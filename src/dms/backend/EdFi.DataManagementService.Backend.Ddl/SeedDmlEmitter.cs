@@ -97,10 +97,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
 
         var writer = new SqlWriter(_dialect);
 
-        writer.AppendLine("-- ==========================================================");
-        writer.AppendLine("-- Phase 7: Seed Data (insert-if-missing + validation)");
-        writer.AppendLine("-- ==========================================================");
-        writer.AppendLine();
+        writer.WritePhaseHeader(7, "Seed Data (insert-if-missing + validation)");
 
         EmitResourceKeySeeds(writer, effectiveSchema.ResourceKeysInIdOrder);
         EmitResourceKeyValidation(writer, effectiveSchema.ResourceKeysInIdOrder);

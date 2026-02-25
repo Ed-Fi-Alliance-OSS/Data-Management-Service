@@ -126,6 +126,21 @@ public sealed class SqlWriter
     }
 
     /// <summary>
+    /// Writes a standardized phase-separator comment block followed by a blank line.
+    /// </summary>
+    /// <param name="phaseNumber">The phase ordinal (e.g. 1, 2, …).</param>
+    /// <param name="phaseName">The human-readable phase label (e.g. "Schemas", "Triggers").</param>
+    /// <returns>This writer for method chaining.</returns>
+    public SqlWriter WritePhaseHeader(int phaseNumber, string phaseName)
+    {
+        AppendLine("-- ==========================================================");
+        AppendLine($"-- Phase {phaseNumber}: {phaseName}");
+        AppendLine("-- ==========================================================");
+        AppendLine();
+        return this;
+    }
+
+    /// <summary>
     /// Returns the canonical SQL output with Unix line endings and no trailing whitespace.
     /// </summary>
     /// <returns>The canonical SQL string.</returns>
