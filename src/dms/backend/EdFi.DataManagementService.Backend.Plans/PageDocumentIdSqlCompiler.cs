@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
 
 namespace EdFi.DataManagementService.Backend.Plans;
 
@@ -53,12 +54,23 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             spec.Predicates,
             spec.UnifiedAliasMappingsByColumn
         );
+        ValidateFilterParameterNamesDoNotCollideWithPaging(
+            rewrittenPredicates,
+            spec.OffsetParameterName,
+            spec.LimitParameterName
+        );
+
         var pageSql = BuildPageDocumentIdSql(spec, rewrittenPredicates);
         var totalCountSql = spec.IncludeTotalCountSql
             ? BuildTotalCountSql(spec.RootTable, rewrittenPredicates)
             : null;
+        var parametersInOrder = BuildParametersInOrder(
+            rewrittenPredicates,
+            spec.OffsetParameterName,
+            spec.LimitParameterName
+        );
 
-        return new PageDocumentIdSqlPlan(pageSql, totalCountSql);
+        return new PageDocumentIdSqlPlan(pageSql, totalCountSql, parametersInOrder);
     }
 
     /// <summary>
@@ -141,6 +153,69 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             predicate.Operator,
             predicate.ParameterName
         );
+    }
+
+    /// <summary>
+    /// Ensures filter-parameter names do not collide with paging parameter names.
+    /// </summary>
+    private static void ValidateFilterParameterNamesDoNotCollideWithPaging(
+        IReadOnlyList<RewrittenPredicate> predicates,
+        string offsetParameterName,
+        string limitParameterName
+    )
+    {
+        foreach (var predicate in predicates)
+        {
+            if (
+                string.Equals(
+                    predicate.ParameterName,
+                    offsetParameterName,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                throw CreateFilterPagingCollisionException(
+                    predicate.ParameterName,
+                    offsetParameterName,
+                    nameof(PageDocumentIdQuerySpec.OffsetParameterName)
+                );
+            }
+
+            if (
+                string.Equals(predicate.ParameterName, limitParameterName, StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                throw CreateFilterPagingCollisionException(
+                    predicate.ParameterName,
+                    limitParameterName,
+                    nameof(PageDocumentIdQuerySpec.LimitParameterName)
+                );
+            }
+        }
+    }
+
+    /// <summary>
+    /// Builds deterministic query parameter metadata in SQL-emission order.
+    /// </summary>
+    private static IReadOnlyList<QuerySqlParameter> BuildParametersInOrder(
+        IReadOnlyList<RewrittenPredicate> predicates,
+        string offsetParameterName,
+        string limitParameterName
+    )
+    {
+        var parametersInOrder = new List<QuerySqlParameter>(predicates.Count + 2);
+
+        foreach (var predicate in predicates)
+        {
+            parametersInOrder.Add(
+                new QuerySqlParameter(QuerySqlParameterRole.Filter, predicate.ParameterName)
+            );
+        }
+
+        parametersInOrder.Add(new QuerySqlParameter(QuerySqlParameterRole.Offset, offsetParameterName));
+        parametersInOrder.Add(new QuerySqlParameter(QuerySqlParameterRole.Limit, limitParameterName));
+
+        return parametersInOrder;
     }
 
     /// <summary>
@@ -378,6 +453,22 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     private static string FormatCollisionValues(IReadOnlyList<string> values)
     {
         return string.Join(", ", values.Select(static value => $"'{value}'"));
+    }
+
+    /// <summary>
+    /// Creates a deterministic exception describing a filter/paging parameter-name collision.
+    /// </summary>
+    private static ArgumentException CreateFilterPagingCollisionException(
+        string filterParameterName,
+        string pagingParameterName,
+        string pagingParameterPropertyName
+    )
+    {
+        return new ArgumentException(
+            $"Filter parameter name '{filterParameterName}' collides with paging parameter name '{pagingParameterName}' (case-insensitive). "
+                + $"Rename the filter parameter or change {pagingParameterPropertyName}.",
+            nameof(PageDocumentIdQuerySpec.Predicates)
+        );
     }
 
     /// <summary>

@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 using FluentAssertions;
 using NUnit.Framework;
@@ -184,6 +185,19 @@ public class Given_PageDocumentIdSqlCompiler
         firstPredicateIndex.Should().BeGreaterThan(-1);
         secondPredicateIndex.Should().BeGreaterThan(firstPredicateIndex);
         thirdPredicateIndex.Should().BeGreaterThan(secondPredicateIndex);
+
+        plan.ParametersInOrder.Select(parameter => parameter.ParameterName)
+            .Should()
+            .Equal("mParam", "zParam", "aParam", "offset", "limit");
+        plan.ParametersInOrder.Select(parameter => parameter.Role)
+            .Should()
+            .Equal(
+                QuerySqlParameterRole.Filter,
+                QuerySqlParameterRole.Filter,
+                QuerySqlParameterRole.Filter,
+                QuerySqlParameterRole.Offset,
+                QuerySqlParameterRole.Limit
+            );
     }
 
     [Test]
@@ -255,6 +269,10 @@ public class Given_PageDocumentIdSqlCompiler
 
         plan.PageDocumentIdSql.Should().Contain("LIMIT @limit OFFSET @offset");
         plan.PageDocumentIdSql.Should().NotContain("OFFSET @offset LIMIT @limit");
+        plan.ParametersInOrder.Select(parameter => parameter.Role)
+            .Should()
+            .Equal(QuerySqlParameterRole.Offset, QuerySqlParameterRole.Limit);
+        plan.ParametersInOrder.Select(parameter => parameter.ParameterName).Should().Equal("offset", "limit");
     }
 
     [Test]
@@ -310,6 +328,14 @@ public class Given_PageDocumentIdSqlCompiler
         plan.TotalCountSql.Should().NotBeNull();
         plan.TotalCountSql.Should().Contain("SELECT COUNT(1)");
         plan.TotalCountSql.Should().Contain("(r.\"SchoolId\" = @schoolId)");
+        plan.TotalCountSql.Should().NotContain("@offset");
+        plan.TotalCountSql.Should().NotContain("@limit");
+        plan.ParametersInOrder.Select(parameter => parameter.Role)
+            .Should()
+            .Equal(QuerySqlParameterRole.Filter, QuerySqlParameterRole.Offset, QuerySqlParameterRole.Limit);
+        plan.ParametersInOrder.Select(parameter => parameter.ParameterName)
+            .Should()
+            .Equal("schoolId", "offset", "limit");
     }
 
     [Test]
@@ -346,6 +372,56 @@ public class Given_PageDocumentIdSqlCompiler
         var act = () => _compiler.Compile(CreateSpec([], [], limitParameterName: "1; DROP TABLE foo--"));
 
         act.Should().Throw<ArgumentException>().WithParameterName("LimitParameterName");
+    }
+
+    [Test]
+    public void It_should_reject_filter_parameter_names_that_collide_with_offset_parameter_name_case_insensitively()
+    {
+        var act = () =>
+            _compiler.Compile(
+                CreateSpec(
+                    [
+                        new QueryValuePredicate(
+                            new DbColumnName("SchoolId"),
+                            QueryComparisonOperator.Equal,
+                            "OffSet"
+                        ),
+                    ],
+                    []
+                )
+            );
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("Predicates")
+            .WithMessage(
+                "Filter parameter name 'OffSet' collides with paging parameter name 'offset' (case-insensitive). Rename the filter parameter or change OffsetParameterName.*"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_filter_parameter_names_that_collide_with_limit_parameter_name_case_insensitively()
+    {
+        var act = () =>
+            _compiler.Compile(
+                CreateSpec(
+                    [
+                        new QueryValuePredicate(
+                            new DbColumnName("SchoolId"),
+                            QueryComparisonOperator.Equal,
+                            "LiMit"
+                        ),
+                    ],
+                    []
+                )
+            );
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("Predicates")
+            .WithMessage(
+                "Filter parameter name 'LiMit' collides with paging parameter name 'limit' (case-insensitive). Rename the filter parameter or change LimitParameterName.*"
+            );
     }
 
     private static PageDocumentIdQuerySpec CreateSpec(

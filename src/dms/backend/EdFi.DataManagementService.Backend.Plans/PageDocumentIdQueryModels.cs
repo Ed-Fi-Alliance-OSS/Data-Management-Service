@@ -40,12 +40,3 @@ public sealed record PageDocumentIdQuerySpec(
     string LimitParameterName = "limit",
     bool IncludeTotalCountSql = false
 );
-
-/// <summary>
-/// Compiled SQL for page keyset selection and total-count evaluation.
-/// </summary>
-/// <param name="PageDocumentIdSql">Parameterized SQL selecting a page of <c>DocumentId</c>s.</param>
-/// <param name="TotalCountSql">
-/// Parameterized SQL selecting total row count for the same filter set, when requested.
-/// </param>
-public sealed record PageDocumentIdSqlPlan(string PageDocumentIdSql, string? TotalCountSql);
