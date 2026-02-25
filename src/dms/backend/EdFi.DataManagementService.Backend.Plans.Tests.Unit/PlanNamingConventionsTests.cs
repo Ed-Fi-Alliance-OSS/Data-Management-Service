@@ -73,6 +73,25 @@ public class Given_PlanNamingConventions
     }
 
     [Test]
+    public void It_should_deterministically_sanitize_and_deduplicate_across_repeated_invocations()
+    {
+        IReadOnlyList<DbColumnName> columns =
+        [
+            new DbColumnName("School-ID"),
+            new DbColumnName("school-id"),
+            new DbColumnName("School__ID"),
+            new DbColumnName("1School Name"),
+            new DbColumnName("1school name"),
+        ];
+
+        var first = PlanNamingConventions.DeriveWriteParameterNamesInOrder(columns);
+        var second = PlanNamingConventions.DeriveWriteParameterNamesInOrder(columns);
+
+        second.Should().Equal(first);
+        second.Should().Equal("school_ID", "school_id_2", "school_ID_3", "_1School_Name", "_1school_name_2");
+    }
+
+    [Test]
     public void It_should_return_deterministic_fixed_aliases_by_role()
     {
         PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Root).Should().Be("r");

@@ -32,3 +32,10 @@ Decisions: added deterministic keyset-table contract factory in Backend.External
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/KeysetTableConventions.cs; src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/PlanContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/KeysetTableConventionsTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ExternalPlanContractsTests.cs; tasks.json.
 Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 74); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 errors; 1 transient MSB3026 copy-retry warning in Backend.Ddl).
 Blockers/notes: no blockers; next highest-priority remaining task likely Determinism Tests.
+
+2026-02-25
+Task done: Determinism Tests. Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: added explicit determinism assertions for query compiler output across repeated compiles + predicate-order permutations; added permutation-based deterministic failure assertions for invalid parameter names and paging-name collisions; added repeated-run sanitize+case-insensitive dedupe determinism coverage in naming tests.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageDocumentIdSqlCompilerTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanNamingConventionsTests.cs; tasks.json.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 79); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 errors).
+Blockers/notes: no blockers; next highest-priority remaining task is Golden Fixtures.
