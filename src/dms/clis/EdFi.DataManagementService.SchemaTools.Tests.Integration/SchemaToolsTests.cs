@@ -350,10 +350,10 @@ public class SchemaToolsTests
         }
 
         [Test]
-        public void It_creates_simple_relational_model_manifest_name()
+        public void It_creates_dialect_suffixed_relational_model_manifest()
         {
-            // When single dialect, the manifest is not dialect-prefixed
-            File.Exists(Path.Combine(_outputDir, "relational-model.manifest.json")).Should().BeTrue();
+            // Manifest always includes dialect suffix since the model is dialect-dependent
+            File.Exists(Path.Combine(_outputDir, "relational-model.pgsql.manifest.json")).Should().BeTrue();
         }
     }
 

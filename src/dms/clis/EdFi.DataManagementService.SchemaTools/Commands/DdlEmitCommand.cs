@@ -141,7 +141,6 @@ public static class DdlEmitCommand
         Directory.CreateDirectory(outputDir);
 
         var emittedFiles = new List<string>();
-        var emitMultipleDialects = dialects.Count > 1;
 
         // Emit DDL and model manifests per dialect
         foreach (var dialect in dialects)
@@ -164,18 +163,17 @@ public static class DdlEmitCommand
             var seedDml = new SeedDmlEmitter(sqlDialect).Emit(effectiveSchemaInfo);
             var combinedSql = coreDdl + relationalDdl + seedDml;
 
-            // Write SQL file
+            // Write SQL file (always dialect-prefixed, matching {dialect}.sql convention)
             var dialectLabel = dialect == SqlDialect.Pgsql ? "pgsql" : "mssql";
             var sqlFileName = $"{dialectLabel}.sql";
             var sqlPath = Path.Combine(outputDir, sqlFileName);
             WriteFileWithUnixLineEndings(sqlPath, combinedSql);
             emittedFiles.Add(sqlFileName);
 
-            // Emit relational model manifest
+            // Emit relational model manifest (always dialect-suffixed because the
+            // derived model is dialect-dependent via ISqlDialectRules naming/type rules)
             var modelManifest = DerivedModelSetManifestEmitter.Emit(modelSet);
-            var manifestFileName = emitMultipleDialects
-                ? $"relational-model.{dialectLabel}.manifest.json"
-                : "relational-model.manifest.json";
+            var manifestFileName = $"relational-model.{dialectLabel}.manifest.json";
             var manifestPath = Path.Combine(outputDir, manifestFileName);
             WriteFileWithUnixLineEndings(manifestPath, modelManifest);
             emittedFiles.Add(manifestFileName);
