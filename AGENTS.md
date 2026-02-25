@@ -1,34 +1,7 @@
-# Agent Reference for Ed-Fi Data Management Service
-
-## Project Overview
-
 This repository contains the **Ed-Fi Data Management Service (DMS) Platform**, which consists of two main applications:
 
 1. **Ed-Fi Data Management Service (DMS)** - A functional implementation of Ed-Fi Resources API, Ed-Fi Descriptors API, and Ed-Fi Discovery API
 2. **Ed-Fi DMS Configuration Service (CMS)** - A functional implementation of the Ed-Fi Management API specification
-
-## Project Structure
-
-```text
-Data-Management-Service/
-├── src/
-│   ├── dms/                          # Main Data Management Service
-│   │   ├── frontend/                 # AspNetCore web API frontend
-│   │   ├── backend/                  # Database backends (PostgreSQL, MSSQL, OpenSearch)
-│   │   ├── core/                     # Core business logic and services
-│   │   ├── clis/                     # Command-line tools (ApiSchemaDownloader, etc.)
-│   │   └── tests/                    # E2E tests
-│   └── config/                       # DMS Configuration Service
-│       ├── frontend/                 # AspNetCore web API frontend
-│       ├── backend/                  # Database backends and identity providers
-│       ├── datamodel/                # Shared data models
-│       └── tests/                    # E2E tests
-├── eng/                              # Engineering tools and scripts
-│   ├── docker-compose/               # Docker composition files and startup scripts
-│   ├── bulkLoad/                     # Performance testing and bulk loading
-│   └── smoke_test/                   # Smoke testing scripts
-└── docs/                             # Developer documentation
-```
 
 ## DMS Core and Backends
 
@@ -52,18 +25,14 @@ Data-Management-Service/
 ## Formatting and Code Style
 
 - Apply code-formatting style defined in `.editorconfig`.
-- Prefer file-scoped namespace declarations and single-line using directives.
-- Insert a newline before the opening curly brace of any code block (e.g., after `if`, `for`, `while`, `foreach`, `using`, `try`, etc.).
-- Ensure that the final return statement of a method is on its own line.
 - Use pattern matching and switch expressions wherever possible.
 - Use `nameof` instead of string literals when referring to member names.
 - Only use .NET 10 code style, including modern C# language features (e.g., primary constructors, pattern matching, records, target-typed new, collection expressions, and file-scoped namespaces).
 
 ### Nullable Reference Types
 
-- Declare variables non-nullable, and check for `null` at entry points.
+- Declare variables non-nullable.
 - Always use `is null` or `is not null` instead of `== null` or `!= null`.
-- Trust the C# null annotations and don't add null checks when the type system says a value cannot be null.
 
 ## Development Workflow
 
@@ -84,8 +53,6 @@ Data-Management-Service/
 The Data Management Service E2E tests directory is `src/dms/tests/EdFi.DataManagementService.Tests.E2E/`.
 
 The Data Management Service E2E tests interact with a Docker stack named dms-local. Examine the docker log files to assist in debugging E2E tests.
-
-Testcontainers is obsolete, do not use them when working with the E2E tests.
 
 If docker is not running, on Linux start it with `systemctl --user start docker-desktop`
 
@@ -115,8 +82,6 @@ The DMS Configuration Management Service E2E tests have a similar setup and envi
 
 ## Testing Guidelines
 
-- Use NUnit tests.
-- Use FluentAssertions for assertions.
-- Use FakeItEasy for mocking in tests.
-- Copy existing style in nearby files for test method names and capitalization.
-- NUnit tests should follow the existing style, which is TestFixture classes named with prefix "Given_", a Setup method which does arrange and act, and Test methods with "It_" prefixes for each individual assert.
+- Use NUnit with FluentAssertions, and FakeItEasy for mocks when necessary.
+- NUnit tests should follow the existing style, which is filenames named like the code area being tested,
+  TestFixture classes named with prefix "Given_", a Setup method which does arrange and act, and Test methods with "It_" prefixes for each individual assert.

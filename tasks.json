@@ -1,0 +1,64 @@
+[
+  {
+    "category": "Contracts",
+    "description": "Add executor-facing plan contract types under `src/dms/backend/EdFi.DataManagementService.Backend.External/Plans` in namespace `EdFi.DataManagementService.Backend.External.Plans`. Acceptance: (1) Write contracts: `ResourceWritePlan`, `TableWritePlan`, `WriteColumnBinding` (includes `DbColumnModel Column`, `WriteValueSource Source`, and bare `ParameterName`), `WriteValueSource` variants (`DocumentId`, `ParentKeyPart(index)`, `Ordinal`, `Scalar(relativePath,type)`, `DocumentReference(bindingIndex,referenceObjectPath)`, `DescriptorReference(descriptorResource,relativePath,descriptorValuePath?)`, `Precomputed`), and `KeyUnificationWritePlan` + members. (2) Read contracts: `ResourceReadPlan`, `TableReadPlan`, and a `KeysetTableContract` that explicitly names the keyset table and its `DocumentId` column. (3) Query contracts: `PageDocumentIdSqlPlan` (page SQL + optional total-count SQL) and `ParametersInOrder: IReadOnlyList<QuerySqlParameter>` with `Role` (`Filter`, `Offset`, `Limit`) and bare name. (4) All ordering-sensitive collections are explicit `IReadOnlyList<>` in stable canonical order; do not store `Dictionary`/`map` in the contract (derived lookups may be built by helper methods/classes). (5) Types are plain data (records/structs) with no delegates/DI/live DB objects so they are pack-serializable later.",
+    "steps-to-verify": [
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Naming",
+    "description": "Implement deterministic naming utilities used by plan compilation. Acceptance: (1) Write-plan parameter naming derives base names from `DbColumnName.Value` using a camelCase first-character transform while preserving underscores. (2) Deterministic sanitization to `^[a-zA-Z_][a-zA-Z0-9_]*$`: replace invalid chars with `_`, collapse repeats, prefix `_` if needed, and fall back to `p` if empty. (3) Deterministic de-duplication is case-insensitive: keep the first occurrence, then append `_{n}` starting at 2 in the authoritative enumeration order (e.g., `ColumnBindings` order). (4) Add deterministic alias helpers: role-based fixed aliases (`r`, `k`, `t`, `doc`, `d`) plus a deterministic allocator for multi-instance roles (`t0`, `t1`, …) that does not derive from physical names.",
+    "steps-to-verify": [
+      "Add/update unit tests covering sanitize + dedupe (including case-only collisions) and alias allocation determinism.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Batching",
+    "description": "Add a write-plan batching contract and deterministic calculator. Acceptance: (1) Add `BulkInsertBatchingInfo` on `TableWritePlan` (plain data) with at least `MaxRowsPerBatch`, `ParametersPerRow`, and `MaxParametersPerCommand` (diagnostics-friendly). (2) Compute `ParametersPerRow = ColumnBindings.Count` (stored/writable columns only). (3) Dialect rules: SQL Server `MaxParametersPerCommand=2100`, also cap VALUES rows at 1000; PostgreSQL `MaxParametersPerCommand=65535` and apply a deterministic policy cap of 1000 rows. (4) `MaxRowsPerBatch = min(policyCapOrRowLimit, floor(MaxParametersPerCommand / ParametersPerRow))`, and fail fast deterministically if the result is < 1. (5) Unit tests cover representative row widths and fail-fast boundaries.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Query",
+    "description": "Refactor `PageDocumentIdSqlCompiler` to produce the new executor-facing query plan contract in `EdFi.DataManagementService.Backend.External.Plans`. Acceptance: (1) Compiler returns `PageDocumentIdSqlPlan` with `PageDocumentIdSql`, optional `TotalCountSql`, and `ParametersInOrder` (ordered list, not dictionary). (2) Filter parameter names are validated (not sanitized) and must not collide with paging names `offset`/`limit` (case-insensitive); fail fast with an actionable exception. (3) `ParametersInOrder` is deterministic and aligns with emitted predicate ordering; page SQL consumes `Filter+Offset+Limit` while total-count consumes only `Filter`. (4) Existing SQL canonicalization remains intact (`\\n`, indentation, keyword casing). Update unit tests accordingly.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Read",
+    "description": "Introduce an explicit keyset table contract for hydration reads. Acceptance: (1) Add `KeysetTableContract(TableName, DocumentIdColumnName)` to `ResourceReadPlan` so executors can materialize the keyset without parsing SQL. (2) Standardize values per dialect and keep constant: PgSQL table `page`, MSSQL table `#page`, column name `DocumentId`. (3) Provide a deterministic helper/factory for selecting the correct keyset contract from `SqlDialect` and unit tests locking down the constants.",
+    "steps-to-verify": [
+      "Add unit tests verifying dialect-specific keyset table contract values.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Determinism Tests",
+    "description": "Add unit tests that validate deterministic outputs under input-order permutations. Acceptance: (1) Compile the same query plan twice and assert identical SQL and identical `ParametersInOrder`. (2) Permute predicate input ordering and assert identical output (after rewrite/sort) including parameter ordering. (3) Validate parameter-name de-duplication stability (case-insensitive collisions) and sanitization determinism. (4) Ensure failures are deterministic for invalid parameter names and paging-name collisions.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Golden Fixtures",
+    "description": "Add a deterministic JSON plan-manifest golden fixture for this story in `EdFi.DataManagementService.Backend.Plans.Tests.Unit`. Acceptance: (1) Emit a single `.json` manifest that snapshots: query plan SQL (or normalized SQL hash), `ParametersInOrder` with roles, representative write-parameter naming output, and representative batching output. (2) Manifest ordering is stable (no dictionary iteration dependence), uses `\\n` line endings, and trims trailing whitespace. (3) Test compares `expected/` vs `actual/` via `git diff --no-index` and supports `UPDATE_GOLDENS=1` to bless updates.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
+      "Optional (update goldens): `UPDATE_GOLDENS=1 dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  }
+]
