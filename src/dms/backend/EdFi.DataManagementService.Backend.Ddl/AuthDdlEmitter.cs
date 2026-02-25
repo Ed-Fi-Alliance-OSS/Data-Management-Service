@@ -152,6 +152,177 @@ public sealed class AuthDdlEmitter(ISqlDialect dialect, AuthEdOrgHierarchy hiera
 
         // Triggers are emitted alphabetically by entity name,
         // then by trigger type (Delete, Insert, Update) for determinism.
-        // Implementation of trigger body emission is handled in subsequent tasks.
+        foreach (var entity in _hierarchy.EntitiesInNameOrder)
+        {
+            bool isLeaf = entity.ParentEdOrgFks.Count == 0;
+
+            // Delete trigger (alphabetically first)
+            if (isLeaf)
+            {
+                EmitTrigger(writer, entity, "Delete", "DELETE", EmitLeafDeleteBody);
+            }
+
+            // Insert trigger
+            if (isLeaf)
+            {
+                EmitTrigger(writer, entity, "Insert", "INSERT", EmitLeafInsertBody);
+            }
+
+            // Hierarchical triggers (Insert, Update, Delete) will be added in tasks 4-6.
+        }
     }
+
+    // ── Trigger scaffolding ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Emits a complete trigger (scaffolding + body) dispatching to the correct dialect.
+    /// </summary>
+    private void EmitTrigger(
+        SqlWriter writer,
+        AuthEdOrgEntity entity,
+        string triggerSuffix,
+        string triggerEvent,
+        Action<SqlWriter, AuthEdOrgEntity> emitBody
+    )
+    {
+        if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
+        {
+            EmitPgsqlTrigger(writer, entity, triggerSuffix, triggerEvent, emitBody);
+        }
+        else
+        {
+            EmitMssqlTrigger(writer, entity, triggerSuffix, triggerEvent, emitBody);
+        }
+    }
+
+    private void EmitPgsqlTrigger(
+        SqlWriter writer,
+        AuthEdOrgEntity entity,
+        string triggerSuffix,
+        string triggerEvent,
+        Action<SqlWriter, AuthEdOrgEntity> emitBody
+    )
+    {
+        var schema = entity.Table.Schema;
+        var funcName = $"TF_{entity.EntityName}_AuthHierarchy_{triggerSuffix}";
+        var triggerName = $"TR_{entity.EntityName}_AuthHierarchy_{triggerSuffix}";
+
+        // Trigger function
+        writer.AppendLine($"CREATE OR REPLACE FUNCTION {Quote(schema)}.{Quote(funcName)}()");
+        writer.AppendLine("RETURNS TRIGGER AS $$");
+        writer.AppendLine("BEGIN");
+        using (writer.Indent())
+        {
+            emitBody(writer, entity);
+            writer.AppendLine("RETURN NULL;");
+        }
+        writer.AppendLine("END;");
+        writer.AppendLine("$$ LANGUAGE plpgsql;");
+        writer.AppendLine();
+
+        // Drop + Create trigger
+        writer.AppendLine(_dialect.DropTriggerIfExists(entity.Table, triggerName));
+        writer.AppendLine($"CREATE TRIGGER {Quote(triggerName)}");
+        using (writer.Indent())
+        {
+            writer.AppendLine($"AFTER {triggerEvent} ON {Quote(entity.Table)}");
+            writer.AppendLine("FOR EACH ROW");
+            writer.AppendLine($"EXECUTE FUNCTION {Quote(schema)}.{Quote(funcName)}();");
+        }
+        writer.AppendLine();
+    }
+
+    private void EmitMssqlTrigger(
+        SqlWriter writer,
+        AuthEdOrgEntity entity,
+        string triggerSuffix,
+        string triggerEvent,
+        Action<SqlWriter, AuthEdOrgEntity> emitBody
+    )
+    {
+        var schema = entity.Table.Schema;
+        var triggerName = $"TR_{entity.EntityName}_AuthHierarchy_{triggerSuffix}";
+
+        writer.AppendLine("GO");
+        writer.AppendLine($"CREATE OR ALTER TRIGGER {Quote(schema)}.{Quote(triggerName)}");
+        writer.AppendLine($"ON {Quote(entity.Table)}");
+        writer.AppendLine($"AFTER {triggerEvent}");
+        writer.AppendLine("AS");
+        writer.AppendLine("BEGIN");
+        using (writer.Indent())
+        {
+            writer.AppendLine("SET NOCOUNT ON;");
+            emitBody(writer, entity);
+        }
+        writer.AppendLine("END;");
+        writer.AppendLine();
+    }
+
+    // ── Leaf trigger bodies ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Emits the INSERT trigger body for a leaf EdOrg (no parent FKs).
+    /// Inserts the self-referencing tuple <c>(EdOrgId, EdOrgId)</c>.
+    /// </summary>
+    private void EmitLeafInsertBody(SqlWriter writer, AuthEdOrgEntity entity)
+    {
+        var authTable = Quote(_authTable);
+        var source = Quote(_sourceCol);
+        var target = Quote(_targetCol);
+        var idCol = Quote(entity.IdentityColumn);
+
+        if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
+        {
+            writer.AppendLine($"INSERT INTO {authTable} ({source}, {target})");
+            writer.AppendLine($"VALUES (NEW.{idCol}, NEW.{idCol});");
+        }
+        else
+        {
+            writer.AppendLine($"INSERT INTO {authTable} ({source}, {target})");
+            writer.AppendLine($"SELECT new.{idCol}, new.{idCol}");
+            writer.AppendLine("FROM inserted new;");
+        }
+    }
+
+    /// <summary>
+    /// Emits the DELETE trigger body for a leaf EdOrg (no parent FKs).
+    /// Removes the self-referencing tuple.
+    /// </summary>
+    private void EmitLeafDeleteBody(SqlWriter writer, AuthEdOrgEntity entity)
+    {
+        var authTable = Quote(_authTable);
+        var source = Quote(_sourceCol);
+        var target = Quote(_targetCol);
+        var idCol = Quote(entity.IdentityColumn);
+
+        if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
+        {
+            writer.AppendLine($"DELETE FROM {authTable}");
+            writer.AppendLine($"WHERE {source} = OLD.{idCol} AND {target} = OLD.{idCol};");
+        }
+        else
+        {
+            writer.AppendLine($"DELETE tuples");
+            writer.AppendLine($"FROM {authTable} AS tuples");
+            using (writer.Indent())
+            {
+                writer.AppendLine("INNER JOIN deleted old");
+                using (writer.Indent())
+                {
+                    writer.AppendLine($"ON tuples.{source} = old.{idCol}");
+                    writer.AppendLine($"AND tuples.{target} = old.{idCol};");
+                }
+            }
+        }
+    }
+
+    // ── Quoting helpers ─────────────────────────────────────────────────
+
+    private string Quote(string identifier) => _dialect.QuoteIdentifier(identifier);
+
+    private string Quote(DbSchemaName schema) => _dialect.QuoteIdentifier(schema.Value);
+
+    private string Quote(DbTableName table) => _dialect.QualifyTable(table);
+
+    private string Quote(DbColumnName column) => _dialect.QuoteIdentifier(column.Value);
 }
