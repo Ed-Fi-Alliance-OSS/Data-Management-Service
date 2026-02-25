@@ -28,6 +28,40 @@ public class ProfileStepDefinitions(
     ScenarioContext scenarioContext
 )
 {
+    // Keep singularization lightweight and deterministic for URL endpoint names.
+    private static string SingularizeResourceName(string pluralName)
+    {
+        if (string.IsNullOrEmpty(pluralName))
+        {
+            return pluralName;
+        }
+
+        var lower = pluralName.ToLowerInvariant();
+
+        if (lower.EndsWith("ies", StringComparison.Ordinal))
+        {
+            return $"{pluralName[..^3]}y";
+        }
+
+        if (
+            lower.EndsWith("ches", StringComparison.Ordinal)
+            || lower.EndsWith("shes", StringComparison.Ordinal)
+            || lower.EndsWith("xes", StringComparison.Ordinal)
+            || lower.EndsWith("zes", StringComparison.Ordinal)
+            || lower.EndsWith("ses", StringComparison.Ordinal)
+        )
+        {
+            return pluralName[..^2];
+        }
+
+        if (lower.EndsWith("s", StringComparison.Ordinal) && !lower.EndsWith("ss", StringComparison.Ordinal))
+        {
+            return pluralName[..^1];
+        }
+
+        return pluralName;
+    }
+
     private readonly PlaywrightContext _playwrightContext = playwrightContext;
     private readonly TestLogger _logger = logger;
     private readonly ScenarioContext _scenarioContext = scenarioContext;
@@ -208,6 +242,8 @@ public class ProfileStepDefinitions(
     [Scope(Feature = "Profile Assigned Profiles")]
     [Scope(Feature = "Profile Definition Advanced Filtering")]
     [Scope(Feature = "Profile Reference Filtering")]
+    [Scope(Feature = "Profile XML File Definition Validation")]
+    [Scope(Feature = "Profile XML File Method Usage")]
     public async Task GivenTheSystemHasTheseDescriptors(DataTable dataTable)
     {
         string descriptorToken = await GetTokenForExtensionDescriptors();
@@ -1360,13 +1396,7 @@ public class ProfileStepDefinitions(
         string[] segments = url.Split('/');
         string pluralName = segments[^1].Split('?')[0]; // Handle query strings
 
-        // Convert plural to singular (simple rule: remove trailing 's')
-        if (pluralName.EndsWith("s", StringComparison.OrdinalIgnoreCase))
-        {
-            return pluralName[..^1];
-        }
-
-        return pluralName;
+        return SingularizeResourceName(pluralName);
     }
 
     #endregion

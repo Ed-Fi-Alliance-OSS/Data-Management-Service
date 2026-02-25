@@ -47,6 +47,67 @@ These were test infrastructure issues, not product behavior differences:
 - Claimset permissions used in setup for ESC/LEA creation.
 - JSON path step support for array-index navigation.
 
+### Implementation Description
+
+1. **Assigned profile enforcement (covered resources)**
+
+- Locate the profile assignment enforcement path in DMS request handling where Content-Type/Accept is interpreted against assigned profiles.
+- For resources covered by assigned profiles:
+  - `GET` with `Accept: application/json` must fail.
+  - `POST/PUT` with `Content-Type: application/json` must fail.
+- Keep current behavior for not-covered resources (standard content type should remain allowed).
+
+1. **Multi-assigned wrong profile selection contract**
+
+- For requests using a profile-specific media type not valid for the covered resource under assigned profiles, return:
+  - HTTP status: `403`
+  - Error type: `urn:ed-fi:api:security:data-policy:incorrect-usage`
+- Ensure this is consistent for read and write paths where applicable.
+
+1. **Creatability enforcement**
+
+- Reinstate validation so profile definitions that exclude required elements for creating:
+  - child collection items, or
+  - embedded objects
+  cause create requests to fail with `400`.
+- Ensure validation failure surfaces via the expected data-policy/validation problem details path used by existing creatability scenarios.
+
+### Related Postman Tests
+
+1. Multi-assigned wrong profile selection
+
+- `Assigned profiles > Assigned profiles must be used for covered resources > Read Requests > Covered resource with different Profile's content type`
+  Equivalent E2E: `ProfileAssignedProfiles.feature` Scenario `02 Covered resource with different profile content type fails` (single-assigned baseline).
+- `Assigned profiles > Assigned profiles must be used for covered resources > Write Requests > Covered resource with different Profile's content type`
+  Equivalent E2E: `ProfileAssignedProfiles.feature` Scenario `04 Covered resource write with different profile content type fails` (single-assigned baseline).
+- `Assigned profiles > Assigned profiles must be used for covered resources > Read Requests > Covered resource with different Profile's content type for API client with several assigned profiles`
+  Equivalent E2E: `ProfileAssignedProfiles.feature` Scenario `07 Covered resource with different profile content type for API client with several assigned profiles fails with invalid-profile-usage` (multi-assigned).
+- `Assigned profiles > Assigned profiles must be used for covered resources > Write Requests > Covered resource with different Profile's content type for API client with several assigned profiles`
+  Equivalent E2E: No dedicated multi-assigned write-wrong-profile scenario yet (candidate to add; currently inferred from Scenario 04 + multi-assigned read Scenario 07).
+- Source file anchor: [Ed-Fi ODS-API Profile Test Suite.postman_collection.json](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/main/Postman%20Test%20Suite/Ed-Fi%20ODS-API%20Profile%20Test%20Suite.postman_collection.json) (search around lines ~`8234`, `9051`, `9576`, `10213`).
+
+1. Assigned profile + standard content type behavior (covered resources)
+
+- `Assigned profiles > Assigned profiles must be used for covered resources > Read Requests > Covered resource with standard content type specified for API client with one assigned profile > Get School`
+  Equivalent E2E: `ProfileAssignedProfiles.feature` Scenario `05 Covered resource with standard content type and one assigned profile is currently allowed`.
+- `Assigned profiles > Assigned profiles must be used for covered resources > Read Requests > Covered resource with standard content type specified for API client with multiple assigned profiles > Get School`
+  Equivalent E2E: `ProfileAssignedProfiles.feature` Scenario `11 Covered resource with standard content type and several assigned profiles is currently allowed`.
+- `Assigned profiles > Assigned profiles must be used for covered resources > Write Requests > Covered resource with standard content type specified for API client with one assigned profile`
+  Equivalent E2E: `ProfileAssignedProfiles.feature` Scenario `09 Covered resource write with standard content type and one assigned profile is currently allowed`.
+- `Assigned profiles > Assigned profiles must be used for covered resources > Write Requests > Covered resource with standard content type specified for API client with several assigned profiles`
+  Equivalent E2E: `ProfileAssignedProfiles.feature` Scenario `10 Covered resource write with standard content type and several assigned profiles is currently allowed`.
+- Source file anchor: [Ed-Fi ODS-API Profile Test Suite.postman_collection.json](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/main/Postman%20Test%20Suite/Ed-Fi%20ODS-API%20Profile%20Test%20Suite.postman_collection.json) (search around lines ~`8485`, `8580`, `9079`, `9167`).
+
+1. Creatability validation scenarios (specific write cases)
+
+- `Data Policy Enforcement > Detecting Profile usage where resource items cannot be created > Create School (Profile prevents creation)`
+  Equivalent E2E: `ProfileCreatabilityValidation.feature` Scenario `01 POST with profile excluding required scalar field returns 400 with data-policy-enforced error` (resource-level create prevention contract).
+- `Data Policy Enforcement > Detecting Profile usage when creating collection items is prevented > Create School (Profile prevents creation of child collection item)`
+  Equivalent E2E: `ProfileCreatabilityValidation.feature` Scenario `07 Profile with non-creatable child collection rule still allows creation` (current behavior divergence target).
+- `Data Policy Enforcement > Detecting Profile usage when creating child embedded object is prevented > Create Assessment (Profile prevents creation of embedded object)`
+  Equivalent E2E: `ProfileCreatabilityValidation.feature` Scenario `09 Profile with non-creatable embedded object rule still allows creation` (current behavior divergence target).
+- Source file anchor: [Ed-Fi ODS-API Profile Test Suite.postman_collection.json](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/main/Postman%20Test%20Suite/Ed-Fi%20ODS-API%20Profile%20Test%20Suite.postman_collection.json) (search around lines ~`14602`, `14651`, `14967`).
+
 ## Ticket Backlog Candidates
 
 1. `Profiles API Contract`: Decide and codify response `Content-Type` behavior for profile reads.
