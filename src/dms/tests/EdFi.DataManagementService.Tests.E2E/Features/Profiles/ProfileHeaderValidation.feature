@@ -35,18 +35,21 @@ Feature: Profile Header Validation
             When a GET request is made to "/ed-fi/schools/{id}" with Accept header "application/vnd.ed-fi.invalid"
             Then the profile response status is 400
              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
+             And the response body status should equal the response status code
              And the response body should have error message "The format of the profile-based content type header was invalid"
 
         Scenario: 02 Profile header with wrong resource name returns 400
             When a GET request is made to "/ed-fi/schools/{id}" with Accept header "application/vnd.ed-fi.student.e2e-test-school-includeonly.readable+json"
             Then the profile response status is 400
              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
+             And the response body status should equal the response status code
              And the response body should have error message "does not match the requested resource"
 
         Scenario: 03 Profile header with writable usage for GET returns 400
             When a GET request is made to "/ed-fi/schools/{id}" with Accept header "application/vnd.ed-fi.school.e2e-test-school-includeonly.writable+json"
             Then the profile response status is 400
              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
+             And the response body status should equal the response status code
              And the response body should have error message "writable cannot be used with GET requests"
 
     Rule: Profile header on app with no profiles returns 406 Not Acceptable
@@ -82,6 +85,7 @@ Feature: Profile Header Validation
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly" for resource "School"
             Then the profile response status is 406
              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
+             And the response body status should equal the response status code
 
     Rule: Non-existent profile returns 403
 
@@ -115,6 +119,7 @@ Feature: Profile Header Validation
             When a GET request is made to "/ed-fi/schools/{id}" with Accept header "application/vnd.ed-fi.school.nonexistent-profile.readable+json"
             Then the profile response status is 403
              And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
+             And the response body status should equal the response status code
 
     Rule: Valid profile header succeeds
 

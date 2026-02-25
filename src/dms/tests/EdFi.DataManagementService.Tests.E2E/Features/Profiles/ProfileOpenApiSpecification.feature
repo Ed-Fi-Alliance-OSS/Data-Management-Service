@@ -35,3 +35,9 @@ Feature: Profile OpenAPI Specification Filtering
              When a GET request is made to "/metadata/specifications/profiles/NonExistentProfile/resources-spec.json"
              Then the profile response status is 404
 
+        Scenario: 05 Metadata specifications list includes profile entries
+             When a GET request is made to "/metadata/specifications"
+             Then the profile response status is 200
+              And the metadata specifications should include sections "Resources, Descriptors, Discovery"
+              And the metadata specifications should include a profile entry for "E2E-Test-School-IncludeOnly"
+
