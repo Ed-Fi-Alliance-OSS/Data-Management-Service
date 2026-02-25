@@ -28,6 +28,7 @@ public sealed class AuthDdlEmitter(ISqlDialect dialect, AuthEdOrgHierarchy hiera
     private static readonly DbTableName _authTable = AuthTableNames.EdOrgIdToEdOrgId;
     private static readonly DbColumnName _sourceCol = AuthTableNames.SourceEdOrgId;
     private static readonly DbColumnName _targetCol = AuthTableNames.TargetEdOrgId;
+    private static readonly DbColumnName _documentIdCol = new("DocumentId");
 
     /// <summary>
     /// Generates the complete <c>auth.*</c> DDL script for the configured dialect.
@@ -161,14 +162,18 @@ public sealed class AuthDdlEmitter(ISqlDialect dialect, AuthEdOrgHierarchy hiera
             {
                 EmitTrigger(writer, entity, "Delete", "DELETE", EmitLeafDeleteBody);
             }
+            // Hierarchical Delete triggers will be added in task 6.
 
             // Insert trigger
-            if (isLeaf)
-            {
-                EmitTrigger(writer, entity, "Insert", "INSERT", EmitLeafInsertBody);
-            }
+            EmitTrigger(
+                writer,
+                entity,
+                "Insert",
+                "INSERT",
+                isLeaf ? EmitLeafInsertBody : EmitHierarchicalInsertBody
+            );
 
-            // Hierarchical triggers (Insert, Update, Delete) will be added in tasks 4-6.
+            // Hierarchical Update triggers will be added in task 5.
         }
     }
 
@@ -311,6 +316,188 @@ public sealed class AuthDdlEmitter(ISqlDialect dialect, AuthEdOrgHierarchy hiera
                 {
                     writer.AppendLine($"ON tuples.{source} = old.{idCol}");
                     writer.AppendLine($"AND tuples.{target} = old.{idCol};");
+                }
+            }
+        }
+    }
+
+    // ── Hierarchical INSERT trigger body ────────────────────────────────
+
+    /// <summary>
+    /// Emits the INSERT trigger body for a hierarchical EdOrg (>= 1 parent FK).
+    /// Inserts the self-referencing tuple, then ancestor tuples via CROSS JOIN
+    /// of source ancestors (resolved through parent DocumentId joins) and
+    /// existing descendants. Multi-parent entities combine sources with UNION.
+    /// </summary>
+    private void EmitHierarchicalInsertBody(SqlWriter writer, AuthEdOrgEntity entity)
+    {
+        var authTable = Quote(_authTable);
+        var source = Quote(_sourceCol);
+        var target = Quote(_targetCol);
+        var idCol = Quote(entity.IdentityColumn);
+        bool isPgsql = _dialect.Rules.Dialect == SqlDialect.Pgsql;
+
+        // Step 1: Self-referencing tuple
+        if (isPgsql)
+        {
+            writer.AppendLine($"INSERT INTO {authTable} ({source}, {target})");
+            writer.AppendLine($"VALUES (NEW.{idCol}, NEW.{idCol});");
+        }
+        else
+        {
+            writer.AppendLine($"INSERT INTO {authTable} ({source}, {target})");
+            writer.AppendLine($"SELECT new.{idCol}, new.{idCol}");
+            writer.AppendLine("FROM inserted new;");
+        }
+        writer.AppendLine();
+
+        // Step 2: Ancestor tuples via CROSS JOIN (sources x descendants)
+        writer.AppendLine($"INSERT INTO {authTable} ({source}, {target})");
+        writer.AppendLine($"SELECT sources.{source}, targets.{target}");
+        writer.AppendLine("FROM (");
+
+        // Source ancestors: one block per parent FK, combined with UNION
+        using (writer.Indent())
+        {
+            for (int i = 0; i < entity.ParentEdOrgFks.Count; i++)
+            {
+                if (i > 0)
+                {
+                    writer.AppendLine();
+                    writer.AppendLine("UNION");
+                    writer.AppendLine();
+                }
+
+                EmitSourceAncestorsForFk(writer, entity, entity.ParentEdOrgFks[i], "inserted", "new", "NEW");
+            }
+        }
+        writer.AppendLine(") AS sources");
+
+        writer.AppendLine("CROSS JOIN");
+        writer.AppendLine("(");
+
+        // Targets/descendants
+        using (writer.Indent())
+        {
+            EmitDescendantsSubquery(writer, entity, "inserted", "new", "NEW");
+        }
+
+        if (isPgsql)
+        {
+            writer.AppendLine(") AS targets;");
+        }
+        else
+        {
+            writer.AppendLine(") AS targets");
+            writer.AppendLine($"WHERE sources.{idCol} = targets.{idCol};");
+        }
+    }
+
+    // ── Reusable trigger subquery helpers ────────────────────────────────
+
+    /// <summary>
+    /// Emits a source ancestor SELECT for a single parent FK, resolving the
+    /// parent's EducationOrganizationId via a DocumentId join to the parent table.
+    /// For multi-parent entities, the caller combines multiple blocks with UNION.
+    /// </summary>
+    /// <remarks>
+    /// Used by INSERT and DELETE trigger bodies (UPDATE triggers use a different
+    /// pattern with additional WHERE conditions for change detection).
+    /// </remarks>
+    private void EmitSourceAncestorsForFk(
+        SqlWriter writer,
+        AuthEdOrgEntity entity,
+        AuthParentEdOrgFk fk,
+        string mssqlPseudoTable,
+        string mssqlAlias,
+        string pgsqlRecord
+    )
+    {
+        var authTable = Quote(_authTable);
+        var source = Quote(_sourceCol);
+        var target = Quote(_targetCol);
+        var idCol = Quote(entity.IdentityColumn);
+        var fkCol = Quote(fk.FkColumn);
+        var parentTable = Quote(fk.ParentTable);
+        var parentIdCol = Quote(fk.ParentIdentityColumn);
+        var docIdCol = Quote(_documentIdCol);
+
+        if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
+        {
+            writer.AppendLine($"SELECT tuples.{source}");
+            writer.AppendLine($"FROM {parentTable} AS parent");
+            using (writer.Indent())
+            {
+                writer.AppendLine($"INNER JOIN {authTable} AS tuples");
+                using (writer.Indent())
+                {
+                    writer.AppendLine($"ON parent.{parentIdCol} = tuples.{target}");
+                }
+            }
+            writer.AppendLine($"WHERE parent.{docIdCol} = {pgsqlRecord}.{fkCol}");
+            using (writer.Indent())
+            {
+                writer.AppendLine($"AND {pgsqlRecord}.{fkCol} IS NOT NULL");
+            }
+        }
+        else
+        {
+            writer.AppendLine($"SELECT tuples.{source}, {mssqlAlias}.{idCol}");
+            writer.AppendLine($"FROM {mssqlPseudoTable} {mssqlAlias}");
+            using (writer.Indent())
+            {
+                writer.AppendLine($"INNER JOIN {parentTable} AS parent");
+                using (writer.Indent())
+                {
+                    writer.AppendLine($"ON parent.{docIdCol} = {mssqlAlias}.{fkCol}");
+                }
+                writer.AppendLine($"INNER JOIN {authTable} AS tuples");
+                using (writer.Indent())
+                {
+                    writer.AppendLine($"ON parent.{parentIdCol} = tuples.{target}");
+                }
+            }
+            writer.AppendLine($"WHERE {mssqlAlias}.{fkCol} IS NOT NULL");
+        }
+    }
+
+    /// <summary>
+    /// Emits a descendants SELECT subquery that finds all existing descendants
+    /// of the current entity by looking up tuples where the entity's
+    /// EducationOrganizationId is the source.
+    /// </summary>
+    /// <remarks>
+    /// Used by INSERT and DELETE trigger bodies for the CROSS JOIN targets side.
+    /// </remarks>
+    private void EmitDescendantsSubquery(
+        SqlWriter writer,
+        AuthEdOrgEntity entity,
+        string mssqlPseudoTable,
+        string mssqlAlias,
+        string pgsqlRecord
+    )
+    {
+        var authTable = Quote(_authTable);
+        var source = Quote(_sourceCol);
+        var target = Quote(_targetCol);
+        var idCol = Quote(entity.IdentityColumn);
+
+        if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
+        {
+            writer.AppendLine($"SELECT tuples.{target}");
+            writer.AppendLine($"FROM {authTable} AS tuples");
+            writer.AppendLine($"WHERE tuples.{source} = {pgsqlRecord}.{idCol}");
+        }
+        else
+        {
+            writer.AppendLine($"SELECT {mssqlAlias}.{idCol}, tuples.{target}");
+            writer.AppendLine($"FROM {mssqlPseudoTable} {mssqlAlias}");
+            using (writer.Indent())
+            {
+                writer.AppendLine($"INNER JOIN {authTable} AS tuples");
+                using (writer.Indent())
+                {
+                    writer.AppendLine($"ON {mssqlAlias}.{idCol} = tuples.{source}");
                 }
             }
         }
