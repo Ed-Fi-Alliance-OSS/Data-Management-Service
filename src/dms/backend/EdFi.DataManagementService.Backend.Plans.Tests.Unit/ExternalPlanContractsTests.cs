@@ -169,15 +169,12 @@ public class Given_ExternalPlanContracts
 
         var readPlan = new ExternalPlans.ResourceReadPlan(
             resourceModel,
-            new ExternalPlans.KeysetTableContract(
-                new DbTableName(new DbSchemaName("edfi"), "page"),
-                new DbColumnName("DocumentId")
-            ),
+            ExternalPlans.KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
             [new ExternalPlans.TableReadPlan(tableModel, "SELECT BY KEYSET SQL")]
         );
 
-        readPlan.KeysetTable.TableName.Should().Be(new DbTableName(new DbSchemaName("edfi"), "page"));
-        readPlan.KeysetTable.DocumentIdColumn.Should().Be(new DbColumnName("DocumentId"));
+        readPlan.KeysetTable.TableName.Name.Should().Be("page");
+        readPlan.KeysetTable.DocumentIdColumnName.Should().Be(new DbColumnName("DocumentId"));
         readPlan.TablePlansInDependencyOrder.Should().ContainSingle();
     }
 

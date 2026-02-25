@@ -25,3 +25,10 @@ Decisions: compiler now returns executor-facing `Backend.External.Plans.PageDocu
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdQueryModels.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageDocumentIdSqlCompilerTests.cs; tasks.json.
 Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 70); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 errors).
 Blockers/notes: no blockers; next highest-priority remaining task likely Read.
+
+2026-02-25
+Task done: Read. Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: added deterministic keyset-table contract factory in Backend.External.Plans; dialect constants locked to keyset table names `page` (PgSQL) and `#page` (MSSQL) with `DocumentId` column; kept contract compatibility by adding `DocumentIdColumnName` alias on `KeysetTableContract` while preserving existing `DocumentIdColumn` property.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/KeysetTableConventions.cs; src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/PlanContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/KeysetTableConventionsTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ExternalPlanContractsTests.cs; tasks.json.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 74); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 errors; 1 transient MSB3026 copy-retry warning in Backend.Ddl).
+Blockers/notes: no blockers; next highest-priority remaining task likely Determinism Tests.

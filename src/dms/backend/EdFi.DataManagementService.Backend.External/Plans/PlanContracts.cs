@@ -194,7 +194,13 @@ public sealed record TableReadPlan(DbTableModel TableModel, string SelectByKeyse
 /// </summary>
 /// <param name="TableName">Keyset table name.</param>
 /// <param name="DocumentIdColumn">Keyset table <c>DocumentId</c> column name.</param>
-public sealed record KeysetTableContract(DbTableName TableName, DbColumnName DocumentIdColumn);
+public sealed record KeysetTableContract(DbTableName TableName, DbColumnName DocumentIdColumn)
+{
+    /// <summary>
+    /// Keyset table <c>DocumentId</c> column name.
+    /// </summary>
+    public DbColumnName DocumentIdColumnName => DocumentIdColumn;
+}
 
 /// <summary>
 /// Compiled SQL plan for selecting a page of <c>DocumentId</c>s and optional total count.
