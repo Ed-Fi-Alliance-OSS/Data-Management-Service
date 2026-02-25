@@ -4,3 +4,10 @@ Decisions: new executor-facing plan contracts in Backend.External.Plans; list-on
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/PlanContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ExternalPlanContractsTests.cs; tasks.json.
 Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 43); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 errors).
 Blockers/notes: no blockers; next highest-priority remaining task is Naming.
+
+2026-02-25
+Task done: Naming. Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: added centralized deterministic naming utility in Backend.Plans; write parameter naming pipeline is base-name camel-first-char -> sanitize -> case-insensitive dedupe w/ `_{n}` suffixes; added fixed alias roles (`r`,`k`,`t`,`doc`,`d`) + table allocator (`t0`,`t1`,...); query compiler root alias now sourced from helper.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/PlanNamingConventions.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanNamingConventionsTests.cs; tasks.json.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 57); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 errors).
+Blockers/notes: no blockers; next highest-priority remaining task likely Batching.

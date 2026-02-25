@@ -15,7 +15,7 @@
       "Add/update unit tests covering sanitize + dedupe (including case-only collisions) and alias allocation determinism.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Batching",

@@ -19,6 +19,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
 {
     private const string DocumentIdColumnName = "DocumentId";
     private const string MissingPresenceColumnSortValue = "";
+    private static readonly string RootAlias = PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Root);
 
     private readonly ISqlDialect _sqlDialect = SqlDialectFactory.Create(dialect);
     private readonly IPlanSqlDialect _planSqlDialect = PlanSqlDialectFactory.Create(dialect);
@@ -153,16 +154,16 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         var writer = new SqlWriter(_sqlDialect);
 
         writer
-            .Append("SELECT r.")
+            .Append($"SELECT {RootAlias}.")
             .AppendQuoted(DocumentIdColumnName)
             .AppendLine()
             .Append("FROM ")
             .AppendTable(spec.RootTable)
-            .AppendLine(" r");
+            .AppendLine($" {RootAlias}");
 
         AppendWhereClause(writer, predicates);
 
-        writer.Append("ORDER BY r.").AppendQuoted(DocumentIdColumnName).AppendLine(" ASC");
+        writer.Append($"ORDER BY {RootAlias}.").AppendQuoted(DocumentIdColumnName).AppendLine(" ASC");
 
         _planSqlDialect.AppendPagingClause(writer, spec.OffsetParameterName, spec.LimitParameterName);
         writer.AppendLine(";");
@@ -177,7 +178,11 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     {
         var writer = new SqlWriter(_sqlDialect);
 
-        writer.AppendLine("SELECT COUNT(1)").Append("FROM ").AppendTable(rootTable).AppendLine(" r");
+        writer
+            .AppendLine("SELECT COUNT(1)")
+            .Append("FROM ")
+            .AppendTable(rootTable)
+            .AppendLine($" {RootAlias}");
 
         AppendWhereClause(writer, predicates);
         writer.AppendLine(";");
@@ -228,7 +233,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         }
 
         writer
-            .Append("r.")
+            .Append($"{RootAlias}.")
             .AppendQuoted(column.Value)
             .Append(" ")
             .Append(ToSqlOperator(@operator))
@@ -241,7 +246,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     /// </summary>
     private static void AppendIsNotNullSql(SqlWriter writer, DbColumnName column)
     {
-        writer.Append("r.").AppendQuoted(column.Value).Append(" IS NOT NULL");
+        writer.Append($"{RootAlias}.").AppendQuoted(column.Value).Append(" IS NOT NULL");
     }
 
     /// <summary>
