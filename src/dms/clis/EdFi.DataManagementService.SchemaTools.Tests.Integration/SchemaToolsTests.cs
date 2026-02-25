@@ -375,10 +375,53 @@ public class SchemaToolsTests
             _outputDir4 = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
             var fixturePath = GetAuthoritativeFixturePath();
 
-            RunCli("ddl", "emit", "--schema", fixturePath, "--output", _outputDir1, "--dialect", "pgsql");
-            RunCli("ddl", "emit", "--schema", fixturePath, "--output", _outputDir2, "--dialect", "pgsql");
-            RunCli("ddl", "emit", "--schema", fixturePath, "--output", _outputDir3, "--dialect", "mssql");
-            RunCli("ddl", "emit", "--schema", fixturePath, "--output", _outputDir4, "--dialect", "mssql");
+            var (exit1, _, err1) = RunCli(
+                "ddl",
+                "emit",
+                "--schema",
+                fixturePath,
+                "--output",
+                _outputDir1,
+                "--dialect",
+                "pgsql"
+            );
+            Assert.That(exit1, Is.EqualTo(0), $"pgsql run 1 failed: {err1}");
+
+            var (exit2, _, err2) = RunCli(
+                "ddl",
+                "emit",
+                "--schema",
+                fixturePath,
+                "--output",
+                _outputDir2,
+                "--dialect",
+                "pgsql"
+            );
+            Assert.That(exit2, Is.EqualTo(0), $"pgsql run 2 failed: {err2}");
+
+            var (exit3, _, err3) = RunCli(
+                "ddl",
+                "emit",
+                "--schema",
+                fixturePath,
+                "--output",
+                _outputDir3,
+                "--dialect",
+                "mssql"
+            );
+            Assert.That(exit3, Is.EqualTo(0), $"mssql run 1 failed: {err3}");
+
+            var (exit4, _, err4) = RunCli(
+                "ddl",
+                "emit",
+                "--schema",
+                fixturePath,
+                "--output",
+                _outputDir4,
+                "--dialect",
+                "mssql"
+            );
+            Assert.That(exit4, Is.EqualTo(0), $"mssql run 2 failed: {err4}");
         }
 
         [TearDown]

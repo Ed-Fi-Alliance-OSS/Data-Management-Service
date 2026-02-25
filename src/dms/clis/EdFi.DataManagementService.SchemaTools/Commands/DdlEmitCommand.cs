@@ -21,6 +21,8 @@ namespace EdFi.DataManagementService.SchemaTools.Commands;
 /// </summary>
 public static class DdlEmitCommand
 {
+    private static readonly System.Text.UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
+
     public static Command Create(
         ILogger logger,
         IApiSchemaFileLoader fileLoader,
@@ -264,10 +266,6 @@ public static class DdlEmitCommand
     {
         // Normalize to LF line endings for deterministic output
         var normalized = content.Replace("\r\n", "\n").Replace("\r", "\n");
-        File.WriteAllText(
-            path,
-            normalized,
-            new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false)
-        );
+        File.WriteAllText(path, normalized, Utf8NoBom);
     }
 }
