@@ -26,6 +26,9 @@ public sealed record ResourceWritePlan(
 /// <param name="DeleteByParentSql">
 /// Optional delete SQL used for replace semantics by parent key (non-root tables).
 /// </param>
+/// <param name="BulkInsertBatching">
+/// Deterministic bulk-insert batching metadata for this table.
+/// </param>
 /// <param name="ColumnBindings">
 /// Stored/writable column bindings in authoritative parameter/value order.
 /// </param>
@@ -37,8 +40,21 @@ public sealed record TableWritePlan(
     string InsertSql,
     string? UpdateSql,
     string? DeleteByParentSql,
+    BulkInsertBatchingInfo BulkInsertBatching,
     IReadOnlyList<WriteColumnBinding> ColumnBindings,
     IReadOnlyList<KeyUnificationWritePlan> KeyUnificationPlans
+);
+
+/// <summary>
+/// Deterministic batching metadata used to chunk bulk insert commands.
+/// </summary>
+/// <param name="MaxRowsPerBatch">Maximum rows per command for this table plan.</param>
+/// <param name="ParametersPerRow">Number of parameters emitted per inserted row.</param>
+/// <param name="MaxParametersPerCommand">Dialect max-parameter limit used by the calculator.</param>
+public sealed record BulkInsertBatchingInfo(
+    int MaxRowsPerBatch,
+    int ParametersPerRow,
+    int MaxParametersPerCommand
 );
 
 /// <summary>

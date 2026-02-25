@@ -65,6 +65,11 @@ public class Given_ExternalPlanContracts
             "INSERT SQL",
             UpdateSql: null,
             DeleteByParentSql: null,
+            BulkInsertBatching: new ExternalPlans.BulkInsertBatchingInfo(
+                MaxRowsPerBatch: 700,
+                ParametersPerRow: 3,
+                MaxParametersPerCommand: 2100
+            ),
             ColumnBindings:
             [
                 new ExternalPlans.WriteColumnBinding(
@@ -116,6 +121,16 @@ public class Given_ExternalPlanContracts
             .ColumnBindings[1]
             .Source.Should()
             .BeOfType<ExternalPlans.WriteValueSource.Scalar>();
+        writePlan
+            .TablePlansInDependencyOrder[0]
+            .BulkInsertBatching.Should()
+            .Be(
+                new ExternalPlans.BulkInsertBatchingInfo(
+                    MaxRowsPerBatch: 700,
+                    ParametersPerRow: 3,
+                    MaxParametersPerCommand: 2100
+                )
+            );
     }
 
     [Test]

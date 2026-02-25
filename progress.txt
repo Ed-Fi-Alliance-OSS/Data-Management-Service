@@ -11,3 +11,10 @@ Decisions: added centralized deterministic naming utility in Backend.Plans; writ
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/PlanNamingConventions.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanNamingConventionsTests.cs; tasks.json.
 Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 57); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 errors).
 Blockers/notes: no blockers; next highest-priority remaining task likely Batching.
+
+2026-02-25
+Task done: Batching. Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: added plain-data `BulkInsertBatchingInfo` contract on `TableWritePlan`; calculator centralizes deterministic dialect limits (MSSQL 2100 params + 1000 VALUES rows, PGSQL 65535 params + 1000 policy rows); fail-fast on invalid row width (`<1` and computed max rows `<1`) to avoid executor guesswork.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/PlanContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/PlanWriteBatchingConventions.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanWriteBatchingConventionsTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ExternalPlanContractsTests.cs; tasks.json.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 68); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 errors).
+Blockers/notes: no blockers; next highest-priority remaining task likely Query (integration path for new executor-facing query contract).
