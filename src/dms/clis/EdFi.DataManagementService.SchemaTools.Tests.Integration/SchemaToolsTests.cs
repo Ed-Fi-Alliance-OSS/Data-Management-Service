@@ -362,59 +362,72 @@ public class SchemaToolsTests
     {
         private string _outputDir1 = null!;
         private string _outputDir2 = null!;
-        private bool _filesIdentical;
+        private string _outputDir3 = null!;
+        private string _outputDir4 = null!;
 
         [SetUp]
         public void SetUp()
         {
             _outputDir1 = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
             _outputDir2 = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
+            _outputDir3 = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
+            _outputDir4 = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
             var fixturePath = GetAuthoritativeFixturePath();
 
             RunCli("ddl", "emit", "--schema", fixturePath, "--output", _outputDir1, "--dialect", "pgsql");
-
             RunCli("ddl", "emit", "--schema", fixturePath, "--output", _outputDir2, "--dialect", "pgsql");
+            RunCli("ddl", "emit", "--schema", fixturePath, "--output", _outputDir3, "--dialect", "mssql");
+            RunCli("ddl", "emit", "--schema", fixturePath, "--output", _outputDir4, "--dialect", "mssql");
+        }
 
-            // Compare all files in both directories
-            _filesIdentical = true;
-            foreach (var file1 in Directory.GetFiles(_outputDir1))
+        [TearDown]
+        public void TearDown()
+        {
+            foreach (var dir in new[] { _outputDir1, _outputDir2, _outputDir3, _outputDir4 })
+            {
+                if (Directory.Exists(dir))
+                {
+                    Directory.Delete(dir, recursive: true);
+                }
+            }
+        }
+
+        [Test]
+        public void It_produces_byte_identical_pgsql_output()
+        {
+            AssertDirectoriesIdentical(_outputDir1, _outputDir2)
+                .Should()
+                .BeTrue("pgsql DDL output should be deterministic across runs");
+        }
+
+        [Test]
+        public void It_produces_byte_identical_mssql_output()
+        {
+            AssertDirectoriesIdentical(_outputDir3, _outputDir4)
+                .Should()
+                .BeTrue("mssql DDL output should be deterministic across runs");
+        }
+
+        private static bool AssertDirectoriesIdentical(string dir1, string dir2)
+        {
+            foreach (var file1 in Directory.GetFiles(dir1))
             {
                 var fileName = Path.GetFileName(file1);
-                var file2 = Path.Combine(_outputDir2, fileName);
+                var file2 = Path.Combine(dir2, fileName);
                 if (!File.Exists(file2))
                 {
-                    _filesIdentical = false;
-                    break;
+                    return false;
                 }
 
                 var bytes1 = File.ReadAllBytes(file1);
                 var bytes2 = File.ReadAllBytes(file2);
                 if (!bytes1.AsSpan().SequenceEqual(bytes2))
                 {
-                    _filesIdentical = false;
-                    break;
+                    return false;
                 }
             }
-        }
 
-        [TearDown]
-        public void TearDown()
-        {
-            if (Directory.Exists(_outputDir1))
-            {
-                Directory.Delete(_outputDir1, recursive: true);
-            }
-
-            if (Directory.Exists(_outputDir2))
-            {
-                Directory.Delete(_outputDir2, recursive: true);
-            }
-        }
-
-        [Test]
-        public void It_produces_byte_identical_output()
-        {
-            _filesIdentical.Should().BeTrue("DDL output should be deterministic across runs");
+            return true;
         }
     }
 

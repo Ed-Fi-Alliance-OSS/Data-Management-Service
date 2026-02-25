@@ -11,7 +11,7 @@ Provide a CLI command that generates deterministic artifacts without connecting 
 
 - `{dialect}.sql` DDL scripts (pgsql + mssql as configured)
 - `effective-schema.manifest.json`
-- `relational-model.manifest.json`
+- `relational-model.{dialect}.manifest.json`
 - optional `ddl.manifest.json` (hashes/counts) for diagnostics
 
 The CLI should accept an explicit list of `ApiSchema.json` inputs (or a fixture file) and an output directory.

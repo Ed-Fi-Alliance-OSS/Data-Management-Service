@@ -62,126 +62,51 @@ public static class HashCommand
 
         var result = fileLoader.Load(coreSchemaPath, extensionSchemaPaths);
 
-        return result switch
+        if (result is not ApiSchemaFileLoadResult.SuccessResult success)
         {
-            ApiSchemaFileLoadResult.SuccessResult success => HandleSuccess(logger, hashProvider, success),
-            ApiSchemaFileLoadResult.FileNotFoundResult failure => HandleFileNotFound(logger, failure),
-            ApiSchemaFileLoadResult.FileReadErrorResult failure => HandleFileReadError(logger, failure),
-            ApiSchemaFileLoadResult.InvalidJsonResult failure => HandleInvalidJson(logger, failure),
-            ApiSchemaFileLoadResult.NormalizationFailureResult failure => HandleNormalizationFailure(
-                logger,
-                failure
-            ),
-            _ => HandleUnknownResult(logger, result),
-        };
-    }
-
-    private static int HandleSuccess(
-        ILogger logger,
-        IEffectiveSchemaHashProvider hashProvider,
-        ApiSchemaFileLoadResult.SuccessResult success
-    )
-    {
-        var nodes = success.NormalizedNodes;
-        var coreEndpoint = nodes
-            .CoreApiSchemaRootNode["projectSchema"]
-            ?["projectEndpointName"]?.GetValue<string>();
-        var extensionCount = nodes.ExtensionApiSchemaRootNodes.Length;
-
-        logger.LogInformation(
-            "Schema loaded and normalized successfully. Core: {CoreEndpoint}, Extensions: {ExtensionCount}",
-            LoggingSanitizer.SanitizeForLogging(coreEndpoint),
-            extensionCount
-        );
-
-        if (extensionCount > 0)
-        {
-            var extensionEndpoints = nodes
-                .ExtensionApiSchemaRootNodes.Select(n =>
-                    n["projectSchema"]?["projectEndpointName"]?.GetValue<string>()
-                )
-                .Where(n => n != null);
-
-            logger.LogInformation(
-                "Extension endpoints: {Extensions}",
-                string.Join(", ", extensionEndpoints.Select(LoggingSanitizer.SanitizeForLogging))
-            );
+            return LoadResultErrorHandler.Handle(logger, result);
         }
 
-        var effectiveSchemaHash = hashProvider.ComputeHash(nodes);
-        logger.LogInformation("Effective schema hash: {Hash}", effectiveSchemaHash);
-
-        Console.WriteLine("Schema normalization successful.");
-        Console.WriteLine($"Effective schema hash: {effectiveSchemaHash}");
-        return 0;
-    }
-
-    private static int HandleFileNotFound(ILogger logger, ApiSchemaFileLoadResult.FileNotFoundResult failure)
-    {
-        logger.LogError("File not found: {FilePath}", LoggingSanitizer.SanitizeForLogging(failure.FilePath));
-        Console.Error.WriteLine(
-            $"Error: File not found: {LoggingSanitizer.SanitizeForLogging(failure.FilePath)}"
-        );
-        return 1;
-    }
-
-    private static int HandleFileReadError(
-        ILogger logger,
-        ApiSchemaFileLoadResult.FileReadErrorResult failure
-    )
-    {
-        logger.LogError(
-            "Failed to read file {FilePath}: {Error}",
-            LoggingSanitizer.SanitizeForLogging(failure.FilePath),
-            LoggingSanitizer.SanitizeForLogging(failure.ErrorMessage)
-        );
-        Console.Error.WriteLine(
-            $"Error: Failed to read file {LoggingSanitizer.SanitizeForLogging(failure.FilePath)}: {LoggingSanitizer.SanitizeForLogging(failure.ErrorMessage)}"
-        );
-        return 1;
-    }
-
-    private static int HandleInvalidJson(ILogger logger, ApiSchemaFileLoadResult.InvalidJsonResult failure)
-    {
-        logger.LogError(
-            "Invalid JSON in file {FilePath}: {Error}",
-            LoggingSanitizer.SanitizeForLogging(failure.FilePath),
-            LoggingSanitizer.SanitizeForLogging(failure.ErrorMessage)
-        );
-        Console.Error.WriteLine(
-            $"Error: Invalid JSON in file {LoggingSanitizer.SanitizeForLogging(failure.FilePath)}: {LoggingSanitizer.SanitizeForLogging(failure.ErrorMessage)}"
-        );
-        return 1;
-    }
-
-    private static int HandleNormalizationFailure(
-        ILogger logger,
-        ApiSchemaFileLoadResult.NormalizationFailureResult failure
-    )
-    {
-        var message = failure.FailureResult switch
+        try
         {
-            ApiSchemaNormalizationResult.MissingOrMalformedProjectSchemaResult r =>
-                $"Schema '{r.SchemaSource}' is malformed: {r.Details}",
-            ApiSchemaNormalizationResult.ApiSchemaVersionMismatchResult r =>
-                $"Version mismatch in '{r.SchemaSource}': expected {r.ExpectedVersion}, got {r.ActualVersion}",
-            ApiSchemaNormalizationResult.ProjectEndpointNameCollisionResult r =>
-                $"Endpoint name collision(s): {string.Join("; ", r.Collisions.Select(c => $"'{c.ProjectEndpointName}' in [{string.Join(", ", c.ConflictingSources)}]"))}",
-            _ => "Unknown normalization failure",
-        };
+            var nodes = success.NormalizedNodes;
+            var coreEndpoint = nodes
+                .CoreApiSchemaRootNode["projectSchema"]
+                ?["projectEndpointName"]?.GetValue<string>();
+            var extensionCount = nodes.ExtensionApiSchemaRootNodes.Length;
 
-        logger.LogError(
-            "Schema normalization failed: {Message}",
-            LoggingSanitizer.SanitizeForLogging(message)
-        );
-        Console.Error.WriteLine($"Error: {LoggingSanitizer.SanitizeForLogging(message)}");
-        return 1;
-    }
+            logger.LogInformation(
+                "Schema loaded and normalized successfully. Core: {CoreEndpoint}, Extensions: {ExtensionCount}",
+                LoggingSanitizer.SanitizeForLogging(coreEndpoint),
+                extensionCount
+            );
 
-    private static int HandleUnknownResult(ILogger logger, ApiSchemaFileLoadResult result)
-    {
-        logger.LogError("Unknown result type: {ResultType}", result.GetType().Name);
-        Console.Error.WriteLine($"Error: Unknown result type: {result.GetType().Name}");
-        return 1;
+            if (extensionCount > 0)
+            {
+                var extensionEndpoints = nodes
+                    .ExtensionApiSchemaRootNodes.Select(n =>
+                        n["projectSchema"]?["projectEndpointName"]?.GetValue<string>()
+                    )
+                    .Where(n => n != null);
+
+                logger.LogInformation(
+                    "Extension endpoints: {Extensions}",
+                    string.Join(", ", extensionEndpoints.Select(LoggingSanitizer.SanitizeForLogging))
+                );
+            }
+
+            var effectiveSchemaHash = hashProvider.ComputeHash(nodes);
+            logger.LogInformation("Effective schema hash: {Hash}", effectiveSchemaHash);
+
+            Console.WriteLine("Schema normalization successful.");
+            Console.WriteLine($"Effective schema hash: {effectiveSchemaHash}");
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            logger.LogCritical(ex, "An unexpected error occurred during hash computation");
+            Console.Error.WriteLine($"Error: An unexpected error occurred: {ex.Message}");
+            return 1;
+        }
     }
 }

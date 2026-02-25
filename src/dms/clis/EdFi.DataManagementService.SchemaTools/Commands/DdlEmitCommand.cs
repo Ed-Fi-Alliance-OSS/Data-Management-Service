@@ -124,83 +124,92 @@ public static class DdlEmitCommand
 
         if (loadResult is not ApiSchemaFileLoadResult.SuccessResult success)
         {
-            return HandleLoadError(logger, loadResult);
+            return LoadResultErrorHandler.Handle(logger, loadResult);
         }
 
-        // Build EffectiveSchemaSet
-        var effectiveSchemaSet = schemaSetBuilder.Build(success.NormalizedNodes);
-        var effectiveSchemaInfo = effectiveSchemaSet.EffectiveSchema;
-
-        logger.LogInformation(
-            "Effective schema hash: {Hash}, resource keys: {ResourceKeyCount}",
-            effectiveSchemaInfo.EffectiveSchemaHash,
-            effectiveSchemaInfo.ResourceKeyCount
-        );
-
-        // Create output directory
-        Directory.CreateDirectory(outputDir);
-
-        var emittedFiles = new List<string>();
-
-        // Emit DDL and model manifests per dialect
-        foreach (var dialect in dialects)
+        try
         {
-            var (sqlDialect, dialectRules) = CreateDialect(dialect);
+            // Build EffectiveSchemaSet
+            var effectiveSchemaSet = schemaSetBuilder.Build(success.NormalizedNodes);
+            var effectiveSchemaInfo = effectiveSchemaSet.EffectiveSchema;
 
-            // Deep-clone the effective schema set for each dialect because the
-            // relational model builder mutates ProjectSchema JsonObjects by parenting them.
-            var clonedSchemaSet = CloneEffectiveSchemaSet(effectiveSchemaSet);
-
-            // Build relational model
-            var modelSetBuilder = new DerivedRelationalModelSetBuilder(
-                RelationalModelSetPasses.CreateDefault()
+            logger.LogInformation(
+                "Effective schema hash: {Hash}, resource keys: {ResourceKeyCount}",
+                effectiveSchemaInfo.EffectiveSchemaHash,
+                effectiveSchemaInfo.ResourceKeyCount
             );
-            var modelSet = modelSetBuilder.Build(clonedSchemaSet, dialect, dialectRules);
 
-            // Emit DDL: core + relational model + seed DML
-            var coreDdl = new CoreDdlEmitter(sqlDialect).Emit();
-            var relationalDdl = new RelationalModelDdlEmitter(sqlDialect).Emit(modelSet);
-            var seedDml = new SeedDmlEmitter(sqlDialect).Emit(effectiveSchemaInfo);
-            var combinedSql = coreDdl + relationalDdl + seedDml;
+            // Create output directory
+            Directory.CreateDirectory(outputDir);
 
-            // Write SQL file (always dialect-prefixed, matching {dialect}.sql convention)
-            var dialectLabel = dialect == SqlDialect.Pgsql ? "pgsql" : "mssql";
-            var sqlFileName = $"{dialectLabel}.sql";
-            var sqlPath = Path.Combine(outputDir, sqlFileName);
-            WriteFileWithUnixLineEndings(sqlPath, combinedSql);
-            emittedFiles.Add(sqlFileName);
+            var emittedFiles = new List<string>();
 
-            // Emit relational model manifest (always dialect-suffixed because the
-            // derived model is dialect-dependent via ISqlDialectRules naming/type rules)
-            var modelManifest = DerivedModelSetManifestEmitter.Emit(modelSet);
-            var manifestFileName = $"relational-model.{dialectLabel}.manifest.json";
-            var manifestPath = Path.Combine(outputDir, manifestFileName);
-            WriteFileWithUnixLineEndings(manifestPath, modelManifest);
-            emittedFiles.Add(manifestFileName);
+            // Emit DDL and model manifests per dialect
+            foreach (var dialect in dialects)
+            {
+                var (sqlDialect, dialectRules) = CreateDialect(dialect);
+
+                // Deep-clone the effective schema set for each dialect because the
+                // relational model builder mutates ProjectSchema JsonObjects by parenting them.
+                var clonedSchemaSet = CloneEffectiveSchemaSet(effectiveSchemaSet);
+
+                // Build relational model
+                var modelSetBuilder = new DerivedRelationalModelSetBuilder(
+                    RelationalModelSetPasses.CreateDefault()
+                );
+                var modelSet = modelSetBuilder.Build(clonedSchemaSet, dialect, dialectRules);
+
+                // Emit DDL: core + relational model + seed DML
+                var coreDdl = new CoreDdlEmitter(sqlDialect).Emit();
+                var relationalDdl = new RelationalModelDdlEmitter(sqlDialect).Emit(modelSet);
+                var seedDml = new SeedDmlEmitter(sqlDialect).Emit(effectiveSchemaInfo);
+                var combinedSql = coreDdl + relationalDdl + seedDml;
+
+                // Write SQL file (always dialect-prefixed, matching {dialect}.sql convention)
+                var dialectLabel = dialect == SqlDialect.Pgsql ? "pgsql" : "mssql";
+                var sqlFileName = $"{dialectLabel}.sql";
+                var sqlPath = Path.Combine(outputDir, sqlFileName);
+                WriteFileWithUnixLineEndings(sqlPath, combinedSql);
+                emittedFiles.Add(sqlFileName);
+
+                // Emit relational model manifest (always dialect-suffixed because the
+                // derived model is dialect-dependent via ISqlDialectRules naming/type rules)
+                var modelManifest = DerivedModelSetManifestEmitter.Emit(modelSet);
+                var manifestFileName = $"relational-model.{dialectLabel}.manifest.json";
+                var manifestPath = Path.Combine(outputDir, manifestFileName);
+                WriteFileWithUnixLineEndings(manifestPath, modelManifest);
+                emittedFiles.Add(manifestFileName);
+            }
+
+            // Emit effective schema manifest (dialect-independent, emitted once)
+            var schemaManifest = EffectiveSchemaManifestEmitter.Emit(
+                effectiveSchemaInfo,
+                includeResourceKeys: true
+            );
+            var schemaManifestPath = Path.Combine(outputDir, "effective-schema.manifest.json");
+            WriteFileWithUnixLineEndings(schemaManifestPath, schemaManifest);
+            emittedFiles.Add("effective-schema.manifest.json");
+
+            // Print summary
+            Console.WriteLine(
+                $"DDL emission complete. Output directory: {LoggingSanitizer.SanitizeForLogging(outputDir)}"
+            );
+            Console.WriteLine($"Effective schema hash: {effectiveSchemaInfo.EffectiveSchemaHash}");
+            Console.WriteLine($"Resource key count: {effectiveSchemaInfo.ResourceKeyCount}");
+            Console.WriteLine("Files written:");
+            foreach (var file in emittedFiles)
+            {
+                Console.WriteLine($"  {file}");
+            }
+
+            return 0;
         }
-
-        // Emit effective schema manifest (dialect-independent, emitted once)
-        var schemaManifest = EffectiveSchemaManifestEmitter.Emit(
-            effectiveSchemaInfo,
-            includeResourceKeys: true
-        );
-        var schemaManifestPath = Path.Combine(outputDir, "effective-schema.manifest.json");
-        WriteFileWithUnixLineEndings(schemaManifestPath, schemaManifest);
-        emittedFiles.Add("effective-schema.manifest.json");
-
-        // Print summary
-        Console.WriteLine(
-            $"DDL emission complete. Output directory: {LoggingSanitizer.SanitizeForLogging(outputDir)}"
-        );
-        Console.WriteLine($"Effective schema hash: {effectiveSchemaInfo.EffectiveSchemaHash}");
-        Console.WriteLine($"Resource key count: {effectiveSchemaInfo.ResourceKeyCount}");
-        Console.WriteLine("Files written:");
-        foreach (var file in emittedFiles)
+        catch (Exception ex)
         {
-            Console.WriteLine($"  {file}");
+            logger.LogCritical(ex, "An unexpected error occurred during DDL emission");
+            Console.Error.WriteLine($"Error: An unexpected error occurred: {ex.Message}");
+            return 1;
         }
-
-        return 0;
     }
 
     private static List<SqlDialect>? ParseDialect(string dialectName)
@@ -254,68 +263,7 @@ public static class DdlEmitCommand
     private static void WriteFileWithUnixLineEndings(string path, string content)
     {
         // Normalize to LF line endings for deterministic output
-        var normalized = content.Replace("\r\n", "\n");
+        var normalized = content.Replace("\r\n", "\n").Replace("\r", "\n");
         File.WriteAllText(path, normalized);
-    }
-
-    private static int HandleLoadError(ILogger logger, ApiSchemaFileLoadResult result)
-    {
-        switch (result)
-        {
-            case ApiSchemaFileLoadResult.FileNotFoundResult failure:
-                logger.LogError(
-                    "File not found: {FilePath}",
-                    LoggingSanitizer.SanitizeForLogging(failure.FilePath)
-                );
-                Console.Error.WriteLine(
-                    $"Error: File not found: {LoggingSanitizer.SanitizeForLogging(failure.FilePath)}"
-                );
-                return 1;
-
-            case ApiSchemaFileLoadResult.FileReadErrorResult failure:
-                logger.LogError(
-                    "Failed to read file {FilePath}: {Error}",
-                    LoggingSanitizer.SanitizeForLogging(failure.FilePath),
-                    LoggingSanitizer.SanitizeForLogging(failure.ErrorMessage)
-                );
-                Console.Error.WriteLine(
-                    $"Error: Failed to read file {LoggingSanitizer.SanitizeForLogging(failure.FilePath)}: {LoggingSanitizer.SanitizeForLogging(failure.ErrorMessage)}"
-                );
-                return 1;
-
-            case ApiSchemaFileLoadResult.InvalidJsonResult failure:
-                logger.LogError(
-                    "Invalid JSON in file {FilePath}: {Error}",
-                    LoggingSanitizer.SanitizeForLogging(failure.FilePath),
-                    LoggingSanitizer.SanitizeForLogging(failure.ErrorMessage)
-                );
-                Console.Error.WriteLine(
-                    $"Error: Invalid JSON in file {LoggingSanitizer.SanitizeForLogging(failure.FilePath)}: {LoggingSanitizer.SanitizeForLogging(failure.ErrorMessage)}"
-                );
-                return 1;
-
-            case ApiSchemaFileLoadResult.NormalizationFailureResult failure:
-                var message = failure.FailureResult switch
-                {
-                    ApiSchemaNormalizationResult.MissingOrMalformedProjectSchemaResult r =>
-                        $"Schema '{r.SchemaSource}' is malformed: {r.Details}",
-                    ApiSchemaNormalizationResult.ApiSchemaVersionMismatchResult r =>
-                        $"Version mismatch in '{r.SchemaSource}': expected {r.ExpectedVersion}, got {r.ActualVersion}",
-                    ApiSchemaNormalizationResult.ProjectEndpointNameCollisionResult r =>
-                        $"Endpoint name collision(s): {string.Join("; ", r.Collisions.Select(c => $"'{c.ProjectEndpointName}' in [{string.Join(", ", c.ConflictingSources)}]"))}",
-                    _ => "Unknown normalization failure",
-                };
-                logger.LogError(
-                    "Schema normalization failed: {Message}",
-                    LoggingSanitizer.SanitizeForLogging(message)
-                );
-                Console.Error.WriteLine($"Error: {LoggingSanitizer.SanitizeForLogging(message)}");
-                return 1;
-
-            default:
-                logger.LogError("Unknown result type: {ResultType}", result.GetType().Name);
-                Console.Error.WriteLine($"Error: Unknown result type: {result.GetType().Name}");
-                return 1;
-        }
     }
 }
