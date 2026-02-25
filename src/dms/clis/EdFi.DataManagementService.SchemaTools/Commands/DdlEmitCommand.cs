@@ -193,7 +193,9 @@ public static class DdlEmitCommand
             emittedFiles.Add("effective-schema.manifest.json");
 
             // Print summary
-            Console.WriteLine($"DDL emission complete. Output directory: {outputDir}");
+            Console.WriteLine(
+                $"DDL emission complete. Output directory: {LoggingSanitizer.SanitizeForConsole(outputDir)}"
+            );
             Console.WriteLine($"Effective schema hash: {effectiveSchemaInfo.EffectiveSchemaHash}");
             Console.WriteLine($"Resource key count: {effectiveSchemaInfo.ResourceKeyCount}");
             Console.WriteLine("Files written:");
