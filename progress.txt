@@ -39,3 +39,10 @@ Decisions: added explicit determinism assertions for query compiler output acros
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageDocumentIdSqlCompilerTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanNamingConventionsTests.cs; tasks.json.
 Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 79); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 errors).
 Blockers/notes: no blockers; next highest-priority remaining task is Golden Fixtures.
+
+2026-02-25
+Task done: Golden Fixtures. Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: added single deterministic JSON manifest fixture in Plans unit tests; manifest snapshots query SQL + normalized SHA256, ordered query parameters w/ roles, representative write parameter naming output, and representative batching output; JSON emitted via Utf8JsonWriter with explicit `\n` newlines + deterministic property/array order; expected fixture bless flow uses UPDATE_GOLDENS=1 + git diff --no-index.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanContractsManifestGoldenFixtureTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Fixtures/plan-contracts-manifest/minimal/expected/plan-contracts.manifest.json; tasks.json.
+Feedback loops: UPDATE_GOLDENS=1 dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 80); dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 80); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 errors).
+Blockers/notes: no blockers; all tasks in tasks.json now completed.
