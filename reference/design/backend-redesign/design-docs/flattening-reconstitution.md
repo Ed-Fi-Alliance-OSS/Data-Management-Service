@@ -1157,7 +1157,13 @@ public sealed record ResourceWritePlan(
 /// <param name="InsertSql">Parameterized insert SQL (multi-row insert is handled by IBulkInserter).</param>
 /// <param name="UpdateSql">Optional update SQL (for root tables).</param>
 /// <param name="DeleteByParentSql">Delete SQL that removes all child rows for a parent key (replace semantics).</param>
-/// <param name="ColumnBindings">The ordered list of columns and their write-time value sources.</param>
+/// <param name="MaxRowsPerBatch">
+/// The deterministic maximum number of rows the executor may include in a single bulk-insert batch for this table.
+/// Derived from dialect limits (e.g., SQL Server parameter limits) and this plan's bound column count.
+/// </param>
+/// <param name="ColumnBindings">
+/// The ordered list of columns and their write-time value sources, including the authoritative parameter name for each binding.
+/// </param>
 /// <param name="KeyUnificationPlans">
 /// Per-table inventory used to populate canonical storage columns and synthetic presence flags during row materialization.
 /// Empty when <c>DbTableModel.KeyUnificationClasses</c> is empty.
@@ -1167,6 +1173,7 @@ public sealed record TableWritePlan(
     string InsertSql,
     string? UpdateSql,
     string? DeleteByParentSql,
+    int MaxRowsPerBatch,
     IReadOnlyList<WriteColumnBinding> ColumnBindings,
     IReadOnlyList<KeyUnificationWritePlan> KeyUnificationPlans
 );
@@ -1175,8 +1182,9 @@ public sealed record TableWritePlan(
 /// Binds a physical column to a write-time value source.
 /// </summary>
 /// <param name="Column">The column model being written.</param>
+/// <param name="ParameterName">The bare SQL parameter name used by the plan's SQL (without the <c>@</c> prefix).</param>
 /// <param name="Source">Where the value comes from (parent key, ordinal, scalar json value, reference resolution, ...).</param>
-public sealed record WriteColumnBinding(DbColumnModel Column, WriteValueSource Source);
+public sealed record WriteColumnBinding(DbColumnModel Column, string ParameterName, WriteValueSource Source);
 
 /// <summary>
 /// The source for a write-time column value.

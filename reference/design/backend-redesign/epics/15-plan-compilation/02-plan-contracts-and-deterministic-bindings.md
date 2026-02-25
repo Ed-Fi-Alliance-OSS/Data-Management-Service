@@ -38,7 +38,9 @@ Design references:
   - write plans:
     - `ResourceWritePlan` with per-table `TableWritePlan`,
     - `TableWritePlan.InsertSql` / `UpdateSql` (root only) / `DeleteByParentSql` (non-root, replace semantics),
+    - `TableWritePlan.MaxRowsPerBatch` for deterministic, dialect-aware bulk insert chunking,
     - `ColumnBindings: IReadOnlyList<WriteColumnBinding>` in authoritative parameter/value order,
+    - `WriteColumnBinding.ParameterName` so runtime execution never depends on parsing SQL text to infer bindings,
     - `WriteValueSource` coverage for: `DocumentId`, `ParentKeyPart(i)`, `Ordinal`, `Scalar(...)`, `DocumentReference(...)`, `DescriptorReference(...)`, and `Precomputed`,
     - key-unification inventory (`KeyUnificationWritePlan[]`) sufficient to populate all `Precomputed` bindings deterministically.
   - read/hydration plans:

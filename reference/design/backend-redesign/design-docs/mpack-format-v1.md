@@ -121,7 +121,11 @@ All collections are `repeated` and MUST be emitted in stable sort order:
 - Within each `ResourceWritePlan`:
   - `table_plans`: ascending by `(table.schema, table.name)`
 - Within each `TableWritePlan`:
+  - `max_rows_per_batch` is semantically significant and MUST be derived deterministically from:
+    - dialect limits (e.g., SQL Server parameter limits), and
+    - the plan's `column_bindings` count
   - `column_bindings`: order is semantically significant (defines parameter ordering) and MUST NOT be sorted
+    - `parameter_name` is semantically significant and MUST be deterministic and unique within its statement
   - `key_unification_plans`: ascending by `(canonical_column.value)`
   - within `key_unification_plans[*]`:
     - `members_in_order` order is semantically significant and MUST NOT be sorted
@@ -509,6 +513,10 @@ message TableWritePlan {
   string update_sql = 11;                                // empty => not present
   string delete_by_parent_sql = 12;                      // empty => not present
 
+  // Deterministic bulk-insert batching bound for this table.
+  // Derived from dialect limits (e.g., SQL Server parameter limits) and the plan's bound column count.
+  uint32 max_rows_per_batch = 13;
+
   // Parameter/value ordering for insert is defined by this list.
   repeated WriteColumnBinding column_bindings = 20;
 
@@ -519,6 +527,7 @@ message TableWritePlan {
 message WriteColumnBinding {
   DbColumnName column = 1;
   WriteValueSource source = 2;
+  string parameter_name = 3;                             // bare name; SQL uses "@{parameter_name}"
 }
 
 message WriteValueSource {

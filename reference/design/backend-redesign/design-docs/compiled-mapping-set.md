@@ -338,7 +338,8 @@ For a write request targeting resource `R`:
 5. **Flatten to row buffers using `TableWritePlan.ColumnBindings`**
    - For each `DbTableModel` in `ResourceWritePlan.Model.TablesInDependencyOrder`, enumerate JSON scope instances (`JsonScope`) and materialize `RowBuffer` objects.
    - Each `TableWritePlan` contains:
-     - `ColumnBindings: IReadOnlyList<WriteColumnBinding>` (stored/writable columns only, in parameter order), and
+     - `MaxRowsPerBatch` (deterministic bulk-insert chunking bound for this table),
+     - `ColumnBindings: IReadOnlyList<WriteColumnBinding>` (stored/writable columns only, in parameter order; each binding includes its authoritative `ParameterName`),
      - `KeyUnificationPlans: IReadOnlyList<KeyUnificationWritePlan>` (empty when no key unification applies).
    - Runtime produces `RowBuffer.Values[]` by iterating `ColumnBindings` *in order* and sourcing each value from the associated `WriteValueSource`:
      - `DocumentId`, `ParentKeyPart(i)`, `Ordinal`
@@ -353,15 +354,15 @@ For a write request targeting resource `R`:
 
    **Critical invariant (how “compiled SQL parameter positions” work):**
    - `TableWritePlan.ColumnBindings` defines the authoritative *parameter/value ordering* for writes.
-   - The compiled `InsertSql` for the table is emitted such that its parameter placeholders correspond to `ColumnBindings[0..N)` in that same order.
-   - Runtime binds parameters by this ordering (not by “guessing” from SQL text), so it always knows which extracted value goes in which SQL parameter position.
+   - The compiled `InsertSql` for the table is emitted such that its parameter placeholders correspond to `ColumnBindings[0..N)` in that same order and use `WriteColumnBinding.ParameterName`.
+   - Runtime binds parameters from `WriteColumnBinding.ParameterName` (not by “guessing” from SQL text), so it always knows which extracted value goes in which SQL parameter position.
 
 6. **Execute (single transaction, replace semantics for collections)**
    - Root table:
      - `InsertSql` for insert and/or `UpdateSql` for update (depending on identity outcome).
    - Child/collection tables:
      - execute `DeleteByParentSql` (for the parent key) then bulk insert the new rows.
-   - Bulk insert is used whenever a table has 0..N rows to write (especially child/collection and extension tables): a dialect-aware executor (e.g. `IBulkInserter`) batches `RowBuffer`s into multi-row inserts (or `COPY`/`SqlBulkCopy`-style paths for large batches), using `InsertSql` + ordered `ColumnBindings` and chunking to respect dialect parameter limits.
+   - Bulk insert is used whenever a table has 0..N rows to write (especially child/collection and extension tables): a dialect-aware executor (e.g. `IBulkInserter`) batches `RowBuffer`s into multi-row inserts (or `COPY`/`SqlBulkCopy`-style paths for large batches), using `InsertSql` + ordered `ColumnBindings` and chunking by `TableWritePlan.MaxRowsPerBatch` to respect dialect parameter limits.
 
 ### 4.3 Read path usage (GET by id / query)
 
