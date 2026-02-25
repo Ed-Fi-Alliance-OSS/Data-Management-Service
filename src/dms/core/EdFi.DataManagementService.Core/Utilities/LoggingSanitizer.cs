@@ -72,6 +72,65 @@ public static class LoggingSanitizer
 #pragma warning restore S3267
     }
 
+    /// <summary>
+    /// Sanitizes input for console/stderr output by stripping control characters only.
+    /// Unlike <see cref="SanitizeForLogging"/> which uses a strict whitelist to prevent
+    /// structured-log template injection, this method preserves all printable characters
+    /// (quotes, parentheses, brackets, etc.) so that file paths and exception messages
+    /// remain readable in user-facing CLI output.
+    /// </summary>
+    public static string SanitizeForConsole(string? input)
+    {
+        if (string.IsNullOrEmpty(input))
+        {
+            return string.Empty;
+        }
+
+        // Fast path: check if any control characters are present
+        bool hasControl = false;
+        int printableCount = 0;
+
+        foreach (char c in input)
+        {
+            if (char.IsControl(c))
+            {
+                hasControl = true;
+            }
+            else
+            {
+                printableCount++;
+            }
+        }
+
+        if (!hasControl)
+        {
+            return new string(input);
+        }
+
+        if (printableCount == 0)
+        {
+            return string.Empty;
+        }
+
+#pragma warning disable S3267 // Loop intentionally avoids LINQ for performance - no intermediate allocations
+        return string.Create(
+            printableCount,
+            input,
+            static (span, source) =>
+            {
+                int index = 0;
+                foreach (char c in source)
+                {
+                    if (!char.IsControl(c))
+                    {
+                        span[index++] = c;
+                    }
+                }
+            }
+        );
+#pragma warning restore S3267
+    }
+
     // Explicitly reject control characters for defense in depth
     // Includes backslash for Windows file paths
     private static bool IsAllowedChar(char c) =>

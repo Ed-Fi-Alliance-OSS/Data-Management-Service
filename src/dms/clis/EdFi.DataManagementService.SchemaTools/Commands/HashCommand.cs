@@ -105,7 +105,9 @@ public static class HashCommand
         catch (Exception ex)
         {
             logger.LogCritical(ex, "An unexpected error occurred during hash computation");
-            Console.Error.WriteLine($"Error: An unexpected error occurred: {ex.Message}");
+            Console.Error.WriteLine(
+                $"Error: An unexpected error occurred: {LoggingSanitizer.SanitizeForConsole(ex.Message)}"
+            );
             return 1;
         }
     }

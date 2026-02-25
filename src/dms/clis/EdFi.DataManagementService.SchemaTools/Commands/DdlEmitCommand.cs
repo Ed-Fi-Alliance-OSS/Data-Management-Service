@@ -83,7 +83,7 @@ public static class DdlEmitCommand
                 LoggingSanitizer.SanitizeForLogging(dialectName)
             );
             Console.Error.WriteLine(
-                $"Error: Invalid dialect '{dialectName}'. Must be pgsql, mssql, or both."
+                $"Error: Invalid dialect '{LoggingSanitizer.SanitizeForConsole(dialectName)}'. Must be pgsql, mssql, or both."
             );
             return 1;
         }
@@ -103,7 +103,9 @@ public static class DdlEmitCommand
                     "Schema file not found: {FilePath}",
                     LoggingSanitizer.SanitizeForLogging(schemaPath)
                 );
-                Console.Error.WriteLine($"Error: Schema file not found: {schemaPath}");
+                Console.Error.WriteLine(
+                    $"Error: Schema file not found: {LoggingSanitizer.SanitizeForConsole(schemaPath)}"
+                );
                 return 1;
             }
         }
@@ -203,7 +205,9 @@ public static class DdlEmitCommand
         catch (Exception ex)
         {
             logger.LogCritical(ex, "An unexpected error occurred during DDL emission");
-            Console.Error.WriteLine($"Error: An unexpected error occurred: {ex.Message}");
+            Console.Error.WriteLine(
+                $"Error: An unexpected error occurred: {LoggingSanitizer.SanitizeForConsole(ex.Message)}"
+            );
             return 1;
         }
     }

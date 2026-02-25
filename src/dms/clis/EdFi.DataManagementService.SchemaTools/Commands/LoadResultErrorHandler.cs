@@ -28,7 +28,9 @@ public static class LoadResultErrorHandler
                     "File not found: {FilePath}",
                     LoggingSanitizer.SanitizeForLogging(failure.FilePath)
                 );
-                Console.Error.WriteLine($"Error: File not found: {failure.FilePath}");
+                Console.Error.WriteLine(
+                    $"Error: File not found: {LoggingSanitizer.SanitizeForConsole(failure.FilePath)}"
+                );
                 return 1;
 
             case ApiSchemaFileLoadResult.FileReadErrorResult failure:
@@ -38,7 +40,7 @@ public static class LoadResultErrorHandler
                     LoggingSanitizer.SanitizeForLogging(failure.ErrorMessage)
                 );
                 Console.Error.WriteLine(
-                    $"Error: Failed to read file {failure.FilePath}: {failure.ErrorMessage}"
+                    $"Error: Failed to read file {LoggingSanitizer.SanitizeForConsole(failure.FilePath)}: {LoggingSanitizer.SanitizeForConsole(failure.ErrorMessage)}"
                 );
                 return 1;
 
@@ -49,7 +51,7 @@ public static class LoadResultErrorHandler
                     LoggingSanitizer.SanitizeForLogging(failure.ErrorMessage)
                 );
                 Console.Error.WriteLine(
-                    $"Error: Invalid JSON in file {failure.FilePath}: {failure.ErrorMessage}"
+                    $"Error: Invalid JSON in file {LoggingSanitizer.SanitizeForConsole(failure.FilePath)}: {LoggingSanitizer.SanitizeForConsole(failure.ErrorMessage)}"
                 );
                 return 1;
 
@@ -68,7 +70,7 @@ public static class LoadResultErrorHandler
                     "Schema normalization failed: {Message}",
                     LoggingSanitizer.SanitizeForLogging(message)
                 );
-                Console.Error.WriteLine($"Error: {message}");
+                Console.Error.WriteLine($"Error: {LoggingSanitizer.SanitizeForConsole(message)}");
                 return 1;
 
             default:
