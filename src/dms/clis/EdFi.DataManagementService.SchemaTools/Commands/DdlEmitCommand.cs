@@ -47,6 +47,7 @@ public static class DdlEmitCommand
             Description = "SQL dialect: pgsql, mssql, or both",
             DefaultValueFactory = _ => "both",
         };
+        dialectOption.AcceptOnlyFromAmong("pgsql", "mssql", "both");
 
         var command = new Command(
             "emit",
@@ -76,26 +77,8 @@ public static class DdlEmitCommand
         string dialectName
     )
     {
-        // Validate dialect
+        // Dialect is validated at parse time by AcceptOnlyFromAmong
         var dialects = ParseDialect(dialectName);
-        if (dialects is null)
-        {
-            logger.LogError(
-                "Invalid dialect: {Dialect}. Must be pgsql, mssql, or both.",
-                LoggingSanitizer.SanitizeForLogging(dialectName)
-            );
-            Console.Error.WriteLine(
-                $"Error: Invalid dialect '{LoggingSanitizer.SanitizeForConsole(dialectName)}'. Must be pgsql, mssql, or both."
-            );
-            return 1;
-        }
-
-        // Validate schema paths
-        if (schemaPaths.Length < 1)
-        {
-            Console.Error.WriteLine("Error: At least one schema path (core) is required.");
-            return 1;
-        }
 
         foreach (var schemaPath in schemaPaths)
         {
@@ -161,7 +144,9 @@ public static class DdlEmitCommand
                 );
                 var modelSet = modelSetBuilder.Build(clonedSchemaSet, dialect, dialectRules);
 
-                // Emit DDL: core + relational model + seed DML
+                // Emit DDL: core + relational model + seed DML.
+                // SeedDmlEmitter uses the original effectiveSchemaInfo (not the cloned set)
+                // because EffectiveSchemaInfo is an immutable record unaffected by model builder mutation.
                 var coreDdl = new CoreDdlEmitter(sqlDialect).Emit();
                 var relationalDdl = new RelationalModelDdlEmitter(sqlDialect).Emit(modelSet);
                 var seedDml = new SeedDmlEmitter(sqlDialect).Emit(effectiveSchemaInfo);
@@ -216,14 +201,18 @@ public static class DdlEmitCommand
         }
     }
 
-    private static List<SqlDialect>? ParseDialect(string dialectName)
+    private static List<SqlDialect> ParseDialect(string dialectName)
     {
         return dialectName.ToLowerInvariant() switch
         {
             "pgsql" => [SqlDialect.Pgsql],
             "mssql" => [SqlDialect.Mssql],
             "both" => [SqlDialect.Pgsql, SqlDialect.Mssql],
-            _ => null,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(dialectName),
+                dialectName,
+                "Invalid dialect (should be rejected by AcceptOnlyFromAmong)"
+            ),
         };
     }
 

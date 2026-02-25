@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Security.Cryptography;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
@@ -41,14 +40,18 @@ public sealed class EffectiveSchemaSetBuilder(
         var schemaComponents = new List<SchemaComponentInfo>(1 + nodes.ExtensionApiSchemaRootNodes.Length);
 
         // Process core schema
-        var (coreProject, coreComponent) = ExtractProjectInfo(nodes.CoreApiSchemaRootNode);
+        var (coreProject, coreComponent) = ToProjectAndComponent(
+            ProjectSchemaMetadataExtractor.Extract(nodes.CoreApiSchemaRootNode)
+        );
         projects.Add(coreProject);
         schemaComponents.Add(coreComponent);
 
         // Process extension schemas
         foreach (var extensionNode in nodes.ExtensionApiSchemaRootNodes)
         {
-            var (extensionProject, extensionComponent) = ExtractProjectInfo(extensionNode);
+            var (extensionProject, extensionComponent) = ToProjectAndComponent(
+                ProjectSchemaMetadataExtractor.Extract(extensionNode)
+            );
             projects.Add(extensionProject);
             schemaComponents.Add(extensionComponent);
         }
@@ -91,56 +94,32 @@ public sealed class EffectiveSchemaSetBuilder(
     }
 
     /// <summary>
-    /// Extracts project metadata and computes the per-project content hash.
+    /// Converts shared <see cref="ProjectSchemaMetadata"/> into the domain types needed
+    /// by the DDL pipeline, deep-cloning the <c>ProjectSchema</c> to detach it from its parent node.
     /// </summary>
-    private static (EffectiveProjectSchema Project, SchemaComponentInfo Component) ExtractProjectInfo(
-        JsonNode schemaNode
+    private static (EffectiveProjectSchema Project, SchemaComponentInfo Component) ToProjectAndComponent(
+        ProjectSchemaMetadata meta
     )
     {
-        var projectSchema =
-            schemaNode["projectSchema"] as JsonObject
-            ?? throw new InvalidOperationException("Schema node missing 'projectSchema' property");
-
-        var projectEndpointName =
-            projectSchema["projectEndpointName"]?.GetValue<string>()
-            ?? throw new InvalidOperationException("projectSchema missing 'projectEndpointName'");
-
-        var projectName =
-            projectSchema["projectName"]?.GetValue<string>()
-            ?? throw new InvalidOperationException("projectSchema missing 'projectName'");
-
-        var projectVersion =
-            projectSchema["projectVersion"]?.GetValue<string>()
-            ?? throw new InvalidOperationException("projectSchema missing 'projectVersion'");
-
-        var isExtensionProject =
-            projectSchema["isExtensionProject"]?.GetValue<bool>()
-            ?? throw new InvalidOperationException("projectSchema missing 'isExtensionProject'");
-
-        // Compute per-project hash using canonical JSON serialization
-        byte[] canonicalBytes = CanonicalJsonSerializer.SerializeToUtf8Bytes(projectSchema);
-        byte[] projectHashBytes = SHA256.HashData(canonicalBytes);
-        var projectHash = Convert.ToHexStringLower(projectHashBytes);
-
         // Deep-clone the projectSchema for the EffectiveProjectSchema (detach from parent)
         var detachedSchema =
-            projectSchema.DeepClone() as JsonObject
+            meta.ProjectSchema.DeepClone() as JsonObject
             ?? throw new InvalidOperationException("projectSchema deep clone must produce a JsonObject");
 
         var project = new EffectiveProjectSchema(
-            projectEndpointName,
-            projectName,
-            projectVersion,
-            isExtensionProject,
+            meta.ProjectEndpointName,
+            meta.ProjectName,
+            meta.ProjectVersion,
+            meta.IsExtensionProject,
             detachedSchema
         );
 
         var component = new SchemaComponentInfo(
-            projectEndpointName,
-            projectName,
-            projectVersion,
-            isExtensionProject,
-            projectHash
+            meta.ProjectEndpointName,
+            meta.ProjectName,
+            meta.ProjectVersion,
+            meta.IsExtensionProject,
+            meta.ProjectHash
         );
 
         return (project, component);

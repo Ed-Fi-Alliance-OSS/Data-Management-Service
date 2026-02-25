@@ -523,7 +523,8 @@ public class SchemaToolsTests
         [Test]
         public void It_prints_error_about_invalid_dialect()
         {
-            _error.Should().Contain("Invalid dialect");
+            // System.CommandLine's AcceptOnlyFromAmong rejects 'oracle' at parse time
+            _error.Should().Contain("oracle");
         }
     }
 

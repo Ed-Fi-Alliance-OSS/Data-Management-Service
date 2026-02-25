@@ -43,8 +43,7 @@ public static class LoggingSanitizer
 
         if (!needsSanitization)
         {
-            // All characters are safe - return a new string to avoid returning user input by reference
-            return new string(input);
+            return input;
         }
 
         if (safeCount == 0)
@@ -104,7 +103,7 @@ public static class LoggingSanitizer
 
         if (!hasControl)
         {
-            return new string(input);
+            return input;
         }
 
         if (printableCount == 0)
