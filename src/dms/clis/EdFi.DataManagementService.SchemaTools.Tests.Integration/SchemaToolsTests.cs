@@ -70,10 +70,11 @@ public class SchemaToolsTests
         }
 
         using var process = Process.Start(startInfo)!;
+        var outputTask = process.StandardOutput.ReadToEndAsync();
         var errorTask = process.StandardError.ReadToEndAsync();
-        var output = process.StandardOutput.ReadToEnd();
-        var error = errorTask.GetAwaiter().GetResult();
         process.WaitForExit();
+        var output = outputTask.GetAwaiter().GetResult();
+        var error = errorTask.GetAwaiter().GetResult();
 
         return (process.ExitCode, output, error);
     }
@@ -490,11 +491,12 @@ public class SchemaToolsTests
     {
         private int _exitCode;
         private string _error = null!;
+        private string _outputDir = null!;
 
         [SetUp]
         public void SetUp()
         {
-            var outputDir = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
+            _outputDir = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
             var fixturePath = GetAuthoritativeFixturePath();
             (_exitCode, _, _error) = RunCli(
                 "ddl",
@@ -502,15 +504,18 @@ public class SchemaToolsTests
                 "--schema",
                 fixturePath,
                 "--output",
-                outputDir,
+                _outputDir,
                 "--dialect",
                 "oracle"
             );
+        }
 
-            // Clean up
-            if (Directory.Exists(outputDir))
+        [TearDown]
+        public void TearDown()
+        {
+            if (Directory.Exists(_outputDir))
             {
-                Directory.Delete(outputDir, recursive: true);
+                Directory.Delete(_outputDir, recursive: true);
             }
         }
 
@@ -533,19 +538,29 @@ public class SchemaToolsTests
     {
         private int _exitCode;
         private string _error = null!;
+        private string _outputDir = null!;
 
         [SetUp]
         public void SetUp()
         {
-            var outputDir = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
+            _outputDir = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
             (_exitCode, _, _error) = RunCli(
                 "ddl",
                 "emit",
                 "--schema",
                 "nonexistent/ApiSchema.json",
                 "--output",
-                outputDir
+                _outputDir
             );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            if (Directory.Exists(_outputDir))
+            {
+                Directory.Delete(_outputDir, recursive: true);
+            }
         }
 
         [Test]

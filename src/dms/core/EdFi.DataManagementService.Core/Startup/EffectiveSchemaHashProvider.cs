@@ -120,7 +120,7 @@ public class EffectiveSchemaHashProvider(ILogger<EffectiveSchemaHashProvider> lo
     /// <summary>
     /// Extracts the apiSchemaVersion from a schema root node.
     /// </summary>
-    private static string GetApiSchemaVersion(JsonNode node) =>
+    public static string GetApiSchemaVersion(JsonNode node) =>
         node["apiSchemaVersion"]?.GetValue<string>()
         ?? throw new InvalidOperationException("Schema node missing 'apiSchemaVersion'");
 }

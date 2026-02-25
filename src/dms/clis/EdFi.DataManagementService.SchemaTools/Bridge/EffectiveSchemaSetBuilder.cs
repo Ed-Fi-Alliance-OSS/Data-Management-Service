@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Startup;
@@ -14,6 +13,11 @@ namespace EdFi.DataManagementService.SchemaTools.Bridge;
 /// <summary>
 /// Bridges <see cref="ApiSchemaDocumentNodes"/> (file-loader output)
 /// to <see cref="EffectiveSchemaSet"/> (DDL pipeline input).
+///
+/// The returned <see cref="EffectiveSchemaSet"/> contains <see cref="EffectiveProjectSchema"/>
+/// instances whose <c>ProjectSchema</c> JsonObjects share references with the input nodes.
+/// Callers that need isolated copies (e.g., for mutation by the relational model builder)
+/// should deep-clone the schema set before use.
 /// </summary>
 public sealed class EffectiveSchemaSetBuilder(
     IEffectiveSchemaHashProvider hashProvider,
@@ -31,45 +35,26 @@ public sealed class EffectiveSchemaSetBuilder(
         var effectiveSchemaHash = hashProvider.ComputeHash(nodes);
 
         // Step 2: Extract apiSchemaFormatVersion from core schema
-        var apiSchemaFormatVersion =
-            nodes.CoreApiSchemaRootNode["apiSchemaVersion"]?.GetValue<string>()
-            ?? throw new InvalidOperationException("Core schema node missing 'apiSchemaVersion'");
-
-        // Step 3: Extract project schemas (core + extensions) and build EffectiveProjectSchema list
-        var projects = new List<EffectiveProjectSchema>(1 + nodes.ExtensionApiSchemaRootNodes.Length);
-        var schemaComponents = new List<SchemaComponentInfo>(1 + nodes.ExtensionApiSchemaRootNodes.Length);
-
-        // Process core schema
-        var (coreProject, coreComponent) = ToProjectAndComponent(
-            ProjectSchemaMetadataExtractor.Extract(nodes.CoreApiSchemaRootNode)
+        var apiSchemaFormatVersion = EffectiveSchemaHashProvider.GetApiSchemaVersion(
+            nodes.CoreApiSchemaRootNode
         );
-        projects.Add(coreProject);
-        schemaComponents.Add(coreComponent);
 
-        // Process extension schemas
-        foreach (var extensionNode in nodes.ExtensionApiSchemaRootNodes)
-        {
-            var (extensionProject, extensionComponent) = ToProjectAndComponent(
-                ProjectSchemaMetadataExtractor.Extract(extensionNode)
-            );
-            projects.Add(extensionProject);
-            schemaComponents.Add(extensionComponent);
-        }
+        // Step 3: Extract project schemas (core + extensions) and build paired lists
+        var allNodes = new[] { nodes.CoreApiSchemaRootNode }.Concat(nodes.ExtensionApiSchemaRootNodes);
 
-        // Step 4: Sort projects and components by endpoint name
-        var projectsInEndpointOrder = projects
-            .OrderBy(p => p.ProjectEndpointName, StringComparer.Ordinal)
+        var pairs = allNodes
+            .Select(node => ToProjectAndComponent(ProjectSchemaMetadataExtractor.Extract(node)))
+            .OrderBy(pair => pair.Project.ProjectEndpointName, StringComparer.Ordinal)
             .ToList();
 
-        var componentsInEndpointOrder = schemaComponents
-            .OrderBy(c => c.ProjectEndpointName, StringComparer.Ordinal)
-            .ToArray();
+        var projectsInEndpointOrder = pairs.Select(p => p.Project).ToList();
+        var componentsInEndpointOrder = pairs.Select(p => p.Component).ToArray();
 
-        // Step 5: Get resource key seeds and compute seed hash
+        // Step 4: Get resource key seeds and compute seed hash
         var seeds = seedProvider.GetSeeds(nodes);
         var seedHash = seedProvider.ComputeSeedHash(seeds);
 
-        // Step 6: Map Core ResourceKeySeed → Backend.External ResourceKeyEntry
+        // Step 5: Map Core ResourceKeySeed → Backend.External ResourceKeyEntry
         var resourceKeys = seeds
             .Select(seed => new ResourceKeyEntry(
                 seed.ResourceKeyId,
@@ -79,7 +64,7 @@ public sealed class EffectiveSchemaSetBuilder(
             ))
             .ToArray();
 
-        // Step 7: Assemble EffectiveSchemaInfo
+        // Step 6: Assemble EffectiveSchemaInfo
         var effectiveSchemaInfo = new EffectiveSchemaInfo(
             apiSchemaFormatVersion,
             SchemaHashConstants.RelationalMappingVersion,
@@ -95,23 +80,21 @@ public sealed class EffectiveSchemaSetBuilder(
 
     /// <summary>
     /// Converts shared <see cref="ProjectSchemaMetadata"/> into the domain types needed
-    /// by the DDL pipeline, deep-cloning the <c>ProjectSchema</c> to detach it from its parent node.
+    /// by the DDL pipeline. The <c>ProjectSchema</c> is NOT deep-cloned here; it retains
+    /// a reference to the original node. Callers that need mutation-safe copies should
+    /// deep-clone the returned <see cref="EffectiveSchemaSet"/> before passing it to
+    /// components that mutate <c>ProjectSchema</c> (e.g., the relational model builder).
     /// </summary>
     private static (EffectiveProjectSchema Project, SchemaComponentInfo Component) ToProjectAndComponent(
         ProjectSchemaMetadata meta
     )
     {
-        // Deep-clone the projectSchema for the EffectiveProjectSchema (detach from parent)
-        var detachedSchema =
-            meta.ProjectSchema.DeepClone() as JsonObject
-            ?? throw new InvalidOperationException("projectSchema deep clone must produce a JsonObject");
-
         var project = new EffectiveProjectSchema(
             meta.ProjectEndpointName,
             meta.ProjectName,
             meta.ProjectVersion,
             meta.IsExtensionProject,
-            detachedSchema
+            meta.ProjectSchema
         );
 
         var component = new SchemaComponentInfo(
