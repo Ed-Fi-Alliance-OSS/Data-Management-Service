@@ -410,17 +410,18 @@ public class SchemaToolsTests
 
         private static bool AssertDirectoriesIdentical(string dir1, string dir2)
         {
-            foreach (var file1 in Directory.GetFiles(dir1))
-            {
-                var fileName = Path.GetFileName(file1);
-                var file2 = Path.Combine(dir2, fileName);
-                if (!File.Exists(file2))
-                {
-                    return false;
-                }
+            var files1 = Directory.GetFiles(dir1).Select(Path.GetFileName).Order().ToList();
+            var files2 = Directory.GetFiles(dir2).Select(Path.GetFileName).Order().ToList();
 
-                var bytes1 = File.ReadAllBytes(file1);
-                var bytes2 = File.ReadAllBytes(file2);
+            if (!files1.SequenceEqual(files2))
+            {
+                return false;
+            }
+
+            foreach (var fileName in files1)
+            {
+                var bytes1 = File.ReadAllBytes(Path.Combine(dir1, fileName!));
+                var bytes2 = File.ReadAllBytes(Path.Combine(dir2, fileName!));
                 if (!bytes1.AsSpan().SequenceEqual(bytes2))
                 {
                     return false;

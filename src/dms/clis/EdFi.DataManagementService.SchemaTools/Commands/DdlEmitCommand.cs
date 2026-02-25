@@ -207,7 +207,9 @@ public static class DdlEmitCommand
         catch (Exception ex)
         {
             logger.LogCritical(ex, "An unexpected error occurred during DDL emission");
-            Console.Error.WriteLine($"Error: An unexpected error occurred: {ex.Message}");
+            Console.Error.WriteLine(
+                $"Error: An unexpected error occurred: {LoggingSanitizer.SanitizeForLogging(ex.Message)}"
+            );
             return 1;
         }
     }
