@@ -1,0 +1,6 @@
+2026-02-25
+Task done: Contracts. Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: new executor-facing plan contracts in Backend.External.Plans; list-only ordering contracts (`IReadOnlyList`) no contract dictionaries; query plan contract carries ordered parameters w/ role metadata; kept existing compiler output type unchanged for later Query task.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/PlanContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ExternalPlanContractsTests.cs; tasks.json.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 43); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 errors).
+Blockers/notes: no blockers; next highest-priority remaining task is Naming.
