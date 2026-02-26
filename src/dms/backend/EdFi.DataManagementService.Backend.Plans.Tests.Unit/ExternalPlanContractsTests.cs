@@ -93,12 +93,10 @@ public class Given_ExternalPlanContracts
                     CanonicalBindingIndex: 1,
                     MembersInOrder:
                     [
-                        new ExternalPlans.KeyUnificationMemberWritePlan(
+                        new ExternalPlans.KeyUnificationMemberWritePlan.ScalarMember(
                             MemberPathColumn: new DbColumnName("SchoolYear"),
                             RelativePath: schoolYearPath,
-                            Kind: ColumnKind.Scalar,
                             ScalarType: new RelationalScalarType(ScalarKind.Int32),
-                            DescriptorResource: null,
                             PresenceColumn: null,
                             PresenceBindingIndex: null,
                             PresenceIsSynthetic: false
@@ -214,5 +212,48 @@ public class Given_ExternalPlanContracts
             .ParametersInOrder.Select(parameter => parameter.ParameterName)
             .Should()
             .Equal("schoolYear", "offset", "limit");
+    }
+
+    [Test]
+    public void It_should_make_invalid_key_unification_member_combinations_unrepresentable_by_shape()
+    {
+        var relativePath = new JsonPathExpression(
+            "$.schoolYear",
+            [new JsonPathSegment.Property("schoolYear")]
+        );
+
+        var scalarMember = new ExternalPlans.KeyUnificationMemberWritePlan.ScalarMember(
+            MemberPathColumn: new DbColumnName("SchoolYear"),
+            RelativePath: relativePath,
+            ScalarType: new RelationalScalarType(ScalarKind.Int32),
+            PresenceColumn: null,
+            PresenceBindingIndex: null,
+            PresenceIsSynthetic: false
+        );
+
+        var descriptorMember = new ExternalPlans.KeyUnificationMemberWritePlan.DescriptorMember(
+            MemberPathColumn: new DbColumnName("AcademicSubjectDescriptorId"),
+            RelativePath: relativePath,
+            DescriptorResource: new QualifiedResourceName("Ed-Fi", "AcademicSubjectDescriptor"),
+            PresenceColumn: null,
+            PresenceBindingIndex: null,
+            PresenceIsSynthetic: false
+        );
+
+        typeof(ExternalPlans.KeyUnificationMemberWritePlan).IsAbstract.Should().BeTrue();
+
+        var scalarType = scalarMember.GetType();
+        scalarType
+            .GetProperty(
+                nameof(ExternalPlans.KeyUnificationMemberWritePlan.DescriptorMember.DescriptorResource)
+            )
+            .Should()
+            .BeNull();
+
+        var descriptorType = descriptorMember.GetType();
+        descriptorType
+            .GetProperty(nameof(ExternalPlans.KeyUnificationMemberWritePlan.ScalarMember.ScalarType))
+            .Should()
+            .BeNull();
     }
 }

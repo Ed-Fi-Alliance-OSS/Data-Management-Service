@@ -143,11 +143,6 @@ public sealed record KeyUnificationWritePlan(
 /// </summary>
 /// <param name="MemberPathColumn">The member-path binding column.</param>
 /// <param name="RelativePath">Member value path relative to the table scope.</param>
-/// <param name="Kind">The member column semantic kind.</param>
-/// <param name="ScalarType">Scalar metadata when <paramref name="Kind" /> is <see cref="ColumnKind.Scalar" />.</param>
-/// <param name="DescriptorResource">
-/// Descriptor resource when <paramref name="Kind" /> is <see cref="ColumnKind.DescriptorFk" />.
-/// </param>
 /// <param name="PresenceColumn">
 /// Optional presence gate column used to preserve absent-versus-null semantics.
 /// </param>
@@ -155,16 +150,72 @@ public sealed record KeyUnificationWritePlan(
 /// Optional binding index in <see cref="TableWritePlan.ColumnBindings" /> for the presence column.
 /// </param>
 /// <param name="PresenceIsSynthetic">Indicates whether the presence column is synthetic.</param>
-public sealed record KeyUnificationMemberWritePlan(
+public abstract record KeyUnificationMemberWritePlan(
     DbColumnName MemberPathColumn,
     JsonPathExpression RelativePath,
-    ColumnKind Kind,
-    RelationalScalarType? ScalarType,
-    QualifiedResourceName? DescriptorResource,
     DbColumnName? PresenceColumn,
     int? PresenceBindingIndex,
     bool PresenceIsSynthetic
-);
+)
+{
+    /// <summary>
+    /// Scalar member source metadata.
+    /// </summary>
+    /// <param name="MemberPathColumn">The member-path binding column.</param>
+    /// <param name="RelativePath">Member value path relative to the table scope.</param>
+    /// <param name="ScalarType">Scalar metadata for the member value extraction.</param>
+    /// <param name="PresenceColumn">
+    /// Optional presence gate column used to preserve absent-versus-null semantics.
+    /// </param>
+    /// <param name="PresenceBindingIndex">
+    /// Optional binding index in <see cref="TableWritePlan.ColumnBindings" /> for the presence column.
+    /// </param>
+    /// <param name="PresenceIsSynthetic">Indicates whether the presence column is synthetic.</param>
+    public sealed record ScalarMember(
+        DbColumnName MemberPathColumn,
+        JsonPathExpression RelativePath,
+        RelationalScalarType ScalarType,
+        DbColumnName? PresenceColumn,
+        int? PresenceBindingIndex,
+        bool PresenceIsSynthetic
+    )
+        : KeyUnificationMemberWritePlan(
+            MemberPathColumn,
+            RelativePath,
+            PresenceColumn,
+            PresenceBindingIndex,
+            PresenceIsSynthetic
+        );
+
+    /// <summary>
+    /// Descriptor member source metadata.
+    /// </summary>
+    /// <param name="MemberPathColumn">The member-path binding column.</param>
+    /// <param name="RelativePath">Member value path relative to the table scope.</param>
+    /// <param name="DescriptorResource">Descriptor resource expected at the member path.</param>
+    /// <param name="PresenceColumn">
+    /// Optional presence gate column used to preserve absent-versus-null semantics.
+    /// </param>
+    /// <param name="PresenceBindingIndex">
+    /// Optional binding index in <see cref="TableWritePlan.ColumnBindings" /> for the presence column.
+    /// </param>
+    /// <param name="PresenceIsSynthetic">Indicates whether the presence column is synthetic.</param>
+    public sealed record DescriptorMember(
+        DbColumnName MemberPathColumn,
+        JsonPathExpression RelativePath,
+        QualifiedResourceName DescriptorResource,
+        DbColumnName? PresenceColumn,
+        int? PresenceBindingIndex,
+        bool PresenceIsSynthetic
+    )
+        : KeyUnificationMemberWritePlan(
+            MemberPathColumn,
+            RelativePath,
+            PresenceColumn,
+            PresenceBindingIndex,
+            PresenceIsSynthetic
+        );
+}
 
 /// <summary>
 /// Compiled read plan for a single resource.
