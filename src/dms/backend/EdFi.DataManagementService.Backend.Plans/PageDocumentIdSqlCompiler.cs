@@ -59,6 +59,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             spec.OffsetParameterName,
             spec.LimitParameterName
         );
+        ValidateFilterParameterNamesAreUnique(rewrittenPredicates);
 
         var pageSql = BuildPageDocumentIdSql(spec, rewrittenPredicates);
         var totalCountSql = spec.IncludeTotalCountSql
@@ -192,6 +193,30 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                 );
             }
         }
+    }
+
+    /// <summary>
+    /// Ensures filter-parameter names are unique (case-insensitive).
+    /// </summary>
+    private static void ValidateFilterParameterNamesAreUnique(IReadOnlyList<RewrittenPredicate> predicates)
+    {
+        var duplicateGroups = predicates
+            .Select(predicate => predicate.ParameterName)
+            .GroupBy(static parameterName => parameterName, StringComparer.OrdinalIgnoreCase)
+            .Where(static group => group.Count() > 1)
+            .Select(static group =>
+                group.OrderBy(static parameterName => parameterName, StringComparer.Ordinal).ToArray()
+            )
+            .OrderBy(static group => group[0], StringComparer.OrdinalIgnoreCase)
+            .ThenBy(static group => group[0], StringComparer.Ordinal)
+            .ToArray();
+
+        if (duplicateGroups.Length == 0)
+        {
+            return;
+        }
+
+        throw CreateDuplicateFilterParameterNamesException(duplicateGroups);
     }
 
     /// <summary>
@@ -462,6 +487,25 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         return new ArgumentException(
             $"Filter parameter name '{filterParameterName}' collides with paging parameter name '{pagingParameterName}' (case-insensitive). "
                 + $"Rename the filter parameter or change {pagingParameterPropertyName}.",
+            nameof(PageDocumentIdQuerySpec.Predicates)
+        );
+    }
+
+    /// <summary>
+    /// Creates a deterministic exception describing duplicate filter parameter names.
+    /// </summary>
+    private static ArgumentException CreateDuplicateFilterParameterNamesException(
+        IReadOnlyList<string[]> duplicateGroups
+    )
+    {
+        var formattedGroups = duplicateGroups
+            .Select(static group => $"[{FormatCollisionValues(group)}]")
+            .ToArray();
+
+        return new ArgumentException(
+            "Duplicate filter parameter names are not allowed (case-insensitive). "
+                + $"Colliding names: [{string.Join(", ", formattedGroups)}]. "
+                + "Rename filter parameters so each name is unique.",
             nameof(PageDocumentIdQuerySpec.Predicates)
         );
     }

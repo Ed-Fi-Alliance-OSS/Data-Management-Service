@@ -449,6 +449,60 @@ public class Given_PageDocumentIdSqlCompiler
     }
 
     [Test]
+    public void It_should_fail_with_a_deterministic_duplicate_filter_parameter_name_error_across_predicate_order_permutations()
+    {
+        var firstException = Assert.Throws<ArgumentException>(() =>
+            _compiler.Compile(
+                CreateSpec(
+                    [
+                        new QueryValuePredicate(
+                            new DbColumnName("SchoolId"),
+                            QueryComparisonOperator.Equal,
+                            "schoolId"
+                        ),
+                        new QueryValuePredicate(
+                            new DbColumnName("SchoolYear"),
+                            QueryComparisonOperator.Equal,
+                            "SchoolId"
+                        ),
+                    ],
+                    []
+                )
+            )
+        );
+        var secondException = Assert.Throws<ArgumentException>(() =>
+            _compiler.Compile(
+                CreateSpec(
+                    [
+                        new QueryValuePredicate(
+                            new DbColumnName("SchoolYear"),
+                            QueryComparisonOperator.Equal,
+                            "SchoolId"
+                        ),
+                        new QueryValuePredicate(
+                            new DbColumnName("SchoolId"),
+                            QueryComparisonOperator.Equal,
+                            "schoolId"
+                        ),
+                    ],
+                    []
+                )
+            )
+        );
+
+        firstException.Should().NotBeNull();
+        secondException.Should().NotBeNull();
+        secondException!.ParamName.Should().Be(firstException!.ParamName);
+        secondException.Message.Should().Be(firstException.Message);
+        secondException.ParamName.Should().Be("Predicates");
+        secondException
+            .Message.Should()
+            .Contain(
+                "Duplicate filter parameter names are not allowed (case-insensitive). Colliding names: [['SchoolId', 'schoolId']]."
+            );
+    }
+
+    [Test]
     public void It_should_reject_in_operator_until_supported()
     {
         var act = () =>

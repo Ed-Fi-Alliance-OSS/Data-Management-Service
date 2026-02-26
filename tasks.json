@@ -104,5 +104,23 @@
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
     ],
     "completed": true
+  },
+  {
+    "category": "Query",
+    "description": "Harden query parameter determinism and safety in `PageDocumentIdSqlCompiler`. Acceptance: (1) Add a deterministic, case-insensitive uniqueness validation for filter parameter names after rewrite/sort so executors never receive ambiguous duplicate parameter entries. (2) Keep existing paging collision checks (`offset`/`limit`) and ensure the combined rule is: unique filter names + no filter/paging collisions. (3) Throw an actionable deterministic exception that is stable across predicate-order permutations. (4) Extend unit tests to cover duplicate filter parameter names (including case variants) and permutation-stable failure behavior.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj` and confirm new duplicate-name tests pass.",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`."
+    ],
+    "completed": true
+  },
+  {
+    "category": "Tests",
+    "description": "Remove duplicated query fixture setup across plan SQL golden tests. Acceptance: (1) Extract shared query-plan fixture construction used by `PlanSqlFoundationsGoldenFixtureTests` and `PlanContractsManifestGoldenFixtureTests` into a common helper in the Plans test project. (2) Preserve existing SQL output and manifest snapshot content byte-for-byte. (3) Keep test readability and deterministic ordering behavior unchanged while reducing maintenance drift risk.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj` and confirm all golden and unit tests pass.",
+      "Run: `git diff -- src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Fixtures` and confirm there are no fixture changes."
+    ],
+    "completed": false
   }
 ]
