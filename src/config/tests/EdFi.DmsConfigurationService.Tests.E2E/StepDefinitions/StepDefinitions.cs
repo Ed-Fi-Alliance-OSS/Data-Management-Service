@@ -96,7 +96,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         var segments = _token.Split('.');
         var signature = segments[2].ToCharArray();
         new Random().Shuffle(signature);
-        _token = $"{segments[0]}.{segments[1]}.{signature}";
+        _token = $"{segments[0]}.{segments[1]}.{new string(signature)}";
     }
 
     [Given("the system has these {string}")]
@@ -157,6 +157,42 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         )!;
     }
 
+    [When("a GET request is made to {string} with header {string} value {string}")]
+    public async Task WhenAGETRequestIsMadeToWithHeader(string url, string header, string value)
+    {
+        url = await ReplaceIdsAsync(url);
+
+        var headers = new Dictionary<string, string>(_authHeaders, StringComparer.OrdinalIgnoreCase)
+        {
+            [header] = value,
+        };
+
+        _apiResponse = await playwrightContext.ApiRequestContext?.GetAsync(url, new() { Headers = headers })!;
+    }
+
+    // Alias used in OWASP security scenarios to make their intent explicit in feature files.
+    // Behaviour is identical to WhenAGETRequestIsMadeToWithHeader.
+    [When("a security GET request is made to {string} with header {string} value {string}")]
+    public async Task WhenASecurityGetRequestIsMadeToWithHeader(string url, string header, string value) =>
+        await WhenAGETRequestIsMadeToWithHeader(url, header, value);
+
+    [When("an {string} request is made to {string} with headers")]
+    public async Task WhenAnRequestIsMadeToWithHeaders(string method, string url, DataTable headersTable)
+    {
+        url = await ReplaceIdsAsync(url);
+
+        var headers = new Dictionary<string, string>(_authHeaders, StringComparer.OrdinalIgnoreCase);
+        foreach (var row in headersTable.Rows)
+        {
+            headers[row["Key"]] = row["Value"];
+        }
+
+        _apiResponse = await playwrightContext.ApiRequestContext!.FetchAsync(
+            url,
+            new() { Method = method, Headers = headers }
+        );
+    }
+
     [When("a GET request is made to {string} for first {int} items")]
     public async Task WhenAGETRequestIsMadeTo(string url, int limit)
     {
@@ -190,9 +226,33 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         await ExtractIdFromHeader(_apiResponse);
     }
 
+    [When("an unauthenticated POST request is made to {string} with header {string} value {string} and")]
+    public async Task WhenAnUnauthenticatedPostRequestIsMadeToWithHeaderAnd(
+        string url,
+        string header,
+        string value,
+        string body
+    )
+    {
+        url = await ReplaceIdsAsync(url);
+        body = await ReplaceIdsAsync(body);
+
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Content-Type"] = "application/json",
+            [header] = value,
+        };
+
+        _apiResponse = await playwrightContext.ApiRequestContext?.PostAsync(
+            url,
+            new() { Headers = headers, Data = body }
+        )!;
+    }
+
     [When("a Form URL Encoded POST request is made to {string} with")]
     public async Task WhenAFormUrlPostIsMade(string url, DataTable formData)
     {
+        url = await ReplaceIdsAsync(url);
         Dictionary<string, string> formDataDictionary = formData.Rows.ToDictionary(
             x => x["Key"].ToString(),
             y => ReplaceIds(y["Value"].ToString())
@@ -206,10 +266,30 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
             },
             Data = await content.ReadAsStringAsync(),
         };
-        if (playwrightContext.ApiRequestContext != null)
+        _apiResponse = await playwrightContext.ApiRequestContext!.PostAsync(url, options);
+    }
+
+    [When("an unauthenticated Form URL Encoded POST request is made to {string} with")]
+    public async Task WhenAnUnauthenticatedFormUrlEncodedPostRequestIsMadeToWith(
+        string url,
+        DataTable formData
+    )
+    {
+        url = await ReplaceIdsAsync(url);
+        Dictionary<string, string> formDataDictionary = formData.Rows.ToDictionary(
+            x => x["Key"].ToString(),
+            y => ReplaceIds(y["Value"].ToString())
+        );
+        var content = new FormUrlEncodedContent(formDataDictionary);
+        APIRequestContextOptions? options = new()
         {
-            _apiResponse = await playwrightContext.ApiRequestContext!.PostAsync(url, options);
-        }
+            Headers = new Dictionary<string, string>
+            {
+                { "Content-Type", "application/x-www-form-urlencoded" },
+            },
+            Data = await content.ReadAsStringAsync(),
+        };
+        _apiResponse = await playwrightContext.ApiRequestContext!.PostAsync(url, options);
     }
 
     [When("a DELETE request is made to {string}")]
@@ -266,6 +346,13 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         _apiResponse.Status.Should().Be(statusCode, body);
     }
 
+    [Then("it should respond with {int} or {int}")]
+    public async Task ThenItShouldRespondWithEither(int statusCode1, int statusCode2)
+    {
+        string body = await _apiResponse.TextAsync();
+        _apiResponse.Status.Should().BeOneOf([statusCode1, statusCode2], body);
+    }
+
     [Then("the response headers include")]
     public void ThenTheResponseHeadersIncludes(string headers)
     {
@@ -283,6 +370,16 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
                 _apiResponse.Headers[key].Should().Contain(expectedValue);
             }
         }
+    }
+
+    [Then("the response header {string} is not present")]
+    public void ThenTheResponseHeaderIsNotPresent(string headerName)
+    {
+        var key = _apiResponse.Headers.Keys.FirstOrDefault(k =>
+            k.Equals(headerName, StringComparison.OrdinalIgnoreCase)
+        );
+
+        key.Should().BeNull($"Header '{headerName}' should not be present.");
     }
 
     [Then("the record can be retrieved with a GET request")]
@@ -310,6 +407,13 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     public async Task ThenTheResponseBodyIs(string expectedBody)
     {
         await ResponseBodyIs(expectedBody);
+    }
+
+    [Then("the response body should not contain {string}")]
+    public async Task ThenTheResponseBodyShouldNotContain(string text)
+    {
+        string content = await _apiResponse.TextAsync();
+        content.Should().NotContain(text);
     }
 
     [Then(@"the response body is an array with more than one object where each object")]
