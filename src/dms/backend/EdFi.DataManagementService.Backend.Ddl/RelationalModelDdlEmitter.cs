@@ -52,30 +52,70 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
         var writer = new SqlWriter(_dialect);
 
+        // Apply canonical ordering within each phase so output is byte-for-byte stable
+        // regardless of the order in which elements appear in the model set.
+        // All comparisons use StringComparer.Ordinal (culture-invariant, case-sensitive).
+        // NOTE: These sort keys intentionally duplicate the ordering applied in
+        // RelationalModelSetBuilderContext.BuildResult() as a defense-in-depth measure.
+        // If sort keys diverge between layers, consider centralizing sort-key definitions.
+        var schemas = modelSet
+            .ProjectSchemasInEndpointOrder.OrderBy(s => s.PhysicalSchema.Value, StringComparer.Ordinal)
+            .ThenBy(s => s.ProjectEndpointName, StringComparer.Ordinal)
+            .ToList();
+
+        var concreteResources = modelSet
+            .ConcreteResourcesInNameOrder.OrderBy(
+                r => r.ResourceKey.Resource.ProjectName,
+                StringComparer.Ordinal
+            )
+            .ThenBy(r => r.ResourceKey.Resource.ResourceName, StringComparer.Ordinal)
+            .ToList();
+
+        var abstractIdentityTables = modelSet
+            .AbstractIdentityTablesInNameOrder.OrderBy(
+                t => t.AbstractResourceKey.Resource.ProjectName,
+                StringComparer.Ordinal
+            )
+            .ThenBy(t => t.AbstractResourceKey.Resource.ResourceName, StringComparer.Ordinal)
+            .ToList();
+
+        var abstractUnionViews = modelSet
+            .AbstractUnionViewsInNameOrder.OrderBy(v => v.ViewName.Schema.Value, StringComparer.Ordinal)
+            .ThenBy(v => v.ViewName.Name, StringComparer.Ordinal)
+            .ToList();
+
+        var indexes = modelSet
+            .IndexesInCreateOrder.OrderBy(i => i.Table.Schema.Value, StringComparer.Ordinal)
+            .ThenBy(i => i.Table.Name, StringComparer.Ordinal)
+            .ThenBy(i => i.Name.Value, StringComparer.Ordinal)
+            .ToList();
+
+        var triggers = modelSet
+            .TriggersInCreateOrder.OrderBy(t => t.Table.Schema.Value, StringComparer.Ordinal)
+            .ThenBy(t => t.Table.Name, StringComparer.Ordinal)
+            .ThenBy(t => t.Name.Value, StringComparer.Ordinal)
+            .ToList();
+
         // Phase 1: Schemas
-        EmitSchemas(writer, modelSet.ProjectSchemasInEndpointOrder);
+        EmitSchemas(writer, schemas);
 
         // Phase 2: Tables (PK/UK/CHECK only, no cross-table FKs)
-        EmitTables(writer, modelSet.ConcreteResourcesInNameOrder);
+        EmitTables(writer, concreteResources);
 
         // Phase 3: Abstract Identity Tables (must precede FKs that reference them)
-        EmitAbstractIdentityTables(writer, modelSet.AbstractIdentityTablesInNameOrder);
+        EmitAbstractIdentityTables(writer, abstractIdentityTables);
 
         // Phase 4: Foreign Keys (separate ALTER TABLE statements)
-        EmitForeignKeys(
-            writer,
-            modelSet.ConcreteResourcesInNameOrder,
-            modelSet.AbstractIdentityTablesInNameOrder
-        );
+        EmitForeignKeys(writer, concreteResources, abstractIdentityTables);
 
         // Phase 5: Indexes
-        EmitIndexes(writer, modelSet.IndexesInCreateOrder);
+        EmitIndexes(writer, indexes);
 
         // Phase 6: Abstract Union Views (must precede Triggers per design)
-        EmitAbstractUnionViews(writer, modelSet.AbstractUnionViewsInNameOrder);
+        EmitAbstractUnionViews(writer, abstractUnionViews);
 
         // Phase 7: Triggers
-        EmitTriggers(writer, modelSet.TriggersInCreateOrder);
+        EmitTriggers(writer, triggers);
 
         return writer.ToString();
     }
@@ -220,7 +260,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private void EmitTableForeignKeys(SqlWriter writer, DbTableModel table)
     {
-        foreach (var fk in table.Constraints.OfType<TableConstraint.ForeignKey>())
+        // OrderBy is redundant with RelationalModelOrdering.CanonicalizeTable() constraint
+        // ordering but kept as defense-in-depth for the emitter's byte-for-byte guarantee.
+        foreach (
+            var fk in table
+                .Constraints.OfType<TableConstraint.ForeignKey>()
+                .OrderBy(fk => fk.Name, StringComparer.Ordinal)
+        )
         {
             writer.AppendLine(
                 _dialect.AddForeignKeyConstraint(

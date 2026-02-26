@@ -1,20 +1,20 @@
 IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'edfi')
     EXEC('CREATE SCHEMA [edfi]');
 
-IF OBJECT_ID(N'edfi.School', N'U') IS NULL
-CREATE TABLE [edfi].[School]
-(
-    [DocumentId] bigint NOT NULL,
-    [EducationOrganizationId] int NOT NULL,
-    CONSTRAINT [PK_School] PRIMARY KEY ([DocumentId])
-);
-
 IF OBJECT_ID(N'edfi.LocalEducationAgency', N'U') IS NULL
 CREATE TABLE [edfi].[LocalEducationAgency]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganizationId] int NOT NULL,
     CONSTRAINT [PK_LocalEducationAgency] PRIMARY KEY ([DocumentId])
+);
+
+IF OBJECT_ID(N'edfi.School', N'U') IS NULL
+CREATE TABLE [edfi].[School]
+(
+    [DocumentId] bigint NOT NULL,
+    [EducationOrganizationId] int NOT NULL,
+    CONSTRAINT [PK_School] PRIMARY KEY ([DocumentId])
 );
 
 IF OBJECT_ID(N'edfi.EducationOrganizationIdentity', N'U') IS NULL
@@ -28,10 +28,10 @@ CREATE TABLE [edfi].[EducationOrganizationIdentity]
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_School_EducationOrganizationIdentity' AND parent_object_id = OBJECT_ID(N'edfi.School')
+    WHERE name = N'FK_LocalEducationAgency_EducationOrganizationIdentity' AND parent_object_id = OBJECT_ID(N'edfi.LocalEducationAgency')
 )
-ALTER TABLE [edfi].[School]
-ADD CONSTRAINT [FK_School_EducationOrganizationIdentity]
+ALTER TABLE [edfi].[LocalEducationAgency]
+ADD CONSTRAINT [FK_LocalEducationAgency_EducationOrganizationIdentity]
 FOREIGN KEY ([DocumentId])
 REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
 ON DELETE CASCADE
@@ -39,10 +39,10 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_LocalEducationAgency_EducationOrganizationIdentity' AND parent_object_id = OBJECT_ID(N'edfi.LocalEducationAgency')
+    WHERE name = N'FK_School_EducationOrganizationIdentity' AND parent_object_id = OBJECT_ID(N'edfi.School')
 )
-ALTER TABLE [edfi].[LocalEducationAgency]
-ADD CONSTRAINT [FK_LocalEducationAgency_EducationOrganizationIdentity]
+ALTER TABLE [edfi].[School]
+ADD CONSTRAINT [FK_School_EducationOrganizationIdentity]
 FOREIGN KEY ([DocumentId])
 REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
 ON DELETE CASCADE
@@ -67,29 +67,6 @@ UNION ALL
 SELECT [DocumentId] AS [DocumentId], [EducationOrganizationId] AS [EducationOrganizationId], CAST(N'Ed-Fi:LocalEducationAgency' AS nvarchar(50)) AS [Discriminator]
 FROM [edfi].[LocalEducationAgency]
 ;
-
-GO
-CREATE OR ALTER TRIGGER [edfi].[TR_LocalEducationAgency_Stamp]
-ON [edfi].[LocalEducationAgency]
-AFTER INSERT, UPDATE, DELETE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    ;WITH affectedDocs AS (SELECT [DocumentId] FROM inserted UNION SELECT [DocumentId] FROM deleted)
-    UPDATE d
-    SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
-    FROM [dms].[Document] d
-    INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
-    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([EducationOrganizationId]))
-    BEGIN
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganizationId] <> del.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND del.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND del.[EducationOrganizationId] IS NULL));
-    END
-END;
 
 GO
 CREATE OR ALTER TRIGGER [edfi].[TR_LocalEducationAgency_AbstractIdentity]
@@ -162,8 +139,8 @@ BEGIN
 END;
 
 GO
-CREATE OR ALTER TRIGGER [edfi].[TR_School_Stamp]
-ON [edfi].[School]
+CREATE OR ALTER TRIGGER [edfi].[TR_LocalEducationAgency_Stamp]
+ON [edfi].[LocalEducationAgency]
 AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
@@ -251,6 +228,29 @@ BEGIN
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
         SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$$.educationOrganizationId=' + CAST(i.[EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 1
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
+    END
+END;
+
+GO
+CREATE OR ALTER TRIGGER [edfi].[TR_School_Stamp]
+ON [edfi].[School]
+AFTER INSERT, UPDATE, DELETE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    ;WITH affectedDocs AS (SELECT [DocumentId] FROM inserted UNION SELECT [DocumentId] FROM deleted)
+    UPDATE d
+    SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
+    FROM [dms].[Document] d
+    INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
+    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([EducationOrganizationId]))
+    BEGIN
+        UPDATE d
+        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
+        FROM [dms].[Document] d
+        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        WHERE (i.[EducationOrganizationId] <> del.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND del.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND del.[EducationOrganizationId] IS NULL));
     END
 END;
 
