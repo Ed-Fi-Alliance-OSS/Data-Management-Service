@@ -1112,6 +1112,22 @@ public class ApiSchemaBuilder
     }
 
     /// <summary>
+    /// Adds commonExtensionOverrides to the current resource node.
+    /// </summary>
+    public ApiSchemaBuilder WithCommonExtensionOverrides(JsonArray overrides)
+    {
+        if (_currentResourceNode is null)
+        {
+            throw new InvalidOperationException(
+                "WithCommonExtensionOverrides called without an active resource"
+            );
+        }
+
+        _currentResourceNode["commonExtensionOverrides"] = overrides;
+        return this;
+    }
+
+    /// <summary>
     /// Adds fragments for new extension resources/descriptors.
     /// This is a convenience method for completely new resources introduced by an extension.
     /// </summary>
