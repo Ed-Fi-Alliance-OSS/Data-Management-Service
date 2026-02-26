@@ -2049,12 +2049,14 @@ public class Given_Uuidv5Namespace_Constant
 /// This guards against regressions where dictionary iteration order or JSON-file processing order
 /// leaks into the emitted SQL text.
 /// </summary>
-[TestFixture(SqlDialect.Pgsql, "\"Alpha\"", "\"Zeta\"")]
-[TestFixture(SqlDialect.Mssql, "[Alpha]", "[Zeta]")]
+[TestFixture(SqlDialect.Pgsql, "\"Alpha\"", "\"Zeta\"", "\"edfi\"", "\"tpdm\"")]
+[TestFixture(SqlDialect.Mssql, "[Alpha]", "[Zeta]", "[edfi]", "[tpdm]")]
 public class Given_RelationalModelDdlEmitter_InputOrder_Is_Irrelevant(
     SqlDialect sqlDialect,
     string quotedAlpha,
-    string quotedZeta
+    string quotedZeta,
+    string quotedEdfi,
+    string quotedTpdm
 )
 {
     private string _zetaFirstDdl = default!;
@@ -2103,19 +2105,66 @@ public class Given_RelationalModelDdlEmitter_InputOrder_Is_Irrelevant(
             .Index.Should()
             .BeLessThan(zetaMatch.Index, "Alpha must precede Zeta in canonical ordinal order");
     }
+
+    [Test]
+    public void It_should_emit_edfi_schema_before_tpdm_schema()
+    {
+        var edfiMatch = System.Text.RegularExpressions.Regex.Match(
+            _zetaFirstDdl,
+            @$"CREATE SCHEMA\b.*{System.Text.RegularExpressions.Regex.Escape(quotedEdfi)}"
+        );
+        var tpdmMatch = System.Text.RegularExpressions.Regex.Match(
+            _zetaFirstDdl,
+            @$"CREATE SCHEMA\b.*{System.Text.RegularExpressions.Regex.Escape(quotedTpdm)}"
+        );
+
+        edfiMatch.Success.Should().BeTrue("expected CREATE SCHEMA for edfi in DDL");
+        tpdmMatch.Success.Should().BeTrue("expected CREATE SCHEMA for tpdm in DDL");
+        edfiMatch
+            .Index.Should()
+            .BeLessThan(tpdmMatch.Index, "edfi schema must precede tpdm schema in canonical order");
+    }
+
+    [Test]
+    public void It_should_emit_edfi_tables_before_tpdm_tables()
+    {
+        // Within concrete resource tables, Ed-Fi resources (ProjectName "Ed-Fi") are ordered
+        // before TPDM resources (ProjectName "TPDM") because "Ed-Fi" < "TPDM" ordinally.
+        // Check that the first edfi-schema table appears before the first tpdm-schema table.
+        var firstEdfiTable = System.Text.RegularExpressions.Regex.Match(
+            _zetaFirstDdl,
+            @$"CREATE TABLE\b.*{System.Text.RegularExpressions.Regex.Escape(quotedEdfi)}\."
+        );
+        var firstTpdmTable = System.Text.RegularExpressions.Regex.Match(
+            _zetaFirstDdl,
+            @$"CREATE TABLE\b.*{System.Text.RegularExpressions.Regex.Escape(quotedTpdm)}\."
+        );
+
+        firstEdfiTable.Success.Should().BeTrue("expected at least one edfi table in DDL");
+        firstTpdmTable.Success.Should().BeTrue("expected at least one tpdm table in DDL");
+
+        firstEdfiTable
+            .Index.Should()
+            .BeLessThan(
+                firstTpdmTable.Index,
+                "first edfi table must precede first tpdm table in canonical order"
+            );
+    }
 }
 
 /// <summary>
 /// Fixture for input-order permutation tests.
-/// Two concrete resources ("Alpha" and "Zeta"), two abstract identity tables ("AlphaAbstract"
-/// and "ZetaAbstract"), and two abstract union views are provided in opposite orderings across
-/// the two <c>Build*</c> methods so the emitter's canonical sort is the only thing that can
+/// Two schemas ("edfi" and "tpdm"), three concrete resources ("Alpha", "AlphaChild", "Zeta" in edfi
+/// plus "Gamma" in tpdm), abstract identity tables, abstract union views, multiple FKs per table,
+/// multiple indexes per table, and multiple triggers per table are provided in opposite orderings
+/// across the two <c>Build*</c> methods so the emitter's canonical sort is the only thing that can
 /// produce identical output.
 /// </summary>
 internal static class PermutationInputOrderFixture
 {
     private static DerivedRelationalModelSet Build(
         SqlDialect dialect,
+        IReadOnlyList<ProjectSchemaInfo> projectSchemaOrder,
         IReadOnlyList<ConcreteResourceModel> resourceOrder,
         IReadOnlyList<AbstractIdentityTableInfo> abstractIdentityTableOrder,
         IReadOnlyList<AbstractUnionViewInfo> abstractUnionViewOrder,
@@ -2135,12 +2184,18 @@ internal static class PermutationInputOrderFixture
         var zetaAbstractResource = new QualifiedResourceName("Ed-Fi", "ZetaAbstract");
         var zetaAbstractKey = new ResourceKeyEntry(4, zetaAbstractResource, "1.0.0", true);
 
+        var gammaResource = new QualifiedResourceName("TPDM", "Gamma");
+        var gammaKey = new ResourceKeyEntry(5, gammaResource, "1.0.0", false);
+
+        var gammaAbstractResource = new QualifiedResourceName("TPDM", "GammaAbstract");
+        var gammaAbstractKey = new ResourceKeyEntry(6, gammaAbstractResource, "1.0.0", true);
+
         return new DerivedRelationalModelSet(
             new EffectiveSchemaInfo(
                 "1.0.0",
                 "1.0.0",
                 "abc123",
-                4,
+                6,
                 [0xAB, 0xC1],
                 [
                     new SchemaComponentInfo(
@@ -2150,11 +2205,18 @@ internal static class PermutationInputOrderFixture
                         false,
                         "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
                     ),
+                    new SchemaComponentInfo(
+                        "tpdm",
+                        "TPDM",
+                        "1.0.0",
+                        false,
+                        "tpdmtpdmtpdmtpdmtpdmtpdmtpdmtpdmtpdmtpdmtpdmtpdmtpdmtpdmtpdmtpdm"
+                    ),
                 ],
-                [alphaKey, zetaKey, alphaAbstractKey, zetaAbstractKey]
+                [alphaKey, zetaKey, alphaAbstractKey, zetaAbstractKey, gammaKey, gammaAbstractKey]
             ),
             dialect,
-            [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, new DbSchemaName("edfi"))],
+            projectSchemaOrder,
             resourceOrder,
             abstractIdentityTableOrder,
             abstractUnionViewOrder,
@@ -2167,10 +2229,12 @@ internal static class PermutationInputOrderFixture
         DbSchemaName schema,
         DbColumnName documentIdColumn,
         short keyId,
-        string resourceName
+        string resourceName,
+        string projectName = "Ed-Fi",
+        TableConstraint.ForeignKey? extraChildFk = null
     )
     {
-        var resource = new QualifiedResourceName("Ed-Fi", resourceName);
+        var resource = new QualifiedResourceName(projectName, resourceName);
         var key = new ResourceKeyEntry(keyId, resource, "1.0.0", false);
         var parentTableName = new DbTableName(schema, resourceName);
         var childTableName = new DbTableName(schema, $"{resourceName}Child");
@@ -2193,6 +2257,54 @@ internal static class PermutationInputOrderFixture
             []
         );
 
+        List<DbColumnModel> childColumns =
+        [
+            new(
+                documentIdColumn,
+                ColumnKind.ParentKeyPart,
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new(
+                childOrdinalColumn,
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.Int32),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+        ];
+
+        List<TableConstraint> childConstraints =
+        [
+            new TableConstraint.ForeignKey(
+                $"FK_{resourceName}Child_{resourceName}",
+                [documentIdColumn],
+                parentTableName,
+                [documentIdColumn],
+                ReferentialAction.Cascade,
+                ReferentialAction.NoAction
+            ),
+        ];
+
+        if (extraChildFk != null)
+        {
+            // Add the extra FK column to the child table
+            childColumns.Add(
+                new DbColumnModel(
+                    extraChildFk.Columns[0],
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                )
+            );
+            childConstraints.Add(extraChildFk);
+        }
+
         var childTable = new DbTableModel(
             childTableName,
             new JsonPathExpression("$.children[*]", []),
@@ -2203,34 +2315,8 @@ internal static class PermutationInputOrderFixture
                     new DbKeyColumn(childOrdinalColumn, ColumnKind.Scalar),
                 ]
             ),
-            [
-                new DbColumnModel(
-                    documentIdColumn,
-                    ColumnKind.ParentKeyPart,
-                    new RelationalScalarType(ScalarKind.Int64),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    childOrdinalColumn,
-                    ColumnKind.Scalar,
-                    new RelationalScalarType(ScalarKind.Int32),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-            ],
-            [
-                new TableConstraint.ForeignKey(
-                    $"FK_{resourceName}Child_{resourceName}",
-                    [documentIdColumn],
-                    parentTableName,
-                    [documentIdColumn],
-                    ReferentialAction.Cascade,
-                    ReferentialAction.NoAction
-                ),
-            ]
+            childColumns,
+            childConstraints
         );
 
         var model = new RelationalResourceModel(
@@ -2249,10 +2335,11 @@ internal static class PermutationInputOrderFixture
         DbSchemaName schema,
         DbColumnName documentIdColumn,
         short keyId,
-        string resourceName
+        string resourceName,
+        string projectName = "Ed-Fi"
     )
     {
-        var resource = new QualifiedResourceName("Ed-Fi", resourceName);
+        var resource = new QualifiedResourceName(projectName, resourceName);
         var key = new ResourceKeyEntry(keyId, resource, "1.0.0", true);
         var table = new DbTableModel(
             new DbTableName(schema, $"{resourceName}Identity"),
@@ -2290,15 +2377,16 @@ internal static class PermutationInputOrderFixture
         short abstractKeyId,
         string abstractResourceName,
         short concreteKeyId,
-        string concreteResourceName
+        string concreteResourceName,
+        string projectName = "Ed-Fi"
     )
     {
         var documentIdColumn = new DbColumnName("DocumentId");
-        var abstractResource = new QualifiedResourceName("Ed-Fi", abstractResourceName);
+        var abstractResource = new QualifiedResourceName(projectName, abstractResourceName);
         var abstractKey = new ResourceKeyEntry(abstractKeyId, abstractResource, "1.0.0", true);
         var concreteKey = new ResourceKeyEntry(
             concreteKeyId,
-            new QualifiedResourceName("Ed-Fi", concreteResourceName),
+            new QualifiedResourceName(projectName, concreteResourceName),
             "1.0.0",
             false
         );
@@ -2319,21 +2407,29 @@ internal static class PermutationInputOrderFixture
         );
     }
 
-    private static DbIndexInfo BuildIndex(DbSchemaName schema, string tableName)
+    private static DbIndexInfo BuildIndex(
+        DbSchemaName schema,
+        string tableName,
+        string columnName = "DocumentId"
+    )
     {
         return new DbIndexInfo(
-            new DbIndexName($"IX_{tableName}_DocumentId"),
+            new DbIndexName($"IX_{tableName}_{columnName}"),
             new DbTableName(schema, tableName),
-            [new DbColumnName("DocumentId")],
+            [new DbColumnName(columnName)],
             false,
             DbIndexKind.ForeignKeySupport
         );
     }
 
-    private static DbTriggerInfo BuildTrigger(DbSchemaName schema, string tableName)
+    private static DbTriggerInfo BuildTrigger(
+        DbSchemaName schema,
+        string tableName,
+        string triggerSuffix = "Stamp"
+    )
     {
         return new DbTriggerInfo(
-            new DbTriggerName($"TR_{tableName}_Stamp"),
+            new DbTriggerName($"TR_{tableName}_{triggerSuffix}"),
             new DbTableName(schema, tableName),
             [new DbColumnName("DocumentId")],
             [],
@@ -2343,53 +2439,96 @@ internal static class PermutationInputOrderFixture
 
     /// <summary>
     /// Builds a model set with all elements in Zeta-first (non-alphabetical) order.
+    /// Schema ordering is tpdm-first to exercise cross-schema sorting.
     /// </summary>
     internal static DerivedRelationalModelSet BuildZetaFirstOrder(SqlDialect dialect)
     {
-        var schema = new DbSchemaName("edfi");
+        var edfiSchema = new DbSchemaName("edfi");
+        var tpdmSchema = new DbSchemaName("tpdm");
         var docId = new DbColumnName("DocumentId");
-        var (alpha, zeta, alphaIdentity, zetaIdentity, alphaView, zetaView) = BuildAllModels(schema, docId);
+        var (alpha, zeta, gamma, alphaIdentity, zetaIdentity, gammaIdentity, alphaView, zetaView, gammaView) =
+            BuildAllModels(edfiSchema, tpdmSchema, docId);
 
-        // Intentionally non-alphabetical: Zeta first, Alpha second
+        // Intentionally non-alphabetical: Zeta first, then Gamma (tpdm), then Alpha
         return Build(
             dialect,
-            resourceOrder: [zeta, alpha],
-            abstractIdentityTableOrder: [zetaIdentity, alphaIdentity],
-            abstractUnionViewOrder: [zetaView, alphaView],
-            indexOrder: [BuildIndex(schema, "Zeta"), BuildIndex(schema, "Alpha")],
-            triggerOrder: [BuildTrigger(schema, "Zeta"), BuildTrigger(schema, "Alpha")]
+            projectSchemaOrder:
+            [
+                new ProjectSchemaInfo("tpdm", "TPDM", "1.0.0", false, tpdmSchema),
+                new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, edfiSchema),
+            ],
+            resourceOrder: [zeta, gamma, alpha],
+            abstractIdentityTableOrder: [zetaIdentity, gammaIdentity, alphaIdentity],
+            abstractUnionViewOrder: [zetaView, gammaView, alphaView],
+            indexOrder:
+            [
+                BuildIndex(tpdmSchema, "Gamma"),
+                BuildIndex(edfiSchema, "Zeta"),
+                BuildIndex(edfiSchema, "Alpha", "ReferentialId"),
+                BuildIndex(edfiSchema, "Alpha"),
+            ],
+            triggerOrder:
+            [
+                BuildTrigger(tpdmSchema, "Gamma"),
+                BuildTrigger(edfiSchema, "Zeta"),
+                BuildTrigger(edfiSchema, "Alpha", "Version"),
+                BuildTrigger(edfiSchema, "Alpha"),
+            ]
         );
     }
 
     /// <summary>
     /// Builds a model set with the same data as <see cref="BuildZetaFirstOrder"/> but with
     /// all elements in Alpha-first (alphabetical) order.
+    /// Schema ordering is edfi-first (alphabetical).
     /// </summary>
     internal static DerivedRelationalModelSet BuildAlphaFirstOrder(SqlDialect dialect)
     {
-        var schema = new DbSchemaName("edfi");
+        var edfiSchema = new DbSchemaName("edfi");
+        var tpdmSchema = new DbSchemaName("tpdm");
         var docId = new DbColumnName("DocumentId");
-        var (alpha, zeta, alphaIdentity, zetaIdentity, alphaView, zetaView) = BuildAllModels(schema, docId);
+        var (alpha, zeta, gamma, alphaIdentity, zetaIdentity, gammaIdentity, alphaView, zetaView, gammaView) =
+            BuildAllModels(edfiSchema, tpdmSchema, docId);
 
-        // Alphabetical order: Alpha first, Zeta second
+        // Alphabetical order: Alpha first, then Zeta, then Gamma (tpdm)
         return Build(
             dialect,
-            resourceOrder: [alpha, zeta],
-            abstractIdentityTableOrder: [alphaIdentity, zetaIdentity],
-            abstractUnionViewOrder: [alphaView, zetaView],
-            indexOrder: [BuildIndex(schema, "Alpha"), BuildIndex(schema, "Zeta")],
-            triggerOrder: [BuildTrigger(schema, "Alpha"), BuildTrigger(schema, "Zeta")]
+            projectSchemaOrder:
+            [
+                new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, edfiSchema),
+                new ProjectSchemaInfo("tpdm", "TPDM", "1.0.0", false, tpdmSchema),
+            ],
+            resourceOrder: [alpha, zeta, gamma],
+            abstractIdentityTableOrder: [alphaIdentity, zetaIdentity, gammaIdentity],
+            abstractUnionViewOrder: [alphaView, zetaView, gammaView],
+            indexOrder:
+            [
+                BuildIndex(edfiSchema, "Alpha"),
+                BuildIndex(edfiSchema, "Alpha", "ReferentialId"),
+                BuildIndex(edfiSchema, "Zeta"),
+                BuildIndex(tpdmSchema, "Gamma"),
+            ],
+            triggerOrder:
+            [
+                BuildTrigger(edfiSchema, "Alpha"),
+                BuildTrigger(edfiSchema, "Alpha", "Version"),
+                BuildTrigger(edfiSchema, "Zeta"),
+                BuildTrigger(tpdmSchema, "Gamma"),
+            ]
         );
     }
 
     private static (
         ConcreteResourceModel alpha,
         ConcreteResourceModel zeta,
+        ConcreteResourceModel gamma,
         AbstractIdentityTableInfo alphaIdentity,
         AbstractIdentityTableInfo zetaIdentity,
+        AbstractIdentityTableInfo gammaIdentity,
         AbstractUnionViewInfo alphaView,
-        AbstractUnionViewInfo zetaView
-    ) BuildAllModels(DbSchemaName schema, DbColumnName documentIdColumn)
+        AbstractUnionViewInfo zetaView,
+        AbstractUnionViewInfo gammaView
+    ) BuildAllModels(DbSchemaName edfiSchema, DbSchemaName tpdmSchema, DbColumnName documentIdColumn)
     {
         var discriminator = new DbColumnName("Discriminator");
         List<AbstractUnionViewOutputColumn> outputColumns =
@@ -2398,13 +2537,42 @@ internal static class PermutationInputOrderFixture
             new(discriminator, new RelationalScalarType(ScalarKind.String, MaxLength: 50), null, null),
         ];
 
+        // Cross-resource FK: AlphaChild references Zeta parent table via ZetaDocumentId
+        var zetaDocIdColumn = new DbColumnName("ZetaDocumentId");
+        var zetaParentTable = new DbTableName(edfiSchema, "Zeta");
+        var alphaChildCrossRefFk = new TableConstraint.ForeignKey(
+            "FK_AlphaChild_Zeta",
+            [zetaDocIdColumn],
+            zetaParentTable,
+            [documentIdColumn],
+            ReferentialAction.NoAction,
+            ReferentialAction.NoAction
+        );
+
         return (
-            BuildConcreteResource(schema, documentIdColumn, 1, "Alpha"),
-            BuildConcreteResource(schema, documentIdColumn, 2, "Zeta"),
-            BuildAbstractIdentityTable(schema, documentIdColumn, 3, "AlphaAbstract"),
-            BuildAbstractIdentityTable(schema, documentIdColumn, 4, "ZetaAbstract"),
-            BuildAbstractUnionView(schema, outputColumns, 3, "AlphaAbstract", 1, "Alpha"),
-            BuildAbstractUnionView(schema, outputColumns, 4, "ZetaAbstract", 2, "Zeta")
+            BuildConcreteResource(
+                edfiSchema,
+                documentIdColumn,
+                1,
+                "Alpha",
+                extraChildFk: alphaChildCrossRefFk
+            ),
+            BuildConcreteResource(edfiSchema, documentIdColumn, 2, "Zeta"),
+            BuildConcreteResource(tpdmSchema, documentIdColumn, 5, "Gamma", projectName: "TPDM"),
+            BuildAbstractIdentityTable(edfiSchema, documentIdColumn, 3, "AlphaAbstract"),
+            BuildAbstractIdentityTable(edfiSchema, documentIdColumn, 4, "ZetaAbstract"),
+            BuildAbstractIdentityTable(tpdmSchema, documentIdColumn, 6, "GammaAbstract", projectName: "TPDM"),
+            BuildAbstractUnionView(edfiSchema, outputColumns, 3, "AlphaAbstract", 1, "Alpha"),
+            BuildAbstractUnionView(edfiSchema, outputColumns, 4, "ZetaAbstract", 2, "Zeta"),
+            BuildAbstractUnionView(
+                tpdmSchema,
+                outputColumns,
+                6,
+                "GammaAbstract",
+                5,
+                "Gamma",
+                projectName: "TPDM"
+            )
         );
     }
 }
