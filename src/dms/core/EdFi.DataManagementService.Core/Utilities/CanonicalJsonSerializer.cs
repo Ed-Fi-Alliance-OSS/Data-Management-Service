@@ -22,7 +22,7 @@ namespace EdFi.DataManagementService.Core.Utilities;
 /// This guarantees byte-for-byte identical output for semantically equivalent JSON,
 /// enabling deterministic hashing.
 /// </summary>
-internal static class CanonicalJsonSerializer
+public static class CanonicalJsonSerializer
 {
     private static readonly JsonWriterOptions WriterOptions = new()
     {

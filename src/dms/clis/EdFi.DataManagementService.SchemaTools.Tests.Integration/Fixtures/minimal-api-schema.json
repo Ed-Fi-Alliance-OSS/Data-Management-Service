@@ -1,0 +1,120 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "TestProject",
+    "projectVersion": "1.0.0",
+    "projectEndpointName": "testproject",
+    "isExtensionProject": false,
+    "description": "Minimal test project for determinism validation",
+    "abstractResources": {},
+    "resourceNameMapping": {
+      "Widget": "widgets",
+      "Gadget": "gadgets"
+    },
+    "caseInsensitiveEndpointNameMapping": {
+      "widgets": "widgets",
+      "gadgets": "gadgets"
+    },
+    "educationOrganizationHierarchy": {},
+    "educationOrganizationTypes": [],
+    "domains": [],
+    "resourceSchemas": {
+      "widgets": {
+        "resourceName": "Widget",
+        "allowIdentityUpdates": false,
+        "isDescriptor": false,
+        "isSchoolYearEnumeration": false,
+        "isSubclass": false,
+        "isResourceExtension": false,
+        "identityJsonPaths": [
+          "$.widgetId"
+        ],
+        "documentPathsMapping": {
+          "WidgetId": {
+            "isPartOfIdentity": true,
+            "isReference": false,
+            "isRequired": true,
+            "path": "$.widgetId",
+            "type": "integer"
+          },
+          "WidgetName": {
+            "isPartOfIdentity": false,
+            "isReference": false,
+            "isRequired": true,
+            "path": "$.widgetName",
+            "type": "string"
+          }
+        },
+        "equalityConstraints": [],
+        "jsonSchemaForInsert": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "widgetId": {
+              "type": "integer",
+              "description": "Widget identifier."
+            },
+            "widgetName": {
+              "type": "string",
+              "maxLength": 75,
+              "description": "The name of the widget."
+            }
+          },
+          "required": [
+            "widgetId",
+            "widgetName"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "gadgets": {
+        "resourceName": "Gadget",
+        "allowIdentityUpdates": false,
+        "isDescriptor": false,
+        "isSchoolYearEnumeration": false,
+        "isSubclass": false,
+        "isResourceExtension": false,
+        "identityJsonPaths": [
+          "$.gadgetCode"
+        ],
+        "documentPathsMapping": {
+          "GadgetCode": {
+            "isPartOfIdentity": true,
+            "isReference": false,
+            "isRequired": true,
+            "path": "$.gadgetCode",
+            "type": "string"
+          },
+          "Description": {
+            "isPartOfIdentity": false,
+            "isReference": false,
+            "isRequired": false,
+            "path": "$.description",
+            "type": "string"
+          }
+        },
+        "equalityConstraints": [],
+        "jsonSchemaForInsert": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "gadgetCode": {
+              "type": "string",
+              "maxLength": 60,
+              "description": "A unique code for the gadget."
+            },
+            "description": {
+              "type": "string",
+              "maxLength": 255,
+              "description": "A description of the gadget."
+            }
+          },
+          "required": [
+            "gadgetCode"
+          ],
+          "additionalProperties": false
+        }
+      }
+    }
+  }
+}

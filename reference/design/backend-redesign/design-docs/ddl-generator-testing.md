@@ -39,7 +39,8 @@ Fixtures are checked in as directories with this structure:
         fixture.json
         expected/
           effective-schema.manifest.json
-          relational-model.manifest.json
+          relational-model.pgsql.manifest.json
+          relational-model.mssql.manifest.json
           pgsql.sql
           mssql.sql
           pack.manifest.json
@@ -51,7 +52,8 @@ Fixtures are checked in as directories with this structure:
         fixture.json
         expected/
           effective-schema.manifest.json
-          relational-model.manifest.json
+          relational-model.pgsql.manifest.json
+          relational-model.mssql.manifest.json
           pgsql.sql
           mssql.sql
           pack.manifest.json
@@ -91,7 +93,7 @@ Every fixture’s `expected/` directory uses consistent filenames. Some outputs 
 Always required:
 
 - `effective-schema.manifest.json`: schema fingerprint + schema components + deterministic `dms.ResourceKey` seed mapping summary (and optionally the full seed list).
-- `relational-model.manifest.json`: derived relational model summary (schemas/tables/columns/constraints/indexes/views/triggers) used to generate DDL and compile plans.
+- `relational-model.{dialect}.manifest.json`: per-dialect derived relational model summary (schemas/tables/columns/constraints/indexes/views/triggers) used to generate DDL and compile plans. The manifest is per-dialect because the derived model is dialect-dependent (identifier shortening, type mapping, and naming rules differ between engines).
 - `{dialect}.sql`: normalized DDL text, where `{dialect}` is `pgsql` or `mssql` (one file per dialect listed in `fixture.json.dialects`).
 
 Optional (recommended for diagnostics and fast diffs):
@@ -123,7 +125,7 @@ Minimum required fields:
   - `resource_key_seed_hash`
   - `schema_components[]`: `project_endpoint_name`, `project_name`, `project_version`, `is_extension_project`, `project_hash`
   - Optional (recommended): `resource_keys[]` list with `resource_key_id`, `project_name`, `resource_name`, `resource_version`
-- `relational-model.manifest.json`
+- `relational-model.{dialect}.manifest.json`
   - `effective_schema_hash`, `dialect`, `relational_mapping_version`
   - `resources[]` ordered by `(project_name, resource_name)` ordinal:
     - physical schema/table names
@@ -141,11 +143,11 @@ Minimum required fields:
   - `resources[]` plan summaries:
     - per plan: `normalized_sql_sha256` (store SQL hashes, not the raw SQL text for large fixtures)
     - binding order metadata required for correctness (parameter order, keyset ordering, etc.)
-  - Must include the same key-unification model surface required by `relational-model.manifest.json` (per-column `storage`, per-table `key_unification_classes`, descriptor-FK de-duplication diagnostics, and per-resource equality-constraint diagnostics).
+  - Must include the same key-unification model surface required by `relational-model.{dialect}.manifest.json` (per-column `storage`, per-table `key_unification_classes`, descriptor-FK de-duplication diagnostics, and per-resource equality-constraint diagnostics).
 - `mappingset.manifest.json`
   - Same semantic shape as `pack.manifest.json` for the runtime mapping-set object graph
   - MUST match pack-derived mapping sets exactly (after normalization)
-  - Must include the same key-unification model surface required by `relational-model.manifest.json` (per-column `storage`, per-table `key_unification_classes`, descriptor-FK de-duplication diagnostics, and per-resource equality-constraint diagnostics).
+  - Must include the same key-unification model surface required by `relational-model.{dialect}.manifest.json` (per-column `storage`, per-table `key_unification_classes`, descriptor-FK de-duplication diagnostics, and per-resource equality-constraint diagnostics).
 - `ddl.manifest.json` (when emitted)
   - `effective_schema_hash`, `relational_mapping_version`
   - `ddl[]` ordered by dialect:

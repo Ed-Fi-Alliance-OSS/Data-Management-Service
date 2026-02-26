@@ -21,4 +21,14 @@ public interface IEffectiveSchemaHashProvider
     /// <param name="nodes">The normalized API schema nodes to hash.</param>
     /// <returns>A hexadecimal string representation of the schema hash.</returns>
     string ComputeHash(ApiSchemaDocumentNodes nodes);
+
+    /// <summary>
+    /// Computes a deterministic hash from pre-extracted project metadata.
+    /// Use this overload when metadata has already been extracted to avoid
+    /// redundant <see cref="ProjectSchemaMetadataExtractor.Extract"/> calls.
+    /// </summary>
+    /// <param name="apiSchemaFormatVersion">The API schema format version from the core schema.</param>
+    /// <param name="sortedProjects">Project metadata entries already sorted by projectEndpointName (ordinal).</param>
+    /// <returns>A hexadecimal string representation of the schema hash.</returns>
+    string ComputeHash(string apiSchemaFormatVersion, IReadOnlyList<ProjectSchemaMetadata> sortedProjects);
 }

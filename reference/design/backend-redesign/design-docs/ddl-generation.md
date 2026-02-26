@@ -65,7 +65,7 @@ Explicitly out of scope for this redesign phase:
   - Indexes explicitly called out in the design docs plus supporting indexes for all foreign keys (no query indexes)
 - Optional deterministic **diagnostic/test artifacts** (non-SQL) used by the verification harness:
   - `effective-schema.manifest.json` (schema fingerprint inputs + schema components + resource-key seed summary)
-  - `relational-model.manifest.json` (derived model inventory used to generate DDL and compile plans)
+  - `relational-model.{dialect}.manifest.json` (per-dialect derived model inventory used to generate DDL and compile plans)
   - `ddl.manifest.json` (per-dialect normalized DDL hashes and statement counts)
   - File naming and minimum required fields are defined in `ddl-generator-testing.md` (“Artifacts and fixtures (normative)”).
 
