@@ -55,8 +55,12 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         // Apply canonical ordering within each phase so output is byte-for-byte stable
         // regardless of the order in which elements appear in the model set.
         // All comparisons use StringComparer.Ordinal (culture-invariant, case-sensitive).
+        // NOTE: These sort keys intentionally duplicate the ordering applied in
+        // RelationalModelSetBuilderContext.BuildResult() as a defense-in-depth measure.
+        // If sort keys diverge between layers, consider centralizing sort-key definitions.
         var schemas = modelSet
             .ProjectSchemasInEndpointOrder.OrderBy(s => s.PhysicalSchema.Value, StringComparer.Ordinal)
+            .ThenBy(s => s.ProjectEndpointName, StringComparer.Ordinal)
             .ToList();
 
         var concreteResources = modelSet
@@ -256,6 +260,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private void EmitTableForeignKeys(SqlWriter writer, DbTableModel table)
     {
+        // OrderBy is redundant with RelationalModelOrdering.CanonicalizeTable() constraint
+        // ordering but kept as defense-in-depth for the emitter's byte-for-byte guarantee.
         foreach (
             var fk in table
                 .Constraints.OfType<TableConstraint.ForeignKey>()
