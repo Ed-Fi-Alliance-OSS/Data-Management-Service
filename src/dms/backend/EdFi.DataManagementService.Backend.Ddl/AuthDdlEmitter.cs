@@ -173,7 +173,11 @@ public sealed class AuthDdlEmitter(ISqlDialect dialect, AuthEdOrgHierarchy hiera
                 isLeaf ? EmitLeafInsertBody : EmitHierarchicalInsertBody
             );
 
-            // Hierarchical Update triggers will be added in task 5.
+            // Update trigger (hierarchical only — leaf entities have no parent FKs to update)
+            if (!isLeaf)
+            {
+                EmitTrigger(writer, entity, "Update", "UPDATE", EmitHierarchicalUpdateBody);
+            }
         }
     }
 
@@ -390,6 +394,382 @@ public sealed class AuthDdlEmitter(ISqlDialect dialect, AuthEdOrgHierarchy hiera
         {
             writer.AppendLine(") AS targets");
             writer.AppendLine($"WHERE sources.{idCol} = targets.{idCol};");
+        }
+    }
+
+    // ── Hierarchical UPDATE trigger body ────────────────────────────────
+
+    /// <summary>
+    /// Emits the UPDATE trigger body for a hierarchical EdOrg (>= 1 parent FK).
+    /// Step 1: DELETE invalidated ancestor tuples (with EXCEPT for remaining ancestors).
+    /// Step 2: INSERT new ancestor tuples (MERGE for MSSQL, ON CONFLICT for PG).
+    /// </summary>
+    private void EmitHierarchicalUpdateBody(SqlWriter writer, AuthEdOrgEntity entity)
+    {
+        EmitUpdateDeleteStep(writer, entity);
+        writer.AppendLine();
+        EmitUpdateInsertStep(writer, entity);
+    }
+
+    /// <summary>
+    /// Emits the DELETE step of the UPDATE trigger: removes invalidated ancestor tuples
+    /// when parent FK values are cleared or changed. Uses EXCEPT to preserve ancestors
+    /// that remain via other parent FK paths.
+    /// </summary>
+    private void EmitUpdateDeleteStep(SqlWriter writer, AuthEdOrgEntity entity)
+    {
+        var authTable = Quote(_authTable);
+        var source = Quote(_sourceCol);
+        var target = Quote(_targetCol);
+        var idCol = Quote(entity.IdentityColumn);
+        bool isPgsql = _dialect.Rules.Dialect == SqlDialect.Pgsql;
+
+        if (isPgsql)
+        {
+            writer.AppendLine($"DELETE FROM {authTable}");
+            writer.AppendLine($"WHERE ({source}, {target}) IN (");
+            using (writer.Indent())
+            {
+                writer.AppendLine($"SELECT sources.{source}, targets.{target}");
+                writer.AppendLine("FROM (");
+                using (writer.Indent())
+                {
+                    EmitUpdateDeleteSources(writer, entity);
+                }
+                writer.AppendLine(") AS sources");
+                writer.AppendLine("CROSS JOIN");
+                writer.AppendLine("(");
+                using (writer.Indent())
+                {
+                    EmitDescendantsSubquery(writer, entity, "inserted", "new", "NEW");
+                }
+                writer.AppendLine(") AS targets");
+            }
+            writer.AppendLine(");");
+        }
+        else
+        {
+            writer.AppendLine("DELETE tbd");
+            writer.AppendLine($"FROM {authTable} AS tbd");
+            using (writer.Indent())
+            {
+                writer.AppendLine("INNER JOIN (");
+                using (writer.Indent())
+                {
+                    writer.AppendLine($"SELECT d1.{source}, d2.{target}");
+                    writer.AppendLine("FROM (");
+                    using (writer.Indent())
+                    {
+                        EmitUpdateDeleteSources(writer, entity);
+                    }
+                    writer.AppendLine(") AS d1");
+                    writer.AppendLine("CROSS JOIN");
+                    writer.AppendLine("(");
+                    using (writer.Indent())
+                    {
+                        EmitDescendantsSubquery(writer, entity, "inserted", "new", "NEW");
+                    }
+                    writer.AppendLine(") AS d2");
+                    writer.AppendLine($"WHERE d1.{idCol} = d2.{idCol}");
+                }
+                writer.AppendLine(") AS cj");
+                using (writer.Indent())
+                {
+                    writer.AppendLine($"ON tbd.{source} = cj.{source}");
+                    writer.AppendLine($"AND tbd.{target} = cj.{target};");
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Emits the combined sources block for the DELETE step: UNION of "old ancestors
+    /// to remove" for each FK, followed by EXCEPT of "ancestors to keep" for each FK.
+    /// </summary>
+    private void EmitUpdateDeleteSources(SqlWriter writer, AuthEdOrgEntity entity)
+    {
+        for (int i = 0; i < entity.ParentEdOrgFks.Count; i++)
+        {
+            if (i > 0)
+            {
+                writer.AppendLine();
+                writer.AppendLine("UNION");
+                writer.AppendLine();
+            }
+            EmitUpdateOldAncestorsForFk(writer, entity, entity.ParentEdOrgFks[i]);
+        }
+
+        foreach (var fk in entity.ParentEdOrgFks)
+        {
+            writer.AppendLine();
+            writer.AppendLine("EXCEPT");
+            writer.AppendLine();
+            EmitUpdateKeepAncestorsForFk(writer, entity, fk);
+        }
+    }
+
+    /// <summary>
+    /// Emits one parent FK's "old ancestors to remove" SELECT for the DELETE step.
+    /// Resolves the OLD parent FK via DocumentId join, with change detection guards.
+    /// </summary>
+    private void EmitUpdateOldAncestorsForFk(SqlWriter writer, AuthEdOrgEntity entity, AuthParentEdOrgFk fk)
+    {
+        var authTable = Quote(_authTable);
+        var source = Quote(_sourceCol);
+        var target = Quote(_targetCol);
+        var idCol = Quote(entity.IdentityColumn);
+        var fkCol = Quote(fk.FkColumn);
+        var parentTable = Quote(fk.ParentTable);
+        var parentIdCol = Quote(fk.ParentIdentityColumn);
+        var docIdCol = Quote(_documentIdCol);
+
+        if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
+        {
+            writer.AppendLine($"SELECT tuples.{source}");
+            writer.AppendLine($"FROM {parentTable} AS parent");
+            using (writer.Indent())
+            {
+                writer.AppendLine($"INNER JOIN {authTable} AS tuples");
+                using (writer.Indent())
+                {
+                    writer.AppendLine($"ON parent.{parentIdCol} = tuples.{target}");
+                }
+            }
+            writer.AppendLine($"WHERE parent.{docIdCol} = OLD.{fkCol}");
+            using (writer.Indent())
+            {
+                writer.AppendLine($"AND OLD.{fkCol} IS NOT NULL");
+                writer.AppendLine($"AND (NEW.{fkCol} IS NULL OR OLD.{fkCol} <> NEW.{fkCol})");
+            }
+        }
+        else
+        {
+            writer.AppendLine($"SELECT tuples.{source}, new.{idCol}");
+            writer.AppendLine("FROM inserted new");
+            using (writer.Indent())
+            {
+                writer.AppendLine("INNER JOIN deleted old");
+                using (writer.Indent())
+                {
+                    writer.AppendLine($"ON old.{idCol} = new.{idCol}");
+                }
+                writer.AppendLine($"INNER JOIN {parentTable} AS parent");
+                using (writer.Indent())
+                {
+                    writer.AppendLine($"ON parent.{docIdCol} = old.{fkCol}");
+                }
+                writer.AppendLine($"INNER JOIN {authTable} AS tuples");
+                using (writer.Indent())
+                {
+                    writer.AppendLine($"ON parent.{parentIdCol} = tuples.{target}");
+                }
+            }
+            writer.AppendLine($"WHERE old.{fkCol} IS NOT NULL");
+            using (writer.Indent())
+            {
+                writer.AppendLine($"AND (new.{fkCol} IS NULL OR old.{fkCol} <> new.{fkCol})");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Emits one parent FK's "ancestors to keep" SELECT for the DELETE step EXCEPT clause.
+    /// Resolves the NEW parent FK via DocumentId join, no change detection needed.
+    /// </summary>
+    private void EmitUpdateKeepAncestorsForFk(SqlWriter writer, AuthEdOrgEntity entity, AuthParentEdOrgFk fk)
+    {
+        var authTable = Quote(_authTable);
+        var source = Quote(_sourceCol);
+        var target = Quote(_targetCol);
+        var idCol = Quote(entity.IdentityColumn);
+        var fkCol = Quote(fk.FkColumn);
+        var parentTable = Quote(fk.ParentTable);
+        var parentIdCol = Quote(fk.ParentIdentityColumn);
+        var docIdCol = Quote(_documentIdCol);
+
+        if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
+        {
+            writer.AppendLine($"SELECT tuples.{source}");
+            writer.AppendLine($"FROM {parentTable} AS parent");
+            using (writer.Indent())
+            {
+                writer.AppendLine($"INNER JOIN {authTable} AS tuples");
+                using (writer.Indent())
+                {
+                    writer.AppendLine($"ON parent.{parentIdCol} = tuples.{target}");
+                }
+            }
+            writer.AppendLine($"WHERE parent.{docIdCol} = NEW.{fkCol}");
+        }
+        else
+        {
+            writer.AppendLine($"SELECT tuples.{source}, new.{idCol}");
+            writer.AppendLine("FROM inserted new");
+            using (writer.Indent())
+            {
+                writer.AppendLine($"INNER JOIN {parentTable} AS parent");
+                using (writer.Indent())
+                {
+                    writer.AppendLine($"ON parent.{docIdCol} = new.{fkCol}");
+                }
+                writer.AppendLine($"INNER JOIN {authTable} AS tuples");
+                using (writer.Indent())
+                {
+                    writer.AppendLine($"ON parent.{parentIdCol} = tuples.{target}");
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Emits the INSERT step of the UPDATE trigger: adds new ancestor tuples
+    /// when parent FK values are initialized or changed. Uses MERGE for MSSQL
+    /// and INSERT ON CONFLICT for PgSQL to handle idempotent upserts.
+    /// </summary>
+    private void EmitUpdateInsertStep(SqlWriter writer, AuthEdOrgEntity entity)
+    {
+        var authTable = Quote(_authTable);
+        var source = Quote(_sourceCol);
+        var target = Quote(_targetCol);
+        var idCol = Quote(entity.IdentityColumn);
+        bool isPgsql = _dialect.Rules.Dialect == SqlDialect.Pgsql;
+
+        if (isPgsql)
+        {
+            writer.AppendLine($"INSERT INTO {authTable} ({source}, {target})");
+            writer.AppendLine($"SELECT sources.{source}, targets.{target}");
+            writer.AppendLine("FROM (");
+            using (writer.Indent())
+            {
+                EmitUpdateInsertSources(writer, entity);
+            }
+            writer.AppendLine(") AS sources");
+            writer.AppendLine("CROSS JOIN");
+            writer.AppendLine("(");
+            using (writer.Indent())
+            {
+                EmitDescendantsSubquery(writer, entity, "inserted", "new", "NEW");
+            }
+            writer.AppendLine(") AS targets");
+            writer.AppendLine($"ON CONFLICT ({source}, {target}) DO NOTHING;");
+        }
+        else
+        {
+            writer.AppendLine($"MERGE INTO {authTable} target");
+            writer.AppendLine("USING (");
+            using (writer.Indent())
+            {
+                writer.AppendLine($"SELECT sources.{source}, targets.{target}");
+                writer.AppendLine("FROM (");
+                using (writer.Indent())
+                {
+                    EmitUpdateInsertSources(writer, entity);
+                }
+                writer.AppendLine(") AS sources");
+                writer.AppendLine("CROSS JOIN");
+                writer.AppendLine("(");
+                using (writer.Indent())
+                {
+                    EmitDescendantsSubquery(writer, entity, "inserted", "new", "NEW");
+                }
+                writer.AppendLine(") AS targets");
+                writer.AppendLine($"WHERE sources.{idCol} = targets.{idCol}");
+            }
+            writer.AppendLine(") AS source");
+            using (writer.Indent())
+            {
+                writer.AppendLine($"ON target.{source} = source.{source}");
+                writer.AppendLine($"AND target.{target} = source.{target}");
+            }
+            writer.AppendLine("WHEN NOT MATCHED BY TARGET THEN");
+            using (writer.Indent())
+            {
+                writer.AppendLine($"INSERT ({source}, {target})");
+                writer.AppendLine($"VALUES (source.{source}, source.{target});");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Emits the combined sources block for the INSERT step: UNION of "new ancestors
+    /// to add" for each FK, with change detection guards.
+    /// </summary>
+    private void EmitUpdateInsertSources(SqlWriter writer, AuthEdOrgEntity entity)
+    {
+        for (int i = 0; i < entity.ParentEdOrgFks.Count; i++)
+        {
+            if (i > 0)
+            {
+                writer.AppendLine();
+                writer.AppendLine("UNION");
+                writer.AppendLine();
+            }
+            EmitUpdateNewAncestorsForFk(writer, entity, entity.ParentEdOrgFks[i]);
+        }
+    }
+
+    /// <summary>
+    /// Emits one parent FK's "new ancestors to add" SELECT for the INSERT step.
+    /// Resolves the NEW parent FK via DocumentId join, with change detection guards.
+    /// </summary>
+    private void EmitUpdateNewAncestorsForFk(SqlWriter writer, AuthEdOrgEntity entity, AuthParentEdOrgFk fk)
+    {
+        var authTable = Quote(_authTable);
+        var source = Quote(_sourceCol);
+        var target = Quote(_targetCol);
+        var idCol = Quote(entity.IdentityColumn);
+        var fkCol = Quote(fk.FkColumn);
+        var parentTable = Quote(fk.ParentTable);
+        var parentIdCol = Quote(fk.ParentIdentityColumn);
+        var docIdCol = Quote(_documentIdCol);
+
+        if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
+        {
+            writer.AppendLine($"SELECT tuples.{source}");
+            writer.AppendLine($"FROM {parentTable} AS parent");
+            using (writer.Indent())
+            {
+                writer.AppendLine($"INNER JOIN {authTable} AS tuples");
+                using (writer.Indent())
+                {
+                    writer.AppendLine($"ON parent.{parentIdCol} = tuples.{target}");
+                }
+            }
+            writer.AppendLine($"WHERE parent.{docIdCol} = NEW.{fkCol}");
+            using (writer.Indent())
+            {
+                writer.AppendLine(
+                    $"AND ((OLD.{fkCol} IS NULL AND NEW.{fkCol} IS NOT NULL) OR OLD.{fkCol} <> NEW.{fkCol})"
+                );
+            }
+        }
+        else
+        {
+            writer.AppendLine($"SELECT tuples.{source}, new.{idCol}");
+            writer.AppendLine("FROM inserted new");
+            using (writer.Indent())
+            {
+                writer.AppendLine("INNER JOIN deleted old");
+                using (writer.Indent())
+                {
+                    writer.AppendLine($"ON new.{idCol} = old.{idCol}");
+                }
+                writer.AppendLine($"INNER JOIN {parentTable} AS parent");
+                using (writer.Indent())
+                {
+                    writer.AppendLine($"ON parent.{docIdCol} = new.{fkCol}");
+                }
+                writer.AppendLine($"INNER JOIN {authTable} AS tuples");
+                using (writer.Indent())
+                {
+                    writer.AppendLine($"ON parent.{parentIdCol} = tuples.{target}");
+                }
+            }
+            writer.AppendLine($"WHERE (old.{fkCol} IS NULL AND new.{fkCol} IS NOT NULL)");
+            using (writer.Indent())
+            {
+                writer.AppendLine($"OR old.{fkCol} <> new.{fkCol}");
+            }
         }
     }
 
