@@ -77,7 +77,13 @@ public static class AuthEdOrgHierarchyCompiler
         var entities = concreteMemberNames
             .Select(memberName =>
             {
-                var concrete = concreteResourcesByName[memberName];
+                if (!concreteResourcesByName.TryGetValue(memberName, out var concrete))
+                {
+                    throw new InvalidOperationException(
+                        $"Union view for '{EducationOrganizationResourceName}' references concrete member "
+                            + $"'{memberName.ResourceName}' which was not found in ConcreteResourcesInNameOrder."
+                    );
+                }
                 var rootTable = concrete.RelationalModel.Root;
 
                 var parentFks = rootTable
@@ -147,6 +153,14 @@ public static class AuthEdOrgHierarchyCompiler
             return abstractIdentityTable.TableModel.Table;
         }
 
-        return concreteResourcesByName[targetResource].RelationalModel.Root.Table;
+        if (!concreteResourcesByName.TryGetValue(targetResource, out var concreteResource))
+        {
+            throw new InvalidOperationException(
+                $"Parent FK targets concrete EdOrg '{targetResource.ResourceName}' "
+                    + "which was not found in ConcreteResourcesInNameOrder."
+            );
+        }
+
+        return concreteResource.RelationalModel.Root.Table;
     }
 }
