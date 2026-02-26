@@ -49,17 +49,24 @@ public static class AuthEdOrgHierarchyCompiler
 
         // Step 3: Find the abstract identity table for parent FK resolution
         // on abstract references (e.g., OrganizationDepartment.ParentEducationOrganization).
-        var abstractIdentityTable = modelSet.AbstractIdentityTablesInNameOrder.First(t =>
-            t.AbstractResourceKey.Resource == abstractEdOrgResource
-        );
+        var abstractIdentityTable =
+            modelSet.AbstractIdentityTablesInNameOrder.FirstOrDefault(t =>
+                t.AbstractResourceKey.Resource == abstractEdOrgResource
+            )
+            ?? throw new InvalidOperationException(
+                $"No abstract identity table found for '{abstractEdOrgResource.ResourceName}'."
+            );
 
         // Step 4: Determine the identity column from the abstract identity table.
         // This is the scalar column that is NOT DocumentId and NOT Discriminator.
-        var identityColumn = abstractIdentityTable
-            .TableModel.Columns.First(c =>
+        var identityColumn = (
+            abstractIdentityTable.TableModel.Columns.FirstOrDefault(c =>
                 c.Kind == ColumnKind.Scalar && c.ColumnName.Value != "Discriminator"
             )
-            .ColumnName;
+            ?? throw new InvalidOperationException(
+                $"No scalar identity column found on abstract identity table for '{abstractEdOrgResource.ResourceName}'."
+            )
+        ).ColumnName;
 
         // Step 5: Build a lookup of concrete resource models by qualified name.
         var concreteResourcesByName = modelSet
