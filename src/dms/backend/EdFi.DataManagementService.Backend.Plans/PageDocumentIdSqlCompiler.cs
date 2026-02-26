@@ -20,7 +20,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
 {
     private const string DocumentIdColumnName = "DocumentId";
     private const string MissingPresenceColumnSortValue = "";
-    private static readonly string RootAlias = PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Root);
+    private static readonly string _rootAlias = PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Root);
 
     private readonly ISqlDialect _sqlDialect = SqlDialectFactory.Create(dialect);
     private readonly IPlanSqlDialect _planSqlDialect = PlanSqlDialectFactory.Create(dialect);
@@ -230,16 +230,16 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         var writer = new SqlWriter(_sqlDialect);
 
         writer
-            .Append($"SELECT {RootAlias}.")
+            .Append($"SELECT {_rootAlias}.")
             .AppendQuoted(DocumentIdColumnName)
             .AppendLine()
             .Append("FROM ")
             .AppendRelation(new SqlRelationRef.PhysicalTable(spec.RootTable))
-            .AppendLine($" {RootAlias}");
+            .AppendLine($" {_rootAlias}");
 
         AppendWhereClause(writer, predicates);
 
-        writer.Append($"ORDER BY {RootAlias}.").AppendQuoted(DocumentIdColumnName).AppendLine(" ASC");
+        writer.Append($"ORDER BY {_rootAlias}.").AppendQuoted(DocumentIdColumnName).AppendLine(" ASC");
 
         _planSqlDialect.AppendPagingClause(writer, spec.OffsetParameterName, spec.LimitParameterName);
         writer.AppendLine(";");
@@ -258,7 +258,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             .AppendLine("SELECT COUNT(1)")
             .Append("FROM ")
             .AppendRelation(new SqlRelationRef.PhysicalTable(rootTable))
-            .AppendLine($" {RootAlias}");
+            .AppendLine($" {_rootAlias}");
 
         AppendWhereClause(writer, predicates);
         writer.AppendLine(";");
@@ -301,15 +301,8 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         string parameterName
     )
     {
-        if (@operator is QueryComparisonOperator.In)
-        {
-            throw new NotSupportedException(
-                $"Operator '{nameof(QueryComparisonOperator.In)}' is not supported by {nameof(PageDocumentIdSqlCompiler)}."
-            );
-        }
-
         writer
-            .Append($"{RootAlias}.")
+            .Append($"{_rootAlias}.")
             .AppendQuoted(column.Value)
             .Append(" ")
             .Append(ToSqlOperator(@operator))
@@ -322,7 +315,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     /// </summary>
     private static void AppendIsNotNullSql(SqlWriter writer, DbColumnName column)
     {
-        writer.Append($"{RootAlias}.").AppendQuoted(column.Value).Append(" IS NOT NULL");
+        writer.Append($"{_rootAlias}.").AppendQuoted(column.Value).Append(" IS NOT NULL");
     }
 
     /// <summary>
@@ -339,6 +332,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             QueryComparisonOperator.GreaterThan => ">",
             QueryComparisonOperator.GreaterThanOrEqual => ">=",
             QueryComparisonOperator.Like => "LIKE",
+
             // Defer implementation until the real compilation stories
             QueryComparisonOperator.In => throw new NotSupportedException(
                 $"Operator '{nameof(QueryComparisonOperator.In)}' is not yet supported by {nameof(ToSqlOperator)}."
