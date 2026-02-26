@@ -47,7 +47,7 @@ internal class UpdateByIdHandler(
             "update",
             requestInfo.FrontendRequest.TraceId,
             r => r is UpdateFailureWriteConflict,
-            async _ =>
+            async ct =>
                 await documentStoreRepository.UpdateDocumentById(
                     new UpdateRequest(
                         DocumentUuid: requestInfo.PathComponents.DocumentUuid,

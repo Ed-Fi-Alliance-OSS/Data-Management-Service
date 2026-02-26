@@ -219,13 +219,19 @@ public static class DmsCoreServiceExtensions
                 }),
                 OnRetry = args =>
                 {
+                    args.Context.Properties.TryGetValue(Utility.TraceIdKey, out var traceId);
+                    args.Context.Properties.TryGetValue(Utility.OperationNameKey, out var operationName);
+
                     retryLogger.LogWarning(
                         "Deadlock retry attempt {DeadlockRetryAttempt}/{DeadlockRetryMaxAttempts} "
-                            + "after {DelayMs}ms. OperationType: {OperationType}",
+                            + "after {DelayMs}ms. OperationType: {OperationType}, "
+                            + "OperationName: {OperationName} - {TraceId}",
                         args.AttemptNumber,
                         retrySettings.MaxRetryAttempts,
                         args.RetryDelay.TotalMilliseconds,
-                        args.Outcome.Result?.GetType().Name
+                        args.Outcome.Result?.GetType().Name,
+                        operationName ?? "unknown",
+                        traceId ?? "unknown"
                     );
 
                     return ValueTask.CompletedTask;

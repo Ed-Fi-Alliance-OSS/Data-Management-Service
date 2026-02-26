@@ -40,7 +40,7 @@ internal class DeleteByIdHandler(
             "delete",
             requestInfo.FrontendRequest.TraceId,
             r => r is DeleteFailureWriteConflict,
-            async _ =>
+            async ct =>
                 await documentStoreRepository.DeleteDocumentById(
                     new DeleteRequest(
                         DocumentUuid: requestInfo.PathComponents.DocumentUuid,

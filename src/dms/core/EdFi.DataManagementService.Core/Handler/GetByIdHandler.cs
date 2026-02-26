@@ -40,7 +40,7 @@ internal class GetByIdHandler(
             "get",
             requestInfo.FrontendRequest.TraceId,
             r => r is GetFailureRetryable,
-            async _ =>
+            async ct =>
                 await documentStoreRepository.GetDocumentById(
                     new GetRequest(
                         DocumentUuid: requestInfo.PathComponents.DocumentUuid,
@@ -64,7 +64,7 @@ internal class GetByIdHandler(
         _logger.LogDebug(
             "Document store GetDocumentById returned {GetResult}- {TraceId}",
             getResult.GetType().FullName,
-            requestInfo.FrontendRequest.TraceId
+            requestInfo.FrontendRequest.TraceId.Value
         );
 
         requestInfo.FrontendResponse = getResult switch

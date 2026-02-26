@@ -46,7 +46,7 @@ internal class UpsertHandler(
             "upsert",
             requestInfo.FrontendRequest.TraceId,
             r => r is UpsertFailureWriteConflict,
-            async _ =>
+            async ct =>
             {
                 // A document uuid that will be assigned if this is a new document
                 DocumentUuid candidateDocumentUuid = new(FastGuid.NewPostgreSqlGuid());

@@ -28,11 +28,23 @@ public class PostgresqlDocumentStoreRepository(
 {
     private readonly IsolationLevel _isolationLevel = _databaseOptions.Value.IsolationLevel;
 
-    public async Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
+    /// <summary>
+    /// Executes an operation within a transaction, handling commit/rollback,
+    /// commit-time serialization/deadlock detection, timing, and error logging.
+    /// </summary>
+    private async Task<TResult> ExecuteTransactionalAsync<TResult>(
+        string operationName,
+        string traceId,
+        Func<NpgsqlConnection, NpgsqlTransaction, Task<TResult>> operation,
+        Func<TResult, bool> shouldCommit,
+        TResult writeConflictResult,
+        TResult unknownFailureResult
+    )
     {
         _logger.LogDebug(
-            "Entering PostgresqlDocumentStoreRepository.UpsertDocument - {TraceId}",
-            upsertRequest.TraceId.Value
+            "Entering PostgresqlDocumentStoreRepository.{OperationName} - {TraceId}",
+            operationName,
+            traceId
         );
 
         var sw = Stopwatch.StartNew();
@@ -41,25 +53,40 @@ public class PostgresqlDocumentStoreRepository(
             await using var connection = await _dataSourceProvider.DataSource.OpenConnectionAsync();
             await using var transaction = await connection.BeginTransactionAsync(_isolationLevel);
 
-            UpsertResult result = await _upsertDocument.Upsert(upsertRequest, connection, transaction);
+            TResult result = await operation(connection, transaction);
 
-            switch (result)
+            if (shouldCommit(result))
             {
-                case UpsertResult.InsertSuccess:
-                case UpsertResult.UpdateSuccess:
+                try
+                {
                     await transaction.CommitAsync();
-                    break;
-                default:
-                    await transaction.RollbackAsync();
-                    break;
+                }
+                catch (PostgresException pe)
+                    when (pe.SqlState == PostgresErrorCodes.SerializationFailure
+                        || pe.SqlState == PostgresErrorCodes.DeadlockDetected
+                    )
+                {
+                    _logger.LogDebug(
+                        pe,
+                        "Transaction conflict on commit for {OperationName} - {TraceId}",
+                        operationName,
+                        traceId
+                    );
+                    return writeConflictResult;
+                }
+            }
+            else
+            {
+                await transaction.RollbackAsync();
             }
 
             sw.Stop();
-            _logger.LogDebug(
-                "UpsertDocument completed in {TransactionDurationMs}ms with result {ResultType} - {TraceId}",
+            _logger.LogInformation(
+                "{OperationName} completed in {TransactionDurationMs}ms with result {ResultType} - {TraceId}",
+                operationName,
                 sw.ElapsedMilliseconds,
-                result.GetType().Name,
-                upsertRequest.TraceId.Value
+                result!.GetType().Name,
+                traceId
             );
 
             return result;
@@ -69,12 +96,26 @@ public class PostgresqlDocumentStoreRepository(
             sw.Stop();
             _logger.LogCritical(
                 ex,
-                "Uncaught UpsertDocument failure after {TransactionDurationMs}ms - {TraceId}",
+                "Uncaught {OperationName} failure after {TransactionDurationMs}ms - {TraceId}",
+                operationName,
                 sw.ElapsedMilliseconds,
-                upsertRequest.TraceId.Value
+                traceId
             );
-            return new UpsertResult.UnknownFailure("Unknown Failure");
+            return unknownFailureResult;
         }
+    }
+
+    public async Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
+    {
+        return await ExecuteTransactionalAsync(
+            "UpsertDocument",
+            upsertRequest.TraceId.Value,
+            async (connection, transaction) =>
+                await _upsertDocument.Upsert(upsertRequest, connection, transaction),
+            result => result is UpsertResult.InsertSuccess or UpsertResult.UpdateSuccess,
+            new UpsertResult.UpsertFailureWriteConflict(),
+            new UpsertResult.UnknownFailure("Unknown Failure")
+        );
     }
 
     public async Task<GetResult> GetDocumentById(IGetRequest getRequest)
@@ -92,7 +133,7 @@ public class PostgresqlDocumentStoreRepository(
             GetResult result = await _getDocumentById.GetById(getRequest, connection, null);
 
             sw.Stop();
-            _logger.LogDebug(
+            _logger.LogInformation(
                 "GetDocumentById completed in {TransactionDurationMs}ms with result {ResultType} - {TraceId}",
                 sw.ElapsedMilliseconds,
                 result.GetType().Name,
@@ -116,105 +157,28 @@ public class PostgresqlDocumentStoreRepository(
 
     public async Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
     {
-        _logger.LogDebug(
-            "Entering PostgresqlDocumentStoreRepository.UpdateDocumentById - {TraceId}",
-            updateRequest.TraceId.Value
+        return await ExecuteTransactionalAsync(
+            "UpdateDocumentById",
+            updateRequest.TraceId.Value,
+            async (connection, transaction) =>
+                await _updateDocumentById.UpdateById(updateRequest, connection, transaction),
+            result => result is UpdateResult.UpdateSuccess,
+            new UpdateResult.UpdateFailureWriteConflict(),
+            new UpdateResult.UnknownFailure("Unknown Failure")
         );
-
-        var sw = Stopwatch.StartNew();
-        try
-        {
-            await using var connection = await _dataSourceProvider.DataSource.OpenConnectionAsync();
-            await using var transaction = await connection.BeginTransactionAsync(_isolationLevel);
-
-            UpdateResult result = await _updateDocumentById.UpdateById(
-                updateRequest,
-                connection,
-                transaction
-            );
-
-            switch (result)
-            {
-                case UpdateResult.UpdateSuccess:
-                    await transaction.CommitAsync();
-                    break;
-                default:
-                    await transaction.RollbackAsync();
-                    break;
-            }
-
-            sw.Stop();
-            _logger.LogDebug(
-                "UpdateDocumentById completed in {TransactionDurationMs}ms with result {ResultType} - {TraceId}",
-                sw.ElapsedMilliseconds,
-                result.GetType().Name,
-                updateRequest.TraceId.Value
-            );
-
-            return result;
-        }
-        catch (Exception ex)
-        {
-            sw.Stop();
-            _logger.LogCritical(
-                ex,
-                "Uncaught UpdateDocumentById failure after {TransactionDurationMs}ms - {TraceId}",
-                sw.ElapsedMilliseconds,
-                updateRequest.TraceId.Value
-            );
-            return new UpdateResult.UnknownFailure("Unknown Failure");
-        }
     }
 
     public async Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest)
     {
-        _logger.LogDebug(
-            "Entering PostgresqlDocumentStoreRepository.DeleteDocumentById - {TraceId}",
-            deleteRequest.TraceId.Value
+        return await ExecuteTransactionalAsync(
+            "DeleteDocumentById",
+            deleteRequest.TraceId.Value,
+            async (connection, transaction) =>
+                await _deleteDocumentById.DeleteById(deleteRequest, connection, transaction),
+            result => result is DeleteResult.DeleteSuccess,
+            new DeleteResult.DeleteFailureWriteConflict(),
+            new DeleteResult.UnknownFailure("Unknown Failure")
         );
-
-        var sw = Stopwatch.StartNew();
-        try
-        {
-            await using var connection = await _dataSourceProvider.DataSource.OpenConnectionAsync();
-            await using var transaction = await connection.BeginTransactionAsync(_isolationLevel);
-            DeleteResult result = await _deleteDocumentById.DeleteById(
-                deleteRequest,
-                connection,
-                transaction
-            );
-
-            switch (result)
-            {
-                case DeleteResult.DeleteSuccess:
-                    await transaction.CommitAsync();
-                    break;
-                default:
-                    await transaction.RollbackAsync();
-                    break;
-            }
-
-            sw.Stop();
-            _logger.LogDebug(
-                "DeleteDocumentById completed in {TransactionDurationMs}ms with result {ResultType} - {TraceId}",
-                sw.ElapsedMilliseconds,
-                result.GetType().Name,
-                deleteRequest.TraceId.Value
-            );
-
-            return result;
-        }
-        catch (Exception ex)
-        {
-            sw.Stop();
-            _logger.LogCritical(
-                ex,
-                "Uncaught DeleteDocumentById failure after {TransactionDurationMs}ms - {TraceId}",
-                sw.ElapsedMilliseconds,
-                deleteRequest.TraceId.Value
-            );
-            return new DeleteResult.UnknownFailure("Unknown Failure");
-        }
     }
 
     public async Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
@@ -230,7 +194,7 @@ public class PostgresqlDocumentStoreRepository(
             QueryResult result = await _queryDocument.QueryDocuments(queryRequest);
 
             sw.Stop();
-            _logger.LogDebug(
+            _logger.LogInformation(
                 "QueryDocuments completed in {TransactionDurationMs}ms with result {ResultType} - {TraceId}",
                 sw.ElapsedMilliseconds,
                 result.GetType().Name,

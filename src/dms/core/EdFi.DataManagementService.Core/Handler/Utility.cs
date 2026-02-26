@@ -16,6 +16,16 @@ namespace EdFi.DataManagementService.Core.Handler;
 public static class Utility
 {
     /// <summary>
+    /// ResilienceContext property key for TraceId, used to correlate per-retry log lines.
+    /// </summary>
+    internal static readonly ResiliencePropertyKey<string> TraceIdKey = new("TraceId");
+
+    /// <summary>
+    /// ResilienceContext property key for the operation name (e.g. "upsert", "delete").
+    /// </summary>
+    internal static readonly ResiliencePropertyKey<string> OperationNameKey = new("OperationName");
+
+    /// <summary>
     /// Formats a error result string from the given error information and traceId
     /// </summary>
     public static JsonNode? ToJsonError(string errorInfo, TraceId traceId)
@@ -39,22 +49,40 @@ public static class Utility
         where TResult : class
     {
         int attemptCount = 0;
+        var context = ResilienceContextPool.Shared.Get();
+        context.Properties.Set(TraceIdKey, traceId.Value);
+        context.Properties.Set(OperationNameKey, operationName);
+
         try
         {
-            var result = await resiliencePipeline.ExecuteAsync(async ct =>
-            {
-                attemptCount++;
-                return await operation(ct);
-            });
+            var result = await resiliencePipeline.ExecuteAsync(
+                async ctx =>
+                {
+                    attemptCount++;
+                    return await operation(ctx.CancellationToken);
+                },
+                context
+            );
 
             if (isRetryExhausted(result))
             {
-                logger.LogError(
-                    "All deadlock retry attempts exhausted for {OperationName} after {AttemptCount} attempts - {TraceId}",
-                    operationName,
-                    attemptCount,
-                    traceId.Value
-                );
+                if (attemptCount > 1)
+                {
+                    logger.LogError(
+                        "All deadlock retry attempts exhausted for {OperationName} after {AttemptCount} attempts - {TraceId}",
+                        operationName,
+                        attemptCount,
+                        traceId.Value
+                    );
+                }
+                else
+                {
+                    logger.LogWarning(
+                        "Operation {OperationName} returned retryable result but retries are disabled - {TraceId}",
+                        operationName,
+                        traceId.Value
+                    );
+                }
             }
             else if (attemptCount > 1)
             {
@@ -83,6 +111,10 @@ public static class Utility
                 Headers: []
             );
             return null;
+        }
+        finally
+        {
+            ResilienceContextPool.Shared.Return(context);
         }
     }
 }
