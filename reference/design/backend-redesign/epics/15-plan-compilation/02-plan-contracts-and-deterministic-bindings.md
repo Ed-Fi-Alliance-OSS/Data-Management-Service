@@ -34,11 +34,11 @@ Design references:
 
 ### Contract coverage (executor-facing)
 
-- Plan contract types exist for:
+ - Plan contract types exist for:
   - write plans:
     - `ResourceWritePlan` with per-table `TableWritePlan`,
     - `TableWritePlan.InsertSql` / `UpdateSql` (root only) / `DeleteByParentSql` (non-root, replace semantics),
-    - `TableWritePlan.MaxRowsPerBatch` for deterministic, dialect-aware bulk insert chunking,
+    - `TableWritePlan.BulkInsertBatching.MaxRowsPerBatch` for deterministic, dialect-aware bulk insert chunking,
     - `ColumnBindings: IReadOnlyList<WriteColumnBinding>` in authoritative parameter/value order,
     - `WriteColumnBinding.ParameterName` so runtime execution never depends on parsing SQL text to infer bindings,
     - `WriteValueSource` coverage for: `DocumentId`, `ParentKeyPart(i)`, `Ordinal`, `Scalar(...)`, `DocumentReference(...)`, `DescriptorReference(...)`, and `Precomputed`,
@@ -81,5 +81,5 @@ Design references:
 2. Define and implement deterministic naming utilities:
    - parameter naming conventions (binding-derived base names + stable de-duplication),
    - deterministic alias naming helper(s) used by plan compilers.
-3. Define a write-plan batching contract (e.g., per-table `MaxRowsPerBatch`) derived from dialect rules/limits and stored on the plan so executors can batch safely.
+3. Define a write-plan batching contract (e.g., per-table `BulkInsertBatching.MaxRowsPerBatch`) derived from dialect rules/limits and stored on the plan so executors can batch safely.
 4. Add unit tests that validate determinism under input-order permutations and duplicate-name scenarios.
