@@ -168,12 +168,16 @@ public class Given_ExternalPlanContracts
         var readPlan = new ExternalPlans.ResourceReadPlan(
             resourceModel,
             ExternalPlans.KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
-            [new ExternalPlans.TableReadPlan(tableModel, "SELECT BY KEYSET SQL")]
+            [new ExternalPlans.TableReadPlan(tableModel, "SELECT BY KEYSET SQL")],
+            [],
+            []
         );
 
         readPlan.KeysetTable.Table.Name.Should().Be("page");
         readPlan.KeysetTable.DocumentIdColumnName.Should().Be(new DbColumnName("DocumentId"));
         readPlan.TablePlansInDependencyOrder.Should().ContainSingle();
+        readPlan.ReferenceIdentityProjectionPlansInDependencyOrder.Should().BeEmpty();
+        readPlan.DescriptorProjectionPlansInOrder.Should().BeEmpty();
     }
 
     [Test]
@@ -212,6 +216,150 @@ public class Given_ExternalPlanContracts
             .ParametersInOrder.Select(parameter => parameter.ParameterName)
             .Should()
             .Equal("schoolYear", "offset", "limit");
+    }
+
+    [Test]
+    public void It_should_preserve_projection_contract_ordering_semantics()
+    {
+        var schoolReferencePath = new JsonPathExpression(
+            "$.schoolReference",
+            [new JsonPathSegment.Property("schoolReference")]
+        );
+        var schoolIdPath = new JsonPathExpression(
+            "$.schoolReference.schoolId",
+            [new JsonPathSegment.Property("schoolReference"), new JsonPathSegment.Property("schoolId")]
+        );
+        var schoolYearPath = new JsonPathExpression(
+            "$.schoolReference.schoolYear",
+            [new JsonPathSegment.Property("schoolReference"), new JsonPathSegment.Property("schoolYear")]
+        );
+        var descriptorPath = new JsonPathExpression(
+            "$.gradeLevelDescriptor",
+            [new JsonPathSegment.Property("gradeLevelDescriptor")]
+        );
+
+        var secondaryTable = new DbTableName(new DbSchemaName("edfi"), "StudentAddress");
+        var primaryTable = new DbTableName(new DbSchemaName("edfi"), "Student");
+
+        var readPlan = new ExternalPlans.ResourceReadPlan(
+            Model: new RelationalResourceModel(
+                new QualifiedResourceName("Ed-Fi", "Student"),
+                new DbSchemaName("edfi"),
+                ResourceStorageKind.RelationalTables,
+                Root: new DbTableModel(
+                    primaryTable,
+                    new JsonPathExpression("$", []),
+                    new TableKey(
+                        "PK_Student",
+                        [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+                    ),
+                    [
+                        new DbColumnModel(
+                            new DbColumnName("DocumentId"),
+                            ColumnKind.ParentKeyPart,
+                            new RelationalScalarType(ScalarKind.Int64),
+                            IsNullable: false,
+                            SourceJsonPath: null,
+                            TargetResource: null
+                        ),
+                    ],
+                    []
+                ),
+                TablesInDependencyOrder: [],
+                DocumentReferenceBindings: [],
+                DescriptorEdgeSources: []
+            ),
+            KeysetTable: ExternalPlans.KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
+            TablePlansInDependencyOrder: [],
+            ReferenceIdentityProjectionPlansInDependencyOrder:
+            [
+                new ExternalPlans.ReferenceIdentityProjectionTablePlan(
+                    secondaryTable,
+                    [
+                        new ExternalPlans.ReferenceIdentityProjectionBinding(
+                            IsIdentityComponent: false,
+                            ReferenceObjectPath: schoolReferencePath,
+                            TargetResource: new QualifiedResourceName("Ed-Fi", "School"),
+                            FkColumnOrdinal: 5,
+                            IdentityFieldOrdinalsInOrder:
+                            [
+                                new ExternalPlans.ReferenceIdentityProjectionFieldOrdinal(
+                                    schoolYearPath,
+                                    ColumnOrdinal: 9
+                                ),
+                                new ExternalPlans.ReferenceIdentityProjectionFieldOrdinal(
+                                    schoolIdPath,
+                                    ColumnOrdinal: 8
+                                ),
+                            ]
+                        ),
+                    ]
+                ),
+                new ExternalPlans.ReferenceIdentityProjectionTablePlan(
+                    primaryTable,
+                    [
+                        new ExternalPlans.ReferenceIdentityProjectionBinding(
+                            IsIdentityComponent: true,
+                            ReferenceObjectPath: schoolReferencePath,
+                            TargetResource: new QualifiedResourceName("Ed-Fi", "School"),
+                            FkColumnOrdinal: 2,
+                            IdentityFieldOrdinalsInOrder:
+                            [
+                                new ExternalPlans.ReferenceIdentityProjectionFieldOrdinal(
+                                    schoolIdPath,
+                                    ColumnOrdinal: 4
+                                ),
+                            ]
+                        ),
+                    ]
+                ),
+            ],
+            DescriptorProjectionPlansInOrder:
+            [
+                new ExternalPlans.DescriptorProjectionPlan(
+                    SelectByKeysetSql: "SELECT d.DocumentId, d.Uri FROM page JOIN dms.Descriptor d ON d.DocumentId = page.DocumentId",
+                    ResultShape: new ExternalPlans.DescriptorProjectionResultShape(
+                        DescriptorIdOrdinal: 0,
+                        UriOrdinal: 1
+                    ),
+                    SourcesInOrder:
+                    [
+                        new ExternalPlans.DescriptorProjectionSource(
+                            descriptorPath,
+                            secondaryTable,
+                            new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor"),
+                            DescriptorIdColumnOrdinal: 6
+                        ),
+                        new ExternalPlans.DescriptorProjectionSource(
+                            descriptorPath,
+                            primaryTable,
+                            new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor"),
+                            DescriptorIdColumnOrdinal: 3
+                        ),
+                    ]
+                ),
+            ]
+        );
+
+        readPlan
+            .ReferenceIdentityProjectionPlansInDependencyOrder.Select(plan => plan.Table)
+            .Should()
+            .Equal(secondaryTable, primaryTable);
+        readPlan
+            .ReferenceIdentityProjectionPlansInDependencyOrder[0]
+            .BindingsInOrder[0]
+            .IdentityFieldOrdinalsInOrder.Select(identity => identity.ColumnOrdinal)
+            .Should()
+            .Equal(9, 8);
+        readPlan
+            .DescriptorProjectionPlansInOrder[0]
+            .SourcesInOrder.Select(source => source.Table)
+            .Should()
+            .Equal(secondaryTable, primaryTable);
+        readPlan
+            .DescriptorProjectionPlansInOrder[0]
+            .ResultShape.Should()
+            .Be(new ExternalPlans.DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1));
     }
 
     [Test]

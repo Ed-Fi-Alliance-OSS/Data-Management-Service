@@ -60,3 +60,10 @@ Decisions: replaced wide `KeyUnificationMemberWritePlan` (`Kind` + nullable type
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/PlanContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ExternalPlanContractsTests.cs; tasks.json.
 Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 85); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
 Blockers/notes: no blockers; next highest-priority remaining task likely Projection Contracts.
+
+2026-02-26
+Task done: Projection Contracts. Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: added read-side projection shells directly in executor-facing plan contracts so runtime can consume projection metadata without SQL parsing; reference-identity projection metadata is table-local + ordinal-based (`FkColumnOrdinal` and identity field ordinals) to align with hydration select-list consumption; descriptor projection contract carries explicit `(DescriptorId, Uri)` ordinal shape + deterministic `SourcesInOrder` for stable page-batched follow-up execution.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/PlanContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ExternalPlanContractsTests.cs; tasks.json.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 86); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
+Blockers/notes: no blockers; next highest-priority remaining task likely Naming (dedupe suffix-collision regression).
