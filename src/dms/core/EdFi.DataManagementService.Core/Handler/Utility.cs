@@ -43,6 +43,7 @@ public static class Utility
         string operationName,
         TraceId traceId,
         Func<TResult, bool> isRetryExhausted,
+        Func<TResult, bool> isSuccess,
         Func<CancellationToken, ValueTask<TResult>> operation,
         RequestInfo requestInfo
     )
@@ -86,12 +87,25 @@ public static class Utility
             }
             else if (attemptCount > 1)
             {
-                logger.LogWarning(
-                    "Deadlock resolved after {RetryCount} retries for {OperationName} - {TraceId}",
-                    attemptCount - 1,
-                    operationName,
-                    traceId.Value
-                );
+                if (isSuccess(result))
+                {
+                    logger.LogWarning(
+                        "Deadlock resolved after {RetryCount} retries for {OperationName} - {TraceId}",
+                        attemptCount - 1,
+                        operationName,
+                        traceId.Value
+                    );
+                }
+                else
+                {
+                    logger.LogWarning(
+                        "Operation {OperationName} ended with non-retryable result {ResultType} after {RetryCount} retries - {TraceId}",
+                        operationName,
+                        result.GetType().Name,
+                        attemptCount - 1,
+                        traceId.Value
+                    );
+                }
             }
 
             return result;

@@ -37,6 +37,7 @@ internal class QueryRequestHandler(
             "query",
             requestInfo.FrontendRequest.TraceId,
             r => r is QueryFailureRetryable,
+            r => r is QuerySuccess,
             async ct =>
                 await queryHandler.QueryDocuments(
                     new QueryRequest(

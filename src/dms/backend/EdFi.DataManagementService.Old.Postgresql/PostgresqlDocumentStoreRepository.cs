@@ -66,10 +66,12 @@ public class PostgresqlDocumentStoreRepository(
                         || pe.SqlState == PostgresErrorCodes.DeadlockDetected
                     )
                 {
+                    sw.Stop();
                     _logger.LogDebug(
                         pe,
-                        "Transaction conflict on commit for {OperationName} - {TraceId}",
+                        "Transaction conflict on commit for {OperationName} after {TransactionDurationMs}ms - {TraceId}",
                         operationName,
+                        sw.ElapsedMilliseconds,
                         traceId
                     );
                     return writeConflictResult;

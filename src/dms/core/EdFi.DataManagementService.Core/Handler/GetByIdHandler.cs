@@ -40,6 +40,7 @@ internal class GetByIdHandler(
             "get",
             requestInfo.FrontendRequest.TraceId,
             r => r is GetFailureRetryable,
+            r => r is GetSuccess,
             async ct =>
                 await documentStoreRepository.GetDocumentById(
                     new GetRequest(

@@ -46,6 +46,7 @@ internal class UpsertHandler(
             "upsert",
             requestInfo.FrontendRequest.TraceId,
             r => r is UpsertFailureWriteConflict,
+            r => r is InsertSuccess or UpdateSuccess,
             async ct =>
             {
                 // A document uuid that will be assigned if this is a new document
