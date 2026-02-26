@@ -145,6 +145,7 @@ public class SchemaToolsTests
     }
 
     [TestFixture]
+    [Category("Authoritative")]
     public class Given_Hash_Command_With_Valid_Schema : SchemaToolsTests
     {
         private int _exitCode;
@@ -202,6 +203,7 @@ public class SchemaToolsTests
     }
 
     [TestFixture]
+    [Category("Authoritative")]
     public class Given_Ddl_Emit_With_Valid_Schema : SchemaToolsTests
     {
         private int _exitCode;
@@ -302,6 +304,7 @@ public class SchemaToolsTests
     }
 
     [TestFixture]
+    [Category("Authoritative")]
     public class Given_Ddl_Emit_With_Single_Dialect : SchemaToolsTests
     {
         private int _exitCode;
@@ -367,6 +370,13 @@ public class SchemaToolsTests
         private string _outputDir3 = null!;
         private string _outputDir4 = null!;
 
+        private static string GetMinimalFixturePath()
+        {
+            var assemblyLocation = typeof(SchemaToolsTests).Assembly.Location;
+            var testBinDir = Path.GetDirectoryName(assemblyLocation)!;
+            return Path.Combine(testBinDir, "Fixtures", "minimal-api-schema.json");
+        }
+
         [SetUp]
         public void SetUp()
         {
@@ -374,7 +384,7 @@ public class SchemaToolsTests
             _outputDir2 = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
             _outputDir3 = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
             _outputDir4 = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
-            var fixturePath = GetAuthoritativeFixturePath();
+            var fixturePath = GetMinimalFixturePath();
 
             var (exit1, _, err1) = RunCli(
                 "ddl",
@@ -487,6 +497,7 @@ public class SchemaToolsTests
     }
 
     [TestFixture]
+    [Category("Authoritative")]
     public class Given_Ddl_Emit_With_Invalid_Dialect : SchemaToolsTests
     {
         private int _exitCode;
@@ -572,7 +583,7 @@ public class SchemaToolsTests
         [Test]
         public void It_prints_error_about_missing_file()
         {
-            _error.Should().Contain("Schema file not found");
+            _error.Should().Contain("File not found");
         }
     }
 }

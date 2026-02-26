@@ -16,6 +16,8 @@ Provide a CLI command that generates deterministic artifacts without connecting 
 
 The CLI should accept an explicit list of `ApiSchema.json` inputs (or a fixture file) and an output directory.
 
+> **Note:** Fixture-file input is deferred to the verification-harness epic ([DMS-957](https://edfi.atlassian.net/browse/DMS-957)). The current implementation accepts only explicit `--schema` paths.
+
 ## Acceptance Criteria
 
 - CLI generates deterministic outputs for the same inputs (byte-for-byte stable).

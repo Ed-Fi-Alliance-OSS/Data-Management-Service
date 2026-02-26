@@ -78,7 +78,7 @@ public class Given_A_Descriptor_Only_Model_Set_When_Emitting_Manifest
     [Test]
     public void It_should_include_dialect()
     {
-        _manifest.Should().Contain("\"dialect\": \"Pgsql\"");
+        _manifest.Should().Contain("\"dialect\": \"pgsql\"");
     }
 
     [Test]

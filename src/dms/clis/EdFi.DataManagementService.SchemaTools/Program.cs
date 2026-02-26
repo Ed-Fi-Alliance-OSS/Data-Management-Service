@@ -13,38 +13,42 @@ using Serilog;
 
 var serviceCollection = new ServiceCollection();
 ConfigureServices(serviceCollection);
-var serviceProvider = serviceCollection.BuildServiceProvider();
+await using var serviceProvider = serviceCollection.BuildServiceProvider();
 
-var logger = serviceProvider.GetRequiredService<ILogger<Program>>();
-var fileLoader = serviceProvider.GetRequiredService<IApiSchemaFileLoader>();
-var hashProvider = serviceProvider.GetRequiredService<IEffectiveSchemaHashProvider>();
-var schemaSetBuilder = serviceProvider.GetRequiredService<EffectiveSchemaSetBuilder>();
+try
+{
+    var logger = serviceProvider.GetRequiredService<ILogger<Program>>();
+    var fileLoader = serviceProvider.GetRequiredService<IApiSchemaFileLoader>();
+    var hashProvider = serviceProvider.GetRequiredService<IEffectiveSchemaHashProvider>();
+    var schemaSetBuilder = serviceProvider.GetRequiredService<EffectiveSchemaSetBuilder>();
 
-var rootCommand = new RootCommand("Ed-Fi DMS schema tool for hashing and DDL generation");
+    var rootCommand = new RootCommand("Ed-Fi DMS schema tool for hashing and DDL generation");
 
-// hash subcommand
-rootCommand.Subcommands.Add(HashCommand.Create(logger, fileLoader, hashProvider));
+    // hash subcommand
+    rootCommand.Subcommands.Add(HashCommand.Create(logger, fileLoader, hashProvider));
 
-// ddl command group
-var ddlCommand = new Command("ddl", "DDL generation commands");
-ddlCommand.Subcommands.Add(DdlEmitCommand.Create(logger, fileLoader, schemaSetBuilder));
-rootCommand.Subcommands.Add(ddlCommand);
+    // ddl command group
+    var ddlCommand = new Command("ddl", "DDL generation commands");
+    ddlCommand.Subcommands.Add(DdlEmitCommand.Create(logger, fileLoader, schemaSetBuilder));
+    rootCommand.Subcommands.Add(ddlCommand);
 
-var parseResult = rootCommand.Parse(args);
-return await parseResult.InvokeAsync();
+    var parseResult = rootCommand.Parse(args);
+    return await parseResult.InvokeAsync();
+}
+finally
+{
+    await Log.CloseAndFlushAsync();
+}
 
 void ConfigureServices(IServiceCollection services)
 {
-    var logConfiguration = new LoggerConfiguration().MinimumLevel.Information();
+    var logConfiguration = new LoggerConfiguration()
+        .MinimumLevel.Information()
+        .WriteTo.File("logs/dms-schema.log", rollingInterval: RollingInterval.Day);
 
-    if (Console.IsOutputRedirected)
-    {
-        logConfiguration.WriteTo.File("logs/dms-schema.log", rollingInterval: RollingInterval.Day);
-    }
-    else
+    if (!Console.IsOutputRedirected)
     {
         logConfiguration.WriteTo.Console();
-        logConfiguration.WriteTo.File("logs/dms-schema.log", rollingInterval: RollingInterval.Day);
     }
 
     Log.Logger = logConfiguration.CreateLogger();

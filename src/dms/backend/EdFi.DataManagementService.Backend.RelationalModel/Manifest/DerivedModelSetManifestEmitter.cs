@@ -12,7 +12,7 @@ using static EdFi.DataManagementService.Backend.RelationalModel.Manifest.Manifes
 namespace EdFi.DataManagementService.Backend.RelationalModel.Manifest;
 
 /// <summary>
-/// Emits a deterministic <c>relational-model.manifest.json</c> from a <see cref="DerivedRelationalModelSet"/>.
+/// Emits a deterministic <c>relational-model.{dialect}.manifest.json</c> from a <see cref="DerivedRelationalModelSet"/>.
 /// The manifest is a semantic representation of the derived relational model inventory and must be
 /// byte-for-byte stable for the same inputs.
 /// </summary>
@@ -46,7 +46,12 @@ public static class DerivedModelSetManifestEmitter
         using (var writer = new Utf8JsonWriter(buffer, _writerOptions))
         {
             writer.WriteStartObject();
-            writer.WriteString("dialect", modelSet.Dialect.ToString());
+            writer.WriteString("dialect", modelSet.Dialect.ToString().ToLowerInvariant());
+            writer.WriteString("effective_schema_hash", modelSet.EffectiveSchema.EffectiveSchemaHash);
+            writer.WriteString(
+                "relational_mapping_version",
+                modelSet.EffectiveSchema.RelationalMappingVersion
+            );
 
             WriteProjects(writer, modelSet.ProjectSchemasInEndpointOrder);
             WriteResourcesSummary(writer, modelSet.ConcreteResourcesInNameOrder);

@@ -25,4 +25,17 @@ internal class NoOpEffectiveSchemaHashProvider(ILogger<NoOpEffectiveSchemaHashPr
         );
         return string.Empty;
     }
+
+    /// <inheritdoc />
+    public string ComputeHash(
+        string apiSchemaFormatVersion,
+        IReadOnlyList<ProjectSchemaMetadata> sortedProjects
+    )
+    {
+        _logger.LogDebug(
+            "NoOpEffectiveSchemaHashProvider invoked - returning empty hash. "
+                + "Deterministic hash computation will be implemented in DMS-925."
+        );
+        return string.Empty;
+    }
 }

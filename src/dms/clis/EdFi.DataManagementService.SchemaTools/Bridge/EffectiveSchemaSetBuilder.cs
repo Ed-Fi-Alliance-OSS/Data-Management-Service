@@ -31,30 +31,32 @@ public sealed class EffectiveSchemaSetBuilder(
     {
         ArgumentNullException.ThrowIfNull(nodes);
 
-        // Step 1: Compute the effective schema hash
-        var effectiveSchemaHash = hashProvider.ComputeHash(nodes);
-
-        // Step 2: Extract apiSchemaFormatVersion from core schema
+        // Step 1: Extract apiSchemaFormatVersion from core schema
         var apiSchemaFormatVersion = EffectiveSchemaHashProvider.GetApiSchemaVersion(
             nodes.CoreApiSchemaRootNode
         );
 
-        // Step 3: Extract project schemas (core + extensions) and build paired lists
+        // Step 2: Extract project metadata once (core + extensions), sorted by endpoint name
         var allNodes = new[] { nodes.CoreApiSchemaRootNode }.Concat(nodes.ExtensionApiSchemaRootNodes);
 
-        var pairs = allNodes
-            .Select(node => ToProjectAndComponent(ProjectSchemaMetadataExtractor.Extract(node)))
-            .OrderBy(pair => pair.Project.ProjectEndpointName, StringComparer.Ordinal)
+        var sortedMetadata = allNodes
+            .Select(ProjectSchemaMetadataExtractor.Extract)
+            .OrderBy(m => m.ProjectEndpointName, StringComparer.Ordinal)
             .ToList();
 
+        // Step 3: Compute the effective schema hash using pre-extracted metadata
+        var effectiveSchemaHash = hashProvider.ComputeHash(apiSchemaFormatVersion, sortedMetadata);
+
+        // Step 4: Build paired project/component lists from the same metadata
+        var pairs = sortedMetadata.Select(ToProjectAndComponent).ToList();
         var projectsInEndpointOrder = pairs.Select(p => p.Project).ToList();
         var componentsInEndpointOrder = pairs.Select(p => p.Component).ToArray();
 
-        // Step 4: Get resource key seeds and compute seed hash
+        // Step 5: Get resource key seeds and compute seed hash
         var seeds = seedProvider.GetSeeds(nodes);
         var seedHash = seedProvider.ComputeSeedHash(seeds);
 
-        // Step 5: Map Core ResourceKeySeed → Backend.External ResourceKeyEntry
+        // Step 6: Map Core ResourceKeySeed → Backend.External ResourceKeyEntry
         var resourceKeys = seeds
             .Select(seed => new ResourceKeyEntry(
                 seed.ResourceKeyId,
@@ -64,7 +66,7 @@ public sealed class EffectiveSchemaSetBuilder(
             ))
             .ToArray();
 
-        // Step 6: Assemble EffectiveSchemaInfo
+        // Step 7: Assemble EffectiveSchemaInfo
         var effectiveSchemaInfo = new EffectiveSchemaInfo(
             apiSchemaFormatVersion,
             SchemaHashConstants.RelationalMappingVersion,

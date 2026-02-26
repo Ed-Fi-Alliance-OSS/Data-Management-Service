@@ -1,5 +1,7 @@
 {
-  "dialect": "Pgsql",
+  "dialect": "pgsql",
+  "effective_schema_hash": "edf1edf1",
+  "relational_mapping_version": "1.0.0",
   "projects": [
     {
       "project_endpoint_name": "ed-fi",

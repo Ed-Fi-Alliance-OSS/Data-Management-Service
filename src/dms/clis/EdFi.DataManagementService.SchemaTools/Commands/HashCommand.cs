@@ -102,6 +102,22 @@ public static class HashCommand
             Console.WriteLine($"Effective schema hash: {effectiveSchemaHash}");
             return 0;
         }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogError(ex, "Schema processing failed during hash computation");
+            Console.Error.WriteLine(
+                $"Error: Schema processing failed: {LoggingSanitizer.SanitizeForConsole(ex.Message)}"
+            );
+            return 1;
+        }
+        catch (ArgumentException ex)
+        {
+            logger.LogError(ex, "Invalid argument during hash computation");
+            Console.Error.WriteLine(
+                $"Error: Invalid argument: {LoggingSanitizer.SanitizeForConsole(ex.Message)}"
+            );
+            return 1;
+        }
         catch (Exception ex)
         {
             logger.LogCritical(ex, "An unexpected error occurred during hash computation");

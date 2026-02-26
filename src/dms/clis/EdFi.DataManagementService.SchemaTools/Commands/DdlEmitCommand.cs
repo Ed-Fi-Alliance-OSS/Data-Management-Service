@@ -80,21 +80,6 @@ public static class DdlEmitCommand
         // Dialect is validated at parse time by AcceptOnlyFromAmong
         var dialects = ParseDialect(dialectName);
 
-        foreach (var schemaPath in schemaPaths)
-        {
-            if (!File.Exists(schemaPath))
-            {
-                logger.LogError(
-                    "Schema file not found: {FilePath}",
-                    LoggingSanitizer.SanitizeForLogging(schemaPath)
-                );
-                Console.Error.WriteLine(
-                    $"Error: Schema file not found: {LoggingSanitizer.SanitizeForConsole(schemaPath)}"
-                );
-                return 1;
-            }
-        }
-
         // Load schemas
         var corePath = schemaPaths[0];
         var extensionPaths = schemaPaths.Skip(1).ToList();
@@ -124,8 +109,23 @@ public static class DdlEmitCommand
                 effectiveSchemaInfo.ResourceKeyCount
             );
 
-            // Create output directory
+            // Create output directory (must be empty or new to avoid stale artifacts)
             Directory.CreateDirectory(outputDir);
+
+            if (Directory.EnumerateFileSystemEntries(outputDir).Any())
+            {
+                logger.LogError(
+                    "Output directory is not empty: {OutputDir}",
+                    LoggingSanitizer.SanitizeForLogging(outputDir)
+                );
+                Console.Error.WriteLine(
+                    $"Error: Output directory is not empty: {LoggingSanitizer.SanitizeForConsole(outputDir)}"
+                );
+                Console.Error.WriteLine(
+                    "Remove existing files or choose a different output directory to avoid stale artifacts."
+                );
+                return 1;
+            }
 
             var emittedFiles = new List<string>();
 
@@ -190,6 +190,22 @@ public static class DdlEmitCommand
             }
 
             return 0;
+        }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogError(ex, "Schema processing failed during DDL emission");
+            Console.Error.WriteLine(
+                $"Error: Schema processing failed: {LoggingSanitizer.SanitizeForConsole(ex.Message)}"
+            );
+            return 1;
+        }
+        catch (ArgumentException ex)
+        {
+            logger.LogError(ex, "Invalid argument during DDL emission");
+            Console.Error.WriteLine(
+                $"Error: Invalid argument: {LoggingSanitizer.SanitizeForConsole(ex.Message)}"
+            );
+            return 1;
         }
         catch (Exception ex)
         {
@@ -263,6 +279,12 @@ public static class DdlEmitCommand
 
     private static void WriteFileWithUnixLineEndings(string path, string content)
     {
+        if (!content.Contains('\r'))
+        {
+            File.WriteAllText(path, content, Utf8NoBom);
+            return;
+        }
+
         // Normalize to LF line endings for deterministic output
         var normalized = content.Replace("\r\n", "\n").Replace("\r", "\n");
         File.WriteAllText(path, normalized, Utf8NoBom);

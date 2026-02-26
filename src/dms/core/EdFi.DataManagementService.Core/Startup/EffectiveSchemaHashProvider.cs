@@ -60,12 +60,21 @@ public class EffectiveSchemaHashProvider(ILogger<EffectiveSchemaHashProvider> lo
             (a, b) => string.Compare(a.ProjectEndpointName, b.ProjectEndpointName, StringComparison.Ordinal)
         );
 
-        // Step 4: Build manifest string
-        var manifest = BuildManifestString(apiSchemaFormatVersion, projects);
+        return ComputeHash(apiSchemaFormatVersion, projects);
+    }
+
+    /// <inheritdoc />
+    public string ComputeHash(
+        string apiSchemaFormatVersion,
+        IReadOnlyList<ProjectSchemaMetadata> sortedProjects
+    )
+    {
+        // Build manifest string
+        var manifest = BuildManifestString(apiSchemaFormatVersion, sortedProjects);
 
         _logger.LogDebug("Manifest string length: {Length} characters", manifest.Length);
 
-        // Step 5: Compute final hash of the manifest
+        // Compute final hash of the manifest
         byte[] hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(manifest));
         string hashHex = Convert.ToHexStringLower(hashBytes);
 
@@ -79,7 +88,7 @@ public class EffectiveSchemaHashProvider(ILogger<EffectiveSchemaHashProvider> lo
     /// </summary>
     private static string BuildManifestString(
         string apiSchemaFormatVersion,
-        List<ProjectSchemaMetadata> projects
+        IReadOnlyList<ProjectSchemaMetadata> projects
     )
     {
         // Header (~80 chars) + per project (~140 chars each)
