@@ -52,6 +52,48 @@ public class Given_AuthDdlEmitter_With_EdOrgHierarchy_For_Mssql : DdlEmissionGol
 }
 
 // ===================================================================
+// Auth DDL Golden File Tests - Empty Hierarchy (edge case)
+// ===================================================================
+
+[TestFixture]
+public class Given_AuthDdlEmitter_With_EmptyHierarchy_For_Pgsql : DdlEmissionGoldenTestBase
+{
+    private GoldenTestPaths _paths = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var hierarchy = new AuthEdOrgHierarchy([]);
+        _paths = EmitAuthDdl("auth-edorg-empty", SqlDialect.Pgsql, hierarchy);
+    }
+
+    [Test]
+    public void It_should_emit_ddl_matching_golden_file()
+    {
+        AssertGoldenMatch(_paths);
+    }
+}
+
+[TestFixture]
+public class Given_AuthDdlEmitter_With_EmptyHierarchy_For_Mssql : DdlEmissionGoldenTestBase
+{
+    private GoldenTestPaths _paths = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var hierarchy = new AuthEdOrgHierarchy([]);
+        _paths = EmitAuthDdl("auth-edorg-empty", SqlDialect.Mssql, hierarchy);
+    }
+
+    [Test]
+    public void It_should_emit_ddl_matching_golden_file()
+    {
+        AssertGoldenMatch(_paths);
+    }
+}
+
+// ===================================================================
 // Auth DDL Determinism Tests
 // ===================================================================
 
