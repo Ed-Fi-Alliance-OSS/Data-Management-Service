@@ -364,7 +364,7 @@ Rules:
 Within each phase:
 
 - **Schemas**: order by schema name (ordinal).
-- **Projects**: order by `ProjectEndpointName` (ordinal).
+- **Projects**: order by `ProjectName` (ordinal).
 - **Resources within a project**: order by `ResourceName` (ordinal).
 - **Tables within a resource**:
   - order by `JsonScope` depth (`$` root first, then child arrays, then nested arrays),

@@ -56,7 +56,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         // regardless of the order in which elements appear in the model set.
         // All comparisons use StringComparer.Ordinal (culture-invariant, case-sensitive).
         var schemas = modelSet
-            .ProjectSchemasInEndpointOrder.OrderBy(s => s.ProjectEndpointName, StringComparer.Ordinal)
+            .ProjectSchemasInEndpointOrder.OrderBy(s => s.PhysicalSchema.Value, StringComparer.Ordinal)
             .ToList();
 
         var concreteResources = modelSet
@@ -76,11 +76,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             .ToList();
 
         var abstractUnionViews = modelSet
-            .AbstractUnionViewsInNameOrder.OrderBy(
-                v => v.AbstractResourceKey.Resource.ProjectName,
-                StringComparer.Ordinal
-            )
-            .ThenBy(v => v.AbstractResourceKey.Resource.ResourceName, StringComparer.Ordinal)
+            .AbstractUnionViewsInNameOrder.OrderBy(v => v.ViewName.Schema.Value, StringComparer.Ordinal)
+            .ThenBy(v => v.ViewName.Name, StringComparer.Ordinal)
             .ToList();
 
         var indexes = modelSet
