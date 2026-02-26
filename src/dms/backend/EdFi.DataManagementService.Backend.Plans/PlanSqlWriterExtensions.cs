@@ -5,6 +5,8 @@
 
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Backend.Ddl;
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
 
 namespace EdFi.DataManagementService.Backend.Plans;
 
@@ -27,6 +29,29 @@ public static partial class PlanSqlWriterExtensions
 
         ValidateBareParameterName(bareName, nameof(bareName));
         return writer.Append($"@{bareName}");
+    }
+
+    /// <summary>
+    /// Appends a relation reference using canonical qualification rules.
+    /// </summary>
+    /// <param name="writer">The SQL writer.</param>
+    /// <param name="relation">The relation reference to append.</param>
+    /// <returns>The same writer for fluent chaining.</returns>
+    public static SqlWriter AppendRelation(this SqlWriter writer, SqlRelationRef relation)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        ArgumentNullException.ThrowIfNull(relation);
+
+        return relation switch
+        {
+            SqlRelationRef.PhysicalTable physicalTable => writer.AppendTable(physicalTable.Table),
+            SqlRelationRef.TempTable tempTable => writer.AppendQuoted(tempTable.Name),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(relation),
+                relation,
+                "Unsupported relation reference."
+            ),
+        };
     }
 
     /// <summary>
