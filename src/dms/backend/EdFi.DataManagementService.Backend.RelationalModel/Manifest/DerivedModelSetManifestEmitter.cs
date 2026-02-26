@@ -474,12 +474,19 @@ public static class DerivedModelSetManifestEmitter
         writer.WriteStartArray();
         if (model.StorageKind != ResourceStorageKind.SharedDescriptorTable)
         {
+            var descriptorFkDeduplicationsByTable = BuildDescriptorForeignKeyDeduplicationLookup(
+                model.DescriptorForeignKeyDeduplications
+            );
+
             foreach (var table in model.TablesInDependencyOrder)
             {
-                WriteTable(writer, table);
+                WriteTable(writer, table, descriptorFkDeduplicationsByTable);
             }
         }
         writer.WriteEndArray();
+
+        writer.WritePropertyName("key_unification_equality_constraints");
+        WriteKeyUnificationEqualityConstraintDiagnostics(writer, model.KeyUnificationEqualityConstraints);
 
         writer.WritePropertyName("document_reference_bindings");
         writer.WriteStartArray();
@@ -502,51 +509,6 @@ public static class DerivedModelSetManifestEmitter
         foreach (var site in extensionSites)
         {
             WriteExtensionSite(writer, site);
-        }
-        writer.WriteEndArray();
-
-        writer.WriteEndObject();
-    }
-
-    /// <summary>
-    /// Writes a table object with its key columns, columns, and constraints.
-    /// </summary>
-    private static void WriteTable(Utf8JsonWriter writer, DbTableModel table)
-    {
-        writer.WriteStartObject();
-        writer.WriteString("schema", table.Table.Schema.Value);
-        writer.WriteString("name", table.Table.Name);
-        writer.WriteString("scope", table.JsonScope.Canonical);
-
-        writer.WritePropertyName("key_columns");
-        writer.WriteStartArray();
-        foreach (var keyColumn in table.Key.Columns)
-        {
-            WriteKeyColumn(writer, keyColumn);
-        }
-        writer.WriteEndArray();
-
-        writer.WritePropertyName("columns");
-        writer.WriteStartArray();
-        foreach (var column in table.Columns)
-        {
-            WriteColumn(writer, column);
-        }
-        writer.WriteEndArray();
-
-        writer.WritePropertyName("key_unification_classes");
-        writer.WriteStartArray();
-        foreach (var keyUnificationClass in table.KeyUnificationClasses)
-        {
-            WriteKeyUnificationClass(writer, keyUnificationClass);
-        }
-        writer.WriteEndArray();
-
-        writer.WritePropertyName("constraints");
-        writer.WriteStartArray();
-        foreach (var constraint in table.Constraints)
-        {
-            WriteConstraint(writer, constraint);
         }
         writer.WriteEndArray();
 

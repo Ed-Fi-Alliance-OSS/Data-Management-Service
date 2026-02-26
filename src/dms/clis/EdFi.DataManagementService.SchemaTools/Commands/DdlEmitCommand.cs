@@ -165,8 +165,13 @@ public static class DdlEmitCommand
                     emittedFiles.Add(sqlFileName);
 
                     // Emit relational model manifest (always dialect-suffixed because the
-                    // derived model is dialect-dependent via ISqlDialectRules naming/type rules)
-                    var modelManifest = DerivedModelSetManifestEmitter.Emit(modelSet);
+                    // derived model is dialect-dependent via ISqlDialectRules naming/type rules).
+                    // Pass all concrete resources as detailedResources to include the full
+                    // resource inventory with key-unification surface per the design spec.
+                    var allResources = new HashSet<QualifiedResourceName>(
+                        modelSet.ConcreteResourcesInNameOrder.Select(r => r.ResourceKey.Resource)
+                    );
+                    var modelManifest = DerivedModelSetManifestEmitter.Emit(modelSet, allResources);
                     var manifestFileName = $"relational-model.{dialectLabel}.manifest.json";
                     var manifestPath = Path.Combine(outputDir, manifestFileName);
                     WriteFileWithUnixLineEndings(manifestPath, modelManifest);
