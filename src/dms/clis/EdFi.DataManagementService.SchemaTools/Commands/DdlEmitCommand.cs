@@ -97,124 +97,104 @@ public static class DdlEmitCommand
             return LoadResultErrorHandler.Handle(logger, loadResult);
         }
 
-        try
-        {
-            // Build EffectiveSchemaSet
-            var effectiveSchemaSet = schemaSetBuilder.Build(success.NormalizedNodes);
-            var effectiveSchemaInfo = effectiveSchemaSet.EffectiveSchema;
-
-            logger.LogInformation(
-                "Effective schema hash: {Hash}, resource keys: {ResourceKeyCount}",
-                effectiveSchemaInfo.EffectiveSchemaHash,
-                effectiveSchemaInfo.ResourceKeyCount
-            );
-
-            // Create output directory (must be empty or new to avoid stale artifacts)
-            Directory.CreateDirectory(outputDir);
-
-            if (Directory.EnumerateFileSystemEntries(outputDir).Any())
+        return CommandErrorHandler.Execute(
+            logger,
+            "DDL emission",
+            () =>
             {
-                logger.LogError(
-                    "Output directory is not empty: {OutputDir}",
-                    LoggingSanitizer.SanitizeForLogging(outputDir)
+                // Build EffectiveSchemaSet
+                var effectiveSchemaSet = schemaSetBuilder.Build(success.NormalizedNodes);
+                var effectiveSchemaInfo = effectiveSchemaSet.EffectiveSchema;
+
+                logger.LogInformation(
+                    "Effective schema hash: {Hash}, resource keys: {ResourceKeyCount}",
+                    effectiveSchemaInfo.EffectiveSchemaHash,
+                    effectiveSchemaInfo.ResourceKeyCount
                 );
-                Console.Error.WriteLine(
-                    $"Error: Output directory is not empty: {LoggingSanitizer.SanitizeForConsole(outputDir)}"
+
+                // Create output directory (must be empty or new to avoid stale artifacts)
+                Directory.CreateDirectory(outputDir);
+
+                if (Directory.EnumerateFileSystemEntries(outputDir).Any())
+                {
+                    logger.LogError(
+                        "Output directory is not empty: {OutputDir}",
+                        LoggingSanitizer.SanitizeForLogging(outputDir)
+                    );
+                    Console.Error.WriteLine(
+                        $"Error: Output directory is not empty: {LoggingSanitizer.SanitizeForConsole(outputDir)}"
+                    );
+                    Console.Error.WriteLine(
+                        "Remove existing files or choose a different output directory to avoid stale artifacts."
+                    );
+                    return 1;
+                }
+
+                var emittedFiles = new List<string>();
+
+                // Emit DDL and model manifests per dialect
+                foreach (var dialect in dialects)
+                {
+                    var (sqlDialect, dialectRules) = CreateDialect(dialect);
+
+                    // Deep-clone the effective schema set for each dialect because the
+                    // relational model builder mutates ProjectSchema JsonObjects by parenting them.
+                    var clonedSchemaSet = CloneEffectiveSchemaSet(effectiveSchemaSet);
+
+                    // Build relational model
+                    var modelSetBuilder = new DerivedRelationalModelSetBuilder(
+                        RelationalModelSetPasses.CreateDefault()
+                    );
+                    var modelSet = modelSetBuilder.Build(clonedSchemaSet, dialect, dialectRules);
+
+                    // Emit DDL: core + relational model + seed DML.
+                    // SeedDmlEmitter uses the original effectiveSchemaInfo (not the cloned set)
+                    // because EffectiveSchemaInfo is an immutable record unaffected by model builder mutation.
+                    var coreDdl = new CoreDdlEmitter(sqlDialect).Emit();
+                    var relationalDdl = new RelationalModelDdlEmitter(sqlDialect).Emit(modelSet);
+                    var seedDml = new SeedDmlEmitter(sqlDialect).Emit(effectiveSchemaInfo);
+                    var combinedSql = coreDdl + relationalDdl + seedDml;
+
+                    // Write SQL file (always dialect-prefixed, matching {dialect}.sql convention)
+                    var dialectLabel = DialectLabel(dialect);
+                    var sqlFileName = $"{dialectLabel}.sql";
+                    var sqlPath = Path.Combine(outputDir, sqlFileName);
+                    WriteFileWithUnixLineEndings(sqlPath, combinedSql);
+                    emittedFiles.Add(sqlFileName);
+
+                    // Emit relational model manifest (always dialect-suffixed because the
+                    // derived model is dialect-dependent via ISqlDialectRules naming/type rules)
+                    var modelManifest = DerivedModelSetManifestEmitter.Emit(modelSet);
+                    var manifestFileName = $"relational-model.{dialectLabel}.manifest.json";
+                    var manifestPath = Path.Combine(outputDir, manifestFileName);
+                    WriteFileWithUnixLineEndings(manifestPath, modelManifest);
+                    emittedFiles.Add(manifestFileName);
+                }
+
+                // Emit effective schema manifest (dialect-independent, emitted once)
+                var schemaManifest = EffectiveSchemaManifestEmitter.Emit(
+                    effectiveSchemaInfo,
+                    includeResourceKeys: true
                 );
-                Console.Error.WriteLine(
-                    "Remove existing files or choose a different output directory to avoid stale artifacts."
+                var schemaManifestPath = Path.Combine(outputDir, "effective-schema.manifest.json");
+                WriteFileWithUnixLineEndings(schemaManifestPath, schemaManifest);
+                emittedFiles.Add("effective-schema.manifest.json");
+
+                // Print summary
+                Console.WriteLine(
+                    $"DDL emission complete. Output directory: {LoggingSanitizer.SanitizeForConsole(outputDir)}"
                 );
-                return 1;
+                Console.WriteLine($"Effective schema hash: {effectiveSchemaInfo.EffectiveSchemaHash}");
+                Console.WriteLine($"Resource key count: {effectiveSchemaInfo.ResourceKeyCount}");
+                Console.WriteLine("Files written:");
+                foreach (var file in emittedFiles)
+                {
+                    Console.WriteLine($"  {file}");
+                }
+
+                return 0;
             }
-
-            var emittedFiles = new List<string>();
-
-            // Emit DDL and model manifests per dialect
-            foreach (var dialect in dialects)
-            {
-                var (sqlDialect, dialectRules) = CreateDialect(dialect);
-
-                // Deep-clone the effective schema set for each dialect because the
-                // relational model builder mutates ProjectSchema JsonObjects by parenting them.
-                var clonedSchemaSet = CloneEffectiveSchemaSet(effectiveSchemaSet);
-
-                // Build relational model
-                var modelSetBuilder = new DerivedRelationalModelSetBuilder(
-                    RelationalModelSetPasses.CreateDefault()
-                );
-                var modelSet = modelSetBuilder.Build(clonedSchemaSet, dialect, dialectRules);
-
-                // Emit DDL: core + relational model + seed DML.
-                // SeedDmlEmitter uses the original effectiveSchemaInfo (not the cloned set)
-                // because EffectiveSchemaInfo is an immutable record unaffected by model builder mutation.
-                var coreDdl = new CoreDdlEmitter(sqlDialect).Emit();
-                var relationalDdl = new RelationalModelDdlEmitter(sqlDialect).Emit(modelSet);
-                var seedDml = new SeedDmlEmitter(sqlDialect).Emit(effectiveSchemaInfo);
-                var combinedSql = coreDdl + relationalDdl + seedDml;
-
-                // Write SQL file (always dialect-prefixed, matching {dialect}.sql convention)
-                var dialectLabel = DialectLabel(dialect);
-                var sqlFileName = $"{dialectLabel}.sql";
-                var sqlPath = Path.Combine(outputDir, sqlFileName);
-                WriteFileWithUnixLineEndings(sqlPath, combinedSql);
-                emittedFiles.Add(sqlFileName);
-
-                // Emit relational model manifest (always dialect-suffixed because the
-                // derived model is dialect-dependent via ISqlDialectRules naming/type rules)
-                var modelManifest = DerivedModelSetManifestEmitter.Emit(modelSet);
-                var manifestFileName = $"relational-model.{dialectLabel}.manifest.json";
-                var manifestPath = Path.Combine(outputDir, manifestFileName);
-                WriteFileWithUnixLineEndings(manifestPath, modelManifest);
-                emittedFiles.Add(manifestFileName);
-            }
-
-            // Emit effective schema manifest (dialect-independent, emitted once)
-            var schemaManifest = EffectiveSchemaManifestEmitter.Emit(
-                effectiveSchemaInfo,
-                includeResourceKeys: true
-            );
-            var schemaManifestPath = Path.Combine(outputDir, "effective-schema.manifest.json");
-            WriteFileWithUnixLineEndings(schemaManifestPath, schemaManifest);
-            emittedFiles.Add("effective-schema.manifest.json");
-
-            // Print summary
-            Console.WriteLine(
-                $"DDL emission complete. Output directory: {LoggingSanitizer.SanitizeForConsole(outputDir)}"
-            );
-            Console.WriteLine($"Effective schema hash: {effectiveSchemaInfo.EffectiveSchemaHash}");
-            Console.WriteLine($"Resource key count: {effectiveSchemaInfo.ResourceKeyCount}");
-            Console.WriteLine("Files written:");
-            foreach (var file in emittedFiles)
-            {
-                Console.WriteLine($"  {file}");
-            }
-
-            return 0;
-        }
-        catch (InvalidOperationException ex)
-        {
-            logger.LogError(ex, "Schema processing failed during DDL emission");
-            Console.Error.WriteLine(
-                $"Error: Schema processing failed: {LoggingSanitizer.SanitizeForConsole(ex.Message)}"
-            );
-            return 1;
-        }
-        catch (ArgumentException ex)
-        {
-            logger.LogError(ex, "Invalid argument during DDL emission");
-            Console.Error.WriteLine(
-                $"Error: Invalid argument: {LoggingSanitizer.SanitizeForConsole(ex.Message)}"
-            );
-            return 1;
-        }
-        catch (Exception ex)
-        {
-            logger.LogCritical(ex, "An unexpected error occurred during DDL emission");
-            Console.Error.WriteLine(
-                $"Error: An unexpected error occurred: {LoggingSanitizer.SanitizeForConsole(ex.Message)}"
-            );
-            return 1;
-        }
+        );
     }
 
     private static string DialectLabel(SqlDialect dialect) =>

@@ -67,64 +67,44 @@ public static class HashCommand
             return LoadResultErrorHandler.Handle(logger, result);
         }
 
-        try
-        {
-            var nodes = success.NormalizedNodes;
-            var coreEndpoint = nodes
-                .CoreApiSchemaRootNode["projectSchema"]
-                ?["projectEndpointName"]?.GetValue<string>();
-            var extensionCount = nodes.ExtensionApiSchemaRootNodes.Length;
-
-            logger.LogInformation(
-                "Schema loaded and normalized successfully. Core: {CoreEndpoint}, Extensions: {ExtensionCount}",
-                LoggingSanitizer.SanitizeForLogging(coreEndpoint),
-                extensionCount
-            );
-
-            if (extensionCount > 0)
+        return CommandErrorHandler.Execute(
+            logger,
+            "hash computation",
+            () =>
             {
-                var extensionEndpoints = nodes
-                    .ExtensionApiSchemaRootNodes.Select(n =>
-                        n["projectSchema"]?["projectEndpointName"]?.GetValue<string>()
-                    )
-                    .Where(n => n != null);
+                var nodes = success.NormalizedNodes;
+                var coreEndpoint = nodes
+                    .CoreApiSchemaRootNode["projectSchema"]
+                    ?["projectEndpointName"]?.GetValue<string>();
+                var extensionCount = nodes.ExtensionApiSchemaRootNodes.Length;
 
                 logger.LogInformation(
-                    "Extension endpoints: {Extensions}",
-                    string.Join(", ", extensionEndpoints.Select(LoggingSanitizer.SanitizeForLogging))
+                    "Schema loaded and normalized successfully. Core: {CoreEndpoint}, Extensions: {ExtensionCount}",
+                    LoggingSanitizer.SanitizeForLogging(coreEndpoint),
+                    extensionCount
                 );
+
+                if (extensionCount > 0)
+                {
+                    var extensionEndpoints = nodes
+                        .ExtensionApiSchemaRootNodes.Select(n =>
+                            n["projectSchema"]?["projectEndpointName"]?.GetValue<string>()
+                        )
+                        .Where(n => n != null);
+
+                    logger.LogInformation(
+                        "Extension endpoints: {Extensions}",
+                        string.Join(", ", extensionEndpoints.Select(LoggingSanitizer.SanitizeForLogging))
+                    );
+                }
+
+                var effectiveSchemaHash = hashProvider.ComputeHash(nodes);
+                logger.LogInformation("Effective schema hash: {Hash}", effectiveSchemaHash);
+
+                Console.WriteLine("Schema normalization successful.");
+                Console.WriteLine($"Effective schema hash: {effectiveSchemaHash}");
+                return 0;
             }
-
-            var effectiveSchemaHash = hashProvider.ComputeHash(nodes);
-            logger.LogInformation("Effective schema hash: {Hash}", effectiveSchemaHash);
-
-            Console.WriteLine("Schema normalization successful.");
-            Console.WriteLine($"Effective schema hash: {effectiveSchemaHash}");
-            return 0;
-        }
-        catch (InvalidOperationException ex)
-        {
-            logger.LogError(ex, "Schema processing failed during hash computation");
-            Console.Error.WriteLine(
-                $"Error: Schema processing failed: {LoggingSanitizer.SanitizeForConsole(ex.Message)}"
-            );
-            return 1;
-        }
-        catch (ArgumentException ex)
-        {
-            logger.LogError(ex, "Invalid argument during hash computation");
-            Console.Error.WriteLine(
-                $"Error: Invalid argument: {LoggingSanitizer.SanitizeForConsole(ex.Message)}"
-            );
-            return 1;
-        }
-        catch (Exception ex)
-        {
-            logger.LogCritical(ex, "An unexpected error occurred during hash computation");
-            Console.Error.WriteLine(
-                $"Error: An unexpected error occurred: {LoggingSanitizer.SanitizeForConsole(ex.Message)}"
-            );
-            return 1;
-        }
+        );
     }
 }
