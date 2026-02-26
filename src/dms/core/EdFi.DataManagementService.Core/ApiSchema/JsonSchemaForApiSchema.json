@@ -245,6 +245,9 @@
                                     },
                                     "schemaFragment": {
                                         "type": "object"
+                                    },
+                                    "projectEndpointName": {
+                                        "type": "string"
                                     }
                                 },
                                 "required": ["insertionLocations", "schemaFragment"]
