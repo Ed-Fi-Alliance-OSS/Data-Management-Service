@@ -117,42 +117,7 @@ internal static class PlanContractsManifestFixtureBuilder
 
     private static QueryPlanSnapshot BuildQueryPlanSnapshot(SqlDialect dialect)
     {
-        var compiler = new PageDocumentIdSqlCompiler(dialect);
-        var plan = compiler.Compile(
-            new PageDocumentIdQuerySpec(
-                RootTable: new DbTableName(new DbSchemaName("edfi"), "StudentSchoolAssociation"),
-                Predicates:
-                [
-                    new QueryValuePredicate(
-                        new DbColumnName("AliasB"),
-                        QueryComparisonOperator.GreaterThan,
-                        "zParam"
-                    ),
-                    new QueryValuePredicate(
-                        new DbColumnName("AliasA"),
-                        QueryComparisonOperator.Equal,
-                        "aParam"
-                    ),
-                    new QueryValuePredicate(
-                        new DbColumnName("AliasC"),
-                        QueryComparisonOperator.LessThan,
-                        "mParam"
-                    ),
-                ],
-                UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>
-                {
-                    [new DbColumnName("AliasA")] = new ColumnStorage.UnifiedAlias(
-                        new DbColumnName("CanonicalA"),
-                        new DbColumnName("PresenceA")
-                    ),
-                    [new DbColumnName("AliasB")] = new ColumnStorage.UnifiedAlias(
-                        new DbColumnName("CanonicalB"),
-                        null
-                    ),
-                },
-                IncludeTotalCountSql: true
-            )
-        );
+        var plan = PlanSqlGoldenFixtureQueryPlans.CompileContractsManifestPageDocumentIdPlan(dialect);
 
         return new QueryPlanSnapshot(
             dialect,

@@ -88,3 +88,10 @@ Decisions: added case-insensitive duplicate filter-parameter validation after re
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageDocumentIdSqlCompilerTests.cs; progress.txt; tasks.json.
 Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 89); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
 Blockers/notes: no blockers; next highest-priority remaining task is Tests (shared query fixture extraction).
+
+2026-02-26
+Task done: Tests (shared query fixture helper extraction). Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: extracted shared page-query fixture compiler helper (`PlanSqlGoldenFixtureQueryPlans`) with two canonical spec builders consumed by both golden suites; kept fixture-building call sites thin to preserve readability and deterministic output behavior.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanSqlGoldenFixtureQueryPlans.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanSqlFoundationsGoldenFixtureTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanContractsManifestGoldenFixtureTests.cs; tasks.json.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 89); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors); git diff -- src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Fixtures (no output).
+Blockers/notes: no blockers; all tasks in tasks.json now completed.

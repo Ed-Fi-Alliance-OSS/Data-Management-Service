@@ -121,6 +121,6 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj` and confirm all golden and unit tests pass.",
       "Run: `git diff -- src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Fixtures` and confirm there are no fixture changes."
     ],
-    "completed": false
+    "completed": true
   }
 ]

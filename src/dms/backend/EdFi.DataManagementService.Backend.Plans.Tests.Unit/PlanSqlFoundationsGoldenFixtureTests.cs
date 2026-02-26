@@ -117,34 +117,7 @@ public class Given_PlanSqlFoundations_GoldenFixture
 
     private static string BuildPageDocumentIdSql(SqlDialect dialect)
     {
-        var compiler = new PageDocumentIdSqlCompiler(dialect);
-        var plan = compiler.Compile(
-            new PageDocumentIdQuerySpec(
-                RootTable: new DbTableName(new DbSchemaName("edfi"), "StudentSchoolAssociation"),
-                Predicates:
-                [
-                    new QueryValuePredicate(
-                        new DbColumnName("SchoolYear"),
-                        QueryComparisonOperator.GreaterThanOrEqual,
-                        "schoolYear"
-                    ),
-                    new QueryValuePredicate(
-                        new DbColumnName("Student_StudentUniqueId"),
-                        QueryComparisonOperator.Equal,
-                        "studentUniqueId"
-                    ),
-                ],
-                UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>
-                {
-                    [new DbColumnName("Student_StudentUniqueId")] = new ColumnStorage.UnifiedAlias(
-                        new DbColumnName("StudentUniqueId_Unified"),
-                        new DbColumnName("Student_DocumentId")
-                    ),
-                }
-            )
-        );
-
-        return plan.PageDocumentIdSql;
+        return PlanSqlGoldenFixtureQueryPlans.CompileFoundationsPageDocumentIdPlan(dialect).PageDocumentIdSql;
     }
 
     private static string BuildSimpleInsertSql(SqlDialect dialect)
