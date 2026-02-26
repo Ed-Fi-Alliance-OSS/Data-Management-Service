@@ -345,7 +345,10 @@ public sealed record KeysetTableContract(SqlRelationRef.TempTable Table, DbColum
 /// </summary>
 /// <param name="PageDocumentIdSql">SQL selecting a page of <c>DocumentId</c>s.</param>
 /// <param name="TotalCountSql">Optional SQL selecting a total row count over the same filters.</param>
-/// <param name="ParametersInOrder">Deterministic parameter inventory in SQL emission order.</param>
+/// <param name="ParametersInOrder">
+/// Deterministic inventory of plan parameters in canonical order (filters as emitted, then paging roles).
+/// Executors bind parameters by name; this ordering does not necessarily match placeholder appearance per dialect.
+/// </param>
 public sealed record PageDocumentIdSqlPlan(
     string PageDocumentIdSql,
     string? TotalCountSql,

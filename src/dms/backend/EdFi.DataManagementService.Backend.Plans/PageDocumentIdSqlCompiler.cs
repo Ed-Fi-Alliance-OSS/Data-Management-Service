@@ -195,7 +195,8 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     }
 
     /// <summary>
-    /// Builds deterministic query parameter metadata in SQL-emission order.
+    /// Builds deterministic query parameter metadata in canonical plan order.
+    /// Executors bind parameters by name, so this ordering does not need to match placeholder appearance per dialect.
     /// </summary>
     private static IReadOnlyList<QuerySqlParameter> BuildParametersInOrder(
         IReadOnlyList<RewrittenPredicate> predicates,
