@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -198,6 +199,38 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             var signature = segments[2].ToCharArray();
             new Random().Shuffle(signature);
             _scenarioContext["dmsToken"] = $"{segments[0]}.{segments[1]}.{new string(signature)}";
+        }
+
+        [Given("the token is expired")]
+        public void GivenTheTokenIsExpired()
+        {
+            var token = GetDmsTokenFromContext().Replace("Bearer ", string.Empty);
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                throw new InvalidOperationException("No JWT token available to expire.");
+            }
+
+            var segments = token.Split('.');
+            if (segments.Length < 2)
+            {
+                throw new InvalidOperationException("Token is not a valid JWT.");
+            }
+
+            var payloadJson = Encoding.UTF8.GetString(Base64UrlDecode(segments[1]));
+            var payload =
+                JsonNode.Parse(payloadJson)?.AsObject()
+                ?? throw new InvalidOperationException("Token payload is not valid JSON.");
+
+            payload["exp"] = DateTimeOffset.UtcNow.AddMinutes(-5).ToUnixTimeSeconds();
+
+            var updatedPayload = Base64UrlEncode(Encoding.UTF8.GetBytes(payload.ToJsonString()));
+            var updatedToken = segments.Length switch
+            {
+                2 => $"{segments[0]}.{updatedPayload}",
+                _ => $"{segments[0]}.{updatedPayload}.{segments[2]}",
+            };
+
+            _scenarioContext["dmsToken"] = $"Bearer {updatedToken}";
         }
 
         private static (string, Dictionary<string, object>) ExtractDescriptorBody(string descriptorValue)
@@ -419,13 +452,17 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information($"POST url: {url}");
             _logger.log.Information($"POST body: {body}");
 
-            // Add custom header
-            var httpHeaders = new List<KeyValuePair<string, string>> { new(header, value) };
-            httpHeaders.AddRange(GetHeaders());
+            var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var authHeader in GetHeaders())
+            {
+                headers[authHeader.Key] = authHeader.Value;
+            }
+
+            headers[header] = value;
 
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
                 url,
-                new() { Data = body, Headers = httpHeaders }
+                new() { Data = body, Headers = headers }
             )!;
             _featureContext["_waitOnNextQuery"] = true;
             _logger.log.Information(_apiResponse.TextAsync().Result);
@@ -1659,6 +1696,24 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         private string GetDmsTokenFromContext()
         {
             return _scenarioContext.GetValueOrDefault("dmsToken")?.ToString() ?? string.Empty;
+        }
+
+        private static string Base64UrlEncode(byte[] input)
+        {
+            return Convert.ToBase64String(input).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        }
+
+        private static byte[] Base64UrlDecode(string input)
+        {
+            string padded = input.Replace('-', '+').Replace('_', '/');
+            padded = (padded.Length % 4) switch
+            {
+                2 => padded + "==",
+                3 => padded + "=",
+                _ => padded,
+            };
+
+            return Convert.FromBase64String(padded);
         }
     }
 }
