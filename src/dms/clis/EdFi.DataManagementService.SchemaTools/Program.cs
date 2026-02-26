@@ -59,7 +59,6 @@ void ConfigureServices(IServiceCollection services)
         config.AddSerilog();
     });
 
-    services.AddSingleton(typeof(ILogger<>), typeof(Logger<>));
     services.AddSingleton<IApiSchemaInputNormalizer, ApiSchemaInputNormalizer>();
     services.AddSingleton<IApiSchemaFileLoader, ApiSchemaFileLoader>();
     services.AddSingleton<IEffectiveSchemaHashProvider, EffectiveSchemaHashProvider>();

@@ -137,8 +137,10 @@ public static class DdlEmitCommand
                 {
                     var (sqlDialect, dialectRules) = CreateDialect(dialect);
 
-                    // Deep-clone the effective schema set for each dialect because the
-                    // relational model builder mutates ProjectSchema JsonObjects by parenting them.
+                    // Deep-clone the effective schema set for each dialect because
+                    // DerivedRelationalModelSetBuilder assigns JsonNode.Parent on ProjectSchema
+                    // nodes, which prevents reuse across builds. Ideally the builder should
+                    // treat inputs as immutable, but until then we clone before each build.
                     var clonedSchemaSet = CloneEffectiveSchemaSet(effectiveSchemaSet);
 
                     // Build relational model
