@@ -144,6 +144,7 @@ public static class PlanNamingConventions
         ArgumentNullException.ThrowIfNull(orderedNames);
 
         var nextSuffixByName = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var deduplicatedNames = new string[orderedNames.Count];
 
         for (var index = 0; index < orderedNames.Count; index++)
@@ -158,18 +159,82 @@ public static class PlanNamingConventions
                 );
             }
 
-            if (!nextSuffixByName.TryGetValue(name, out var nextSuffix))
+            AdvanceSuffixFromExplicitName(name, nextSuffixByName);
+
+            if (usedNames.Add(name))
             {
                 deduplicatedNames[index] = name;
-                nextSuffixByName[name] = 2;
+                if (!nextSuffixByName.TryGetValue(name, out var currentNextSuffix) || currentNextSuffix < 2)
+                {
+                    nextSuffixByName[name] = 2;
+                }
+
                 continue;
             }
 
-            deduplicatedNames[index] = $"{name}_{nextSuffix}";
-            nextSuffixByName[name] = nextSuffix + 1;
+            var baseName = TryParseNumericSuffix(name, out var parsedBaseName, out _) ? parsedBaseName : name;
+
+            var nextDeduplicatedSuffix = nextSuffixByName.TryGetValue(baseName, out var nextSuffixForBase)
+                ? nextSuffixForBase
+                : 2;
+
+            var candidate = $"{baseName}_{nextDeduplicatedSuffix}";
+
+            while (usedNames.Contains(candidate))
+            {
+                nextDeduplicatedSuffix++;
+                candidate = $"{baseName}_{nextDeduplicatedSuffix}";
+            }
+
+            deduplicatedNames[index] = candidate;
+            usedNames.Add(candidate);
+            nextSuffixByName[baseName] = nextDeduplicatedSuffix + 1;
+            AdvanceSuffixFromExplicitName(candidate, nextSuffixByName);
         }
 
         return deduplicatedNames;
+    }
+
+    private static void AdvanceSuffixFromExplicitName(string name, IDictionary<string, int> nextSuffixByName)
+    {
+        if (!TryParseNumericSuffix(name, out var baseName, out var explicitSuffix))
+        {
+            return;
+        }
+
+        var nextSuffix = explicitSuffix + 1;
+
+        if (
+            !nextSuffixByName.TryGetValue(baseName, out var currentNextSuffix)
+            || nextSuffix > currentNextSuffix
+        )
+        {
+            nextSuffixByName[baseName] = nextSuffix;
+        }
+    }
+
+    private static bool TryParseNumericSuffix(string name, out string baseName, out int suffix)
+    {
+        baseName = string.Empty;
+        suffix = 0;
+
+        var separatorIndex = name.LastIndexOf('_');
+
+        if (separatorIndex <= 0 || separatorIndex == name.Length - 1)
+        {
+            return false;
+        }
+
+        var suffixSpan = name.AsSpan(separatorIndex + 1);
+
+        if (!int.TryParse(suffixSpan, out var parsedSuffix) || parsedSuffix < 1)
+        {
+            return false;
+        }
+
+        baseName = name[..separatorIndex];
+        suffix = parsedSuffix;
+        return true;
     }
 
     /// <summary>

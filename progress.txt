@@ -67,3 +67,10 @@ Decisions: added read-side projection shells directly in executor-facing plan co
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/PlanContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ExternalPlanContractsTests.cs; tasks.json.
 Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 86); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
 Blockers/notes: no blockers; next highest-priority remaining task likely Naming (dedupe suffix-collision regression).
+
+2026-02-26
+Task done: Naming (suffix-collision regression). Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: de-dupe now uses case-insensitive emitted-name set + explicit-suffix floor tracking; for collisions, suffix allocator bumps until unused and, for names ending in numeric suffixes, resolves to base stem to avoid duplicate emission patterns like `a`,`a`,`a_2`.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/PlanNamingConventions.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanNamingConventionsTests.cs; tasks.json.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 88); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
+Blockers/notes: no blockers; remaining task in tasks.json is Docs.

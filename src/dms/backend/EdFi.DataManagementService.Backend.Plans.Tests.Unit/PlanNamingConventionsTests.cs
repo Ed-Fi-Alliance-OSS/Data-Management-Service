@@ -60,6 +60,22 @@ public class Given_PlanNamingConventions
     }
 
     [Test]
+    public void It_should_bump_suffixes_until_unused_when_generated_names_collide_with_later_inputs()
+    {
+        var deduplicated = PlanNamingConventions.DeduplicateCaseInsensitive(["a", "a", "a_2"]);
+
+        deduplicated.Should().Equal("a", "a_2", "a_3");
+    }
+
+    [Test]
+    public void It_should_bump_suffixes_deterministically_for_case_variant_suffix_collisions()
+    {
+        var deduplicated = PlanNamingConventions.DeduplicateCaseInsensitive(["a", "A", "a_2", "A_2"]);
+
+        deduplicated.Should().Equal("a", "A_2", "a_3", "A_4");
+    }
+
+    [Test]
     public void It_should_derive_and_deduplicate_write_parameter_names_from_ordered_columns()
     {
         var parameterNames = PlanNamingConventions.DeriveWriteParameterNamesInOrder([
