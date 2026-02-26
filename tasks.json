@@ -60,5 +60,49 @@
       "Optional (update goldens): `UPDATE_GOLDENS=1 dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
     ],
     "completed": true
+  },
+  {
+    "category": "Keyset Table",
+    "description": "Make the keyset \"page\" object first-class so SQL generation can never schema-qualify it. Acceptance: (1) Introduce a small relation-ref model (e.g., `SqlRelationRef`) with cases `PhysicalTable(DbTableName Table)` (always schema-qualified) and `TempTable(string Name)` (never schema-qualified; name may be `page` or `#page`). (2) Add `SqlWriter.AppendRelation(SqlRelationRef)` and use it from all plan/query emitters that produce `FROM` clauses. (3) Update `KeysetTableContract` to hold a temp-table relation reference (or rename contract to `KeysetTempTableContract`) plus a single canonical `DocumentIdColumnName` property (remove/avoid alternate property names). (4) Update `KeysetTableConventions` to return `TempTable(\"page\")` for PgSQL and `TempTable(\"#page\")` for MSSQL. (5) Add unit tests that lock down: (a) temp-table references are never schema-qualified, (b) physical tables remain schema-qualified, and (c) keyset-table constants remain deterministic across calls.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Naming",
+    "description": "Fix parameter de-duplication so it cannot emit duplicates when a generated suffix name already exists. Acceptance: (1) Update `PlanNamingConventions.DeduplicateCaseInsensitive(...)` to track a case-insensitive `used` set of emitted names and, when de-duplicating, bump the `_{n}` suffix until the candidate is unused. (2) Preserve determinism: the output must depend only on the ordered input sequence. (3) Add a unit test for the specific regression case `['a', 'a', 'a_2']` (and case variants) that proves no duplicates are emitted and the suffix bumps deterministically (e.g., `['a', 'a_2', 'a_3']`).",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Projection Contracts",
+    "description": "Add the missing executor-facing projection plan contract shells required by `reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md`. Acceptance: (1) Introduce plain-data projection contract types under `EdFi.DataManagementService.Backend.External.Plans` for descriptor projection (page-batched execution returning `(DescriptorId, Uri)` with stable result ordering) and for reference-identity projection metadata derived from `DocumentReferenceBindings` that can be consumed via ordinal access over hydration select lists (no SQL parsing). (2) All ordering-sensitive collections are `IReadOnlyList<>` with deterministic ordering and no dictionaries/maps in the contract. (3) Add unit tests that at minimum validate the contract shapes are instantiable and preserve ordering semantics (no accidental sorting or dictionary iteration dependence).",
+    "steps-to-verify": [
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Contracts",
+    "description": "Convert `KeyUnificationMemberWritePlan` to a discriminated-union shape to prevent invalid field combinations. Acceptance: (1) Replace the current wide record (with `Kind` + nullable `ScalarType`/`DescriptorResource` fields) with a discriminated union (e.g., `ScalarMember(...)` and `DescriptorMember(...)`) that encodes required fields per kind. (2) Preserve all required semantics: relative path, presence-gating metadata (presence column name, presence binding index, synthetic flag), and any descriptor resource metadata where applicable. (3) Keep the contracts plain-data and pack-serializable (records/structs only, no delegates). (4) Update existing unit tests and add at least one test that demonstrates invalid combinations are unrepresentable (compile-time) or rejected by construction.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Docs",
+    "description": "Align design docs with the implemented contracts and batching shape. Acceptance: (1) Update `reference/design/backend-redesign/design-docs/flattening-reconstitution.md` to show `ResourceWritePlan` using ordered lists (e.g., `TablePlansInDependencyOrder`) instead of a `Dictionary`, and ensure all references describe deterministic ordering without dictionary iteration dependence. (2) Update `reference/design/backend-redesign/design-docs/compiled-mapping-set.md` and `reference/design/backend-redesign/design-docs/flattening-reconstitution.md` to reference `TableWritePlan.BulkInsertBatching` / `BulkInsertBatchingInfo` rather than `TableWritePlan.MaxRowsPerBatch`. (3) Update the mapping pack proto/spec in `reference/design/backend-redesign/design-docs/mpack-format-v1.md` to replace `max_rows_per_batch` with a nested batching message (e.g., `bulk_insert_batching { max_rows_per_batch, parameters_per_row, max_parameters_per_command }`) and update the ordering/determinism rules in the same doc accordingly. (4) Ensure the docs describe `WriteColumnBinding.ParameterName` as authoritative and avoid any wording that implies SQL-text parsing for binding inference.",
+    "steps-to-verify": [
+      "Review the updated doc sections for internal consistency and correct cross-links.",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
   }
 ]
