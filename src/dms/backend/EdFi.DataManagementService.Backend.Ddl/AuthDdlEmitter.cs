@@ -41,6 +41,16 @@ public sealed class AuthDdlEmitter(ISqlDialect dialect, AuthEdOrgHierarchy hiera
         string PgsqlRecord
     );
 
+    /// <summary>
+    /// Pre-computed quoted identifiers for the auth table, source/target columns,
+    /// and a per-entity identity column. Eliminates repeated <c>Quote()</c> calls
+    /// across trigger body methods.
+    /// </summary>
+    private readonly record struct QuotedNames(string AuthTable, string Source, string Target, string IdCol);
+
+    private QuotedNames GetQuotedNames(AuthEdOrgEntity entity) =>
+        new(Quote(_authTable), Quote(_sourceCol), Quote(_targetCol), Quote(entity.IdentityColumn));
+
     private static readonly TriggerContext _insertedContext = new("inserted", "new", "NEW");
     private static readonly TriggerContext _deletedContext = new("deleted", "old", "OLD");
 
@@ -251,6 +261,10 @@ public sealed class AuthDdlEmitter(ISqlDialect dialect, AuthEdOrgHierarchy hiera
         using (writer.Indent())
         {
             writer.AppendLine($"AFTER {triggerEvent} ON {Quote(entity.Table)}");
+            // Row-level triggers simplify access to NEW/OLD records for the hierarchy
+            // join logic. Statement-level triggers with REFERENCING transition tables
+            // would be more efficient for bulk EdOrg provisioning but are unnecessary
+            // for typical low-volume administrative EdOrg operations.
             writer.AppendLine("FOR EACH ROW");
             writer.AppendLine($"EXECUTE FUNCTION {Quote(schema)}.{Quote(funcName)}();");
         }
@@ -313,10 +327,7 @@ public sealed class AuthDdlEmitter(ISqlDialect dialect, AuthEdOrgHierarchy hiera
     /// </summary>
     private void EmitHierarchicalInsertBody(SqlWriter writer, AuthEdOrgEntity entity)
     {
-        var authTable = Quote(_authTable);
-        var source = Quote(_sourceCol);
-        var target = Quote(_targetCol);
-        var idCol = Quote(entity.IdentityColumn);
+        var (authTable, source, target, idCol) = GetQuotedNames(entity);
         bool isPgsql = _dialect.Rules.Dialect == SqlDialect.Pgsql;
 
         // Step 1: Self-referencing tuple
@@ -416,10 +427,7 @@ public sealed class AuthDdlEmitter(ISqlDialect dialect, AuthEdOrgHierarchy hiera
     /// </summary>
     private void EmitUpdateOldAncestorsForFk(SqlWriter writer, AuthEdOrgEntity entity, AuthParentEdOrgFk fk)
     {
-        var authTable = Quote(_authTable);
-        var source = Quote(_sourceCol);
-        var target = Quote(_targetCol);
-        var idCol = Quote(entity.IdentityColumn);
+        var (authTable, source, target, idCol) = GetQuotedNames(entity);
         var fkCol = Quote(fk.FkColumn);
         var parentTable = Quote(fk.ParentTable);
         var parentIdCol = Quote(fk.ParentIdentityColumn);
@@ -480,10 +488,7 @@ public sealed class AuthDdlEmitter(ISqlDialect dialect, AuthEdOrgHierarchy hiera
     /// </summary>
     private void EmitUpdateKeepAncestorsForFk(SqlWriter writer, AuthEdOrgEntity entity, AuthParentEdOrgFk fk)
     {
-        var authTable = Quote(_authTable);
-        var source = Quote(_sourceCol);
-        var target = Quote(_targetCol);
-        var idCol = Quote(entity.IdentityColumn);
+        var (authTable, source, target, idCol) = GetQuotedNames(entity);
         var fkCol = Quote(fk.FkColumn);
         var parentTable = Quote(fk.ParentTable);
         var parentIdCol = Quote(fk.ParentIdentityColumn);
@@ -530,10 +535,7 @@ public sealed class AuthDdlEmitter(ISqlDialect dialect, AuthEdOrgHierarchy hiera
     /// </summary>
     private void EmitUpdateInsertStep(SqlWriter writer, AuthEdOrgEntity entity)
     {
-        var authTable = Quote(_authTable);
-        var source = Quote(_sourceCol);
-        var target = Quote(_targetCol);
-        var idCol = Quote(entity.IdentityColumn);
+        var (authTable, source, target, idCol) = GetQuotedNames(entity);
         bool isPgsql = _dialect.Rules.Dialect == SqlDialect.Pgsql;
 
         if (isPgsql)
@@ -616,10 +618,7 @@ public sealed class AuthDdlEmitter(ISqlDialect dialect, AuthEdOrgHierarchy hiera
     /// </summary>
     private void EmitUpdateNewAncestorsForFk(SqlWriter writer, AuthEdOrgEntity entity, AuthParentEdOrgFk fk)
     {
-        var authTable = Quote(_authTable);
-        var source = Quote(_sourceCol);
-        var target = Quote(_targetCol);
-        var idCol = Quote(entity.IdentityColumn);
+        var (authTable, source, target, idCol) = GetQuotedNames(entity);
         var fkCol = Quote(fk.FkColumn);
         var parentTable = Quote(fk.ParentTable);
         var parentIdCol = Quote(fk.ParentIdentityColumn);
@@ -708,10 +707,7 @@ public sealed class AuthDdlEmitter(ISqlDialect dialect, AuthEdOrgHierarchy hiera
     /// </summary>
     private void EmitSelfTupleInsert(SqlWriter writer, AuthEdOrgEntity entity)
     {
-        var authTable = Quote(_authTable);
-        var source = Quote(_sourceCol);
-        var target = Quote(_targetCol);
-        var idCol = Quote(entity.IdentityColumn);
+        var (authTable, source, target, idCol) = GetQuotedNames(entity);
 
         if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
@@ -732,10 +728,7 @@ public sealed class AuthDdlEmitter(ISqlDialect dialect, AuthEdOrgHierarchy hiera
     /// </summary>
     private void EmitSelfTupleDelete(SqlWriter writer, AuthEdOrgEntity entity)
     {
-        var authTable = Quote(_authTable);
-        var source = Quote(_sourceCol);
-        var target = Quote(_targetCol);
-        var idCol = Quote(entity.IdentityColumn);
+        var (authTable, source, target, idCol) = GetQuotedNames(entity);
 
         if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
@@ -770,10 +763,7 @@ public sealed class AuthDdlEmitter(ISqlDialect dialect, AuthEdOrgHierarchy hiera
         Action<SqlWriter> emitTargets
     )
     {
-        var authTable = Quote(_authTable);
-        var source = Quote(_sourceCol);
-        var target = Quote(_targetCol);
-        var idCol = Quote(entity.IdentityColumn);
+        var (authTable, source, target, idCol) = GetQuotedNames(entity);
 
         if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
@@ -870,10 +860,7 @@ public sealed class AuthDdlEmitter(ISqlDialect dialect, AuthEdOrgHierarchy hiera
         TriggerContext ctx
     )
     {
-        var authTable = Quote(_authTable);
-        var source = Quote(_sourceCol);
-        var target = Quote(_targetCol);
-        var idCol = Quote(entity.IdentityColumn);
+        var (authTable, source, target, idCol) = GetQuotedNames(entity);
         var fkCol = Quote(fk.FkColumn);
         var parentTable = Quote(fk.ParentTable);
         var parentIdCol = Quote(fk.ParentIdentityColumn);
@@ -928,10 +915,7 @@ public sealed class AuthDdlEmitter(ISqlDialect dialect, AuthEdOrgHierarchy hiera
     /// </remarks>
     private void EmitDescendantsSubquery(SqlWriter writer, AuthEdOrgEntity entity, TriggerContext ctx)
     {
-        var authTable = Quote(_authTable);
-        var source = Quote(_sourceCol);
-        var target = Quote(_targetCol);
-        var idCol = Quote(entity.IdentityColumn);
+        var (authTable, source, target, idCol) = GetQuotedNames(entity);
 
         if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
