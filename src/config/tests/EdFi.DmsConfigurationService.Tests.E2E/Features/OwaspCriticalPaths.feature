@@ -155,7 +155,7 @@ Feature: OWASP critical attack path protections
                     "namespacePrefixes": "uri://ed-fi.org"
                   }
                   """
-             Then it should respond with 200
+             Then it should respond with 201
 
              When a GET request is made to "/v2/vendors/{vendorId}"
              Then it should respond with 200
