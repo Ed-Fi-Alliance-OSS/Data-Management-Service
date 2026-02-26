@@ -10,6 +10,7 @@ using EdFi.DataManagementService.SchemaTools.Commands;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Serilog;
+using Serilog.Events;
 
 var serviceCollection = new ServiceCollection();
 ConfigureServices(serviceCollection);
@@ -46,7 +47,13 @@ void ConfigureServices(IServiceCollection services)
         .MinimumLevel.Information()
         .WriteTo.File("logs/dms-schema.log", rollingInterval: RollingInterval.Day);
 
-    if (!Console.IsOutputRedirected)
+    if (Console.IsOutputRedirected)
+    {
+        // When stdout is piped/redirected (e.g. CI capture, `> file`), route all
+        // diagnostic logs to stderr so they don't corrupt the structured stdout output.
+        logConfiguration.WriteTo.Console(standardErrorFromLevel: LogEventLevel.Verbose);
+    }
+    else
     {
         logConfiguration.WriteTo.Console();
     }
