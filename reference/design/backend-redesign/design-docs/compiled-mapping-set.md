@@ -336,9 +336,9 @@ For a write request targeting resource `R`:
    - This is what allows the flattener to populate FK columns for nested arrays in O(1) without per-row DB calls.
 
 5. **Flatten to row buffers using `TableWritePlan.ColumnBindings`**
-   - For each `DbTableModel` in `ResourceWritePlan.Model.TablesInDependencyOrder`, enumerate JSON scope instances (`JsonScope`) and materialize `RowBuffer` objects.
+   - For each `TableWritePlan` in `ResourceWritePlan.TablePlansInDependencyOrder`, enumerate JSON scope instances (`JsonScope`) for `TableWritePlan.TableModel` and materialize `RowBuffer` objects.
    - Each `TableWritePlan` contains:
-     - `MaxRowsPerBatch` (deterministic bulk-insert chunking bound for this table),
+     - `BulkInsertBatching: BulkInsertBatchingInfo` (`MaxRowsPerBatch`, `ParametersPerRow`, `MaxParametersPerCommand`),
      - `ColumnBindings: IReadOnlyList<WriteColumnBinding>` (stored/writable columns only, in parameter order; each binding includes its authoritative `ParameterName`),
      - `KeyUnificationPlans: IReadOnlyList<KeyUnificationWritePlan>` (empty when no key unification applies).
    - Runtime produces `RowBuffer.Values[]` by iterating `ColumnBindings` *in order* and sourcing each value from the associated `WriteValueSource`:
@@ -362,7 +362,7 @@ For a write request targeting resource `R`:
      - `InsertSql` for insert and/or `UpdateSql` for update (depending on identity outcome).
    - Child/collection tables:
      - execute `DeleteByParentSql` (for the parent key) then bulk insert the new rows.
-   - Bulk insert is used whenever a table has 0..N rows to write (especially child/collection and extension tables): a dialect-aware executor (e.g. `IBulkInserter`) batches `RowBuffer`s into multi-row inserts (or `COPY`/`SqlBulkCopy`-style paths for large batches), using `InsertSql` + ordered `ColumnBindings` and chunking by `TableWritePlan.MaxRowsPerBatch` to respect dialect parameter limits.
+   - Bulk insert is used whenever a table has 0..N rows to write (especially child/collection and extension tables): a dialect-aware executor (e.g. `IBulkInserter`) batches `RowBuffer`s into multi-row inserts (or `COPY`/`SqlBulkCopy`-style paths for large batches), using `InsertSql` + ordered `ColumnBindings` and chunking by `TableWritePlan.BulkInsertBatching.MaxRowsPerBatch` to respect dialect parameter limits.
 
 ### 4.3 Read path usage (GET by id / query)
 

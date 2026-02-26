@@ -103,6 +103,6 @@
       "Review the updated doc sections for internal consistency and correct cross-links.",
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
     ],
-    "completed": false
+    "completed": true
   }
 ]

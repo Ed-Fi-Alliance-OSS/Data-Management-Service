@@ -121,9 +121,11 @@ All collections are `repeated` and MUST be emitted in stable sort order:
 - Within each `ResourceWritePlan`:
   - `table_plans`: ascending by `(table.schema, table.name)`
 - Within each `TableWritePlan`:
-  - `max_rows_per_batch` is semantically significant and MUST be derived deterministically from:
-    - dialect limits (e.g., SQL Server parameter limits), and
+  - `bulk_insert_batching` is semantically significant and MUST be derived deterministically from:
+    - dialect limits (e.g., SQL Server parameter limits),
+    - policy row caps, and
     - the plan's `column_bindings` count
+    - `bulk_insert_batching.max_rows_per_batch`, `bulk_insert_batching.parameters_per_row`, and `bulk_insert_batching.max_parameters_per_command` MUST all be stable for the same selection key
   - `column_bindings`: order is semantically significant (defines parameter ordering) and MUST NOT be sorted
     - `parameter_name` is semantically significant and MUST be deterministic and unique within its statement
   - `key_unification_plans`: ascending by `(canonical_column.value)`
@@ -514,14 +516,20 @@ message TableWritePlan {
   string delete_by_parent_sql = 12;                      // empty => not present
 
   // Deterministic bulk-insert batching bound for this table.
-  // Derived from dialect limits (e.g., SQL Server parameter limits) and the plan's bound column count.
-  uint32 max_rows_per_batch = 13;
+  // Derived from dialect limits (e.g., SQL Server parameter limits), policy row caps, and the plan's bound column count.
+  BulkInsertBatchingInfo bulk_insert_batching = 13;
 
   // Parameter/value ordering for insert is defined by this list.
   repeated WriteColumnBinding column_bindings = 20;
 
   // Empty when this table has no key-unification classes.
   repeated KeyUnificationWritePlan key_unification_plans = 30;
+}
+
+message BulkInsertBatchingInfo {
+  uint32 max_rows_per_batch = 1;
+  uint32 parameters_per_row = 2;
+  uint32 max_parameters_per_command = 3;
 }
 
 message WriteColumnBinding {
