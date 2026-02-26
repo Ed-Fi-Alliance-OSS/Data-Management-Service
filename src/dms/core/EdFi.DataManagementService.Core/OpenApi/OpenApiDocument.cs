@@ -1201,6 +1201,166 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
     }
 
     /// <summary>
+    /// Inserts _ext for common type extensions specified via commonExtensionOverrides.
+    /// Navigates the OpenAPI spec's $ref chains to find the target component schema
+    /// and adds extension references using the schemaFragment data.
+    /// </summary>
+    private void InsertCommonExtensionOverrides(
+        JsonArray overrides,
+        JsonNode openApiSpec,
+        string coreComponentSchemaName
+    )
+    {
+        var componentsSchemas =
+            openApiSpec.SelectNodeFromPath("$.components.schemas", _logger)?.AsObject()
+            ?? throw new InvalidOperationException("OpenAPI spec missing 'components.schemas'.");
+
+        foreach (JsonNode? overrideEntry in overrides)
+        {
+            if (overrideEntry is null)
+            {
+                continue;
+            }
+
+            var insertionLocations = overrideEntry["insertionLocations"]?.AsArray();
+            var schemaFragment = overrideEntry["schemaFragment"]?.AsObject();
+
+            if (insertionLocations is null || schemaFragment is null)
+            {
+                continue;
+            }
+
+            var fragmentProperties = schemaFragment["properties"]?.AsObject();
+            if (fragmentProperties is null)
+            {
+                continue;
+            }
+
+            foreach (JsonNode? location in insertionLocations)
+            {
+                var jsonPath = location?.GetValue<string>();
+                if (string.IsNullOrEmpty(jsonPath))
+                {
+                    continue;
+                }
+
+                var targetSchemaName = ResolveComponentSchemaFromInsertionLocation(
+                    componentsSchemas,
+                    coreComponentSchemaName,
+                    jsonPath
+                );
+
+                if (targetSchemaName is null)
+                {
+                    _logger.LogWarning(
+                        "Could not resolve insertion location '{JsonPath}' to a component schema from '{CoreSchema}'",
+                        jsonPath,
+                        coreComponentSchemaName
+                    );
+                    continue;
+                }
+
+                var targetSchema = componentsSchemas[targetSchemaName]?.AsObject();
+                if (targetSchema?["properties"] is not JsonObject targetProperties)
+                {
+                    _logger.LogWarning(
+                        "Target component schema '{TargetSchema}' has no properties",
+                        targetSchemaName
+                    );
+                    continue;
+                }
+
+                foreach ((string projectKey, JsonNode? projectSchemaValue) in fragmentProperties)
+                {
+                    if (projectSchemaValue is not JsonObject projectSchema)
+                    {
+                        continue;
+                    }
+
+                    var schemaNames = CreateSchemaNames(targetSchemaName, projectKey);
+
+                    SetupExtensionSchema(targetProperties, componentsSchemas, schemaNames, projectKey);
+                    AddProjectSchema(
+                        componentsSchemas,
+                        schemaNames.ProjectExtensionSchemaName,
+                        projectSchema.DeepClone().AsObject()
+                    );
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Resolves an insertion location JSONPath (e.g., "$.properties.addresses.items") to the target
+    /// OpenAPI component schema name by navigating the spec's $ref chains.
+    /// </summary>
+    private static string? ResolveComponentSchemaFromInsertionLocation(
+        JsonObject componentsSchemas,
+        string startSchemaName,
+        string insertionLocation
+    )
+    {
+        var segments = insertionLocation.Split('.').Where(s => s != "$").ToArray();
+
+        JsonNode? current = componentsSchemas[startSchemaName];
+        string resolvedSchemaName = startSchemaName;
+
+        foreach (var segment in segments)
+        {
+            if (current is null)
+            {
+                return null;
+            }
+
+            (current, resolvedSchemaName) = ResolveRef(current, componentsSchemas, resolvedSchemaName);
+            if (current is null)
+            {
+                return null;
+            }
+
+            current = current[segment];
+        }
+
+        // Final $ref resolution at the target node
+        if (current is not null)
+        {
+            (_, resolvedSchemaName) = ResolveRef(current, componentsSchemas, resolvedSchemaName);
+        }
+
+        return resolvedSchemaName;
+    }
+
+    /// <summary>
+    /// If the node contains a $ref pointing to a component schema, resolves it and returns
+    /// the referenced node and updated schema name. Otherwise returns the original node unchanged.
+    /// </summary>
+    private static (JsonNode? Node, string SchemaName) ResolveRef(
+        JsonNode? node,
+        JsonObject componentsSchemas,
+        string currentSchemaName
+    )
+    {
+        if (node is null)
+        {
+            return (null, currentSchemaName);
+        }
+
+        var refValue = node["$ref"]?.GetValue<string>();
+        if (refValue is null)
+        {
+            return (node, currentSchemaName);
+        }
+
+        var resolved = ExtractSchemaNameFromRef(refValue);
+        if (resolved is null)
+        {
+            return (node, currentSchemaName);
+        }
+
+        return (componentsSchemas[resolved], resolved);
+    }
+
+    /// <summary>
     /// Inserts new endpoint paths from extension OpenAPI fragments into the paths section of the corresponding
     /// core OpenAPI endpoint.
     /// </summary>
@@ -1529,14 +1689,39 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
                     InsertNewTags(tags, openApiSpecification);
                 }
 
-                // Handle resource extensions (exts)
-                if (resourceSchema.IsResourceExtension && fragment["exts"] is JsonObject exts)
+                // Handle resource extensions (exts) and common extension overrides
+                var fragmentExts = fragment["exts"] as JsonObject;
+
+                if (resourceSchema.IsResourceExtension && fragmentExts is not null)
                 {
                     InsertExts(
-                        exts,
+                        fragmentExts,
                         openApiSpecification,
                         extensionProjectSchema.ProjectName.Value.ToLower()
                     );
+                }
+
+                if (
+                    resourceSchemaNode["commonExtensionOverrides"] is JsonArray commonOverrides
+                    && commonOverrides.Count > 0
+                )
+                {
+                    if (fragmentExts is null)
+                    {
+                        throw new InvalidOperationException(
+                            $"Extension resource '{resourceSchema.ResourceName.Value}' has commonExtensionOverrides but no 'exts' in openApiFragments. "
+                                + "The 'exts' section is required to determine the core component schema name for common extension overrides."
+                        );
+                    }
+
+                    var coreSchemaName =
+                        fragmentExts.Select(kvp => kvp.Key).FirstOrDefault()
+                        ?? throw new InvalidOperationException(
+                            $"Extension resource '{resourceSchema.ResourceName.Value}' has commonExtensionOverrides but 'exts' is empty. "
+                                + "At least one core component schema name must be present in 'exts'."
+                        );
+
+                    InsertCommonExtensionOverrides(commonOverrides, openApiSpecification, coreSchemaName);
                 }
             }
         }
