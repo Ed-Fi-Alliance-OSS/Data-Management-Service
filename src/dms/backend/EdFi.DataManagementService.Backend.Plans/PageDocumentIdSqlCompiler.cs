@@ -233,7 +233,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             .AppendQuoted(DocumentIdColumnName)
             .AppendLine()
             .Append("FROM ")
-            .AppendTable(spec.RootTable)
+            .AppendRelation(new SqlRelationRef.PhysicalTable(spec.RootTable))
             .AppendLine($" {RootAlias}");
 
         AppendWhereClause(writer, predicates);
@@ -256,7 +256,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         writer
             .AppendLine("SELECT COUNT(1)")
             .Append("FROM ")
-            .AppendTable(rootTable)
+            .AppendRelation(new SqlRelationRef.PhysicalTable(rootTable))
             .AppendLine($" {RootAlias}");
 
         AppendWhereClause(writer, predicates);

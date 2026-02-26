@@ -5,6 +5,7 @@
 
 using System.Text;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
 
 namespace EdFi.DataManagementService.Backend.Ddl;
 
@@ -77,6 +78,27 @@ public sealed class SqlWriter
         WriteIndentIfNeeded();
         _builder.Append(Dialect.QualifyTable(table));
         return this;
+    }
+
+    /// <summary>
+    /// Appends a relation reference using canonical qualification rules.
+    /// </summary>
+    /// <param name="relation">The relation reference to append.</param>
+    /// <returns>This writer for method chaining.</returns>
+    public SqlWriter AppendRelation(SqlRelationRef relation)
+    {
+        ArgumentNullException.ThrowIfNull(relation);
+
+        return relation switch
+        {
+            SqlRelationRef.PhysicalTable physicalTable => AppendTable(physicalTable.Table),
+            SqlRelationRef.TempTable tempTable => AppendQuoted(tempTable.Name),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(relation),
+                relation,
+                "Unsupported relation reference."
+            ),
+        };
     }
 
     /// <summary>

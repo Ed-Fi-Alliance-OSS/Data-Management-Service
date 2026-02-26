@@ -192,15 +192,9 @@ public sealed record TableReadPlan(DbTableModel TableModel, string SelectByKeyse
 /// <summary>
 /// Names the materialized keyset table and its <c>DocumentId</c> column used by hydration SQL.
 /// </summary>
-/// <param name="TableName">Keyset table name.</param>
-/// <param name="DocumentIdColumn">Keyset table <c>DocumentId</c> column name.</param>
-public sealed record KeysetTableContract(DbTableName TableName, DbColumnName DocumentIdColumn)
-{
-    /// <summary>
-    /// Keyset table <c>DocumentId</c> column name.
-    /// </summary>
-    public DbColumnName DocumentIdColumnName => DocumentIdColumn;
-}
+/// <param name="Table">Keyset temporary table relation.</param>
+/// <param name="DocumentIdColumnName">Keyset table <c>DocumentId</c> column name.</param>
+public sealed record KeysetTableContract(SqlRelationRef.TempTable Table, DbColumnName DocumentIdColumnName);
 
 /// <summary>
 /// Compiled SQL plan for selecting a page of <c>DocumentId</c>s and optional total count.

@@ -10,17 +10,16 @@ namespace EdFi.DataManagementService.Backend.External.Plans;
 /// </summary>
 public static class KeysetTableConventions
 {
-    private static readonly DbSchemaName UnqualifiedSchema = new(string.Empty);
     private static readonly DbColumnName DocumentIdColumnName = new("DocumentId");
 
     private static readonly KeysetTableContract PgsqlKeysetTableContract = new(
-        TableName: new DbTableName(UnqualifiedSchema, "page"),
-        DocumentIdColumn: DocumentIdColumnName
+        Table: new SqlRelationRef.TempTable("page"),
+        DocumentIdColumnName: DocumentIdColumnName
     );
 
     private static readonly KeysetTableContract MssqlKeysetTableContract = new(
-        TableName: new DbTableName(UnqualifiedSchema, "#page"),
-        DocumentIdColumn: DocumentIdColumnName
+        Table: new SqlRelationRef.TempTable("#page"),
+        DocumentIdColumnName: DocumentIdColumnName
     );
 
     /// <summary>

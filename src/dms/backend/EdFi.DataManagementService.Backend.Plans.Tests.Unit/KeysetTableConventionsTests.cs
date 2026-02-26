@@ -22,8 +22,7 @@ public class Given_KeysetTableConventions
     {
         var keysetContract = KeysetTableConventions.GetKeysetTableContract(dialect);
 
-        keysetContract.TableName.Schema.Value.Should().BeEmpty();
-        keysetContract.TableName.Name.Should().Be(expectedTableName);
+        keysetContract.Table.Name.Should().Be(expectedTableName);
         keysetContract.DocumentIdColumnName.Should().Be(new DbColumnName("DocumentId"));
     }
 

@@ -173,7 +173,7 @@ public class Given_ExternalPlanContracts
             [new ExternalPlans.TableReadPlan(tableModel, "SELECT BY KEYSET SQL")]
         );
 
-        readPlan.KeysetTable.TableName.Name.Should().Be("page");
+        readPlan.KeysetTable.Table.Name.Should().Be("page");
         readPlan.KeysetTable.DocumentIdColumnName.Should().Be(new DbColumnName("DocumentId"));
         readPlan.TablePlansInDependencyOrder.Should().ContainSingle();
     }
