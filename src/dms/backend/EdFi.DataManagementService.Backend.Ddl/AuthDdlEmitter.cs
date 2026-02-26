@@ -158,11 +158,13 @@ public sealed class AuthDdlEmitter(ISqlDialect dialect, AuthEdOrgHierarchy hiera
             bool isLeaf = entity.ParentEdOrgFks.Count == 0;
 
             // Delete trigger (alphabetically first)
-            if (isLeaf)
-            {
-                EmitTrigger(writer, entity, "Delete", "DELETE", EmitLeafDeleteBody);
-            }
-            // Hierarchical Delete triggers will be added in task 6.
+            EmitTrigger(
+                writer,
+                entity,
+                "Delete",
+                "DELETE",
+                isLeaf ? EmitLeafDeleteBody : EmitHierarchicalDeleteBody
+            );
 
             // Insert trigger
             EmitTrigger(
@@ -769,6 +771,137 @@ public sealed class AuthDdlEmitter(ISqlDialect dialect, AuthEdOrgHierarchy hiera
             using (writer.Indent())
             {
                 writer.AppendLine($"OR old.{fkCol} <> new.{fkCol}");
+            }
+        }
+    }
+
+    // ── Hierarchical DELETE trigger body ────────────────────────────────
+
+    /// <summary>
+    /// Emits the DELETE trigger body for a hierarchical EdOrg (>= 1 parent FK).
+    /// Step 1: Remove ancestor tuples via CROSS JOIN of old ancestors (resolved
+    /// through parent DocumentId joins) and old descendants. Multi-parent entities
+    /// combine source blocks with UNION. Step 2: Remove self-referencing tuple.
+    /// Ancestor removal precedes self-tuple removal so the descendants subquery
+    /// still finds the entity itself.
+    /// </summary>
+    private void EmitHierarchicalDeleteBody(SqlWriter writer, AuthEdOrgEntity entity)
+    {
+        var authTable = Quote(_authTable);
+        var source = Quote(_sourceCol);
+        var target = Quote(_targetCol);
+        var idCol = Quote(entity.IdentityColumn);
+        bool isPgsql = _dialect.Rules.Dialect == SqlDialect.Pgsql;
+
+        // Step 1: Remove ancestor tuples (CROSS JOIN old ancestors x old descendants)
+        if (isPgsql)
+        {
+            writer.AppendLine($"DELETE FROM {authTable}");
+            writer.AppendLine($"WHERE ({source}, {target}) IN (");
+            using (writer.Indent())
+            {
+                writer.AppendLine($"SELECT sources.{source}, targets.{target}");
+                writer.AppendLine("FROM (");
+                using (writer.Indent())
+                {
+                    for (int i = 0; i < entity.ParentEdOrgFks.Count; i++)
+                    {
+                        if (i > 0)
+                        {
+                            writer.AppendLine();
+                            writer.AppendLine("UNION");
+                            writer.AppendLine();
+                        }
+                        EmitSourceAncestorsForFk(
+                            writer,
+                            entity,
+                            entity.ParentEdOrgFks[i],
+                            "deleted",
+                            "old",
+                            "OLD"
+                        );
+                    }
+                }
+                writer.AppendLine(") AS sources");
+                writer.AppendLine("CROSS JOIN");
+                writer.AppendLine("(");
+                using (writer.Indent())
+                {
+                    EmitDescendantsSubquery(writer, entity, "deleted", "old", "OLD");
+                }
+                writer.AppendLine(") AS targets");
+            }
+            writer.AppendLine(");");
+        }
+        else
+        {
+            writer.AppendLine("DELETE tbd");
+            writer.AppendLine($"FROM {authTable} AS tbd");
+            using (writer.Indent())
+            {
+                writer.AppendLine("INNER JOIN (");
+                using (writer.Indent())
+                {
+                    writer.AppendLine($"SELECT d1.{source}, d2.{target}");
+                    writer.AppendLine("FROM (");
+                    using (writer.Indent())
+                    {
+                        for (int i = 0; i < entity.ParentEdOrgFks.Count; i++)
+                        {
+                            if (i > 0)
+                            {
+                                writer.AppendLine();
+                                writer.AppendLine("UNION");
+                                writer.AppendLine();
+                            }
+                            EmitSourceAncestorsForFk(
+                                writer,
+                                entity,
+                                entity.ParentEdOrgFks[i],
+                                "deleted",
+                                "old",
+                                "OLD"
+                            );
+                        }
+                    }
+                    writer.AppendLine(") AS d1");
+                    writer.AppendLine("CROSS JOIN");
+                    writer.AppendLine("(");
+                    using (writer.Indent())
+                    {
+                        EmitDescendantsSubquery(writer, entity, "deleted", "old", "OLD");
+                    }
+                    writer.AppendLine(") AS d2");
+                    writer.AppendLine($"WHERE d1.{idCol} = d2.{idCol}");
+                }
+                writer.AppendLine(") AS cj");
+                using (writer.Indent())
+                {
+                    writer.AppendLine($"ON tbd.{source} = cj.{source}");
+                    writer.AppendLine($"AND tbd.{target} = cj.{target};");
+                }
+            }
+        }
+        writer.AppendLine();
+
+        // Step 2: Remove self-referencing tuple
+        if (isPgsql)
+        {
+            writer.AppendLine($"DELETE FROM {authTable}");
+            writer.AppendLine($"WHERE {source} = OLD.{idCol} AND {target} = OLD.{idCol};");
+        }
+        else
+        {
+            writer.AppendLine($"DELETE tuples");
+            writer.AppendLine($"FROM {authTable} AS tuples");
+            using (writer.Indent())
+            {
+                writer.AppendLine("INNER JOIN deleted old");
+                using (writer.Indent())
+                {
+                    writer.AppendLine($"ON tuples.{source} = old.{idCol}");
+                    writer.AppendLine($"AND tuples.{target} = old.{idCol};");
+                }
             }
         }
     }
