@@ -467,7 +467,7 @@ public class Given_PageDocumentIdSqlCompiler
 
         act.Should()
             .Throw<NotSupportedException>()
-            .WithMessage("Operator 'In' is not supported by PageDocumentIdSqlCompiler.");
+            .WithMessage("Operator 'In' is not yet supported by ToSqlOperator.");
     }
 
     [Test]
