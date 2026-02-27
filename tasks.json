@@ -141,5 +141,101 @@
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
     ],
     "completed": false
+  },
+  {
+    "category": "Tests",
+    "description": "Add test-only normalized DTO types for plan-contract roundtrip tests (“pack-shaped” primitives). Acceptance: (1) Add internal record DTOs under `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/` that represent write/read/projection/query plan contracts using only primitives + stable identifiers (e.g., table schema/name strings, column-name strings, canonical JSONPath strings, indices/ordinals). (2) DTOs mirror the relevant contract intent in `reference/design/backend-redesign/design-docs/mpack-format-v1.md` (plan-focused subset) without embedding `DbTableModel`/`DbColumnModel`/`JsonPathExpression` objects. (3) Provide a canonical JSON emitter for DTOs (explicit ordering, `\\n` newlines) and a stable SHA-256 helper so tests can compare `encode → decode → encode` by deterministic bytes/hashes rather than by object-reference equality.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Tests",
+    "description": "Implement deterministic encode/decode between executor contracts and normalized DTOs. Acceptance: (1) Implement an encoder that converts `EdFi.DataManagementService.Backend.External.Plans` contracts (`ResourceWritePlan`, `ResourceReadPlan`, projection contracts, and `PageDocumentIdSqlPlan`) into the DTOs deterministically, using stable identifiers (`DbTableName`, `DbColumnName`, `JsonPathExpression.Canonical`) and preserving authoritative ordering for ordering-sensitive lists (`ColumnBindings`, `MembersInOrder`, query `ParametersInOrder`). (2) Implement a decoder that reconstructs executor contracts from DTOs using a provided `RelationalResourceModel` for table/column lookup and `JsonPathExpressionCompiler.Compile(...)` for JSONPath reconstruction. (3) Decoder validates invariants and fails fast deterministically with actionable exceptions for: unknown tables/columns, out-of-range binding indices/ordinals, mismatched document-reference binding index vs reference-object path, and invalid/duplicate parameter names. (4) Unit tests cover both successful reconstruction and invariant failures.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Tests",
+    "description": "Add write-plan contract roundtrip tests (normalize → reconstruct → normalize). Acceptance: (1) Add NUnit tests that build a minimal but representative `ResourceWritePlan` including at least one `TableWritePlan` with multiple `WriteValueSource` variants (`DocumentId`, `ParentKeyPart`, `Ordinal`, `Scalar`, `DocumentReference`, `DescriptorReference`, `Precomputed`). (2) Include at least one key-unification plan with a presence-gated member and assert `CanonicalBindingIndex`, `PresenceBindingIndex`, and `PresenceIsSynthetic` survive roundtrip. (3) Assert decoded plan is semantically equivalent (same SQL, same table/column identities by name, same parameter names in order) and `encode(plan)` equals `encode(decode(encode(plan)))` by canonical JSON hash. (4) Add negative tests that corrupt the DTO (unknown column/table, invalid binding index, duplicate parameter names) and assert deterministic failure (stable exception type/message).",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Tests",
+    "description": "Add read/projection contract roundtrip tests (keyset + reference identity + descriptor URI projection). Acceptance: (1) Add NUnit tests that roundtrip a representative `ResourceReadPlan` including `KeysetTableContract`, `TableReadPlan.SelectByKeysetSql`, `ReferenceIdentityProjectionPlansInDependencyOrder`, and `DescriptorProjectionPlansInOrder`. (2) Validate reference-identity ordinals and descriptor-projection ordinals are preserved and/or recomputed deterministically from the table model, and decode fails fast for out-of-range ordinals. (3) Assert canonical JSONPath strings are preserved, and decoded `JsonPathExpression` objects are reconstructed via `JsonPathExpressionCompiler.Compile(...)` (segments need not be byte-identical arrays, but `Canonical` must match). (4) Add at least one negative test per contract area (missing table, invalid ordinal, invalid keyset-table name) with deterministic failure behavior.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Tests",
+    "description": "Add determinism stress tests for normalized plan DTO encoding. Acceptance: (1) Construct logically equivalent plan/model fixtures with permuted input ordering for collections that must not affect output (e.g., reordering `DocumentReferenceBindings` where the encoder/decoder uses canonical `reference_object_path`, reordering descriptor-edge sources, or reordering tables/columns when canonicalization rules should dominate), then assert the encoded DTO JSON hash is identical. (2) For semantically-ordering-sensitive lists (`ColumnBindings`, key-unification `MembersInOrder`, query `ParametersInOrder`), assert that permutation changes the encoded hash so the test suite would catch accidental sorting/losing authoritative order. (3) Ensure any invariant-failure exceptions are stable across permutations (same type/message).",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Docs",
+    "description": "Update E05 protobuf-contracts story to plan the DTO→protobuf swap while keeping test vectors. Acceptance: (1) Update `reference/design/backend-redesign/epics/05-mpack-generation/00-protobuf-contracts.md` (DMS-964) to explicitly require replacing the E15 test-only normalized DTO types with the real protobuf-generated contracts once the contracts project/package exists. (2) Document that the same roundtrip test vectors and canonical JSON/hash assertions must be preserved (swap the DTO types, not the test intent), so failures continue to catch ordering/binding drift. (3) Call out deterministic protobuf serialization as required for these tests (use the runtime/library deterministic option) and ensure the story’s unit-test task references running the existing Plans unit test project.",
+    "steps-to-verify": [
+      "Review the updated story doc for internal consistency and correct cross-links to `mpack-format-v1.md` and the E15 roundtrip tests.",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Docs",
+    "description": "Clarify `.mpack` as a normalized on-disk representation and document deterministic reconstruction rules; align the E15 plan-contracts story wording. Acceptance: (1) Update `reference/design/backend-redesign/design-docs/mpack-format-v1.md` to explicitly state the payload is a normalized representation (not a 1:1 serialization of executor contracts) and to list which elements are stored vs derived at pack load time (e.g., `KeysetTableContract` by dialect, `JsonPathExpression.Segments` compiled from canonical strings, table/column lookups by `(schema,name)` and `DbColumnName.Value`). (2) Add a deterministic reconstruction section that describes required fail-fast invariant checks (unknown tables/columns, out-of-range indices/ordinals, duplicate canonical paths, etc.). (3) Update `reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md` to reflect that AOT mode decodes a normalized payload into executor-facing contracts (contracts remain plain data, but are reconstructed rather than assumed to be directly serialized). (4) Cross-links between the story and pack spec remain accurate and do not imply SQL-text parsing for bindings.",
+    "steps-to-verify": [
+      "Review the updated doc sections for internal consistency and correct cross-links between the E15 story and `mpack-format-v1.md`.",
+      "Run: `rg -n \"1:1|one-to-one|serialize(d)? into\" reference/design/backend-redesign/design-docs/mpack-format-v1.md reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md` and confirm the wording matches the normalized+reconstruction intent."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Packs",
+    "description": "Reconcile dependency ordering in the `.mpack` proto/spec by collapsing `tables_in_read_dependency_order` + `tables_in_write_dependency_order` to a single `tables_in_dependency_order`. Acceptance: (1) Update `reference/design/backend-redesign/design-docs/mpack-format-v1.md` protobuf schema: replace fields `tables_in_read_dependency_order` and `tables_in_write_dependency_order` with one `repeated DbTableModel tables_in_dependency_order` and reserve the removed field numbers/tags to prevent accidental reuse. (2) Update the determinism rules to define one canonical ordering algorithm (root-first, then depth-first; stable within sibling sets by `(json_scope, table_name)` using ordinal string ordering) and remove language implying separate read/write orderings. (3) Ensure the spec ordering matches the in-memory model contract `RelationalResourceModel.TablesInDependencyOrder` used by both read hydration and write flattening. (4) Remove/replace all remaining references to the old field names in `reference/design/backend-redesign/`.",
+    "steps-to-verify": [
+      "Run: `rg -n \"tables_in_read_dependency_order|tables_in_write_dependency_order\" reference/design/backend-redesign -S` and confirm no references remain after the change.",
+      "Review `reference/design/backend-redesign/design-docs/flattening-reconstitution.md` and confirm it describes a single dependency order used for both read and write."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Packs",
+    "description": "Extend the `.mpack` proto/spec to carry projection plans (reference identity + descriptor URI) so AOT packs can replay executor-ready read metadata. Acceptance: (1) Update `reference/design/backend-redesign/design-docs/mpack-format-v1.md` to add protobuf messages for reference-identity projection metadata (table-local bindings with FK/identity-field ordinals) and descriptor URI projection (page-batched plan SQL + result-shape ordinals + ordered source inventory). (2) Add fields to `ResourceReadPlan` to carry these projection plans and define deterministic ordering rules for all new `repeated` fields (no `map<>`; explicit stable ordering and/or “MUST NOT be sorted” where authoritative order is semantically significant). (3) Ensure the spec can represent the current executor contracts in `src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/ProjectionPlanContracts.cs` without requiring SQL-text parsing at runtime. (4) Update any referenced design docs (e.g., `aot-compilation.md`) where they claim packs embed projection plans so the claim is now true for PackFormatVersion=1.",
+    "steps-to-verify": [
+      "Review `reference/design/backend-redesign/design-docs/mpack-format-v1.md` ordering rules section to ensure the new projection-plan fields are covered and deterministic.",
+      "Run: `rg -n \"projection\" reference/design/backend-redesign/design-docs/mpack-format-v1.md reference/design/backend-redesign/design-docs/aot-compilation.md` and confirm terminology and field names are consistent."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Contracts",
+    "description": "Optional hardening: remove redundant `ReferenceObjectPath` from `WriteValueSource.DocumentReference` and keep only `BindingIndex`, deriving the path from `RelationalResourceModel.DocumentReferenceBindings`. Acceptance: (1) Update `src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/WritePlanContracts.cs` so `WriteValueSource.DocumentReference` stores only `BindingIndex` (no `JsonPathExpression ReferenceObjectPath`). (2) Update any plan compiler/executor code to resolve the reference object path (and any other needed reference-site metadata) by indexing into `ResourceWritePlan.Model.DocumentReferenceBindings[BindingIndex]` and fail fast deterministically for out-of-range indices. (3) Update unit tests and any normalized DTO/proto mapping to no longer require storing the reference object path in the write plan value-source contract (the canonical path remains available via the model bindings). (4) Update docs/spec where they describe `WriteDocumentReference` so it no longer implies duplicated “index + path” invariants inside executor contracts.",
+    "steps-to-verify": [
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
+      "Run: `rg -n \"DocumentReference\\(.*ReferenceObjectPath|ReferenceObjectPath\" src/dms/backend -S` and confirm remaining references are only model-level bindings, not the write value source."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Immutability",
+    "description": "Make plan contracts truly immutable before caching/sharing: prefer `ImmutableArray<T>` / `FrozenDictionary<TKey,TValue>` so callers cannot mutate cached `ResourceWritePlan`/`ResourceReadPlan` internals. Acceptance: (1) Replace list-typed properties on executor-facing plan contracts (e.g., `TablePlansInDependencyOrder`, `ColumnBindings`, `KeyUnificationPlans`, `MembersInOrder`, read/projection plan lists, query `ParametersInOrder`) with `ImmutableArray<T>` (or a similarly strong immutable type) and ensure constructors defensively copy inputs. (2) Where dictionaries are cached/shared (e.g., per-resource plan lookups in a `MappingSet`), prefer `FrozenDictionary<,>` or ensure dictionaries are built once and not externally mutable. (3) Add a unit test that demonstrates mutation of the original input collection after constructing a plan does not change the plan (defensive-copy proof). (4) Ensure the public API surface remains plain-data and thread-safe for reuse across requests.",
+    "steps-to-verify": [
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": false
   }
 ]
