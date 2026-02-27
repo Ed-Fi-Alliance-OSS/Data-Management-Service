@@ -19,7 +19,6 @@ using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using Polly;
 using Polly.Retry;
-using Polly.Timeout;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
@@ -35,13 +34,10 @@ public class DeadlockRetryPolicyTests
     private static ResiliencePipeline<object> BuildPipeline(
         int maxRetryAttempts,
         int baseDelayMs = 1,
-        bool useJitter = false,
-        int totalTimeoutMs = 30000
+        bool useJitter = false
     )
     {
-        var builder = new ResiliencePipelineBuilder<object>().AddTimeout(
-            new TimeoutStrategyOptions { Timeout = TimeSpan.FromMilliseconds(totalTimeoutMs) }
-        );
+        var builder = new ResiliencePipelineBuilder<object>();
 
         if (maxRetryAttempts > 0)
         {
@@ -276,48 +272,6 @@ public class DeadlockRetryPolicyTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_Total_Timeout_Exceeded : DeadlockRetryPolicyTests
-    {
-        private int _callCount;
-        private bool _timeoutThrown;
-
-        [SetUp]
-        public async Task Setup()
-        {
-            _callCount = 0;
-            _timeoutThrown = false;
-            var pipeline = BuildPipeline(maxRetryAttempts: 10, baseDelayMs: 1, totalTimeoutMs: 200);
-
-            try
-            {
-                await pipeline.ExecuteAsync(async token =>
-                {
-                    _callCount++;
-                    await Task.Delay(100, token);
-                    return (object)new UpsertResult.UpsertFailureWriteConflict();
-                });
-            }
-            catch (TimeoutRejectedException)
-            {
-                _timeoutThrown = true;
-            }
-        }
-
-        [Test]
-        public void It_throws_timeout_exception()
-        {
-            _timeoutThrown.Should().BeTrue();
-        }
-
-        [Test]
-        public void It_does_not_exhaust_all_retries()
-        {
-            _callCount.Should().BeLessThan(11);
-        }
-    }
-
-    [TestFixture]
-    [Parallelizable]
     public class Given_Invalid_MaxRetryAttempts : DeadlockRetryPolicyTests
     {
         [Test]
@@ -338,16 +292,6 @@ public class DeadlockRetryPolicyTests
             var act = () => DmsCoreServiceExtensions.ValidateDeadlockRetrySettings(settings);
 
             act.Should().Throw<InvalidOperationException>().WithMessage("*BaseDelayMilliseconds*");
-        }
-
-        [Test]
-        public void It_throws_on_low_TotalTimeoutMilliseconds()
-        {
-            var settings = new DeadlockRetrySettings { TotalTimeoutMilliseconds = 50 };
-
-            var act = () => DmsCoreServiceExtensions.ValidateDeadlockRetrySettings(settings);
-
-            act.Should().Throw<InvalidOperationException>().WithMessage("*TotalTimeoutMilliseconds*");
         }
     }
 

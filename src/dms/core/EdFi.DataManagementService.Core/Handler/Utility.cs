@@ -5,11 +5,9 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
 using Polly;
-using Polly.Timeout;
 
 namespace EdFi.DataManagementService.Core.Handler;
 
@@ -34,8 +32,7 @@ public static class Utility
     }
 
     /// <summary>
-    /// Executes an operation within a resilience pipeline, handling retry logging and timeout.
-    /// Returns null if a timeout occurred (caller should return early).
+    /// Executes an operation within a resilience pipeline, handling retry logging.
     /// </summary>
     internal static async Task<TResult?> ExecuteWithRetryLogging<TResult>(
         ResiliencePipeline resiliencePipeline,
@@ -109,22 +106,6 @@ public static class Utility
             }
 
             return result;
-        }
-        catch (TimeoutRejectedException ex)
-        {
-            logger.LogError(
-                ex,
-                "Operation timed out after {AttemptCount} attempts for {OperationName} - {TraceId}",
-                attemptCount,
-                operationName,
-                traceId.Value
-            );
-            requestInfo.FrontendResponse = new FrontendResponse(
-                StatusCode: 503,
-                Body: ToJsonError("Request timed out due to database contention", traceId),
-                Headers: []
-            );
-            return null;
         }
         finally
         {

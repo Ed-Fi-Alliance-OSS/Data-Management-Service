@@ -22,10 +22,4 @@ internal class DeadlockRetrySettings
     /// Whether to add jitter to the backoff delay to prevent thundering-herd.
     /// </summary>
     public bool UseJitter { get; set; } = true;
-
-    /// <summary>
-    /// Total timeout in milliseconds for the entire operation including all retries.
-    /// Acts as a safety ceiling to prevent unbounded request latency.
-    /// </summary>
-    public int TotalTimeoutMilliseconds { get; set; } = 5000;
 }

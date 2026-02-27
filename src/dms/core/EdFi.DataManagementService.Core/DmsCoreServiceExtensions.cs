@@ -26,7 +26,6 @@ using Polly;
 using Polly.CircuitBreaker;
 using Polly.Retry;
 using Polly.Telemetry;
-using Polly.Timeout;
 using Serilog;
 
 namespace EdFi.DataManagementService.Core;
@@ -238,18 +237,11 @@ public static class DmsCoreServiceExtensions
                 },
             };
 
-            // Pipeline ordering (outermost → innermost): Timeout → CircuitBreaker → Retry → Execute.
+            // Pipeline ordering (outermost → innermost): CircuitBreaker → Retry → Execute.
             // Retry wraps the full repository call (including connection/transaction lifecycle)
             // because deadlock recovery requires replaying the entire transaction,
             // not just the failing SQL statement.
-            builder
-                .ConfigureTelemetry(telemetryOptions)
-                .AddTimeout(
-                    new TimeoutStrategyOptions
-                    {
-                        Timeout = TimeSpan.FromMilliseconds(retrySettings.TotalTimeoutMilliseconds),
-                    }
-                );
+            builder.ConfigureTelemetry(telemetryOptions);
 
             builder.AddCircuitBreaker(optionsUnknownFailure);
 
@@ -325,11 +317,6 @@ public static class DmsCoreServiceExtensions
         if (settings.BaseDelayMilliseconds < 1)
         {
             throw new InvalidOperationException("DeadlockRetry:BaseDelayMilliseconds must be >= 1");
-        }
-
-        if (settings.TotalTimeoutMilliseconds < 100)
-        {
-            throw new InvalidOperationException("DeadlockRetry:TotalTimeoutMilliseconds must be >= 100");
         }
     }
 }
