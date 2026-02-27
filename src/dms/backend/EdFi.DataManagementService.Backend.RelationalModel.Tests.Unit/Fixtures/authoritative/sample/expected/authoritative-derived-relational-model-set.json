@@ -1,5 +1,7 @@
 {
-  "dialect": "Pgsql",
+  "dialect": "pgsql",
+  "effective_schema_hash": "edf1edf1",
+  "relational_mapping_version": "1.0.0",
   "projects": [
     {
       "project_endpoint_name": "ed-fi",
@@ -42784,6 +42786,7 @@
             }
           ],
           "key_unification_classes": [],
+          "descriptor_fk_deduplications": [],
           "constraints": [
             {
               "kind": "Unique",
@@ -42970,6 +42973,7 @@
             }
           ],
           "key_unification_classes": [],
+          "descriptor_fk_deduplications": [],
           "constraints": [
             {
               "kind": "ForeignKey",
@@ -43086,6 +43090,7 @@
             }
           ],
           "key_unification_classes": [],
+          "descriptor_fk_deduplications": [],
           "constraints": [
             {
               "kind": "Unique",
@@ -43114,6 +43119,53 @@
           ]
         }
       ],
+      "key_unification_equality_constraints": {
+        "applied": [],
+        "redundant": [],
+        "ignored": [
+          {
+            "endpoint_a_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.assessmentIdentifier",
+            "endpoint_b_path": "$.assessmentReference.assessmentIdentifier",
+            "reason": "cross_table",
+            "endpoint_a_binding": {
+              "table": {
+                "schema": "edfi",
+                "name": "AssessmentAdministrationAssessmentBatteryPart"
+              },
+              "column": "AssessmentBatteryPart_AssessmentIdentifier"
+            },
+            "endpoint_b_binding": {
+              "table": {
+                "schema": "edfi",
+                "name": "AssessmentAdministration"
+              },
+              "column": "Assessment_AssessmentIdentifier"
+            }
+          },
+          {
+            "endpoint_a_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.namespace",
+            "endpoint_b_path": "$.assessmentReference.namespace",
+            "reason": "cross_table",
+            "endpoint_a_binding": {
+              "table": {
+                "schema": "edfi",
+                "name": "AssessmentAdministrationAssessmentBatteryPart"
+              },
+              "column": "AssessmentBatteryPart_Namespace"
+            },
+            "endpoint_b_binding": {
+              "table": {
+                "schema": "edfi",
+                "name": "AssessmentAdministration"
+              },
+              "column": "Assessment_Namespace"
+            }
+          }
+        ],
+        "ignored_by_reason": {
+          "cross_table": 2
+        }
+      },
       "document_reference_bindings": [
         {
           "is_identity_component": false,
@@ -43613,6 +43665,32 @@
               ]
             }
           ],
+          "descriptor_fk_deduplications": [
+            {
+              "storage_column": "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId",
+              "binding_columns": [
+                "ProgramEvaluationObjective_ProgramEvaluationPeriodDe_0fde0c9fcc",
+                "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
+              ],
+              "constraint_name": "FK_ProgramEvaluationElement_ProgramEvaluationPeriodD_4122be3539"
+            },
+            {
+              "storage_column": "ProgramEvaluationTypeDescriptor_Unified_DescriptorId",
+              "binding_columns": [
+                "ProgramEvaluationObjective_ProgramEvaluationTypeDesc_513b5067cb",
+                "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"
+              ],
+              "constraint_name": "FK_ProgramEvaluationElement_ProgramEvaluationTypeDes_9ed95edefc"
+            },
+            {
+              "storage_column": "ProgramTypeDescriptor_Unified_DescriptorId",
+              "binding_columns": [
+                "ProgramEvaluationObjective_ProgramTypeDescriptor_DescriptorId",
+                "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
+              ],
+              "constraint_name": "FK_ProgramEvaluationElement_ProgramTypeDescriptor_Unified"
+            }
+          ],
           "constraints": [
             {
               "kind": "Unique",
@@ -43868,6 +43946,7 @@
             }
           ],
           "key_unification_classes": [],
+          "descriptor_fk_deduplications": [],
           "constraints": [
             {
               "kind": "Unique",
@@ -43912,6 +43991,79 @@
           ]
         }
       ],
+      "key_unification_equality_constraints": {
+        "applied": [
+          {
+            "endpoint_a_path": "$.programEvaluationObjectiveReference.programEducationOrganizationId",
+            "endpoint_b_path": "$.programEvaluationReference.programEducationOrganizationId",
+            "table": {
+              "schema": "edfi",
+              "name": "ProgramEvaluationElement"
+            },
+            "endpoint_a_column": "ProgramEvaluationObjective_ProgramEducationOrganizationId",
+            "endpoint_b_column": "ProgramEvaluation_ProgramEducationOrganizationId",
+            "canonical_column": "ProgramEducationOrganizationId_Unified"
+          },
+          {
+            "endpoint_a_path": "$.programEvaluationObjectiveReference.programEvaluationPeriodDescriptor",
+            "endpoint_b_path": "$.programEvaluationReference.programEvaluationPeriodDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "ProgramEvaluationElement"
+            },
+            "endpoint_a_column": "ProgramEvaluationObjective_ProgramEvaluationPeriodDe_0fde0c9fcc",
+            "endpoint_b_column": "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e",
+            "canonical_column": "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId"
+          },
+          {
+            "endpoint_a_path": "$.programEvaluationObjectiveReference.programEvaluationTitle",
+            "endpoint_b_path": "$.programEvaluationReference.programEvaluationTitle",
+            "table": {
+              "schema": "edfi",
+              "name": "ProgramEvaluationElement"
+            },
+            "endpoint_a_column": "ProgramEvaluationObjective_ProgramEvaluationTitle",
+            "endpoint_b_column": "ProgramEvaluation_ProgramEvaluationTitle",
+            "canonical_column": "ProgramEvaluationTitle_Unified"
+          },
+          {
+            "endpoint_a_path": "$.programEvaluationObjectiveReference.programEvaluationTypeDescriptor",
+            "endpoint_b_path": "$.programEvaluationReference.programEvaluationTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "ProgramEvaluationElement"
+            },
+            "endpoint_a_column": "ProgramEvaluationObjective_ProgramEvaluationTypeDesc_513b5067cb",
+            "endpoint_b_column": "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId",
+            "canonical_column": "ProgramEvaluationTypeDescriptor_Unified_DescriptorId"
+          },
+          {
+            "endpoint_a_path": "$.programEvaluationObjectiveReference.programName",
+            "endpoint_b_path": "$.programEvaluationReference.programName",
+            "table": {
+              "schema": "edfi",
+              "name": "ProgramEvaluationElement"
+            },
+            "endpoint_a_column": "ProgramEvaluationObjective_ProgramName",
+            "endpoint_b_column": "ProgramEvaluation_ProgramName",
+            "canonical_column": "ProgramName_Unified"
+          },
+          {
+            "endpoint_a_path": "$.programEvaluationObjectiveReference.programTypeDescriptor",
+            "endpoint_b_path": "$.programEvaluationReference.programTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "ProgramEvaluationElement"
+            },
+            "endpoint_a_column": "ProgramEvaluationObjective_ProgramTypeDescriptor_DescriptorId",
+            "endpoint_b_column": "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId",
+            "canonical_column": "ProgramTypeDescriptor_Unified_DescriptorId"
+          }
+        ],
+        "redundant": [],
+        "ignored": [],
+        "ignored_by_reason": {}
+      },
       "document_reference_bindings": [
         {
           "is_identity_component": false,
@@ -44407,6 +44559,7 @@
               ]
             }
           ],
+          "descriptor_fk_deduplications": [],
           "constraints": [
             {
               "kind": "Unique",
@@ -44709,6 +44862,7 @@
             }
           ],
           "key_unification_classes": [],
+          "descriptor_fk_deduplications": [],
           "constraints": [
             {
               "kind": "Unique",
@@ -44819,6 +44973,7 @@
             }
           ],
           "key_unification_classes": [],
+          "descriptor_fk_deduplications": [],
           "constraints": [
             {
               "kind": "Unique",
@@ -44847,6 +45002,24 @@
           ]
         }
       ],
+      "key_unification_equality_constraints": {
+        "applied": [
+          {
+            "endpoint_a_path": "$.studentEducationOrganizationAssociationReference.studentUniqueId",
+            "endpoint_b_path": "$.studentSchoolAssociationReference.studentUniqueId",
+            "table": {
+              "schema": "edfi",
+              "name": "StudentAssessmentRegistration"
+            },
+            "endpoint_a_column": "StudentEducationOrganizationAssociation_StudentUniqueId",
+            "endpoint_b_column": "StudentSchoolAssociation_StudentUniqueId",
+            "canonical_column": "StudentUniqueId_Unified"
+          }
+        ],
+        "redundant": [],
+        "ignored": [],
+        "ignored_by_reason": {}
+      },
       "document_reference_bindings": [
         {
           "is_identity_component": true,
@@ -45538,6 +45711,7 @@
               ]
             }
           ],
+          "descriptor_fk_deduplications": [],
           "constraints": [
             {
               "kind": "Unique",
@@ -45951,6 +46125,7 @@
             }
           ],
           "key_unification_classes": [],
+          "descriptor_fk_deduplications": [],
           "constraints": [
             {
               "kind": "ForeignKey",
@@ -46075,6 +46250,7 @@
             }
           ],
           "key_unification_classes": [],
+          "descriptor_fk_deduplications": [],
           "constraints": [
             {
               "kind": "ForeignKey",
@@ -46195,6 +46371,7 @@
             }
           ],
           "key_unification_classes": [],
+          "descriptor_fk_deduplications": [],
           "constraints": [
             {
               "kind": "Unique",
@@ -46239,6 +46416,35 @@
           ]
         }
       ],
+      "key_unification_equality_constraints": {
+        "applied": [
+          {
+            "endpoint_a_path": "$.calendarReference.schoolId",
+            "endpoint_b_path": "$.schoolReference.schoolId",
+            "table": {
+              "schema": "edfi",
+              "name": "StudentSchoolAssociation"
+            },
+            "endpoint_a_column": "Calendar_SchoolId",
+            "endpoint_b_column": "School_SchoolId",
+            "canonical_column": "SchoolId_Unified"
+          },
+          {
+            "endpoint_a_path": "$.calendarReference.schoolYear",
+            "endpoint_b_path": "$.schoolYearTypeReference.schoolYear",
+            "table": {
+              "schema": "edfi",
+              "name": "StudentSchoolAssociation"
+            },
+            "endpoint_a_column": "Calendar_SchoolYear",
+            "endpoint_b_column": "SchoolYear_SchoolYear",
+            "canonical_column": "SchoolYear_Unified"
+          }
+        ],
+        "redundant": [],
+        "ignored": [],
+        "ignored_by_reason": {}
+      },
       "document_reference_bindings": [
         {
           "is_identity_component": false,

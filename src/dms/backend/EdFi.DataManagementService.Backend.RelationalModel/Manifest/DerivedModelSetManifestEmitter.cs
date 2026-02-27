@@ -12,7 +12,7 @@ using static EdFi.DataManagementService.Backend.RelationalModel.Manifest.Manifes
 namespace EdFi.DataManagementService.Backend.RelationalModel.Manifest;
 
 /// <summary>
-/// Emits a deterministic <c>relational-model.manifest.json</c> from a <see cref="DerivedRelationalModelSet"/>.
+/// Emits a deterministic <c>relational-model.{dialect}.manifest.json</c> from a <see cref="DerivedRelationalModelSet"/>.
 /// The manifest is a semantic representation of the derived relational model inventory and must be
 /// byte-for-byte stable for the same inputs.
 /// </summary>
@@ -46,7 +46,12 @@ public static class DerivedModelSetManifestEmitter
         using (var writer = new Utf8JsonWriter(buffer, _writerOptions))
         {
             writer.WriteStartObject();
-            writer.WriteString("dialect", modelSet.Dialect.ToString());
+            writer.WriteString("dialect", modelSet.Dialect.ToString().ToLowerInvariant());
+            writer.WriteString("effective_schema_hash", modelSet.EffectiveSchema.EffectiveSchemaHash);
+            writer.WriteString(
+                "relational_mapping_version",
+                modelSet.EffectiveSchema.RelationalMappingVersion
+            );
 
             WriteProjects(writer, modelSet.ProjectSchemasInEndpointOrder);
             WriteResourcesSummary(writer, modelSet.ConcreteResourcesInNameOrder);
@@ -469,12 +474,19 @@ public static class DerivedModelSetManifestEmitter
         writer.WriteStartArray();
         if (model.StorageKind != ResourceStorageKind.SharedDescriptorTable)
         {
+            var descriptorFkDeduplicationsByTable = BuildDescriptorForeignKeyDeduplicationLookup(
+                model.DescriptorForeignKeyDeduplications
+            );
+
             foreach (var table in model.TablesInDependencyOrder)
             {
-                WriteTable(writer, table);
+                WriteTable(writer, table, descriptorFkDeduplicationsByTable);
             }
         }
         writer.WriteEndArray();
+
+        writer.WritePropertyName("key_unification_equality_constraints");
+        WriteKeyUnificationEqualityConstraintDiagnostics(writer, model.KeyUnificationEqualityConstraints);
 
         writer.WritePropertyName("document_reference_bindings");
         writer.WriteStartArray();
@@ -497,51 +509,6 @@ public static class DerivedModelSetManifestEmitter
         foreach (var site in extensionSites)
         {
             WriteExtensionSite(writer, site);
-        }
-        writer.WriteEndArray();
-
-        writer.WriteEndObject();
-    }
-
-    /// <summary>
-    /// Writes a table object with its key columns, columns, and constraints.
-    /// </summary>
-    private static void WriteTable(Utf8JsonWriter writer, DbTableModel table)
-    {
-        writer.WriteStartObject();
-        writer.WriteString("schema", table.Table.Schema.Value);
-        writer.WriteString("name", table.Table.Name);
-        writer.WriteString("scope", table.JsonScope.Canonical);
-
-        writer.WritePropertyName("key_columns");
-        writer.WriteStartArray();
-        foreach (var keyColumn in table.Key.Columns)
-        {
-            WriteKeyColumn(writer, keyColumn);
-        }
-        writer.WriteEndArray();
-
-        writer.WritePropertyName("columns");
-        writer.WriteStartArray();
-        foreach (var column in table.Columns)
-        {
-            WriteColumn(writer, column);
-        }
-        writer.WriteEndArray();
-
-        writer.WritePropertyName("key_unification_classes");
-        writer.WriteStartArray();
-        foreach (var keyUnificationClass in table.KeyUnificationClasses)
-        {
-            WriteKeyUnificationClass(writer, keyUnificationClass);
-        }
-        writer.WriteEndArray();
-
-        writer.WritePropertyName("constraints");
-        writer.WriteStartArray();
-        foreach (var constraint in table.Constraints)
-        {
-            WriteConstraint(writer, constraint);
         }
         writer.WriteEndArray();
 

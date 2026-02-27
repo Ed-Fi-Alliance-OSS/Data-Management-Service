@@ -18,7 +18,7 @@ Implement the fixture layout and runner described in `reference/design/backend-r
 - A fixture with `fixture.json` drives exactly which inputs are loaded (no filesystem enumeration).
 - Runner emits standard filenames into `actual/`:
   - `effective-schema.manifest.json`
-  - `relational-model.manifest.json`
+  - `relational-model.{dialect}.manifest.json`
   - `{dialect}.sql`
   - optional manifest files as configured
 - `actual/` directories are ignored by git (via `.gitignore`).

@@ -184,3 +184,184 @@ Feature: Profile Extension Filtering
              Then the profile response status is 200
               And the response body should not contain fields "shortNameOfInstitution"
               And the response body should contain fields "nameOfInstitution, _ext"
+
+    Rule: Extension write profiles preserve or filter extension updates as configured
+
+        Background:
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized without profiles and namespacePrefixes "uri://ed-fi.org, uri://sample.ed-fi.org"
+              And a profile test POST request is made to "/ed-fi/staffs" with
+                  """
+                  {
+                      "staffUniqueId": "99000308",
+                      "firstName": "John",
+                      "lastSurname": "Doe",
+                      "_ext": {
+                          "sample": {
+                              "firstPetOwnedDate": "2000-01-01",
+                              "pets": [
+                                  {
+                                      "petName": "Rex",
+                                      "isFixed": false
+                                  }
+                              ],
+                              "petPreference": {
+                                  "minimumWeight": 20,
+                                  "maximumWeight": 35
+                              }
+                          }
+                      }
+                  }
+                  """
+
+        Scenario: 08 Extension Not Included write profile is currently unsupported for write content type
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Sample-Staff-Extension-Not-Included" and namespacePrefixes "uri://ed-fi.org, uri://sample.ed-fi.org"
+            When a PUT request is made to "/ed-fi/staffs/{id}" with profile "Sample-Staff-Extension-Not-Included" for resource "Staff" with body
+                  """
+                  {
+                      "id": "{id}",
+                      "staffUniqueId": "99000308",
+                      "firstName": "John",
+                      "lastSurname": "Doe",
+                      "_ext": {
+                          "sample": {
+                              "petPreference": {
+                                  "maximumWeight": 200,
+                                  "minimumWeight": 100
+                              },
+                              "pets": [
+                                  {
+                                      "petName": "Rex",
+                                      "isFixed": true
+                                  }
+                              ]
+                          }
+                      }
+                  }
+                  """
+            Then the profile response status is 415
+             And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
+             And the response body should have error message "is not supported by this host"
+
+        Scenario: 09 Extension Excluded write profile applies write payload to extension members
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Sample-Staff-Extension-Excluded" and namespacePrefixes "uri://ed-fi.org, uri://sample.ed-fi.org"
+            When a PUT request is made to "/ed-fi/staffs/{id}" with profile "Sample-Staff-Extension-Excluded" for resource "Staff" with body
+                  """
+                  {
+                      "id": "{id}",
+                      "staffUniqueId": "99000308",
+                      "firstName": "John",
+                      "lastSurname": "Doe",
+                      "_ext": {
+                          "sample": {
+                              "petPreference": {
+                                  "maximumWeight": 135,
+                                  "minimumWeight": 120
+                              },
+                              "pets": [
+                                  {
+                                      "petName": "Rex",
+                                      "isFixed": true
+                                  }
+                              ]
+                          }
+                      }
+                  }
+                  """
+            Then the profile response status is 204
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized without profiles and namespacePrefixes "uri://ed-fi.org, uri://sample.ed-fi.org"
+            When a GET request is made to "/ed-fi/staffs/{id}" without profile header
+            Then the profile response status is 200
+             And the response body should not contain path "_ext.sample.firstPetOwnedDate"
+             And the response body path "_ext.sample.petPreference.minimumWeight" should have value "120"
+             And the response body path "_ext.sample.petPreference.maximumWeight" should have value "135"
+             And the response body path "_ext.sample.pets.0.isFixed" should have value "true"
+
+        Scenario: 10 Extension Include-Only-Deeply write profile is currently unsupported for write content type
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Sample-Staff-Extension-Include-Only-Deeply" and namespacePrefixes "uri://ed-fi.org, uri://sample.ed-fi.org"
+            When a PUT request is made to "/ed-fi/staffs/{id}" with profile "Sample-Staff-Extension-Include-Only-Deeply" for resource "Staff" with body
+                  """
+                  {
+                      "id": "{id}",
+                      "staffUniqueId": "99000308",
+                      "firstName": "John",
+                      "lastSurname": "Doe",
+                      "_ext": {
+                          "sample": {
+                              "firstPetOwnedDate": "2020-02-02",
+                              "petPreference": {
+                                  "maximumWeight": 200,
+                                  "minimumWeight": 100
+                              },
+                              "pets": [
+                                  {
+                                      "petName": "Rex",
+                                      "isFixed": true
+                                  }
+                              ]
+                          }
+                      }
+                  }
+                  """
+            Then the profile response status is 415
+             And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
+             And the response body should have error message "is not supported by this host"
+
+        Scenario: 11 Extension Exclude-Only-Deeply write profile is currently unsupported for write content type
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Sample-Staff-Extension-Exclude-Only-Deeply" and namespacePrefixes "uri://ed-fi.org, uri://sample.ed-fi.org"
+            When a PUT request is made to "/ed-fi/staffs/{id}" with profile "Sample-Staff-Extension-Exclude-Only-Deeply" for resource "Staff" with body
+                  """
+                  {
+                      "id": "{id}",
+                      "staffUniqueId": "99000308",
+                      "firstName": "John",
+                      "lastSurname": "Doe",
+                      "_ext": {
+                          "sample": {
+                              "firstPetOwnedDate": "2020-02-02",
+                              "petPreference": {
+                                  "maximumWeight": 200,
+                                  "minimumWeight": 100
+                              },
+                              "pets": [
+                                  {
+                                      "petName": "Rex",
+                                      "isFixed": true
+                                  }
+                              ]
+                          }
+                      }
+                  }
+                  """
+            Then the profile response status is 415
+             And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
+             And the response body should have error message "is not supported by this host"
+
+        Scenario: 12 Extension Exclude-Everything write profile is currently unsupported for write content type
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Sample-Staff-Extension-Exclude-Everything" and namespacePrefixes "uri://ed-fi.org, uri://sample.ed-fi.org"
+            When a PUT request is made to "/ed-fi/staffs/{id}" with profile "Sample-Staff-Extension-Exclude-Everything" for resource "Staff" with body
+                  """
+                  {
+                      "id": "{id}",
+                      "staffUniqueId": "99000308",
+                      "firstName": "John",
+                      "lastSurname": "Doe",
+                      "_ext": {
+                          "sample": {
+                              "firstPetOwnedDate": "2020-02-02",
+                              "petPreference": {
+                                  "maximumWeight": 200,
+                                  "minimumWeight": 100
+                              },
+                              "pets": [
+                                  {
+                                      "petName": "Rex",
+                                      "isFixed": true
+                                  }
+                              ]
+                          }
+                      }
+                  }
+                  """
+            Then the profile response status is 415
+             And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
+             And the response body should have error message "is not supported by this host"

@@ -100,7 +100,7 @@ internal class LoadAndBuildEffectiveSchemaTask(
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Step 3: Compute effective schema hash (no-op for now, future DMS-925)
+        // Step 3: Compute effective schema hash
         _logger.LogDebug("Computing effective schema hash");
         var effectiveSchemaHash = _hashProvider.ComputeHash(normalizedNodes);
         if (!string.IsNullOrEmpty(effectiveSchemaHash))

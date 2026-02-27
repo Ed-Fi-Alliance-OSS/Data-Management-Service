@@ -42,11 +42,13 @@ public static class ProfileSetupHooks
         int successCount = 0;
         int failCount = 0;
 
+        // Create all profiles up front so DMS profile catalog caching sees a
+        // complete set for the run.
         foreach ((string name, string xml) in ProfileDefinitions.AllProfiles)
         {
             try
             {
-                logger.log.Information($"Creating profile: {name}");
+                logger.log.Information("Creating profile: {ProfileName}", name);
 
                 int profileId = await ProfileAwareAuthorizationProvider.CreateProfile(
                     name,
@@ -57,12 +59,16 @@ public static class ProfileSetupHooks
                 ProfileTestData.RegisterProfile(name, profileId);
                 successCount++;
 
-                logger.log.Information($"Profile '{name}' created with ID: {profileId}");
+                logger.log.Information(
+                    "Profile '{ProfileName}' created with ID: {ProfileId}",
+                    name,
+                    profileId
+                );
             }
             catch (Exception ex)
             {
                 failCount++;
-                logger.log.Error($"Failed to create profile '{name}': {ex.Message}");
+                logger.log.Error(ex, "Failed to create profile '{ProfileName}'", name);
 
                 // Don't throw here - continue creating other profiles
                 // Tests using this profile will fail with a clear error
@@ -72,10 +78,13 @@ public static class ProfileSetupHooks
         ProfileTestData.MarkInitialized();
 
         logger.log.Information(
-            $"===== Profile setup complete: {successCount} succeeded, {failCount} failed ====="
+            "===== Profile setup complete: {SuccessCount} succeeded, {FailCount} failed =====",
+            successCount,
+            failCount
         );
         logger.log.Information(
-            $"Registered profiles: {string.Join(", ", ProfileTestData.RegisteredProfileNames)}"
+            "Registered profiles: {ProfileNames}",
+            string.Join(", ", ProfileTestData.RegisteredProfileNames)
         );
     }
 }

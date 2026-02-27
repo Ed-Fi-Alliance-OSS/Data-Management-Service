@@ -129,6 +129,14 @@ public abstract class DdlEmissionGoldenTestBase
         var emitter = new RelationalModelDdlEmitter(dialectInstance);
         var ddl = emitter.Emit(modelSet);
 
+        // Strict canonicalization checks on the raw emitter output, independent of
+        // the git diff flags (--ignore-space-at-eol, --ignore-cr-at-eol) used below.
+        ddl.Should().NotContain("\r", "emitted DDL must use \\n line endings only, never \\r");
+        ddl.Split('\n')
+            .Where(line => line.Length > 0 && line[^1] == ' ')
+            .Should()
+            .BeEmpty("emitted DDL must not contain trailing whitespace on any line");
+
         Directory.CreateDirectory(Path.GetDirectoryName(actualPath)!);
         File.WriteAllText(actualPath, ddl);
 

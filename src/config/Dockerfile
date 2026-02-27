@@ -3,7 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0.101-alpine3.23@sha256:b6e895da9d359739e8cff0c296c28eaac24697d44af63f3a7099a6fd0dfe3be7 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0.103-alpine3.23@sha256:9b4b31da5246f575086b1901e9871b189ae2a80eb42fe9234e9d000b51febd4b AS build
 
 WORKDIR /source
 # Named context support https://github.com/hadolint/hadolint/issues/830
@@ -31,7 +31,7 @@ COPY datamodel/EdFi.DmsConfigurationService.DataModel/ ./datamodel/EdFi.DmsConfi
 RUN dotnet publish frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/EdFi.DmsConfigurationService.Frontend.AspNetCore.csproj \
     -c Release --no-restore --self-contained false -o /app/Frontend
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0.1-alpine3.23@sha256:2273b24ea865e253d5e3b66d0eae23ce53529946089819489410849ba62db12c AS runtimebase
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.3-alpine3.23@sha256:258b939d6d684ff05ad7ea16782b4bee55260de4acc6f99bec897fd11de7640c AS runtimebase
 
 # Install specific OpenSSL version and runtime helpers
 RUN apk --no-cache add openssl=~3.5.5-r0 bash=~5 postgresql16-client=~16

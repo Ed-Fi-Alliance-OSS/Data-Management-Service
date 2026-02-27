@@ -3,7 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Tests.E2E.Authorization;
 using EdFi.DataManagementService.Tests.E2E.Extensions;
 using EdFi.DataManagementService.Tests.E2E.Management;
@@ -25,6 +28,40 @@ public class ProfileStepDefinitions(
     ScenarioContext scenarioContext
 )
 {
+    // Keep singularization lightweight and deterministic for URL endpoint names.
+    private static string SingularizeResourceName(string pluralName)
+    {
+        if (string.IsNullOrEmpty(pluralName))
+        {
+            return pluralName;
+        }
+
+        var lower = pluralName.ToLowerInvariant();
+
+        if (lower.EndsWith("ies", StringComparison.Ordinal))
+        {
+            return $"{pluralName[..^3]}y";
+        }
+
+        if (
+            lower.EndsWith("ches", StringComparison.Ordinal)
+            || lower.EndsWith("shes", StringComparison.Ordinal)
+            || lower.EndsWith("xes", StringComparison.Ordinal)
+            || lower.EndsWith("zes", StringComparison.Ordinal)
+            || lower.EndsWith("ses", StringComparison.Ordinal)
+        )
+        {
+            return pluralName[..^2];
+        }
+
+        if (lower.EndsWith("s", StringComparison.Ordinal) && !lower.EndsWith("ss", StringComparison.Ordinal))
+        {
+            return pluralName[..^1];
+        }
+
+        return pluralName;
+    }
+
     private readonly PlaywrightContext _playwrightContext = playwrightContext;
     private readonly TestLogger _logger = logger;
     private readonly ScenarioContext _scenarioContext = scenarioContext;
@@ -67,6 +104,16 @@ public class ProfileStepDefinitions(
             _logger.log.Error(ex, "Failed to create profile '{ProfileName}'", profileName);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Creates a profile using XML loaded from a file in the test project.
+    /// </summary>
+    [Given(@"a profile ""([^""]*)"" is created from XML file ""([^""]*)""")]
+    public async Task GivenAProfileIsCreatedFromXmlFile(string profileName, string relativePath)
+    {
+        string profileXml = ProfileXmlFileLoader.LoadProfileXml(relativePath, profileName);
+        await GivenAProfileIsCreatedWithXml(profileName, profileXml);
     }
 
     #endregion
@@ -182,12 +229,21 @@ public class ProfileStepDefinitions(
     [Scope(Feature = "Profile Response Filtering")]
     [Scope(Feature = "Profile Resolution")]
     [Scope(Feature = "Profile Header Validation")]
+    [Scope(Feature = "Multi-Resource Profile Usage")]
     [Scope(Feature = "Profile Collection Item Filtering")]
     [Scope(Feature = "Profile Extension Filtering")]
     [Scope(Feature = "Profile Write Filtering")]
     [Scope(Feature = "Profile Creatability Validation")]
     [Scope(Feature = "Profile PUT Merge Functionality")]
     [Scope(Feature = "Profile Nested Identity Preservation")]
+    [Scope(Feature = "Profile Undefined and Misconfigured Usage")]
+    [Scope(Feature = "Profile Response Content Types")]
+    [Scope(Feature = "Profile Embedded Object Filtering")]
+    [Scope(Feature = "Profile Assigned Profiles")]
+    [Scope(Feature = "Profile Definition Advanced Filtering")]
+    [Scope(Feature = "Profile Reference Filtering")]
+    [Scope(Feature = "Profile XML File Definition Validation")]
+    [Scope(Feature = "Profile XML File Method Usage")]
     public async Task GivenTheSystemHasTheseDescriptors(DataTable dataTable)
     {
         string descriptorToken = await GetTokenForExtensionDescriptors();
@@ -513,6 +569,33 @@ public class ProfileStepDefinitions(
         ExtractIdFromResponse();
     }
 
+    [When(@"a POST request is made to ""([^""]*)"" without profile header with body")]
+    public async Task WhenAPOSTRequestIsMadeToWithoutProfileHeaderWithBody(string url, string body)
+    {
+        url = AddDataPrefixIfNecessary(url)
+            .Replace("{id}", _id)
+            .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
+        _logger.log.Information($"POST url (no profile header): {url}");
+        _logger.log.Information($"POST body: {body}");
+
+        var headers = new List<KeyValuePair<string, string>>
+        {
+            new("Authorization", _dmsToken),
+            new("Content-Type", "application/json"),
+        };
+
+        _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
+            url,
+            new() { Data = body, Headers = headers }
+        )!;
+
+        _logger.log.Information($"Response status: {_apiResponse.Status}");
+        _logger.log.Information($"Response body: {await _apiResponse.TextAsync()}");
+
+        ExtractIdFromResponse();
+    }
+
     /// <summary>
     /// Makes a PUT request with an explicit profile Content-Type header for write filtering tests.
     /// Format: application/vnd.ed-fi.{resource}.{profile}.writable+json
@@ -557,6 +640,33 @@ public class ProfileStepDefinitions(
         _logger.log.Information($"Response body: {await _apiResponse.TextAsync()}");
     }
 
+    [When(@"a PUT request is made to ""([^""]*)"" without profile header with body")]
+    public async Task WhenAPUTRequestIsMadeToWithoutProfileHeaderWithBody(string url, string body)
+    {
+        url = AddDataPrefixIfNecessary(url)
+            .Replace("{id}", _id)
+            .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
+        body = body.Replace("{id}", _id);
+
+        _logger.log.Information($"PUT url (no profile header): {url}");
+        _logger.log.Information($"PUT body: {body}");
+
+        var headers = new List<KeyValuePair<string, string>>
+        {
+            new("Authorization", _dmsToken),
+            new("Content-Type", "application/json"),
+        };
+
+        _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
+            url,
+            new() { Data = body, Headers = headers }
+        )!;
+
+        _logger.log.Information($"Response status: {_apiResponse.Status}");
+        _logger.log.Information($"Response body: {await _apiResponse.TextAsync()}");
+    }
+
     #endregion
 
     #region Then - Response Validation
@@ -570,6 +680,21 @@ public class ProfileStepDefinitions(
         string body = _apiResponse.TextAsync().Result;
         _logger.log.Information($"Validating status {expectedStatus}, actual: {_apiResponse.Status}");
         _apiResponse.Status.Should().Be(expectedStatus, body);
+    }
+
+    [Then(@"the profile response status is (\d+) or (\d+)")]
+    public void ThenTheProfileResponseStatusIsOneOf(int firstStatus, int secondStatus)
+    {
+        string body = _apiResponse.TextAsync().Result;
+        _logger.log.Information(
+            $"Validating status {firstStatus} or {secondStatus}, actual: {_apiResponse.Status}"
+        );
+        _apiResponse
+            .Status.Should()
+            .BeOneOf(
+                new[] { firstStatus, secondStatus },
+                $"Expected status {firstStatus} or {secondStatus}. Response: {body}"
+            );
     }
 
     /// <summary>
@@ -782,24 +907,12 @@ public class ProfileStepDefinitions(
 
         foreach (JsonObject obj in objects)
         {
-            JsonNode? current = obj;
-
-            foreach (string part in pathParts)
-            {
-                if (
-                    current is JsonObject currentObj
-                    && currentObj.TryGetPropertyValue(part, out JsonNode? next)
-                )
-                {
-                    current = next;
-                }
-                else
-                {
-                    throw new AssertionException(
-                        $"Path '{jsonPath}' not found in response. Failed at '{part}'. Response: {obj}"
-                    );
-                }
-            }
+            bool pathExists = TryResolvePath(obj, pathParts, out _, out string failedAtPart);
+            pathExists
+                .Should()
+                .BeTrue(
+                    $"Path '{jsonPath}' not found in response. Failed at '{failedAtPart}'. Response: {obj}"
+                );
         }
     }
 
@@ -822,24 +935,7 @@ public class ProfileStepDefinitions(
 
         foreach (JsonObject obj in objects)
         {
-            JsonNode? current = obj;
-            bool pathExists = true;
-
-            foreach (string part in pathParts)
-            {
-                if (
-                    current is JsonObject currentObj
-                    && currentObj.TryGetPropertyValue(part, out JsonNode? next)
-                )
-                {
-                    current = next;
-                }
-                else
-                {
-                    pathExists = false;
-                    break;
-                }
-            }
+            bool pathExists = TryResolvePath(obj, pathParts, out _, out _);
 
             pathExists
                 .Should()
@@ -866,24 +962,12 @@ public class ProfileStepDefinitions(
 
         foreach (JsonObject obj in objects)
         {
-            JsonNode? current = obj;
-
-            foreach (string part in pathParts)
-            {
-                if (
-                    current is JsonObject currentObj
-                    && currentObj.TryGetPropertyValue(part, out JsonNode? next)
-                )
-                {
-                    current = next;
-                }
-                else
-                {
-                    throw new AssertionException(
-                        $"Path '{jsonPath}' not found in response. Failed at '{part}'. Response: {obj}"
-                    );
-                }
-            }
+            bool pathExists = TryResolvePath(obj, pathParts, out JsonNode? current, out string failedAtPart);
+            pathExists
+                .Should()
+                .BeTrue(
+                    $"Path '{jsonPath}' not found in response. Failed at '{failedAtPart}'. Response: {obj}"
+                );
 
             string? actualValue = current?.ToString();
             actualValue
@@ -893,6 +977,53 @@ public class ProfileStepDefinitions(
                     $"Path '{jsonPath}' should have value '{expectedValue}' but was '{actualValue}'"
                 );
         }
+    }
+
+    private static bool TryResolvePath(
+        JsonNode? root,
+        IReadOnlyList<string> pathParts,
+        out JsonNode? resolvedNode,
+        out string failedAtPart
+    )
+    {
+        JsonNode? current = root;
+        failedAtPart = string.Empty;
+
+        foreach (string part in pathParts)
+        {
+            if (current is JsonObject currentObj)
+            {
+                if (currentObj.TryGetPropertyValue(part, out JsonNode? next))
+                {
+                    current = next;
+                    continue;
+                }
+
+                failedAtPart = part;
+                resolvedNode = null;
+                return false;
+            }
+
+            if (current is JsonArray currentArray && int.TryParse(part, out int index))
+            {
+                if (index >= 0 && index < currentArray.Count)
+                {
+                    current = currentArray[index];
+                    continue;
+                }
+
+                failedAtPart = part;
+                resolvedNode = null;
+                return false;
+            }
+
+            failedAtPart = part;
+            resolvedNode = null;
+            return false;
+        }
+
+        resolvedNode = current;
+        return true;
     }
 
     /// <summary>
@@ -946,6 +1077,134 @@ public class ProfileStepDefinitions(
             {
                 throw new AssertionException($"Response does not contain 'errors' array: {responseBody}");
             }
+        }
+    }
+
+    /// <summary>
+    /// Verifies the response body contains a specific problem details detail value.
+    /// </summary>
+    [Then(@"the response body should have detail ""([^""]*)""")]
+    public async Task ThenTheResponseBodyShouldHaveDetail(string expectedDetail)
+    {
+        string responseBody = await _apiResponse.TextAsync();
+        JsonNode? responseJson = JsonNode.Parse(responseBody);
+        responseJson.Should().NotBeNull("Response should be valid JSON");
+
+        if (responseJson is JsonObject jsonObject)
+        {
+            if (jsonObject.TryGetPropertyValue("detail", out JsonNode? detailNode))
+            {
+                string? actualDetail = detailNode?.ToString();
+                actualDetail.Should().Be(expectedDetail, $"Response: {responseBody}");
+            }
+            else
+            {
+                throw new AssertionException($"Response does not contain 'detail' field: {responseBody}");
+            }
+        }
+        else
+        {
+            throw new AssertionException(
+                $"Response should be a JSON object but was {responseJson?.GetType().Name ?? "null"}: {responseBody}"
+            );
+        }
+    }
+
+    /// <summary>
+    /// Verifies at least one entry in the response errors array matches the regex pattern.
+    /// </summary>
+    [Then(@"the response body errors should match regex ""([^""]*)""")]
+    public async Task ThenTheResponseBodyErrorsShouldMatchRegex(string regexPattern)
+    {
+        string responseBody = await _apiResponse.TextAsync();
+        JsonNode? responseJson = JsonNode.Parse(responseBody);
+        responseJson.Should().NotBeNull("Response should be valid JSON");
+
+        if (responseJson is JsonObject jsonObject)
+        {
+            if (
+                jsonObject.TryGetPropertyValue("errors", out JsonNode? errorsNode)
+                && errorsNode is JsonArray errorsArray
+            )
+            {
+                List<string> errorMessages = errorsArray
+                    .Select(e => e?.ToString())
+                    .Where(message => !string.IsNullOrEmpty(message))
+                    .Select(message => message!)
+                    .ToList();
+
+                errorMessages
+                    .Exists(message => Regex.IsMatch(message, regexPattern))
+                    .Should()
+                    .BeTrue(
+                        $"Expected at least one error to match regex '{regexPattern}'. Actual errors: {string.Join(", ", errorMessages)}. Response: {responseBody}"
+                    );
+            }
+            else
+            {
+                throw new AssertionException($"Response does not contain 'errors' array: {responseBody}");
+            }
+        }
+        else
+        {
+            throw new AssertionException(
+                $"Response should be a JSON object but was {responseJson?.GetType().Name ?? "null"}: {responseBody}"
+            );
+        }
+    }
+
+    /// <summary>
+    /// Verifies problem details status field equals the HTTP response status code.
+    /// </summary>
+    [Then(@"the response body status should equal the response status code")]
+    public async Task ThenTheResponseBodyStatusShouldEqualTheResponseStatusCode()
+    {
+        string responseBody = await _apiResponse.TextAsync();
+        JsonNode? responseJson = JsonNode.Parse(responseBody);
+        responseJson.Should().NotBeNull("Response should be valid JSON");
+
+        if (responseJson is JsonObject jsonObject)
+        {
+            if (jsonObject.TryGetPropertyValue("status", out JsonNode? statusNode))
+            {
+                int? bodyStatus = statusNode?.GetValue<int>();
+                bodyStatus.Should().Be(_apiResponse.Status, $"Response: {responseBody}");
+            }
+            else
+            {
+                throw new AssertionException($"Response does not contain 'status' field: {responseBody}");
+            }
+        }
+        else
+        {
+            throw new AssertionException(
+                $"Response should be a JSON object but was {responseJson?.GetType().Name ?? "null"}: {responseBody}"
+            );
+        }
+    }
+
+    /// <summary>
+    /// Verifies response headers for the last profile request.
+    /// Expected headers are provided as a JSON object.
+    /// </summary>
+    [Then(@"the profile response headers include")]
+    public void ThenTheProfileResponseHeadersInclude(string headers)
+    {
+        JsonNode expectedHeaders = JsonNode.Parse(headers)!;
+        foreach ((string? key, JsonNode? value) in expectedHeaders.AsObject())
+        {
+            string expectedValue = value?.ToString() ?? string.Empty;
+
+            string? actualHeaderKey = _apiResponse.Headers.Keys.FirstOrDefault(k =>
+                k.Equals(key, StringComparison.OrdinalIgnoreCase)
+            );
+
+            actualHeaderKey.Should().NotBeNull($"Response should include header '{key}'");
+
+            _apiResponse
+                .Headers[actualHeaderKey!]
+                .Should()
+                .Contain(expectedValue, $"Header '{key}' should contain '{expectedValue}'");
         }
     }
 
@@ -1053,7 +1312,7 @@ public class ProfileStepDefinitions(
         _logger.log.Information($"POST url: {url}");
         _logger.log.Information($"POST body: {body}");
 
-        // Build headers, including Content-Type for multi-profile apps
+        // Build headers, including Content-Type for multi-profile applications
         var headers = GetHeadersForPost(url);
 
         _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
@@ -1137,14 +1396,87 @@ public class ProfileStepDefinitions(
         string[] segments = url.Split('/');
         string pluralName = segments[^1].Split('?')[0]; // Handle query strings
 
-        // Convert plural to singular (simple rule: remove trailing 's')
-        if (pluralName.EndsWith("s", StringComparison.OrdinalIgnoreCase))
-        {
-            return pluralName[..^1];
-        }
-
-        return pluralName;
+        return SingularizeResourceName(pluralName);
     }
+
+    #endregion
+
+    #region Metadata Specification Validation Steps
+
+    [Then(@"the metadata specifications should include sections ""([^""]*)""")]
+    public async Task ThenTheMetadataSpecificationsShouldIncludeSections(string sectionsCsv)
+    {
+        JsonArray sections = await GetMetadataSpecificationSectionsAsync();
+        var actualSectionNames = sections
+            .Select(node => node as JsonObject)
+            .Where(obj => obj is not null)
+            .Select(obj => obj!["name"]?.GetValue<string>())
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (string expected in SplitCommaSeparatedValues(sectionsCsv))
+        {
+            actualSectionNames
+                .Should()
+                .Contain(expected, $"Metadata specifications should include section '{expected}'");
+        }
+    }
+
+    [Then(@"the metadata specifications should include a profile entry for ""([^""]*)""")]
+    public async Task ThenTheMetadataSpecificationsShouldIncludeProfileEntryFor(string profileName)
+    {
+        JsonArray sections = await GetMetadataSpecificationSectionsAsync();
+        JsonObject? profileSection = sections
+            .Select(node => node as JsonObject)
+            .FirstOrDefault(obj =>
+                obj is not null
+                && string.Equals(
+                    obj!["prefix"]?.GetValue<string>(),
+                    "Profiles",
+                    StringComparison.OrdinalIgnoreCase
+                )
+                && string.Equals(
+                    obj!["name"]?.GetValue<string>(),
+                    profileName,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            );
+
+        profileSection
+            .Should()
+            .NotBeNull($"Metadata specifications should include a profile entry for '{profileName}'");
+
+        string? endpointUri = profileSection?["endpointUri"]?.GetValue<string>();
+        endpointUri.Should().NotBeNull($"Profile entry for '{profileName}' should include an endpointUri");
+
+        string expectedPath = BuildProfileResourcesSpecPath(profileName);
+        endpointUri!
+            .Should()
+            .Contain(expectedPath, $"Profile entry for '{profileName}' should reference its resources spec");
+    }
+
+    private static IEnumerable<string> SplitCommaSeparatedValues(string csv) =>
+        csv.Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(value => value.Trim())
+            .Where(value => !string.IsNullOrEmpty(value));
+
+    private async Task<JsonArray> GetMetadataSpecificationSectionsAsync()
+    {
+        string responseBody = await _apiResponse.TextAsync();
+        JsonNode? rootNode = JsonNode.Parse(responseBody);
+        rootNode.Should().NotBeNull("Metadata specifications response should be valid JSON");
+
+        rootNode
+            .Should()
+            .BeOfType<JsonArray>(
+                $"Metadata specifications response should be a JSON array but was {rootNode?.GetType().Name ?? "null"}"
+            );
+
+        return (JsonArray)rootNode!;
+    }
+
+    private static string BuildProfileResourcesSpecPath(string profileName) =>
+        $"/metadata/specifications/profiles/{Uri.EscapeDataString(profileName)}/resources-spec.json";
 
     #endregion
 
