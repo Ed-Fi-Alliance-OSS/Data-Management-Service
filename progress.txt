@@ -37,3 +37,11 @@
 - CSharpier formatted all new/modified files
 - Build succeeds with 0 warnings (TreatWarningsAsErrors)
 - All external data sanitized via LoggingSanitizer before logging
+
+### QA Tasks
+
+**QA: Deduplicate CreateDialect/CloneEffectiveSchemaSet**
+- Extracted identical CreateDialect() and CloneEffectiveSchemaSet() from DdlEmitCommand and DdlProvisionCommand into shared DdlCommandHelpers class
+- Removed System.Text.Json.Nodes using from both commands (no longer needed), removed Core.Startup using from helpers (unused)
+- Build 0 warnings, all 34 tests pass
+- Files: Commands/DdlCommandHelpers.cs (new), Commands/DdlEmitCommand.cs, Commands/DdlProvisionCommand.cs
