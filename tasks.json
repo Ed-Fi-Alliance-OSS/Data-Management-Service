@@ -217,7 +217,7 @@
       "Review `reference/design/backend-redesign/design-docs/mpack-format-v1.md` ordering rules section to ensure the new projection-plan fields are covered and deterministic.",
       "Run: `rg -n \"projection\" reference/design/backend-redesign/design-docs/mpack-format-v1.md reference/design/backend-redesign/design-docs/aot-compilation.md` and confirm terminology and field names are consistent."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Contracts",

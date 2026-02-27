@@ -101,8 +101,10 @@ Pack contains:
   - used by DMS runtime to validate `dms.ResourceKey` and to translate between `ResourceKeyId` (stored in core tables) and `QualifiedResourceName` (plan cache key),
 - per-resource compiled plans:
   - `ResourceWritePlan` (including `TableWritePlan` SQL and bindings)
-  - `ResourceReadPlan` (including `TableReadPlan` SQL and bindings)
-  - reference binding metadata required by reconstitution (e.g., `DocumentReferenceBinding` / `DescriptorEdgeSource`)
+  - `ResourceReadPlan` (including `TableReadPlan` hydration SQL and executor-ready projection metadata)
+    - table-local reference identity projection metadata (`ReferenceIdentityProjectionTablePlan`)
+    - page-batched descriptor URI projection plans (`DescriptorProjectionPlan`)
+  - model-level reference binding metadata required by reconstitution (e.g., `DocumentReferenceBinding` / `DescriptorEdgeSource`)
 - any additional metadata needed to execute those plans without re-deriving/compiling from `ApiSchema.json`.
 
 Logical plan pack identity is `(EffectiveSchemaHash, Dialect, RelationalMappingVersion, PackFormatVersion)`.
@@ -132,6 +134,10 @@ Minimum requirements:
 - `resource_keys`: ordered by `resource_key_id` ascending.
 - `resources`: ordered by `(project_name, resource_name)` using ordinal string ordering.
 - Any per-resource lists (tables, columns, constraints, indexes, views) follow the same deterministic ordering rules used by the DDL generator.
+- `ResourceReadPlan` projection collections preserve authoritative order (no sorting):
+  - `table_plans`: `tables_in_dependency_order`
+  - `reference_identity_projection_table_plans`: dependency-order subset by table
+  - `descriptor_projection_plans`: deterministic execution order
 
 ### SQL text canonicalization (pack reproducibility)
 
@@ -304,11 +310,14 @@ message ResourcePack {
   string resource_name = 2;
 
   // Plan packs always include dialect-specific compiled plans.
-  ResourcePlans plans = 10;
+  ResourceWritePlan write_plan = 21;
+  ResourceReadPlan read_plan = 22;
 }
 
-message ResourcePlans {
-  // Omitted: compiled SQL strings and binding metadata for write/read/projection.
+message ResourceReadPlan {
+  repeated TableReadPlan table_plans = 1;
+  repeated ReferenceIdentityProjectionTablePlan reference_identity_projection_table_plans = 2;
+  repeated DescriptorProjectionPlan descriptor_projection_plans = 3;
 }
 ```
 

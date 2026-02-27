@@ -20,7 +20,7 @@ The `.mpack` format is a redistributable artifact that contains **dialect-specif
 
 - deterministic `dms.ResourceKey` seed mapping for that schema
 - per-resource relational models (tables/columns/paths) needed by generic flatten/reconstitute
-- per-resource, dialect-specific SQL plans (write/read)
+- per-resource, dialect-specific SQL plans and projection metadata (write/read/reference-identity/descriptor-URI)
 
 The consumer (DMS runtime) MUST be able to execute schema-dependent relational work for that effective schema **without compiling** models or SQL from `ApiSchema.json` at runtime (but Core may still load `ApiSchema.json` for validation and identity extraction).
 
@@ -101,7 +101,7 @@ The envelope MAY contain build/producer metadata that changes between runs (e.g.
 
 The `.proto` schema for PackFormatVersion 1 MUST NOT use `map<...>` fields.
 
-All collections are `repeated` and MUST be emitted in stable sort order:
+All collections are `repeated` and MUST be emitted in stable deterministic order:
 
 - `resource_keys`: ascending by `(resource_key_id)` (and then by `(project_name, resource_name)` for tie-breaking, though ties are invalid).
 - `resources`: ascending by `(project_name, resource_name)` using ordinal (culture-invariant) string ordering.
@@ -132,6 +132,15 @@ All collections are `repeated` and MUST be emitted in stable sort order:
   - within `key_unification_plans[*]`:
     - `members_in_order` order is semantically significant and MUST NOT be sorted
     - producers MUST emit the list exactly as derived (must match the corresponding `key_unification_classes[*].member_path_columns`)
+- Within each `ResourceReadPlan`:
+  - `table_plans`: order is semantically significant and MUST match `relational_model.tables_in_dependency_order` (do not sort independently)
+  - `reference_identity_projection_table_plans`: order is semantically significant and MUST follow `table_plans` dependency order for tables that emit reference-identity metadata
+  - `descriptor_projection_plans`: order is semantically significant (execution order) and MUST NOT be sorted
+- Within each `ReferenceIdentityProjectionTablePlan`:
+  - `bindings_in_order`: order is semantically significant and MUST preserve deterministic `reference_object_path` order from `relational_model.document_reference_bindings` for that table
+  - within `bindings_in_order[*]`: `identity_field_ordinals_in_order` preserves reference identity field order and MUST NOT be sorted
+- Within each `DescriptorProjectionPlan`:
+  - `sources_in_order`: order is semantically significant and MUST preserve deterministic `descriptor_value_path` order from `relational_model.descriptor_edge_sources` for the plan's selected source set
 
 ### 4.3 SQL text canonicalization
 
@@ -213,6 +222,11 @@ Given `(expectedEffectiveSchemaHash, expectedDialect, expectedRelationalMappingV
    - For each `ResourcePack`:
      - if `is_abstract=false`, has `relational_model`, `write_plan`, and `read_plan`
      - all referenced tables/columns/bindings referenced by plans exist in the model
+     - read/projection invariants:
+       - every `read_plan.table_plans[*].table` exists in `relational_model.tables_in_dependency_order`
+       - every `read_plan.reference_identity_projection_table_plans[*].table` exists, and `fk_column_ordinal` plus every `identity_field_ordinals_in_order[*].column_ordinal` are valid ordinals for that table's hydration row shape
+       - every `read_plan.descriptor_projection_plans[*].sources_in_order[*].table` exists, and `descriptor_id_column_ordinal` is a valid ordinal for that source table's hydration row shape
+       - every `read_plan.descriptor_projection_plans[*].result_shape` has distinct `descriptor_id_ordinal` and `uri_ordinal`
      - key unification invariants (when used in this `RelationalMappingVersion`):
        - every `DbColumnModel` has `storage` set
        - any `UnifiedAlias` storage references only stored columns on the same table (canonical + optional presence)
@@ -316,7 +330,7 @@ message ResourcePack {
   string resource_name = 2;
   bool is_abstract_resource = 3;
 
-  reserved 10; // formerly identity_projection_plan (removed; reference identity is reconstituted from local columns)
+  reserved 10; // formerly identity_projection_plan (now represented by read_plan.reference_identity_projection_table_plans)
 
   // Concrete resources only (required when is_abstract_resource=false).
   RelationalResourceModel relational_model = 20;
@@ -593,12 +607,50 @@ message KeyUnificationMemberWritePlan {
 }
 
 message ResourceReadPlan {
-  repeated TableReadPlan table_plans = 1;                // unique by table
+  repeated TableReadPlan table_plans = 1;                // unique by table; order matches relational_model.tables_in_dependency_order
+  repeated ReferenceIdentityProjectionTablePlan reference_identity_projection_table_plans = 2; // dependency-order subset by table
+  repeated DescriptorProjectionPlan descriptor_projection_plans = 3; // deterministic execution order
 }
 
 message TableReadPlan {
   DbTableName table = 1;
   string select_by_keyset_sql = 10;                      // expects a materialized keyset table with BIGINT DocumentId
+}
+
+message ReferenceIdentityProjectionTablePlan {
+  DbTableName table = 1;
+  repeated ReferenceIdentityProjectionBinding bindings_in_order = 2; // ordered; do not sort
+}
+
+message ReferenceIdentityProjectionBinding {
+  bool is_identity_component = 1;
+  string reference_object_path = 2;                      // canonical JsonPath string
+  QualifiedResourceName target_resource = 3;
+  uint32 fk_column_ordinal = 4;                          // zero-based hydration select-list ordinal
+  repeated ReferenceIdentityProjectionFieldOrdinal identity_field_ordinals_in_order = 5; // ordered; do not sort
+}
+
+message ReferenceIdentityProjectionFieldOrdinal {
+  string reference_json_path = 1;                        // canonical path written under reference_object_path
+  uint32 column_ordinal = 2;                             // zero-based hydration select-list ordinal
+}
+
+message DescriptorProjectionPlan {
+  string select_by_keyset_sql = 1;                       // page-batched SQL, no runtime SQL parsing for shape/binding
+  DescriptorProjectionResultShape result_shape = 2;
+  repeated DescriptorProjectionSource sources_in_order = 3; // ordered; do not sort
+}
+
+message DescriptorProjectionResultShape {
+  uint32 descriptor_id_ordinal = 1;                      // zero-based descriptor result-row ordinal
+  uint32 uri_ordinal = 2;                                // zero-based descriptor result-row ordinal
+}
+
+message DescriptorProjectionSource {
+  string descriptor_value_path = 1;                      // canonical descriptor JSON path
+  DbTableName table = 2;
+  QualifiedResourceName descriptor_resource = 3;
+  uint32 descriptor_id_column_ordinal = 4;               // zero-based hydration select-list ordinal
 }
 ```
 
