@@ -198,7 +198,7 @@ internal static class PlanContractsManifestJsonEmitter
         writer.WriteString("dialect", ToManifestDialect(queryPlanSnapshot.Dialect));
         writer.WriteString(
             "page_document_id_sql",
-            NormalizeMultilineText(queryPlanSnapshot.PageDocumentIdSql)
+            PlanJsonCanonicalization.NormalizeMultilineText(queryPlanSnapshot.PageDocumentIdSql)
         );
         writer.WriteString(
             "page_document_id_sql_sha256",
@@ -212,7 +212,10 @@ internal static class PlanContractsManifestJsonEmitter
         }
         else
         {
-            writer.WriteString("total_count_sql", NormalizeMultilineText(queryPlanSnapshot.TotalCountSql));
+            writer.WriteString(
+                "total_count_sql",
+                PlanJsonCanonicalization.NormalizeMultilineText(queryPlanSnapshot.TotalCountSql)
+            );
             writer.WriteString(
                 "total_count_sql_sha256",
                 ComputeNormalizedSha256(queryPlanSnapshot.TotalCountSql)
@@ -224,7 +227,7 @@ internal static class PlanContractsManifestJsonEmitter
         foreach (var parameter in queryPlanSnapshot.ParametersInOrder)
         {
             writer.WriteStartObject();
-            writer.WriteString("role", ToManifestParameterRole(parameter.Role));
+            writer.WriteString("role", PlanJsonCanonicalization.ToQueryParameterRoleToken(parameter.Role));
             writer.WriteString("parameter_name", parameter.ParameterName);
             writer.WriteEndObject();
         }
@@ -256,33 +259,11 @@ internal static class PlanContractsManifestJsonEmitter
         };
     }
 
-    private static string ToManifestParameterRole(QuerySqlParameterRole role)
-    {
-        return role switch
-        {
-            QuerySqlParameterRole.Filter => "filter",
-            QuerySqlParameterRole.Offset => "offset",
-            QuerySqlParameterRole.Limit => "limit",
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(role),
-                role,
-                "Unsupported query parameter role."
-            ),
-        };
-    }
-
     private static string ComputeNormalizedSha256(string text)
     {
-        var normalizedBytes = Encoding.UTF8.GetBytes(NormalizeMultilineText(text));
+        var normalizedBytes = Encoding.UTF8.GetBytes(PlanJsonCanonicalization.NormalizeMultilineText(text));
 
         return Convert.ToHexStringLower(SHA256.HashData(normalizedBytes));
-    }
-
-    private static string NormalizeMultilineText(string value)
-    {
-        ArgumentNullException.ThrowIfNull(value);
-
-        return value.ReplaceLineEndings("\n").TrimEnd();
     }
 }
 

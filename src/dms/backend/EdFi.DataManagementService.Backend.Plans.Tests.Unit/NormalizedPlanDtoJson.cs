@@ -83,7 +83,10 @@ internal static class NormalizedPlanDtoJson
             writer.WriteStartObject();
             writer.WritePropertyName("table");
             WriteTableName(writer, tablePlan.Table);
-            writer.WriteString("insert_sql", NormalizeMultilineText(tablePlan.InsertSql));
+            writer.WriteString(
+                "insert_sql",
+                PlanJsonCanonicalization.NormalizeMultilineText(tablePlan.InsertSql)
+            );
 
             if (tablePlan.UpdateSql is null)
             {
@@ -91,7 +94,10 @@ internal static class NormalizedPlanDtoJson
             }
             else
             {
-                writer.WriteString("update_sql", NormalizeMultilineText(tablePlan.UpdateSql));
+                writer.WriteString(
+                    "update_sql",
+                    PlanJsonCanonicalization.NormalizeMultilineText(tablePlan.UpdateSql)
+                );
             }
 
             if (tablePlan.DeleteByParentSql is null)
@@ -102,7 +108,7 @@ internal static class NormalizedPlanDtoJson
             {
                 writer.WriteString(
                     "delete_by_parent_sql",
-                    NormalizeMultilineText(tablePlan.DeleteByParentSql)
+                    PlanJsonCanonicalization.NormalizeMultilineText(tablePlan.DeleteByParentSql)
                 );
             }
 
@@ -172,7 +178,10 @@ internal static class NormalizedPlanDtoJson
             writer.WriteStartObject();
             writer.WritePropertyName("table");
             WriteTableName(writer, tablePlan.Table);
-            writer.WriteString("select_by_keyset_sql", NormalizeMultilineText(tablePlan.SelectByKeysetSql));
+            writer.WriteString(
+                "select_by_keyset_sql",
+                PlanJsonCanonicalization.NormalizeMultilineText(tablePlan.SelectByKeysetSql)
+            );
             writer.WriteEndObject();
         }
         writer.WriteEndArray();
@@ -216,7 +225,10 @@ internal static class NormalizedPlanDtoJson
         foreach (var plan in value.DescriptorProjectionPlansInOrder)
         {
             writer.WriteStartObject();
-            writer.WriteString("select_by_keyset_sql", NormalizeMultilineText(plan.SelectByKeysetSql));
+            writer.WriteString(
+                "select_by_keyset_sql",
+                PlanJsonCanonicalization.NormalizeMultilineText(plan.SelectByKeysetSql)
+            );
             writer.WritePropertyName("result_shape");
             writer.WriteStartObject();
             writer.WriteNumber("descriptor_id_ordinal", plan.ResultShape.DescriptorIdOrdinal);
@@ -248,7 +260,10 @@ internal static class NormalizedPlanDtoJson
     private static void WriteQueryPlan(Utf8JsonWriter writer, PageDocumentIdSqlPlanDto value)
     {
         writer.WriteStartObject();
-        writer.WriteString("page_document_id_sql", NormalizeMultilineText(value.PageDocumentIdSql));
+        writer.WriteString(
+            "page_document_id_sql",
+            PlanJsonCanonicalization.NormalizeMultilineText(value.PageDocumentIdSql)
+        );
 
         if (value.TotalCountSql is null)
         {
@@ -256,7 +271,10 @@ internal static class NormalizedPlanDtoJson
         }
         else
         {
-            writer.WriteString("total_count_sql", NormalizeMultilineText(value.TotalCountSql));
+            writer.WriteString(
+                "total_count_sql",
+                PlanJsonCanonicalization.NormalizeMultilineText(value.TotalCountSql)
+            );
         }
 
         writer.WritePropertyName("parameters_in_order");
@@ -264,7 +282,7 @@ internal static class NormalizedPlanDtoJson
         foreach (var parameter in value.ParametersInOrder)
         {
             writer.WriteStartObject();
-            writer.WriteString("role", ToQuerySqlParameterRole(parameter.Role));
+            writer.WriteString("role", PlanJsonCanonicalization.ToQueryParameterRoleToken(parameter.Role));
             writer.WriteString("parameter_name", parameter.ParameterName);
             writer.WriteEndObject();
         }
@@ -442,28 +460,6 @@ internal static class NormalizedPlanDtoJson
             NormalizedScalarKind.Time => "time",
             _ => throw new ArgumentOutOfRangeException(nameof(value), value, "Unsupported scalar kind DTO."),
         };
-    }
-
-    private static string ToQuerySqlParameterRole(QuerySqlParameterRoleDto value)
-    {
-        return value switch
-        {
-            QuerySqlParameterRoleDto.Filter => "filter",
-            QuerySqlParameterRoleDto.Offset => "offset",
-            QuerySqlParameterRoleDto.Limit => "limit",
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(value),
-                value,
-                "Unsupported query parameter role DTO."
-            ),
-        };
-    }
-
-    private static string NormalizeMultilineText(string value)
-    {
-        ArgumentNullException.ThrowIfNull(value);
-
-        return value.ReplaceLineEndings("\n").TrimEnd();
     }
 
     private static void WriteNullableInt(Utf8JsonWriter writer, string propertyName, int? value)

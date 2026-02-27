@@ -214,3 +214,10 @@ Decisions: replaced hard-coded keyset temp-table constants in normalized decode 
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodec.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodecTests.cs; tasks.json; progress.txt.
 Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 120); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
 Blockers/notes: no blockers; next highest-priority remaining task is Test Utilities.
+
+2026-02-27
+Task done: Test Utilities (canonical JSON/token helper consolidation). Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: extracted shared test utility `PlanJsonCanonicalization` for newline-stable multiline normalization and query-parameter role token formatting; replaced duplicated helpers in normalized DTO JSON emitter + manifest emitter while keeping emitters content-focused; preserved fixture/hash stability by reusing identical normalization/token rules.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanJsonCanonicalization.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanDtoJson.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanContractsManifestGoldenFixtureTests.cs; tasks.json; progress.txt.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 120); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors); git diff -- src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Fixtures (no output).
+Blockers/notes: no blockers; all tasks in tasks.json now completed.
