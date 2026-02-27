@@ -204,18 +204,7 @@ public static class DmsCoreServiceExtensions
                 MaxRetryAttempts = retrySettings.MaxRetryAttempts,
                 Delay = TimeSpan.FromMilliseconds(retrySettings.BaseDelayMilliseconds),
                 UseJitter = retrySettings.UseJitter,
-                ShouldHandle = new PredicateBuilder().HandleResult(result =>
-                {
-                    return result switch
-                    {
-                        DeleteResult.DeleteFailureWriteConflict => true,
-                        GetResult.GetFailureRetryable => true,
-                        QueryResult.QueryFailureRetryable => true,
-                        UpdateResult.UpdateFailureWriteConflict => true,
-                        UpsertResult.UpsertFailureWriteConflict => true,
-                        _ => false,
-                    };
-                }),
+                ShouldHandle = new PredicateBuilder().HandleResult(Utility.IsRetryableResult),
                 OnRetry = args =>
                 {
                     args.Context.Properties.TryGetValue(Utility.TraceIdKey, out var traceId);

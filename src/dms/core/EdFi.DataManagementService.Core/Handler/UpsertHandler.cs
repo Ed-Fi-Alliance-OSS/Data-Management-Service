@@ -45,7 +45,7 @@ internal class UpsertHandler(
             _logger,
             "upsert",
             requestInfo.FrontendRequest.TraceId,
-            r => r is UpsertFailureWriteConflict,
+            r => IsRetryableResult(r),
             r => r is InsertSuccess or UpdateSuccess,
             async ct =>
             {

@@ -27,7 +27,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 public class DeadlockRetryPolicyTests
 {
     /// <summary>
-    /// Builds a resilience pipeline that mirrors the retry + timeout configuration
+    /// Builds a resilience pipeline that mirrors the retry configuration
     /// used in DmsCoreServiceExtensions, without the circuit breaker or telemetry layers.
     /// When maxRetryAttempts is 0, the retry strategy is skipped (matching production behavior).
     /// </summary>
@@ -48,17 +48,7 @@ public class DeadlockRetryPolicyTests
                     MaxRetryAttempts = maxRetryAttempts,
                     Delay = TimeSpan.FromMilliseconds(baseDelayMs),
                     UseJitter = useJitter,
-                    ShouldHandle = new PredicateBuilder<object>().HandleResult(result =>
-                        result switch
-                        {
-                            UpsertResult.UpsertFailureWriteConflict => true,
-                            UpdateResult.UpdateFailureWriteConflict => true,
-                            DeleteResult.DeleteFailureWriteConflict => true,
-                            GetResult.GetFailureRetryable => true,
-                            QueryResult.QueryFailureRetryable => true,
-                            _ => false,
-                        }
-                    ),
+                    ShouldHandle = new PredicateBuilder<object>().HandleResult(Utility.IsRetryableResult),
                 }
             );
         }
@@ -371,13 +361,7 @@ public class DeadlockRetryPolicyTests
                     MaxRetryAttempts = maxRetryAttempts,
                     Delay = TimeSpan.FromMilliseconds(1),
                     UseJitter = false,
-                    ShouldHandle = new PredicateBuilder().HandleResult(result =>
-                        result switch
-                        {
-                            GetResult.GetFailureRetryable => true,
-                            _ => false,
-                        }
-                    ),
+                    ShouldHandle = new PredicateBuilder().HandleResult(Utility.IsRetryableResult),
                 }
             );
         }
@@ -544,13 +528,7 @@ public class DeadlockRetryPolicyTests
                         MaxRetryAttempts = maxRetryAttempts,
                         Delay = TimeSpan.FromMilliseconds(1),
                         UseJitter = false,
-                        ShouldHandle = new PredicateBuilder<object>().HandleResult(result =>
-                            result switch
-                            {
-                                UpsertResult.UpsertFailureWriteConflict => true,
-                                _ => false,
-                            }
-                        ),
+                        ShouldHandle = new PredicateBuilder<object>().HandleResult(Utility.IsRetryableResult),
                         OnRetry = args =>
                         {
                             _retryLogger.LogWarning(

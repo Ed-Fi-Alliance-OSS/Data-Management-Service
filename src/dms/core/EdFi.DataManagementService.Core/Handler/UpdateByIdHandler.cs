@@ -46,7 +46,7 @@ internal class UpdateByIdHandler(
             _logger,
             "update",
             requestInfo.FrontendRequest.TraceId,
-            r => r is UpdateFailureWriteConflict,
+            r => IsRetryableResult(r),
             r => r is UpdateSuccess,
             async ct =>
                 await documentStoreRepository.UpdateDocumentById(

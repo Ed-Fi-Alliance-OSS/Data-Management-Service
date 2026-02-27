@@ -39,7 +39,7 @@ internal class GetByIdHandler(
             _logger,
             "get",
             requestInfo.FrontendRequest.TraceId,
-            r => r is GetFailureRetryable,
+            r => IsRetryableResult(r),
             r => r is GetSuccess,
             async ct =>
                 await documentStoreRepository.GetDocumentById(

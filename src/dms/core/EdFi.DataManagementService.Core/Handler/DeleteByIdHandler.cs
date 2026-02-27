@@ -39,7 +39,7 @@ internal class DeleteByIdHandler(
             _logger,
             "delete",
             requestInfo.FrontendRequest.TraceId,
-            r => r is DeleteFailureWriteConflict,
+            r => IsRetryableResult(r),
             r => r is DeleteSuccess,
             async ct =>
                 await documentStoreRepository.DeleteDocumentById(

@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
@@ -22,6 +23,19 @@ public static class Utility
     /// ResilienceContext property key for the operation name (e.g. "upsert", "delete").
     /// </summary>
     internal static readonly ResiliencePropertyKey<string> OperationNameKey = new("OperationName");
+
+    /// <summary>
+    /// Returns true if the given result represents a retryable transient failure
+    /// (deadlock or serialization conflict). This is the single source of truth
+    /// for the retry predicate used by the resilience pipeline and handler logging.
+    /// </summary>
+    internal static bool IsRetryableResult(object result) =>
+        result
+            is DeleteResult.DeleteFailureWriteConflict
+                or GetResult.GetFailureRetryable
+                or QueryResult.QueryFailureRetryable
+                or UpdateResult.UpdateFailureWriteConflict
+                or UpsertResult.UpsertFailureWriteConflict;
 
     /// <summary>
     /// Formats a error result string from the given error information and traceId
