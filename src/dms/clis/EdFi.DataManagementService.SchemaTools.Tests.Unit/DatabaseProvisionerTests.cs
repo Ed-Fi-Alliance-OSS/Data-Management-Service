@@ -10,11 +10,10 @@ using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.SchemaTools.Tests.Unit;
 
-[TestFixture]
 public class DatabaseProvisionerTests
 {
     [TestFixture]
-    public class Given_PgsqlDatabaseProvisioner_With_Valid_Connection_String : DatabaseProvisionerTests
+    public class Given_PgsqlDatabaseProvisioner_With_Valid_Connection_String
     {
         private PgsqlDatabaseProvisioner _provisioner = null!;
         private string _databaseName = null!;
@@ -37,7 +36,6 @@ public class DatabaseProvisionerTests
 
     [TestFixture]
     public class Given_PgsqlDatabaseProvisioner_With_No_Database_In_Connection_String
-        : DatabaseProvisionerTests
     {
         private PgsqlDatabaseProvisioner _provisioner = null!;
         private Action _action = null!;
@@ -64,7 +62,7 @@ public class DatabaseProvisionerTests
     }
 
     [TestFixture]
-    public class Given_MssqlDatabaseProvisioner_With_Valid_Connection_String : DatabaseProvisionerTests
+    public class Given_MssqlDatabaseProvisioner_With_Valid_Connection_String
     {
         private MssqlDatabaseProvisioner _provisioner = null!;
         private string _databaseName = null!;
@@ -86,7 +84,7 @@ public class DatabaseProvisionerTests
     }
 
     [TestFixture]
-    public class Given_MssqlDatabaseProvisioner_With_Database_Keyword : DatabaseProvisionerTests
+    public class Given_MssqlDatabaseProvisioner_With_Database_Keyword
     {
         private MssqlDatabaseProvisioner _provisioner = null!;
         private string _databaseName = null!;
@@ -109,7 +107,6 @@ public class DatabaseProvisionerTests
 
     [TestFixture]
     public class Given_MssqlDatabaseProvisioner_With_No_Database_In_Connection_String
-        : DatabaseProvisionerTests
     {
         private MssqlDatabaseProvisioner _provisioner = null!;
         private Action _action = null!;
@@ -138,7 +135,7 @@ public class DatabaseProvisionerTests
     }
 
     [TestFixture]
-    public class Given_Pgsql_Provisioner_CheckOrConfigureMvcc : DatabaseProvisionerTests
+    public class Given_Pgsql_Provisioner_CheckOrConfigureMvcc
     {
         private PgsqlDatabaseProvisioner _provisioner = null!;
 
