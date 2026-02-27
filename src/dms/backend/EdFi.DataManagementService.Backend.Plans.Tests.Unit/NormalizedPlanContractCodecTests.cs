@@ -481,6 +481,23 @@ public class Given_NormalizedPlanContractCodec
     }
 
     [Test]
+    public void It_should_fail_fast_when_keyset_document_id_column_name_is_not_supported()
+    {
+        var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
+        var mutated = encoded with
+        {
+            KeysetTable = encoded.KeysetTable with { DocumentIdColumnName = "DocId" },
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Contain(nameof(KeysetTableContractDto.DocumentIdColumnName));
+        exception.Message.Should().Contain("Unsupported keyset DocumentId column name");
+        exception.Message.Should().Contain("DocumentId");
+    }
+
+    [Test]
     public void It_should_fail_fast_when_reference_object_path_does_not_match_document_reference_binding_index()
     {
         var encoded = NormalizedPlanContractCodec.Encode(_readPlan);

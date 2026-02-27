@@ -246,7 +246,7 @@ internal static class NormalizedPlanContractCodec
             tempTableNameArgument
         );
 
-        var keysetDocumentIdColumnName = RequireNonEmpty(
+        var keysetDocumentIdColumnName = ValidateSupportedKeysetDocumentIdColumnName(
             dto.KeysetTable.DocumentIdColumnName,
             documentIdColumnNameArgument
         );
@@ -1346,6 +1346,24 @@ internal static class NormalizedPlanContractCodec
         throw new ArgumentException(
             $"Unsupported keyset temp table name '{keysetTempTableName}'. "
                 + $"Supported names are '{pgsqlKeysetTableName}' and '{mssqlKeysetTableName}'.",
+            argumentName
+        );
+    }
+
+    private static string ValidateSupportedKeysetDocumentIdColumnName(string value, string argumentName)
+    {
+        const string supportedColumnName = "DocumentId";
+
+        var keysetDocumentIdColumnName = RequireNonEmpty(value, argumentName);
+
+        if (string.Equals(keysetDocumentIdColumnName, supportedColumnName, StringComparison.Ordinal))
+        {
+            return keysetDocumentIdColumnName;
+        }
+
+        throw new ArgumentException(
+            $"Unsupported keyset DocumentId column name '{keysetDocumentIdColumnName}'. "
+                + $"Supported names are '{supportedColumnName}'.",
             argumentName
         );
     }
