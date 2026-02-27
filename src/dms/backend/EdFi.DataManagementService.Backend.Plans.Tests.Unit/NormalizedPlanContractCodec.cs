@@ -12,6 +12,12 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
 internal static class NormalizedPlanContractCodec
 {
+    private static readonly string[] SupportedKeysetTempTableNamesInDeterministicOrder =
+    [
+        ExternalPlans.KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql).Table.Name,
+        ExternalPlans.KeysetTableConventions.GetKeysetTableContract(SqlDialect.Mssql).Table.Name,
+    ];
+
     public static ResourceWritePlanDto Encode(ExternalPlans.ResourceWritePlan plan)
     {
         ArgumentNullException.ThrowIfNull(plan);
@@ -1330,18 +1336,18 @@ internal static class NormalizedPlanContractCodec
 
     private static string ValidateSupportedKeysetTempTableName(string value, string argumentName)
     {
-        const string pgsqlKeysetTableName = "page";
-        const string mssqlKeysetTableName = "#page";
-
         var keysetTempTableName = RequireNonEmpty(value, argumentName);
 
-        if (
-            string.Equals(keysetTempTableName, pgsqlKeysetTableName, StringComparison.Ordinal)
-            || string.Equals(keysetTempTableName, mssqlKeysetTableName, StringComparison.Ordinal)
-        )
+        foreach (var supportedKeysetTempTableName in SupportedKeysetTempTableNamesInDeterministicOrder)
         {
-            return keysetTempTableName;
+            if (string.Equals(keysetTempTableName, supportedKeysetTempTableName, StringComparison.Ordinal))
+            {
+                return keysetTempTableName;
+            }
         }
+
+        var pgsqlKeysetTableName = SupportedKeysetTempTableNamesInDeterministicOrder[0];
+        var mssqlKeysetTableName = SupportedKeysetTempTableNamesInDeterministicOrder[1];
 
         throw new ArgumentException(
             $"Unsupported keyset temp table name '{keysetTempTableName}'. "

@@ -466,6 +466,12 @@ public class Given_NormalizedPlanContractCodec
     public void It_should_fail_fast_when_keyset_temp_table_name_is_not_supported()
     {
         var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
+        var pgsqlKeysetTempTableName = KeysetTableConventions
+            .GetKeysetTableContract(SqlDialect.Pgsql)
+            .Table.Name;
+        var mssqlKeysetTempTableName = KeysetTableConventions
+            .GetKeysetTableContract(SqlDialect.Mssql)
+            .Table.Name;
         var mutated = encoded with
         {
             KeysetTable = encoded.KeysetTable with { TempTableName = "KeysetPage" },
@@ -476,8 +482,8 @@ public class Given_NormalizedPlanContractCodec
         var exception = act.Should().Throw<ArgumentException>().Which;
         exception.ParamName.Should().Contain(nameof(KeysetTableContractDto.TempTableName));
         exception.Message.Should().Contain("Unsupported keyset temp table name");
-        exception.Message.Should().Contain("page");
-        exception.Message.Should().Contain("#page");
+        exception.Message.Should().Contain(pgsqlKeysetTempTableName);
+        exception.Message.Should().Contain(mssqlKeysetTempTableName);
     }
 
     [Test]

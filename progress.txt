@@ -207,3 +207,10 @@ Decisions: `TryParseNumericSuffix(...)` now uses explicit `CultureInfo.Invariant
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/PlanNamingConventions.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanNamingConventionsTests.cs; tasks.json.
 Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 120); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
 Blockers/notes: no blockers; next highest-priority remaining task likely Refactor (single-source keyset temp-table constants in normalized DTO decode helper).
+
+2026-02-27
+Task done: Refactor (single-source keyset temp-table constants in normalized DTO decode helper). Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: replaced hard-coded keyset temp-table constants in normalized decode helper with deterministic names derived from `KeysetTableConventions` for `SqlDialect.Pgsql` and `SqlDialect.Mssql`; preserved unsupported-name exception text shape/order by keeping dialect order explicit (`Pgsql`, then `Mssql`); adjusted failure test to assert convention-derived names so runtime contracts and test-only codec cannot drift silently.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodec.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodecTests.cs; tasks.json; progress.txt.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 120); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
+Blockers/notes: no blockers; next highest-priority remaining task is Test Utilities.
