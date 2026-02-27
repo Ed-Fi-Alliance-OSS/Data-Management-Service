@@ -241,7 +241,10 @@ internal static class NormalizedPlanContractCodec
         var documentIdColumnNameArgument =
             $"{nameof(ResourceReadPlanDto.KeysetTable)}.{nameof(KeysetTableContractDto.DocumentIdColumnName)}";
 
-        var keysetTempTableName = RequireNonEmpty(dto.KeysetTable.TempTableName, tempTableNameArgument);
+        var keysetTempTableName = ValidateSupportedKeysetTempTableName(
+            dto.KeysetTable.TempTableName,
+            tempTableNameArgument
+        );
 
         var keysetDocumentIdColumnName = RequireNonEmpty(
             dto.KeysetTable.DocumentIdColumnName,
@@ -1289,6 +1292,28 @@ internal static class NormalizedPlanContractCodec
         }
 
         return value;
+    }
+
+    private static string ValidateSupportedKeysetTempTableName(string value, string argumentName)
+    {
+        const string pgsqlKeysetTableName = "page";
+        const string mssqlKeysetTableName = "#page";
+
+        var keysetTempTableName = RequireNonEmpty(value, argumentName);
+
+        if (
+            string.Equals(keysetTempTableName, pgsqlKeysetTableName, StringComparison.Ordinal)
+            || string.Equals(keysetTempTableName, mssqlKeysetTableName, StringComparison.Ordinal)
+        )
+        {
+            return keysetTempTableName;
+        }
+
+        throw new ArgumentException(
+            $"Unsupported keyset temp table name '{keysetTempTableName}'. "
+                + $"Supported names are '{pgsqlKeysetTableName}' and '{mssqlKeysetTableName}'.",
+            argumentName
+        );
     }
 
     private static string FormatTableName(DbTableName tableName)

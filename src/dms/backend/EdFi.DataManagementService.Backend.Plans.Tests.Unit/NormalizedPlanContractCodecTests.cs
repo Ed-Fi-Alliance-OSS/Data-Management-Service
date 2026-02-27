@@ -116,17 +116,86 @@ public class Given_NormalizedPlanContractCodec
             .Should()
             .Be(NormalizedPlanDtoJson.ComputeCanonicalSha256(encoded));
 
-        decoded
-            .ReferenceIdentityProjectionPlansInDependencyOrder[0]
-            .BindingsInOrder[0]
-            .ReferenceObjectPath.Canonical.Should()
-            .Be("$.schoolReference");
+        var sourceTablePlan = _readPlan.TablePlansInDependencyOrder[0];
+        var decodedTablePlan = decoded.TablePlansInDependencyOrder[0];
+        decodedTablePlan.SelectByKeysetSql.Should().Be(sourceTablePlan.SelectByKeysetSql);
 
-        decoded
-            .DescriptorProjectionPlansInOrder[0]
-            .SourcesInOrder[0]
-            .DescriptorValuePath.Canonical.Should()
-            .Be("$.gradeLevelDescriptor");
+        decoded.KeysetTable.Table.Name.Should().Be(_readPlan.KeysetTable.Table.Name);
+        decoded.KeysetTable.DocumentIdColumnName.Should().Be(_readPlan.KeysetTable.DocumentIdColumnName);
+
+        var sourceReferenceBinding = _readPlan
+            .ReferenceIdentityProjectionPlansInDependencyOrder[0]
+            .BindingsInOrder[0];
+
+        var decodedReferenceBinding = decoded
+            .ReferenceIdentityProjectionPlansInDependencyOrder[0]
+            .BindingsInOrder[0];
+
+        decodedReferenceBinding.FkColumnOrdinal.Should().Be(sourceReferenceBinding.FkColumnOrdinal);
+        decodedReferenceBinding
+            .IdentityFieldOrdinalsInOrder.Select(static field => field.ColumnOrdinal)
+            .Should()
+            .Equal(
+                sourceReferenceBinding.IdentityFieldOrdinalsInOrder.Select(static field =>
+                    field.ColumnOrdinal
+                )
+            );
+
+        decodedReferenceBinding
+            .ReferenceObjectPath.Canonical.Should()
+            .Be(sourceReferenceBinding.ReferenceObjectPath.Canonical);
+
+        decodedReferenceBinding
+            .ReferenceObjectPath.Should()
+            .NotBeSameAs(sourceReferenceBinding.ReferenceObjectPath);
+
+        var sourceReferenceFieldPath = sourceReferenceBinding
+            .IdentityFieldOrdinalsInOrder[0]
+            .ReferenceJsonPath;
+
+        var decodedReferenceFieldPath = decodedReferenceBinding
+            .IdentityFieldOrdinalsInOrder[0]
+            .ReferenceJsonPath;
+
+        decodedReferenceFieldPath.Canonical.Should().Be(sourceReferenceFieldPath.Canonical);
+        decodedReferenceFieldPath.Should().NotBeSameAs(sourceReferenceFieldPath);
+
+        var sourceDescriptorPlan = _readPlan.DescriptorProjectionPlansInOrder[0];
+        var decodedDescriptorPlan = decoded.DescriptorProjectionPlansInOrder[0];
+        decodedDescriptorPlan.SelectByKeysetSql.Should().Be(sourceDescriptorPlan.SelectByKeysetSql);
+        decodedDescriptorPlan.ResultShape.Should().Be(sourceDescriptorPlan.ResultShape);
+        decodedDescriptorPlan
+            .SourcesInOrder.Select(static source => source.DescriptorIdColumnOrdinal)
+            .Should()
+            .Equal(
+                sourceDescriptorPlan.SourcesInOrder.Select(static source => source.DescriptorIdColumnOrdinal)
+            );
+
+        var sourceDescriptorPath = sourceDescriptorPlan.SourcesInOrder[0].DescriptorValuePath;
+        var decodedDescriptorPath = decodedDescriptorPlan.SourcesInOrder[0].DescriptorValuePath;
+        decodedDescriptorPath.Canonical.Should().Be(sourceDescriptorPath.Canonical);
+        decodedDescriptorPath.Should().NotBeSameAs(sourceDescriptorPath);
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_decoding_read_plan_with_unknown_projection_table()
+    {
+        var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
+        var descriptorPlan = encoded.DescriptorProjectionPlansInOrder[0];
+        var sources = descriptorPlan.SourcesInOrder.ToArray();
+
+        sources[0] = sources[0] with { Table = new DbTableNameDto("edfi", "MissingProjectionTable") };
+
+        var mutated = encoded with
+        {
+            DescriptorProjectionPlansInOrder = [descriptorPlan with { SourcesInOrder = [.. sources] }],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Contain(nameof(DescriptorProjectionSourceDto.Table));
+        exception.Message.Should().Contain("Unknown table 'edfi.MissingProjectionTable'");
     }
 
     [Test]
@@ -256,6 +325,51 @@ public class Given_NormalizedPlanContractCodec
         var exception = act.Should().Throw<ArgumentOutOfRangeException>().Which;
         exception.ParamName.Should().Contain(nameof(ReferenceIdentityProjectionBindingDto.FkColumnOrdinal));
         exception.Message.Should().Contain("out of range");
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_descriptor_projection_ordinal_is_out_of_range()
+    {
+        var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
+        var descriptorPlan = encoded.DescriptorProjectionPlansInOrder[0];
+        var descriptorSources = descriptorPlan.SourcesInOrder.ToArray();
+
+        descriptorSources[0] = descriptorSources[0] with { DescriptorIdColumnOrdinal = 100 };
+
+        var mutated = encoded with
+        {
+            DescriptorProjectionPlansInOrder =
+            [
+                descriptorPlan with
+                {
+                    SourcesInOrder = [.. descriptorSources],
+                },
+            ],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
+
+        var exception = act.Should().Throw<ArgumentOutOfRangeException>().Which;
+        exception.ParamName.Should().Contain(nameof(DescriptorProjectionSourceDto.DescriptorIdColumnOrdinal));
+        exception.Message.Should().Contain("out of range");
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_keyset_temp_table_name_is_not_supported()
+    {
+        var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
+        var mutated = encoded with
+        {
+            KeysetTable = encoded.KeysetTable with { TempTableName = "KeysetPage" },
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Contain(nameof(KeysetTableContractDto.TempTableName));
+        exception.Message.Should().Contain("Unsupported keyset temp table name");
+        exception.Message.Should().Contain("page");
+        exception.Message.Should().Contain("#page");
     }
 
     [Test]
