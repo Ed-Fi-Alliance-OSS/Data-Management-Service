@@ -167,7 +167,14 @@ public class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisioner
             checkCommand.Parameters.AddWithValue("@dbName", targetDatabase);
 
             var result = checkCommand.ExecuteScalar();
-            if (result is bool rcsiEnabled && !rcsiEnabled)
+            if (result is null)
+            {
+                logger.LogError(
+                    "Database not found in sys.databases: {DatabaseName}",
+                    LoggingSanitizer.SanitizeForLogging(targetDatabase)
+                );
+            }
+            else if (result is bool rcsiEnabled && !rcsiEnabled)
             {
                 var warning =
                     $"READ_COMMITTED_SNAPSHOT is OFF for database '{LoggingSanitizer.SanitizeForConsole(targetDatabase)}'. "

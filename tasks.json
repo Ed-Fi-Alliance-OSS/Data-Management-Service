@@ -57,7 +57,7 @@
       "Confirm the null case logs an error or warning about database not found in sys.databases",
       "Run: `dotnet build src/dms/clis/EdFi.DataManagementService.SchemaTools/`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Test Coverage",

@@ -45,3 +45,10 @@
 - Removed System.Text.Json.Nodes using from both commands (no longer needed), removed Core.Startup using from helpers (unused)
 - Build 0 warnings, all 34 tests pass
 - Files: Commands/DdlCommandHelpers.cs (new), Commands/DdlEmitCommand.cs, Commands/DdlProvisionCommand.cs
+
+**QA: Robustness — null check in CheckOrConfigureMvcc**
+- Added explicit null check for ExecuteScalar result before the `is bool` pattern match
+- When result is null (database disappeared from sys.databases), logs an error instead of silently skipping
+- Existing bool-true and bool-false paths unchanged
+- Build 0 warnings, all 34 tests pass
+- Files: Provisioning/MssqlDatabaseProvisioner.cs
