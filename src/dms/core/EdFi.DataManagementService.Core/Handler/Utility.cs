@@ -109,11 +109,17 @@ public static class Utility
 
             if (isRetryExhausted(result))
             {
+                var resourceName = requestInfo.ResourceInfo.ResourceName.Value;
+                var documentUuid = requestInfo.PathComponents.DocumentUuid.Value;
+
                 if (attemptCount > 1)
                 {
                     logger.LogError(
-                        "All deadlock retry attempts exhausted for {OperationName} after {AttemptCount} attempts - {TraceId}",
+                        "All deadlock retry attempts exhausted for {OperationName} on resource {ResourceName} "
+                            + "(DocumentUuid: {DocumentUuid}) after {AttemptCount} attempts - {TraceId}",
                         operationName,
+                        resourceName,
+                        documentUuid,
                         attemptCount,
                         traceId.Value
                     );
@@ -121,8 +127,11 @@ public static class Utility
                 else
                 {
                     logger.LogWarning(
-                        "Operation {OperationName} returned retryable result but retries are disabled - {TraceId}",
+                        "Operation {OperationName} on resource {ResourceName} (DocumentUuid: {DocumentUuid}) "
+                            + "returned retryable result but retries are disabled - {TraceId}",
                         operationName,
+                        resourceName,
+                        documentUuid,
                         traceId.Value
                     );
                 }
