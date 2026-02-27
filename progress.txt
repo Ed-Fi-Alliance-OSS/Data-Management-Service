@@ -165,3 +165,10 @@ Decisions: strengthened read-plan roundtrip assertions to cover keyset/table SQL
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodecTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodec.cs; tasks.json.
 Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 111); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
 Blockers/notes: no blockers; next highest-priority remaining task likely Tests (determinism stress tests for normalized DTO encoding).
+
+2026-02-27
+Task done: Tests (determinism stress tests for normalized DTO encoding). Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: added permutation-invariance assertion by decoding read DTO against equivalent model with permuted `DocumentReferenceBindings`/`DescriptorEdgeSources` and re-encoding to the same canonical hash; added order-sensitive hash-change assertions for write `ColumnBindings`, key-unification `MembersInOrder`, and query `ParametersInOrder`; added duplicate-query-parameter failure permutation test asserting stable exception type/message across reordered invalid inputs.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodecTests.cs; tasks.json; progress.txt.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 114); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
+Blockers/notes: no blockers; remaining tasks are Docs updates (E05 protobuf-contracts swap guidance, and normalized `.mpack` reconstruction wording alignment).

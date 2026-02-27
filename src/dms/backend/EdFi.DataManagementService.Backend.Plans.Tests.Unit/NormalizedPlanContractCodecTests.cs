@@ -217,6 +217,114 @@ public class Given_NormalizedPlanContractCodec
     }
 
     [Test]
+    public void It_should_preserve_read_plan_hash_when_model_lookup_collections_are_permuted()
+    {
+        var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
+        var baselineHash = NormalizedPlanDtoJson.ComputeCanonicalSha256(encoded);
+        var permutedModel = CreateModelWithPermutedLookups(_model);
+
+        var decoded = NormalizedPlanContractCodec.Decode(encoded, permutedModel);
+        var reEncoded = NormalizedPlanContractCodec.Encode(decoded);
+
+        NormalizedPlanDtoJson.ComputeCanonicalSha256(reEncoded).Should().Be(baselineHash);
+    }
+
+    [Test]
+    public void It_should_change_hash_when_order_sensitive_lists_are_permuted()
+    {
+        var baselineWriteHash = ComputeCanonicalWritePlanHash(_writePlan);
+        var baselineQueryHash = ComputeCanonicalQueryPlanHash(_queryPlan);
+        var sourceTablePlan = _writePlan.TablePlansInDependencyOrder[0];
+
+        var reorderedColumnBindingsPlan = _writePlan with
+        {
+            TablePlansInDependencyOrder =
+            [
+                sourceTablePlan with
+                {
+                    ColumnBindings =
+                    [
+                        sourceTablePlan.ColumnBindings[1],
+                        sourceTablePlan.ColumnBindings[0],
+                        .. sourceTablePlan.ColumnBindings.Skip(2),
+                    ],
+                },
+            ],
+        };
+
+        var sourceKeyUnificationPlan = sourceTablePlan.KeyUnificationPlans[0];
+        var reorderedKeyUnificationMembersPlan = _writePlan with
+        {
+            TablePlansInDependencyOrder =
+            [
+                sourceTablePlan with
+                {
+                    KeyUnificationPlans =
+                    [
+                        sourceKeyUnificationPlan with
+                        {
+                            MembersInOrder =
+                            [
+                                sourceKeyUnificationPlan.MembersInOrder[1],
+                                sourceKeyUnificationPlan.MembersInOrder[0],
+                            ],
+                        },
+                    ],
+                },
+            ],
+        };
+
+        var reorderedQueryPlan = _queryPlan with
+        {
+            ParametersInOrder =
+            [
+                _queryPlan.ParametersInOrder[0],
+                _queryPlan.ParametersInOrder[2],
+                _queryPlan.ParametersInOrder[1],
+            ],
+        };
+
+        ComputeCanonicalWritePlanHash(reorderedColumnBindingsPlan).Should().NotBe(baselineWriteHash);
+        ComputeCanonicalWritePlanHash(reorderedKeyUnificationMembersPlan).Should().NotBe(baselineWriteHash);
+        ComputeCanonicalQueryPlanHash(reorderedQueryPlan).Should().NotBe(baselineQueryHash);
+    }
+
+    [Test]
+    public void It_should_emit_stable_duplicate_query_parameter_failures_across_permutations()
+    {
+        var encoded = NormalizedPlanContractCodec.Encode(_queryPlan);
+
+        var firstPermutation = encoded with
+        {
+            ParametersInOrder =
+            [
+                new QuerySqlParameterDto(QuerySqlParameterRoleDto.Filter, "schoolYear"),
+                new QuerySqlParameterDto(QuerySqlParameterRoleDto.Offset, "offset"),
+                new QuerySqlParameterDto(QuerySqlParameterRoleDto.Limit, "OffSet"),
+            ],
+        };
+
+        var secondPermutation = encoded with
+        {
+            ParametersInOrder =
+            [
+                new QuerySqlParameterDto(QuerySqlParameterRoleDto.Limit, "OffSet"),
+                new QuerySqlParameterDto(QuerySqlParameterRoleDto.Filter, "schoolYear"),
+                new QuerySqlParameterDto(QuerySqlParameterRoleDto.Offset, "offset"),
+            ],
+        };
+
+        Action firstAct = () => NormalizedPlanContractCodec.Decode(firstPermutation);
+        Action secondAct = () => NormalizedPlanContractCodec.Decode(secondPermutation);
+
+        var firstException = firstAct.Should().Throw<ArgumentException>().Which;
+        var secondException = secondAct.Should().Throw<ArgumentException>().Which;
+
+        secondException.ParamName.Should().Be(firstException.ParamName);
+        secondException.Message.Should().Be(firstException.Message);
+    }
+
+    [Test]
     public void It_should_fail_fast_when_decoding_write_plan_with_unknown_table()
     {
         var encoded = NormalizedPlanContractCodec.Encode(_writePlan);
@@ -609,6 +717,13 @@ public class Given_NormalizedPlanContractCodec
                     FkColumn: new DbColumnName("GradeLevel_DescriptorId"),
                     DescriptorResource: new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor")
                 ),
+                new DescriptorEdgeSource(
+                    IsIdentityComponent: false,
+                    DescriptorValuePath: Path("$.schoolYearDescriptor"),
+                    Table: table.Table,
+                    FkColumn: new DbColumnName("SchoolYear_DescriptorAlias"),
+                    DescriptorResource: new QualifiedResourceName("Ed-Fi", "SchoolYearTypeDescriptor")
+                ),
             ]
         );
     }
@@ -799,6 +914,25 @@ public class Given_NormalizedPlanContractCodec
     private static JsonPathExpression Path(string value)
     {
         return JsonPathExpressionCompiler.Compile(value);
+    }
+
+    private static RelationalResourceModel CreateModelWithPermutedLookups(RelationalResourceModel model)
+    {
+        return model with
+        {
+            DocumentReferenceBindings = [.. model.DocumentReferenceBindings.Reverse()],
+            DescriptorEdgeSources = [.. model.DescriptorEdgeSources.Reverse()],
+        };
+    }
+
+    private static string ComputeCanonicalWritePlanHash(ResourceWritePlan plan)
+    {
+        return NormalizedPlanDtoJson.ComputeCanonicalSha256(NormalizedPlanContractCodec.Encode(plan));
+    }
+
+    private static string ComputeCanonicalQueryPlanHash(PageDocumentIdSqlPlan plan)
+    {
+        return NormalizedPlanDtoJson.ComputeCanonicalSha256(NormalizedPlanContractCodec.Encode(plan));
     }
 
     private static string GetWriteValueSourceKind(WriteValueSource source)
