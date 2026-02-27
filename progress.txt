@@ -66,3 +66,9 @@
 - Each method now constructs exactly one connection string builder; validation inlined from GetDatabaseName
 - Build 0 warnings, all 34 tests pass
 - Files: Provisioning/PgsqlDatabaseProvisioner.cs, Provisioning/MssqlDatabaseProvisioner.cs
+
+**QA: Test Coverage — remove unnecessary [TestFixture] and inheritance**
+- Removed [TestFixture] from outer DatabaseProvisionerTests class (serves no purpose since it has no test methods)
+- Removed `: DatabaseProvisionerTests` inheritance from all 6 inner test fixture classes (outer provides no shared members)
+- CSharpier formatted; build 0 warnings, all 34 tests pass
+- Files: DatabaseProvisionerTests.cs

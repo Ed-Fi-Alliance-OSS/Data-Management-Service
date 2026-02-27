@@ -67,6 +67,6 @@
       "Confirm inner test fixture classes do not inherit from DatabaseProvisionerTests",
       "Run: `dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/`"
     ],
-    "completed": false
+    "completed": true
   }
 ]
