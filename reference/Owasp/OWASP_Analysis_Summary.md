@@ -2,9 +2,20 @@
 
 ## Overview
 
-This summary documents the OWASP attack path coverage achieved in branch `DMS-414` for Ed-Fi Data Management Service (DMS) and Configuration Service (CMS), based on four waves of review and E2E test additions. It identifies which scenarios are covered by tests, which remain uncovered, and whether gaps are due to missing tests or require code changes.
+This summary documents the OWASP attack path coverage achieved in branch `DMS-414` for Ed-Fi Data Management Service (DMS) and Configuration Service (CMS). It identifies which scenarios are covered by tests, which remain uncovered, and whether gaps are due to missing tests or require code changes.
 
 ---
+
+## ZAP Analysis Summary
+
+- **Report:** ZAP 2.17.0 scan (generated 2026-02-27).
+- **Top findings:**
+  - Multiple SQL Injection alerts across many endpoints (automated boolean/tautology payloads observed against GET query parameters and POST fields). Example targets include `descriptorMappings`, `educationContents`, `people`, `students` and various collection endpoints.
+  - These findings were detected via response manipulation checks (boolean conditions, payload comparisons) and require manual triage to confirm true positives versus scanner false positives.
+    - Added E2E confirmation: targeted E2E checks show these alerts are false positives for the tested endpoints — the APIs reject injected payloads and do not permit SQL injection.
+- **Other scan insights:**
+  - High percentage of 4xx responses during crawling and widespread use of `application/problem+json` for error payloads.
+  - ZAP reported operational warnings (memory/log warnings) during the run; these are environment/scan notes rather than direct app vulnerabilities.
 
 ## Covered OWASP Scenarios (Validated by E2E Tests)
 

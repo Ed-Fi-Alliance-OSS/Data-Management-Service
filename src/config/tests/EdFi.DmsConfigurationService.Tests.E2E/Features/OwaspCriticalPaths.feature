@@ -12,6 +12,10 @@ Feature: OWASP critical attack path protections
              When a GET request is made to "/v2/vendors?limit=10&offset='0 OR 1=1--"
              Then it should respond with 400
 
+        Scenario: 02a SQL injection payload in query string offset is rejected
+             When a GET request is made to "/v2/vendors?limit=10&offset='0+OR+1%3D1--"
+             Then it should respond with 400
+
         Scenario: 03 SQL injection payload in route id is rejected
              When a GET request is made to "/v2/vendors/1;DROP TABLE dmscs.Vendor;--"
              Then it should respond with 400

@@ -7,7 +7,17 @@ Feature: OWASP critical attack path protections
                   | 1001     | Security School   | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
 
         Scenario: 01 SQL injection payload in query string numeric field is rejected
-             When a GET request is made to "/ed-fi/schools?schoolId=' OR 1=1--"
+             When a GET request is made to "/ed-fi/schools?schoolId=9999' OR 1=1--"
+             Then it should respond with 400
+
+        @KnownSecurityGap
+        Scenario: 01a SQL injection payload in query string numeric field is rejected
+             When a GET request is made to "/ed-fi/schools?OR 1=1--schoolId=9999"
+             Then it should respond with 400
+
+        @KnownSecurityGap
+        Scenario: 01b SQL injection payload in query string numeric field is rejected
+             When a GET request is made to "/ed-fi/schools?+OR+1%3D1+--schoolId=9999"
              Then it should respond with 400
 
         Scenario: 02 SQL injection payload in JSON body numeric field is rejected
@@ -97,11 +107,11 @@ Feature: OWASP critical attack path protections
                   """
              Then it should respond with 401
 
-           Scenario: 06a Expired JWT is rejected
-              Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
-                And the token is expired
-               When a GET request is made to "/ed-fi/schools"
-               Then it should respond with 401
+        Scenario: 06a Expired JWT is rejected
+            Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
+              And the token is expired
+             When a GET request is made to "/ed-fi/schools"
+             Then it should respond with 401
 
         # Host is a browser-forbidden header (https://fetch.spec.whatwg.org/#forbidden-header-name).
         # Playwright/Chromium silently drops it, so the spoofed value never reaches the server.
@@ -284,7 +294,7 @@ Feature: OWASP critical attack path protections
         Scenario: 19 CSRF style browser form post without bearer token is rejected
             Given there is no Authorization header
              When an unauthenticated Form URL Encoded POST request is made to "/ed-fi/schools" with
-                  | Key               | Value                |
-                  | schoolId          | 1004                 |
-                  | nameOfInstitution | CSRF Form Test       |
+                  | Key               | Value          |
+                  | schoolId          | 1004           |
+                  | nameOfInstitution | CSRF Form Test |
              Then it should respond with 401
