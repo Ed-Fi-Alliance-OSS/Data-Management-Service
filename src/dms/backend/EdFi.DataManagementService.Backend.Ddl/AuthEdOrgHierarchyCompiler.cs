@@ -58,7 +58,8 @@ public static class AuthEdOrgHierarchyCompiler
             );
 
         // Step 4: Determine the identity column from the abstract identity table.
-        // This is the scalar column that is NOT DocumentId and NOT Discriminator.
+        // This is the scalar column that is NOT Discriminator (DocumentId columns are
+        // implicitly excluded by their non-Scalar ColumnKind).
         var identityColumn = (
             abstractIdentityTable.TableModel.Columns.FirstOrDefault(c =>
                 c.Kind == ColumnKind.Scalar && c.ColumnName.Value != "Discriminator"
