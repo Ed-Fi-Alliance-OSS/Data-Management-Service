@@ -1,0 +1,68 @@
+[
+  {
+    "category": "Dependencies",
+    "description": "Add Npgsql and Microsoft.Data.SqlClient NuGet package references to EdFi.DataManagementService.SchemaTools.csproj. These are required for ADO.NET database connectivity in the new `ddl provision` command. Acceptance: the project builds successfully with both packages referenced, and no other projects are modified.",
+    "steps-to-verify": [
+      "Confirm Npgsql and Microsoft.Data.SqlClient appear in SchemaTools .csproj",
+      "Run: `dotnet build src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Provisioning",
+    "description": "Create an IDatabaseProvisioner interface and two implementations (PgsqlDatabaseProvisioner, MssqlDatabaseProvisioner) in src/dms/clis/EdFi.DataManagementService.SchemaTools/Provisioning/. These classes encapsulate all database connectivity for the provision command.\n\nIDatabaseProvisioner contract:\n- CreateDatabaseIfNotExists(connectionString): connects to the admin database (postgres/master), executes CREATE DATABASE IF NOT EXISTS for the target database name parsed from the connection string. This is a pre-step outside any transaction.\n- ExecuteInTransaction(connectionString, sql): opens a connection to the target database, begins a transaction, executes the full DDL SQL string, commits on success, rolls back on failure. Propagates errors with clear messages.\n- CheckOrConfigureMvcc(connectionString, databaseWasCreated): SQL Server only. If databaseWasCreated is true, enables READ_COMMITTED_SNAPSHOT ON and ALLOW_SNAPSHOT_ISOLATION ON via ALTER DATABASE (outside transaction, on master). If databaseWasCreated is false, queries sys.databases to check current settings and logs a warning to stderr if READ_COMMITTED_SNAPSHOT is OFF. PostgreSQL implementation is a no-op.\n\nConnection string parsing: use NpgsqlConnectionStringBuilder / SqlConnectionStringBuilder to extract the target database name and to build admin connection strings (replacing Database with 'postgres' or 'master').\n\nAll external data (connection string fragments, database names, error messages) must be sanitized before logging using LoggingSanitizer.\n\nAcceptance:\n- Both implementations compile and handle the happy path (create DB, execute SQL in txn, MVCC config).\n- Errors during DB creation, SQL execution, or MVCC checks are caught and reported with clear messages.\n- PostgreSQL CREATE DATABASE runs outside a transaction block.\n- SQL Server MVCC configuration runs outside the provisioning transaction.",
+    "steps-to-verify": [
+      "Confirm IDatabaseProvisioner.cs, PgsqlDatabaseProvisioner.cs, MssqlDatabaseProvisioner.cs exist in SchemaTools/Provisioning/",
+      "Confirm connection string parsing uses the builder classes (NpgsqlConnectionStringBuilder, SqlConnectionStringBuilder)",
+      "Confirm all log statements sanitize external data via LoggingSanitizer",
+      "Confirm PostgreSQL CREATE DATABASE uses a connection with no open transaction",
+      "Confirm SQL Server MVCC ALTER DATABASE runs outside the main provisioning transaction",
+      "Run: `dotnet build src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "CLI Command",
+    "description": "Create DdlProvisionCommand in src/dms/clis/EdFi.DataManagementService.SchemaTools/Commands/DdlProvisionCommand.cs. This command connects to a real database and executes the generated DDL.\n\nCLI options:\n- --schema / -s (required, repeatable): ApiSchema.json paths, same as ddl emit.\n- --connection-string / -c (required): ADO.NET connection string for the target database.\n- --dialect / -d (required, no default): 'pgsql' or 'mssql'. Unlike ddl emit, 'both' is NOT accepted — you provision one database at a time.\n- --create-database (optional flag, default false): when set, creates the target database if it does not exist before provisioning.\n\nExecution flow (reuse DdlEmitCommand's DDL generation pipeline):\n1. Parse and validate options. Reject --dialect 'both'.\n2. Load schemas via IApiSchemaFileLoader.\n3. Build EffectiveSchemaSet via EffectiveSchemaSetBuilder.\n4. Build DerivedRelationalModelSet for the selected dialect (deep-clone pattern from DdlEmitCommand).\n5. Emit combined DDL string: CoreDdlEmitter + RelationalModelDdlEmitter + SeedDmlEmitter.\n6. If --create-database: call provisioner.CreateDatabaseIfNotExists().\n7. Call provisioner.ExecuteInTransaction() with the combined SQL.\n8. Call provisioner.CheckOrConfigureMvcc() (pass whether DB was just created).\n9. Print summary to stdout: effective schema hash, resource key count, dialect, success message.\n10. Return exit code 0 on success, 1 on failure.\n\nError handling: use CommandErrorHandler.Execute() wrapper consistent with DdlEmitCommand. Catch and surface database connection errors, SQL execution errors, and transaction failures with clear user-facing messages on stderr.\n\nAcceptance:\n- `dms-schema ddl provision --help` shows all options with descriptions.\n- `dms-schema ddl provision -s <path> -c <connstr> -d pgsql` generates DDL and executes it.\n- `dms-schema ddl provision -d both` is rejected with an error.\n- --create-database flag triggers database creation pre-step.\n- Exit code 0 on success, 1 on any error.\n- No authorization objects are emitted or created (inherent from existing DDL pipeline).",
+    "steps-to-verify": [
+      "Confirm DdlProvisionCommand.cs exists in SchemaTools/Commands/",
+      "Confirm --dialect does not accept 'both' (AcceptOnlyFromAmong 'pgsql', 'mssql')",
+      "Confirm DDL generation reuses the same pipeline as DdlEmitCommand (CoreDdlEmitter + RelationalModelDdlEmitter + SeedDmlEmitter)",
+      "Confirm deep-clone of EffectiveSchemaSet before building relational model",
+      "Confirm CommandErrorHandler.Execute() wraps the execution",
+      "Confirm all log statements sanitize external data",
+      "Run: `dotnet build src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Wiring",
+    "description": "Wire up the `ddl provision` subcommand in Program.cs. Register it under the existing `ddl` command group alongside `ddl emit`. The provisioner is created directly by the command based on dialect (no DI registration needed — same pattern as DdlEmitCommand creating emitters directly).\n\nAcceptance:\n- `dms-schema ddl provision` is a recognized subcommand.\n- `dms-schema ddl --help` lists both `emit` and `provision`.\n- `dms-schema --help` shows the `ddl` command group.",
+    "steps-to-verify": [
+      "Confirm Program.cs adds DdlProvisionCommand to the ddl command group",
+      "Run: `dotnet build src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj`",
+      "Run: `dotnet run --project src/dms/clis/EdFi.DataManagementService.SchemaTools -- ddl --help` and confirm both emit and provision appear"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Testing",
+    "description": "Add unit tests for the ddl provision command in src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/ (or a new unit test project if appropriate, following existing test project conventions).\n\nTest coverage:\n1. Command parsing tests:\n   - Valid options are accepted (--schema, --connection-string, --dialect pgsql/mssql, --create-database).\n   - --dialect 'both' is rejected.\n   - Missing required options (--schema, --connection-string, --dialect) produce errors.\n2. Provisioner selection tests:\n   - Dialect 'pgsql' creates PgsqlDatabaseProvisioner.\n   - Dialect 'mssql' creates MssqlDatabaseProvisioner.\n3. Connection string parsing tests:\n   - PostgreSQL connection string: database name is correctly extracted, admin connection string uses 'postgres' as database.\n   - SQL Server connection string: database name is correctly extracted, admin connection string uses 'master' as database.\n   - Connection string without a database name produces a clear error.\n\nNo Docker or real database connectivity required — mock/stub the ADO.NET layer where needed.\n\nAcceptance:\n- All tests pass.\n- Tests follow existing NUnit conventions (Given_ prefix for fixtures, It_ prefix for test methods, Setup for arrange+act).",
+    "steps-to-verify": [
+      "Confirm test classes follow Given_/It_ naming conventions",
+      "Run: `dotnet test` for the relevant test project and confirm all tests pass",
+      "Confirm no Docker or real database connectivity is used in tests"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Code Quality",
+    "description": "Run CSharpier formatting on all new and modified files. Ensure the solution builds cleanly with TreatWarningsAsErrors. Verify no CodeQL log-injection patterns exist in new code (all external data sanitized before logging).\n\nAcceptance:\n- `dotnet csharpier format` produces no changes on the new/modified files.\n- `dotnet build` succeeds with zero warnings.\n- Every logger.Log* call in new code that includes external data uses LoggingSanitizer.SanitizeForLogging().\n- Every Console.Error.WriteLine that includes external data uses LoggingSanitizer.SanitizeForConsole().",
+    "steps-to-verify": [
+      "Run: `dotnet csharpier format src/dms/clis/EdFi.DataManagementService.SchemaTools/`",
+      "Run: `dotnet build src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj`",
+      "Manually review all new log statements for sanitization compliance"
+    ],
+    "completed": true
+  }
+]
