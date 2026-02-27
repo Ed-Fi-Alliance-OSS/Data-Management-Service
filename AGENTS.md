@@ -3,30 +3,12 @@ This repository contains the **Ed-Fi Data Management Service (DMS) Platform**, w
 1. **Ed-Fi Data Management Service (DMS)** - A functional implementation of Ed-Fi Resources API, Ed-Fi Descriptors API, and Ed-Fi Discovery API
 2. **Ed-Fi DMS Configuration Service (CMS)** - A functional implementation of the Ed-Fi Management API specification
 
-## DMS Core and Backends
+### Code Style
 
-- `src/dms/core/EdFi.DataManagementService.Core/`: core runtime wired into the DMS `frontend` via `DmsCoreServiceExtensions` (request pipeline, middlewares, handlers security, validation, API schema/OpenAPI/OAuth).
-- `src/dms/core/EdFi.DataManagementService.Core.External/`: shared contracts/models used across `frontend` + backend implementations (notably `Backend/` request/result types like `IGetRequest`/`GetResult`).
-- `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/`: relational backend implementation plus schema deploy code under `Deploy/`
-- Tests: `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/` and `src/dms/backend/*Tests*/`.
-
-### Code Quality
-
-- **Required**: Obey the `.editorconfig` file settings at all times. The project uses:
-  - UTF-8 character encoding
-  - LF line endings
-  - Spaces for indentation style
-  - Final newlines required
-  - Trailing whitespace must be trimmed
-- **Required**: run the appropriate build process and correct any build errors with the following scripts:
+- Obey the `.editorconfig` file settings at all times.
+- Run the appropriate build process and correct any build errors with the following scripts:
   - If modifying code in `./src/dms` then run `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`
   - If modifying code in `./src/config` then run `dotnet build --no-restore ./src/config/EdFi.DmsConfigurationService.sln`
-
-## Formatting and Code Style
-
-- Apply code-formatting style defined in `.editorconfig`.
-- Use pattern matching and switch expressions wherever possible.
-- Use `nameof` instead of string literals when referring to member names.
 - Only use .NET 10 code style, including modern C# language features (e.g., primary constructors, pattern matching, records, target-typed new, collection expressions, and file-scoped namespaces).
 
 ### Nullable Reference Types

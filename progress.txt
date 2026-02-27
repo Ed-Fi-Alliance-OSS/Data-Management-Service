@@ -1,0 +1,188 @@
+2026-02-25
+Task done: Contracts. Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: new executor-facing plan contracts in Backend.External.Plans; list-only ordering contracts (`IReadOnlyList`) no contract dictionaries; query plan contract carries ordered parameters w/ role metadata; kept existing compiler output type unchanged for later Query task.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/PlanContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ExternalPlanContractsTests.cs; tasks.json.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 43); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 errors).
+Blockers/notes: no blockers; next highest-priority remaining task is Naming.
+
+2026-02-25
+Task done: Naming. Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: added centralized deterministic naming utility in Backend.Plans; write parameter naming pipeline is base-name camel-first-char -> sanitize -> case-insensitive dedupe w/ `_{n}` suffixes; added fixed alias roles (`r`,`k`,`t`,`doc`,`d`) + table allocator (`t0`,`t1`,...); query compiler root alias now sourced from helper.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/PlanNamingConventions.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanNamingConventionsTests.cs; tasks.json.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 57); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 errors).
+Blockers/notes: no blockers; next highest-priority remaining task likely Batching.
+
+2026-02-25
+Task done: Batching. Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: added plain-data `BulkInsertBatchingInfo` contract on `TableWritePlan`; calculator centralizes deterministic dialect limits (MSSQL 2100 params + 1000 VALUES rows, PGSQL 65535 params + 1000 policy rows); fail-fast on invalid row width (`<1` and computed max rows `<1`) to avoid executor guesswork.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/PlanContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/PlanWriteBatchingConventions.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanWriteBatchingConventionsTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ExternalPlanContractsTests.cs; tasks.json.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 68); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 errors).
+Blockers/notes: no blockers; next highest-priority remaining task likely Query (integration path for new executor-facing query contract).
+
+2026-02-25
+Task done: Query. Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: compiler now returns executor-facing `Backend.External.Plans.PageDocumentIdSqlPlan`; `ParametersInOrder` is deterministic in SQL emission order (filters after rewrite/sort, then offset, then limit); filter names are validated and now fail fast on case-insensitive collisions with paging names via actionable `ArgumentException` on `Predicates`; total-count SQL remains filter-only (no paging placeholders).
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdQueryModels.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageDocumentIdSqlCompilerTests.cs; tasks.json.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 70); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 errors).
+Blockers/notes: no blockers; next highest-priority remaining task likely Read.
+
+2026-02-25
+Task done: Read. Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: added deterministic keyset-table contract factory in Backend.External.Plans; dialect constants locked to keyset table names `page` (PgSQL) and `#page` (MSSQL) with `DocumentId` column; kept contract compatibility by adding `DocumentIdColumnName` alias on `KeysetTableContract` while preserving existing `DocumentIdColumn` property.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/KeysetTableConventions.cs; src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/PlanContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/KeysetTableConventionsTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ExternalPlanContractsTests.cs; tasks.json.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 74); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 errors; 1 transient MSB3026 copy-retry warning in Backend.Ddl).
+Blockers/notes: no blockers; next highest-priority remaining task likely Determinism Tests.
+
+2026-02-25
+Task done: Determinism Tests. Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: added explicit determinism assertions for query compiler output across repeated compiles + predicate-order permutations; added permutation-based deterministic failure assertions for invalid parameter names and paging-name collisions; added repeated-run sanitize+case-insensitive dedupe determinism coverage in naming tests.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageDocumentIdSqlCompilerTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanNamingConventionsTests.cs; tasks.json.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 79); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 errors).
+Blockers/notes: no blockers; next highest-priority remaining task is Golden Fixtures.
+
+2026-02-25
+Task done: Golden Fixtures. Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: added single deterministic JSON manifest fixture in Plans unit tests; manifest snapshots query SQL + normalized SHA256, ordered query parameters w/ roles, representative write parameter naming output, and representative batching output; JSON emitted via Utf8JsonWriter with explicit `\n` newlines + deterministic property/array order; expected fixture bless flow uses UPDATE_GOLDENS=1 + git diff --no-index.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanContractsManifestGoldenFixtureTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Fixtures/plan-contracts-manifest/minimal/expected/plan-contracts.manifest.json; tasks.json.
+Feedback loops: UPDATE_GOLDENS=1 dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 80); dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 80); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 errors).
+Blockers/notes: no blockers; all tasks in tasks.json now completed.
+
+2026-02-26
+Task done: Keyset Table. Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: introduced `SqlRelationRef` union (`PhysicalTable`, `TempTable`) as emitter-facing relation model; `SqlWriter.AppendRelation(...)` now enforces qualification rules by relation kind; `KeysetTableContract` now stores `SqlRelationRef.TempTable` + single canonical `DocumentIdColumnName` (removed alternate keyset column property shape); page-query compiler `FROM` paths now flow through relation refs.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/SqlRelationRef.cs; src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/PlanContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/KeysetTableConventions.cs; src/dms/backend/EdFi.DataManagementService.Backend.Ddl/SqlWriter.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanSqlWriterExtensionsTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/KeysetTableConventionsTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ExternalPlanContractsTests.cs; tasks.json.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 84); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 errors).
+Blockers/notes: no blockers; next highest-priority remaining task likely Contracts (convert KeyUnificationMemberWritePlan to discriminated union).
+
+2026-02-26
+Task done: Contracts (KeyUnification member union). Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: replaced wide `KeyUnificationMemberWritePlan` (`Kind` + nullable type-specific fields) with discriminated union `ScalarMember`/`DescriptorMember`; kept shared member/presence-gating metadata on abstract base record so contracts stay plain-data + deterministic; added shape test proving mixed scalar+descriptor field combos are no longer representable on one member type.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/PlanContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ExternalPlanContractsTests.cs; tasks.json.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 85); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
+Blockers/notes: no blockers; next highest-priority remaining task likely Projection Contracts.
+
+2026-02-26
+Task done: Projection Contracts. Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: added read-side projection shells directly in executor-facing plan contracts so runtime can consume projection metadata without SQL parsing; reference-identity projection metadata is table-local + ordinal-based (`FkColumnOrdinal` and identity field ordinals) to align with hydration select-list consumption; descriptor projection contract carries explicit `(DescriptorId, Uri)` ordinal shape + deterministic `SourcesInOrder` for stable page-batched follow-up execution.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/PlanContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ExternalPlanContractsTests.cs; tasks.json.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 86); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
+Blockers/notes: no blockers; next highest-priority remaining task likely Naming (dedupe suffix-collision regression).
+
+2026-02-26
+Task done: Naming (suffix-collision regression). Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: de-dupe now uses case-insensitive emitted-name set + explicit-suffix floor tracking; for collisions, suffix allocator bumps until unused and, for names ending in numeric suffixes, resolves to base stem to avoid duplicate emission patterns like `a`,`a`,`a_2`.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/PlanNamingConventions.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanNamingConventionsTests.cs; tasks.json.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 88); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
+Blockers/notes: no blockers; remaining task in tasks.json is Docs.
+
+2026-02-26
+Task done: Docs. Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: aligned plan-contract doc snippets to implemented list-first contracts (`TablePlansInDependencyOrder`) and batching metadata object (`BulkInsertBatchingInfo`) instead of scalar `MaxRowsPerBatch`; updated mapping-pack proto/spec to nested `bulk_insert_batching` message (`max_rows_per_batch`, `parameters_per_row`, `max_parameters_per_command`) + determinism rules; kept `WriteColumnBinding.ParameterName` explicitly authoritative and binding-by-name (no SQL-text inference).
+Files changed: reference/design/backend-redesign/design-docs/flattening-reconstitution.md; reference/design/backend-redesign/design-docs/compiled-mapping-set.md; reference/design/backend-redesign/design-docs/mpack-format-v1.md; tasks.json.
+Feedback loops: dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors); dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 88).
+Blockers/notes: no blockers; all tasks in tasks.json now completed.
+
+2026-02-26
+Task done: Query (parameter uniqueness hardening). Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: added case-insensitive duplicate filter-parameter validation after rewrite/sort; preserved existing offset/limit collision checks so combined rule is unique filters + no paging collisions; duplicate-name exception lists colliding names in deterministic sorted order for permutation-stable output.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageDocumentIdSqlCompilerTests.cs; progress.txt; tasks.json.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 89); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
+Blockers/notes: no blockers; next highest-priority remaining task is Tests (shared query fixture extraction).
+
+2026-02-26
+Task done: Tests (shared query fixture helper extraction). Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: extracted shared page-query fixture compiler helper (`PlanSqlGoldenFixtureQueryPlans`) with two canonical spec builders consumed by both golden suites; kept fixture-building call sites thin to preserve readability and deterministic output behavior.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanSqlGoldenFixtureQueryPlans.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanSqlFoundationsGoldenFixtureTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanContractsManifestGoldenFixtureTests.cs; tasks.json.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 89); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors); git diff -- src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Fixtures (no output).
+Blockers/notes: no blockers; all tasks in tasks.json now completed.
+
+2026-02-27
+Task done: Contracts (DocumentReference index-only hardening). Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: removed duplicated `ReferenceObjectPath` from `WriteValueSource.DocumentReference` so write value source stores only `BindingIndex`; added deterministic resolver helper that pulls binding metadata from `ResourceWritePlan.Model.DocumentReferenceBindings` and fails fast with actionable `ArgumentOutOfRangeException` for invalid indices; aligned design/proto docs so `WriteDocumentReference` stores `binding_index` instead of path.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/WritePlanContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/WritePlanDocumentReferenceConventions.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/WritePlanDocumentReferenceConventionsTests.cs; reference/design/backend-redesign/design-docs/flattening-reconstitution.md; reference/design/backend-redesign/design-docs/mpack-format-v1.md; tasks.json.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 91); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors); rg -n "DocumentReference\\(.*ReferenceObjectPath|ReferenceObjectPath" src/dms/backend -S (no write-plan value-source path field remains).
+Blockers/notes: no blockers; next highest-priority remaining task likely Immutability (contract-level mutation hardening before broader DTO/proto roundtrip work).
+
+2026-02-27
+Task done: Immutability. Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: executor-facing plan contracts now store authoritative ordered collections as `ImmutableArray<T>`; constructors accept enumerable inputs and defensively copy via shared helper (`PlanContractCollectionCloner`) to prevent post-construction caller mutation from affecting cached/shared plans; no per-resource shared plan dictionaries are present in current contract/runtime slice, so no `FrozenDictionary` conversion was required in this task.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/WritePlanContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/ReadPlanContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/ProjectionPlanContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/QueryPlanContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/PlanContractCollectionCloner.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ExternalPlanContractsTests.cs; tasks.json.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 92); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 errors; 1 transient MSB3026 copy-retry warning in Backend.RelationalModel).
+Blockers/notes: no blockers; next highest-priority remaining task likely Query (paging parameter collision validation).
+
+2026-02-27
+Task done: Query (paging parameter collision validation). Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: added explicit case-insensitive guard that rejects OffsetParameterName/LimitParameterName collisions before rewrite/sort so paging parameter inventory cannot be ambiguous; exception is deterministic `ArgumentException` with `ParamName=OffsetParameterName` and message includes both paging properties/values for actionable fixes; added exact-collision + case-variant tests to lock message/param stability.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageDocumentIdSqlCompilerTests.cs; tasks.json.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 94); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
+Blockers/notes: no blockers; next highest-priority remaining task likely Query (remove Enum.ToString() in semantic-key formatting).
+
+2026-02-27
+Task done: Query (remove Enum.ToString() in semantic-key formatting). Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: semantic-key formatter now uses explicit operator token via `GetOperatorSortKey(...)` instead of enum interpolation; preserved duplicate-semantic-predicate message shape (`operator='Equal'` etc.) while removing runtime reliance on `Enum.ToString()`.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs; tasks.json.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 94); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
+Blockers/notes: no blockers; next highest-priority remaining task likely Tests (test-only normalized DTO types for roundtrip work).
+
+2026-02-27
+Task done: Tests (test-only normalized DTO types). Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: added test-only normalized plan DTO contract set using primitives/stable identifiers only (table schema/name, column names, canonical JSONPath strings, binding indices/ordinals) and no `DbTableModel`/`DbColumnModel`/`JsonPathExpression` object embedding; ordering-sensitive collections stored as immutable arrays preserving authoritative input order; canonical JSON emitter writes explicit property/array order with `\n` newlines and normalization for multiline SQL text, plus stable SHA-256 helper over UTF-8 bytes.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractDtos.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanDtoJson.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractDtosTests.cs; tasks.json; progress.txt.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 97); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
+Blockers/notes: no blockers; next highest-priority remaining task likely Tests (deterministic encode/decode between executor contracts and normalized DTOs).
+
+2026-02-27
+Task done: Tests (deterministic encode/decode between executor contracts and normalized DTOs). Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: added test-only `NormalizedPlanContractCodec` for deterministic encode/decode between executor-facing plans and normalized DTOs; decode resolves tables/columns from provided `RelationalResourceModel`, compiles canonical JSONPaths via `JsonPathExpressionCompiler.Compile(...)`, and fail-fast validates unknown table/column, out-of-range binding indices/ordinals, document-reference binding/path mismatches, and invalid/duplicate parameter names; read/projection decode also cross-checks model document-reference/descriptor-edge inventories by table+FK to keep reconstruction deterministic and actionable.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodec.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodecTests.cs; tasks.json.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 107); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
+Blockers/notes: no blockers; next highest-priority remaining work is roundtrip contract tests that consume this codec (write/read and determinism stress tasks).
+
+2026-02-27
+Task done: Tests (write-plan contract roundtrip tests). Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: upgraded write roundtrip fixture to exercise all required `WriteValueSource` kinds (added `ParentKeyPart` + presence binding column) while preserving deterministic ordering; strengthened roundtrip assertions to cover SQL/text identity, table+column identity by name, parameter ordering, and key-unification presence metadata (`CanonicalBindingIndex`, `PresenceBindingIndex`, `PresenceIsSynthetic`); added case-insensitive duplicate write-parameter decode failure assertion for deterministic actionable error shape.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodecTests.cs; tasks.json; progress.txt.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 108); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
+Blockers/notes: no blockers; next highest-priority remaining task likely Tests (read/projection contract roundtrip coverage hardening).
+
+2026-02-27
+Task done: Packs (dependency ordering unification in `.mpack` spec). Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: collapsed dual read/write model-table lists to single `tables_in_dependency_order`; canonical order is root-first depth-first with stable sibling ordering by `(json_scope, table_name)` using ordinal string compare; protobuf tags `11`/`12` reserved and unified field moved to tag `13` to prevent reuse ambiguity; ordering text now explicitly aligned to in-memory `RelationalResourceModel.TablesInDependencyOrder` used by both hydration and flattening.
+Files changed: reference/design/backend-redesign/design-docs/mpack-format-v1.md; tasks.json; progress.txt.
+Feedback loops: dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors); dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 108); rg -n "tables_in_read_dependency_order|tables_in_write_dependency_order" reference/design/backend-redesign -S (no matches).
+Blockers/notes: no blockers; next highest-priority remaining task likely Packs (projection-plan fields in `.mpack` spec) before lower-priority docs polish.
+
+2026-02-27
+Task done: Packs (projection plans in `.mpack` spec). Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: added explicit PackFormatVersion=1 proto messages for read-side projection contracts (`ReferenceIdentityProjectionTablePlan` + bindings/field ordinals, `DescriptorProjectionPlan` + result-shape/sources) and wired them into `ResourceReadPlan`; ordering rules now spell out authoritative non-sortable repeated fields for projection collections; consumer validation section now requires projection table/ordinal invariants; updated AOT overview/high-level proto sketch so pack-contains-projection claim matches normative spec.
+Files changed: reference/design/backend-redesign/design-docs/mpack-format-v1.md; reference/design/backend-redesign/design-docs/aot-compilation.md; tasks.json.
+Feedback loops: rg -n "projection" reference/design/backend-redesign/design-docs/mpack-format-v1.md reference/design/backend-redesign/design-docs/aot-compilation.md -S (projection fields/terminology aligned); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors); dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 108).
+Blockers/notes: no blockers; next highest-priority remaining task likely Tests (read/projection contract roundtrip coverage hardening).
+
+2026-02-27
+Task done: Tests (read/projection contract roundtrip coverage hardening). Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: strengthened read-plan roundtrip assertions to cover keyset/table SQL + reference/descriptor ordinals, and asserted canonical JSONPath preservation with reconstructed `JsonPathExpression` instances (canonical equality + non-reference identity); added negative read/projection failures for unknown projection table, out-of-range descriptor ordinal, and unsupported keyset temp-table name; codec now validates keyset temp-table names against deterministic allowed set (`page`, `#page`) to make invalid-name failures explicit/actionable.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodecTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodec.cs; tasks.json.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 111); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
+Blockers/notes: no blockers; next highest-priority remaining task likely Tests (determinism stress tests for normalized DTO encoding).
+
+2026-02-27
+Task done: Tests (determinism stress tests for normalized DTO encoding). Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: added permutation-invariance assertion by decoding read DTO against equivalent model with permuted `DocumentReferenceBindings`/`DescriptorEdgeSources` and re-encoding to the same canonical hash; added order-sensitive hash-change assertions for write `ColumnBindings`, key-unification `MembersInOrder`, and query `ParametersInOrder`; added duplicate-query-parameter failure permutation test asserting stable exception type/message across reordered invalid inputs.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodecTests.cs; tasks.json; progress.txt.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 114); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
+Blockers/notes: no blockers; remaining tasks are Docs updates (E05 protobuf-contracts swap guidance, and normalized `.mpack` reconstruction wording alignment).
+
+2026-02-27
+Task done: Docs (normalized `.mpack` representation + deterministic reconstruction wording alignment). Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: made `mpack-format-v1.md` explicit that payload is normalized (not 1:1 executor-contract serialization); documented authoritative stored vs derived-at-load elements (dialect-derived keyset contract, JsonPath compile from canonical strings, table/column lookup by stable names); extended consumer algorithm with deterministic reconstruction step + fail-fast invariant list (unknown table/column, out-of-range indices/ordinals, duplicate canonical paths, duplicate parameter names) and explicit no SQL-text binding inference; aligned E15 story AOT wording to reconstruction from normalized payload.
+Files changed: reference/design/backend-redesign/design-docs/mpack-format-v1.md; reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md; tasks.json; progress.txt.
+Feedback loops: rg -n "1:1|one-to-one|serialize(d)? into" reference/design/backend-redesign/design-docs/mpack-format-v1.md reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md -S (matches now only intentional normalized/1:1 clarification wording); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
+Blockers/notes: no blockers; next highest-priority remaining task is Docs (E05 protobuf-contracts story update for DTO→protobuf swap while preserving vectors).
+
+2026-02-27
+Task done: Docs (E05 protobuf-contracts story update for DTO→protobuf swap guidance). Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: updated DMS-964 story to explicitly cross-link E15 roundtrip vector work and require swapping test-only normalized DTO contracts to protobuf-generated contracts once package exists; preserved test intent by mandating same vector fixtures + canonical JSON/hash assertions post-swap; made deterministic protobuf serialization explicit for producer/consumer and byte/hash-comparison test paths; story task list now includes running existing Plans unit test project.
+Files changed: reference/design/backend-redesign/epics/05-mpack-generation/00-protobuf-contracts.md; tasks.json; progress.txt.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 114); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
+Blockers/notes: no blockers; all tasks in tasks.json now completed.
