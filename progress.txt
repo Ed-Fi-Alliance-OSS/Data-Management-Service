@@ -58,3 +58,11 @@
 - Avoids unnecessary string allocation in the check-only (else) path
 - Build 0 warnings, all 34 tests pass
 - Files: Provisioning/MssqlDatabaseProvisioner.cs
+
+**QA: Code Simplification — eliminate redundant connection string builder parse**
+- PgsqlDatabaseProvisioner.CreateDatabaseIfNotExists: extract `builder.Database` directly instead of calling `GetDatabaseName()` which constructs a second builder
+- MssqlDatabaseProvisioner.CreateDatabaseIfNotExists: extract `builder.InitialCatalog` directly instead of calling `GetDatabaseName()`
+- MssqlDatabaseProvisioner.CheckOrConfigureMvcc: same fix — extract from builder instead of redundant `GetDatabaseName()` call
+- Each method now constructs exactly one connection string builder; validation inlined from GetDatabaseName
+- Build 0 warnings, all 34 tests pass
+- Files: Provisioning/PgsqlDatabaseProvisioner.cs, Provisioning/MssqlDatabaseProvisioner.cs

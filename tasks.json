@@ -36,7 +36,7 @@
       "Confirm MssqlDatabaseProvisioner.CreateDatabaseIfNotExists constructs SqlConnectionStringBuilder only once",
       "Run: `dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Duplicated Code",
