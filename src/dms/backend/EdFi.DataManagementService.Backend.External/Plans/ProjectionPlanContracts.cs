@@ -10,12 +10,16 @@ namespace EdFi.DataManagementService.Backend.External.Plans;
 /// <summary>
 /// Table-local reference-object projection metadata consumed by ordinal access over hydration select lists.
 /// </summary>
-/// <param name="Table">The table whose hydration result-set ordinals this metadata targets.</param>
-/// <param name="BindingsInOrder">
-/// Reference-object projection bindings in deterministic authoritative order.
-/// </param>
+/// <remarks>
+/// This metadata targets the hydration result-set select-list ordinals for a specific table.
+/// </remarks>
 public sealed record ReferenceIdentityProjectionTablePlan
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ReferenceIdentityProjectionTablePlan" /> record.
+    /// </summary>
+    /// <param name="Table">The table whose hydration result-set ordinals this metadata targets.</param>
+    /// <param name="BindingsInOrder">Reference-object projection bindings in deterministic authoritative order.</param>
     public ReferenceIdentityProjectionTablePlan(
         DbTableName Table,
         IEnumerable<ReferenceIdentityProjectionBinding> BindingsInOrder
@@ -28,27 +32,36 @@ public sealed record ReferenceIdentityProjectionTablePlan
         );
     }
 
+    /// <summary>
+    /// The table whose hydration result-set ordinals this metadata targets.
+    /// </summary>
     public DbTableName Table { get; init; }
 
+    /// <summary>
+    /// Reference-object projection bindings in deterministic authoritative order.
+    /// </summary>
     public ImmutableArray<ReferenceIdentityProjectionBinding> BindingsInOrder { get; init; }
 }
 
 /// <summary>
 /// One reference-object projection binding derived from <c>DocumentReferenceBindings</c>.
 /// </summary>
-/// <param name="IsIdentityComponent">
-/// Indicates whether the reference participates in the resource identity projection.
-/// </param>
-/// <param name="ReferenceObjectPath">Reference-object path to materialize.</param>
-/// <param name="TargetResource">The referenced resource type.</param>
-/// <param name="FkColumnOrdinal">
-/// Zero-based ordinal for the local <c>..._DocumentId</c> column in the hydration select list.
-/// </param>
-/// <param name="IdentityFieldOrdinalsInOrder">
-/// Identity field projection metadata in deterministic field order.
-/// </param>
 public sealed record ReferenceIdentityProjectionBinding
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ReferenceIdentityProjectionBinding" /> record.
+    /// </summary>
+    /// <param name="IsIdentityComponent">
+    /// Indicates whether the reference participates in the resource identity projection.
+    /// </param>
+    /// <param name="ReferenceObjectPath">Reference-object path to materialize.</param>
+    /// <param name="TargetResource">The referenced resource type.</param>
+    /// <param name="FkColumnOrdinal">
+    /// Zero-based ordinal for the local <c>..._DocumentId</c> column in the hydration select list.
+    /// </param>
+    /// <param name="IdentityFieldOrdinalsInOrder">
+    /// Identity field projection metadata in deterministic field order.
+    /// </param>
     public ReferenceIdentityProjectionBinding(
         bool IsIdentityComponent,
         JsonPathExpression ReferenceObjectPath,
@@ -67,14 +80,29 @@ public sealed record ReferenceIdentityProjectionBinding
         );
     }
 
+    /// <summary>
+    /// Indicates whether the reference participates in resource identity projection.
+    /// </summary>
     public bool IsIdentityComponent { get; init; }
 
+    /// <summary>
+    /// The reference-object path to materialize in the reconstituted JSON document.
+    /// </summary>
     public JsonPathExpression ReferenceObjectPath { get; init; }
 
+    /// <summary>
+    /// The referenced resource type.
+    /// </summary>
     public QualifiedResourceName TargetResource { get; init; }
 
+    /// <summary>
+    /// Zero-based hydration select-list ordinal for the local <c>..._DocumentId</c> FK column.
+    /// </summary>
     public int FkColumnOrdinal { get; init; }
 
+    /// <summary>
+    /// Identity field ordinal metadata in deterministic field order.
+    /// </summary>
     public ImmutableArray<ReferenceIdentityProjectionFieldOrdinal> IdentityFieldOrdinalsInOrder { get; init; }
 }
 
@@ -91,17 +119,16 @@ public sealed record ReferenceIdentityProjectionFieldOrdinal(
 /// <summary>
 /// Descriptor projection contract for page-batched URI materialization.
 /// </summary>
-/// <param name="SelectByKeysetSql">
-/// Parameterized SQL that emits descriptor projection rows for the current page keyset.
-/// </param>
-/// <param name="ResultShape">
-/// Ordinal contract for descriptor projection result rows.
-/// </param>
-/// <param name="SourcesInOrder">
-/// Descriptor FK source metadata in deterministic authoritative order.
-/// </param>
 public sealed record DescriptorProjectionPlan
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="DescriptorProjectionPlan" /> record.
+    /// </summary>
+    /// <param name="SelectByKeysetSql">
+    /// Parameterized SQL that emits descriptor projection rows for the current page keyset.
+    /// </param>
+    /// <param name="ResultShape">Ordinal contract for descriptor projection result rows.</param>
+    /// <param name="SourcesInOrder">Descriptor FK source metadata in deterministic authoritative order.</param>
     public DescriptorProjectionPlan(
         string SelectByKeysetSql,
         DescriptorProjectionResultShape ResultShape,
@@ -119,10 +146,19 @@ public sealed record DescriptorProjectionPlan
         );
     }
 
+    /// <summary>
+    /// Parameterized SQL that emits descriptor projection rows for the current page keyset.
+    /// </summary>
     public string SelectByKeysetSql { get; init; }
 
+    /// <summary>
+    /// Ordinal contract describing the descriptor projection result row shape.
+    /// </summary>
     public DescriptorProjectionResultShape ResultShape { get; init; }
 
+    /// <summary>
+    /// Descriptor FK source metadata in deterministic authoritative order.
+    /// </summary>
     public ImmutableArray<DescriptorProjectionSource> SourcesInOrder { get; init; }
 }
 

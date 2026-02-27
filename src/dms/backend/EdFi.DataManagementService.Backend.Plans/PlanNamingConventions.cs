@@ -196,6 +196,9 @@ public static class PlanNamingConventions
         return deduplicatedNames;
     }
 
+    /// <summary>
+    /// Updates the next-suffix allocator when a name already contains an explicit numeric suffix.
+    /// </summary>
     private static void AdvanceSuffixFromExplicitName(string name, IDictionary<string, int> nextSuffixByName)
     {
         if (!TryParseNumericSuffix(name, out var baseName, out var explicitSuffix))
@@ -214,6 +217,9 @@ public static class PlanNamingConventions
         }
     }
 
+    /// <summary>
+    /// Attempts to parse a trailing <c>_&lt;number&gt;</c> suffix into a base name and 1-based integer suffix.
+    /// </summary>
     private static bool TryParseNumericSuffix(string name, out string baseName, out int suffix)
     {
         baseName = string.Empty;
@@ -271,6 +277,9 @@ public static class PlanNamingConventions
         return new PlanSqlTableAliasAllocator();
     }
 
+    /// <summary>
+    /// Returns <see langword="true"/> when the character is a valid ASCII identifier start character.
+    /// </summary>
     private static bool IsAsciiIdentifierStart(char character)
     {
         return character == '_'
@@ -278,6 +287,9 @@ public static class PlanNamingConventions
             || (character >= 'A' && character <= 'Z');
     }
 
+    /// <summary>
+    /// Returns <see langword="true"/> when the character is a valid ASCII identifier part character.
+    /// </summary>
     private static bool IsAsciiIdentifierPart(char character)
     {
         return IsAsciiIdentifierStart(character) || (character >= '0' && character <= '9');

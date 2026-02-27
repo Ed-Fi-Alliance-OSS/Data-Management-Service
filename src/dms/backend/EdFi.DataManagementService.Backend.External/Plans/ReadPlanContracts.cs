@@ -10,19 +10,24 @@ namespace EdFi.DataManagementService.Backend.External.Plans;
 /// <summary>
 /// Compiled read plan for a single resource.
 /// </summary>
-/// <param name="Model">The derived relational model for the resource.</param>
-/// <param name="KeysetTable">
-/// Keyset-table contract used by hydration queries for this dialect/runtime.
-/// </param>
-/// <param name="TablePlansInDependencyOrder">Per-table read plans in deterministic dependency order.</param>
-/// <param name="ReferenceIdentityProjectionPlansInDependencyOrder">
-/// Table-local reference-identity projection metadata in deterministic table dependency order.
-/// </param>
-/// <param name="DescriptorProjectionPlansInOrder">
-/// Descriptor projection plans in deterministic execution order.
-/// </param>
+/// <remarks>
+/// This contract carries hydration SQL plus deterministic ordinal metadata so executors never infer result shapes or
+/// bindings by parsing SQL text.
+/// </remarks>
 public sealed record ResourceReadPlan
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ResourceReadPlan" /> record.
+    /// </summary>
+    /// <param name="Model">The derived relational model for the resource.</param>
+    /// <param name="KeysetTable">Keyset-table contract used by hydration queries for this dialect/runtime.</param>
+    /// <param name="TablePlansInDependencyOrder">Per-table read plans in deterministic dependency order.</param>
+    /// <param name="ReferenceIdentityProjectionPlansInDependencyOrder">
+    /// Table-local reference-identity projection metadata in deterministic table dependency order.
+    /// </param>
+    /// <param name="DescriptorProjectionPlansInOrder">
+    /// Descriptor projection plans in deterministic execution order.
+    /// </param>
     public ResourceReadPlan(
         RelationalResourceModel Model,
         KeysetTableContract KeysetTable,
@@ -51,14 +56,29 @@ public sealed record ResourceReadPlan
         );
     }
 
+    /// <summary>
+    /// The derived relational model the plan was compiled from.
+    /// </summary>
     public RelationalResourceModel Model { get; init; }
 
+    /// <summary>
+    /// Dialect-specific contract for the materialized keyset relation consumed by hydration SQL.
+    /// </summary>
     public KeysetTableContract KeysetTable { get; init; }
 
+    /// <summary>
+    /// Per-table hydration plans in deterministic dependency order.
+    /// </summary>
     public ImmutableArray<TableReadPlan> TablePlansInDependencyOrder { get; init; }
 
+    /// <summary>
+    /// Reference-object identity projection metadata in deterministic table dependency order.
+    /// </summary>
     public ImmutableArray<ReferenceIdentityProjectionTablePlan> ReferenceIdentityProjectionPlansInDependencyOrder { get; init; }
 
+    /// <summary>
+    /// Descriptor URI projection plans in deterministic execution order.
+    /// </summary>
     public ImmutableArray<DescriptorProjectionPlan> DescriptorProjectionPlansInOrder { get; init; }
 }
 

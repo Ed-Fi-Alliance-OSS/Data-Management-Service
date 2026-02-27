@@ -10,12 +10,17 @@ namespace EdFi.DataManagementService.Backend.External.Plans;
 /// <summary>
 /// Compiled write plan for a single resource.
 /// </summary>
-/// <param name="Model">The derived relational model for the resource.</param>
-/// <param name="TablePlansInDependencyOrder">
-/// Per-table write plans in deterministic dependency order.
-/// </param>
+/// <remarks>
+/// This contract carries canonical SQL text plus deterministic binding metadata so runtime execution never relies on
+/// SQL text parsing to infer parameter bindings.
+/// </remarks>
 public sealed record ResourceWritePlan
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ResourceWritePlan" /> record.
+    /// </summary>
+    /// <param name="Model">The derived relational model for the resource.</param>
+    /// <param name="TablePlansInDependencyOrder">Per-table write plans in deterministic dependency order.</param>
     public ResourceWritePlan(
         RelationalResourceModel Model,
         IEnumerable<TableWritePlan> TablePlansInDependencyOrder
@@ -30,31 +35,42 @@ public sealed record ResourceWritePlan
         );
     }
 
+    /// <summary>
+    /// The derived relational model the plan was compiled from.
+    /// </summary>
     public RelationalResourceModel Model { get; init; }
 
+    /// <summary>
+    /// Per-table write plans in deterministic dependency order.
+    /// </summary>
     public ImmutableArray<TableWritePlan> TablePlansInDependencyOrder { get; init; }
 }
 
 /// <summary>
 /// Compiled write plan for one table.
 /// </summary>
-/// <param name="TableModel">The table shape model.</param>
-/// <param name="InsertSql">Parameterized insert SQL.</param>
-/// <param name="UpdateSql">Optional parameterized update SQL (root table only).</param>
-/// <param name="DeleteByParentSql">
-/// Optional delete SQL used for replace semantics by parent key (non-root tables).
-/// </param>
-/// <param name="BulkInsertBatching">
-/// Deterministic bulk-insert batching metadata for this table.
-/// </param>
-/// <param name="ColumnBindings">
-/// Stored/writable column bindings in authoritative parameter/value order.
-/// </param>
-/// <param name="KeyUnificationPlans">
-/// Per-table key-unification precompute plans that populate <see cref="WriteValueSource.Precomputed" /> bindings.
-/// </param>
+/// <remarks>
+/// Ordering-sensitive collections (for example <see cref="ColumnBindings" />) are semantically significant and must be
+/// preserved exactly as compiled.
+/// </remarks>
 public sealed record TableWritePlan
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="TableWritePlan" /> record.
+    /// </summary>
+    /// <param name="TableModel">The table shape model.</param>
+    /// <param name="InsertSql">Parameterized insert SQL.</param>
+    /// <param name="UpdateSql">Optional parameterized update SQL (root table only).</param>
+    /// <param name="DeleteByParentSql">
+    /// Optional delete SQL used for replace semantics by parent key (non-root tables).
+    /// </param>
+    /// <param name="BulkInsertBatching">Deterministic bulk-insert batching metadata for this table.</param>
+    /// <param name="ColumnBindings">
+    /// Stored/writable column bindings in authoritative parameter/value order.
+    /// </param>
+    /// <param name="KeyUnificationPlans">
+    /// Per-table key-unification precompute plans that populate <see cref="WriteValueSource.Precomputed" /> bindings.
+    /// </param>
     public TableWritePlan(
         DbTableModel TableModel,
         string InsertSql,
@@ -84,18 +100,39 @@ public sealed record TableWritePlan
         );
     }
 
+    /// <summary>
+    /// The table model the SQL and bindings target.
+    /// </summary>
     public DbTableModel TableModel { get; init; }
 
+    /// <summary>
+    /// Canonical parameterized <c>INSERT</c> SQL for this table.
+    /// </summary>
     public string InsertSql { get; init; }
 
+    /// <summary>
+    /// Optional canonical parameterized <c>UPDATE</c> SQL (root table only).
+    /// </summary>
     public string? UpdateSql { get; init; }
 
+    /// <summary>
+    /// Optional delete SQL used to remove all child rows for a parent key (replace semantics).
+    /// </summary>
     public string? DeleteByParentSql { get; init; }
 
+    /// <summary>
+    /// Deterministic batching metadata derived from dialect limits and per-row parameter width.
+    /// </summary>
     public BulkInsertBatchingInfo BulkInsertBatching { get; init; }
 
+    /// <summary>
+    /// Stored/writable column bindings in authoritative parameter/value order.
+    /// </summary>
     public ImmutableArray<WriteColumnBinding> ColumnBindings { get; init; }
 
+    /// <summary>
+    /// Key-unification precompute plans that populate <see cref="WriteValueSource.Precomputed" /> bindings deterministically.
+    /// </summary>
     public ImmutableArray<KeyUnificationWritePlan> KeyUnificationPlans { get; init; }
 }
 
@@ -177,15 +214,16 @@ public abstract record WriteValueSource
 /// <summary>
 /// Per-table key-unification precompute plan.
 /// </summary>
-/// <param name="CanonicalColumn">The canonical stored column this plan computes.</param>
-/// <param name="CanonicalBindingIndex">
-/// Binding index in <see cref="TableWritePlan.ColumnBindings" /> for the canonical stored column.
-/// </param>
-/// <param name="MembersInOrder">
-/// Candidate member sources in deterministic precedence order.
-/// </param>
 public sealed record KeyUnificationWritePlan
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="KeyUnificationWritePlan" /> record.
+    /// </summary>
+    /// <param name="CanonicalColumn">The canonical stored column this plan computes.</param>
+    /// <param name="CanonicalBindingIndex">
+    /// Binding index in <see cref="TableWritePlan.ColumnBindings" /> for the canonical stored column.
+    /// </param>
+    /// <param name="MembersInOrder">Candidate member sources in deterministic precedence order.</param>
     public KeyUnificationWritePlan(
         DbColumnName CanonicalColumn,
         int CanonicalBindingIndex,
@@ -200,10 +238,19 @@ public sealed record KeyUnificationWritePlan
         );
     }
 
+    /// <summary>
+    /// The canonical stored column that this plan computes.
+    /// </summary>
     public DbColumnName CanonicalColumn { get; init; }
 
+    /// <summary>
+    /// Binding index in <see cref="TableWritePlan.ColumnBindings" /> for <see cref="CanonicalColumn" />.
+    /// </summary>
     public int CanonicalBindingIndex { get; init; }
 
+    /// <summary>
+    /// Candidate member sources in deterministic precedence order.
+    /// </summary>
     public ImmutableArray<KeyUnificationMemberWritePlan> MembersInOrder { get; init; }
 }
 

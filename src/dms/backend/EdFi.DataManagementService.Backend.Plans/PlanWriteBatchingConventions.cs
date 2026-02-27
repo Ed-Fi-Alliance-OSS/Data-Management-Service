@@ -73,6 +73,9 @@ public static class PlanWriteBatchingConventions
         );
     }
 
+    /// <summary>
+    /// Returns dialect-specific batching limits used by bulk insert batching calculations.
+    /// </summary>
     private static BatchingLimits GetLimits(SqlDialect dialect)
     {
         return dialect switch
@@ -89,5 +92,10 @@ public static class PlanWriteBatchingConventions
         };
     }
 
+    /// <summary>
+    /// Dialect policy limits used to compute deterministic bulk insert batch sizes.
+    /// </summary>
+    /// <param name="MaxParametersPerCommand">Maximum parameter placeholders allowed in a single command.</param>
+    /// <param name="RowCap">Maximum rows allowed per <c>VALUES</c> clause (or policy cap).</param>
     private readonly record struct BatchingLimits(int MaxParametersPerCommand, int RowCap);
 }

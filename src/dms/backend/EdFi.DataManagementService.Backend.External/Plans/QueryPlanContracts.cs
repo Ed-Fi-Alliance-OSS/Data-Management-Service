@@ -10,14 +10,20 @@ namespace EdFi.DataManagementService.Backend.External.Plans;
 /// <summary>
 /// Compiled SQL plan for selecting a page of <c>DocumentId</c>s and optional total count.
 /// </summary>
-/// <param name="PageDocumentIdSql">SQL selecting a page of <c>DocumentId</c>s.</param>
-/// <param name="TotalCountSql">Optional SQL selecting a total row count over the same filters.</param>
-/// <param name="ParametersInOrder">
-/// Deterministic inventory of plan parameters in canonical order (filters as emitted, then paging roles).
-/// Executors bind parameters by name; this ordering does not necessarily match placeholder appearance per dialect.
-/// </param>
+/// <remarks>
+/// Carries canonical SQL plus an explicit parameter inventory so executors never infer bindings from SQL-text parsing.
+/// </remarks>
 public sealed record PageDocumentIdSqlPlan
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="PageDocumentIdSqlPlan" /> record.
+    /// </summary>
+    /// <param name="PageDocumentIdSql">SQL selecting a page of <c>DocumentId</c>s.</param>
+    /// <param name="TotalCountSql">Optional SQL selecting a total row count over the same filters.</param>
+    /// <param name="ParametersInOrder">
+    /// Deterministic inventory of plan parameters in canonical order (filters as emitted, then paging roles).
+    /// Executors bind parameters by name; this ordering does not necessarily match placeholder appearance per dialect.
+    /// </param>
     public PageDocumentIdSqlPlan(
         string PageDocumentIdSql,
         string? TotalCountSql,
@@ -34,10 +40,19 @@ public sealed record PageDocumentIdSqlPlan
         );
     }
 
+    /// <summary>
+    /// SQL that selects a single page of <c>DocumentId</c>s.
+    /// </summary>
     public string PageDocumentIdSql { get; init; }
 
+    /// <summary>
+    /// Optional SQL that selects a total row count over the same filters.
+    /// </summary>
     public string? TotalCountSql { get; init; }
 
+    /// <summary>
+    /// Deterministic inventory of query parameters in canonical order.
+    /// </summary>
     public ImmutableArray<QuerySqlParameter> ParametersInOrder { get; init; }
 }
 
