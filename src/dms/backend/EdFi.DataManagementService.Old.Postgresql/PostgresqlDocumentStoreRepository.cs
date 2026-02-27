@@ -83,7 +83,7 @@ public class PostgresqlDocumentStoreRepository(
             }
 
             sw.Stop();
-            _logger.LogInformation(
+            _logger.LogDebug(
                 "{OperationName} completed in {TransactionDurationMs}ms with result {ResultType} - {TraceId}",
                 operationName,
                 sw.ElapsedMilliseconds,
@@ -135,7 +135,7 @@ public class PostgresqlDocumentStoreRepository(
             GetResult result = await _getDocumentById.GetById(getRequest, connection, null);
 
             sw.Stop();
-            _logger.LogInformation(
+            _logger.LogDebug(
                 "GetDocumentById completed in {TransactionDurationMs}ms with result {ResultType} - {TraceId}",
                 sw.ElapsedMilliseconds,
                 result.GetType().Name,
@@ -196,7 +196,7 @@ public class PostgresqlDocumentStoreRepository(
             QueryResult result = await _queryDocument.QueryDocuments(queryRequest);
 
             sw.Stop();
-            _logger.LogInformation(
+            _logger.LogDebug(
                 "QueryDocuments completed in {TransactionDurationMs}ms with result {ResultType} - {TraceId}",
                 sw.ElapsedMilliseconds,
                 result.GetType().Name,
