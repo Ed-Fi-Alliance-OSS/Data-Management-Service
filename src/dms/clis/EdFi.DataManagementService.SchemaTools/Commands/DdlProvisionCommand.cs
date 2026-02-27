@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.CommandLine;
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.RelationalModel.Build;
@@ -125,12 +124,12 @@ public static class DdlProvisionCommand
                 );
 
                 // Create dialect-specific objects
-                var (sqlDialect, dialectRules) = CreateDialect(dialect);
+                var (sqlDialect, dialectRules) = DdlCommandHelpers.CreateDialect(dialect);
 
                 // Deep-clone the effective schema set because
                 // DerivedRelationalModelSetBuilder assigns JsonNode.Parent on ProjectSchema
                 // nodes, which prevents reuse across builds.
-                var clonedSchemaSet = CloneEffectiveSchemaSet(effectiveSchemaSet);
+                var clonedSchemaSet = DdlCommandHelpers.CloneEffectiveSchemaSet(effectiveSchemaSet);
 
                 // Build relational model
                 var modelSetBuilder = new DerivedRelationalModelSetBuilder(
@@ -188,28 +187,6 @@ public static class DdlProvisionCommand
         };
     }
 
-    private static (ISqlDialect Dialect, ISqlDialectRules Rules) CreateDialect(SqlDialect dialect)
-    {
-        return dialect switch
-        {
-            SqlDialect.Pgsql => CreatePgsqlDialect(),
-            SqlDialect.Mssql => CreateMssqlDialect(),
-            _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported dialect"),
-        };
-
-        static (ISqlDialect, ISqlDialectRules) CreatePgsqlDialect()
-        {
-            var rules = new PgsqlDialectRules();
-            return (new PgsqlDialect(rules), rules);
-        }
-
-        static (ISqlDialect, ISqlDialectRules) CreateMssqlDialect()
-        {
-            var rules = new MssqlDialectRules();
-            return (new MssqlDialect(rules), rules);
-        }
-    }
-
     private static IDatabaseProvisioner CreateProvisioner(SqlDialect dialect, ILogger logger)
     {
         return dialect switch
@@ -218,20 +195,5 @@ public static class DdlProvisionCommand
             SqlDialect.Mssql => new MssqlDatabaseProvisioner(logger),
             _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported dialect"),
         };
-    }
-
-    private static EffectiveSchemaSet CloneEffectiveSchemaSet(EffectiveSchemaSet original)
-    {
-        var clonedProjects = original
-            .ProjectsInEndpointOrder.Select(p => new EffectiveProjectSchema(
-                p.ProjectEndpointName,
-                p.ProjectName,
-                p.ProjectVersion,
-                p.IsExtensionProject,
-                (JsonObject)p.ProjectSchema.DeepClone()
-            ))
-            .ToList();
-
-        return new EffectiveSchemaSet(original.EffectiveSchema, clonedProjects);
     }
 }
