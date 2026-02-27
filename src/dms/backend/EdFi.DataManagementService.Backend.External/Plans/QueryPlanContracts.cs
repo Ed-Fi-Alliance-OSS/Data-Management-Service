@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Immutable;
+
 namespace EdFi.DataManagementService.Backend.External.Plans;
 
 /// <summary>
@@ -14,11 +16,30 @@ namespace EdFi.DataManagementService.Backend.External.Plans;
 /// Deterministic inventory of plan parameters in canonical order (filters as emitted, then paging roles).
 /// Executors bind parameters by name; this ordering does not necessarily match placeholder appearance per dialect.
 /// </param>
-public sealed record PageDocumentIdSqlPlan(
-    string PageDocumentIdSql,
-    string? TotalCountSql,
-    IReadOnlyList<QuerySqlParameter> ParametersInOrder
-);
+public sealed record PageDocumentIdSqlPlan
+{
+    public PageDocumentIdSqlPlan(
+        string PageDocumentIdSql,
+        string? TotalCountSql,
+        IEnumerable<QuerySqlParameter> ParametersInOrder
+    )
+    {
+        ArgumentNullException.ThrowIfNull(PageDocumentIdSql);
+
+        this.PageDocumentIdSql = PageDocumentIdSql;
+        this.TotalCountSql = TotalCountSql;
+        this.ParametersInOrder = PlanContractCollectionCloner.ToImmutableArray(
+            ParametersInOrder,
+            nameof(ParametersInOrder)
+        );
+    }
+
+    public string PageDocumentIdSql { get; init; }
+
+    public string? TotalCountSql { get; init; }
+
+    public ImmutableArray<QuerySqlParameter> ParametersInOrder { get; init; }
+}
 
 /// <summary>
 /// One query-SQL parameter contract entry.

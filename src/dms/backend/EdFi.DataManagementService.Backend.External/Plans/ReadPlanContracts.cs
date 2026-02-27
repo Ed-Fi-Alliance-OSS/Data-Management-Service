@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Immutable;
+
 namespace EdFi.DataManagementService.Backend.External.Plans;
 
 /// <summary>
@@ -19,13 +21,46 @@ namespace EdFi.DataManagementService.Backend.External.Plans;
 /// <param name="DescriptorProjectionPlansInOrder">
 /// Descriptor projection plans in deterministic execution order.
 /// </param>
-public sealed record ResourceReadPlan(
-    RelationalResourceModel Model,
-    KeysetTableContract KeysetTable,
-    IReadOnlyList<TableReadPlan> TablePlansInDependencyOrder,
-    IReadOnlyList<ReferenceIdentityProjectionTablePlan> ReferenceIdentityProjectionPlansInDependencyOrder,
-    IReadOnlyList<DescriptorProjectionPlan> DescriptorProjectionPlansInOrder
-);
+public sealed record ResourceReadPlan
+{
+    public ResourceReadPlan(
+        RelationalResourceModel Model,
+        KeysetTableContract KeysetTable,
+        IEnumerable<TableReadPlan> TablePlansInDependencyOrder,
+        IEnumerable<ReferenceIdentityProjectionTablePlan> ReferenceIdentityProjectionPlansInDependencyOrder,
+        IEnumerable<DescriptorProjectionPlan> DescriptorProjectionPlansInOrder
+    )
+    {
+        ArgumentNullException.ThrowIfNull(Model);
+        ArgumentNullException.ThrowIfNull(KeysetTable);
+
+        this.Model = Model;
+        this.KeysetTable = KeysetTable;
+        this.TablePlansInDependencyOrder = PlanContractCollectionCloner.ToImmutableArray(
+            TablePlansInDependencyOrder,
+            nameof(TablePlansInDependencyOrder)
+        );
+        this.ReferenceIdentityProjectionPlansInDependencyOrder =
+            PlanContractCollectionCloner.ToImmutableArray(
+                ReferenceIdentityProjectionPlansInDependencyOrder,
+                nameof(ReferenceIdentityProjectionPlansInDependencyOrder)
+            );
+        this.DescriptorProjectionPlansInOrder = PlanContractCollectionCloner.ToImmutableArray(
+            DescriptorProjectionPlansInOrder,
+            nameof(DescriptorProjectionPlansInOrder)
+        );
+    }
+
+    public RelationalResourceModel Model { get; init; }
+
+    public KeysetTableContract KeysetTable { get; init; }
+
+    public ImmutableArray<TableReadPlan> TablePlansInDependencyOrder { get; init; }
+
+    public ImmutableArray<ReferenceIdentityProjectionTablePlan> ReferenceIdentityProjectionPlansInDependencyOrder { get; init; }
+
+    public ImmutableArray<DescriptorProjectionPlan> DescriptorProjectionPlansInOrder { get; init; }
+}
 
 /// <summary>
 /// Compiled read SQL for one table in a resource hydration flow.

@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Immutable;
+
 namespace EdFi.DataManagementService.Backend.External.Plans;
 
 /// <summary>
@@ -12,10 +14,26 @@ namespace EdFi.DataManagementService.Backend.External.Plans;
 /// <param name="TablePlansInDependencyOrder">
 /// Per-table write plans in deterministic dependency order.
 /// </param>
-public sealed record ResourceWritePlan(
-    RelationalResourceModel Model,
-    IReadOnlyList<TableWritePlan> TablePlansInDependencyOrder
-);
+public sealed record ResourceWritePlan
+{
+    public ResourceWritePlan(
+        RelationalResourceModel Model,
+        IEnumerable<TableWritePlan> TablePlansInDependencyOrder
+    )
+    {
+        ArgumentNullException.ThrowIfNull(Model);
+
+        this.Model = Model;
+        this.TablePlansInDependencyOrder = PlanContractCollectionCloner.ToImmutableArray(
+            TablePlansInDependencyOrder,
+            nameof(TablePlansInDependencyOrder)
+        );
+    }
+
+    public RelationalResourceModel Model { get; init; }
+
+    public ImmutableArray<TableWritePlan> TablePlansInDependencyOrder { get; init; }
+}
 
 /// <summary>
 /// Compiled write plan for one table.
@@ -35,15 +53,51 @@ public sealed record ResourceWritePlan(
 /// <param name="KeyUnificationPlans">
 /// Per-table key-unification precompute plans that populate <see cref="WriteValueSource.Precomputed" /> bindings.
 /// </param>
-public sealed record TableWritePlan(
-    DbTableModel TableModel,
-    string InsertSql,
-    string? UpdateSql,
-    string? DeleteByParentSql,
-    BulkInsertBatchingInfo BulkInsertBatching,
-    IReadOnlyList<WriteColumnBinding> ColumnBindings,
-    IReadOnlyList<KeyUnificationWritePlan> KeyUnificationPlans
-);
+public sealed record TableWritePlan
+{
+    public TableWritePlan(
+        DbTableModel TableModel,
+        string InsertSql,
+        string? UpdateSql,
+        string? DeleteByParentSql,
+        BulkInsertBatchingInfo BulkInsertBatching,
+        IEnumerable<WriteColumnBinding> ColumnBindings,
+        IEnumerable<KeyUnificationWritePlan> KeyUnificationPlans
+    )
+    {
+        ArgumentNullException.ThrowIfNull(TableModel);
+        ArgumentNullException.ThrowIfNull(InsertSql);
+        ArgumentNullException.ThrowIfNull(BulkInsertBatching);
+
+        this.TableModel = TableModel;
+        this.InsertSql = InsertSql;
+        this.UpdateSql = UpdateSql;
+        this.DeleteByParentSql = DeleteByParentSql;
+        this.BulkInsertBatching = BulkInsertBatching;
+        this.ColumnBindings = PlanContractCollectionCloner.ToImmutableArray(
+            ColumnBindings,
+            nameof(ColumnBindings)
+        );
+        this.KeyUnificationPlans = PlanContractCollectionCloner.ToImmutableArray(
+            KeyUnificationPlans,
+            nameof(KeyUnificationPlans)
+        );
+    }
+
+    public DbTableModel TableModel { get; init; }
+
+    public string InsertSql { get; init; }
+
+    public string? UpdateSql { get; init; }
+
+    public string? DeleteByParentSql { get; init; }
+
+    public BulkInsertBatchingInfo BulkInsertBatching { get; init; }
+
+    public ImmutableArray<WriteColumnBinding> ColumnBindings { get; init; }
+
+    public ImmutableArray<KeyUnificationWritePlan> KeyUnificationPlans { get; init; }
+}
 
 /// <summary>
 /// Deterministic batching metadata used to chunk bulk insert commands.
@@ -130,11 +184,28 @@ public abstract record WriteValueSource
 /// <param name="MembersInOrder">
 /// Candidate member sources in deterministic precedence order.
 /// </param>
-public sealed record KeyUnificationWritePlan(
-    DbColumnName CanonicalColumn,
-    int CanonicalBindingIndex,
-    IReadOnlyList<KeyUnificationMemberWritePlan> MembersInOrder
-);
+public sealed record KeyUnificationWritePlan
+{
+    public KeyUnificationWritePlan(
+        DbColumnName CanonicalColumn,
+        int CanonicalBindingIndex,
+        IEnumerable<KeyUnificationMemberWritePlan> MembersInOrder
+    )
+    {
+        this.CanonicalColumn = CanonicalColumn;
+        this.CanonicalBindingIndex = CanonicalBindingIndex;
+        this.MembersInOrder = PlanContractCollectionCloner.ToImmutableArray(
+            MembersInOrder,
+            nameof(MembersInOrder)
+        );
+    }
+
+    public DbColumnName CanonicalColumn { get; init; }
+
+    public int CanonicalBindingIndex { get; init; }
+
+    public ImmutableArray<KeyUnificationMemberWritePlan> MembersInOrder { get; init; }
+}
 
 /// <summary>
 /// Member source metadata for a key-unification class.

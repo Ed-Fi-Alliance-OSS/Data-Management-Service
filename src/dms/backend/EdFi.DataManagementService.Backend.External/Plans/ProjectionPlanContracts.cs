@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Immutable;
+
 namespace EdFi.DataManagementService.Backend.External.Plans;
 
 /// <summary>
@@ -12,10 +14,24 @@ namespace EdFi.DataManagementService.Backend.External.Plans;
 /// <param name="BindingsInOrder">
 /// Reference-object projection bindings in deterministic authoritative order.
 /// </param>
-public sealed record ReferenceIdentityProjectionTablePlan(
-    DbTableName Table,
-    IReadOnlyList<ReferenceIdentityProjectionBinding> BindingsInOrder
-);
+public sealed record ReferenceIdentityProjectionTablePlan
+{
+    public ReferenceIdentityProjectionTablePlan(
+        DbTableName Table,
+        IEnumerable<ReferenceIdentityProjectionBinding> BindingsInOrder
+    )
+    {
+        this.Table = Table;
+        this.BindingsInOrder = PlanContractCollectionCloner.ToImmutableArray(
+            BindingsInOrder,
+            nameof(BindingsInOrder)
+        );
+    }
+
+    public DbTableName Table { get; init; }
+
+    public ImmutableArray<ReferenceIdentityProjectionBinding> BindingsInOrder { get; init; }
+}
 
 /// <summary>
 /// One reference-object projection binding derived from <c>DocumentReferenceBindings</c>.
@@ -31,13 +47,36 @@ public sealed record ReferenceIdentityProjectionTablePlan(
 /// <param name="IdentityFieldOrdinalsInOrder">
 /// Identity field projection metadata in deterministic field order.
 /// </param>
-public sealed record ReferenceIdentityProjectionBinding(
-    bool IsIdentityComponent,
-    JsonPathExpression ReferenceObjectPath,
-    QualifiedResourceName TargetResource,
-    int FkColumnOrdinal,
-    IReadOnlyList<ReferenceIdentityProjectionFieldOrdinal> IdentityFieldOrdinalsInOrder
-);
+public sealed record ReferenceIdentityProjectionBinding
+{
+    public ReferenceIdentityProjectionBinding(
+        bool IsIdentityComponent,
+        JsonPathExpression ReferenceObjectPath,
+        QualifiedResourceName TargetResource,
+        int FkColumnOrdinal,
+        IEnumerable<ReferenceIdentityProjectionFieldOrdinal> IdentityFieldOrdinalsInOrder
+    )
+    {
+        this.IsIdentityComponent = IsIdentityComponent;
+        this.ReferenceObjectPath = ReferenceObjectPath;
+        this.TargetResource = TargetResource;
+        this.FkColumnOrdinal = FkColumnOrdinal;
+        this.IdentityFieldOrdinalsInOrder = PlanContractCollectionCloner.ToImmutableArray(
+            IdentityFieldOrdinalsInOrder,
+            nameof(IdentityFieldOrdinalsInOrder)
+        );
+    }
+
+    public bool IsIdentityComponent { get; init; }
+
+    public JsonPathExpression ReferenceObjectPath { get; init; }
+
+    public QualifiedResourceName TargetResource { get; init; }
+
+    public int FkColumnOrdinal { get; init; }
+
+    public ImmutableArray<ReferenceIdentityProjectionFieldOrdinal> IdentityFieldOrdinalsInOrder { get; init; }
+}
 
 /// <summary>
 /// Ordinal projection metadata for one reference identity field.
@@ -61,11 +100,31 @@ public sealed record ReferenceIdentityProjectionFieldOrdinal(
 /// <param name="SourcesInOrder">
 /// Descriptor FK source metadata in deterministic authoritative order.
 /// </param>
-public sealed record DescriptorProjectionPlan(
-    string SelectByKeysetSql,
-    DescriptorProjectionResultShape ResultShape,
-    IReadOnlyList<DescriptorProjectionSource> SourcesInOrder
-);
+public sealed record DescriptorProjectionPlan
+{
+    public DescriptorProjectionPlan(
+        string SelectByKeysetSql,
+        DescriptorProjectionResultShape ResultShape,
+        IEnumerable<DescriptorProjectionSource> SourcesInOrder
+    )
+    {
+        ArgumentNullException.ThrowIfNull(SelectByKeysetSql);
+        ArgumentNullException.ThrowIfNull(ResultShape);
+
+        this.SelectByKeysetSql = SelectByKeysetSql;
+        this.ResultShape = ResultShape;
+        this.SourcesInOrder = PlanContractCollectionCloner.ToImmutableArray(
+            SourcesInOrder,
+            nameof(SourcesInOrder)
+        );
+    }
+
+    public string SelectByKeysetSql { get; init; }
+
+    public DescriptorProjectionResultShape ResultShape { get; init; }
+
+    public ImmutableArray<DescriptorProjectionSource> SourcesInOrder { get; init; }
+}
 
 /// <summary>
 /// Ordinal contract for descriptor projection result rows.

@@ -404,4 +404,126 @@ public class Given_ExternalPlanContracts
             .Should()
             .BeNull();
     }
+
+    [Test]
+    public void It_should_defensively_copy_mutable_input_collections()
+    {
+        var rootPath = new JsonPathExpression("$", []);
+        var schoolYearPath = new JsonPathExpression(
+            "$.schoolYear",
+            [new JsonPathSegment.Property("schoolYear")]
+        );
+
+        var tableModel = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "Student"),
+            rootPath,
+            new TableKey(
+                "PK_Student",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("SchoolYear"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    schoolYearPath,
+                    TargetResource: null
+                ),
+            ],
+            []
+        );
+
+        var resourceModel = new RelationalResourceModel(
+            new QualifiedResourceName("Ed-Fi", "Student"),
+            new DbSchemaName("edfi"),
+            ResourceStorageKind.RelationalTables,
+            tableModel,
+            [tableModel],
+            [],
+            []
+        );
+
+        var membersInOrder = new List<ExternalPlans.KeyUnificationMemberWritePlan>
+        {
+            new ExternalPlans.KeyUnificationMemberWritePlan.ScalarMember(
+                MemberPathColumn: new DbColumnName("SchoolYear"),
+                RelativePath: schoolYearPath,
+                ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                PresenceColumn: null,
+                PresenceBindingIndex: null,
+                PresenceIsSynthetic: false
+            ),
+        };
+
+        var keyUnificationPlans = new List<ExternalPlans.KeyUnificationWritePlan>
+        {
+            new(
+                CanonicalColumn: new DbColumnName("SchoolYear"),
+                CanonicalBindingIndex: 1,
+                MembersInOrder: membersInOrder
+            ),
+        };
+
+        var columnBindings = new List<ExternalPlans.WriteColumnBinding>
+        {
+            new(
+                tableModel.Columns[0],
+                new ExternalPlans.WriteValueSource.DocumentId(),
+                ParameterName: "documentId"
+            ),
+            new(
+                tableModel.Columns[1],
+                new ExternalPlans.WriteValueSource.Scalar(
+                    schoolYearPath,
+                    new RelationalScalarType(ScalarKind.Int32)
+                ),
+                ParameterName: "schoolYear"
+            ),
+        };
+
+        var tablePlansInDependencyOrder = new List<ExternalPlans.TableWritePlan>
+        {
+            new(
+                TableModel: tableModel,
+                InsertSql: "INSERT SQL",
+                UpdateSql: null,
+                DeleteByParentSql: null,
+                BulkInsertBatching: new ExternalPlans.BulkInsertBatchingInfo(
+                    MaxRowsPerBatch: 700,
+                    ParametersPerRow: 2,
+                    MaxParametersPerCommand: 2100
+                ),
+                ColumnBindings: columnBindings,
+                KeyUnificationPlans: keyUnificationPlans
+            ),
+        };
+
+        var writePlan = new ExternalPlans.ResourceWritePlan(
+            Model: resourceModel,
+            TablePlansInDependencyOrder: tablePlansInDependencyOrder
+        );
+
+        membersInOrder.Clear();
+        keyUnificationPlans.Clear();
+        columnBindings.Clear();
+        tablePlansInDependencyOrder.Clear();
+
+        writePlan.TablePlansInDependencyOrder.Should().ContainSingle();
+        writePlan.TablePlansInDependencyOrder[0].ColumnBindings.Should().HaveCount(2);
+        writePlan.TablePlansInDependencyOrder[0].KeyUnificationPlans.Should().ContainSingle();
+        writePlan
+            .TablePlansInDependencyOrder[0]
+            .KeyUnificationPlans[0]
+            .MembersInOrder.Should()
+            .ContainSingle();
+    }
 }
