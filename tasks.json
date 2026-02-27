@@ -190,7 +190,7 @@
       "Review the updated story doc for internal consistency and correct cross-links to `mpack-format-v1.md` and the E15 roundtrip tests.",
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Docs",

@@ -179,3 +179,10 @@ Decisions: made `mpack-format-v1.md` explicit that payload is normalized (not 1:
 Files changed: reference/design/backend-redesign/design-docs/mpack-format-v1.md; reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md; tasks.json; progress.txt.
 Feedback loops: rg -n "1:1|one-to-one|serialize(d)? into" reference/design/backend-redesign/design-docs/mpack-format-v1.md reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md -S (matches now only intentional normalized/1:1 clarification wording); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
 Blockers/notes: no blockers; next highest-priority remaining task is Docs (E05 protobuf-contracts story update for DTO→protobuf swap while preserving vectors).
+
+2026-02-27
+Task done: Docs (E05 protobuf-contracts story update for DTO→protobuf swap guidance). Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: updated DMS-964 story to explicitly cross-link E15 roundtrip vector work and require swapping test-only normalized DTO contracts to protobuf-generated contracts once package exists; preserved test intent by mandating same vector fixtures + canonical JSON/hash assertions post-swap; made deterministic protobuf serialization explicit for producer/consumer and byte/hash-comparison test paths; story task list now includes running existing Plans unit test project.
+Files changed: reference/design/backend-redesign/epics/05-mpack-generation/00-protobuf-contracts.md; tasks.json; progress.txt.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 114); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
+Blockers/notes: no blockers; all tasks in tasks.json now completed.
