@@ -122,5 +122,24 @@
       "Run: `git diff -- src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Fixtures` and confirm there are no fixture changes."
     ],
     "completed": true
+  },
+  {
+    "category": "Query",
+    "description": "Fail fast when paging parameter names collide in `PageDocumentIdSqlCompiler`. Acceptance: (1) Validate `PageDocumentIdQuerySpec.OffsetParameterName` and `PageDocumentIdQuerySpec.LimitParameterName` are not equal case-insensitively; if they collide, throw a deterministic `ArgumentException` with an actionable message that includes both names and references both properties. (2) Ensure the emitted `PageDocumentIdSqlPlan.ParametersInOrder` never contains ambiguous duplicates for paging roles (offset/limit must always be distinct). (3) Add unit tests covering exact-collision and case-variant collision (e.g., `offset` vs `OffSet`), and assert exception `ParamName` and message are stable.",
+    "steps-to-verify": [
+      "Add unit tests in `PageDocumentIdSqlCompilerTests` for offset/limit collision validation.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Query",
+    "description": "Remove reliance on `Enum.ToString()` in `PageDocumentIdSqlCompiler` semantic-key formatting. Acceptance: (1) Update `FormatSemanticKey(...)` to format the operator using an explicit deterministic string (e.g., via `GetOperatorSortKey(...)` or equivalent) rather than interpolating the enum directly. (2) Preserve the existing duplicate-semantic-predicate exception message format and ensure it remains deterministic. (3) Ensure existing unit tests (including duplicate-semantic-predicate error assertions) continue to pass; add/adjust tests only if necessary to lock down the formatted operator token.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
   }
 ]
