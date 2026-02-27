@@ -414,13 +414,14 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     private static string FormatSemanticKey(RewrittenPredicate predicate)
     {
         var presenceColumn = predicate.PresenceColumn?.Value ?? "<none>";
+        var operatorToken = GetOperatorSortKey(predicate.Operator);
 
         return string.Join(
             ", ",
             [
                 $"presenceColumn='{presenceColumn}'",
                 $"canonicalColumn='{predicate.CanonicalColumn.Value}'",
-                $"operator='{predicate.Operator}'",
+                $"operator='{operatorToken}'",
             ]
         );
     }
