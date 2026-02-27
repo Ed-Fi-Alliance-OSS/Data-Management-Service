@@ -205,25 +205,7 @@ public static class DmsCoreServiceExtensions
                 Delay = TimeSpan.FromMilliseconds(retrySettings.BaseDelayMilliseconds),
                 UseJitter = retrySettings.UseJitter,
                 ShouldHandle = new PredicateBuilder().HandleResult(Utility.IsRetryableResult),
-                OnRetry = args =>
-                {
-                    args.Context.Properties.TryGetValue(Utility.TraceIdKey, out var traceId);
-                    args.Context.Properties.TryGetValue(Utility.OperationNameKey, out var operationName);
-
-                    retryLogger.LogWarning(
-                        "Deadlock retry attempt {DeadlockRetryAttempt}/{DeadlockRetryMaxAttempts} "
-                            + "after {DelayMs}ms. OperationType: {OperationType}, "
-                            + "OperationName: {OperationName} - {TraceId}",
-                        args.AttemptNumber,
-                        retrySettings.MaxRetryAttempts,
-                        args.RetryDelay.TotalMilliseconds,
-                        args.Outcome.Result?.GetType().Name,
-                        operationName ?? "unknown",
-                        traceId ?? "unknown"
-                    );
-
-                    return ValueTask.CompletedTask;
-                },
+                OnRetry = Utility.CreateOnRetryHandler(retryLogger, retrySettings.MaxRetryAttempts),
             };
 
             // Pipeline ordering (outermost → innermost): CircuitBreaker → Retry → Execute.

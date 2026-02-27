@@ -520,6 +520,9 @@ public class DeadlockRetryPolicyTests
             _callCount = 0;
             int maxRetryAttempts = 3;
 
+            // Uses the production OnRetry handler to catch regressions
+            var onRetryHandler = Utility.CreateOnRetryHandler(_retryLogger, maxRetryAttempts);
+
             var pipeline = new ResiliencePipelineBuilder<object>()
                 .AddRetry(
                     new RetryStrategyOptions<object>
@@ -529,19 +532,7 @@ public class DeadlockRetryPolicyTests
                         Delay = TimeSpan.FromMilliseconds(1),
                         UseJitter = false,
                         ShouldHandle = new PredicateBuilder<object>().HandleResult(Utility.IsRetryableResult),
-                        OnRetry = args =>
-                        {
-                            _retryLogger.LogWarning(
-                                "Deadlock retry attempt {DeadlockRetryAttempt}/{DeadlockRetryMaxAttempts} "
-                                    + "after {DelayMs}ms. OperationType: {OperationType}",
-                                args.AttemptNumber,
-                                maxRetryAttempts,
-                                args.RetryDelay.TotalMilliseconds,
-                                args.Outcome.Result?.GetType().Name
-                            );
-
-                            return ValueTask.CompletedTask;
-                        },
+                        OnRetry = args => onRetryHandler(args),
                     }
                 )
                 .Build();
@@ -580,6 +571,12 @@ public class DeadlockRetryPolicyTests
         public void It_includes_operation_type()
         {
             _retryLogger.Entries.Should().Contain(e => e.Message.Contains("UpsertFailureWriteConflict"));
+        }
+
+        [Test]
+        public void It_includes_operation_name()
+        {
+            _retryLogger.Entries.Should().Contain(e => e.Message.Contains("unknown"));
         }
     }
 }

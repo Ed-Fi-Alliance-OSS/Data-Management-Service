@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
 using Polly;
+using Polly.Retry;
 
 namespace EdFi.DataManagementService.Core.Handler;
 
@@ -36,6 +37,36 @@ public static class Utility
                 or QueryResult.QueryFailureRetryable
                 or UpdateResult.UpdateFailureWriteConflict
                 or UpsertResult.UpsertFailureWriteConflict;
+
+    /// <summary>
+    /// Creates the OnRetry callback used by the deadlock retry policy.
+    /// Extracted so the production pipeline and tests share the same implementation.
+    /// </summary>
+    internal static Func<OnRetryArguments<object>, ValueTask> CreateOnRetryHandler(
+        ILogger retryLogger,
+        int maxRetryAttempts
+    )
+    {
+        return args =>
+        {
+            args.Context.Properties.TryGetValue(TraceIdKey, out var traceId);
+            args.Context.Properties.TryGetValue(OperationNameKey, out var operationName);
+
+            retryLogger.LogWarning(
+                "Deadlock retry attempt {DeadlockRetryAttempt}/{DeadlockRetryMaxAttempts} "
+                    + "after {DelayMs}ms. OperationType: {OperationType}, "
+                    + "OperationName: {OperationName} - {TraceId}",
+                args.AttemptNumber,
+                maxRetryAttempts,
+                args.RetryDelay.TotalMilliseconds,
+                args.Outcome.Result?.GetType().Name,
+                operationName ?? "unknown",
+                traceId ?? "unknown"
+            );
+
+            return ValueTask.CompletedTask;
+        };
+    }
 
     /// <summary>
     /// Formats a error result string from the given error information and traceId
