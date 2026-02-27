@@ -200,3 +200,10 @@ Decisions: decode now enforces keyset `DocumentIdColumnName` invariant as exact 
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodec.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodecTests.cs; tasks.json; progress.txt.
 Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 119); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
 Blockers/notes: no blockers; next highest-priority remaining task likely Naming Determinism.
+
+2026-02-27
+Task done: Naming Determinism. Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: `TryParseNumericSuffix(...)` now uses explicit `CultureInfo.InvariantCulture` + `NumberStyles.Integer` so suffix parsing cannot depend on thread culture; preserved existing `_n` suffix semantics and collision behavior.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/PlanNamingConventions.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanNamingConventionsTests.cs; tasks.json.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 120); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
+Blockers/notes: no blockers; next highest-priority remaining task likely Refactor (single-source keyset temp-table constants in normalized DTO decode helper).

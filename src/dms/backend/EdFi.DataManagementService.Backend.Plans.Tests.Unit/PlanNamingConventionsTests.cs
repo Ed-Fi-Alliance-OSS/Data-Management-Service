@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
 using FluentAssertions;
@@ -108,6 +109,21 @@ public class Given_PlanNamingConventions
     }
 
     [Test]
+    public void It_should_deduplicate_suffixes_identically_under_non_default_culture()
+    {
+        IReadOnlyList<string> names = ["a", "a", "a_2", "A", "a_4", "a"];
+
+        var defaultCultureResult = DeduplicateWithCurrentCulture(CultureInfo.InvariantCulture, names);
+        var nonDefaultCultureResult = DeduplicateWithCurrentCulture(
+            CultureInfo.GetCultureInfo("tr-TR"),
+            names
+        );
+
+        nonDefaultCultureResult.Should().Equal(defaultCultureResult);
+        nonDefaultCultureResult.Should().Equal("a", "a_2", "a_3", "A_4", "a_5", "a_6");
+    }
+
+    [Test]
     public void It_should_return_deterministic_fixed_aliases_by_role()
     {
         PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Root).Should().Be("r");
@@ -115,6 +131,28 @@ public class Given_PlanNamingConventions
         PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Table).Should().Be("t");
         PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Document).Should().Be("doc");
         PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Descriptor).Should().Be("d");
+    }
+
+    private static IReadOnlyList<string> DeduplicateWithCurrentCulture(
+        CultureInfo culture,
+        IReadOnlyList<string> names
+    )
+    {
+        var originalCulture = CultureInfo.CurrentCulture;
+        var originalUiCulture = CultureInfo.CurrentUICulture;
+
+        try
+        {
+            CultureInfo.CurrentCulture = culture;
+            CultureInfo.CurrentUICulture = culture;
+
+            return PlanNamingConventions.DeduplicateCaseInsensitive(names);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+            CultureInfo.CurrentUICulture = originalUiCulture;
+        }
     }
 }
 
