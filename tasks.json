@@ -221,13 +221,13 @@
   },
   {
     "category": "Contracts",
-    "description": "Optional hardening: remove redundant `ReferenceObjectPath` from `WriteValueSource.DocumentReference` and keep only `BindingIndex`, deriving the path from `RelationalResourceModel.DocumentReferenceBindings`. Acceptance: (1) Update `src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/WritePlanContracts.cs` so `WriteValueSource.DocumentReference` stores only `BindingIndex` (no `JsonPathExpression ReferenceObjectPath`). (2) Update any plan compiler/executor code to resolve the reference object path (and any other needed reference-site metadata) by indexing into `ResourceWritePlan.Model.DocumentReferenceBindings[BindingIndex]` and fail fast deterministically for out-of-range indices. (3) Update unit tests and any normalized DTO/proto mapping to no longer require storing the reference object path in the write plan value-source contract (the canonical path remains available via the model bindings). (4) Update docs/spec where they describe `WriteDocumentReference` so it no longer implies duplicated “index + path” invariants inside executor contracts.",
+    "description": "Hardening: remove redundant `ReferenceObjectPath` from `WriteValueSource.DocumentReference` and keep only `BindingIndex`, deriving the path from `RelationalResourceModel.DocumentReferenceBindings`. Acceptance: (1) Update `src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/WritePlanContracts.cs` so `WriteValueSource.DocumentReference` stores only `BindingIndex` (no `JsonPathExpression ReferenceObjectPath`). (2) Update any plan compiler/executor code to resolve the reference object path (and any other needed reference-site metadata) by indexing into `ResourceWritePlan.Model.DocumentReferenceBindings[BindingIndex]` and fail fast deterministically for out-of-range indices. (3) Update unit tests and any normalized DTO/proto mapping to no longer require storing the reference object path in the write plan value-source contract (the canonical path remains available via the model bindings). (4) Update docs/spec where they describe `WriteDocumentReference` so it no longer implies duplicated “index + path” invariants inside executor contracts.",
     "steps-to-verify": [
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
       "Run: `rg -n \"DocumentReference\\(.*ReferenceObjectPath|ReferenceObjectPath\" src/dms/backend -S` and confirm remaining references are only model-level bindings, not the write value source."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Immutability",

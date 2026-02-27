@@ -95,12 +95,10 @@ public abstract record WriteValueSource
         : WriteValueSource;
 
     /// <summary>
-    /// Resolves a document-reference FK by binding inventory index and reference object path.
+    /// Resolves a document-reference FK by binding inventory index.
     /// </summary>
     /// <param name="BindingIndex">The index into the resource's document-reference binding inventory.</param>
-    /// <param name="ReferenceObjectPath">The canonical reference object JSONPath.</param>
-    public sealed record DocumentReference(int BindingIndex, JsonPathExpression ReferenceObjectPath)
-        : WriteValueSource;
+    public sealed record DocumentReference(int BindingIndex) : WriteValueSource;
 
     /// <summary>
     /// Resolves a descriptor FK from descriptor metadata and a scope-relative path.

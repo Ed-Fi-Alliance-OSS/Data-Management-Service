@@ -396,6 +396,7 @@ public sealed class ResourceFlattener : IResourceFlattener
           var rootTablePlan = tablePlanByTable[rootTable];
 
           var rootRow = MaterializeRow(
+              resourcePlan: plan,
               tablePlan: rootTablePlan,
               documentId: documentId,
               scopeNode: document,                       // root scope "$"
@@ -424,6 +425,7 @@ public sealed class ResourceFlattener : IResourceFlattener
 
                   // pseudocode: row = childPlan.CreateRow(parentKey, ordinal) + SetScalars + SetFks
                   rows.Add(MaterializeRow(
+                      resourcePlan: plan,
                       tablePlan,
                       documentId,
                       scopeNode: scope.ScopeNode,               // the object at this table scope
@@ -1239,11 +1241,11 @@ public abstract record WriteValueSource
     ///
     /// With the concrete-path approach (section 5.2.1), the referential id is computed by Core and emitted with concrete JSON location.
     /// The backend uses a per-request index keyed by:
-    /// - binding inventory index + wildcard reference-object path
+    /// - binding inventory index (wildcard path resolved via `ResourceWritePlan.Model.DocumentReferenceBindings[bindingIndex]`)
     /// - the current row's OrdinalPath (array indices from root to the current scope)
     /// to return the referenced DocumentId without per-row hashing.
     /// </summary>
-    public sealed record DocumentReference(int BindingIndex, JsonPathExpression ReferenceObjectPath) : WriteValueSource;
+    public sealed record DocumentReference(int BindingIndex) : WriteValueSource;
 
     /// <summary>
     /// A descriptor FK value resolved from descriptor metadata + a scope-relative path.
@@ -1789,6 +1791,7 @@ Flattening inner loop sketch (how `TableWritePlan.ColumnBindings` and `TableWrit
 
 ```csharp
 private static RowBuffer MaterializeRow(
+    ResourceWritePlan resourcePlan,
     TableWritePlan tablePlan,
     long documentId,
     JsonNode scopeNode,
@@ -1813,8 +1816,8 @@ private static RowBuffer MaterializeRow(
             WriteValueSource.DescriptorReference(var edgeSource, var relPath)
                 => ResolveDescriptorId(scopeNode, edgeSource.DescriptorResource, relPath, resolved),
 
-            WriteValueSource.DocumentReference(var binding)
-                => ResolveReferencedDocumentId(binding, ordinalPath, documentReferences),
+            WriteValueSource.DocumentReference(var bindingIndex)
+                => ResolveReferencedDocumentId(resourcePlan, bindingIndex, ordinalPath, documentReferences),
 
             _ => throw new InvalidOperationException("Unsupported write value source")
         };
@@ -1918,10 +1921,20 @@ private static void ApplyKeyUnificationPlans(
 }
 
 private static long? ResolveReferencedDocumentId(
-    DocumentReferenceBinding binding,
+    ResourceWritePlan resourcePlan,
+    int bindingIndex,
     ReadOnlySpan<int> ordinalPath,
     IDocumentReferenceInstanceIndex documentReferences)
 {
+    if ((uint)bindingIndex >= (uint)resourcePlan.Model.DocumentReferenceBindings.Count)
+    {
+        throw new ArgumentOutOfRangeException(
+            nameof(bindingIndex),
+            bindingIndex,
+            "Document-reference binding index is out of range for ResourceWritePlan.Model.DocumentReferenceBindings.");
+    }
+
+    var binding = resourcePlan.Model.DocumentReferenceBindings[bindingIndex];
     return documentReferences.GetReferencedDocumentId(binding, ordinalPath);
 }
 ```

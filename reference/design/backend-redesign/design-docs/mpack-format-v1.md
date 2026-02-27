@@ -566,7 +566,7 @@ message WriteScalar {
 }
 
 message WriteDocumentReference {
-  string reference_object_path = 1;                      // matches DocumentReferenceBinding.reference_object_path
+  uint32 binding_index = 1;                              // index into RelationalResourceModel.document_reference_bindings
 }
 
 message WriteDescriptorReference {
