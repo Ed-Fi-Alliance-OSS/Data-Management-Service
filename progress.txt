@@ -52,3 +52,9 @@
 - Existing bool-true and bool-false paths unchanged
 - Build 0 warnings, all 34 tests pass
 - Files: Provisioning/MssqlDatabaseProvisioner.cs
+
+**QA: Dead Code — move quotedName inside if-block**
+- Moved `quotedName` computation from unconditional (line 131) into `if (databaseWasCreated)` block where it's actually used
+- Avoids unnecessary string allocation in the check-only (else) path
+- Build 0 warnings, all 34 tests pass
+- Files: Provisioning/MssqlDatabaseProvisioner.cs

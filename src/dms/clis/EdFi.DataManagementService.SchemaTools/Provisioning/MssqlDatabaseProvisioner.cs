@@ -128,7 +128,6 @@ public class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisioner
     {
         var builder = new SqlConnectionStringBuilder(connectionString);
         var targetDatabase = GetDatabaseName(connectionString);
-        var quotedName = $"[{targetDatabase.Replace("]", "]]")}]";
 
         // MVCC commands must run on master, outside a transaction
         builder.InitialCatalog = "master";
@@ -139,6 +138,8 @@ public class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisioner
 
         if (databaseWasCreated)
         {
+            var quotedName = $"[{targetDatabase.Replace("]", "]]")}]";
+
             // Enable MVCC settings on the newly created database
             logger.LogInformation(
                 "Configuring MVCC isolation for new database: {DatabaseName}",
