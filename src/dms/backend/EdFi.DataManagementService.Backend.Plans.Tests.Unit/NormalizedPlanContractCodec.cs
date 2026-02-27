@@ -288,6 +288,7 @@ internal static class NormalizedPlanContractCodec
             nameof(PageDocumentIdSqlPlanDto.ParametersInOrder),
             "query plan"
         );
+        ValidatePagingRoleInventory(decodedParameters, nameof(PageDocumentIdSqlPlanDto.ParametersInOrder));
 
         return new ExternalPlans.PageDocumentIdSqlPlan(
             PageDocumentIdSql: dto.PageDocumentIdSql,
@@ -1280,6 +1281,39 @@ internal static class NormalizedPlanContractCodec
         throw new ArgumentException(
             $"Duplicate parameter names are not allowed (case-insensitive) in {context}. "
                 + $"Colliding names: [{formattedDuplicateGroups}].",
+            argumentName
+        );
+    }
+
+    private static void ValidatePagingRoleInventory(
+        IReadOnlyList<ExternalPlans.QuerySqlParameter> parametersInOrder,
+        string argumentName
+    )
+    {
+        var offsetCount = 0;
+        var limitCount = 0;
+
+        foreach (var parameter in parametersInOrder)
+        {
+            switch (parameter.Role)
+            {
+                case ExternalPlans.QuerySqlParameterRole.Offset:
+                    offsetCount++;
+                    break;
+                case ExternalPlans.QuerySqlParameterRole.Limit:
+                    limitCount++;
+                    break;
+            }
+        }
+
+        if (offsetCount == 1 && limitCount == 1)
+        {
+            return;
+        }
+
+        throw new ArgumentException(
+            "Query plan parameters must include exactly one Offset and one Limit role entry. "
+                + $"Observed counts: Offset={offsetCount}, Limit={limitCount}.",
             argumentName
         );
     }

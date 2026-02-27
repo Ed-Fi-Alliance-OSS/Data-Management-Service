@@ -509,6 +509,102 @@ public class Given_NormalizedPlanContractCodec
     }
 
     [Test]
+    public void It_should_fail_fast_when_query_parameters_are_missing_offset_role()
+    {
+        var encoded = NormalizedPlanContractCodec.Encode(_queryPlan);
+
+        var mutated = encoded with
+        {
+            ParametersInOrder =
+            [
+                new QuerySqlParameterDto(QuerySqlParameterRoleDto.Filter, "schoolYear"),
+                new QuerySqlParameterDto(QuerySqlParameterRoleDto.Limit, "limit"),
+            ],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated);
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Be(nameof(PageDocumentIdSqlPlanDto.ParametersInOrder));
+        exception.Message.Should().Contain("exactly one Offset and one Limit role entry");
+        exception.Message.Should().Contain("Offset=0");
+        exception.Message.Should().Contain("Limit=1");
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_query_parameters_are_missing_limit_role()
+    {
+        var encoded = NormalizedPlanContractCodec.Encode(_queryPlan);
+
+        var mutated = encoded with
+        {
+            ParametersInOrder =
+            [
+                new QuerySqlParameterDto(QuerySqlParameterRoleDto.Filter, "schoolYear"),
+                new QuerySqlParameterDto(QuerySqlParameterRoleDto.Offset, "offset"),
+            ],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated);
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Be(nameof(PageDocumentIdSqlPlanDto.ParametersInOrder));
+        exception.Message.Should().Contain("exactly one Offset and one Limit role entry");
+        exception.Message.Should().Contain("Offset=1");
+        exception.Message.Should().Contain("Limit=0");
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_query_parameters_have_duplicate_offset_roles()
+    {
+        var encoded = NormalizedPlanContractCodec.Encode(_queryPlan);
+
+        var mutated = encoded with
+        {
+            ParametersInOrder =
+            [
+                new QuerySqlParameterDto(QuerySqlParameterRoleDto.Filter, "schoolYear"),
+                new QuerySqlParameterDto(QuerySqlParameterRoleDto.Offset, "offset"),
+                new QuerySqlParameterDto(QuerySqlParameterRoleDto.Offset, "offsetTwo"),
+                new QuerySqlParameterDto(QuerySqlParameterRoleDto.Limit, "limit"),
+            ],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated);
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Be(nameof(PageDocumentIdSqlPlanDto.ParametersInOrder));
+        exception.Message.Should().Contain("exactly one Offset and one Limit role entry");
+        exception.Message.Should().Contain("Offset=2");
+        exception.Message.Should().Contain("Limit=1");
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_query_parameters_have_duplicate_limit_roles()
+    {
+        var encoded = NormalizedPlanContractCodec.Encode(_queryPlan);
+
+        var mutated = encoded with
+        {
+            ParametersInOrder =
+            [
+                new QuerySqlParameterDto(QuerySqlParameterRoleDto.Filter, "schoolYear"),
+                new QuerySqlParameterDto(QuerySqlParameterRoleDto.Offset, "offset"),
+                new QuerySqlParameterDto(QuerySqlParameterRoleDto.Limit, "limit"),
+                new QuerySqlParameterDto(QuerySqlParameterRoleDto.Limit, "limitTwo"),
+            ],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated);
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Be(nameof(PageDocumentIdSqlPlanDto.ParametersInOrder));
+        exception.Message.Should().Contain("exactly one Offset and one Limit role entry");
+        exception.Message.Should().Contain("Offset=1");
+        exception.Message.Should().Contain("Limit=2");
+    }
+
+    [Test]
     public void It_should_fail_fast_when_query_parameter_name_is_invalid()
     {
         var encoded = NormalizedPlanContractCodec.Encode(_queryPlan);

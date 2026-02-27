@@ -186,3 +186,10 @@ Decisions: updated DMS-964 story to explicitly cross-link E15 roundtrip vector w
 Files changed: reference/design/backend-redesign/epics/05-mpack-generation/00-protobuf-contracts.md; tasks.json; progress.txt.
 Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 114); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
 Blockers/notes: no blockers; all tasks in tasks.json now completed.
+
+2026-02-27
+Task done: Query Plan Validation (paging-role inventory on decode). Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: added deterministic role-count validation in normalized query decode requiring exactly one Offset and one Limit in authoritative `ParametersInOrder`; validation is inventory-only (no reorder/dedupe) and throws actionable `ArgumentException` on `ParametersInOrder` with observed counts for stable permutation-independent failures.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodec.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodecTests.cs; tasks.json; progress.txt.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 118); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
+Blockers/notes: no blockers; next highest-priority remaining task likely Read Plan Validation.
