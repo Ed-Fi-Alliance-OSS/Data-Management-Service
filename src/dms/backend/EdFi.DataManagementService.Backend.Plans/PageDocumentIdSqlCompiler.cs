@@ -49,6 +49,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             spec.LimitParameterName,
             nameof(spec.LimitParameterName)
         );
+        ValidatePagingParameterNamesAreDistinct(spec.OffsetParameterName, spec.LimitParameterName);
 
         var rewrittenPredicates = RewriteAndSortPredicates(
             spec.Predicates,
@@ -192,6 +193,20 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                     nameof(PageDocumentIdQuerySpec.LimitParameterName)
                 );
             }
+        }
+    }
+
+    /// <summary>
+    /// Ensures paging parameter names are distinct (case-insensitive).
+    /// </summary>
+    private static void ValidatePagingParameterNamesAreDistinct(
+        string offsetParameterName,
+        string limitParameterName
+    )
+    {
+        if (string.Equals(offsetParameterName, limitParameterName, StringComparison.OrdinalIgnoreCase))
+        {
+            throw CreatePagingParameterCollisionException(offsetParameterName, limitParameterName);
         }
     }
 
@@ -488,6 +503,23 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             $"Filter parameter name '{filterParameterName}' collides with paging parameter name '{pagingParameterName}' (case-insensitive). "
                 + $"Rename the filter parameter or change {pagingParameterPropertyName}.",
             nameof(PageDocumentIdQuerySpec.Predicates)
+        );
+    }
+
+    /// <summary>
+    /// Creates a deterministic exception describing an offset/limit paging parameter-name collision.
+    /// </summary>
+    private static ArgumentException CreatePagingParameterCollisionException(
+        string offsetParameterName,
+        string limitParameterName
+    )
+    {
+        return new ArgumentException(
+            $"Paging parameter names must be distinct (case-insensitive). "
+                + $"{nameof(PageDocumentIdQuerySpec.OffsetParameterName)}='{offsetParameterName}', "
+                + $"{nameof(PageDocumentIdQuerySpec.LimitParameterName)}='{limitParameterName}'. "
+                + $"Rename either {nameof(PageDocumentIdQuerySpec.OffsetParameterName)} or {nameof(PageDocumentIdQuerySpec.LimitParameterName)}.",
+            nameof(PageDocumentIdQuerySpec.OffsetParameterName)
         );
     }
 

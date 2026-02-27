@@ -686,6 +686,36 @@ public class Given_PageDocumentIdSqlCompiler
             );
     }
 
+    [Test]
+    public void It_should_reject_offset_and_limit_parameter_names_that_are_identical()
+    {
+        var act = () =>
+            _compiler.Compile(CreateSpec([], [], offsetParameterName: "page", limitParameterName: "page"));
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("OffsetParameterName")
+            .WithMessage(
+                "Paging parameter names must be distinct (case-insensitive). OffsetParameterName='page', LimitParameterName='page'. Rename either OffsetParameterName or LimitParameterName.*"
+            );
+    }
+
+    [Test]
+    public void It_should_reject_offset_and_limit_parameter_names_that_collide_case_insensitively()
+    {
+        var act = () =>
+            _compiler.Compile(
+                CreateSpec([], [], offsetParameterName: "OffSet", limitParameterName: "offset")
+            );
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithParameterName("OffsetParameterName")
+            .WithMessage(
+                "Paging parameter names must be distinct (case-insensitive). OffsetParameterName='OffSet', LimitParameterName='offset'. Rename either OffsetParameterName or LimitParameterName.*"
+            );
+    }
+
     private static PageDocumentIdQuerySpec CreateSpec(
         IReadOnlyList<QueryValuePredicate> predicates,
         IReadOnlyList<KeyValuePair<DbColumnName, ColumnStorage.UnifiedAlias>> unifiedAliasMappings,
