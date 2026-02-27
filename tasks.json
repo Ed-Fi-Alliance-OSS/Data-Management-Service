@@ -208,7 +208,7 @@
       "Run: `rg -n \"tables_in_read_dependency_order|tables_in_write_dependency_order\" reference/design/backend-redesign -S` and confirm no references remain after the change.",
       "Review `reference/design/backend-redesign/design-docs/flattening-reconstitution.md` and confirm it describes a single dependency order used for both read and write."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Packs",

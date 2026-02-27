@@ -106,8 +106,8 @@ All collections are `repeated` and MUST be emitted in stable sort order:
 - `resource_keys`: ascending by `(resource_key_id)` (and then by `(project_name, resource_name)` for tie-breaking, though ties are invalid).
 - `resources`: ascending by `(project_name, resource_name)` using ordinal (culture-invariant) string ordering.
 - Within each `RelationalResourceModel`:
-  - `tables_in_read_dependency_order`: root-first, then increasing depth; stable within depth by `(json_scope, table_name)`
-  - `tables_in_write_dependency_order`: root-first, then depth-first; stable within sibling set by `(json_scope, table_name)`
+  - `tables_in_dependency_order`: root-first, then depth-first; stable within sibling set by `(json_scope, table_name)` using ordinal string ordering
+    - This canonical order MUST match in-memory `RelationalResourceModel.TablesInDependencyOrder` and is used by both read hydration and write flattening.
   - `columns`: stable per table; key columns first (in key order), then document reference groups, descriptor FKs, then scalars
   - `constraints`: ascending by `(constraint_kind_group, name)` where
     `constraint_kind_group = unique < foreign_key < all_or_none_nullability < null_or_true`
@@ -345,8 +345,8 @@ message RelationalResourceModel {
   string physical_schema = 2;                            // schema where this resource's tables live (e.g. "edfi")
 
   DbTableModel root = 10;
-  repeated DbTableModel tables_in_read_dependency_order = 11;
-  repeated DbTableModel tables_in_write_dependency_order = 12;
+  reserved 11, 12;
+  repeated DbTableModel tables_in_dependency_order = 13;
 
   repeated DocumentReferenceBinding document_reference_bindings = 20;
   repeated DescriptorEdgeSource descriptor_edge_sources = 21;

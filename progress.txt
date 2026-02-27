@@ -144,3 +144,10 @@ Decisions: upgraded write roundtrip fixture to exercise all required `WriteValue
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodecTests.cs; tasks.json; progress.txt.
 Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 108); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
 Blockers/notes: no blockers; next highest-priority remaining task likely Tests (read/projection contract roundtrip coverage hardening).
+
+2026-02-27
+Task done: Packs (dependency ordering unification in `.mpack` spec). Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: collapsed dual read/write model-table lists to single `tables_in_dependency_order`; canonical order is root-first depth-first with stable sibling ordering by `(json_scope, table_name)` using ordinal string compare; protobuf tags `11`/`12` reserved and unified field moved to tag `13` to prevent reuse ambiguity; ordering text now explicitly aligned to in-memory `RelationalResourceModel.TablesInDependencyOrder` used by both hydration and flattening.
+Files changed: reference/design/backend-redesign/design-docs/mpack-format-v1.md; tasks.json; progress.txt.
+Feedback loops: dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors); dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 108); rg -n "tables_in_read_dependency_order|tables_in_write_dependency_order" reference/design/backend-redesign -S (no matches).
+Blockers/notes: no blockers; next highest-priority remaining task likely Packs (projection-plan fields in `.mpack` spec) before lower-priority docs polish.
