@@ -141,7 +141,13 @@ internal class UpsertHandler(
                 ),
                 Headers: []
             ),
-            UpsertFailureWriteConflict => new(StatusCode: 409, Body: null, Headers: []),
+            // Returns 500 to match ODS/API behavior: after retries are exhausted for a deadlock,
+            // the client receives a generic system error rather than a retryable status code.
+            UpsertFailureWriteConflict => new(
+                StatusCode: 500,
+                Body: ForSystemError(requestInfo.FrontendRequest.TraceId),
+                Headers: []
+            ),
             UpsertFailureNotAuthorized failure => new(
                 StatusCode: 403,
                 Body: ForForbidden(

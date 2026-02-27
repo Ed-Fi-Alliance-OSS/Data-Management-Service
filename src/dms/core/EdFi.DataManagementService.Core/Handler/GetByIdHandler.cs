@@ -72,12 +72,11 @@ internal class GetByIdHandler(
         {
             GetSuccess success => new FrontendResponse(StatusCode: 200, Body: success.EdfiDoc, Headers: []),
             GetFailureNotExists => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
+            // Returns 500 to match ODS/API behavior: after retries are exhausted for a deadlock,
+            // the client receives a generic system error rather than a retryable status code.
             GetFailureRetryable => new FrontendResponse(
-                StatusCode: 503,
-                Body: ToJsonError(
-                    "Request could not be completed due to database contention",
-                    requestInfo.FrontendRequest.TraceId
-                ),
+                StatusCode: 500,
+                Body: FailureResponse.ForSystemError(requestInfo.FrontendRequest.TraceId),
                 Headers: []
             ),
             GetFailureNotAuthorized notAuthorized => new FrontendResponse(

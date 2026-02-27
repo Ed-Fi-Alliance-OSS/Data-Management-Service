@@ -7,6 +7,7 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Response;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
@@ -71,12 +72,11 @@ internal class QueryRequestHandler(
                     ? new() { { "Total-Count", (success.TotalCount ?? 0).ToString() } }
                     : []
             ),
+            // Returns 500 to match ODS/API behavior: after retries are exhausted for a deadlock,
+            // the client receives a generic system error rather than a retryable status code.
             QueryFailureRetryable => new FrontendResponse(
-                StatusCode: 503,
-                Body: ToJsonError(
-                    "Request could not be completed due to database contention",
-                    requestInfo.FrontendRequest.TraceId
-                ),
+                StatusCode: 500,
+                Body: FailureResponse.ForSystemError(requestInfo.FrontendRequest.TraceId),
                 Headers: []
             ),
             QueryFailureKnownError => new FrontendResponse(StatusCode: 400, Body: null, Headers: []),

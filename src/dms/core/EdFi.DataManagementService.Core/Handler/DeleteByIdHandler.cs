@@ -95,7 +95,13 @@ internal class DeleteByIdHandler(
                 ),
                 Headers: []
             ),
-            DeleteFailureWriteConflict => new FrontendResponse(StatusCode: 409, Body: null, Headers: []),
+            // Returns 500 to match ODS/API behavior: after retries are exhausted for a deadlock,
+            // the client receives a generic system error rather than a retryable status code.
+            DeleteFailureWriteConflict => new FrontendResponse(
+                StatusCode: 500,
+                Body: FailureResponse.ForSystemError(requestInfo.FrontendRequest.TraceId),
+                Headers: []
+            ),
             DeleteFailureETagMisMatch => new FrontendResponse(
                 StatusCode: 412,
                 Body: FailureResponse.ForETagMisMatch(
