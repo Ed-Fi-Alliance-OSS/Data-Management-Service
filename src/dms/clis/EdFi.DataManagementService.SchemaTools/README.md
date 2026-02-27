@@ -87,6 +87,47 @@ dms-schema ddl emit -s core/ApiSchema.json -s extensions/tpdm/ApiSchema.json -o 
 All output files use Unix line endings (`\n`) for deterministic, byte-for-byte
 stable output across platforms.
 
+### `ddl provision` — Generate DDL and execute against a database
+
+Generates dialect-specific DDL and executes it against a target database in a
+single transaction. Provisions one database at a time (`--dialect both` is not
+accepted).
+
+```bash
+dms-schema ddl provision --schema <paths...> --connection-string <connstr> --dialect <dialect> [--create-database]
+```
+
+**Options:**
+
+| Option | Short | Required | Default | Description |
+|---|---|---|---|---|
+| `--schema` | `-s` | Yes | — | `ApiSchema.json` path(s). First is core, rest are extensions. |
+| `--connection-string` | `-c` | Yes | — | ADO.NET connection string for the target database. |
+| `--dialect` | `-d` | Yes | — | SQL dialect: `pgsql` or `mssql` (not `both`). |
+| `--create-database` | — | No | `false` | Create the target database if it does not exist before provisioning. |
+
+**Examples:**
+
+```bash
+# Provision a PostgreSQL database
+dms-schema ddl provision --schema core/ApiSchema.json --connection-string "Host=localhost;Port=5432;Database=edfi_dms;Username=postgres;Password=secret" --dialect pgsql --create-database
+
+# Provision a SQL Server database (database must already exist)
+dms-schema ddl provision -s core/ApiSchema.json -c "Server=localhost;Initial Catalog=edfi_dms;User Id=sa;Password=secret;TrustServerCertificate=true" -d mssql
+
+# Core + extension, PostgreSQL
+dms-schema ddl provision -s core/ApiSchema.json -s extensions/tpdm/ApiSchema.json -c "Host=localhost;Database=edfi_dms;Username=postgres;Password=secret" -d pgsql --create-database
+```
+
+**Behavior:**
+
+1. Loads and normalizes schema files, builds the effective schema set
+2. Generates DDL (core tables, relational model, seed DML) for the specified dialect
+3. Optionally creates the database if `--create-database` is set
+4. Executes all DDL in a single transaction against the target database
+5. For SQL Server: configures Read Committed Snapshot Isolation (RCSI) on newly
+   created databases; warns if RCSI is disabled on existing databases
+
 ## Determinism guarantee
 
 For a fixed set of `(ApiSchema.json inputs, dialect, relational mapping version)`,

@@ -72,3 +72,11 @@
 - Removed `: DatabaseProvisionerTests` inheritance from all 6 inner test fixture classes (outer provides no shared members)
 - CSharpier formatted; build 0 warnings, all 34 tests pass
 - Files: DatabaseProvisionerTests.cs
+
+**QA: Documentation — ddl provision section in README.md**
+- Added `### ddl provision` section mirroring `ddl emit` style
+- Documented all 4 options (--schema, --connection-string, --dialect, --create-database)
+- Noted --dialect only accepts pgsql/mssql (not both)
+- 3 usage examples: pgsql with create-database, mssql without, core+extension
+- Added Behavior section describing provisioning steps and RCSI handling
+- Files: src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md
