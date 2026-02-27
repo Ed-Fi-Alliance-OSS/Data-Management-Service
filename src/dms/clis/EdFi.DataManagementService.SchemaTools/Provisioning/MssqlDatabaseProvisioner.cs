@@ -28,7 +28,11 @@ public class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisioner
     public bool CreateDatabaseIfNotExists(string connectionString)
     {
         var builder = new SqlConnectionStringBuilder(connectionString);
-        var targetDatabase = GetDatabaseName(connectionString);
+        var targetDatabase = string.IsNullOrWhiteSpace(builder.InitialCatalog)
+            ? throw new InvalidOperationException(
+                "Connection string does not specify a database name (Initial Catalog)."
+            )
+            : builder.InitialCatalog;
 
         logger.LogInformation(
             "Checking if database exists: {DatabaseName}",
@@ -127,7 +131,11 @@ public class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisioner
     public void CheckOrConfigureMvcc(string connectionString, bool databaseWasCreated)
     {
         var builder = new SqlConnectionStringBuilder(connectionString);
-        var targetDatabase = GetDatabaseName(connectionString);
+        var targetDatabase = string.IsNullOrWhiteSpace(builder.InitialCatalog)
+            ? throw new InvalidOperationException(
+                "Connection string does not specify a database name (Initial Catalog)."
+            )
+            : builder.InitialCatalog;
 
         // MVCC commands must run on master, outside a transaction
         builder.InitialCatalog = "master";
