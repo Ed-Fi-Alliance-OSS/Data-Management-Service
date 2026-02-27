@@ -123,3 +123,10 @@ Decisions: semantic-key formatter now uses explicit operator token via `GetOpera
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs; tasks.json.
 Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 94); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
 Blockers/notes: no blockers; next highest-priority remaining task likely Tests (test-only normalized DTO types for roundtrip work).
+
+2026-02-27
+Task done: Tests (test-only normalized DTO types). Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: added test-only normalized plan DTO contract set using primitives/stable identifiers only (table schema/name, column names, canonical JSONPath strings, binding indices/ordinals) and no `DbTableModel`/`DbColumnModel`/`JsonPathExpression` object embedding; ordering-sensitive collections stored as immutable arrays preserving authoritative input order; canonical JSON emitter writes explicit property/array order with `\n` newlines and normalization for multiline SQL text, plus stable SHA-256 helper over UTF-8 bytes.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractDtos.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanDtoJson.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractDtosTests.cs; tasks.json; progress.txt.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 97); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
+Blockers/notes: no blockers; next highest-priority remaining task likely Tests (deterministic encode/decode between executor contracts and normalized DTOs).
