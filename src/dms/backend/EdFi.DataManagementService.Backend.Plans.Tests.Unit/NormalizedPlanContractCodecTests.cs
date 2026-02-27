@@ -40,19 +40,68 @@ public class Given_NormalizedPlanContractCodec
             .Should()
             .Be(NormalizedPlanDtoJson.ComputeCanonicalSha256(encoded));
 
-        decoded
-            .TablePlansInDependencyOrder[0]
+        var sourceTablePlan = _writePlan.TablePlansInDependencyOrder[0];
+        var decodedTablePlan = decoded.TablePlansInDependencyOrder[0];
+
+        decodedTablePlan.InsertSql.Should().Be(sourceTablePlan.InsertSql);
+        decodedTablePlan.UpdateSql.Should().Be(sourceTablePlan.UpdateSql);
+        decodedTablePlan.DeleteByParentSql.Should().Be(sourceTablePlan.DeleteByParentSql);
+
+        decodedTablePlan
+            .TableModel.Table.Schema.Value.Should()
+            .Be(sourceTablePlan.TableModel.Table.Schema.Value);
+        decodedTablePlan.TableModel.Table.Name.Should().Be(sourceTablePlan.TableModel.Table.Name);
+
+        decodedTablePlan
             .ColumnBindings.Select(static binding => binding.ParameterName)
             .Should()
             .Equal(
                 "documentId",
+                "parentSchoolDocumentId",
                 "ordinal",
                 "schoolDocumentId",
                 "schoolYear",
                 "calendarDocumentId",
                 "gradeLevelDescriptorId",
-                "schoolYearCanonical"
+                "schoolYearCanonical",
+                "schoolYearPresent"
             );
+
+        decodedTablePlan
+            .ColumnBindings.Select(static binding => binding.Column.ColumnName.Value)
+            .Should()
+            .Equal(sourceTablePlan.ColumnBindings.Select(static binding => binding.Column.ColumnName.Value));
+
+        decodedTablePlan
+            .ColumnBindings.Select(static binding => GetWriteValueSourceKind(binding.Source))
+            .Should()
+            .Equal(
+                nameof(WriteValueSource.DocumentId),
+                nameof(WriteValueSource.ParentKeyPart),
+                nameof(WriteValueSource.Ordinal),
+                nameof(WriteValueSource.DocumentReference),
+                nameof(WriteValueSource.Scalar),
+                nameof(WriteValueSource.DocumentReference),
+                nameof(WriteValueSource.DescriptorReference),
+                nameof(WriteValueSource.Precomputed),
+                nameof(WriteValueSource.Precomputed)
+            );
+
+        var sourceKeyUnificationPlan = sourceTablePlan.KeyUnificationPlans[0];
+        var decodedKeyUnificationPlan = decodedTablePlan.KeyUnificationPlans[0];
+
+        decodedKeyUnificationPlan
+            .CanonicalBindingIndex.Should()
+            .Be(sourceKeyUnificationPlan.CanonicalBindingIndex);
+
+        var sourceDescriptorMember = (KeyUnificationMemberWritePlan.DescriptorMember)
+            sourceKeyUnificationPlan.MembersInOrder[1];
+
+        var decodedDescriptorMember = (KeyUnificationMemberWritePlan.DescriptorMember)
+            decodedKeyUnificationPlan.MembersInOrder[1];
+
+        decodedDescriptorMember.PresenceBindingIndex.Should().Be(sourceDescriptorMember.PresenceBindingIndex);
+        decodedDescriptorMember.PresenceIsSynthetic.Should().Be(sourceDescriptorMember.PresenceIsSynthetic);
     }
 
     [Test]
@@ -133,6 +182,29 @@ public class Given_NormalizedPlanContractCodec
 
         var exception = act.Should().Throw<ArgumentException>().Which;
         exception.Message.Should().Contain("Unknown column 'MissingColumn'");
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_decoding_write_plan_with_duplicate_parameter_names()
+    {
+        var encoded = NormalizedPlanContractCodec.Encode(_writePlan);
+        var tablePlan = encoded.TablePlansInDependencyOrder[0];
+        var mutatedBindings = tablePlan.ColumnBindings.ToArray();
+
+        mutatedBindings[1] = mutatedBindings[1] with { ParameterName = "DocumentId" };
+
+        var mutated = encoded with
+        {
+            TablePlansInDependencyOrder = [tablePlan with { ColumnBindings = [.. mutatedBindings] }],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Be(nameof(TableWritePlanDto.ColumnBindings));
+        exception.Message.Should().Contain("Duplicate parameter names are not allowed");
+        exception.Message.Should().Contain("'DocumentId'");
+        exception.Message.Should().Contain("'documentId'");
     }
 
     [Test]
@@ -361,6 +433,14 @@ public class Given_NormalizedPlanContractCodec
                     SourceJsonPath: Path("$.schoolYearDescriptor"),
                     TargetResource: null
                 ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("ParentSchool_DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
             ],
             Constraints: []
         );
@@ -432,12 +512,12 @@ public class Given_NormalizedPlanContractCodec
 
         var tablePlan = new TableWritePlan(
             TableModel: table,
-            InsertSql: "INSERT INTO [edfi].[StudentSchoolAssociation] ([DocumentId], [Ordinal], [School_DocumentId], [SchoolYear], [Calendar_DocumentId], [GradeLevel_DescriptorId], [SchoolYear_Canonical])\nVALUES (@documentId, @ordinal, @schoolDocumentId, @schoolYear, @calendarDocumentId, @gradeLevelDescriptorId, @schoolYearCanonical);",
+            InsertSql: "INSERT INTO [edfi].[StudentSchoolAssociation] ([DocumentId], [ParentSchool_DocumentId], [Ordinal], [School_DocumentId], [SchoolYear], [Calendar_DocumentId], [GradeLevel_DescriptorId], [SchoolYear_Canonical], [SchoolYear_Present])\nVALUES (@documentId, @parentSchoolDocumentId, @ordinal, @schoolDocumentId, @schoolYear, @calendarDocumentId, @gradeLevelDescriptorId, @schoolYearCanonical, @schoolYearPresent);",
             UpdateSql: "UPDATE [edfi].[StudentSchoolAssociation]\nSET [SchoolYear] = @schoolYear\nWHERE [DocumentId] = @documentId;",
             DeleteByParentSql: null,
             BulkInsertBatching: new BulkInsertBatchingInfo(
-                MaxRowsPerBatch: 500,
-                ParametersPerRow: 7,
+                MaxRowsPerBatch: 233,
+                ParametersPerRow: 9,
                 MaxParametersPerCommand: 2100
             ),
             ColumnBindings:
@@ -446,6 +526,11 @@ public class Given_NormalizedPlanContractCodec
                     Column: Column("DocumentId"),
                     Source: new WriteValueSource.DocumentId(),
                     ParameterName: "documentId"
+                ),
+                new WriteColumnBinding(
+                    Column: Column("ParentSchool_DocumentId"),
+                    Source: new WriteValueSource.ParentKeyPart(Index: 0),
+                    ParameterName: "parentSchoolDocumentId"
                 ),
                 new WriteColumnBinding(
                     Column: Column("Ordinal"),
@@ -484,12 +569,17 @@ public class Given_NormalizedPlanContractCodec
                     Source: new WriteValueSource.Precomputed(),
                     ParameterName: "schoolYearCanonical"
                 ),
+                new WriteColumnBinding(
+                    Column: Column("SchoolYear_Present"),
+                    Source: new WriteValueSource.Precomputed(),
+                    ParameterName: "schoolYearPresent"
+                ),
             ],
             KeyUnificationPlans:
             [
                 new KeyUnificationWritePlan(
                     CanonicalColumn: new DbColumnName("SchoolYear_Canonical"),
-                    CanonicalBindingIndex: 6,
+                    CanonicalBindingIndex: 7,
                     MembersInOrder:
                     [
                         new KeyUnificationMemberWritePlan.ScalarMember(
@@ -508,7 +598,7 @@ public class Given_NormalizedPlanContractCodec
                                 "SchoolYearTypeDescriptor"
                             ),
                             PresenceColumn: new DbColumnName("SchoolYear_Present"),
-                            PresenceBindingIndex: null,
+                            PresenceBindingIndex: 8,
                             PresenceIsSynthetic: true
                         ),
                     ]
@@ -595,5 +685,20 @@ public class Given_NormalizedPlanContractCodec
     private static JsonPathExpression Path(string value)
     {
         return JsonPathExpressionCompiler.Compile(value);
+    }
+
+    private static string GetWriteValueSourceKind(WriteValueSource source)
+    {
+        return source switch
+        {
+            WriteValueSource.DocumentId => nameof(WriteValueSource.DocumentId),
+            WriteValueSource.ParentKeyPart => nameof(WriteValueSource.ParentKeyPart),
+            WriteValueSource.Ordinal => nameof(WriteValueSource.Ordinal),
+            WriteValueSource.Scalar => nameof(WriteValueSource.Scalar),
+            WriteValueSource.DocumentReference => nameof(WriteValueSource.DocumentReference),
+            WriteValueSource.DescriptorReference => nameof(WriteValueSource.DescriptorReference),
+            WriteValueSource.Precomputed => nameof(WriteValueSource.Precomputed),
+            _ => throw new ArgumentOutOfRangeException(nameof(source), source.GetType().Name),
+        };
     }
 }

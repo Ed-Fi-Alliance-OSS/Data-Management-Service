@@ -137,3 +137,10 @@ Decisions: added test-only `NormalizedPlanContractCodec` for deterministic encod
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodec.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodecTests.cs; tasks.json.
 Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 107); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
 Blockers/notes: no blockers; next highest-priority remaining work is roundtrip contract tests that consume this codec (write/read and determinism stress tasks).
+
+2026-02-27
+Task done: Tests (write-plan contract roundtrip tests). Story: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md.
+Decisions: upgraded write roundtrip fixture to exercise all required `WriteValueSource` kinds (added `ParentKeyPart` + presence binding column) while preserving deterministic ordering; strengthened roundtrip assertions to cover SQL/text identity, table+column identity by name, parameter ordering, and key-unification presence metadata (`CanonicalBindingIndex`, `PresenceBindingIndex`, `PresenceIsSynthetic`); added case-insensitive duplicate write-parameter decode failure assertion for deterministic actionable error shape.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodecTests.cs; tasks.json; progress.txt.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (Passed 108); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (Succeeded, 0 warnings/errors).
+Blockers/notes: no blockers; next highest-priority remaining task likely Tests (read/projection contract roundtrip coverage hardening).
