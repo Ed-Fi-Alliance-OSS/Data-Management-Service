@@ -75,6 +75,23 @@ Hashing:
 - Use SHA-256.
 - `payload_sha256` is computed over the exact `MappingPackPayload` protobuf byte sequence (see determinism rules).
 
+### 3.1 Normalized payload model (not 1:1 executor-contract serialization)
+
+PackFormatVersion 1 stores a **normalized representation** of runtime artifacts. The payload is not required to mirror executor-facing contract object graphs 1:1.
+
+Stored in payload (authoritative):
+- canonical identifiers (`DbTableName`, `DbColumnName`, canonical JsonPath strings)
+- SQL text and deterministic parameter/binding metadata
+- deterministic indices/ordinals and ordering-sensitive lists
+- deterministic batching metadata
+
+Derived at pack load/reconstruction time:
+- `KeysetTableContract` values from `SqlDialect` (`page` for PGSQL, `#page` for MSSQL; `DocumentId` column)
+- `JsonPathExpression` runtime objects (`Segments`) by compiling canonical JsonPath strings
+- table/column object references by lookup (`(schema, name)` for tables, `DbColumnName.value` within table for columns)
+
+Consumers MUST reconstruct executor-facing contracts from these normalized payload values and MUST NOT infer bindings from SQL text parsing.
+
 ---
 
 ## 4. Determinism requirements (normative)
@@ -200,7 +217,7 @@ Rationale and seeding algorithm guidance: `reference/design/backend-redesign/des
 
 ---
 
-## 6. Consumer validation algorithm (normative)
+## 6. Consumer validation and reconstruction algorithm (normative)
 
 Given `(expectedEffectiveSchemaHash, expectedDialect, expectedRelationalMappingVersion, expectedPackFormatVersion=1)`:
 
@@ -221,7 +238,13 @@ Given `(expectedEffectiveSchemaHash, expectedDialect, expectedRelationalMappingV
    - `resources` are unique by `(project_name, resource_name)` and sorted
    - For each `ResourcePack`:
      - if `is_abstract=false`, has `relational_model`, `write_plan`, and `read_plan`
+     - within `relational_model`, canonical path keys are unique:
+       - `document_reference_bindings[*].reference_object_path` has no duplicates
+       - `descriptor_edge_sources[*].descriptor_value_path` has no duplicates
      - all referenced tables/columns/bindings referenced by plans exist in the model
+     - write/query binding invariants:
+       - each `column_bindings[*].parameter_name` is present and unique case-insensitively within a statement
+       - all binding-index references are in-range for the target list
      - read/projection invariants:
        - every `read_plan.table_plans[*].table` exists in `relational_model.tables_in_dependency_order`
        - every `read_plan.reference_identity_projection_table_plans[*].table` exists, and `fk_column_ordinal` plus every `identity_field_ordinals_in_order[*].column_ordinal` are valid ordinals for that table's hydration row shape
@@ -232,11 +255,27 @@ Given `(expectedEffectiveSchemaHash, expectedDialect, expectedRelationalMappingV
        - any `UnifiedAlias` storage references only stored columns on the same table (canonical + optional presence)
        - any `DbTableModel.key_unification_classes` entries reference only columns on the same table and the member list is ordered and distinct
        - any `WriteValueSource.precomputed` bindings are populated by exactly one `TableWritePlan.key_unification_plans` entry
-7. Validate `dms.ResourceKey` mapping in the target database (fast path if available; otherwise full diff) and cache:
+7. Reconstruct executor-facing contracts deterministically from normalized payload values:
+   - resolve table identities by `(schema, name)` and columns by `DbColumnName.value` (within each resolved table)
+   - compile canonical JsonPath strings into `JsonPathExpression` runtime objects
+   - derive keyset temp-table contract from dialect constants (`page`/`#page`, column `DocumentId`)
+   - preserve authoritative payload order for all ordering-sensitive collections (no runtime resorting)
+   - bind parameters by explicit metadata (`column_bindings`, query parameter inventories), never by SQL-text parsing
+8. Validate `dms.ResourceKey` mapping in the target database (fast path if available; otherwise full diff) and cache:
    - `(ProjectName, ResourceName) -> ResourceKeyId`
    - `ResourceKeyId -> (ProjectName, ResourceName, ResourceVersion)`
 
 If any step fails, the consumer MUST reject the pack and treat it as unusable for that database.
+
+### 6.1 Required fail-fast reconstruction checks
+
+During step 7, consumers MUST fail fast with deterministic errors when any reconstruction invariant is violated, including:
+- unknown `(schema, name)` table identities
+- unknown `DbColumnName.value` in a resolved table
+- out-of-range binding indices and select-list ordinals
+- duplicate canonical paths (`reference_object_path`, `descriptor_value_path`, per-binding `reference_json_path`)
+- duplicate/ambiguous parameter names where uniqueness is required
+- unsupported dialect values when deriving keyset table constants
 
 ---
 

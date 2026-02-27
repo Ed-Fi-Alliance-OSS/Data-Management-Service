@@ -199,7 +199,7 @@
       "Review the updated doc sections for internal consistency and correct cross-links between the E15 story and `mpack-format-v1.md`.",
       "Run: `rg -n \"1:1|one-to-one|serialize(d)? into\" reference/design/backend-redesign/design-docs/mpack-format-v1.md reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md` and confirm the wording matches the normalized+reconstruction intent."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Packs",

@@ -13,7 +13,7 @@ This story focuses on the *contracts and determinism rules*, not yet on compilin
 
 These contracts are shared between:
 - runtime compilation fallback (cached in-process), and
-- mapping pack builders/decoders (AOT mode).
+- mapping pack builders/decoders (AOT mode, where decoders reconstruct executor-facing contracts from normalized `.mpack` payloads).
 
 Design references:
 
@@ -63,7 +63,7 @@ Design references:
 
 ### AOT compatibility
 
-- Contract types are “plain data” (records/structs): no delegates, compiled expressions, DI/service references, or live DB objects, so they can be serialized into (and decoded from) mapping packs.
+- Contract types are “plain data” (records/structs): no delegates, compiled expressions, DI/service references, or live DB objects, so they can be represented in a normalized mapping-pack payload and deterministically reconstructed by pack decoders.
 
 ### Testing
 
