@@ -31,6 +31,7 @@ try
     // ddl command group
     var ddlCommand = new Command("ddl", "DDL generation commands");
     ddlCommand.Subcommands.Add(DdlEmitCommand.Create(logger, fileLoader, schemaSetBuilder));
+    ddlCommand.Subcommands.Add(DdlProvisionCommand.Create(logger, fileLoader, schemaSetBuilder));
     rootCommand.Subcommands.Add(ddlCommand);
 
     var parseResult = rootCommand.Parse(args);

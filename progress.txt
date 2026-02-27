@@ -1,0 +1,39 @@
+## DMS-951: CLI Command — ddl provision (Create-Only)
+
+### All tasks completed
+
+**Task 1: Dependencies**
+- Added Microsoft.Data.SqlClient 6.1.4 to Directory.Packages.props
+- Added Npgsql and Microsoft.Data.SqlClient PackageReferences to SchemaTools.csproj
+- Files: src/Directory.Packages.props, src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj
+
+**Task 2: IDatabaseProvisioner interface + implementations**
+- Created IDatabaseProvisioner with: CreateDatabaseIfNotExists, ExecuteInTransaction, CheckOrConfigureMvcc, GetDatabaseName
+- PgsqlDatabaseProvisioner: uses NpgsqlConnectionStringBuilder, CREATE DATABASE outside txn, MVCC is no-op
+- MssqlDatabaseProvisioner: uses SqlConnectionStringBuilder, MVCC ALTER DATABASE outside txn, warns if RCSI off
+- Sonar S6667/S2139 required: don't both log and rethrow; rollback catch just rethrows, lets CommandErrorHandler log
+- Files: src/dms/clis/EdFi.DataManagementService.SchemaTools/Provisioning/{IDatabaseProvisioner,PgsqlDatabaseProvisioner,MssqlDatabaseProvisioner}.cs
+
+**Task 3: DdlProvisionCommand**
+- Reuses same DDL pipeline as DdlEmitCommand: load schemas, build EffectiveSchemaSet, deep-clone, build relational model, emit DDL
+- --dialect only accepts pgsql/mssql (not 'both')
+- --create-database flag triggers CreateDatabaseIfNotExists pre-step
+- Creates provisioner directly based on dialect (no DI)
+- Wraps in CommandErrorHandler.Execute()
+- Files: src/dms/clis/EdFi.DataManagementService.SchemaTools/Commands/DdlProvisionCommand.cs
+
+**Task 4: Wiring**
+- Added DdlProvisionCommand to ddl command group in Program.cs
+- `dms-schema ddl --help` shows both emit and provision
+- Files: src/dms/clis/EdFi.DataManagementService.SchemaTools/Program.cs
+
+**Task 5: Unit tests**
+- 9 new tests in DatabaseProvisionerTests.cs following Given_/It_ convention
+- Tests: PgsqlGetDatabaseName, MssqlGetDatabaseName (InitialCatalog + Database keyword), missing DB name errors, MVCC no-op
+- All 34 tests pass (25 existing + 9 new)
+- Files: src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/DatabaseProvisionerTests.cs
+
+**Task 6: Code quality**
+- CSharpier formatted all new/modified files
+- Build succeeds with 0 warnings (TreatWarningsAsErrors)
+- All external data sanitized via LoggingSanitizer before logging
