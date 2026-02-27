@@ -16,7 +16,7 @@
       "Confirm a `ddl provision` section exists with options table and examples",
       "Confirm --dialect documents that only pgsql/mssql are accepted (not both)"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Dead Code",
