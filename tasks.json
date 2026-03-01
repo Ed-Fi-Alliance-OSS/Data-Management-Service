@@ -14,7 +14,7 @@
       "Add unit tests validating `ColumnBindings` ordering/parameter naming and deterministic `InsertSql` for pgsql + mssql.",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Write Compiler",
@@ -23,7 +23,7 @@
       "Add unit tests validating `UpdateSql` presence/absence and deterministic `SET`/`WHERE` column and parameter usage for pgsql + mssql.",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Write Compiler",
