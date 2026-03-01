@@ -231,6 +231,19 @@ public class Given_ExternalPlanContracts
     }
 
     [Test]
+    public void It_should_throw_actionable_not_supported_for_mapping_set_aot_payload_entry_point()
+    {
+        var act = () => MappingSet.FromPayload(new MappingPackPayload());
+
+        act.Should()
+            .Throw<NotSupportedException>()
+            .WithMessage(
+                "AOT mapping-pack decode is not implemented yet for MappingSet.FromPayload(MappingPackPayload). "
+                    + "See story: reference/design/backend-redesign/epics/15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md."
+            );
+    }
+
+    [Test]
     public void It_should_preserve_projection_contract_ordering_semantics()
     {
         var schoolReferencePath = new JsonPathExpression(

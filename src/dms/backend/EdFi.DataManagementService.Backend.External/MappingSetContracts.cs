@@ -37,13 +37,26 @@ public sealed record MappingSet(
     IReadOnlyDictionary<short, ResourceKeyEntry> ResourceKeyById
 )
 {
+    private const string AotMappingPackDecodeStoryRef =
+        "reference/design/backend-redesign/epics/15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md";
+
     /// <summary>
     /// Creates a mapping set from an AOT mapping-pack payload.
     /// </summary>
     /// <param name="payload">The decoded mapping-pack payload.</param>
     /// <returns>The materialized mapping set.</returns>
-    /// <exception cref="NotImplementedException">Thrown until mapping-pack decode is implemented.</exception>
-    public static MappingSet FromPayload(MappingPackPayload payload) => throw new NotImplementedException();
+    /// <exception cref="NotSupportedException">
+    /// Thrown until AOT mapping-pack decode support is implemented.
+    /// </exception>
+    public static MappingSet FromPayload(MappingPackPayload payload)
+    {
+        ArgumentNullException.ThrowIfNull(payload);
+
+        throw new NotSupportedException(
+            "AOT mapping-pack decode is not implemented yet for MappingSet.FromPayload(MappingPackPayload). "
+                + $"See story: {AotMappingPackDecodeStoryRef}."
+        );
+    }
 }
 
 /// <summary>
