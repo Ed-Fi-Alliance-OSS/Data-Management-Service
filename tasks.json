@@ -180,5 +180,65 @@
       "Run: dotnet test --no-build ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
     "completed": true
+  },
+  {
+    "category": "Correctness",
+    "description": "Fix descriptor-resource omission guidance in `MappingSetLookupExtensions`. Acceptance: (1) when `ConcreteResourceModel.StorageKind == SharedDescriptorTable`, `GetWritePlanOrThrow(...)` throws a deterministic `NotSupportedException` that references `E07-S06 (06-descriptor-writes.md)` as the next story and clearly indicates descriptor writes do not use thin-slice relational-table write plans; (2) when `StorageKind == SharedDescriptorTable`, `GetReadPlanOrThrow(...)` throws a deterministic `NotSupportedException` that references `E08-S05 (05-descriptor-endpoints.md)` as the next story and clearly indicates descriptor reads do not use thin-slice relational-table hydration plans; (3) update `MappingSetLookupExtensionsTests` to assert the new messages exactly; (4) no behavior changes for non-descriptor resources.",
+    "steps-to-verify": [
+      "Update `src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetLookupExtensions.cs` to use separate read/write descriptor story references.",
+      "Update `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetLookupExtensionsTests.cs` expected messages.",
+      "Run: dotnet test --no-build ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Correctness",
+    "description": "Update `MappingSet.FromPayload(MappingPackPayload)` stub guidance to reference the correct AOT pack decode story. Acceptance: (1) the thrown `NotSupportedException` message is deterministic and points to `E05-S05 (05-pack-loader-validation.md)` (pack loader/validator + mapping set selection) as the owning story; (2) update the unit test assertion in `ExternalPlanContractsTests` to match; (3) no other API or behavior changes.",
+    "steps-to-verify": [
+      "Update `src/dms/backend/EdFi.DataManagementService.Backend.External/MappingSetContracts.cs` story reference constant/message.",
+      "Update `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ExternalPlanContractsTests.cs` expected message.",
+      "Run: dotnet test --no-build ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Test Fixtures",
+    "description": "Make thin-slice `mappingset.manifest.json` reflect the actual `ORDER BY` semantics emitted by `RootOnlyReadPlanCompiler`. Acceptance: (1) `ThinSliceMappingSetManifestJsonEmitter` emits `order_by_key_columns_in_order` using the same deterministic ordering rule as the compiled SQL (DocumentId key column first, then remaining key columns in model order); (2) update `Fixtures/runtime-plan-compilation/minimal/expected/mappingset.manifest.json` to match; (3) add/extend a unit test that uses a model where key-column order is not DocumentId-first and asserts the emitted manifest matches the compiled SQL order-by; (4) all golden/unit tests remain deterministic and pass.",
+    "steps-to-verify": [
+      "Update `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ThinSliceMappingSetManifestJsonEmitter.cs` to emit the same order-by column sequence as `RootOnlyReadPlanCompiler`.",
+      "Update `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Fixtures/runtime-plan-compilation/minimal/expected/mappingset.manifest.json` expected output.",
+      "Add/extend a unit test (for example `ThinSliceMappingSetManifestJsonEmitterTests.cs`) that asserts manifest order-by columns match compiled SQL semantics for a non-DocumentId-first key model.",
+      "Run: dotnet test --no-build ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactor",
+    "description": "Eliminate redundant `ThinSliceWritePlanSupportEvaluator.Evaluate(...)` calls in `RootOnlyWritePlanCompiler`. Acceptance: (1) evaluation runs at most once per `TryCompile(...)`/`Compile(...)` call path; (2) no behavior changes to support/omission decisions or exception message content; (3) all existing unit tests pass without updates.",
+    "steps-to-verify": [
+      "Refactor `src/dms/backend/EdFi.DataManagementService.Backend.Plans/RootOnlyWritePlanCompiler.cs` to avoid re-evaluating support in both `IsSupported` and `Compile` paths.",
+      "Run: dotnet test --no-build ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactor",
+    "description": "Standardize root-table alias conventions across plan compilers to reduce drift. Acceptance: (1) `RootOnlyReadPlanCompiler` uses the fixed root alias from `PlanSqlAliasRole.Root` (and keeps keyset alias `k`) instead of allocating `t0` for a single-table plan; (2) update unit tests to match the new exact SQL text for both dialects; (3) ensure emitted SQL remains canonicalized and deterministic; (4) no semantic changes to selected columns/join predicates/order-by columns.",
+    "steps-to-verify": [
+      "Update `src/dms/backend/EdFi.DataManagementService.Backend.Plans/RootOnlyReadPlanCompiler.cs` to use the fixed root alias.",
+      "Update `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RootOnlyReadPlanCompilerTests.cs` expected SQL strings.",
+      "Run: dotnet test --no-build ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactor",
+    "description": "Reduce boilerplate in executor-facing plan contract types while preserving ordering + named-argument ergonomics. Acceptance: (1) refactor `Backend.External/Plans/*Contracts.cs` to reduce repetitive constructor bodies (null checks + collection materialization) without changing public behavior; (2) preserve defensive-copy semantics: all ordering-sensitive `IEnumerable<T>` inputs are materialized immediately into `ImmutableArray<T>` in enumeration order; (3) do not break existing named-argument call sites; (4) all unit tests pass.",
+    "steps-to-verify": [
+      "Refactor contract files under `src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/` (for example by consolidating validation/materialization patterns) without breaking constructor parameter names used by named arguments.",
+      "Run: dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln",
+      "Run: dotnet test --no-build ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
   }
 ]

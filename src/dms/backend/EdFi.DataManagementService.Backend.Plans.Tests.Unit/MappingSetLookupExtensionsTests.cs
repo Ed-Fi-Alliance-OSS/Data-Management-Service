@@ -55,7 +55,13 @@ public class Given_MappingSetLookupExtensions
     {
         var act = () => _mappingSet.GetWritePlanOrThrow(_descriptorResource);
 
-        act.Should().Throw<NotSupportedException>().WithMessage("*SharedDescriptorTable*E15-S06*");
+        act.Should()
+            .Throw<NotSupportedException>()
+            .WithMessage(
+                "Write plan for resource 'Ed-Fi.AcademicSubjectDescriptor' was intentionally omitted: "
+                    + "storage kind 'SharedDescriptorTable' does not use thin-slice relational-table write plans. "
+                    + "Next story: E07-S06 (06-descriptor-writes.md)."
+            );
     }
 
     [Test]
@@ -63,7 +69,13 @@ public class Given_MappingSetLookupExtensions
     {
         var act = () => _mappingSet.GetReadPlanOrThrow(_descriptorResource);
 
-        act.Should().Throw<NotSupportedException>().WithMessage("*SharedDescriptorTable*E15-S06*");
+        act.Should()
+            .Throw<NotSupportedException>()
+            .WithMessage(
+                "Read plan for resource 'Ed-Fi.AcademicSubjectDescriptor' was intentionally omitted: "
+                    + "storage kind 'SharedDescriptorTable' does not use thin-slice relational-table hydration plans. "
+                    + "Next story: E08-S05 (05-descriptor-endpoints.md)."
+            );
     }
 
     [Test]

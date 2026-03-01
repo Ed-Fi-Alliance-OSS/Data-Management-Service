@@ -16,7 +16,8 @@ public static class MappingSetLookupExtensions
     private const string WriteCollectionsAndKeyUnificationStoryRef =
         "E15-S04 (04-write-plan-compiler-collections-and-extensions.md)";
     private const string ReadHydrationStoryRef = "E15-S05 (05-read-plan-compiler-hydration.md)";
-    private const string DescriptorSupportStoryRef = "E15-S06 (06-projection-plan-compilers.md)";
+    private const string DescriptorWriteStoryRef = "E07-S06 (06-descriptor-writes.md)";
+    private const string DescriptorReadStoryRef = "E08-S05 (05-descriptor-endpoints.md)";
 
     /// <summary>
     /// Gets the compiled write plan for <paramref name="resource" /> or throws a deterministic actionable exception.
@@ -40,8 +41,8 @@ public static class MappingSetLookupExtensions
         {
             throw new NotSupportedException(
                 $"Write plan for resource '{FormatResource(resource)}' was intentionally omitted: "
-                    + $"storage kind '{ResourceStorageKind.SharedDescriptorTable}' is out of thin-slice runtime compilation scope. "
-                    + $"Next story: {DescriptorSupportStoryRef}."
+                    + $"storage kind '{ResourceStorageKind.SharedDescriptorTable}' does not use thin-slice relational-table write plans. "
+                    + $"Next story: {DescriptorWriteStoryRef}."
             );
         }
 
@@ -111,8 +112,8 @@ public static class MappingSetLookupExtensions
         {
             throw new NotSupportedException(
                 $"Read plan for resource '{FormatResource(resource)}' was intentionally omitted: "
-                    + $"storage kind '{ResourceStorageKind.SharedDescriptorTable}' is out of thin-slice runtime compilation scope. "
-                    + $"Next story: {DescriptorSupportStoryRef}."
+                    + $"storage kind '{ResourceStorageKind.SharedDescriptorTable}' does not use thin-slice relational-table hydration plans. "
+                    + $"Next story: {DescriptorReadStoryRef}."
             );
         }
 

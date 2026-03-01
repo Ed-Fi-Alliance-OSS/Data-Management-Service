@@ -97,3 +97,8 @@ Task completed: Refactor - remove duplicated NormalizedPlanDtoCollectionCloner h
 Decisions/reasoning: Removed test-only NormalizedPlanDtoCollectionCloner and inlined defensive-copy collection expressions (`[.. values]`) in DTO constructors with explicit null guards to preserve ordering + copy semantics while removing helper drift risk.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractDtos.cs; tasks.json; progress.txt
 Blockers/notes next iteration: none. All tasks in tasks.json are now completed.
+
+Task completed: Correctness - descriptor resource omission guidance story refs/messages (DMS-1028 story reference: reference/design/backend-redesign/epics/15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md)
+Decisions/reasoning: Split descriptor next-story refs by operation to avoid drift/confusion: write -> E07-S06 descriptor writes; read -> E08-S05 descriptor endpoints; message text now explicitly states descriptor resources do not use thin-slice relational-table write/hydration plans; left non-descriptor branches unchanged.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetLookupExtensions.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetLookupExtensionsTests.cs; tasks.json; progress.txt
+Blockers/notes next iteration: none. Next: highest-priority remaining task is MappingSet.FromPayload guidance to E05-S05 pack-loader validation story.
