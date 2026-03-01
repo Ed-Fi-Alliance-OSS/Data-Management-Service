@@ -211,9 +211,14 @@ public class Given_NormalizedPlanContractCodec
             .Be(NormalizedPlanDtoJson.ComputeCanonicalSha256(encoded));
 
         decoded
-            .ParametersInOrder.Select(static parameter => parameter.ParameterName)
+            .PageParametersInOrder.Select(static parameter => parameter.ParameterName)
             .Should()
             .Equal("schoolYear", "offset", "limit");
+        decoded.TotalCountParametersInOrder.Should().NotBeNull();
+        decoded
+            .TotalCountParametersInOrder!.Value.Select(static parameter => parameter.ParameterName)
+            .Should()
+            .Equal("schoolYear");
     }
 
     [Test]
@@ -276,11 +281,11 @@ public class Given_NormalizedPlanContractCodec
 
         var reorderedQueryPlan = _queryPlan with
         {
-            ParametersInOrder =
+            PageParametersInOrder =
             [
-                _queryPlan.ParametersInOrder[0],
-                _queryPlan.ParametersInOrder[2],
-                _queryPlan.ParametersInOrder[1],
+                _queryPlan.PageParametersInOrder[0],
+                _queryPlan.PageParametersInOrder[2],
+                _queryPlan.PageParametersInOrder[1],
             ],
         };
 
@@ -296,7 +301,7 @@ public class Given_NormalizedPlanContractCodec
 
         var firstPermutation = encoded with
         {
-            ParametersInOrder =
+            PageParametersInOrder =
             [
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Filter, "schoolYear"),
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Offset, "offset"),
@@ -306,7 +311,7 @@ public class Given_NormalizedPlanContractCodec
 
         var secondPermutation = encoded with
         {
-            ParametersInOrder =
+            PageParametersInOrder =
             [
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Limit, "OffSet"),
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Filter, "schoolYear"),
@@ -538,7 +543,7 @@ public class Given_NormalizedPlanContractCodec
 
         var mutated = encoded with
         {
-            ParametersInOrder =
+            PageParametersInOrder =
             [
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Filter, "schoolYear"),
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Limit, "limit"),
@@ -548,7 +553,7 @@ public class Given_NormalizedPlanContractCodec
         var act = () => NormalizedPlanContractCodec.Decode(mutated);
 
         var exception = act.Should().Throw<ArgumentException>().Which;
-        exception.ParamName.Should().Be(nameof(PageDocumentIdSqlPlanDto.ParametersInOrder));
+        exception.ParamName.Should().Be(nameof(PageDocumentIdSqlPlanDto.PageParametersInOrder));
         exception.Message.Should().Contain("exactly one Offset and one Limit role entry");
         exception.Message.Should().Contain("Offset=0");
         exception.Message.Should().Contain("Limit=1");
@@ -561,7 +566,7 @@ public class Given_NormalizedPlanContractCodec
 
         var mutated = encoded with
         {
-            ParametersInOrder =
+            PageParametersInOrder =
             [
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Filter, "schoolYear"),
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Offset, "offset"),
@@ -571,7 +576,7 @@ public class Given_NormalizedPlanContractCodec
         var act = () => NormalizedPlanContractCodec.Decode(mutated);
 
         var exception = act.Should().Throw<ArgumentException>().Which;
-        exception.ParamName.Should().Be(nameof(PageDocumentIdSqlPlanDto.ParametersInOrder));
+        exception.ParamName.Should().Be(nameof(PageDocumentIdSqlPlanDto.PageParametersInOrder));
         exception.Message.Should().Contain("exactly one Offset and one Limit role entry");
         exception.Message.Should().Contain("Offset=1");
         exception.Message.Should().Contain("Limit=0");
@@ -584,7 +589,7 @@ public class Given_NormalizedPlanContractCodec
 
         var mutated = encoded with
         {
-            ParametersInOrder =
+            PageParametersInOrder =
             [
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Filter, "schoolYear"),
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Offset, "offset"),
@@ -596,7 +601,7 @@ public class Given_NormalizedPlanContractCodec
         var act = () => NormalizedPlanContractCodec.Decode(mutated);
 
         var exception = act.Should().Throw<ArgumentException>().Which;
-        exception.ParamName.Should().Be(nameof(PageDocumentIdSqlPlanDto.ParametersInOrder));
+        exception.ParamName.Should().Be(nameof(PageDocumentIdSqlPlanDto.PageParametersInOrder));
         exception.Message.Should().Contain("exactly one Offset and one Limit role entry");
         exception.Message.Should().Contain("Offset=2");
         exception.Message.Should().Contain("Limit=1");
@@ -609,7 +614,7 @@ public class Given_NormalizedPlanContractCodec
 
         var mutated = encoded with
         {
-            ParametersInOrder =
+            PageParametersInOrder =
             [
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Filter, "schoolYear"),
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Offset, "offset"),
@@ -621,7 +626,7 @@ public class Given_NormalizedPlanContractCodec
         var act = () => NormalizedPlanContractCodec.Decode(mutated);
 
         var exception = act.Should().Throw<ArgumentException>().Which;
-        exception.ParamName.Should().Be(nameof(PageDocumentIdSqlPlanDto.ParametersInOrder));
+        exception.ParamName.Should().Be(nameof(PageDocumentIdSqlPlanDto.PageParametersInOrder));
         exception.Message.Should().Contain("exactly one Offset and one Limit role entry");
         exception.Message.Should().Contain("Offset=1");
         exception.Message.Should().Contain("Limit=2");
@@ -631,11 +636,11 @@ public class Given_NormalizedPlanContractCodec
     public void It_should_fail_fast_when_query_parameter_name_is_invalid()
     {
         var encoded = NormalizedPlanContractCodec.Encode(_queryPlan);
-        var mutatedParameters = encoded.ParametersInOrder.ToArray();
+        var mutatedParameters = encoded.PageParametersInOrder.ToArray();
 
         mutatedParameters[0] = mutatedParameters[0] with { ParameterName = "invalid-name" };
 
-        var mutated = encoded with { ParametersInOrder = [.. mutatedParameters] };
+        var mutated = encoded with { PageParametersInOrder = [.. mutatedParameters] };
 
         var act = () => NormalizedPlanContractCodec.Decode(mutated);
 
@@ -650,7 +655,7 @@ public class Given_NormalizedPlanContractCodec
 
         var mutated = encoded with
         {
-            ParametersInOrder =
+            PageParametersInOrder =
             [
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Filter, "schoolYear"),
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Offset, "offset"),
@@ -664,6 +669,58 @@ public class Given_NormalizedPlanContractCodec
         exception.Message.Should().Contain("Duplicate parameter names");
         exception.Message.Should().Contain("'OffSet'");
         exception.Message.Should().Contain("'offset'");
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_total_count_parameters_are_present_without_total_count_sql()
+    {
+        var encoded = NormalizedPlanContractCodec.Encode(_queryPlan);
+        var mutated = encoded with
+        {
+            TotalCountSql = null,
+            TotalCountParametersInOrder =
+            [
+                new QuerySqlParameterDto(QuerySqlParameterRoleDto.Filter, "schoolYear"),
+            ],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated);
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.Message.Should().Contain("must be null when");
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_total_count_parameters_are_missing_for_total_count_sql()
+    {
+        var encoded = NormalizedPlanContractCodec.Encode(_queryPlan);
+        var mutated = encoded with { TotalCountParametersInOrder = null };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated);
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.Message.Should().Contain("is required when");
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_total_count_parameters_include_non_filter_roles()
+    {
+        var encoded = NormalizedPlanContractCodec.Encode(_queryPlan);
+        var mutated = encoded with
+        {
+            TotalCountParametersInOrder =
+            [
+                new QuerySqlParameterDto(QuerySqlParameterRoleDto.Filter, "schoolYear"),
+                new QuerySqlParameterDto(QuerySqlParameterRoleDto.Offset, "offset"),
+            ],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated);
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Be(nameof(PageDocumentIdSqlPlanDto.TotalCountParametersInOrder));
+        exception.Message.Should().Contain("may only include Filter role entries");
+        exception.Message.Should().Contain("Offset=1");
     }
 
     private static RelationalResourceModel CreateModel()
@@ -1021,12 +1078,13 @@ public class Given_NormalizedPlanContractCodec
         return new PageDocumentIdSqlPlan(
             PageDocumentIdSql: "SELECT r.[DocumentId]\nFROM [edfi].[StudentSchoolAssociation] r\nWHERE r.[SchoolYear] = @schoolYear\nORDER BY r.[DocumentId] ASC\nOFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY;",
             TotalCountSql: "SELECT COUNT(1)\nFROM [edfi].[StudentSchoolAssociation] r\nWHERE r.[SchoolYear] = @schoolYear;",
-            ParametersInOrder:
+            PageParametersInOrder:
             [
                 new QuerySqlParameter(QuerySqlParameterRole.Filter, "schoolYear"),
                 new QuerySqlParameter(QuerySqlParameterRole.Offset, "offset"),
                 new QuerySqlParameter(QuerySqlParameterRole.Limit, "limit"),
-            ]
+            ],
+            TotalCountParametersInOrder: [new QuerySqlParameter(QuerySqlParameterRole.Filter, "schoolYear")]
         );
     }
 

@@ -312,19 +312,43 @@ internal sealed record PageDocumentIdSqlPlanDto
     public PageDocumentIdSqlPlanDto(
         string PageDocumentIdSql,
         string? TotalCountSql,
-        IEnumerable<QuerySqlParameterDto> ParametersInOrder
+        IEnumerable<QuerySqlParameterDto> PageParametersInOrder,
+        IEnumerable<QuerySqlParameterDto>? TotalCountParametersInOrder
     )
     {
         this.PageDocumentIdSql = PageDocumentIdSql;
         this.TotalCountSql = TotalCountSql;
-        this.ParametersInOrder = NormalizedPlanDtoCollectionCloner.ToImmutableArray(ParametersInOrder);
+        this.PageParametersInOrder = NormalizedPlanDtoCollectionCloner.ToImmutableArray(
+            PageParametersInOrder
+        );
+
+        if (TotalCountSql is null)
+        {
+            if (TotalCountParametersInOrder is not null)
+            {
+                throw new ArgumentException(
+                    $"{nameof(TotalCountParametersInOrder)} must be null when {nameof(TotalCountSql)} is null.",
+                    nameof(TotalCountParametersInOrder)
+                );
+            }
+
+            this.TotalCountParametersInOrder = null;
+            return;
+        }
+
+        this.TotalCountParametersInOrder = NormalizedPlanDtoCollectionCloner.ToImmutableArray(
+            TotalCountParametersInOrder
+                ?? throw new ArgumentNullException(nameof(TotalCountParametersInOrder))
+        );
     }
 
     public string PageDocumentIdSql { get; init; }
 
     public string? TotalCountSql { get; init; }
 
-    public ImmutableArray<QuerySqlParameterDto> ParametersInOrder { get; init; }
+    public ImmutableArray<QuerySqlParameterDto> PageParametersInOrder { get; init; }
+
+    public ImmutableArray<QuerySqlParameterDto>? TotalCountParametersInOrder { get; init; }
 }
 
 internal sealed record QuerySqlParameterDto(QuerySqlParameterRoleDto Role, string ParameterName);

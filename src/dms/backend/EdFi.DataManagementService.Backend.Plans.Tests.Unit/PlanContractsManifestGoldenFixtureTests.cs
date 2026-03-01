@@ -123,7 +123,8 @@ internal static class PlanContractsManifestFixtureBuilder
             dialect,
             plan.PageDocumentIdSql,
             plan.TotalCountSql,
-            plan.ParametersInOrder
+            plan.PageParametersInOrder,
+            plan.TotalCountParametersInOrder is null ? null : plan.TotalCountParametersInOrder.Value
         );
     }
 }
@@ -222,9 +223,9 @@ internal static class PlanContractsManifestJsonEmitter
             );
         }
 
-        writer.WritePropertyName("parameters_in_order");
+        writer.WritePropertyName("page_parameters_in_order");
         writer.WriteStartArray();
-        foreach (var parameter in queryPlanSnapshot.ParametersInOrder)
+        foreach (var parameter in queryPlanSnapshot.PageParametersInOrder)
         {
             writer.WriteStartObject();
             writer.WriteString("role", PlanJsonCanonicalization.ToQueryParameterRoleToken(parameter.Role));
@@ -232,6 +233,28 @@ internal static class PlanContractsManifestJsonEmitter
             writer.WriteEndObject();
         }
         writer.WriteEndArray();
+
+        if (queryPlanSnapshot.TotalCountParametersInOrder is null)
+        {
+            writer.WriteNull("total_count_parameters_in_order");
+        }
+        else
+        {
+            writer.WritePropertyName("total_count_parameters_in_order");
+            writer.WriteStartArray();
+            foreach (var parameter in queryPlanSnapshot.TotalCountParametersInOrder)
+            {
+                writer.WriteStartObject();
+                writer.WriteString(
+                    "role",
+                    PlanJsonCanonicalization.ToQueryParameterRoleToken(parameter.Role)
+                );
+                writer.WriteString("parameter_name", parameter.ParameterName);
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+        }
+
         writer.WriteEndObject();
     }
 
@@ -271,5 +294,6 @@ internal sealed record QueryPlanSnapshot(
     SqlDialect Dialect,
     string PageDocumentIdSql,
     string? TotalCountSql,
-    IReadOnlyList<QuerySqlParameter> ParametersInOrder
+    IReadOnlyList<QuerySqlParameter> PageParametersInOrder,
+    IReadOnlyList<QuerySqlParameter>? TotalCountParametersInOrder
 );

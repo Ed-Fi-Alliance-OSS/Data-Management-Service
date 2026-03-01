@@ -186,7 +186,7 @@ public class Given_ExternalPlanContracts
         var queryPlan = new ExternalPlans.PageDocumentIdSqlPlan(
             PageDocumentIdSql: "SELECT DocumentId FROM page",
             TotalCountSql: "SELECT COUNT(1) FROM page",
-            ParametersInOrder:
+            PageParametersInOrder:
             [
                 new ExternalPlans.QuerySqlParameter(
                     ExternalPlans.QuerySqlParameterRole.Filter,
@@ -200,11 +200,18 @@ public class Given_ExternalPlanContracts
                     ExternalPlans.QuerySqlParameterRole.Limit,
                     ParameterName: "limit"
                 ),
+            ],
+            TotalCountParametersInOrder:
+            [
+                new ExternalPlans.QuerySqlParameter(
+                    ExternalPlans.QuerySqlParameterRole.Filter,
+                    ParameterName: "schoolYear"
+                ),
             ]
         );
 
         queryPlan
-            .ParametersInOrder.Select(parameter => parameter.Role)
+            .PageParametersInOrder.Select(parameter => parameter.Role)
             .Should()
             .Equal(
                 ExternalPlans.QuerySqlParameterRole.Filter,
@@ -213,9 +220,14 @@ public class Given_ExternalPlanContracts
             );
 
         queryPlan
-            .ParametersInOrder.Select(parameter => parameter.ParameterName)
+            .PageParametersInOrder.Select(parameter => parameter.ParameterName)
             .Should()
             .Equal("schoolYear", "offset", "limit");
+        queryPlan.TotalCountParametersInOrder.Should().NotBeNull();
+        queryPlan
+            .TotalCountParametersInOrder!.Value.Select(parameter => parameter.ParameterName)
+            .Should()
+            .Equal("schoolYear");
     }
 
     [Test]

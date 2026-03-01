@@ -66,13 +66,22 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         var totalCountSql = spec.IncludeTotalCountSql
             ? BuildTotalCountSql(spec.RootTable, rewrittenPredicates)
             : null;
-        var parametersInOrder = BuildParametersInOrder(
-            rewrittenPredicates,
+        var filterParametersInOrder = BuildFilterParametersInOrder(rewrittenPredicates);
+        var pageParametersInOrder = BuildPageParametersInOrder(
+            filterParametersInOrder,
             spec.OffsetParameterName,
             spec.LimitParameterName
         );
+        var totalCountParametersInOrder = spec.IncludeTotalCountSql
+            ? BuildTotalCountParametersInOrder(filterParametersInOrder)
+            : null;
 
-        return new PageDocumentIdSqlPlan(pageSql, totalCountSql, parametersInOrder);
+        return new PageDocumentIdSqlPlan(
+            pageSql,
+            totalCountSql,
+            pageParametersInOrder,
+            totalCountParametersInOrder
+        );
     }
 
     /// <summary>
@@ -235,28 +244,51 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     }
 
     /// <summary>
-    /// Builds deterministic query parameter metadata in canonical plan order.
+    /// Builds deterministic filter-parameter metadata in canonical plan order.
     /// Executors bind parameters by name, so this ordering does not need to match placeholder appearance per dialect.
     /// </summary>
-    private static IReadOnlyList<QuerySqlParameter> BuildParametersInOrder(
-        IReadOnlyList<RewrittenPredicate> predicates,
+    private static IReadOnlyList<QuerySqlParameter> BuildFilterParametersInOrder(
+        IReadOnlyList<RewrittenPredicate> predicates
+    )
+    {
+        var filterParametersInOrder = new QuerySqlParameter[predicates.Count];
+
+        for (var index = 0; index < predicates.Count; index++)
+        {
+            filterParametersInOrder[index] = new QuerySqlParameter(
+                QuerySqlParameterRole.Filter,
+                predicates[index].ParameterName
+            );
+        }
+
+        return filterParametersInOrder;
+    }
+
+    /// <summary>
+    /// Builds deterministic page-query parameter metadata in canonical plan order.
+    /// </summary>
+    private static IReadOnlyList<QuerySqlParameter> BuildPageParametersInOrder(
+        IReadOnlyList<QuerySqlParameter> filterParametersInOrder,
         string offsetParameterName,
         string limitParameterName
     )
     {
-        var parametersInOrder = new List<QuerySqlParameter>(predicates.Count + 2);
+        var pageParametersInOrder = new List<QuerySqlParameter>(filterParametersInOrder.Count + 2);
+        pageParametersInOrder.AddRange(filterParametersInOrder);
+        pageParametersInOrder.Add(new QuerySqlParameter(QuerySqlParameterRole.Offset, offsetParameterName));
+        pageParametersInOrder.Add(new QuerySqlParameter(QuerySqlParameterRole.Limit, limitParameterName));
 
-        foreach (var predicate in predicates)
-        {
-            parametersInOrder.Add(
-                new QuerySqlParameter(QuerySqlParameterRole.Filter, predicate.ParameterName)
-            );
-        }
+        return pageParametersInOrder;
+    }
 
-        parametersInOrder.Add(new QuerySqlParameter(QuerySqlParameterRole.Offset, offsetParameterName));
-        parametersInOrder.Add(new QuerySqlParameter(QuerySqlParameterRole.Limit, limitParameterName));
-
-        return parametersInOrder;
+    /// <summary>
+    /// Builds deterministic total-count query parameter metadata in canonical plan order (filters only).
+    /// </summary>
+    private static IReadOnlyList<QuerySqlParameter> BuildTotalCountParametersInOrder(
+        IReadOnlyList<QuerySqlParameter> filterParametersInOrder
+    )
+    {
+        return [.. filterParametersInOrder];
     }
 
     /// <summary>

@@ -186,10 +186,10 @@ public class Given_PageDocumentIdSqlCompiler
         secondPredicateIndex.Should().BeGreaterThan(firstPredicateIndex);
         thirdPredicateIndex.Should().BeGreaterThan(secondPredicateIndex);
 
-        plan.ParametersInOrder.Select(parameter => parameter.ParameterName)
+        plan.PageParametersInOrder.Select(parameter => parameter.ParameterName)
             .Should()
             .Equal("mParam", "zParam", "aParam", "offset", "limit");
-        plan.ParametersInOrder.Select(parameter => parameter.Role)
+        plan.PageParametersInOrder.Select(parameter => parameter.Role)
             .Should()
             .Equal(
                 QuerySqlParameterRole.Filter,
@@ -276,7 +276,10 @@ public class Given_PageDocumentIdSqlCompiler
 
         second.PageDocumentIdSql.Should().Be(first.PageDocumentIdSql);
         second.TotalCountSql.Should().Be(first.TotalCountSql);
-        second.ParametersInOrder.Should().Equal(first.ParametersInOrder);
+        second.PageParametersInOrder.Should().Equal(first.PageParametersInOrder);
+        second.TotalCountParametersInOrder.Should().NotBeNull();
+        first.TotalCountParametersInOrder.Should().NotBeNull();
+        second.TotalCountParametersInOrder!.Value.Should().Equal(first.TotalCountParametersInOrder!.Value);
     }
 
     [Test]
@@ -345,7 +348,10 @@ public class Given_PageDocumentIdSqlCompiler
 
         second.PageDocumentIdSql.Should().Be(first.PageDocumentIdSql);
         second.TotalCountSql.Should().Be(first.TotalCountSql);
-        second.ParametersInOrder.Should().Equal(first.ParametersInOrder);
+        second.PageParametersInOrder.Should().Equal(first.PageParametersInOrder);
+        second.TotalCountParametersInOrder.Should().NotBeNull();
+        first.TotalCountParametersInOrder.Should().NotBeNull();
+        second.TotalCountParametersInOrder!.Value.Should().Equal(first.TotalCountParametersInOrder!.Value);
     }
 
     [Test]
@@ -531,10 +537,13 @@ public class Given_PageDocumentIdSqlCompiler
 
         plan.PageDocumentIdSql.Should().Contain("LIMIT @limit OFFSET @offset");
         plan.PageDocumentIdSql.Should().NotContain("OFFSET @offset LIMIT @limit");
-        plan.ParametersInOrder.Select(parameter => parameter.Role)
+        plan.PageParametersInOrder.Select(parameter => parameter.Role)
             .Should()
             .Equal(QuerySqlParameterRole.Offset, QuerySqlParameterRole.Limit);
-        plan.ParametersInOrder.Select(parameter => parameter.ParameterName).Should().Equal("offset", "limit");
+        plan.PageParametersInOrder.Select(parameter => parameter.ParameterName)
+            .Should()
+            .Equal("offset", "limit");
+        plan.TotalCountParametersInOrder.Should().BeNull();
     }
 
     [Test]
@@ -568,6 +577,7 @@ public class Given_PageDocumentIdSqlCompiler
         var plan = compiler.Compile(CreateSpec([], []));
 
         plan.TotalCountSql.Should().BeNull();
+        plan.TotalCountParametersInOrder.Should().BeNull();
     }
 
     [Test]
@@ -592,12 +602,19 @@ public class Given_PageDocumentIdSqlCompiler
         plan.TotalCountSql.Should().Contain("(r.\"SchoolId\" = @schoolId)");
         plan.TotalCountSql.Should().NotContain("@offset");
         plan.TotalCountSql.Should().NotContain("@limit");
-        plan.ParametersInOrder.Select(parameter => parameter.Role)
+        plan.PageParametersInOrder.Select(parameter => parameter.Role)
             .Should()
             .Equal(QuerySqlParameterRole.Filter, QuerySqlParameterRole.Offset, QuerySqlParameterRole.Limit);
-        plan.ParametersInOrder.Select(parameter => parameter.ParameterName)
+        plan.PageParametersInOrder.Select(parameter => parameter.ParameterName)
             .Should()
             .Equal("schoolId", "offset", "limit");
+        plan.TotalCountParametersInOrder.Should().NotBeNull();
+        plan.TotalCountParametersInOrder!.Value.Select(parameter => parameter.Role)
+            .Should()
+            .Equal(QuerySqlParameterRole.Filter);
+        plan.TotalCountParametersInOrder!.Value.Select(parameter => parameter.ParameterName)
+            .Should()
+            .Equal("schoolId");
     }
 
     [Test]
