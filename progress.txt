@@ -57,3 +57,8 @@ Task completed: Determinism - thin-slice runtime compilation + manifest stabilit
 Decisions/reasoning: Added fixture-builder permutation flag to reverse resource schema input order; determinism tests assert byte-identical manifest across repeated compilation and across reversed effective-schema resource input order; extracted per-mapping-set SQL-hash + write-binding fingerprint data from emitted manifest and compared by fixed mapping-set key.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ThinSliceFixtureModelSetBuilder.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ThinSliceRuntimeCompilationDeterminismTests.cs; tasks.json; progress.txt
 Blockers/notes next iteration: none. All story tasks complete.
+
+Task completed: Contracts - freeze MappingSet dictionaries for cache immutability (DMS-1028 story reference: reference/design/backend-redesign/epics/15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md)
+Decisions/reasoning: Froze all compiled mapping-set dictionaries in MappingSetCompiler via ToFrozenDictionary to prevent mutable backing stores from escaping cache; test asserts frozen types, non-Dictionary backing, and NotSupportedException on mutation attempts via IDictionary casts.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetCompilerTests.cs; tasks.json; progress.txt
+Blockers/notes next iteration: none. Next: Caching task can evict faulted entries to support retry after compile failures.

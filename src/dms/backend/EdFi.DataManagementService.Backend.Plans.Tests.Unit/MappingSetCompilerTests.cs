@@ -3,7 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Frozen;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 using FluentAssertions;
 using NUnit.Framework;
@@ -63,6 +65,58 @@ public class Given_MappingSetCompiler
 
             mappingSet.ResourceKeyById[resourceKeyEntry.ResourceKeyId].Should().Be(resourceKeyEntry);
         }
+    }
+
+    [Test]
+    public void It_should_materialize_mapping_set_dictionaries_as_frozen_collections()
+    {
+        var fixture = CreateMixedResourceFixture(SqlDialect.Pgsql);
+        var mappingSet = new MappingSetCompiler().Compile(fixture.ModelSet);
+
+        mappingSet
+            .WritePlansByResource.Should()
+            .BeAssignableTo<FrozenDictionary<QualifiedResourceName, ResourceWritePlan>>();
+        mappingSet
+            .ReadPlansByResource.Should()
+            .BeAssignableTo<FrozenDictionary<QualifiedResourceName, ResourceReadPlan>>();
+        mappingSet
+            .ResourceKeyIdByResource.Should()
+            .BeAssignableTo<FrozenDictionary<QualifiedResourceName, short>>();
+        mappingSet.ResourceKeyById.Should().BeAssignableTo<FrozenDictionary<short, ResourceKeyEntry>>();
+
+        mappingSet
+            .WritePlansByResource.Should()
+            .NotBeAssignableTo<Dictionary<QualifiedResourceName, ResourceWritePlan>>();
+        mappingSet
+            .ReadPlansByResource.Should()
+            .NotBeAssignableTo<Dictionary<QualifiedResourceName, ResourceReadPlan>>();
+        mappingSet
+            .ResourceKeyIdByResource.Should()
+            .NotBeAssignableTo<Dictionary<QualifiedResourceName, short>>();
+        mappingSet.ResourceKeyById.Should().NotBeAssignableTo<Dictionary<short, ResourceKeyEntry>>();
+
+        var writePlans =
+            (IDictionary<QualifiedResourceName, ResourceWritePlan>)mappingSet.WritePlansByResource;
+        var readPlans = (IDictionary<QualifiedResourceName, ResourceReadPlan>)mappingSet.ReadPlansByResource;
+        var resourceKeyIds = (IDictionary<QualifiedResourceName, short>)mappingSet.ResourceKeyIdByResource;
+        var resourceKeys = (IDictionary<short, ResourceKeyEntry>)mappingSet.ResourceKeyById;
+
+        var supportedResource = fixture.SupportedResource;
+        var nonRootOnlyResource = fixture.NonRootOnlyResource;
+        var supportedWritePlan = mappingSet.WritePlansByResource[supportedResource];
+        var supportedReadPlan = mappingSet.ReadPlansByResource[supportedResource];
+        var supportedResourceKeyId = mappingSet.ResourceKeyIdByResource[supportedResource];
+        var supportedResourceKey = mappingSet.ResourceKeyById[supportedResourceKeyId];
+
+        var actAddWritePlan = () => writePlans.Add(nonRootOnlyResource, supportedWritePlan);
+        var actAddReadPlan = () => readPlans.Add(nonRootOnlyResource, supportedReadPlan);
+        var actAddResourceKeyId = () => resourceKeyIds.Add(nonRootOnlyResource, supportedResourceKeyId);
+        var actAddResourceKey = () => resourceKeys.Add(short.MaxValue, supportedResourceKey);
+
+        actAddWritePlan.Should().Throw<NotSupportedException>();
+        actAddReadPlan.Should().Throw<NotSupportedException>();
+        actAddResourceKeyId.Should().Throw<NotSupportedException>();
+        actAddResourceKey.Should().Throw<NotSupportedException>();
     }
 
     private static MappingSetCompilerFixture CreateMixedResourceFixture(SqlDialect dialect)

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Frozen;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 
@@ -80,10 +81,10 @@ public sealed class MappingSetCompiler
         return new MappingSet(
             Key: key,
             Model: modelSet,
-            WritePlansByResource: writePlansByResource,
-            ReadPlansByResource: readPlansByResource,
-            ResourceKeyIdByResource: resourceKeyIdByResource,
-            ResourceKeyById: resourceKeyById
+            WritePlansByResource: writePlansByResource.ToFrozenDictionary(),
+            ReadPlansByResource: readPlansByResource.ToFrozenDictionary(),
+            ResourceKeyIdByResource: resourceKeyIdByResource.ToFrozenDictionary(),
+            ResourceKeyById: resourceKeyById.ToFrozenDictionary()
         );
     }
 }

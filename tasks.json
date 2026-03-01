@@ -104,5 +104,81 @@
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
     "completed": true
+  },
+  {
+    "category": "Caching",
+    "description": "Prevent permanent cache poisoning on compile failures in `MappingSetCache`. Acceptance: (1) when the `compileAsync` task faults for a key, the cache entry is evicted so a subsequent `GetOrCreateAsync(key)` retries compilation; (2) concurrent callers still share a single in-flight compilation per key; (3) cancellation still cancels waiting only and does not cancel compilation; (4) update unit tests to prove retry-on-fault behavior (and remove/replace the existing test that asserts faults are cached forever).",
+    "steps-to-verify": [
+      "Add/adjust unit tests in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetCacheTests.cs` to assert: fault -> evict -> retry compiles again (invocation count increments).",
+      "Run: dotnet test --no-build ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj",
+      "Run: dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Contracts",
+    "description": "Freeze `MappingSet` dictionary payloads to make cached mapping sets immutable to consumers. Acceptance: (1) `WritePlansByResource`, `ReadPlansByResource`, `ResourceKeyIdByResource`, and `ResourceKeyById` are materialized as immutable/frozen dictionaries (`FrozenDictionary` or `ImmutableDictionary`) and are not backed by mutable `Dictionary<,>` instances; (2) attempts to mutate these collections via casts are not possible; (3) existing mapping-set compiler behavior and determinism tests remain unchanged.",
+    "steps-to-verify": [
+      "Update `src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetCompiler.cs` to freeze dictionaries before constructing `MappingSet`.",
+      "Add a unit test asserting the dictionaries are not `Dictionary<,>` and cannot be mutated (or prove immutability via type checks and attempted casts).",
+      "Run: dotnet test --no-build ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Read Compiler",
+    "description": "Align root-only hydration ordering with keyset ordering by ensuring `SelectByKeysetSql` orders by the root DocumentId key column first. Acceptance: (1) `RootOnlyReadPlanCompiler` emits `ORDER BY` with the resolved root document-id key column as the first term, regardless of the order of `DbTableModel.Key.Columns`; (2) remaining key columns (excluding the DocumentId key column) follow in the original key-column order; (3) output remains canonicalized and deterministic; (4) add a regression unit test where the key-column order is not DocumentId-first.",
+    "steps-to-verify": [
+      "Add a unit test in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RootOnlyReadPlanCompilerTests.cs` constructing a root table whose key columns are ordered (non-DocumentId, DocumentId) and asserting the emitted SQL orders by DocumentId first.",
+      "Run: dotnet test --no-build ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Query Compiler",
+    "description": "Avoid requiring executors/drivers to bind unused paging parameters when executing `TotalCountSql`. Acceptance: (1) update `PageDocumentIdSqlPlan` contract to include separate parameter inventories: `PageParametersInOrder` (filters + offset + limit) and `TotalCountParametersInOrder` (filters only, null when `TotalCountSql` is null); (2) update `PageDocumentIdSqlCompiler` to populate both deterministically; (3) update unit tests and any golden fixtures/manifests that snapshot query-plan parameter metadata.",
+    "steps-to-verify": [
+      "Update contracts in `src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/QueryPlanContracts.cs` and compiler logic/tests in `src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs`.",
+      "Update unit tests in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PageDocumentIdSqlCompilerTests.cs` and any fixtures that snapshot query parameters.",
+      "Run: dotnet test --no-build ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactor",
+    "description": "Centralize thin-slice write-plan support evaluation to prevent drift between compilation omission logic and lookup error reporting. Acceptance: (1) factor root-only + key-unification/precomputed guardrail checks into a shared helper (single source of truth); (2) both `RootOnlyWritePlanCompiler.IsSupported/Compile` and `MappingSetLookupExtensions.GetWritePlanOrThrow` use the helper; (3) actionable exception messages remain deterministic and still reference the correct next-story identifiers; (4) remove duplicated `CountStoredNonKeyColumnsWithoutSourceJsonPath` logic.",
+    "steps-to-verify": [
+      "Refactor `src/dms/backend/EdFi.DataManagementService.Backend.Plans/RootOnlyWritePlanCompiler.cs` and `src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetLookupExtensions.cs` to share the same support-check implementation.",
+      "Run: dotnet test --no-build ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Test Fixtures",
+    "description": "Reduce duplication in plan/manifest golden emitters (dialect token mapping and normalized SHA256 helpers) to prevent drift and simplify maintenance. Acceptance: (1) introduce shared helpers for `ToManifestDialect(...)` and `ComputeNormalizedSha256(...)` used by `ThinSliceMappingSetManifestJsonEmitter` and plan-contract manifest emitter; (2) golden outputs remain byte-for-byte identical (no fixture updates required); (3) unit tests still pass without changes to expected files.",
+    "steps-to-verify": [
+      "Refactor emitters in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ThinSliceMappingSetManifestJsonEmitter.cs` and `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanContractsManifestGoldenFixtureTests.cs` (and any related helpers) to reuse shared helpers.",
+      "Run: dotnet test --no-build ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactor",
+    "description": "Remove duplicated immutable-collection cloning helpers used by plan DTOs and contracts. Acceptance: (1) eliminate the test-only `NormalizedPlanDtoCollectionCloner` duplication by either inlining `[.. values]` at call sites or introducing a single shared helper within the test project; (2) no behavior changes (ordering and defensive-copy semantics remain identical); (3) all tests still pass.",
+    "steps-to-verify": [
+      "Refactor `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractDtos.cs` to remove `NormalizedPlanDtoCollectionCloner` duplication.",
+      "Run: dotnet test --no-build ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Contracts",
+    "description": "Harden the public AOT payload entry points to avoid accidental runtime traps. Acceptance: (1) `MappingSet.FromPayload(MappingPackPayload)` throws a deterministic, actionable `NotSupportedException` (or equivalent) with a message that clearly states AOT mapping-pack decode is not implemented yet and references the owning design/epic story; (2) optionally mark the method with `[Obsolete]` to surface a compile-time warning for accidental use; (3) add a unit test asserting exception type and message.",
+    "steps-to-verify": [
+      "Update `src/dms/backend/EdFi.DataManagementService.Backend.External/MappingSetContracts.cs` to throw a more actionable exception and (optionally) add `[Obsolete]`.",
+      "Add a unit test in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ExternalPlanContractsTests.cs` (or a new test) verifying the exception type and message.",
+      "Run: dotnet test --no-build ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
   }
 ]
