@@ -59,7 +59,7 @@
       "Add unit tests covering compile-once under concurrency, fault poisoning, and cancel-wait semantics (canceled caller stops waiting but compilation continues and later callers receive the cached result).",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Lookup API",
