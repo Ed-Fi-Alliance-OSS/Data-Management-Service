@@ -1,0 +1,314 @@
+{
+  "mapping_sets": [
+    {
+      "mapping_set_key": {
+        "effective_schema_hash": "8530e8748a0101d8132a3908b6eb4cc200e7dfe546c8d747f8251b78fcda3574",
+        "dialect": "mssql",
+        "relational_mapping_version": "1.0.0"
+      },
+      "resources": [
+        {
+          "resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "School"
+          },
+          "write_plan": {
+            "insert_sql_sha256": "0cb9a236aabc8c50e9f3ce930b38dffafc9c55a9291215a9de8fbccc6f76632a",
+            "update_sql_sha256": "1107b4888af31afc2130e27401740eb08fb7a318f137e87b65f6aec6983b4c11",
+            "column_bindings_in_order": [
+              {
+                "column_name": "DocumentId",
+                "column_kind": "parent_key_part",
+                "parameter_name": "documentId",
+                "write_value_source": {
+                  "kind": "document_id"
+                }
+              },
+              {
+                "column_name": "NameOfInstitution",
+                "column_kind": "scalar",
+                "parameter_name": "nameOfInstitution",
+                "write_value_source": {
+                  "kind": "scalar",
+                  "relative_path": "$.nameOfInstitution",
+                  "scalar_kind": "string"
+                }
+              },
+              {
+                "column_name": "SchoolId",
+                "column_kind": "scalar",
+                "parameter_name": "schoolId",
+                "write_value_source": {
+                  "kind": "scalar",
+                  "relative_path": "$.schoolId",
+                  "scalar_kind": "int32"
+                }
+              }
+            ]
+          },
+          "read_plan": {
+            "select_by_keyset_sql_sha256": "2bd04a4cbec4f06d6a3b17c12019c9775b8dd08a56711baa4c774d660d6cc470",
+            "select_list_columns_in_order": [
+              "DocumentId",
+              "NameOfInstitution",
+              "SchoolId"
+            ],
+            "order_by_key_columns_in_order": [
+              "DocumentId"
+            ],
+            "keyset_table": {
+              "temp_table_name": "#page",
+              "document_id_column_name": "DocumentId"
+            }
+          }
+        },
+        {
+          "resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "Student"
+          },
+          "write_plan": {
+            "insert_sql_sha256": "c83f94591a5134944a1e5d27b08250dbd97bcd032a76e05b18906b83252c0d24",
+            "update_sql_sha256": "70b53f7165d85cfc1cfa718138844c771dd29e1b91591a9115fae764c674be0f",
+            "column_bindings_in_order": [
+              {
+                "column_name": "DocumentId",
+                "column_kind": "parent_key_part",
+                "parameter_name": "documentId",
+                "write_value_source": {
+                  "kind": "document_id"
+                }
+              },
+              {
+                "column_name": "School_DocumentId",
+                "column_kind": "document_fk",
+                "parameter_name": "school_DocumentId",
+                "write_value_source": {
+                  "kind": "document_reference",
+                  "binding_index": 0
+                }
+              },
+              {
+                "column_name": "School_SchoolId",
+                "column_kind": "scalar",
+                "parameter_name": "school_SchoolId",
+                "write_value_source": {
+                  "kind": "scalar",
+                  "relative_path": "$.schoolReference.schoolId",
+                  "scalar_kind": "int32"
+                }
+              },
+              {
+                "column_name": "AcademicSubjectDescriptor_DescriptorId",
+                "column_kind": "descriptor_fk",
+                "parameter_name": "academicSubjectDescriptor_DescriptorId",
+                "write_value_source": {
+                  "kind": "descriptor_reference",
+                  "descriptor_resource": {
+                    "project_name": "Ed-Fi",
+                    "resource_name": "AcademicSubjectDescriptor"
+                  },
+                  "relative_path": "$.academicSubjectDescriptor",
+                  "descriptor_value_path": "$.academicSubjectDescriptor"
+                }
+              },
+              {
+                "column_name": "FirstName",
+                "column_kind": "scalar",
+                "parameter_name": "firstName",
+                "write_value_source": {
+                  "kind": "scalar",
+                  "relative_path": "$.firstName",
+                  "scalar_kind": "string"
+                }
+              },
+              {
+                "column_name": "StudentUniqueId",
+                "column_kind": "scalar",
+                "parameter_name": "studentUniqueId",
+                "write_value_source": {
+                  "kind": "scalar",
+                  "relative_path": "$.studentUniqueId",
+                  "scalar_kind": "string"
+                }
+              }
+            ]
+          },
+          "read_plan": {
+            "select_by_keyset_sql_sha256": "9dac891350e38f4250b20a9292055b48628acb7148e4b170c6ca84cc2cc74731",
+            "select_list_columns_in_order": [
+              "DocumentId",
+              "School_DocumentId",
+              "School_SchoolId",
+              "AcademicSubjectDescriptor_DescriptorId",
+              "FirstName",
+              "StudentUniqueId"
+            ],
+            "order_by_key_columns_in_order": [
+              "DocumentId"
+            ],
+            "keyset_table": {
+              "temp_table_name": "#page",
+              "document_id_column_name": "DocumentId"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "mapping_set_key": {
+        "effective_schema_hash": "8530e8748a0101d8132a3908b6eb4cc200e7dfe546c8d747f8251b78fcda3574",
+        "dialect": "pgsql",
+        "relational_mapping_version": "1.0.0"
+      },
+      "resources": [
+        {
+          "resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "School"
+          },
+          "write_plan": {
+            "insert_sql_sha256": "d73fde7b11668b5e1b3235a75f61f4b9a09dea41ce51fcd407fe80a7c633b56b",
+            "update_sql_sha256": "5daa822bc2283e7974c9bc6a6dc488e5854a239b8ee8dea98afc9eacbee493fb",
+            "column_bindings_in_order": [
+              {
+                "column_name": "DocumentId",
+                "column_kind": "parent_key_part",
+                "parameter_name": "documentId",
+                "write_value_source": {
+                  "kind": "document_id"
+                }
+              },
+              {
+                "column_name": "NameOfInstitution",
+                "column_kind": "scalar",
+                "parameter_name": "nameOfInstitution",
+                "write_value_source": {
+                  "kind": "scalar",
+                  "relative_path": "$.nameOfInstitution",
+                  "scalar_kind": "string"
+                }
+              },
+              {
+                "column_name": "SchoolId",
+                "column_kind": "scalar",
+                "parameter_name": "schoolId",
+                "write_value_source": {
+                  "kind": "scalar",
+                  "relative_path": "$.schoolId",
+                  "scalar_kind": "int32"
+                }
+              }
+            ]
+          },
+          "read_plan": {
+            "select_by_keyset_sql_sha256": "c0425d4a4d94113a56e267474f6aa499126184f824b8ccb3b6f673d6392cc45b",
+            "select_list_columns_in_order": [
+              "DocumentId",
+              "NameOfInstitution",
+              "SchoolId"
+            ],
+            "order_by_key_columns_in_order": [
+              "DocumentId"
+            ],
+            "keyset_table": {
+              "temp_table_name": "page",
+              "document_id_column_name": "DocumentId"
+            }
+          }
+        },
+        {
+          "resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "Student"
+          },
+          "write_plan": {
+            "insert_sql_sha256": "81102982e5ba2f6997edfb52f476cbc81119d13f45de1ba28195176da76c7835",
+            "update_sql_sha256": "ffc0dbfba85f126f58bddf1c96ee3f0596a9b95b2dd9152d9a788ee1375e1c53",
+            "column_bindings_in_order": [
+              {
+                "column_name": "DocumentId",
+                "column_kind": "parent_key_part",
+                "parameter_name": "documentId",
+                "write_value_source": {
+                  "kind": "document_id"
+                }
+              },
+              {
+                "column_name": "School_DocumentId",
+                "column_kind": "document_fk",
+                "parameter_name": "school_DocumentId",
+                "write_value_source": {
+                  "kind": "document_reference",
+                  "binding_index": 0
+                }
+              },
+              {
+                "column_name": "School_SchoolId",
+                "column_kind": "scalar",
+                "parameter_name": "school_SchoolId",
+                "write_value_source": {
+                  "kind": "scalar",
+                  "relative_path": "$.schoolReference.schoolId",
+                  "scalar_kind": "int32"
+                }
+              },
+              {
+                "column_name": "AcademicSubjectDescriptor_DescriptorId",
+                "column_kind": "descriptor_fk",
+                "parameter_name": "academicSubjectDescriptor_DescriptorId",
+                "write_value_source": {
+                  "kind": "descriptor_reference",
+                  "descriptor_resource": {
+                    "project_name": "Ed-Fi",
+                    "resource_name": "AcademicSubjectDescriptor"
+                  },
+                  "relative_path": "$.academicSubjectDescriptor",
+                  "descriptor_value_path": "$.academicSubjectDescriptor"
+                }
+              },
+              {
+                "column_name": "FirstName",
+                "column_kind": "scalar",
+                "parameter_name": "firstName",
+                "write_value_source": {
+                  "kind": "scalar",
+                  "relative_path": "$.firstName",
+                  "scalar_kind": "string"
+                }
+              },
+              {
+                "column_name": "StudentUniqueId",
+                "column_kind": "scalar",
+                "parameter_name": "studentUniqueId",
+                "write_value_source": {
+                  "kind": "scalar",
+                  "relative_path": "$.studentUniqueId",
+                  "scalar_kind": "string"
+                }
+              }
+            ]
+          },
+          "read_plan": {
+            "select_by_keyset_sql_sha256": "6a48ddc44d79a508117d24c251f2390fbef7d5a7abb6bd7dca0d4476d4b34753",
+            "select_list_columns_in_order": [
+              "DocumentId",
+              "School_DocumentId",
+              "School_SchoolId",
+              "AcademicSubjectDescriptor_DescriptorId",
+              "FirstName",
+              "StudentUniqueId"
+            ],
+            "order_by_key_columns_in_order": [
+              "DocumentId"
+            ],
+            "keyset_table": {
+              "temp_table_name": "page",
+              "document_id_column_name": "DocumentId"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
