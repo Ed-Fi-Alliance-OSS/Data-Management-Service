@@ -77,7 +77,7 @@
       "Add a unit test that derives the model set from the fixture and asserts the supported vs unsupported resource classifications above.",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Manifest",
