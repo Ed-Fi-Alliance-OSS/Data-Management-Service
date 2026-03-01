@@ -12,3 +12,8 @@ Task completed: Write Compiler - deterministic root-table UpdateSql emission (DM
 Decisions/reasoning: Added SimpleUpdateSqlEmitter for canonical UPDATE SQL; SET list uses stored writable non-key bindings in model order; WHERE uses key columns in key order mapped to existing binding parameter names (no extra where params); emit UpdateSql null when no stored writable non-key columns.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/SimpleUpdateSqlEmitter.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/RootOnlyWritePlanCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RootOnlyWritePlanCompilerTests.cs; tasks.json; progress.txt
 Blockers/notes next iteration: none. Next: key-unification guardrails task can gate unsupported write compilation before mapping-set compiler work.
+
+Task completed: Write Compiler - key-unification guardrails for thin-slice write support (DMS-1028 story reference: reference/design/backend-redesign/epics/15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md)
+Decisions/reasoning: Expanded RootOnlyWritePlanCompiler.IsSupported to gate key-unification roots and stored non-key columns lacking SourceJsonPath; added TryCompile for omission flow so mapping-set loops can skip unsupported write plans without throwing while read plan compilation proceeds.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/RootOnlyWritePlanCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RootOnlyWritePlanCompilerTests.cs; tasks.json; progress.txt
+Blockers/notes next iteration: read-plan compiler still pending; mapping-set compiler can now call TryCompile/IsSupported to omit unsupported write plans deterministically.

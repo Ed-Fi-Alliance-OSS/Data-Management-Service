@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics.CodeAnalysis;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.RelationalModel.Naming;
@@ -25,8 +26,42 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
     {
         ArgumentNullException.ThrowIfNull(resourceModel);
 
-        return resourceModel.StorageKind == ResourceStorageKind.RelationalTables
-            && resourceModel.TablesInDependencyOrder.Count == 1;
+        if (
+            resourceModel.StorageKind != ResourceStorageKind.RelationalTables
+            || resourceModel.TablesInDependencyOrder.Count != 1
+        )
+        {
+            return false;
+        }
+
+        var rootTable = resourceModel.Root;
+
+        if (rootTable.KeyUnificationClasses.Count > 0)
+        {
+            return false;
+        }
+
+        return CountStoredNonKeyColumnsWithoutSourceJsonPath(rootTable) == 0;
+    }
+
+    /// <summary>
+    /// Attempts to compile a root-only write plan, returning <see langword="false"/> when unsupported.
+    /// </summary>
+    public bool TryCompile(
+        RelationalResourceModel resourceModel,
+        [NotNullWhen(true)] out ResourceWritePlan? writePlan
+    )
+    {
+        ArgumentNullException.ThrowIfNull(resourceModel);
+
+        if (!IsSupported(resourceModel))
+        {
+            writePlan = null;
+            return false;
+        }
+
+        writePlan = Compile(resourceModel);
+        return true;
     }
 
     /// <summary>
@@ -39,11 +74,15 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
 
         if (!IsSupported(resourceModel))
         {
+            var unsupportedRootTable = resourceModel.Root;
+
             throw new NotSupportedException(
                 "Only root-only relational-table resources are supported. "
                     + $"Resource: {resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}, "
                     + $"StorageKind: {resourceModel.StorageKind}, "
-                    + $"TableCount: {resourceModel.TablesInDependencyOrder.Count}."
+                    + $"TableCount: {resourceModel.TablesInDependencyOrder.Count}, "
+                    + $"RootKeyUnificationClassCount: {unsupportedRootTable.KeyUnificationClasses.Count}, "
+                    + $"RootStoredNonKeyColumnsWithoutSourceJsonPath: {CountStoredNonKeyColumnsWithoutSourceJsonPath(unsupportedRootTable)}."
             );
         }
 
@@ -302,5 +341,16 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
         }
 
         return new WriteValueSource.Scalar(column.SourceJsonPath.Value, column.ScalarType);
+    }
+
+    private static int CountStoredNonKeyColumnsWithoutSourceJsonPath(DbTableModel tableModel)
+    {
+        var keyColumns = tableModel.Key.Columns.Select(static column => column.ColumnName).ToHashSet();
+
+        return tableModel.Columns.Count(column =>
+            column.Storage is ColumnStorage.Stored
+            && !keyColumns.Contains(column.ColumnName)
+            && column.SourceJsonPath is null
+        );
     }
 }

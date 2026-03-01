@@ -167,6 +167,59 @@ public class Given_RootOnlyWritePlanCompiler
     }
 
     [Test]
+    public void It_should_mark_resources_with_root_key_unification_classes_as_unsupported_for_write_compilation()
+    {
+        var keyUnificationModel = CreateRootOnlyModelWithKeyUnificationClass();
+        var compiler = new RootOnlyWritePlanCompiler(SqlDialect.Pgsql);
+
+        RootOnlyWritePlanCompiler.IsSupported(keyUnificationModel).Should().BeFalse();
+
+        var wasCompiled = compiler.TryCompile(keyUnificationModel, out var writePlan);
+
+        wasCompiled.Should().BeFalse();
+        writePlan.Should().BeNull();
+    }
+
+    [Test]
+    public void It_should_mark_resources_with_precomputed_stored_non_key_columns_as_unsupported_for_write_compilation()
+    {
+        var precomputedColumnModel = CreateRootOnlyModelWithStoredPrecomputedNonKeyColumn();
+        var compiler = new RootOnlyWritePlanCompiler(SqlDialect.Pgsql);
+
+        RootOnlyWritePlanCompiler.IsSupported(precomputedColumnModel).Should().BeFalse();
+
+        var wasCompiled = compiler.TryCompile(precomputedColumnModel, out var writePlan);
+
+        wasCompiled.Should().BeFalse();
+        writePlan.Should().BeNull();
+    }
+
+    [Test]
+    public void It_should_allow_mapping_set_loop_to_omit_unsupported_write_plan_and_keep_read_plan_compilation()
+    {
+        var keyUnificationModel = CreateRootOnlyModelWithKeyUnificationClass();
+        var compiler = new RootOnlyWritePlanCompiler(SqlDialect.Pgsql);
+        var writePlansByResource = new Dictionary<QualifiedResourceName, ResourceWritePlan>();
+        var readPlansByResource = new Dictionary<QualifiedResourceName, ResourceReadPlan>();
+
+        var act = () =>
+        {
+            readPlansByResource[keyUnificationModel.Resource] = CreateRootOnlyReadPlanStub(
+                keyUnificationModel
+            );
+
+            if (compiler.TryCompile(keyUnificationModel, out var writePlan))
+            {
+                writePlansByResource[keyUnificationModel.Resource] = writePlan;
+            }
+        };
+
+        act.Should().NotThrow();
+        writePlansByResource.Should().BeEmpty();
+        readPlansByResource.Should().ContainKey(keyUnificationModel.Resource);
+    }
+
+    [Test]
     public void It_should_fail_fast_for_non_root_only_resources()
     {
         var childTable = new DbTableModel(
@@ -229,6 +282,32 @@ public class Given_RootOnlyWritePlanCompiler
         act.Should()
             .Throw<NotSupportedException>()
             .WithMessage("Only root-only relational-table resources are supported.*");
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_root_table_has_key_unification_classes()
+    {
+        var unsupportedModel = CreateRootOnlyModelWithKeyUnificationClass();
+        var act = () => new RootOnlyWritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
+
+        act.Should()
+            .Throw<NotSupportedException>()
+            .WithMessage(
+                "Only root-only relational-table resources are supported.*RootKeyUnificationClassCount: 1*"
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_root_table_has_precomputed_stored_non_key_columns()
+    {
+        var unsupportedModel = CreateRootOnlyModelWithStoredPrecomputedNonKeyColumn();
+        var act = () => new RootOnlyWritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
+
+        act.Should()
+            .Throw<NotSupportedException>()
+            .WithMessage(
+                "Only root-only relational-table resources are supported.*RootStoredNonKeyColumnsWithoutSourceJsonPath: 1*"
+            );
     }
 
     private static RelationalResourceModel CreateSupportedRootOnlyModel()
@@ -333,6 +412,67 @@ public class Given_RootOnlyWritePlanCompiler
             TablesInDependencyOrder: [rootTable],
             DocumentReferenceBindings: [],
             DescriptorEdgeSources: []
+        );
+    }
+
+    private static RelationalResourceModel CreateRootOnlyModelWithKeyUnificationClass()
+    {
+        var model = CreateSupportedRootOnlyModel();
+        var rootTable = model.Root with
+        {
+            KeyUnificationClasses =
+            [
+                new KeyUnificationClass(
+                    CanonicalColumn: new DbColumnName("SchoolYear"),
+                    MemberPathColumns: [new DbColumnName("SchoolYear"), new DbColumnName("SchoolYearAlias")]
+                ),
+            ],
+        };
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
+        };
+    }
+
+    private static RelationalResourceModel CreateRootOnlyModelWithStoredPrecomputedNonKeyColumn()
+    {
+        var model = CreateSupportedRootOnlyModel();
+        var rootTable = model.Root with
+        {
+            Columns =
+            [
+                .. model.Root.Columns,
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("CanonicalSchoolYear"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+        };
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
+        };
+    }
+
+    private static ResourceReadPlan CreateRootOnlyReadPlanStub(RelationalResourceModel resourceModel)
+    {
+        return new ResourceReadPlan(
+            Model: resourceModel,
+            KeysetTable: KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
+            TablePlansInDependencyOrder:
+            [
+                new TableReadPlan(TableModel: resourceModel.Root, SelectByKeysetSql: "SELECT 1;\n"),
+            ],
+            ReferenceIdentityProjectionPlansInDependencyOrder: [],
+            DescriptorProjectionPlansInOrder: []
         );
     }
 }
