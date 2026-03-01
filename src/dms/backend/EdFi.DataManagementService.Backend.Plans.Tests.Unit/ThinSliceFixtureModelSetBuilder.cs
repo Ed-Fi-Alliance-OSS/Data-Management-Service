@@ -20,7 +20,16 @@ internal static class ThinSliceFixtureModelSetBuilder
 
     public static DerivedRelationalModelSet Build(string fixtureRelativePath, SqlDialect dialect)
     {
-        var effectiveSchemaSet = LoadEffectiveSchemaSet(fixtureRelativePath);
+        return Build(fixtureRelativePath, dialect, reverseResourceSchemaOrder: false);
+    }
+
+    public static DerivedRelationalModelSet Build(
+        string fixtureRelativePath,
+        SqlDialect dialect,
+        bool reverseResourceSchemaOrder
+    )
+    {
+        var effectiveSchemaSet = LoadEffectiveSchemaSet(fixtureRelativePath, reverseResourceSchemaOrder);
         ISqlDialectRules dialectRules = dialect switch
         {
             SqlDialect.Pgsql => new PgsqlDialectRules(),
@@ -35,7 +44,10 @@ internal static class ThinSliceFixtureModelSetBuilder
         );
     }
 
-    private static EffectiveSchemaSet LoadEffectiveSchemaSet(string fixtureRelativePath)
+    private static EffectiveSchemaSet LoadEffectiveSchemaSet(
+        string fixtureRelativePath,
+        bool reverseResourceSchemaOrder
+    )
     {
         var fixturePath = GetFixturePath(fixtureRelativePath);
         var rootNode = JsonNode.Parse(File.ReadAllText(fixturePath));
@@ -46,7 +58,10 @@ internal static class ThinSliceFixtureModelSetBuilder
         }
 
         var apiSchemaVersion = RequireString(root, "apiSchemaVersion");
-        var projectSchema = RequireObject(root["projectSchema"], "projectSchema");
+        var projectSchema = PrepareProjectSchema(
+            RequireObject(root["projectSchema"], "projectSchema"),
+            reverseResourceSchemaOrder
+        );
         var projectEndpointName = RequireString(projectSchema, "projectEndpointName");
         var projectName = RequireString(projectSchema, "projectName");
         var projectVersion = RequireString(projectSchema, "projectVersion");
@@ -60,7 +75,7 @@ internal static class ThinSliceFixtureModelSetBuilder
             projectName,
             projectVersion,
             false,
-            (JsonObject)projectSchema.DeepClone()
+            projectSchema
         );
 
         var schemaInfo = new EffectiveSchemaInfo(
@@ -83,6 +98,35 @@ internal static class ThinSliceFixtureModelSetBuilder
         );
 
         return new EffectiveSchemaSet(schemaInfo, [effectiveProjectSchema]);
+    }
+
+    private static JsonObject PrepareProjectSchema(JsonObject projectSchema, bool reverseResourceSchemaOrder)
+    {
+        var schemaClone = (JsonObject)projectSchema.DeepClone();
+
+        if (!reverseResourceSchemaOrder)
+        {
+            return schemaClone;
+        }
+
+        var resourceSchemas = RequireObject(schemaClone["resourceSchemas"], "projectSchema.resourceSchemas");
+        JsonObject reversedResourceSchemas = [];
+
+        foreach (var entry in resourceSchemas.Reverse())
+        {
+            if (entry.Value is null)
+            {
+                throw new InvalidOperationException(
+                    "Expected projectSchema.resourceSchemas entries to be non-null, invalid ApiSchema."
+                );
+            }
+
+            reversedResourceSchemas.Add(entry.Key, entry.Value.DeepClone());
+        }
+
+        schemaClone["resourceSchemas"] = reversedResourceSchemas;
+
+        return schemaClone;
     }
 
     private static string GetFixturePath(string fixtureRelativePath)

@@ -52,3 +52,8 @@ Task completed: Golden Tests - mappingset.manifest.json fixture diff test (DMS-1
 Decisions/reasoning: Reused established golden harness (expected/actual + git --no-index diff + UPDATE_GOLDENS gate) to keep diagnostics consistent; one expected file contains both pgsql+mssql snapshots emitted from story fixture via MappingSetCompiler + ThinSliceMappingSetManifestJsonEmitter.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ThinSliceMappingSetManifestGoldenFixtureTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Fixtures/runtime-plan-compilation/minimal/expected/mappingset.manifest.json; tasks.json; progress.txt
 Blockers/notes next iteration: none. Next: Determinism task can assert byte-for-byte stability across repeated compilation and permuted effective-schema input ordering.
+
+Task completed: Determinism - thin-slice runtime compilation + manifest stability tests (DMS-1028 story reference: reference/design/backend-redesign/epics/15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md)
+Decisions/reasoning: Added fixture-builder permutation flag to reverse resource schema input order; determinism tests assert byte-identical manifest across repeated compilation and across reversed effective-schema resource input order; extracted per-mapping-set SQL-hash + write-binding fingerprint data from emitted manifest and compared by fixed mapping-set key.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ThinSliceFixtureModelSetBuilder.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ThinSliceRuntimeCompilationDeterminismTests.cs; tasks.json; progress.txt
+Blockers/notes next iteration: none. All story tasks complete.
