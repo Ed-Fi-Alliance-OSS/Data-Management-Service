@@ -41,7 +41,7 @@
       "Add unit tests validating SQL shape, aliasing, column ordering, and keyset join correctness for pgsql + mssql.",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "MappingSet Compiler",
