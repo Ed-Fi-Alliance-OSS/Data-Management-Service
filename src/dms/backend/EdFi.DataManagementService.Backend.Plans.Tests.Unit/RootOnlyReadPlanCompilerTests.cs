@@ -87,6 +87,28 @@ public class Given_RootOnlyReadPlanCompiler
     }
 
     [Test]
+    public void It_should_order_by_document_id_first_even_when_model_key_order_is_not_document_id_first()
+    {
+        var modelWithNonDocumentIdFirstKeyOrder = CreateRootOnlyModelWithNonDocumentIdFirstKeyOrder();
+
+        var readPlan = new RootOnlyReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            modelWithNonDocumentIdFirstKeyOrder
+        );
+
+        readPlan
+            .TablePlansInDependencyOrder.Single()
+            .SelectByKeysetSql.Should()
+            .Contain(
+                """
+                ORDER BY
+                    t0."DocumentId" ASC,
+                    t0."SchoolYear" ASC
+                ;
+                """
+            );
+    }
+
+    [Test]
     public void It_should_mark_non_root_only_resources_as_unsupported()
     {
         var childTable = new DbTableModel(
@@ -272,6 +294,28 @@ public class Given_RootOnlyReadPlanCompiler
             Key = new TableKey(
                 ConstraintName: "PK_Student",
                 Columns: [new DbKeyColumn(new DbColumnName("SchoolYear"), ColumnKind.Scalar)]
+            ),
+        };
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
+        };
+    }
+
+    private static RelationalResourceModel CreateRootOnlyModelWithNonDocumentIdFirstKeyOrder()
+    {
+        var model = CreateSupportedRootOnlyModel();
+        var rootTable = model.Root with
+        {
+            Key = new TableKey(
+                ConstraintName: "PK_Student",
+                Columns:
+                [
+                    new DbKeyColumn(new DbColumnName("SchoolYear"), ColumnKind.Scalar),
+                    new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart),
+                ]
             ),
         };
 

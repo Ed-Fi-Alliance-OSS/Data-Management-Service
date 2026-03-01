@@ -132,7 +132,7 @@
       "Add a unit test in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RootOnlyReadPlanCompilerTests.cs` constructing a root table whose key columns are ordered (non-DocumentId, DocumentId) and asserting the emitted SQL orders by DocumentId first.",
       "Run: dotnet test --no-build ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Query Compiler",

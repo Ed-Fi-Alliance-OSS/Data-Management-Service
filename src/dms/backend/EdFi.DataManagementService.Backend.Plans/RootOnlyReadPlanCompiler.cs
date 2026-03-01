@@ -134,15 +134,16 @@ public sealed class RootOnlyReadPlanCompiler(SqlDialect dialect)
         writer.AppendLine();
 
         writer.AppendLine("ORDER BY");
+        var orderByKeyColumns = GetOrderByKeyColumns(rootTable, rootDocumentIdKeyColumn);
 
         using (writer.Indent())
         {
-            for (var index = 0; index < rootTable.Key.Columns.Count; index++)
+            for (var index = 0; index < orderByKeyColumns.Count; index++)
             {
-                AppendQualifiedColumn(writer, tableAlias, rootTable.Key.Columns[index].ColumnName);
+                AppendQualifiedColumn(writer, tableAlias, orderByKeyColumns[index]);
                 writer.Append(" ASC");
 
-                if (index + 1 < rootTable.Key.Columns.Count)
+                if (index + 1 < orderByKeyColumns.Count)
                 {
                     writer.AppendLine(",");
                 }
@@ -179,6 +180,29 @@ public sealed class RootOnlyReadPlanCompiler(SqlDialect dialect)
             $"Cannot compile read plan for '{rootTable.Table}': expected exactly one root document-id key column but found {rootDocumentIdKeyColumns.Length}. "
                 + $"Key columns: [{keyColumnList}]."
         );
+    }
+
+    private static List<DbColumnName> GetOrderByKeyColumns(
+        DbTableModel rootTable,
+        DbColumnName rootDocumentIdKeyColumn
+    )
+    {
+        var orderByKeyColumns = new List<DbColumnName>(rootTable.Key.Columns.Count)
+        {
+            rootDocumentIdKeyColumn,
+        };
+
+        foreach (var keyColumn in rootTable.Key.Columns)
+        {
+            if (keyColumn.ColumnName == rootDocumentIdKeyColumn)
+            {
+                continue;
+            }
+
+            orderByKeyColumns.Add(keyColumn.ColumnName);
+        }
+
+        return orderByKeyColumns;
     }
 
     private static void AppendQualifiedColumn(SqlWriter writer, string tableAlias, DbColumnName columnName)

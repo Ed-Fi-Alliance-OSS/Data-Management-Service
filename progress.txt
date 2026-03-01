@@ -72,3 +72,8 @@ Task completed: Caching - evict faulted MappingSetCache entries and retry compil
 Decisions/reasoning: Replaced permanent fault-poisoning with fail-and-evict semantics; remove only the same in-flight Lazy entry via KeyValuePair TryRemove to avoid racing away newer entries; preserved single-flight concurrency and WaitAsync cancellation-only waiting semantics.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetCache.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetCacheTests.cs; tasks.json; progress.txt
 Blockers/notes next iteration: none. Next: remaining incomplete items are read-order regression, refactors, and MappingSet.FromPayload contract hardening.
+
+Task completed: Read Compiler - DocumentId-first ORDER BY for root-only keyset hydration (DMS-1028 story reference: reference/design/backend-redesign/epics/15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md)
+Decisions/reasoning: Keyset pagination aligns on DocumentId; compiler now always orders by resolved root DocumentId key column first, then remaining key columns in original key order for deterministic/stable output independent of key metadata ordering.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/RootOnlyReadPlanCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RootOnlyReadPlanCompilerTests.cs; tasks.json; progress.txt
+Blockers/notes next iteration: none. Next: highest-priority remaining work is Contracts hardening for MappingSet.FromPayload actionable failure semantics.
