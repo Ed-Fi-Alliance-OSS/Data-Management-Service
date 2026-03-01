@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Buffers;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.External;
@@ -23,7 +22,10 @@ internal static class ThinSliceMappingSetManifestJsonEmitter
 
         var orderedMappingSets = mappingSets
             .OrderBy(mappingSet => mappingSet.Key.EffectiveSchemaHash, StringComparer.Ordinal)
-            .ThenBy(mappingSet => ToManifestDialect(mappingSet.Key.Dialect), StringComparer.Ordinal)
+            .ThenBy(
+                mappingSet => PlanManifestConventions.ToManifestDialect(mappingSet.Key.Dialect),
+                StringComparer.Ordinal
+            )
             .ThenBy(mappingSet => mappingSet.Key.RelationalMappingVersion, StringComparer.Ordinal)
             .ToArray();
 
@@ -54,7 +56,7 @@ internal static class ThinSliceMappingSetManifestJsonEmitter
         writer.WritePropertyName("mapping_set_key");
         writer.WriteStartObject();
         writer.WriteString("effective_schema_hash", mappingSet.Key.EffectiveSchemaHash);
-        writer.WriteString("dialect", ToManifestDialect(mappingSet.Key.Dialect));
+        writer.WriteString("dialect", PlanManifestConventions.ToManifestDialect(mappingSet.Key.Dialect));
         writer.WriteString("relational_mapping_version", mappingSet.Key.RelationalMappingVersion);
         writer.WriteEndObject();
 
@@ -104,7 +106,10 @@ internal static class ThinSliceMappingSetManifestJsonEmitter
         var tablePlan = writePlan.TablePlansInDependencyOrder[0];
 
         writer.WriteStartObject();
-        writer.WriteString("insert_sql_sha256", ComputeNormalizedSha256(tablePlan.InsertSql));
+        writer.WriteString(
+            "insert_sql_sha256",
+            PlanManifestConventions.ComputeNormalizedSha256(tablePlan.InsertSql)
+        );
 
         if (tablePlan.UpdateSql is null)
         {
@@ -112,7 +117,10 @@ internal static class ThinSliceMappingSetManifestJsonEmitter
         }
         else
         {
-            writer.WriteString("update_sql_sha256", ComputeNormalizedSha256(tablePlan.UpdateSql));
+            writer.WriteString(
+                "update_sql_sha256",
+                PlanManifestConventions.ComputeNormalizedSha256(tablePlan.UpdateSql)
+            );
         }
 
         writer.WritePropertyName("column_bindings_in_order");
@@ -147,7 +155,7 @@ internal static class ThinSliceMappingSetManifestJsonEmitter
         writer.WriteStartObject();
         writer.WriteString(
             "select_by_keyset_sql_sha256",
-            ComputeNormalizedSha256(tablePlan.SelectByKeysetSql)
+            PlanManifestConventions.ComputeNormalizedSha256(tablePlan.SelectByKeysetSql)
         );
 
         writer.WritePropertyName("select_list_columns_in_order");
@@ -252,16 +260,6 @@ internal static class ThinSliceMappingSetManifestJsonEmitter
         writer.WriteEndObject();
     }
 
-    private static string ToManifestDialect(SqlDialect dialect)
-    {
-        return dialect switch
-        {
-            SqlDialect.Mssql => "mssql",
-            SqlDialect.Pgsql => "pgsql",
-            _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported SQL dialect."),
-        };
-    }
-
     private static string ToColumnKindToken(ColumnKind columnKind)
     {
         return columnKind switch
@@ -297,13 +295,5 @@ internal static class ThinSliceMappingSetManifestJsonEmitter
                 "Unsupported scalar kind."
             ),
         };
-    }
-
-    private static string ComputeNormalizedSha256(string sql)
-    {
-        var normalized = PlanJsonCanonicalization.NormalizeMultilineText(sql);
-        var bytes = Encoding.UTF8.GetBytes(normalized);
-
-        return Convert.ToHexStringLower(SHA256.HashData(bytes));
     }
 }

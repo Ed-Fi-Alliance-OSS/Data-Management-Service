@@ -160,7 +160,7 @@
       "Refactor emitters in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ThinSliceMappingSetManifestJsonEmitter.cs` and `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/PlanContractsManifestGoldenFixtureTests.cs` (and any related helpers) to reuse shared helpers.",
       "Run: dotnet test --no-build ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Refactor",

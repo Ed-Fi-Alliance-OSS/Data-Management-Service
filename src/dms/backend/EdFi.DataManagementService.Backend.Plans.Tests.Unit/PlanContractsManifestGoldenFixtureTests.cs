@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Buffers;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.External;
@@ -196,14 +195,14 @@ internal static class PlanContractsManifestJsonEmitter
     private static void WriteQueryPlanSnapshot(Utf8JsonWriter writer, QueryPlanSnapshot queryPlanSnapshot)
     {
         writer.WriteStartObject();
-        writer.WriteString("dialect", ToManifestDialect(queryPlanSnapshot.Dialect));
+        writer.WriteString("dialect", PlanManifestConventions.ToManifestDialect(queryPlanSnapshot.Dialect));
         writer.WriteString(
             "page_document_id_sql",
             PlanJsonCanonicalization.NormalizeMultilineText(queryPlanSnapshot.PageDocumentIdSql)
         );
         writer.WriteString(
             "page_document_id_sql_sha256",
-            ComputeNormalizedSha256(queryPlanSnapshot.PageDocumentIdSql)
+            PlanManifestConventions.ComputeNormalizedSha256(queryPlanSnapshot.PageDocumentIdSql)
         );
 
         if (queryPlanSnapshot.TotalCountSql is null)
@@ -219,7 +218,7 @@ internal static class PlanContractsManifestJsonEmitter
             );
             writer.WriteString(
                 "total_count_sql_sha256",
-                ComputeNormalizedSha256(queryPlanSnapshot.TotalCountSql)
+                PlanManifestConventions.ComputeNormalizedSha256(queryPlanSnapshot.TotalCountSql)
             );
         }
 
@@ -265,28 +264,11 @@ internal static class PlanContractsManifestJsonEmitter
     )
     {
         writer.WriteStartObject();
-        writer.WriteString("dialect", ToManifestDialect(dialect));
+        writer.WriteString("dialect", PlanManifestConventions.ToManifestDialect(dialect));
         writer.WriteNumber("max_rows_per_batch", batchingInfo.MaxRowsPerBatch);
         writer.WriteNumber("parameters_per_row", batchingInfo.ParametersPerRow);
         writer.WriteNumber("max_parameters_per_command", batchingInfo.MaxParametersPerCommand);
         writer.WriteEndObject();
-    }
-
-    private static string ToManifestDialect(SqlDialect dialect)
-    {
-        return dialect switch
-        {
-            SqlDialect.Mssql => "mssql",
-            SqlDialect.Pgsql => "pgsql",
-            _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported SQL dialect."),
-        };
-    }
-
-    private static string ComputeNormalizedSha256(string text)
-    {
-        var normalizedBytes = Encoding.UTF8.GetBytes(PlanJsonCanonicalization.NormalizeMultilineText(text));
-
-        return Convert.ToHexStringLower(SHA256.HashData(normalizedBytes));
     }
 }
 
