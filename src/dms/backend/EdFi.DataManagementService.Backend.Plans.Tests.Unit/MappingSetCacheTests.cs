@@ -55,16 +55,23 @@ public class Given_MappingSetCache
     }
 
     [Test]
-    public async Task It_should_cache_compile_faults_per_key()
+    public async Task It_should_evict_faulted_entry_and_retry_compilation()
     {
         var key = CreateMappingSetKey(new string('b', 64), SqlDialect.Mssql, "v1");
+        var compiledMappingSet = CreateMappingSet(key);
         var compileInvocationCount = 0;
 
         var cache = new MappingSetCache(async _ =>
         {
-            Interlocked.Increment(ref compileInvocationCount);
+            var invocationCount = Interlocked.Increment(ref compileInvocationCount);
             await Task.Yield();
-            throw new InvalidOperationException("failed to compile mapping set");
+
+            if (invocationCount == 1)
+            {
+                throw new InvalidOperationException("failed to compile mapping set");
+            }
+
+            return compiledMappingSet;
         });
 
         var firstAct = async () => await cache.GetOrCreateAsync(key, CancellationToken.None);
@@ -73,13 +80,61 @@ public class Given_MappingSetCache
             .ThrowAsync<InvalidOperationException>()
             .WithMessage("failed to compile mapping set");
 
-        var secondAct = async () => await cache.GetOrCreateAsync(key, CancellationToken.None);
-        await secondAct
-            .Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("failed to compile mapping set");
+        var secondResult = await cache.GetOrCreateAsync(key, CancellationToken.None);
+        secondResult.Should().BeSameAs(compiledMappingSet);
+
+        compileInvocationCount.Should().Be(2);
+    }
+
+    [Test]
+    public async Task It_should_share_a_single_faulted_compile_before_retrying()
+    {
+        var key = CreateMappingSetKey(new string('e', 64), SqlDialect.Pgsql, "v1");
+        var compiledMappingSet = CreateMappingSet(key);
+        var compilationStarted = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        var releaseCompilation = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        var compileInvocationCount = 0;
+
+        var cache = new MappingSetCache(async _ =>
+        {
+            var invocationCount = Interlocked.Increment(ref compileInvocationCount);
+            compilationStarted.TrySetResult(true);
+            await releaseCompilation.Task;
+
+            if (invocationCount == 1)
+            {
+                throw new InvalidOperationException("failed to compile mapping set");
+            }
+
+            return compiledMappingSet;
+        });
+
+        var firstCallers = Enumerable
+            .Range(0, 8)
+            .Select(_ => cache.GetOrCreateAsync(key, CancellationToken.None))
+            .ToArray();
+
+        await compilationStarted.Task;
+        releaseCompilation.SetResult(true);
+
+        foreach (var caller in firstCallers)
+        {
+            var failedAct = async () => await caller;
+            await failedAct
+                .Should()
+                .ThrowAsync<InvalidOperationException>()
+                .WithMessage("failed to compile mapping set");
+        }
 
         compileInvocationCount.Should().Be(1);
+
+        var retryResult = await cache.GetOrCreateAsync(key, CancellationToken.None);
+        retryResult.Should().BeSameAs(compiledMappingSet);
+        compileInvocationCount.Should().Be(2);
     }
 
     [Test]

@@ -28,17 +28,36 @@ public sealed class MappingSetCache(Func<MappingSetKey, Task<MappingSet>> compil
     public Task<MappingSet> GetOrCreateAsync(MappingSetKey key, CancellationToken cancellationToken = default)
     {
         var compileTask = _cache
-            .GetOrAdd(
-                key,
-                static (mappingSetKey, state) =>
-                    new Lazy<Task<MappingSet>>(
-                        () => state(mappingSetKey),
-                        LazyThreadSafetyMode.ExecutionAndPublication
-                    ),
-                _compileAsync
-            )
+            .GetOrAdd(key, static (mappingSetKey, state) => state.CreateCacheEntry(mappingSetKey), this)
             .Value;
 
         return compileTask.WaitAsync(cancellationToken);
+    }
+
+    private Lazy<Task<MappingSet>> CreateCacheEntry(MappingSetKey key)
+    {
+        Lazy<Task<MappingSet>> cacheEntry = null!;
+        cacheEntry = new Lazy<Task<MappingSet>>(
+            () => CompileAndEvictOnFailureAsync(key, cacheEntry),
+            LazyThreadSafetyMode.ExecutionAndPublication
+        );
+
+        return cacheEntry;
+    }
+
+    private async Task<MappingSet> CompileAndEvictOnFailureAsync(
+        MappingSetKey key,
+        Lazy<Task<MappingSet>> cacheEntry
+    )
+    {
+        try
+        {
+            return await _compileAsync(key).ConfigureAwait(false);
+        }
+        catch
+        {
+            _cache.TryRemove(new KeyValuePair<MappingSetKey, Lazy<Task<MappingSet>>>(key, cacheEntry));
+            throw;
+        }
     }
 }
