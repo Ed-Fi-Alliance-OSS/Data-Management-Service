@@ -323,28 +323,6 @@ Change:
 
 This fix is a prerequisite for correctness on SQL Server even without DLEP.
 
-## Alternatives Considered
-
-1. **Model “inherited” child values (avoid storage)**
-   - For cross-scope equality where a child field is always derived from a parent/root identity component, change the
-     relational contract so the child table does not store an independent value/reference site.
-   - Pros: avoids fan-out updates into collections.
-   - Cons: complicates reconstitution and FK enforcement (child-level referential integrity becomes join-/projection-
-     dependent), and risks significant redesign of query/reconstitution assumptions.
-
-2. **Restrict propagation to non-FK scalar columns**
-   - Only allow DLEP to update scalar/descriptor storage columns that do not participate in composite reference FKs.
-   - Pros: simpler and avoids reference retargeting.
-   - Cons: does not match ODS/API unified-key behavior for relationship tables, where unified key parts commonly sit inside
-     composite reference keys.
-
-3. **Leave cross-scope equality Core-only**
-   - Rely on Core write-time validation only and accept that indirect identity propagation may violate document-level
-     invariants after commit.
-   - Pros: no additional DB maintenance.
-   - Cons: does not meet parity and produces inconsistent reconstituted documents, as described in
-     `key-unification-children-problem.md`.
-
 ## Operational Considerations
 
 - **Fan-out**: DLEP can update many rows per affected document (all elements in one or more collections). The maintenance
