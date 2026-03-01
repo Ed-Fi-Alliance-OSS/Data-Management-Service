@@ -26,22 +26,7 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
     {
         ArgumentNullException.ThrowIfNull(resourceModel);
 
-        if (
-            resourceModel.StorageKind != ResourceStorageKind.RelationalTables
-            || resourceModel.TablesInDependencyOrder.Count != 1
-        )
-        {
-            return false;
-        }
-
-        var rootTable = resourceModel.Root;
-
-        if (rootTable.KeyUnificationClasses.Count > 0)
-        {
-            return false;
-        }
-
-        return CountStoredNonKeyColumnsWithoutSourceJsonPath(rootTable) == 0;
+        return ThinSliceWritePlanSupportEvaluator.Evaluate(resourceModel).IsSupported;
     }
 
     /// <summary>
@@ -71,18 +56,17 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
     public ResourceWritePlan Compile(RelationalResourceModel resourceModel)
     {
         ArgumentNullException.ThrowIfNull(resourceModel);
+        var supportResult = ThinSliceWritePlanSupportEvaluator.Evaluate(resourceModel);
 
-        if (!IsSupported(resourceModel))
+        if (!supportResult.IsSupported)
         {
-            var unsupportedRootTable = resourceModel.Root;
-
             throw new NotSupportedException(
                 "Only root-only relational-table resources are supported. "
                     + $"Resource: {resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}, "
-                    + $"StorageKind: {resourceModel.StorageKind}, "
-                    + $"TableCount: {resourceModel.TablesInDependencyOrder.Count}, "
-                    + $"RootKeyUnificationClassCount: {unsupportedRootTable.KeyUnificationClasses.Count}, "
-                    + $"RootStoredNonKeyColumnsWithoutSourceJsonPath: {CountStoredNonKeyColumnsWithoutSourceJsonPath(unsupportedRootTable)}."
+                    + $"StorageKind: {supportResult.StorageKind}, "
+                    + $"TableCount: {supportResult.TableCount}, "
+                    + $"RootKeyUnificationClassCount: {supportResult.RootKeyUnificationClassCount}, "
+                    + $"RootStoredNonKeyColumnsWithoutSourceJsonPath: {supportResult.RootStoredNonKeyColumnsWithoutSourceJsonPathCount}."
             );
         }
 
@@ -341,16 +325,5 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
         }
 
         return new WriteValueSource.Scalar(column.SourceJsonPath.Value, column.ScalarType);
-    }
-
-    private static int CountStoredNonKeyColumnsWithoutSourceJsonPath(DbTableModel tableModel)
-    {
-        var keyColumns = tableModel.Key.Columns.Select(static column => column.ColumnName).ToHashSet();
-
-        return tableModel.Columns.Count(column =>
-            column.Storage is ColumnStorage.Stored
-            && !keyColumns.Contains(column.ColumnName)
-            && column.SourceJsonPath is null
-        );
     }
 }

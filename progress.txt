@@ -82,3 +82,8 @@ Task completed: Contracts - actionable MappingSet.FromPayload failure semantics 
 Decisions/reasoning: Replaced placeholder NotImplementedException with deterministic NotSupportedException; message now explicitly states AOT mapping-pack decode is not implemented and points to story path; added contract test to lock exception type/message.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.External/MappingSetContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ExternalPlanContractsTests.cs; tasks.json; progress.txt
 Blockers/notes next iteration: none. Next: centralize write-plan support evaluation shared by compiler + lookup extensions.
+
+Task completed: Refactor - centralize thin-slice write-plan support evaluation (DMS-1028 story reference: reference/design/backend-redesign/epics/15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md)
+Decisions/reasoning: Added ThinSliceWritePlanSupportEvaluator with deterministic unsupported-reason + root guardrail counters; RootOnlyWritePlanCompiler and MappingSetLookupExtensions now consume same evaluator; preserved actionable omission messages with story refs; removed duplicated CountStoredNonKeyColumnsWithoutSourceJsonPath logic.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/ThinSliceWritePlanSupportEvaluator.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/RootOnlyWritePlanCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetLookupExtensions.cs; tasks.json; progress.txt
+Blockers/notes next iteration: none. Next: Test Fixtures task to deduplicate manifest emitter dialect/hash helpers.

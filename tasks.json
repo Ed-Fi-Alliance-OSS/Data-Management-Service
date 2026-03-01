@@ -151,7 +151,7 @@
       "Refactor `src/dms/backend/EdFi.DataManagementService.Backend.Plans/RootOnlyWritePlanCompiler.cs` and `src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetLookupExtensions.cs` to share the same support-check implementation.",
       "Run: dotnet test --no-build ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Test Fixtures",

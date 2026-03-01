@@ -45,37 +45,43 @@ public static class MappingSetLookupExtensions
             );
         }
 
-        if (resourceModel.TablesInDependencyOrder.Count != 1)
+        var supportResult = ThinSliceWritePlanSupportEvaluator.Evaluate(resourceModel);
+
+        switch (supportResult.UnsupportedReason)
         {
-            throw new NotSupportedException(
-                $"Write plan for resource '{FormatResource(resource)}' was intentionally omitted: "
-                    + "thin-slice write compilation supports only root-only resources "
-                    + $"(TablesInDependencyOrder.Count == 1, actual {resourceModel.TablesInDependencyOrder.Count}). "
-                    + $"Next story: {WriteCollectionsAndKeyUnificationStoryRef}."
-            );
-        }
-
-        var rootTable = resourceModel.Root;
-
-        if (rootTable.KeyUnificationClasses.Count > 0)
-        {
-            throw new NotSupportedException(
-                $"Write plan for resource '{FormatResource(resource)}' was intentionally omitted: "
-                    + $"root table '{rootTable.Table}' has {rootTable.KeyUnificationClasses.Count} key-unification class(es). "
-                    + $"Next story: {WriteCollectionsAndKeyUnificationStoryRef}."
-            );
-        }
-
-        var precomputedColumnCount = CountStoredNonKeyColumnsWithoutSourceJsonPath(rootTable);
-
-        if (precomputedColumnCount > 0)
-        {
-            throw new NotSupportedException(
-                $"Write plan for resource '{FormatResource(resource)}' was intentionally omitted: "
-                    + $"root table '{rootTable.Table}' has {precomputedColumnCount} stored non-key column(s) without SourceJsonPath "
-                    + "(precomputed/key-unification candidates). "
-                    + $"Next story: {WriteCollectionsAndKeyUnificationStoryRef}."
-            );
+            case ThinSliceWritePlanUnsupportedReason.None:
+                break;
+            case ThinSliceWritePlanUnsupportedReason.NonRootOnly:
+                throw new NotSupportedException(
+                    $"Write plan for resource '{FormatResource(resource)}' was intentionally omitted: "
+                        + "thin-slice write compilation supports only root-only resources "
+                        + $"(TablesInDependencyOrder.Count == 1, actual {supportResult.TableCount}). "
+                        + $"Next story: {WriteCollectionsAndKeyUnificationStoryRef}."
+                );
+            case ThinSliceWritePlanUnsupportedReason.RootHasKeyUnificationClasses:
+                throw new NotSupportedException(
+                    $"Write plan for resource '{FormatResource(resource)}' was intentionally omitted: "
+                        + $"root table '{resourceModel.Root.Table}' has {supportResult.RootKeyUnificationClassCount} key-unification class(es). "
+                        + $"Next story: {WriteCollectionsAndKeyUnificationStoryRef}."
+                );
+            case ThinSliceWritePlanUnsupportedReason.RootHasStoredNonKeyColumnsWithoutSourceJsonPath:
+                throw new NotSupportedException(
+                    $"Write plan for resource '{FormatResource(resource)}' was intentionally omitted: "
+                        + $"root table '{resourceModel.Root.Table}' has {supportResult.RootStoredNonKeyColumnsWithoutSourceJsonPathCount} stored non-key column(s) without SourceJsonPath "
+                        + "(precomputed/key-unification candidates). "
+                        + $"Next story: {WriteCollectionsAndKeyUnificationStoryRef}."
+                );
+            case ThinSliceWritePlanUnsupportedReason.NonRelationalStorage:
+                throw new NotSupportedException(
+                    $"Write plan for resource '{FormatResource(resource)}' was intentionally omitted: "
+                        + $"storage kind '{supportResult.StorageKind}' is out of thin-slice write runtime compilation scope. "
+                        + $"Next story: {WriteCollectionsAndKeyUnificationStoryRef}."
+                );
+            default:
+                throw new InvalidOperationException(
+                    $"Write plan lookup failed for resource '{FormatResource(resource)}': "
+                        + $"unsupported reason '{supportResult.UnsupportedReason}' is not recognized."
+                );
         }
 
         throw new InvalidOperationException(
@@ -143,17 +149,6 @@ public static class MappingSetLookupExtensions
 
         throw new KeyNotFoundException(
             $"Mapping set '{FormatMappingSetKey(mappingSet.Key)}' does not contain resource '{FormatResource(resource)}' in ConcreteResourcesInNameOrder."
-        );
-    }
-
-    private static int CountStoredNonKeyColumnsWithoutSourceJsonPath(DbTableModel rootTable)
-    {
-        var keyColumns = rootTable.Key.Columns.Select(static keyColumn => keyColumn.ColumnName).ToHashSet();
-
-        return rootTable.Columns.Count(column =>
-            column.Storage is ColumnStorage.Stored
-            && !keyColumns.Contains(column.ColumnName)
-            && column.SourceJsonPath is null
         );
     }
 
