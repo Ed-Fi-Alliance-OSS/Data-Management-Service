@@ -1,0 +1,108 @@
+[
+  {
+    "category": "Contracts",
+    "description": "Add `MappingSetKey` and `MappingSet` plain contract records to `src/dms/backend/EdFi.DataManagementService.Backend.External`, matching `reference/design/backend-redesign/design-docs/compiled-mapping-set.md` (key fields: `EffectiveSchemaHash`, `Dialect`, `RelationalMappingVersion`; mapping set contains `Model`, `WritePlansByResource`, `ReadPlansByResource`, and resource-key lookup dictionaries). Acceptance: contracts compile under `net10.0`, are nullable-safe, and include `MappingSet.FromPayload(MappingPackPayload)` stubbed to throw `NotImplementedException` (add a minimal placeholder `MappingPackPayload` contract if needed so the stub compiles).",
+    "steps-to-verify": [
+      "Run: dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Write Compiler",
+    "description": "Implement root-only write-plan compilation foundations (bindings + `InsertSql`) in `src/dms/backend/EdFi.DataManagementService.Backend.Plans`. Acceptance: (1) supported resources are `ResourceStorageKind.RelationalTables` with `TablesInDependencyOrder.Count == 1`; (2) `TableWritePlan.ColumnBindings` order is `DbTableModel.Columns` model order filtered to `ColumnStorage.Stored` (key columns naturally first), and each binding has a deterministic `ParameterName` from `PlanNamingConventions`; (3) `InsertSql` is canonical and uses the same ordered columns and ordered parameter names; (4) `DeleteByParentSql` is null and `KeyUnificationPlans` is empty; (5) `BulkInsertBatching` is derived deterministically from the binding count; (6) `UpdateSql` may be left null in this task (added in the next task).",
+    "steps-to-verify": [
+      "Add unit tests validating `ColumnBindings` ordering/parameter naming and deterministic `InsertSql` for pgsql + mssql.",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Write Compiler",
+    "description": "Add deterministic root-table `UpdateSql` emission to the root-only write-plan compiler in `src/dms/backend/EdFi.DataManagementService.Backend.Plans`. Acceptance: (1) emit `UpdateSql` only when there is at least one stored/writable non-key column to set; otherwise `UpdateSql = null`; (2) `SET` every stored/writable non-key column (exclude key columns and exclude `ColumnStorage.UnifiedAlias`) in deterministic model order, using the existing `WriteColumnBinding.ParameterName` values; (3) `WHERE` matches the table key using the key columns’ existing parameters (no extra parameters like `whereDocumentId`); (4) SQL is canonicalized and ends with `;\\n`.",
+    "steps-to-verify": [
+      "Add unit tests validating `UpdateSql` presence/absence and deterministic `SET`/`WHERE` column and parameter usage for pgsql + mssql.",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Write Compiler",
+    "description": "Add key-unification guardrails to thin-slice write-plan compilation in `src/dms/backend/EdFi.DataManagementService.Backend.Plans`. Acceptance: treat write compilation as unsupported (omit the write plan for that resource) when `DbTableModel.KeyUnificationClasses.Count > 0` OR when the root table has any stored, non-key column with `SourceJsonPath is null` (canonical/precomputed columns). Read plans may still be compiled. Add unit tests proving a key-unification-triggering root-only resource yields no write plan but still yields a read plan.",
+    "steps-to-verify": [
+      "Add unit tests covering both key-unification detection mechanisms and ensuring omission does not throw during mapping-set compilation.",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Read Compiler",
+    "description": "Implement root-only hydration read-plan compilation (`TableReadPlan.SelectByKeysetSql`) in `src/dms/backend/EdFi.DataManagementService.Backend.Plans`. Acceptance: (1) per-table alias is `t0` from `PlanNamingConventions.CreateTableAliasAllocator().AllocateNext()` and keyset alias is fixed `k`; (2) select-list includes every `DbTableModel.Columns` entry in model order, fully-qualified (`t0.<quotedColumn>`), no `SELECT *`; (3) `FROM <schema.table> t0` then `INNER JOIN <keyset-temp-table> k ON t0.<rootDocumentIdKeyColumn> = k.<DocumentId>` using the dialect `KeysetTableContract`; (4) `ORDER BY` exactly `DbTableModel.Key.Columns` in key order, all `ASC`, qualified with `t0`; (5) SQL is canonicalized and ends with `;\\n` (stable casing/indentation).",
+    "steps-to-verify": [
+      "Add unit tests validating SQL shape, aliasing, column ordering, and keyset join correctness for pgsql + mssql.",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "MappingSet Compiler",
+    "description": "Implement a thin-slice `MappingSetCompiler` in `src/dms/backend/EdFi.DataManagementService.Backend.Plans` that takes a `DerivedRelationalModelSet` and produces a `MappingSet` with compiled plans. Acceptance: (1) constructs `MappingSetKey` from `(EffectiveSchemaHash, dialect, modelSet.EffectiveSchema.RelationalMappingVersion)`; (2) iterates `ConcreteResourcesInNameOrder` deterministically and compiles plans for supported root-only relational-table resources; (3) omits plans (does not fail the whole mapping-set compile) for non-root-only resources and descriptor resources (`ResourceStorageKind.SharedDescriptorTable`); (4) for key-unification resources, compiles the read plan (root-only) but omits the write plan; (5) creates `ResourceKeyIdByResource` and `ResourceKeyById` dictionaries deterministically from `EffectiveSchemaInfo.ResourceKeysInIdOrder`.",
+    "steps-to-verify": [
+      "Add unit tests validating: supported vs omitted resource behavior, resource-key dictionaries correctness, and that omitted resources do not poison compilation.",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Cache",
+    "description": "Implement an async, concurrency-safe `MappingSetCache` keyed by `MappingSetKey` in `src/dms/backend/EdFi.DataManagementService.Backend.Plans`. Acceptance: (1) compilation is invoked at most once per process per key (concurrent callers share one in-flight compile); (2) cache stores a single in-flight `Task<MappingSet>` per key (e.g., `ConcurrentDictionary<MappingSetKey, Lazy<Task<MappingSet>>>`); (3) exceptions are cached/poisoned for deterministic behavior (no retry storms); (4) `CancellationToken` cancels waiting only (use `task.WaitAsync(ct)`), not compilation; (5) request cancellation does not result in a cached `OperationCanceledException` when compilation succeeds.",
+    "steps-to-verify": [
+      "Add unit tests covering compile-once under concurrency, fault poisoning, and cancel-wait semantics (canceled caller stops waiting but compilation continues and later callers receive the cached result).",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Lookup API",
+    "description": "Add `MappingSet` extension methods in `src/dms/backend/EdFi.DataManagementService.Backend.Plans` for `GetWritePlanOrThrow(...)` and `GetReadPlanOrThrow(...)`. Acceptance: (1) when a plan exists, returns it; (2) when a resource exists in `mappingSet.Model` but the plan was intentionally omitted, throws `NotSupportedException` with an actionable reason derived from the model (descriptor storage kind, `TablesInDependencyOrder.Count`, key-unification detection for write plans) and points to the next stories (E15-S04/S05/S06 as applicable); (3) when a resource does not exist in the mapping set model, throws a deterministic error (e.g., `KeyNotFoundException` or `NotSupportedException`) with a clear message.",
+    "steps-to-verify": [
+      "Add unit tests asserting exception types and messages for: descriptor resource, non-root-only resource, key-unification write-plan omission, and unknown resource.",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Fixtures",
+    "description": "Add a hand-authored `ApiSchema.json` fixture under `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Fixtures/` for this story. Acceptance: fixture can be loaded into an `EffectiveSchemaSet` and derived into a `DerivedRelationalModelSet` for both dialects; it includes: (1) one supported root-only resource with scalar(s) + one document reference (with `referenceJsonPaths`) + at least one descriptor value path that produces a `DescriptorFk` column; (2) the referenced target resource schema (root-only) and the descriptor resource schema (`isDescriptor=true`); (3) one non-root-only resource with an array/collection property so `TablesInDependencyOrder.Count > 1`; (4) one root-only resource with an `equalityConstraints` entry that triggers key-unification (so the derived root table has `KeyUnificationClasses.Count > 0` and/or stored non-key columns with `SourceJsonPath is null`).",
+    "steps-to-verify": [
+      "Add a unit test that derives the model set from the fixture and asserts the supported vs unsupported resource classifications above.",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Manifest",
+    "description": "Implement a deterministic `mappingset.manifest.json` emitter (test helper) for the thin-slice mapping set in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`. Acceptance: emitter produces one JSON string containing both dialect snapshots (`mapping_sets[]`), uses `\\n` line endings + stable indentation + stable property ordering, and includes only supported resources. Per resource include: (1) normalized SQL hashes for `InsertSql`, `UpdateSql` (or null), and `SelectByKeysetSql`; (2) write-plan binding/ordering metadata: `column_bindings_in_order[]` with column name/kind, parameter name, and write-value-source kind + minimal identifying details; (3) read-plan metadata: select-list column names in order, order-by key columns in order, and keyset-table contract.",
+    "steps-to-verify": [
+      "Add unit tests for manifest normalization rules (line endings, trailing whitespace, deterministic ordering) on a small in-memory mapping set.",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Golden Tests",
+    "description": "Add a `mappingset.manifest.json` golden fixture test in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` that compiles mapping sets for both pgsql + mssql from the story fixture and compares `expected/` vs `actual/` with a readable git diff (and supports `UPDATE_GOLDENS=1`). Acceptance: one expected manifest file contains both dialect snapshots and fails with a clear diff when output changes.",
+    "steps-to-verify": [
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj",
+      "To update goldens intentionally: UPDATE_GOLDENS=1 dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Determinism",
+    "description": "Add determinism tests for thin-slice runtime compilation and manifest emission. Acceptance: (1) compiling the same fixture twice yields byte-for-byte identical `mappingset.manifest.json`; (2) permuting effective-schema input ordering (reverse project order and/or reverse resource order) yields identical manifest output; (3) SQL hashes and binding metadata are stable across runs for a fixed `(EffectiveSchemaHash, dialect, relational mapping version)`.",
+    "steps-to-verify": [
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  }
+]

@@ -1,0 +1,5 @@
+Task completed: Contracts - MappingSetKey/MappingSet contracts (DMS-1028 story reference: reference/design/backend-redesign/epics/15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md)
+Decisions/reasoning: Prioritized core abstraction first; aligned shape to compiled-mapping-set.md; added MappingSet.FromPayload(MappingPackPayload) stub throwing NotImplementedException; kept payload minimal placeholder to unblock compile-first slices.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.External/MappingSetContracts.cs; tasks.json; progress.txt
+Blockers/notes next iteration: none. Next: write-compiler foundations in Backend.Plans can now reference MappingSet contracts.
+
