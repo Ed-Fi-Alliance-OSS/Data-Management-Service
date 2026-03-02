@@ -38,14 +38,15 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
     )
     {
         ArgumentNullException.ThrowIfNull(resourceModel);
+        var supportResult = ThinSliceWritePlanSupportEvaluator.Evaluate(resourceModel);
 
-        if (!IsSupported(resourceModel))
+        if (!supportResult.IsSupported)
         {
             writePlan = null;
             return false;
         }
 
-        writePlan = Compile(resourceModel);
+        writePlan = CompileCore(resourceModel, supportResult);
         return true;
     }
 
@@ -58,6 +59,14 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
         ArgumentNullException.ThrowIfNull(resourceModel);
         var supportResult = ThinSliceWritePlanSupportEvaluator.Evaluate(resourceModel);
 
+        return CompileCore(resourceModel, supportResult);
+    }
+
+    private ResourceWritePlan CompileCore(
+        RelationalResourceModel resourceModel,
+        ThinSliceWritePlanSupportResult supportResult
+    )
+    {
         if (!supportResult.IsSupported)
         {
             throw new NotSupportedException(
