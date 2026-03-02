@@ -8,3 +8,12 @@
   - src/dms/clis/EdFi.DataManagementService.SchemaTools/Provisioning/MssqlDatabaseProvisioner.cs
   - src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/DatabaseProvisionerTests.cs
 - All 43 unit tests pass
+
+## Task: Prevent MVCC ALTER DATABASE failure due to connection pooling (01-ddl-provision-command)
+- Added SqlConnection.ClearPool(connection) after transaction commit in ExecuteInTransaction
+  - Root cause: disposed SqlConnection returns to ADO.NET pool, pooled connection blocks ALTER DATABASE exclusive access
+- Added WITH ROLLBACK IMMEDIATE to both ALTER DATABASE SET statements in CheckOrConfigureMvcc
+  - Defense in depth: forces SQL Server to disconnect any remaining sessions before applying the setting
+- Files changed:
+  - src/dms/clis/EdFi.DataManagementService.SchemaTools/Provisioning/MssqlDatabaseProvisioner.cs
+- Build succeeds, all 43 unit tests pass
