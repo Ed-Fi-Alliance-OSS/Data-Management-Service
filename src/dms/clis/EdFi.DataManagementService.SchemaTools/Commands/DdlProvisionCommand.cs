@@ -126,11 +126,16 @@ public static class DdlProvisionCommand
                 // Create dialect-specific objects
                 var (sqlDialect, dialectRules) = DdlCommandHelpers.CreateDialect(dialect);
 
-                // Build relational model (no clone needed — single dialect, schema set not reused)
+                // Deep-clone the effective schema set because
+                // DerivedRelationalModelSetBuilder assigns JsonNode.Parent on ProjectSchema
+                // nodes, which prevents reuse of the original tree.
+                var clonedSchemaSet = DdlCommandHelpers.CloneEffectiveSchemaSet(effectiveSchemaSet);
+
+                // Build relational model
                 var modelSetBuilder = new DerivedRelationalModelSetBuilder(
                     RelationalModelSetPasses.CreateDefault()
                 );
-                var modelSet = modelSetBuilder.Build(effectiveSchemaSet, dialect, dialectRules);
+                var modelSet = modelSetBuilder.Build(clonedSchemaSet, dialect, dialectRules);
 
                 // Emit DDL: core + relational model + seed DML
                 var coreDdl = new CoreDdlEmitter(sqlDialect).Emit();
