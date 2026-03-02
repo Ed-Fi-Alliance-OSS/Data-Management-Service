@@ -239,7 +239,7 @@ public class Given_ExternalPlanContracts
             .Throw<NotSupportedException>()
             .WithMessage(
                 "AOT mapping-pack decode is not implemented yet for MappingSet.FromPayload(MappingPackPayload). "
-                    + "See story: reference/design/backend-redesign/epics/15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md."
+                    + "See E05-S05: reference/design/backend-redesign/epics/05-mpack-generation/05-pack-loader-validation.md."
             );
     }
 

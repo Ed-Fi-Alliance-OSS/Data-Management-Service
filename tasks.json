@@ -199,7 +199,7 @@
       "Update `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ExternalPlanContractsTests.cs` expected message.",
       "Run: dotnet test --no-build ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Test Fixtures",

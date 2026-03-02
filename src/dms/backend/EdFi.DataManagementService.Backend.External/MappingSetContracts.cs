@@ -38,7 +38,7 @@ public sealed record MappingSet(
 )
 {
     private const string AotMappingPackDecodeStoryRef =
-        "reference/design/backend-redesign/epics/15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md";
+        "reference/design/backend-redesign/epics/05-mpack-generation/05-pack-loader-validation.md";
 
     /// <summary>
     /// Creates a mapping set from an AOT mapping-pack payload.
@@ -54,7 +54,7 @@ public sealed record MappingSet(
 
         throw new NotSupportedException(
             "AOT mapping-pack decode is not implemented yet for MappingSet.FromPayload(MappingPackPayload). "
-                + $"See story: {AotMappingPackDecodeStoryRef}."
+                + $"See E05-S05: {AotMappingPackDecodeStoryRef}."
         );
     }
 }

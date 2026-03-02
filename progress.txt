@@ -102,3 +102,8 @@ Task completed: Correctness - descriptor resource omission guidance story refs/m
 Decisions/reasoning: Split descriptor next-story refs by operation to avoid drift/confusion: write -> E07-S06 descriptor writes; read -> E08-S05 descriptor endpoints; message text now explicitly states descriptor resources do not use thin-slice relational-table write/hydration plans; left non-descriptor branches unchanged.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetLookupExtensions.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetLookupExtensionsTests.cs; tasks.json; progress.txt
 Blockers/notes next iteration: none. Next: highest-priority remaining task is MappingSet.FromPayload guidance to E05-S05 pack-loader validation story.
+
+Task completed: Correctness - MappingSet.FromPayload guidance to E05-S05 pack-loader validation story (DMS-1028 story reference: reference/design/backend-redesign/epics/15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md)
+Decisions/reasoning: Kept behavior/exception type unchanged; updated deterministic message/story constant to explicit E05-S05 path so AOT pack decode guidance now points to owning pack loader/validator story.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.External/MappingSetContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ExternalPlanContractsTests.cs; tasks.json; progress.txt
+Blockers/notes next iteration: none. Next: highest-priority remaining task is Test Fixtures manifest order-by metadata alignment with RootOnlyReadPlanCompiler DocumentId-first semantics.
