@@ -59,7 +59,7 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisioner
         }
 
         // CREATE DATABASE cannot run inside a transaction in PostgreSQL.
-        // Npgsql requires an explicit opt-in to run outside a transaction block.
+        // Without an explicit BeginTransaction(), Npgsql executes in autocommit mode.
         // Use a quoted identifier to safely handle the database name.
         logger.LogInformation(
             "Creating database: {DatabaseName}",

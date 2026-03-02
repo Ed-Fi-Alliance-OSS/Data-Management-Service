@@ -46,7 +46,7 @@
     "steps-to-verify": [
       "Review PgsqlDatabaseProvisioner.cs comment in CreateDatabaseIfNotExists for accuracy"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Maintainability",
