@@ -17,3 +17,10 @@
 - Files changed:
   - src/dms/clis/EdFi.DataManagementService.SchemaTools/Provisioning/MssqlDatabaseProvisioner.cs
 - Build succeeds, all 43 unit tests pass
+
+## Task: Make RCSI check defensive against driver return type (01-ddl-provision-command)
+- Changed `result is bool rcsiEnabled && !rcsiEnabled` to `!Convert.ToBoolean(result)` in CheckOrConfigureMvcc
+- Convert.ToBoolean handles bool, int (0/1), and other numeric types that ExecuteScalar may return
+- Files changed:
+  - src/dms/clis/EdFi.DataManagementService.SchemaTools/Provisioning/MssqlDatabaseProvisioner.cs
+- Build succeeds, all 43 unit tests pass

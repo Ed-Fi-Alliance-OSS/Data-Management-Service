@@ -213,7 +213,7 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
                     LoggingSanitizer.SanitizeForLogging(targetDatabase)
                 );
             }
-            else if (result is bool rcsiEnabled && !rcsiEnabled)
+            else if (!Convert.ToBoolean(result))
             {
                 var warning =
                     $"READ_COMMITTED_SNAPSHOT is OFF for database '{LoggingSanitizer.SanitizeForConsole(targetDatabase)}'. "
