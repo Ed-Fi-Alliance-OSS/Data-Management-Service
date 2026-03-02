@@ -161,9 +161,11 @@ public static class DdlProvisionCommand
                 Console.WriteLine(
                     $"Provisioning complete for database: {LoggingSanitizer.SanitizeForConsole(databaseName)}"
                 );
-                Console.WriteLine($"Effective schema hash: {effectiveSchemaInfo.EffectiveSchemaHash}");
+                Console.WriteLine(
+                    $"Effective schema hash: {LoggingSanitizer.SanitizeForConsole(effectiveSchemaInfo.EffectiveSchemaHash)}"
+                );
                 Console.WriteLine($"Resource key count: {effectiveSchemaInfo.ResourceKeyCount}");
-                Console.WriteLine($"Dialect: {dialectName}");
+                Console.WriteLine($"Dialect: {LoggingSanitizer.SanitizeForConsole(dialectName)}");
 
                 return 0;
             }
