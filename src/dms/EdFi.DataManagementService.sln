@@ -52,6 +52,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Backend.Postgresql.Tests.Integration", "backend\EdFi.DataManagementService.Backend.Postgresql.Tests.Integration\EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj", "{30E62A03-302F-95A5-32B8-E2D4D5E0A3AC}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.SchemaGenerator.Pgsql.Tests.Integration", "clis\EdFi.DataManagementService.SchemaGenerator.Pgsql.Tests.Integration\EdFi.DataManagementService.SchemaGenerator.Pgsql.Tests.Integration.csproj", "{ECBE15ED-2988-4444-B528-2450C89F9682}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -126,6 +128,10 @@ Global
 		{A8B2C3D4-E5F6-7890-1234-567890ABCDEF}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A8B2C3D4-E5F6-7890-1234-567890ABCDEF}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A8B2C3D4-E5F6-7890-1234-567890ABCDEF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{ECBE15ED-2988-4444-B528-2450C89F9682}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{ECBE15ED-2988-4444-B528-2450C89F9682}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{ECBE15ED-2988-4444-B528-2450C89F9682}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{ECBE15ED-2988-4444-B528-2450C89F9682}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -148,6 +154,7 @@ Global
 		{CEACE0CE-FE27-4039-9F30-F585B418FCEB} = {2B193382-DF21-4223-888A-CE5CD3B52C25}
 		{116E8864-FF2F-B2C0-8009-741468CA9346} = {2B193382-DF21-4223-888A-CE5CD3B52C25}
 		{30E62A03-302F-95A5-32B8-E2D4D5E0A3AC} = {75AE8F7B-B980-48AE-8518-073830FA6471}
+		{ECBE15ED-2988-4444-B528-2450C89F9682} = {2B193382-DF21-4223-888A-CE5CD3B52C25}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {CAB3D5DE-BC6C-44FD-831C-9C7BE3935343}
