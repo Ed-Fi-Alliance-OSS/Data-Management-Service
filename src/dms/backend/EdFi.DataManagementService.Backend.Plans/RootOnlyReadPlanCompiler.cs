@@ -100,7 +100,7 @@ public sealed class RootOnlyReadPlanCompiler(SqlDialect dialect)
             );
         }
 
-        var tableAlias = PlanNamingConventions.CreateTableAliasAllocator().AllocateNext();
+        var tableAlias = PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Root);
         var keysetAlias = PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Keyset);
         var rootDocumentIdKeyColumn = ResolveRootDocumentIdKeyColumn(rootTable);
 

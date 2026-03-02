@@ -45,15 +45,15 @@ public class Given_RootOnlyReadPlanCompiler
             .Be(
                 """
                 SELECT
-                    t0."DocumentId",
-                    t0."SchoolYear",
-                    t0."LocalEducationAgencyId",
-                    t0."SchoolYearAlias"
-                FROM "edfi"."Student" t0
-                INNER JOIN "page" k ON t0."DocumentId" = k."DocumentId"
+                    r."DocumentId",
+                    r."SchoolYear",
+                    r."LocalEducationAgencyId",
+                    r."SchoolYearAlias"
+                FROM "edfi"."Student" r
+                INNER JOIN "page" k ON r."DocumentId" = k."DocumentId"
                 ORDER BY
-                    t0."DocumentId" ASC,
-                    t0."SchoolYear" ASC
+                    r."DocumentId" ASC,
+                    r."SchoolYear" ASC
                 ;
 
                 """
@@ -71,15 +71,15 @@ public class Given_RootOnlyReadPlanCompiler
             .Be(
                 """
                 SELECT
-                    t0.[DocumentId],
-                    t0.[SchoolYear],
-                    t0.[LocalEducationAgencyId],
-                    t0.[SchoolYearAlias]
-                FROM [edfi].[Student] t0
-                INNER JOIN [#page] k ON t0.[DocumentId] = k.[DocumentId]
+                    r.[DocumentId],
+                    r.[SchoolYear],
+                    r.[LocalEducationAgencyId],
+                    r.[SchoolYearAlias]
+                FROM [edfi].[Student] r
+                INNER JOIN [#page] k ON r.[DocumentId] = k.[DocumentId]
                 ORDER BY
-                    t0.[DocumentId] ASC,
-                    t0.[SchoolYear] ASC
+                    r.[DocumentId] ASC,
+                    r.[SchoolYear] ASC
                 ;
 
                 """
@@ -101,8 +101,8 @@ public class Given_RootOnlyReadPlanCompiler
             .Contain(
                 """
                 ORDER BY
-                    t0."DocumentId" ASC,
-                    t0."SchoolYear" ASC
+                    r."DocumentId" ASC,
+                    r."SchoolYear" ASC
                 ;
                 """
             );

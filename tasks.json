@@ -229,7 +229,7 @@
       "Update `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RootOnlyReadPlanCompilerTests.cs` expected SQL strings.",
       "Run: dotnet test --no-build ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Refactor",
