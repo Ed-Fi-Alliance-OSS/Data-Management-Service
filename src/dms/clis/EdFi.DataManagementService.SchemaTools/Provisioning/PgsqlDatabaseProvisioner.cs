@@ -25,10 +25,9 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisioner
 
     public bool CreateDatabaseIfNotExists(string connectionString)
     {
+        var targetDatabase = GetDatabaseName(connectionString);
+
         var builder = new NpgsqlConnectionStringBuilder(connectionString);
-        var targetDatabase = string.IsNullOrWhiteSpace(builder.Database)
-            ? throw new InvalidOperationException("Connection string does not specify a database name.")
-            : builder.Database;
 
         logger.LogInformation(
             "Checking if database exists: {DatabaseName}",
