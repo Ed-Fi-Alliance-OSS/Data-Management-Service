@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 using FluentAssertions;
 using NUnit.Framework;
@@ -95,5 +96,38 @@ public class Given_PlanSqlWriterExtensions
         _writer.AppendWhereClause([]);
 
         _writer.ToString().Should().Be("SELECT 1\n");
+    }
+
+    [TestCase(SqlDialect.Pgsql, "page", "\"page\"")]
+    [TestCase(SqlDialect.Mssql, "#page", "[#page]")]
+    public void It_should_emit_temp_table_relations_without_schema_qualification(
+        SqlDialect dialect,
+        string tempTableName,
+        string expectedSql
+    )
+    {
+        var writer = new SqlWriter(SqlDialectFactory.Create(dialect));
+
+        writer.Append("FROM ").AppendRelation(new SqlRelationRef.TempTable(tempTableName));
+
+        writer.ToString().Should().Be($"FROM {expectedSql}");
+    }
+
+    [TestCase(SqlDialect.Pgsql, "\"edfi\".\"Student\"")]
+    [TestCase(SqlDialect.Mssql, "[edfi].[Student]")]
+    public void It_should_emit_physical_tables_with_schema_qualification(
+        SqlDialect dialect,
+        string expectedSql
+    )
+    {
+        var writer = new SqlWriter(SqlDialectFactory.Create(dialect));
+
+        writer
+            .Append("FROM ")
+            .AppendRelation(
+                new SqlRelationRef.PhysicalTable(new DbTableName(new DbSchemaName("edfi"), "Student"))
+            );
+
+        writer.ToString().Should().Be($"FROM {expectedSql}");
     }
 }

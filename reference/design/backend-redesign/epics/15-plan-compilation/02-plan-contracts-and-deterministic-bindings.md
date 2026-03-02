@@ -13,7 +13,7 @@ This story focuses on the *contracts and determinism rules*, not yet on compilin
 
 These contracts are shared between:
 - runtime compilation fallback (cached in-process), and
-- mapping pack builders/decoders (AOT mode).
+- mapping pack builders/decoders (AOT mode, where decoders reconstruct executor-facing contracts from normalized `.mpack` payloads).
 
 Design references:
 
@@ -34,11 +34,13 @@ Design references:
 
 ### Contract coverage (executor-facing)
 
-- Plan contract types exist for:
+ - Plan contract types exist for:
   - write plans:
     - `ResourceWritePlan` with per-table `TableWritePlan`,
     - `TableWritePlan.InsertSql` / `UpdateSql` (root only) / `DeleteByParentSql` (non-root, replace semantics),
+    - `TableWritePlan.BulkInsertBatching.MaxRowsPerBatch` for deterministic, dialect-aware bulk insert chunking,
     - `ColumnBindings: IReadOnlyList<WriteColumnBinding>` in authoritative parameter/value order,
+    - `WriteColumnBinding.ParameterName` so runtime execution never depends on parsing SQL text to infer bindings,
     - `WriteValueSource` coverage for: `DocumentId`, `ParentKeyPart(i)`, `Ordinal`, `Scalar(...)`, `DocumentReference(...)`, `DescriptorReference(...)`, and `Precomputed`,
     - key-unification inventory (`KeyUnificationWritePlan[]`) sufficient to populate all `Precomputed` bindings deterministically.
   - read/hydration plans:
@@ -61,7 +63,7 @@ Design references:
 
 ### AOT compatibility
 
-- Contract types are “plain data” (records/structs): no delegates, compiled expressions, DI/service references, or live DB objects, so they can be serialized into (and decoded from) mapping packs.
+- Contract types are “plain data” (records/structs): no delegates, compiled expressions, DI/service references, or live DB objects, so they can be represented in a normalized mapping-pack payload and deterministically reconstructed by pack decoders.
 
 ### Testing
 
@@ -79,5 +81,5 @@ Design references:
 2. Define and implement deterministic naming utilities:
    - parameter naming conventions (binding-derived base names + stable de-duplication),
    - deterministic alias naming helper(s) used by plan compilers.
-3. Define a write-plan batching contract (e.g., per-table `MaxRowsPerBatch`) derived from dialect rules/limits and stored on the plan so executors can batch safely.
+3. Define a write-plan batching contract (e.g., per-table `BulkInsertBatching.MaxRowsPerBatch`) derived from dialect rules/limits and stored on the plan so executors can batch safely.
 4. Add unit tests that validate determinism under input-order permutations and duplicate-name scenarios.

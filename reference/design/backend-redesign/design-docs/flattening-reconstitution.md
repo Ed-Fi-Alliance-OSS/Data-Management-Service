@@ -385,14 +385,18 @@ public sealed class ResourceFlattener : IResourceFlattener
           IDocumentReferenceInstanceIndex documentReferences,
           ResolvedReferenceSet resolved)
       {
+          // keyed lookup for direct addressing; do not iterate this for execution order
+          var tablePlanByTable = plan.TablePlansInDependencyOrder.ToDictionary(s => s.TableModel.Table, s => s);
+
           // pseudocode: plan.TableRows[...] = ...
           var childRows = new Dictionary<DbTableName, IReadOnlyList<RowBuffer>>();
 
           // pseudocode: rootRow = plan.Root.CreateRow(documentId) + SetScalars + SetFks
           var rootTable = plan.Model.Root.Table;
-          var rootTablePlan = plan.TablePlans[rootTable];
+          var rootTablePlan = tablePlanByTable[rootTable];
 
           var rootRow = MaterializeRow(
+              resourcePlan: plan,
               tablePlan: rootTablePlan,
               documentId: documentId,
               scopeNode: document,                       // root scope "$"
@@ -403,12 +407,13 @@ public sealed class ResourceFlattener : IResourceFlattener
               resolved: resolved);
 
           // pseudocode: for each childPlan in plan.ChildrenDepthFirst ...
-          foreach (var tableModel in plan.Model.TablesInDependencyOrder)
+          foreach (var tablePlan in plan.TablePlansInDependencyOrder)
           {
+              var tableModel = tablePlan.TableModel;
+
               if (tableModel.Table.Equals(rootTable))
                   continue;
 
-              var tablePlan = plan.TablePlans[tableModel.Table];
               var rows = new List<RowBuffer>();
 
               // pseudocode: for each element in EnumerateArray(documentJson, childPlan.ArrayPath)
@@ -420,6 +425,7 @@ public sealed class ResourceFlattener : IResourceFlattener
 
                   // pseudocode: row = childPlan.CreateRow(parentKey, ordinal) + SetScalars + SetFks
                   rows.Add(MaterializeRow(
+                      resourcePlan: plan,
                       tablePlan,
                       documentId,
                       scopeNode: scope.ScopeNode,               // the object at this table scope
@@ -1147,7 +1153,7 @@ This is required to support golden-file tests for compiled SQL, stable AOT pack 
 /// </summary>
 public sealed record ResourceWritePlan(
     RelationalResourceModel Model,
-    IReadOnlyDictionary<DbTableName, TableWritePlan> TablePlans
+    IReadOnlyList<TableWritePlan> TablePlansInDependencyOrder
 );
 
 /// <summary>
@@ -1157,7 +1163,12 @@ public sealed record ResourceWritePlan(
 /// <param name="InsertSql">Parameterized insert SQL (multi-row insert is handled by IBulkInserter).</param>
 /// <param name="UpdateSql">Optional update SQL (for root tables).</param>
 /// <param name="DeleteByParentSql">Delete SQL that removes all child rows for a parent key (replace semantics).</param>
-/// <param name="ColumnBindings">The ordered list of columns and their write-time value sources.</param>
+/// <param name="BulkInsertBatching">
+/// Deterministic bulk-insert batching metadata for this table plan.
+/// </param>
+/// <param name="ColumnBindings">
+/// The ordered list of columns and their write-time value sources, including the authoritative parameter name for each binding.
+/// </param>
 /// <param name="KeyUnificationPlans">
 /// Per-table inventory used to populate canonical storage columns and synthetic presence flags during row materialization.
 /// Empty when <c>DbTableModel.KeyUnificationClasses</c> is empty.
@@ -1167,6 +1178,7 @@ public sealed record TableWritePlan(
     string InsertSql,
     string? UpdateSql,
     string? DeleteByParentSql,
+    BulkInsertBatchingInfo BulkInsertBatching,
     IReadOnlyList<WriteColumnBinding> ColumnBindings,
     IReadOnlyList<KeyUnificationWritePlan> KeyUnificationPlans
 );
@@ -1176,7 +1188,20 @@ public sealed record TableWritePlan(
 /// </summary>
 /// <param name="Column">The column model being written.</param>
 /// <param name="Source">Where the value comes from (parent key, ordinal, scalar json value, reference resolution, ...).</param>
-public sealed record WriteColumnBinding(DbColumnModel Column, WriteValueSource Source);
+/// <param name="ParameterName">
+/// The authoritative bare SQL parameter name used by the plan's SQL (without the <c>@</c> prefix).
+/// Runtime binds by this name and never infers bindings by parsing SQL text.
+/// </param>
+public sealed record WriteColumnBinding(DbColumnModel Column, WriteValueSource Source, string ParameterName);
+
+/// <summary>
+/// Deterministic batching metadata used to chunk bulk insert commands.
+/// </summary>
+public sealed record BulkInsertBatchingInfo(
+    int MaxRowsPerBatch,
+    int ParametersPerRow,
+    int MaxParametersPerCommand
+);
 
 /// <summary>
 /// The source for a write-time column value.
@@ -1216,18 +1241,20 @@ public abstract record WriteValueSource
     ///
     /// With the concrete-path approach (section 5.2.1), the referential id is computed by Core and emitted with concrete JSON location.
     /// The backend uses a per-request index keyed by:
-    /// - this binding (which identifies the wildcard reference-object path and the FK column)
+    /// - binding inventory index (wildcard path resolved via `ResourceWritePlan.Model.DocumentReferenceBindings[bindingIndex]`)
     /// - the current row's OrdinalPath (array indices from root to the current scope)
     /// to return the referenced DocumentId without per-row hashing.
     /// </summary>
-    public sealed record DocumentReference(DocumentReferenceBinding Binding) : WriteValueSource;
+    public sealed record DocumentReference(int BindingIndex) : WriteValueSource;
 
     /// <summary>
-    /// A descriptor FK value.
-    /// The flattener reads the descriptor URI string, normalizes it, and uses (normalizedUri, descriptor resource type)
-    /// to look up the descriptor DocumentId in ResolvedReferenceSet.DescriptorIdByKey (populated via dms.ReferentialIdentity resolution).
+    /// A descriptor FK value resolved from descriptor metadata + a scope-relative path.
     /// </summary>
-    public sealed record DescriptorReference(DescriptorEdgeSource EdgeSource, JsonPathExpression RelativePath)
+    public sealed record DescriptorReference(
+        QualifiedResourceName DescriptorResource,
+        JsonPathExpression RelativePath,
+        JsonPathExpression? DescriptorValuePath = null
+    )
         : WriteValueSource;
 }
 
@@ -1240,23 +1267,92 @@ public sealed record KeyUnificationWritePlan(
     IReadOnlyList<KeyUnificationMemberWritePlan> MembersInOrder
 );
 
-public sealed record KeyUnificationMemberWritePlan(
+/// <summary>
+/// Member source metadata for a key-unification class.
+/// </summary>
+/// <param name="MemberPathColumn">The member-path binding column.</param>
+/// <param name="RelativePath">Member value path relative to the table scope.</param>
+/// <param name="PresenceColumn">
+/// Optional presence gate column used to preserve absent-versus-null semantics.
+/// </param>
+/// <param name="PresenceBindingIndex">
+/// Optional binding index in <see cref="TableWritePlan.ColumnBindings" /> for the presence column.
+/// </param>
+/// <param name="PresenceIsSynthetic">Indicates whether the presence column is synthetic.</param>
+public abstract record KeyUnificationMemberWritePlan(
     DbColumnName MemberPathColumn,
     JsonPathExpression RelativePath,
-    ColumnKind Kind,
-    RelationalScalarType? ScalarType,
-    QualifiedResourceName? DescriptorResource,
     DbColumnName? PresenceColumn,
     int? PresenceBindingIndex,
     bool PresenceIsSynthetic
-);
+)
+{
+    /// <summary>
+    /// Scalar member source metadata.
+    /// </summary>
+    /// <param name="MemberPathColumn">The member-path binding column.</param>
+    /// <param name="RelativePath">Member value path relative to the table scope.</param>
+    /// <param name="ScalarType">Scalar metadata for the member value extraction.</param>
+    /// <param name="PresenceColumn">
+    /// Optional presence gate column used to preserve absent-versus-null semantics.
+    /// </param>
+    /// <param name="PresenceBindingIndex">
+    /// Optional binding index in <see cref="TableWritePlan.ColumnBindings" /> for the presence column.
+    /// </param>
+    /// <param name="PresenceIsSynthetic">Indicates whether the presence column is synthetic.</param>
+    public sealed record ScalarMember(
+        DbColumnName MemberPathColumn,
+        JsonPathExpression RelativePath,
+        RelationalScalarType ScalarType,
+        DbColumnName? PresenceColumn,
+        int? PresenceBindingIndex,
+        bool PresenceIsSynthetic
+    )
+        : KeyUnificationMemberWritePlan(
+            MemberPathColumn,
+            RelativePath,
+            PresenceColumn,
+            PresenceBindingIndex,
+            PresenceIsSynthetic
+        );
+
+    /// <summary>
+    /// Descriptor member source metadata.
+    /// </summary>
+    /// <param name="MemberPathColumn">The member-path binding column.</param>
+    /// <param name="RelativePath">Member value path relative to the table scope.</param>
+    /// <param name="DescriptorResource">Descriptor resource expected at the member path.</param>
+    /// <param name="PresenceColumn">
+    /// Optional presence gate column used to preserve absent-versus-null semantics.
+    /// </param>
+    /// <param name="PresenceBindingIndex">
+    /// Optional binding index in <see cref="TableWritePlan.ColumnBindings" /> for the presence column.
+    /// </param>
+    /// <param name="PresenceIsSynthetic">Indicates whether the presence column is synthetic.</param>
+    public sealed record DescriptorMember(
+        DbColumnName MemberPathColumn,
+        JsonPathExpression RelativePath,
+        QualifiedResourceName DescriptorResource,
+        DbColumnName? PresenceColumn,
+        int? PresenceBindingIndex,
+        bool PresenceIsSynthetic
+    )
+        : KeyUnificationMemberWritePlan(
+            MemberPathColumn,
+            RelativePath,
+            PresenceColumn,
+            PresenceBindingIndex,
+            PresenceIsSynthetic
+        );
+}
 
 /// <summary>
 /// Compiled read/reconstitution plan for a single resource type.
 /// </summary>
 public sealed record ResourceReadPlan(
     RelationalResourceModel Model,
-    IReadOnlyDictionary<DbTableName, TableReadPlan> TablePlans
+    KeysetTableContract KeysetTable,
+    IReadOnlyList<TableReadPlan> TablePlansInDependencyOrder
 );
 
 /// <summary>
@@ -1270,6 +1366,14 @@ public sealed record ResourceReadPlan(
 public sealed record TableReadPlan(
     DbTableModel TableModel,
     string SelectByKeysetSql            // expects a keyset table with a BIGINT `DocumentId` column
+);
+
+/// <summary>
+/// Keyset-table contract consumed by hydration SQL.
+/// </summary>
+public sealed record KeysetTableContract(
+    SqlRelationRef.TempTable Table,
+    DbColumnName DocumentIdColumnName
 );
 ```
 
@@ -1687,6 +1791,7 @@ Flattening inner loop sketch (how `TableWritePlan.ColumnBindings` and `TableWrit
 
 ```csharp
 private static RowBuffer MaterializeRow(
+    ResourceWritePlan resourcePlan,
     TableWritePlan tablePlan,
     long documentId,
     JsonNode scopeNode,
@@ -1711,8 +1816,8 @@ private static RowBuffer MaterializeRow(
             WriteValueSource.DescriptorReference(var edgeSource, var relPath)
                 => ResolveDescriptorId(scopeNode, edgeSource.DescriptorResource, relPath, resolved),
 
-            WriteValueSource.DocumentReference(var binding)
-                => ResolveReferencedDocumentId(binding, ordinalPath, documentReferences),
+            WriteValueSource.DocumentReference(var bindingIndex)
+                => ResolveReferencedDocumentId(resourcePlan, bindingIndex, ordinalPath, documentReferences),
 
             _ => throw new InvalidOperationException("Unsupported write value source")
         };
@@ -1816,10 +1921,20 @@ private static void ApplyKeyUnificationPlans(
 }
 
 private static long? ResolveReferencedDocumentId(
-    DocumentReferenceBinding binding,
+    ResourceWritePlan resourcePlan,
+    int bindingIndex,
     ReadOnlySpan<int> ordinalPath,
     IDocumentReferenceInstanceIndex documentReferences)
 {
+    if ((uint)bindingIndex >= (uint)resourcePlan.Model.DocumentReferenceBindings.Count)
+    {
+        throw new ArgumentOutOfRangeException(
+            nameof(bindingIndex),
+            bindingIndex,
+            "Document-reference binding index is out of range for ResourceWritePlan.Model.DocumentReferenceBindings.");
+    }
+
+    var binding = resourcePlan.Model.DocumentReferenceBindings[bindingIndex];
     return documentReferences.GetReferencedDocumentId(binding, ordinalPath);
 }
 ```

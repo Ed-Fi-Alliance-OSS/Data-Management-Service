@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
 
 namespace EdFi.DataManagementService.Backend.Plans;
 
@@ -19,6 +20,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
 {
     private const string DocumentIdColumnName = "DocumentId";
     private const string MissingPresenceColumnSortValue = "";
+    private static readonly string _rootAlias = PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Root);
 
     private readonly ISqlDialect _sqlDialect = SqlDialectFactory.Create(dialect);
     private readonly IPlanSqlDialect _planSqlDialect = PlanSqlDialectFactory.Create(dialect);
@@ -47,17 +49,30 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             spec.LimitParameterName,
             nameof(spec.LimitParameterName)
         );
+        ValidatePagingParameterNamesAreDistinct(spec.OffsetParameterName, spec.LimitParameterName);
 
         var rewrittenPredicates = RewriteAndSortPredicates(
             spec.Predicates,
             spec.UnifiedAliasMappingsByColumn
         );
+        ValidateFilterParameterNamesDoNotCollideWithPaging(
+            rewrittenPredicates,
+            spec.OffsetParameterName,
+            spec.LimitParameterName
+        );
+        ValidateFilterParameterNamesAreUnique(rewrittenPredicates);
+
         var pageSql = BuildPageDocumentIdSql(spec, rewrittenPredicates);
         var totalCountSql = spec.IncludeTotalCountSql
             ? BuildTotalCountSql(spec.RootTable, rewrittenPredicates)
             : null;
+        var parametersInOrder = BuildParametersInOrder(
+            rewrittenPredicates,
+            spec.OffsetParameterName,
+            spec.LimitParameterName
+        );
 
-        return new PageDocumentIdSqlPlan(pageSql, totalCountSql);
+        return new PageDocumentIdSqlPlan(pageSql, totalCountSql, parametersInOrder);
     }
 
     /// <summary>
@@ -143,6 +158,108 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     }
 
     /// <summary>
+    /// Ensures filter-parameter names do not collide with paging parameter names.
+    /// </summary>
+    private static void ValidateFilterParameterNamesDoNotCollideWithPaging(
+        IReadOnlyList<RewrittenPredicate> predicates,
+        string offsetParameterName,
+        string limitParameterName
+    )
+    {
+        foreach (var predicate in predicates)
+        {
+            if (
+                string.Equals(
+                    predicate.ParameterName,
+                    offsetParameterName,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                throw CreateFilterPagingCollisionException(
+                    predicate.ParameterName,
+                    offsetParameterName,
+                    nameof(PageDocumentIdQuerySpec.OffsetParameterName)
+                );
+            }
+
+            if (
+                string.Equals(predicate.ParameterName, limitParameterName, StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                throw CreateFilterPagingCollisionException(
+                    predicate.ParameterName,
+                    limitParameterName,
+                    nameof(PageDocumentIdQuerySpec.LimitParameterName)
+                );
+            }
+        }
+    }
+
+    /// <summary>
+    /// Ensures paging parameter names are distinct (case-insensitive).
+    /// </summary>
+    private static void ValidatePagingParameterNamesAreDistinct(
+        string offsetParameterName,
+        string limitParameterName
+    )
+    {
+        if (string.Equals(offsetParameterName, limitParameterName, StringComparison.OrdinalIgnoreCase))
+        {
+            throw CreatePagingParameterCollisionException(offsetParameterName, limitParameterName);
+        }
+    }
+
+    /// <summary>
+    /// Ensures filter-parameter names are unique (case-insensitive).
+    /// </summary>
+    private static void ValidateFilterParameterNamesAreUnique(IReadOnlyList<RewrittenPredicate> predicates)
+    {
+        var duplicateGroups = predicates
+            .Select(predicate => predicate.ParameterName)
+            .GroupBy(static parameterName => parameterName, StringComparer.OrdinalIgnoreCase)
+            .Where(static group => group.Count() > 1)
+            .Select(static group =>
+                group.OrderBy(static parameterName => parameterName, StringComparer.Ordinal).ToArray()
+            )
+            .OrderBy(static group => group[0], StringComparer.OrdinalIgnoreCase)
+            .ThenBy(static group => group[0], StringComparer.Ordinal)
+            .ToArray();
+
+        if (duplicateGroups.Length == 0)
+        {
+            return;
+        }
+
+        throw CreateDuplicateFilterParameterNamesException(duplicateGroups);
+    }
+
+    /// <summary>
+    /// Builds deterministic query parameter metadata in canonical plan order.
+    /// Executors bind parameters by name, so this ordering does not need to match placeholder appearance per dialect.
+    /// </summary>
+    private static IReadOnlyList<QuerySqlParameter> BuildParametersInOrder(
+        IReadOnlyList<RewrittenPredicate> predicates,
+        string offsetParameterName,
+        string limitParameterName
+    )
+    {
+        var parametersInOrder = new List<QuerySqlParameter>(predicates.Count + 2);
+
+        foreach (var predicate in predicates)
+        {
+            parametersInOrder.Add(
+                new QuerySqlParameter(QuerySqlParameterRole.Filter, predicate.ParameterName)
+            );
+        }
+
+        parametersInOrder.Add(new QuerySqlParameter(QuerySqlParameterRole.Offset, offsetParameterName));
+        parametersInOrder.Add(new QuerySqlParameter(QuerySqlParameterRole.Limit, limitParameterName));
+
+        return parametersInOrder;
+    }
+
+    /// <summary>
     /// Emits canonical SQL for page-<c>DocumentId</c> selection.
     /// </summary>
     private string BuildPageDocumentIdSql(
@@ -153,16 +270,16 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         var writer = new SqlWriter(_sqlDialect);
 
         writer
-            .Append("SELECT r.")
+            .Append($"SELECT {_rootAlias}.")
             .AppendQuoted(DocumentIdColumnName)
             .AppendLine()
             .Append("FROM ")
-            .AppendTable(spec.RootTable)
-            .AppendLine(" r");
+            .AppendRelation(new SqlRelationRef.PhysicalTable(spec.RootTable))
+            .AppendLine($" {_rootAlias}");
 
         AppendWhereClause(writer, predicates);
 
-        writer.Append("ORDER BY r.").AppendQuoted(DocumentIdColumnName).AppendLine(" ASC");
+        writer.Append($"ORDER BY {_rootAlias}.").AppendQuoted(DocumentIdColumnName).AppendLine(" ASC");
 
         _planSqlDialect.AppendPagingClause(writer, spec.OffsetParameterName, spec.LimitParameterName);
         writer.AppendLine(";");
@@ -177,7 +294,11 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     {
         var writer = new SqlWriter(_sqlDialect);
 
-        writer.AppendLine("SELECT COUNT(1)").Append("FROM ").AppendTable(rootTable).AppendLine(" r");
+        writer
+            .AppendLine("SELECT COUNT(1)")
+            .Append("FROM ")
+            .AppendRelation(new SqlRelationRef.PhysicalTable(rootTable))
+            .AppendLine($" {_rootAlias}");
 
         AppendWhereClause(writer, predicates);
         writer.AppendLine(";");
@@ -220,15 +341,8 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         string parameterName
     )
     {
-        if (@operator is QueryComparisonOperator.In)
-        {
-            throw new NotSupportedException(
-                $"Operator '{nameof(QueryComparisonOperator.In)}' is not supported by {nameof(PageDocumentIdSqlCompiler)}."
-            );
-        }
-
         writer
-            .Append("r.")
+            .Append($"{_rootAlias}.")
             .AppendQuoted(column.Value)
             .Append(" ")
             .Append(ToSqlOperator(@operator))
@@ -241,7 +355,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     /// </summary>
     private static void AppendIsNotNullSql(SqlWriter writer, DbColumnName column)
     {
-        writer.Append("r.").AppendQuoted(column.Value).Append(" IS NOT NULL");
+        writer.Append($"{_rootAlias}.").AppendQuoted(column.Value).Append(" IS NOT NULL");
     }
 
     /// <summary>
@@ -258,6 +372,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             QueryComparisonOperator.GreaterThan => ">",
             QueryComparisonOperator.GreaterThanOrEqual => ">=",
             QueryComparisonOperator.Like => "LIKE",
+
             // Defer implementation until the real compilation stories
             QueryComparisonOperator.In => throw new NotSupportedException(
                 $"Operator '{nameof(QueryComparisonOperator.In)}' is not yet supported by {nameof(ToSqlOperator)}."
@@ -299,13 +414,14 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     private static string FormatSemanticKey(RewrittenPredicate predicate)
     {
         var presenceColumn = predicate.PresenceColumn?.Value ?? "<none>";
+        var operatorToken = GetOperatorSortKey(predicate.Operator);
 
         return string.Join(
             ", ",
             [
                 $"presenceColumn='{presenceColumn}'",
                 $"canonicalColumn='{predicate.CanonicalColumn.Value}'",
-                $"operator='{predicate.Operator}'",
+                $"operator='{operatorToken}'",
             ]
         );
     }
@@ -373,6 +489,58 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     private static string FormatCollisionValues(IReadOnlyList<string> values)
     {
         return string.Join(", ", values.Select(static value => $"'{value}'"));
+    }
+
+    /// <summary>
+    /// Creates a deterministic exception describing a filter/paging parameter-name collision.
+    /// </summary>
+    private static ArgumentException CreateFilterPagingCollisionException(
+        string filterParameterName,
+        string pagingParameterName,
+        string pagingParameterPropertyName
+    )
+    {
+        return new ArgumentException(
+            $"Filter parameter name '{filterParameterName}' collides with paging parameter name '{pagingParameterName}' (case-insensitive). "
+                + $"Rename the filter parameter or change {pagingParameterPropertyName}.",
+            nameof(PageDocumentIdQuerySpec.Predicates)
+        );
+    }
+
+    /// <summary>
+    /// Creates a deterministic exception describing an offset/limit paging parameter-name collision.
+    /// </summary>
+    private static ArgumentException CreatePagingParameterCollisionException(
+        string offsetParameterName,
+        string limitParameterName
+    )
+    {
+        return new ArgumentException(
+            $"Paging parameter names must be distinct (case-insensitive). "
+                + $"{nameof(PageDocumentIdQuerySpec.OffsetParameterName)}='{offsetParameterName}', "
+                + $"{nameof(PageDocumentIdQuerySpec.LimitParameterName)}='{limitParameterName}'. "
+                + $"Rename either {nameof(PageDocumentIdQuerySpec.OffsetParameterName)} or {nameof(PageDocumentIdQuerySpec.LimitParameterName)}.",
+            nameof(PageDocumentIdQuerySpec.OffsetParameterName)
+        );
+    }
+
+    /// <summary>
+    /// Creates a deterministic exception describing duplicate filter parameter names.
+    /// </summary>
+    private static ArgumentException CreateDuplicateFilterParameterNamesException(
+        IReadOnlyList<string[]> duplicateGroups
+    )
+    {
+        var formattedGroups = duplicateGroups
+            .Select(static group => $"[{FormatCollisionValues(group)}]")
+            .ToArray();
+
+        return new ArgumentException(
+            "Duplicate filter parameter names are not allowed (case-insensitive). "
+                + $"Colliding names: [{string.Join(", ", formattedGroups)}]. "
+                + "Rename filter parameters so each name is unique.",
+            nameof(PageDocumentIdQuerySpec.Predicates)
+        );
     }
 
     /// <summary>

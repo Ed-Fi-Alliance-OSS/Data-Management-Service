@@ -1,0 +1,93 @@
+{
+  "story": "reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md",
+  "query_plans": [
+    {
+      "dialect": "pgsql",
+      "page_document_id_sql": "SELECT r.\u0022DocumentId\u0022\nFROM \u0022edfi\u0022.\u0022StudentSchoolAssociation\u0022 r\nWHERE\n    (r.\u0022AliasC\u0022 \u003C @mParam)\n    AND (r.\u0022CanonicalB\u0022 \u003E @zParam)\n    AND (r.\u0022PresenceA\u0022 IS NOT NULL AND r.\u0022CanonicalA\u0022 = @aParam)\nORDER BY r.\u0022DocumentId\u0022 ASC\nLIMIT @limit OFFSET @offset\n;",
+      "page_document_id_sql_sha256": "8e8810a3b74c81b9ed148ba83371e3dd4b87aafa620f83d3ab30c453e1c141c9",
+      "total_count_sql": "SELECT COUNT(1)\nFROM \u0022edfi\u0022.\u0022StudentSchoolAssociation\u0022 r\nWHERE\n    (r.\u0022AliasC\u0022 \u003C @mParam)\n    AND (r.\u0022CanonicalB\u0022 \u003E @zParam)\n    AND (r.\u0022PresenceA\u0022 IS NOT NULL AND r.\u0022CanonicalA\u0022 = @aParam)\n;",
+      "total_count_sql_sha256": "bb811ea14806e8792a79ea0d80227425f1c9cae235afb876f7531cb86df778b9",
+      "parameters_in_order": [
+        {
+          "role": "filter",
+          "parameter_name": "mParam"
+        },
+        {
+          "role": "filter",
+          "parameter_name": "zParam"
+        },
+        {
+          "role": "filter",
+          "parameter_name": "aParam"
+        },
+        {
+          "role": "offset",
+          "parameter_name": "offset"
+        },
+        {
+          "role": "limit",
+          "parameter_name": "limit"
+        }
+      ]
+    },
+    {
+      "dialect": "mssql",
+      "page_document_id_sql": "SELECT r.[DocumentId]\nFROM [edfi].[StudentSchoolAssociation] r\nWHERE\n    (r.[AliasC] \u003C @mParam)\n    AND (r.[CanonicalB] \u003E @zParam)\n    AND (r.[PresenceA] IS NOT NULL AND r.[CanonicalA] = @aParam)\nORDER BY r.[DocumentId] ASC\nOFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY\n;",
+      "page_document_id_sql_sha256": "bf46fb8a1f6e57debe0862287130b218b599842cfc91db1075908d1dd888fd53",
+      "total_count_sql": "SELECT COUNT(1)\nFROM [edfi].[StudentSchoolAssociation] r\nWHERE\n    (r.[AliasC] \u003C @mParam)\n    AND (r.[CanonicalB] \u003E @zParam)\n    AND (r.[PresenceA] IS NOT NULL AND r.[CanonicalA] = @aParam)\n;",
+      "total_count_sql_sha256": "359d248a2e995488fd0a46ac687e28c79330a8a8cda06b2ca117a8fa2e852a92",
+      "parameters_in_order": [
+        {
+          "role": "filter",
+          "parameter_name": "mParam"
+        },
+        {
+          "role": "filter",
+          "parameter_name": "zParam"
+        },
+        {
+          "role": "filter",
+          "parameter_name": "aParam"
+        },
+        {
+          "role": "offset",
+          "parameter_name": "offset"
+        },
+        {
+          "role": "limit",
+          "parameter_name": "limit"
+        }
+      ]
+    }
+  ],
+  "write_parameter_naming": {
+    "columns_in_order": [
+      "SchoolId",
+      "schoolId",
+      "School-ID",
+      "School__ID",
+      "1School Name"
+    ],
+    "parameter_names_in_order": [
+      "schoolId",
+      "schoolId_2",
+      "school_ID",
+      "school_ID_2",
+      "_1School_Name"
+    ]
+  },
+  "batching": [
+    {
+      "dialect": "mssql",
+      "max_rows_per_batch": 700,
+      "parameters_per_row": 3,
+      "max_parameters_per_command": 2100
+    },
+    {
+      "dialect": "pgsql",
+      "max_rows_per_batch": 655,
+      "parameters_per_row": 100,
+      "max_parameters_per_command": 65535
+    }
+  ]
+}

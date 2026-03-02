@@ -20,7 +20,7 @@ The `.mpack` format is a redistributable artifact that contains **dialect-specif
 
 - deterministic `dms.ResourceKey` seed mapping for that schema
 - per-resource relational models (tables/columns/paths) needed by generic flatten/reconstitute
-- per-resource, dialect-specific SQL plans (write/read)
+- per-resource, dialect-specific SQL plans and projection metadata (write/read/reference-identity/descriptor-URI)
 
 The consumer (DMS runtime) MUST be able to execute schema-dependent relational work for that effective schema **without compiling** models or SQL from `ApiSchema.json` at runtime (but Core may still load `ApiSchema.json` for validation and identity extraction).
 
@@ -75,6 +75,23 @@ Hashing:
 - Use SHA-256.
 - `payload_sha256` is computed over the exact `MappingPackPayload` protobuf byte sequence (see determinism rules).
 
+### 3.1 Normalized payload model (not 1:1 executor-contract serialization)
+
+PackFormatVersion 1 stores a **normalized representation** of runtime artifacts. The payload is not required to mirror executor-facing contract object graphs 1:1.
+
+Stored in payload (authoritative):
+- canonical identifiers (`DbTableName`, `DbColumnName`, canonical JsonPath strings)
+- SQL text and deterministic parameter/binding metadata
+- deterministic indices/ordinals and ordering-sensitive lists
+- deterministic batching metadata
+
+Derived at pack load/reconstruction time:
+- `KeysetTableContract` values from `SqlDialect` (`page` for PGSQL, `#page` for MSSQL; `DocumentId` column)
+- `JsonPathExpression` runtime objects (`Segments`) by compiling canonical JsonPath strings
+- table/column object references by lookup (`(schema, name)` for tables, `DbColumnName.value` within table for columns)
+
+Consumers MUST reconstruct executor-facing contracts from these normalized payload values and MUST NOT infer bindings from SQL text parsing.
+
 ---
 
 ## 4. Determinism requirements (normative)
@@ -101,13 +118,13 @@ The envelope MAY contain build/producer metadata that changes between runs (e.g.
 
 The `.proto` schema for PackFormatVersion 1 MUST NOT use `map<...>` fields.
 
-All collections are `repeated` and MUST be emitted in stable sort order:
+All collections are `repeated` and MUST be emitted in stable deterministic order:
 
 - `resource_keys`: ascending by `(resource_key_id)` (and then by `(project_name, resource_name)` for tie-breaking, though ties are invalid).
 - `resources`: ascending by `(project_name, resource_name)` using ordinal (culture-invariant) string ordering.
 - Within each `RelationalResourceModel`:
-  - `tables_in_read_dependency_order`: root-first, then increasing depth; stable within depth by `(json_scope, table_name)`
-  - `tables_in_write_dependency_order`: root-first, then depth-first; stable within sibling set by `(json_scope, table_name)`
+  - `tables_in_dependency_order`: root-first, then depth-first; stable within sibling set by `(json_scope, table_name)` using ordinal string ordering
+    - This canonical order MUST match in-memory `RelationalResourceModel.TablesInDependencyOrder` and is used by both read hydration and write flattening.
   - `columns`: stable per table; key columns first (in key order), then document reference groups, descriptor FKs, then scalars
   - `constraints`: ascending by `(constraint_kind_group, name)` where
     `constraint_kind_group = unique < foreign_key < all_or_none_nullability < null_or_true`
@@ -121,11 +138,26 @@ All collections are `repeated` and MUST be emitted in stable sort order:
 - Within each `ResourceWritePlan`:
   - `table_plans`: ascending by `(table.schema, table.name)`
 - Within each `TableWritePlan`:
+  - `bulk_insert_batching` is semantically significant and MUST be derived deterministically from:
+    - dialect limits (e.g., SQL Server parameter limits),
+    - policy row caps, and
+    - the plan's `column_bindings` count
+    - `bulk_insert_batching.max_rows_per_batch`, `bulk_insert_batching.parameters_per_row`, and `bulk_insert_batching.max_parameters_per_command` MUST all be stable for the same selection key
   - `column_bindings`: order is semantically significant (defines parameter ordering) and MUST NOT be sorted
+    - `parameter_name` is semantically significant and MUST be deterministic and unique within its statement
   - `key_unification_plans`: ascending by `(canonical_column.value)`
   - within `key_unification_plans[*]`:
     - `members_in_order` order is semantically significant and MUST NOT be sorted
     - producers MUST emit the list exactly as derived (must match the corresponding `key_unification_classes[*].member_path_columns`)
+- Within each `ResourceReadPlan`:
+  - `table_plans`: order is semantically significant and MUST match `relational_model.tables_in_dependency_order` (do not sort independently)
+  - `reference_identity_projection_table_plans`: order is semantically significant and MUST follow `table_plans` dependency order for tables that emit reference-identity metadata
+  - `descriptor_projection_plans`: order is semantically significant (execution order) and MUST NOT be sorted
+- Within each `ReferenceIdentityProjectionTablePlan`:
+  - `bindings_in_order`: order is semantically significant and MUST preserve deterministic `reference_object_path` order from `relational_model.document_reference_bindings` for that table
+  - within `bindings_in_order[*]`: `identity_field_ordinals_in_order` preserves reference identity field order and MUST NOT be sorted
+- Within each `DescriptorProjectionPlan`:
+  - `sources_in_order`: order is semantically significant and MUST preserve deterministic `descriptor_value_path` order from `relational_model.descriptor_edge_sources` for the plan's selected source set
 
 ### 4.3 SQL text canonicalization
 
@@ -185,7 +217,7 @@ Rationale and seeding algorithm guidance: `reference/design/backend-redesign/des
 
 ---
 
-## 6. Consumer validation algorithm (normative)
+## 6. Consumer validation and reconstruction algorithm (normative)
 
 Given `(expectedEffectiveSchemaHash, expectedDialect, expectedRelationalMappingVersion, expectedPackFormatVersion=1)`:
 
@@ -206,17 +238,44 @@ Given `(expectedEffectiveSchemaHash, expectedDialect, expectedRelationalMappingV
    - `resources` are unique by `(project_name, resource_name)` and sorted
    - For each `ResourcePack`:
      - if `is_abstract=false`, has `relational_model`, `write_plan`, and `read_plan`
+     - within `relational_model`, canonical path keys are unique:
+       - `document_reference_bindings[*].reference_object_path` has no duplicates
+       - `descriptor_edge_sources[*].descriptor_value_path` has no duplicates
      - all referenced tables/columns/bindings referenced by plans exist in the model
+     - write/query binding invariants:
+       - each `column_bindings[*].parameter_name` is present and unique case-insensitively within a statement
+       - all binding-index references are in-range for the target list
+     - read/projection invariants:
+       - every `read_plan.table_plans[*].table` exists in `relational_model.tables_in_dependency_order`
+       - every `read_plan.reference_identity_projection_table_plans[*].table` exists, and `fk_column_ordinal` plus every `identity_field_ordinals_in_order[*].column_ordinal` are valid ordinals for that table's hydration row shape
+       - every `read_plan.descriptor_projection_plans[*].sources_in_order[*].table` exists, and `descriptor_id_column_ordinal` is a valid ordinal for that source table's hydration row shape
+       - every `read_plan.descriptor_projection_plans[*].result_shape` has distinct `descriptor_id_ordinal` and `uri_ordinal`
      - key unification invariants (when used in this `RelationalMappingVersion`):
        - every `DbColumnModel` has `storage` set
        - any `UnifiedAlias` storage references only stored columns on the same table (canonical + optional presence)
        - any `DbTableModel.key_unification_classes` entries reference only columns on the same table and the member list is ordered and distinct
        - any `WriteValueSource.precomputed` bindings are populated by exactly one `TableWritePlan.key_unification_plans` entry
-7. Validate `dms.ResourceKey` mapping in the target database (fast path if available; otherwise full diff) and cache:
+7. Reconstruct executor-facing contracts deterministically from normalized payload values:
+   - resolve table identities by `(schema, name)` and columns by `DbColumnName.value` (within each resolved table)
+   - compile canonical JsonPath strings into `JsonPathExpression` runtime objects
+   - derive keyset temp-table contract from dialect constants (`page`/`#page`, column `DocumentId`)
+   - preserve authoritative payload order for all ordering-sensitive collections (no runtime resorting)
+   - bind parameters by explicit metadata (`column_bindings`, query parameter inventories), never by SQL-text parsing
+8. Validate `dms.ResourceKey` mapping in the target database (fast path if available; otherwise full diff) and cache:
    - `(ProjectName, ResourceName) -> ResourceKeyId`
    - `ResourceKeyId -> (ProjectName, ResourceName, ResourceVersion)`
 
 If any step fails, the consumer MUST reject the pack and treat it as unusable for that database.
+
+### 6.1 Required fail-fast reconstruction checks
+
+During step 7, consumers MUST fail fast with deterministic errors when any reconstruction invariant is violated, including:
+- unknown `(schema, name)` table identities
+- unknown `DbColumnName.value` in a resolved table
+- out-of-range binding indices and select-list ordinals
+- duplicate canonical paths (`reference_object_path`, `descriptor_value_path`, per-binding `reference_json_path`)
+- duplicate/ambiguous parameter names where uniqueness is required
+- unsupported dialect values when deriving keyset table constants
 
 ---
 
@@ -310,7 +369,7 @@ message ResourcePack {
   string resource_name = 2;
   bool is_abstract_resource = 3;
 
-  reserved 10; // formerly identity_projection_plan (removed; reference identity is reconstituted from local columns)
+  reserved 10; // formerly identity_projection_plan (now represented by read_plan.reference_identity_projection_table_plans)
 
   // Concrete resources only (required when is_abstract_resource=false).
   RelationalResourceModel relational_model = 20;
@@ -339,8 +398,8 @@ message RelationalResourceModel {
   string physical_schema = 2;                            // schema where this resource's tables live (e.g. "edfi")
 
   DbTableModel root = 10;
-  repeated DbTableModel tables_in_read_dependency_order = 11;
-  repeated DbTableModel tables_in_write_dependency_order = 12;
+  reserved 11, 12;
+  repeated DbTableModel tables_in_dependency_order = 13;
 
   repeated DocumentReferenceBinding document_reference_bindings = 20;
   repeated DescriptorEdgeSource descriptor_edge_sources = 21;
@@ -509,6 +568,10 @@ message TableWritePlan {
   string update_sql = 11;                                // empty => not present
   string delete_by_parent_sql = 12;                      // empty => not present
 
+  // Deterministic bulk-insert batching bound for this table.
+  // Derived from dialect limits (e.g., SQL Server parameter limits), policy row caps, and the plan's bound column count.
+  BulkInsertBatchingInfo bulk_insert_batching = 13;
+
   // Parameter/value ordering for insert is defined by this list.
   repeated WriteColumnBinding column_bindings = 20;
 
@@ -516,9 +579,16 @@ message TableWritePlan {
   repeated KeyUnificationWritePlan key_unification_plans = 30;
 }
 
+message BulkInsertBatchingInfo {
+  uint32 max_rows_per_batch = 1;
+  uint32 parameters_per_row = 2;
+  uint32 max_parameters_per_command = 3;
+}
+
 message WriteColumnBinding {
   DbColumnName column = 1;
   WriteValueSource source = 2;
+  string parameter_name = 3;                             // bare name; SQL uses "@{parameter_name}"
 }
 
 message WriteValueSource {
@@ -549,7 +619,7 @@ message WriteScalar {
 }
 
 message WriteDocumentReference {
-  string reference_object_path = 1;                      // matches DocumentReferenceBinding.reference_object_path
+  uint32 binding_index = 1;                              // index into RelationalResourceModel.document_reference_bindings
 }
 
 message WriteDescriptorReference {
@@ -576,12 +646,50 @@ message KeyUnificationMemberWritePlan {
 }
 
 message ResourceReadPlan {
-  repeated TableReadPlan table_plans = 1;                // unique by table
+  repeated TableReadPlan table_plans = 1;                // unique by table; order matches relational_model.tables_in_dependency_order
+  repeated ReferenceIdentityProjectionTablePlan reference_identity_projection_table_plans = 2; // dependency-order subset by table
+  repeated DescriptorProjectionPlan descriptor_projection_plans = 3; // deterministic execution order
 }
 
 message TableReadPlan {
   DbTableName table = 1;
   string select_by_keyset_sql = 10;                      // expects a materialized keyset table with BIGINT DocumentId
+}
+
+message ReferenceIdentityProjectionTablePlan {
+  DbTableName table = 1;
+  repeated ReferenceIdentityProjectionBinding bindings_in_order = 2; // ordered; do not sort
+}
+
+message ReferenceIdentityProjectionBinding {
+  bool is_identity_component = 1;
+  string reference_object_path = 2;                      // canonical JsonPath string
+  QualifiedResourceName target_resource = 3;
+  uint32 fk_column_ordinal = 4;                          // zero-based hydration select-list ordinal
+  repeated ReferenceIdentityProjectionFieldOrdinal identity_field_ordinals_in_order = 5; // ordered; do not sort
+}
+
+message ReferenceIdentityProjectionFieldOrdinal {
+  string reference_json_path = 1;                        // canonical path written under reference_object_path
+  uint32 column_ordinal = 2;                             // zero-based hydration select-list ordinal
+}
+
+message DescriptorProjectionPlan {
+  string select_by_keyset_sql = 1;                       // page-batched SQL, no runtime SQL parsing for shape/binding
+  DescriptorProjectionResultShape result_shape = 2;
+  repeated DescriptorProjectionSource sources_in_order = 3; // ordered; do not sort
+}
+
+message DescriptorProjectionResultShape {
+  uint32 descriptor_id_ordinal = 1;                      // zero-based descriptor result-row ordinal
+  uint32 uri_ordinal = 2;                                // zero-based descriptor result-row ordinal
+}
+
+message DescriptorProjectionSource {
+  string descriptor_value_path = 1;                      // canonical descriptor JSON path
+  DbTableName table = 2;
+  QualifiedResourceName descriptor_resource = 3;
+  uint32 descriptor_id_column_ordinal = 4;               // zero-based hydration select-list ordinal
 }
 ```
 
