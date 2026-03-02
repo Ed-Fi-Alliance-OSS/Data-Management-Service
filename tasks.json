@@ -1,0 +1,62 @@
+[
+  {
+    "category": "Correctness",
+    "description": "Split MSSQL DDL on GO batch separators before ADO.NET execution. The emitted MSSQL DDL contains GO batch separators (from CoreDdlEmitter and RelationalModelDdlEmitter for triggers and views). GO is not valid T-SQL and will cause a syntax error when sent as a single SqlCommand. Acceptance: MssqlDatabaseProvisioner.ExecuteInTransaction() splits the SQL string on standalone GO lines (e.g., Regex.Split with pattern ^\\s*GO\\s*$ multiline+ignorecase), executes each non-empty batch as a separate SqlCommand within the same SqlTransaction, and ddl provision -d mssql succeeds on a schema with triggers and views.",
+    "steps-to-verify": [
+      "Review MssqlDatabaseProvisioner.ExecuteInTransaction() for batch-splitting logic",
+      "Run: dotnet build src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj",
+      "Run: dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/",
+      "Manually test: dms-schema ddl provision -s <schema> -c <mssql-connstr> -d mssql --create-database against a local SQL Server Docker container and verify it completes without GO syntax errors"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Correctness",
+    "description": "Prevent MVCC ALTER DATABASE failure due to connection pooling. After ExecuteInTransaction disposes its SqlConnection to the target database, the pooled connection may block ALTER DATABASE SET READ_COMMITTED_SNAPSHOT ON from acquiring exclusive access. Acceptance: Either clear the connection pool after ExecuteInTransaction (SqlConnection.ClearPool), or append WITH ROLLBACK IMMEDIATE to the ALTER DATABASE statements in CheckOrConfigureMvcc, so that ddl provision -d mssql --create-database reliably configures MVCC without exclusive-access errors.",
+    "steps-to-verify": [
+      "Review MssqlDatabaseProvisioner.ExecuteInTransaction() for pool clearing or MssqlDatabaseProvisioner.CheckOrConfigureMvcc() for WITH ROLLBACK IMMEDIATE",
+      "Run: dotnet build src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj",
+      "Manually test: dms-schema ddl provision -s <schema> -c <mssql-connstr> -d mssql --create-database and verify MVCC configuration succeeds without exclusive-lock errors"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Correctness",
+    "description": "Make RCSI check in CheckOrConfigureMvcc defensive against driver return type. The pattern 'result is bool rcsiEnabled && !rcsiEnabled' may silently fail if ExecuteScalar returns a boxed int (0/1) instead of bool in some driver versions. Acceptance: Use Convert.ToBoolean(result) or handle both bool and int return types so the RCSI-off warning is always emitted when READ_COMMITTED_SNAPSHOT is disabled on an existing database.",
+    "steps-to-verify": [
+      "Review MssqlDatabaseProvisioner.CheckOrConfigureMvcc() for defensive type handling",
+      "Run: dotnet build src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj",
+      "Run: dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Simplification",
+    "description": "Remove unnecessary CloneEffectiveSchemaSet call in DdlProvisionCommand. The provision command processes a single dialect so the schema set is never reused; the clone (copied from DdlEmitCommand's multi-dialect loop) is unnecessary. Acceptance: DdlProvisionCommand passes effectiveSchemaSet directly to the model builder without cloning, and the misleading deep-clone comment is removed or replaced.",
+    "steps-to-verify": [
+      "Verify DdlProvisionCommand.cs no longer calls DdlCommandHelpers.CloneEffectiveSchemaSet",
+      "Run: dotnet build src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj",
+      "Run: dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Simplification",
+    "description": "Fix misleading comment about Npgsql transaction opt-in in PgsqlDatabaseProvisioner.CreateDatabaseIfNotExists(). The comment at line 61-63 says 'Npgsql requires an explicit opt-in to run outside a transaction block' but no opt-in is performed and none is needed (Npgsql 7+ uses autocommit by default without explicit BeginTransaction). Acceptance: Comment is updated to: 'CREATE DATABASE cannot run inside a transaction in PostgreSQL. Without an explicit BeginTransaction(), Npgsql executes in autocommit mode.'",
+    "steps-to-verify": [
+      "Review PgsqlDatabaseProvisioner.cs comment in CreateDatabaseIfNotExists for accuracy"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Maintainability",
+    "description": "Deduplicate connection-string parsing in MssqlDatabaseProvisioner and PgsqlDatabaseProvisioner. Both provisioners parse the connection string and extract the database name with identical null-check + InvalidOperationException logic in multiple methods (GetDatabaseName, CreateDatabaseIfNotExists, CheckOrConfigureMvcc). Acceptance: CreateDatabaseIfNotExists and CheckOrConfigureMvcc call GetDatabaseName() for extraction rather than re-parsing, eliminating the duplicated validation. Error messages remain consistent across all code paths.",
+    "steps-to-verify": [
+      "Verify MssqlDatabaseProvisioner has a single database-name extraction path via GetDatabaseName()",
+      "Verify PgsqlDatabaseProvisioner has a single database-name extraction path via GetDatabaseName()",
+      "Run: dotnet build src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj",
+      "Run: dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/"
+    ],
+    "completed": false
+  }
+]

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
@@ -13,7 +14,7 @@ namespace EdFi.DataManagementService.SchemaTools.Provisioning;
 /// SQL Server implementation of <see cref="IDatabaseProvisioner"/>.
 /// Uses Microsoft.Data.SqlClient for all database connectivity.
 /// </summary>
-public class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisioner
+public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisioner
 {
     public string GetDatabaseName(string connectionString)
     {
@@ -90,17 +91,25 @@ public class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisioner
             LoggingSanitizer.SanitizeForLogging(targetDatabase)
         );
 
+        // Split on GO batch separators. GO is not valid T-SQL; it is a sqlcmd/SSMS
+        // directive. The emitted DDL uses GO to separate batches required by
+        // CREATE OR ALTER statements for triggers and views.
+        var batches = SplitOnGoBatchSeparator(sql);
+
         using var connection = new SqlConnection(connectionString);
         connection.Open();
 
         using var transaction = connection.BeginTransaction();
         try
         {
-            using var command = connection.CreateCommand();
-            command.Transaction = transaction;
-            command.CommandText = sql;
-            command.CommandTimeout = 300; // 5 minutes for large DDL scripts
-            command.ExecuteNonQuery();
+            foreach (var batch in batches)
+            {
+                using var command = connection.CreateCommand();
+                command.Transaction = transaction;
+                command.CommandText = batch;
+                command.CommandTimeout = 300; // 5 minutes for large DDL scripts
+                command.ExecuteNonQuery();
+            }
 
             transaction.Commit();
 
@@ -127,6 +136,21 @@ public class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisioner
             throw;
         }
     }
+
+    /// <summary>
+    /// Splits a SQL script on standalone GO batch separators, filtering out empty batches.
+    /// GO is not valid T-SQL; it is a sqlcmd/SSMS directive that separates batches.
+    /// </summary>
+    public static IEnumerable<string> SplitOnGoBatchSeparator(string sql)
+    {
+        return GoBatchSeparatorPattern()
+            .Split(sql)
+            .Select(batch => batch.Trim())
+            .Where(batch => batch.Length > 0);
+    }
+
+    [GeneratedRegex(@"^\s*GO\s*$", RegexOptions.Multiline | RegexOptions.IgnoreCase)]
+    private static partial Regex GoBatchSeparatorPattern();
 
     public void CheckOrConfigureMvcc(string connectionString, bool databaseWasCreated)
     {
