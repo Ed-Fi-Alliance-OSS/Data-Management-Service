@@ -149,6 +149,8 @@ public static class DdlProvisionCommand
                     databaseWasCreated = provisioner.CreateDatabaseIfNotExists(connectionString);
                 }
 
+                // TODO(DMS-952): Preflight hash-mismatch check before provisioning
+
                 // Execute DDL in a transaction
                 provisioner.ExecuteInTransaction(connectionString, combinedSql);
 
