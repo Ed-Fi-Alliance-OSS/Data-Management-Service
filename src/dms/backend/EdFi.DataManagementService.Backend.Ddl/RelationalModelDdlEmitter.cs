@@ -359,7 +359,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append(".");
         writer.Append(Quote(funcName));
         writer.AppendLine("()");
-        writer.AppendLine("RETURNS TRIGGER AS $$");
+        writer.AppendLine("RETURNS TRIGGER AS $func$");
         writer.AppendLine("BEGIN");
         using (writer.Indent())
         {
@@ -401,7 +401,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.AppendLine("RETURN NEW;");
         }
         writer.AppendLine("END;");
-        writer.AppendLine("$$ LANGUAGE plpgsql;");
+        writer.AppendLine("$func$ LANGUAGE plpgsql;");
         writer.AppendLine();
 
         // Trigger: Use DROP + CREATE pattern per design (ddl-generation.md:260-262)

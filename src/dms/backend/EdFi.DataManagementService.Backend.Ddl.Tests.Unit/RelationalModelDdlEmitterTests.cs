@@ -662,7 +662,7 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Triggers
     [Test]
     public void It_should_emit_plpgsql_language()
     {
-        _ddl.Should().Contain("$$ LANGUAGE plpgsql");
+        _ddl.Should().Contain("$func$ LANGUAGE plpgsql");
     }
 
     [Test]
