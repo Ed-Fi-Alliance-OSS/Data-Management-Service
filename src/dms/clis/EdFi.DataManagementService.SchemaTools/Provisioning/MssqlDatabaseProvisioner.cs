@@ -113,6 +113,10 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
 
             transaction.Commit();
 
+            // Clear the connection pool so pooled connections to the target database
+            // do not block subsequent ALTER DATABASE statements (e.g., MVCC configuration).
+            SqlConnection.ClearPool(connection);
+
             logger.LogInformation(
                 "DDL executed successfully against database: {DatabaseName}",
                 LoggingSanitizer.SanitizeForLogging(targetDatabase)
@@ -179,11 +183,13 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
             );
 
             using var rcsiCommand = connection.CreateCommand();
-            rcsiCommand.CommandText = $"ALTER DATABASE {quotedName} SET READ_COMMITTED_SNAPSHOT ON";
+            rcsiCommand.CommandText =
+                $"ALTER DATABASE {quotedName} SET READ_COMMITTED_SNAPSHOT ON WITH ROLLBACK IMMEDIATE";
             rcsiCommand.ExecuteNonQuery();
 
             using var snapshotCommand = connection.CreateCommand();
-            snapshotCommand.CommandText = $"ALTER DATABASE {quotedName} SET ALLOW_SNAPSHOT_ISOLATION ON";
+            snapshotCommand.CommandText =
+                $"ALTER DATABASE {quotedName} SET ALLOW_SNAPSHOT_ISOLATION ON WITH ROLLBACK IMMEDIATE";
             snapshotCommand.ExecuteNonQuery();
 
             logger.LogInformation(

@@ -18,7 +18,7 @@
       "Run: dotnet build src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj",
       "Manually test: dms-schema ddl provision -s <schema> -c <mssql-connstr> -d mssql --create-database and verify MVCC configuration succeeds without exclusive-lock errors"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Correctness",
