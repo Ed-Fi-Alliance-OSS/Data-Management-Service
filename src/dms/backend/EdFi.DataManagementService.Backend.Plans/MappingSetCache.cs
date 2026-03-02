@@ -34,6 +34,9 @@ public sealed class MappingSetCache(Func<MappingSetKey, Task<MappingSet>> compil
         return compileTask.WaitAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Creates a lazy cache entry that performs at most one in-flight compilation and supports eviction on failure.
+    /// </summary>
     private Lazy<Task<MappingSet>> CreateCacheEntry(MappingSetKey key)
     {
         Lazy<Task<MappingSet>> cacheEntry = null!;
@@ -45,6 +48,9 @@ public sealed class MappingSetCache(Func<MappingSetKey, Task<MappingSet>> compil
         return cacheEntry;
     }
 
+    /// <summary>
+    /// Compiles a mapping set and evicts the cache entry if compilation fails so subsequent calls can retry.
+    /// </summary>
     private async Task<MappingSet> CompileAndEvictOnFailureAsync(
         MappingSetKey key,
         Lazy<Task<MappingSet>> cacheEntry

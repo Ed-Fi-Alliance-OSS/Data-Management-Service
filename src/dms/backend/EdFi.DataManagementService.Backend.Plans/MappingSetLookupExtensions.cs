@@ -135,6 +135,9 @@ public static class MappingSetLookupExtensions
         );
     }
 
+    /// <summary>
+    /// Resolves the concrete resource model from the mapping set's canonical resource list or throws a deterministic error.
+    /// </summary>
     private static ConcreteResourceModel GetConcreteResourceModelOrThrow(
         MappingSet mappingSet,
         QualifiedResourceName resource
@@ -153,11 +156,17 @@ public static class MappingSetLookupExtensions
         );
     }
 
+    /// <summary>
+    /// Formats a qualified resource name as <c>{ProjectName}.{ResourceName}</c> for diagnostics.
+    /// </summary>
     private static string FormatResource(QualifiedResourceName resource)
     {
         return $"{resource.ProjectName}.{resource.ResourceName}";
     }
 
+    /// <summary>
+    /// Formats a mapping set key as <c>{EffectiveSchemaHash}/{Dialect}/{RelationalMappingVersion}</c> for diagnostics.
+    /// </summary>
     private static string FormatMappingSetKey(MappingSetKey key)
     {
         return $"{key.EffectiveSchemaHash}/{key.Dialect}/{key.RelationalMappingVersion}";

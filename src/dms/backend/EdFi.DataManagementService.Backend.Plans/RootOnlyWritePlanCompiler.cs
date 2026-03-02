@@ -62,6 +62,9 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
         return CompileCore(resourceModel, supportResult);
     }
 
+    /// <summary>
+    /// Compiles a root-table write plan using deterministic binding order, parameter naming, and canonical SQL emission.
+    /// </summary>
     private ResourceWritePlan CompileCore(
         RelationalResourceModel resourceModel,
         ThinSliceWritePlanSupportResult supportResult
@@ -129,6 +132,9 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
         return new ResourceWritePlan(resourceModel, [tablePlan]);
     }
 
+    /// <summary>
+    /// Emits root-table <c>UPDATE</c> SQL when at least one stored non-key column is writable; otherwise returns <see langword="null" />.
+    /// </summary>
     private string? TryEmitUpdateSql(
         DbTableModel rootTable,
         IReadOnlyList<WriteColumnBinding> bindingsInColumnOrder
@@ -183,6 +189,9 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
         );
     }
 
+    /// <summary>
+    /// Derives a deterministic write-time value source contract for a stored column binding.
+    /// </summary>
     private static WriteValueSource DeriveWriteValueSource(
         RelationalResourceModel resourceModel,
         DbTableModel tableModel,
@@ -215,6 +224,9 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
         };
     }
 
+    /// <summary>
+    /// Returns <see langword="true" /> when the column is the table key's <c>DocumentId</c> component.
+    /// </summary>
     private static bool IsDocumentIdKeyColumn(DbTableModel tableModel, DbColumnModel column)
     {
         return column.Kind == ColumnKind.ParentKeyPart
@@ -225,6 +237,9 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
             );
     }
 
+    /// <summary>
+    /// Gets the 0-based parent-key part index for the column in key order.
+    /// </summary>
     private static int GetParentKeyPartIndex(DbTableModel tableModel, DbColumnModel column)
     {
         for (var index = 0; index < tableModel.Key.Columns.Count; index++)
@@ -242,6 +257,9 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
         );
     }
 
+    /// <summary>
+    /// Finds the document-reference binding inventory index for a specific FK column on a table.
+    /// </summary>
     private static int FindDocumentReferenceBindingIndex(
         RelationalResourceModel resourceModel,
         DbTableName table,
@@ -279,6 +297,9 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
         );
     }
 
+    /// <summary>
+    /// Creates a descriptor-reference write value source by matching the descriptor edge source metadata.
+    /// </summary>
     private static WriteValueSource CreateDescriptorReferenceSource(
         RelationalResourceModel resourceModel,
         DbTableName table,
@@ -319,6 +340,9 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
         );
     }
 
+    /// <summary>
+    /// Creates a scalar write value source when JSON-bound; otherwise creates a precomputed value source placeholder.
+    /// </summary>
     private static WriteValueSource CreateScalarOrPrecomputedSource(DbColumnModel column)
     {
         if (column.SourceJsonPath is null)

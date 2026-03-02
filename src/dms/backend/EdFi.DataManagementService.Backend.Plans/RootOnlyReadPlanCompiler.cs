@@ -84,6 +84,9 @@ public sealed class RootOnlyReadPlanCompiler(SqlDialect dialect)
         );
     }
 
+    /// <summary>
+    /// Emits canonical keyset-join hydration SQL for the root table.
+    /// </summary>
     private string EmitSelectByKeysetSql(DbTableModel rootTable, KeysetTableContract keysetTable)
     {
         if (rootTable.Columns.Count == 0)
@@ -159,6 +162,9 @@ public sealed class RootOnlyReadPlanCompiler(SqlDialect dialect)
         return writer.ToString();
     }
 
+    /// <summary>
+    /// Resolves the single <c>DocumentId</c> key column used to join the root table to the page keyset.
+    /// </summary>
     private static DbColumnName ResolveRootDocumentIdKeyColumn(DbTableModel rootTable)
     {
         var rootDocumentIdKeyColumns = rootTable
@@ -182,6 +188,9 @@ public sealed class RootOnlyReadPlanCompiler(SqlDialect dialect)
         );
     }
 
+    /// <summary>
+    /// Produces a deterministic <c>ORDER BY</c> key column list with <c>DocumentId</c> first.
+    /// </summary>
     private static List<DbColumnName> GetOrderByKeyColumns(
         DbTableModel rootTable,
         DbColumnName rootDocumentIdKeyColumn
@@ -205,6 +214,9 @@ public sealed class RootOnlyReadPlanCompiler(SqlDialect dialect)
         return orderByKeyColumns;
     }
 
+    /// <summary>
+    /// Appends a qualified column reference (<c>{alias}."Column"</c>) using dialect quoting rules.
+    /// </summary>
     private static void AppendQualifiedColumn(SqlWriter writer, string tableAlias, DbColumnName columnName)
     {
         writer.Append($"{tableAlias}.").AppendQuoted(columnName.Value);
