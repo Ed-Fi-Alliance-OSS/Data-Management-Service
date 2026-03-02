@@ -109,15 +109,6 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
             }
 
             transaction.Commit();
-
-            // Clear the connection pool so pooled connections to the target database
-            // do not block subsequent ALTER DATABASE statements (e.g., MVCC configuration).
-            SqlConnection.ClearPool(connection);
-
-            logger.LogInformation(
-                "DDL executed successfully against database: {DatabaseName}",
-                LoggingSanitizer.SanitizeForLogging(targetDatabase)
-            );
         }
         catch
         {
@@ -136,6 +127,15 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
 
             throw;
         }
+
+        // Clear the connection pool so pooled connections to the target database
+        // do not block subsequent ALTER DATABASE statements (e.g., MVCC configuration).
+        SqlConnection.ClearPool(connection);
+
+        logger.LogInformation(
+            "DDL executed successfully against database: {DatabaseName}",
+            LoggingSanitizer.SanitizeForLogging(targetDatabase)
+        );
     }
 
     /// <summary>
@@ -192,7 +192,11 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
         }
         else
         {
-            // Check current MVCC settings and warn if not enabled
+            // For existing databases, only READ_COMMITTED_SNAPSHOT is checked.
+            // ALLOW_SNAPSHOT_ISOLATION is optional per the design doc — it enables
+            // explicit snapshot transactions but is not required for DMS's default
+            // read-committed MVCC behavior. The newly-created path enables both as
+            // a convenience, but we only warn about RCSI for pre-existing databases.
             using var checkCommand = connection.CreateCommand();
             checkCommand.CommandText =
                 "SELECT is_read_committed_snapshot_on FROM sys.databases WHERE name = @dbName";
