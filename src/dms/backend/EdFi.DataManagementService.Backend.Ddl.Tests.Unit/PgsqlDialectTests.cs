@@ -497,9 +497,11 @@ public class Given_PgsqlDialect_Create_Index_If_Not_Exists
     }
 
     [Test]
-    public void It_should_qualify_index_name_with_schema()
+    public void It_should_not_qualify_index_name_with_schema()
     {
-        _ddl.Should().Contain("\"edfi\".\"IX_School_LEA\"");
+        // PostgreSQL does not support schema-qualified index names in CREATE INDEX
+        _ddl.Should().NotContain("\"edfi\".\"IX_School_LEA\"");
+        _ddl.Should().Contain("\"IX_School_LEA\"");
     }
 
     [Test]

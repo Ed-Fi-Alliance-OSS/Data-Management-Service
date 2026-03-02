@@ -745,9 +745,11 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         var changeTable = _dialect.QualifyTable(_documentChangeEventTable);
         var funcName = $"{Quote(DmsTableNames.DmsSchema.Value)}.{Quote("TF_Document_Journal")}";
 
-        // Trigger function
+        // Row-level trigger function. Uses FOR EACH ROW instead of statement-level
+        // transition tables because PostgreSQL 16 does not support transition tables
+        // with column lists or multiple events.
         writer.AppendLine($"CREATE OR REPLACE FUNCTION {funcName}()");
-        writer.AppendLine("RETURNS TRIGGER AS $$");
+        writer.AppendLine("RETURNS TRIGGER AS $func$");
         writer.AppendLine("BEGIN");
         using (writer.Indent())
         {
@@ -755,21 +757,12 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
                 $"INSERT INTO {changeTable} ({Quote("ChangeVersion")}, {Quote("DocumentId")}, {Quote("ResourceKeyId")}, {Quote("CreatedAt")})"
             );
             writer.AppendLine(
-                $"SELECT d.{Quote("ContentVersion")}, d.{Quote("DocumentId")}, d.{Quote("ResourceKeyId")}, now()"
+                $"VALUES (NEW.{Quote("ContentVersion")}, NEW.{Quote("DocumentId")}, NEW.{Quote("ResourceKeyId")}, now());"
             );
-            writer.AppendLine("FROM (");
-            using (writer.Indent())
-            {
-                writer.AppendLine(
-                    $"SELECT DISTINCT ON ({Quote("DocumentId")}) {Quote("ContentVersion")}, {Quote("DocumentId")}, {Quote("ResourceKeyId")}"
-                );
-                writer.AppendLine("FROM new_table");
-            }
-            writer.AppendLine(") d;");
-            writer.AppendLine("RETURN NULL;");
+            writer.AppendLine("RETURN NEW;");
         }
         writer.AppendLine("END;");
-        writer.AppendLine("$$ LANGUAGE plpgsql;");
+        writer.AppendLine("$func$ LANGUAGE plpgsql;");
         writer.AppendLine();
 
         // Drop and recreate trigger
@@ -778,8 +771,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         using (writer.Indent())
         {
             writer.AppendLine($"AFTER INSERT OR UPDATE OF {Quote("ContentVersion")} ON {docTable}");
-            writer.AppendLine("REFERENCING NEW TABLE AS new_table");
-            writer.AppendLine("FOR EACH STATEMENT");
+            writer.AppendLine("FOR EACH ROW");
             writer.AppendLine($"EXECUTE FUNCTION {funcName}();");
         }
         writer.AppendLine();

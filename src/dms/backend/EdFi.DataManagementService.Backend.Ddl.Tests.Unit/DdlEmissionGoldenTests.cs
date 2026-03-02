@@ -467,10 +467,10 @@ public class Given_DdlEmitter_With_FkSupportIndex_For_Pgsql : DdlEmissionGoldenT
     public void It_should_emit_fk_support_index_exactly_once()
     {
         // Use dialect-specific quoted identifier pattern for precise matching
-        // Account for IF NOT EXISTS and schema prefix in PostgreSQL DDL
+        // PostgreSQL index names are NOT schema-qualified in CREATE INDEX
         var indexMatches = System.Text.RegularExpressions.Regex.Matches(
             _ddlContent,
-            @"CREATE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+""[^""]+""\.""IX_Enrollment_SchoolId""",
+            @"CREATE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+""IX_Enrollment_SchoolId""",
             System.Text.RegularExpressions.RegexOptions.IgnoreCase
         );
         indexMatches.Count.Should().Be(1, "FK-support index should be emitted exactly once");
