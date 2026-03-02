@@ -32,3 +32,12 @@
 - Files changed:
   - src/dms/clis/EdFi.DataManagementService.SchemaTools/Commands/DdlProvisionCommand.cs
 - Build succeeds, all 43 unit tests pass
+
+## Task: Fix misleading Npgsql transaction comment (01-ddl-provision-command)
+- Updated comment in PgsqlDatabaseProvisioner.CreateDatabaseIfNotExists (line 62)
+- Old: "Npgsql requires an explicit opt-in to run outside a transaction block"
+- New: "Without an explicit BeginTransaction(), Npgsql executes in autocommit mode"
+- No opt-in code existed; Npgsql 7+ autocommit is the default behavior
+- Files changed:
+  - src/dms/clis/EdFi.DataManagementService.SchemaTools/Provisioning/PgsqlDatabaseProvisioner.cs
+- Build succeeds
