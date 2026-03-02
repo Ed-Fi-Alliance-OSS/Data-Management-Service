@@ -171,6 +171,61 @@ public abstract class DdlEmissionGoldenTestBase
         }
     }
 
+    /// <summary>
+    /// Emits a DDL manifest (both dialects) and writes the actual output file.
+    /// Builds model sets for both dialects, combines core + relational + seed DDL,
+    /// then calls <see cref="DdlManifestEmitter.Emit"/> to produce the manifest JSON.
+    /// </summary>
+    protected static GoldenTestPaths EmitDdlManifest(
+        string fixtureName,
+        Func<SqlDialect, DerivedRelationalModelSet> buildModelSet
+    )
+    {
+        var projectRoot = FindProjectRoot(TestContext.CurrentContext.TestDirectory);
+        var fixtureRoot = Path.Combine(projectRoot, "Fixtures", "ddl-emission");
+        var expectedPath = Path.Combine(fixtureRoot, "expected", "ddl-manifest", $"{fixtureName}.json");
+        var actualPath = Path.Combine(
+            TestContext.CurrentContext.WorkDirectory,
+            "ddl-emission",
+            "ddl-manifest",
+            $"{fixtureName}.json"
+        );
+
+        SqlDialect[] dialects = [SqlDialect.Pgsql, SqlDialect.Mssql];
+        var entries = new List<DdlManifestEntry>();
+        EffectiveSchemaInfo? effectiveSchema = null;
+
+        foreach (var dialect in dialects)
+        {
+            var modelSet = buildModelSet(dialect);
+            effectiveSchema ??= modelSet.EffectiveSchema;
+
+            var sqlDialect = SqlDialectFactory.Create(dialect);
+            var coreDdl = new CoreDdlEmitter(sqlDialect).Emit();
+            var relationalDdl = new RelationalModelDdlEmitter(sqlDialect).Emit(modelSet);
+            var seedDml = new SeedDmlEmitter(sqlDialect).Emit(modelSet.EffectiveSchema);
+            var combinedSql = coreDdl + relationalDdl + seedDml;
+
+            entries.Add(new DdlManifestEntry(dialect, combinedSql));
+        }
+
+        var manifest = DdlManifestEmitter.Emit(effectiveSchema!, entries);
+
+        manifest.Should().NotContain("\r", "manifest must use \\n line endings only");
+        manifest.Should().EndWith("\n", "manifest must end with trailing newline");
+
+        Directory.CreateDirectory(Path.GetDirectoryName(actualPath)!);
+        File.WriteAllText(actualPath, manifest);
+
+        if (ShouldUpdateGoldens())
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(expectedPath)!);
+            File.WriteAllText(expectedPath, manifest);
+        }
+
+        return new GoldenTestPaths(expectedPath, actualPath);
+    }
+
     protected record GoldenTestPaths(string ExpectedPath, string ActualPath);
 }
 
@@ -507,6 +562,118 @@ public class Given_DdlEmitter_With_FkSupportIndex_For_Mssql : DdlEmissionGoldenT
             System.Text.RegularExpressions.RegexOptions.IgnoreCase
         );
         indexMatches.Count.Should().Be(1, "FK-support index should be emitted exactly once");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Golden File Tests - DDL Manifest
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_DdlManifest_For_NestedCollections : DdlEmissionGoldenTestBase
+{
+    private GoldenTestPaths _paths = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _paths = EmitDdlManifest("nested-collections", NestedCollectionsFixture.Build);
+    }
+
+    [Test]
+    public void It_should_emit_manifest_matching_golden_file()
+    {
+        AssertGoldenMatch(_paths);
+    }
+}
+
+[TestFixture]
+public class Given_DdlManifest_For_PolymorphicAbstract : DdlEmissionGoldenTestBase
+{
+    private GoldenTestPaths _paths = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _paths = EmitDdlManifest("polymorphic-abstract", PolymorphicAbstractFixture.Build);
+    }
+
+    [Test]
+    public void It_should_emit_manifest_matching_golden_file()
+    {
+        AssertGoldenMatch(_paths);
+    }
+}
+
+[TestFixture]
+public class Given_DdlManifest_For_IdentityPropagation : DdlEmissionGoldenTestBase
+{
+    private GoldenTestPaths _paths = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _paths = EmitDdlManifest("identity-propagation", IdentityPropagationFixture.Build);
+    }
+
+    [Test]
+    public void It_should_emit_manifest_matching_golden_file()
+    {
+        AssertGoldenMatch(_paths);
+    }
+}
+
+[TestFixture]
+public class Given_DdlManifest_For_ExtensionMapping : DdlEmissionGoldenTestBase
+{
+    private GoldenTestPaths _paths = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _paths = EmitDdlManifest("extension-mapping", ExtensionMappingFixture.Build);
+    }
+
+    [Test]
+    public void It_should_emit_manifest_matching_golden_file()
+    {
+        AssertGoldenMatch(_paths);
+    }
+}
+
+[TestFixture]
+public class Given_DdlManifest_For_KeyUnification : DdlEmissionGoldenTestBase
+{
+    private GoldenTestPaths _paths = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _paths = EmitDdlManifest("key-unification", KeyUnificationFixture.Build);
+    }
+
+    [Test]
+    public void It_should_emit_manifest_matching_golden_file()
+    {
+        AssertGoldenMatch(_paths);
+    }
+}
+
+[TestFixture]
+public class Given_DdlManifest_For_FkSupportIndex : DdlEmissionGoldenTestBase
+{
+    private GoldenTestPaths _paths = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _paths = EmitDdlManifest("fk-support-index", FkSupportIndexFixture.Build);
+    }
+
+    [Test]
+    public void It_should_emit_manifest_matching_golden_file()
+    {
+        AssertGoldenMatch(_paths);
     }
 }
 

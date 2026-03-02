@@ -1,0 +1,16 @@
+{
+  "effective_schema_hash": "hash",
+  "relational_mapping_version": "1.0.0",
+  "ddl": [
+    {
+      "dialect": "mssql",
+      "normalized_sql_sha256": "33b0550df6e369564f31b4ec6ba2fe3cc3e55da362e3b775ba61d89aed8582b6",
+      "statement_count": 34
+    },
+    {
+      "dialect": "pgsql",
+      "normalized_sql_sha256": "ad8f34ccb8e51454867c101c7147cef57aa816db366dab9304d38557fbd6fd9e",
+      "statement_count": 53
+    }
+  ]
+}
