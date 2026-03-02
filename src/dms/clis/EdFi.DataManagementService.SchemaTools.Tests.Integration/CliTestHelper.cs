@@ -76,8 +76,14 @@ public static class CliTestHelper
         if (!process.WaitForExit((int)_processTimeout.TotalMilliseconds))
         {
             process.Kill(entireProcessTree: true);
+            process.WaitForExit(5000);
+
+            var partialOut = outputTask.IsCompleted ? outputTask.Result : "(not captured)";
+            var partialErr = errorTask.IsCompleted ? errorTask.Result : "(not captured)";
+
             Assert.Fail(
-                $"CLI process timed out after {_processTimeout.TotalSeconds} seconds. Args: {string.Join(" ", args)}"
+                $"CLI process timed out after {_processTimeout.TotalSeconds} seconds. "
+                    + $"Args: {string.Join(" ", args)}\nstdout: {partialOut}\nstderr: {partialErr}"
             );
         }
 
