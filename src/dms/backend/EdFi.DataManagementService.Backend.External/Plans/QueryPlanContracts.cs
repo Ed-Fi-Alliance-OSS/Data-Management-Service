@@ -36,32 +36,19 @@ public sealed record PageDocumentIdSqlPlan
         IEnumerable<QuerySqlParameter>? TotalCountParametersInOrder
     )
     {
-        ArgumentNullException.ThrowIfNull(PageDocumentIdSql);
-
-        this.PageDocumentIdSql = PageDocumentIdSql;
+        this.PageDocumentIdSql = PlanContractArgumentValidator.RequireNotNull(
+            PageDocumentIdSql,
+            nameof(PageDocumentIdSql)
+        );
         this.TotalCountSql = TotalCountSql;
-        this.PageParametersInOrder = PlanContractCollectionCloner.ToImmutableArray(
+        this.PageParametersInOrder = PlanContractArgumentValidator.RequireImmutableArray(
             PageParametersInOrder,
             nameof(PageParametersInOrder)
         );
-
-        if (TotalCountSql is null)
-        {
-            if (TotalCountParametersInOrder is not null)
-            {
-                throw new ArgumentException(
-                    $"{nameof(TotalCountParametersInOrder)} must be null when {nameof(TotalCountSql)} is null.",
-                    nameof(TotalCountParametersInOrder)
-                );
-            }
-
-            this.TotalCountParametersInOrder = null;
-            return;
-        }
-
-        this.TotalCountParametersInOrder = PlanContractCollectionCloner.ToImmutableArray(
-            TotalCountParametersInOrder
-                ?? throw new ArgumentNullException(nameof(TotalCountParametersInOrder)),
+        this.TotalCountParametersInOrder = PlanContractArgumentValidator.RequireImmutableArrayWhenSqlPresent(
+            TotalCountSql,
+            nameof(TotalCountSql),
+            TotalCountParametersInOrder,
             nameof(TotalCountParametersInOrder)
         );
     }

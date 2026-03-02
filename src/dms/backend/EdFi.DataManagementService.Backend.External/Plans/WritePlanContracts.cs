@@ -26,10 +26,8 @@ public sealed record ResourceWritePlan
         IEnumerable<TableWritePlan> TablePlansInDependencyOrder
     )
     {
-        ArgumentNullException.ThrowIfNull(Model);
-
-        this.Model = Model;
-        this.TablePlansInDependencyOrder = PlanContractCollectionCloner.ToImmutableArray(
+        this.Model = PlanContractArgumentValidator.RequireNotNull(Model, nameof(Model));
+        this.TablePlansInDependencyOrder = PlanContractArgumentValidator.RequireImmutableArray(
             TablePlansInDependencyOrder,
             nameof(TablePlansInDependencyOrder)
         );
@@ -81,20 +79,19 @@ public sealed record TableWritePlan
         IEnumerable<KeyUnificationWritePlan> KeyUnificationPlans
     )
     {
-        ArgumentNullException.ThrowIfNull(TableModel);
-        ArgumentNullException.ThrowIfNull(InsertSql);
-        ArgumentNullException.ThrowIfNull(BulkInsertBatching);
-
-        this.TableModel = TableModel;
-        this.InsertSql = InsertSql;
+        this.TableModel = PlanContractArgumentValidator.RequireNotNull(TableModel, nameof(TableModel));
+        this.InsertSql = PlanContractArgumentValidator.RequireNotNull(InsertSql, nameof(InsertSql));
         this.UpdateSql = UpdateSql;
         this.DeleteByParentSql = DeleteByParentSql;
-        this.BulkInsertBatching = BulkInsertBatching;
-        this.ColumnBindings = PlanContractCollectionCloner.ToImmutableArray(
+        this.BulkInsertBatching = PlanContractArgumentValidator.RequireNotNull(
+            BulkInsertBatching,
+            nameof(BulkInsertBatching)
+        );
+        this.ColumnBindings = PlanContractArgumentValidator.RequireImmutableArray(
             ColumnBindings,
             nameof(ColumnBindings)
         );
-        this.KeyUnificationPlans = PlanContractCollectionCloner.ToImmutableArray(
+        this.KeyUnificationPlans = PlanContractArgumentValidator.RequireImmutableArray(
             KeyUnificationPlans,
             nameof(KeyUnificationPlans)
         );
@@ -232,7 +229,7 @@ public sealed record KeyUnificationWritePlan
     {
         this.CanonicalColumn = CanonicalColumn;
         this.CanonicalBindingIndex = CanonicalBindingIndex;
-        this.MembersInOrder = PlanContractCollectionCloner.ToImmutableArray(
+        this.MembersInOrder = PlanContractArgumentValidator.RequireImmutableArray(
             MembersInOrder,
             nameof(MembersInOrder)
         );
