@@ -4,13 +4,14 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using FluentAssertions;
-using Npgsql;
+using Microsoft.Data.SqlClient;
 
 namespace EdFi.DataManagementService.SchemaTools.Tests.Integration;
 
 [TestFixture]
 [Category("DatabaseIntegration")]
-public class Given_A_Fresh_Database_Provisioned_With_Create_Database_Flag
+[Category("MssqlIntegration")]
+public class Given_A_Fresh_Mssql_Database_Provisioned_With_Create_Database_Flag
 {
     private string _databaseName = null!;
     private int _exitCode;
@@ -20,8 +21,15 @@ public class Given_A_Fresh_Database_Provisioned_With_Create_Database_Flag
     [SetUp]
     public void SetUp()
     {
-        _databaseName = PostgresTestDatabaseHelper.GenerateUniqueDatabaseName();
-        var connectionString = PostgresTestDatabaseHelper.BuildConnectionString(_databaseName);
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore(
+                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.Test.json"
+            );
+        }
+
+        _databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
+        var connectionString = MssqlTestDatabaseHelper.BuildConnectionString(_databaseName);
         var fixturePath = CliTestHelper.GetMinimalFixturePath();
 
         (_exitCode, _output, _error) = CliTestHelper.RunCli(
@@ -32,7 +40,7 @@ public class Given_A_Fresh_Database_Provisioned_With_Create_Database_Flag
             "--connection-string",
             connectionString,
             "--dialect",
-            "pgsql",
+            "mssql",
             "--create-database"
         );
     }
@@ -40,7 +48,10 @@ public class Given_A_Fresh_Database_Provisioned_With_Create_Database_Flag
     [TearDown]
     public void TearDown()
     {
-        PostgresTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+        if (MssqlTestDatabaseHelper.IsConfigured())
+        {
+            MssqlTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+        }
     }
 
     [Test]
@@ -58,27 +69,27 @@ public class Given_A_Fresh_Database_Provisioned_With_Create_Database_Flag
     [Test]
     public void It_creates_the_database()
     {
-        using var connection = new NpgsqlConnection(DatabaseConfiguration.PostgresAdminConnectionString);
+        using var connection = new SqlConnection(DatabaseConfiguration.MssqlAdminConnectionString!);
         connection.Open();
 
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT 1 FROM pg_database WHERE datname = @name;";
+        command.CommandText = "SELECT 1 FROM sys.databases WHERE name = @name;";
         command.Parameters.AddWithValue("name", _databaseName);
 
         var result = command.ExecuteScalar();
-        result.Should().NotBeNull("the database should exist in pg_database");
+        result.Should().NotBeNull("the database should exist in sys.databases");
     }
 
     [Test]
     public void It_creates_the_dms_schema()
     {
-        using var connection = new NpgsqlConnection(
-            PostgresTestDatabaseHelper.BuildConnectionString(_databaseName)
+        using var connection = new SqlConnection(
+            MssqlTestDatabaseHelper.BuildConnectionString(_databaseName)
         );
         connection.Open();
 
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT 1 FROM information_schema.schemata WHERE schema_name = 'dms';";
+        command.CommandText = "SELECT 1 FROM sys.schemas WHERE name = 'dms';";
 
         var result = command.ExecuteScalar();
         result.Should().NotBeNull("the dms schema should exist");
@@ -99,8 +110,8 @@ public class Given_A_Fresh_Database_Provisioned_With_Create_Database_Flag
             "DocumentChangeEvent",
         };
 
-        using var connection = new NpgsqlConnection(
-            PostgresTestDatabaseHelper.BuildConnectionString(_databaseName)
+        using var connection = new SqlConnection(
+            MssqlTestDatabaseHelper.BuildConnectionString(_databaseName)
         );
         connection.Open();
 
@@ -112,26 +123,26 @@ public class Given_A_Fresh_Database_Provisioned_With_Create_Database_Flag
             command.Parameters.AddWithValue("table", table);
 
             var result = command.ExecuteScalar();
-            result.Should().NotBeNull($"table dms.\"{table}\" should exist");
+            result.Should().NotBeNull($"table dms.[{table}] should exist");
         }
     }
 
     [Test]
     public void It_seeds_effective_schema_row()
     {
-        using var connection = new NpgsqlConnection(
-            PostgresTestDatabaseHelper.BuildConnectionString(_databaseName)
+        using var connection = new SqlConnection(
+            MssqlTestDatabaseHelper.BuildConnectionString(_databaseName)
         );
         connection.Open();
 
         using var command = connection.CreateCommand();
-        command.CommandText = """SELECT COUNT(*) FROM dms."EffectiveSchema";""";
+        command.CommandText = "SELECT COUNT(*) FROM dms.EffectiveSchema;";
 
-        var count = (long)command.ExecuteScalar()!;
+        var count = (int)command.ExecuteScalar()!;
         count.Should().Be(1, "there should be exactly one EffectiveSchema row");
 
         using var hashCommand = connection.CreateCommand();
-        hashCommand.CommandText = """SELECT "EffectiveSchemaHash" FROM dms."EffectiveSchema";""";
+        hashCommand.CommandText = "SELECT EffectiveSchemaHash FROM dms.EffectiveSchema;";
 
         var hash = (string)hashCommand.ExecuteScalar()!;
         hash.Should().NotBeNullOrEmpty("the effective schema hash should be non-empty");
@@ -140,67 +151,73 @@ public class Given_A_Fresh_Database_Provisioned_With_Create_Database_Flag
     [Test]
     public void It_seeds_schema_component_rows()
     {
-        using var connection = new NpgsqlConnection(
-            PostgresTestDatabaseHelper.BuildConnectionString(_databaseName)
+        using var connection = new SqlConnection(
+            MssqlTestDatabaseHelper.BuildConnectionString(_databaseName)
         );
         connection.Open();
 
         using var command = connection.CreateCommand();
-        command.CommandText = """SELECT COUNT(*) FROM dms."SchemaComponent";""";
+        command.CommandText = "SELECT COUNT(*) FROM dms.SchemaComponent;";
 
-        var count = (long)command.ExecuteScalar()!;
+        var count = (int)command.ExecuteScalar()!;
         count.Should().BeGreaterThan(0, "there should be at least one SchemaComponent row");
     }
 
     [Test]
     public void It_seeds_resource_key_rows()
     {
-        using var connection = new NpgsqlConnection(
-            PostgresTestDatabaseHelper.BuildConnectionString(_databaseName)
+        using var connection = new SqlConnection(
+            MssqlTestDatabaseHelper.BuildConnectionString(_databaseName)
         );
         connection.Open();
 
         using var command = connection.CreateCommand();
-        command.CommandText = """SELECT COUNT(*) FROM dms."ResourceKey";""";
+        command.CommandText = "SELECT COUNT(*) FROM dms.ResourceKey;";
 
-        var count = (long)command.ExecuteScalar()!;
+        var count = (int)command.ExecuteScalar()!;
         // The minimal fixture defines Widget and Gadget
         count.Should().BeGreaterThanOrEqualTo(2, "ResourceKey should have rows for Widget and Gadget");
     }
 
     [Test]
-    public void It_creates_the_change_version_sequence()
+    public void It_configures_read_committed_snapshot_isolation()
     {
-        using var connection = new NpgsqlConnection(
-            PostgresTestDatabaseHelper.BuildConnectionString(_databaseName)
-        );
+        using var connection = new SqlConnection(DatabaseConfiguration.MssqlAdminConnectionString!);
         connection.Open();
 
         using var command = connection.CreateCommand();
-        command.CommandText =
-            "SELECT 1 FROM pg_sequences WHERE schemaname = 'dms' AND sequencename = 'ChangeVersionSequence';";
+        command.CommandText = "SELECT is_read_committed_snapshot_on FROM sys.databases WHERE name = @name;";
+        command.Parameters.AddWithValue("name", _databaseName);
 
         var result = command.ExecuteScalar();
-        result.Should().NotBeNull("the ChangeVersionSequence should exist");
+        Convert.ToBoolean(result).Should().BeTrue("RCSI should be enabled on newly created databases");
     }
 }
 
 [TestFixture]
 [Category("DatabaseIntegration")]
-public class Given_Provisioning_Rerun_On_Same_Database
+[Category("MssqlIntegration")]
+public class Given_Mssql_Provisioning_Rerun_On_Same_Database
 {
     private string _databaseName = null!;
     private int _firstExitCode;
     private int _secondExitCode;
     private string _secondOutput = null!;
     private string _secondError = null!;
-    private long _firstResourceKeyCount;
+    private int _firstResourceKeyCount;
 
     [SetUp]
     public void SetUp()
     {
-        _databaseName = PostgresTestDatabaseHelper.GenerateUniqueDatabaseName();
-        var connectionString = PostgresTestDatabaseHelper.BuildConnectionString(_databaseName);
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore(
+                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.Test.json"
+            );
+        }
+
+        _databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
+        var connectionString = MssqlTestDatabaseHelper.BuildConnectionString(_databaseName);
         var fixturePath = CliTestHelper.GetMinimalFixturePath();
 
         // First provisioning run
@@ -212,16 +229,16 @@ public class Given_Provisioning_Rerun_On_Same_Database
             "--connection-string",
             connectionString,
             "--dialect",
-            "pgsql",
+            "mssql",
             "--create-database"
         );
 
         // Capture resource key count after first run
-        using var connection = new NpgsqlConnection(connectionString);
+        using var connection = new SqlConnection(connectionString);
         connection.Open();
         using var command = connection.CreateCommand();
-        command.CommandText = """SELECT COUNT(*) FROM dms."ResourceKey";""";
-        _firstResourceKeyCount = (long)command.ExecuteScalar()!;
+        command.CommandText = "SELECT COUNT(*) FROM dms.ResourceKey;";
+        _firstResourceKeyCount = (int)command.ExecuteScalar()!;
 
         // Second provisioning run (idempotent rerun)
         (_secondExitCode, _secondOutput, _secondError) = CliTestHelper.RunCli(
@@ -232,7 +249,7 @@ public class Given_Provisioning_Rerun_On_Same_Database
             "--connection-string",
             connectionString,
             "--dialect",
-            "pgsql",
+            "mssql",
             "--create-database"
         );
     }
@@ -240,7 +257,10 @@ public class Given_Provisioning_Rerun_On_Same_Database
     [TearDown]
     public void TearDown()
     {
-        PostgresTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+        if (MssqlTestDatabaseHelper.IsConfigured())
+        {
+            MssqlTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+        }
     }
 
     [Test]
@@ -258,37 +278,38 @@ public class Given_Provisioning_Rerun_On_Same_Database
     [Test]
     public void It_still_has_exactly_one_effective_schema_row()
     {
-        using var connection = new NpgsqlConnection(
-            PostgresTestDatabaseHelper.BuildConnectionString(_databaseName)
+        using var connection = new SqlConnection(
+            MssqlTestDatabaseHelper.BuildConnectionString(_databaseName)
         );
         connection.Open();
 
         using var command = connection.CreateCommand();
-        command.CommandText = """SELECT COUNT(*) FROM dms."EffectiveSchema";""";
+        command.CommandText = "SELECT COUNT(*) FROM dms.EffectiveSchema;";
 
-        var count = (long)command.ExecuteScalar()!;
+        var count = (int)command.ExecuteScalar()!;
         count.Should().Be(1, "rerun should not duplicate the EffectiveSchema row");
     }
 
     [Test]
     public void It_has_the_same_resource_key_count()
     {
-        using var connection = new NpgsqlConnection(
-            PostgresTestDatabaseHelper.BuildConnectionString(_databaseName)
+        using var connection = new SqlConnection(
+            MssqlTestDatabaseHelper.BuildConnectionString(_databaseName)
         );
         connection.Open();
 
         using var command = connection.CreateCommand();
-        command.CommandText = """SELECT COUNT(*) FROM dms."ResourceKey";""";
+        command.CommandText = "SELECT COUNT(*) FROM dms.ResourceKey;";
 
-        var count = (long)command.ExecuteScalar()!;
+        var count = (int)command.ExecuteScalar()!;
         count.Should().Be(_firstResourceKeyCount, "rerun should not duplicate ResourceKey rows");
     }
 }
 
 [TestFixture]
 [Category("DatabaseIntegration")]
-public class Given_Provisioning_Without_Create_Database_Against_Existing_Empty_Db
+[Category("MssqlIntegration")]
+public class Given_Mssql_Provisioning_Without_Create_Database_Against_Existing_Empty_Db
 {
     private string _databaseName = null!;
     private int _exitCode;
@@ -298,10 +319,17 @@ public class Given_Provisioning_Without_Create_Database_Against_Existing_Empty_D
     [SetUp]
     public void SetUp()
     {
-        _databaseName = PostgresTestDatabaseHelper.GenerateUniqueDatabaseName();
-        PostgresTestDatabaseHelper.CreateDatabase(_databaseName);
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore(
+                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.Test.json"
+            );
+        }
 
-        var connectionString = PostgresTestDatabaseHelper.BuildConnectionString(_databaseName);
+        _databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
+        MssqlTestDatabaseHelper.CreateDatabase(_databaseName);
+
+        var connectionString = MssqlTestDatabaseHelper.BuildConnectionString(_databaseName);
         var fixturePath = CliTestHelper.GetMinimalFixturePath();
 
         (_exitCode, _output, _error) = CliTestHelper.RunCli(
@@ -312,14 +340,17 @@ public class Given_Provisioning_Without_Create_Database_Against_Existing_Empty_D
             "--connection-string",
             connectionString,
             "--dialect",
-            "pgsql"
+            "mssql"
         );
     }
 
     [TearDown]
     public void TearDown()
     {
-        PostgresTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+        if (MssqlTestDatabaseHelper.IsConfigured())
+        {
+            MssqlTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+        }
     }
 
     [Test]
@@ -343,8 +374,8 @@ public class Given_Provisioning_Without_Create_Database_Against_Existing_Empty_D
             "DocumentChangeEvent",
         };
 
-        using var connection = new NpgsqlConnection(
-            PostgresTestDatabaseHelper.BuildConnectionString(_databaseName)
+        using var connection = new SqlConnection(
+            MssqlTestDatabaseHelper.BuildConnectionString(_databaseName)
         );
         connection.Open();
 
@@ -356,14 +387,15 @@ public class Given_Provisioning_Without_Create_Database_Against_Existing_Empty_D
             command.Parameters.AddWithValue("table", table);
 
             var result = command.ExecuteScalar();
-            result.Should().NotBeNull($"table dms.\"{table}\" should exist");
+            result.Should().NotBeNull($"table dms.[{table}] should exist");
         }
     }
 }
 
 [TestFixture]
 [Category("DatabaseIntegration")]
-public class Given_Provisioning_Without_Create_Database_Against_Missing_Db
+[Category("MssqlIntegration")]
+public class Given_Mssql_Provisioning_Without_Create_Database_Against_Missing_Db
 {
     private string _databaseName = null!;
     private int _exitCode;
@@ -373,8 +405,15 @@ public class Given_Provisioning_Without_Create_Database_Against_Missing_Db
     [SetUp]
     public void SetUp()
     {
-        _databaseName = PostgresTestDatabaseHelper.GenerateUniqueDatabaseName();
-        var connectionString = PostgresTestDatabaseHelper.BuildConnectionString(_databaseName);
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore(
+                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.Test.json"
+            );
+        }
+
+        _databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
+        var connectionString = MssqlTestDatabaseHelper.BuildConnectionString(_databaseName);
         var fixturePath = CliTestHelper.GetMinimalFixturePath();
 
         // Do NOT create the database — run without --create-database
@@ -386,15 +425,18 @@ public class Given_Provisioning_Without_Create_Database_Against_Missing_Db
             "--connection-string",
             connectionString,
             "--dialect",
-            "pgsql"
+            "mssql"
         );
     }
 
     [TearDown]
     public void TearDown()
     {
-        // Database may not exist, but clean up just in case
-        PostgresTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+        if (MssqlTestDatabaseHelper.IsConfigured())
+        {
+            // Database may not exist, but clean up just in case
+            MssqlTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+        }
     }
 
     [Test]
@@ -413,7 +455,8 @@ public class Given_Provisioning_Without_Create_Database_Against_Missing_Db
 
 [TestFixture]
 [Category("DatabaseIntegration")]
-public class Given_Create_Database_Flag_With_Existing_Database
+[Category("MssqlIntegration")]
+public class Given_Mssql_Create_Database_Flag_With_Existing_Database
 {
     private string _databaseName = null!;
     private int _exitCode;
@@ -423,10 +466,17 @@ public class Given_Create_Database_Flag_With_Existing_Database
     [SetUp]
     public void SetUp()
     {
-        _databaseName = PostgresTestDatabaseHelper.GenerateUniqueDatabaseName();
-        PostgresTestDatabaseHelper.CreateDatabase(_databaseName);
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore(
+                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.Test.json"
+            );
+        }
 
-        var connectionString = PostgresTestDatabaseHelper.BuildConnectionString(_databaseName);
+        _databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
+        MssqlTestDatabaseHelper.CreateDatabase(_databaseName);
+
+        var connectionString = MssqlTestDatabaseHelper.BuildConnectionString(_databaseName);
         var fixturePath = CliTestHelper.GetMinimalFixturePath();
 
         (_exitCode, _output, _error) = CliTestHelper.RunCli(
@@ -437,7 +487,7 @@ public class Given_Create_Database_Flag_With_Existing_Database
             "--connection-string",
             connectionString,
             "--dialect",
-            "pgsql",
+            "mssql",
             "--create-database"
         );
     }
@@ -445,7 +495,10 @@ public class Given_Create_Database_Flag_With_Existing_Database
     [TearDown]
     public void TearDown()
     {
-        PostgresTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+        if (MssqlTestDatabaseHelper.IsConfigured())
+        {
+            MssqlTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+        }
     }
 
     [Test]
@@ -457,15 +510,15 @@ public class Given_Create_Database_Flag_With_Existing_Database
     [Test]
     public void It_seeds_effective_schema_row()
     {
-        using var connection = new NpgsqlConnection(
-            PostgresTestDatabaseHelper.BuildConnectionString(_databaseName)
+        using var connection = new SqlConnection(
+            MssqlTestDatabaseHelper.BuildConnectionString(_databaseName)
         );
         connection.Open();
 
         using var command = connection.CreateCommand();
-        command.CommandText = """SELECT COUNT(*) FROM dms."EffectiveSchema";""";
+        command.CommandText = "SELECT COUNT(*) FROM dms.EffectiveSchema;";
 
-        var count = (long)command.ExecuteScalar()!;
+        var count = (int)command.ExecuteScalar()!;
         count.Should().Be(1, "there should be exactly one EffectiveSchema row");
     }
 }

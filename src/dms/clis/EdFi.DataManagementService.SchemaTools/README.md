@@ -143,6 +143,49 @@ This enables reliable golden-file testing and change detection.
 
 Errors are written to stderr with descriptive messages.
 
+## Integration tests
+
+### PostgreSQL
+
+PostgreSQL integration tests run automatically and require a PostgreSQL server.
+The connection string is configured in `appsettings.json` in the
+`SchemaTools.Tests.Integration` project (port 5432 for CI, overridden to 5435
+locally via `appsettings.Test.json`). If PostgreSQL is unreachable, the tests
+fail — this is intentional so CI detects infrastructure problems.
+
+### SQL Server
+
+SQL Server integration tests are **opt-in**. They are skipped unless a
+`MssqlAdmin` connection string is configured. To enable them locally:
+
+1. Create `appsettings.Test.json` in the `SchemaTools.Tests.Integration` project
+   directory (this file is gitignored):
+
+   ```json
+   {
+       "ConnectionStrings": {
+           "PostgresAdmin": "Host=localhost;Port=5435;Database=postgres;Username=postgres;Password=abcdefgh1!;",
+           "MssqlAdmin": "Server=localhost;Database=master;User Id=sa;Password=YourPassword;TrustServerCertificate=true;"
+       }
+   }
+   ```
+
+2. Ensure SQL Server is running (e.g., via Docker):
+
+   ```bash
+   docker run -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=YourPassword" -p 1433:1433 -d mcr.microsoft.com/mssql/server:2022-latest
+   ```
+
+3. Run the integration tests:
+
+   ```bash
+   dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration
+   ```
+
+When `MssqlAdmin` is not configured, the SQL Server tests report as skipped
+(not failed). When it is configured, they run and fail on any server issue —
+same behavior as the PostgreSQL tests.
+
 ## Breaking changes
 
 Prior to DMS-950, the CLI accepted positional arguments for schema hashing:

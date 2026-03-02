@@ -16,7 +16,7 @@ public static class PostgresTestDatabaseHelper
 
     public static string BuildConnectionString(string databaseName)
     {
-        var builder = new NpgsqlConnectionStringBuilder(DatabaseConfiguration.AdminConnectionString)
+        var builder = new NpgsqlConnectionStringBuilder(DatabaseConfiguration.PostgresAdminConnectionString)
         {
             Database = databaseName,
         };
@@ -25,7 +25,7 @@ public static class PostgresTestDatabaseHelper
 
     public static void CreateDatabase(string databaseName)
     {
-        using var connection = new NpgsqlConnection(DatabaseConfiguration.AdminConnectionString);
+        using var connection = new NpgsqlConnection(DatabaseConfiguration.PostgresAdminConnectionString);
         connection.Open();
 
         using var command = connection.CreateCommand();
@@ -39,10 +39,11 @@ public static class PostgresTestDatabaseHelper
         // Clear all Npgsql connection pools to release any held connections
         NpgsqlConnection.ClearAllPools();
 
-        using var connection = new NpgsqlConnection(DatabaseConfiguration.AdminConnectionString);
+        using var connection = new NpgsqlConnection(DatabaseConfiguration.PostgresAdminConnectionString);
         connection.Open();
 
         // Terminate active connections to the target database
+        // Database names are generated internally (GUID-based), safe to interpolate
         using var terminateCommand = connection.CreateCommand();
         terminateCommand.CommandText = $"""
             SELECT pg_terminate_backend(pid)
@@ -54,19 +55,5 @@ public static class PostgresTestDatabaseHelper
         using var dropCommand = connection.CreateCommand();
         dropCommand.CommandText = $"DROP DATABASE IF EXISTS \"{databaseName}\";";
         dropCommand.ExecuteNonQuery();
-    }
-
-    public static bool IsPostgresAvailable()
-    {
-        try
-        {
-            using var connection = new NpgsqlConnection(DatabaseConfiguration.AdminConnectionString);
-            connection.Open();
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
     }
 }
