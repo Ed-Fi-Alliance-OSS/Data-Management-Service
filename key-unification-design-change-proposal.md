@@ -332,14 +332,6 @@ This fix is a prerequisite for correctness on SQL Server even without DLEP.
 - **Telemetry**: Add counters for “documents affected” and “rows updated” per DLEP invocation to detect pathological
   cascades.
 
-## Rollout Plan (Phased)
-
-1. **Phase 0 (baseline)**: Fix SQL Server non-root identity propagation fallback trigger derivation.
-2. **Phase 1**: Implement DLEP for root ↔ child equality constraints targeting scalar/descriptor storage columns only.
-3. **Phase 2**: Add reference-site retargeting for dependent endpoints inside composite reference FKs.
-4. **Phase 3 (optional)**: Expand supported shapes (child ↔ child, base ↔ extension) and add conflict detection where
-   needed.
-
 ## Testing Strategy
 
 - Add a relational-model/DDL inventory test that ensures:
