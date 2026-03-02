@@ -74,11 +74,6 @@ internal class UpsertHandler(
             },
             requestInfo
         );
-        if (upsertResult == null)
-        {
-            return;
-        }
-
         _logger.LogDebug(
             "Document store UpsertDocument returned {UpsertResult}- {TraceId}",
             upsertResult.GetType().FullName,

@@ -79,7 +79,7 @@ public static class Utility
     /// <summary>
     /// Executes an operation within a resilience pipeline, handling retry logging.
     /// </summary>
-    internal static async Task<TResult?> ExecuteWithRetryLogging<TResult>(
+    internal static async Task<TResult> ExecuteWithRetryLogging<TResult>(
         ResiliencePipeline resiliencePipeline,
         ILogger logger,
         string operationName,

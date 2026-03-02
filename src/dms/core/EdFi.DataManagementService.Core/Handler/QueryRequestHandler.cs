@@ -52,11 +52,6 @@ internal class QueryRequestHandler(
                 ),
             requestInfo
         );
-        if (queryResult == null)
-        {
-            return;
-        }
-
         _logger.LogDebug(
             "QueryHandler returned {QueryResult}- {TraceId}",
             queryResult.GetType().FullName,

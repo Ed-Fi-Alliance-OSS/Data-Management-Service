@@ -57,11 +57,6 @@ internal class GetByIdHandler(
                 ),
             requestInfo
         );
-        if (getResult == null)
-        {
-            return;
-        }
-
         _logger.LogDebug(
             "Document store GetDocumentById returned {GetResult}- {TraceId}",
             getResult.GetType().FullName,

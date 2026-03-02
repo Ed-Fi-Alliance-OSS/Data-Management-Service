@@ -64,11 +64,6 @@ internal class DeleteByIdHandler(
                 ),
             requestInfo
         );
-        if (deleteResult == null)
-        {
-            return;
-        }
-
         _logger.LogDebug(
             "Document store DeleteDocumentById returned {DeleteResult}- {TraceId}",
             deleteResult.GetType().FullName,

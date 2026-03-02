@@ -222,8 +222,6 @@ public static class DmsCoreServiceExtensions
             {
                 builder.AddRetry(retryOptions);
             }
-
-            builder.Build();
         }
     }
 

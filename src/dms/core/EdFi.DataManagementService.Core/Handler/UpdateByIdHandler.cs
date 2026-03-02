@@ -70,11 +70,6 @@ internal class UpdateByIdHandler(
                 ),
             requestInfo
         );
-        if (updateResult == null)
-        {
-            return;
-        }
-
         _logger.LogDebug(
             "Document store UpdateDocumentById returned {UpdateResult}- {TraceId}",
             updateResult.GetType().FullName,
