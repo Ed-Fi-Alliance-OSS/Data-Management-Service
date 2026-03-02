@@ -21,7 +21,7 @@ namespace EdFi.DataManagementService.SchemaTools.Commands;
 /// </summary>
 public static class DdlEmitCommand
 {
-    private static readonly System.Text.UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
+    private static readonly System.Text.UTF8Encoding _utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
     public static Command Create(
         ILogger logger,
@@ -131,6 +131,7 @@ public static class DdlEmitCommand
                 }
 
                 var emittedFiles = new List<string>();
+                var ddlManifestEntries = new List<DdlManifestEntry>();
 
                 // Emit DDL and model manifests per dialect
                 foreach (var dialect in dialects)
@@ -156,6 +157,7 @@ public static class DdlEmitCommand
                     var relationalDdl = new RelationalModelDdlEmitter(sqlDialect).Emit(modelSet);
                     var seedDml = new SeedDmlEmitter(sqlDialect).Emit(effectiveSchemaInfo);
                     var combinedSql = coreDdl + relationalDdl + seedDml;
+                    ddlManifestEntries.Add(new DdlManifestEntry(dialect, combinedSql));
 
                     // Write SQL file (always dialect-prefixed, matching {dialect}.sql convention)
                     var dialectLabel = DialectLabel(dialect);
@@ -177,6 +179,12 @@ public static class DdlEmitCommand
                     WriteFileWithUnixLineEndings(manifestPath, modelManifest);
                     emittedFiles.Add(manifestFileName);
                 }
+
+                // Emit DDL manifest (DMS-953)
+                var ddlManifest = DdlManifestEmitter.Emit(effectiveSchemaInfo, ddlManifestEntries);
+                var ddlManifestPath = Path.Combine(outputDir, "ddl.manifest.json");
+                WriteFileWithUnixLineEndings(ddlManifestPath, ddlManifest);
+                emittedFiles.Add("ddl.manifest.json");
 
                 // Emit effective schema manifest (dialect-independent, emitted once)
                 var schemaManifest = EffectiveSchemaManifestEmitter.Emit(
@@ -268,12 +276,12 @@ public static class DdlEmitCommand
     {
         if (!content.Contains('\r'))
         {
-            File.WriteAllText(path, content, Utf8NoBom);
+            File.WriteAllText(path, content, _utf8NoBom);
             return;
         }
 
         // Normalize to LF line endings for deterministic output
         var normalized = content.Replace("\r\n", "\n").Replace("\r", "\n");
-        File.WriteAllText(path, normalized, Utf8NoBom);
+        File.WriteAllText(path, normalized, _utf8NoBom);
     }
 }
