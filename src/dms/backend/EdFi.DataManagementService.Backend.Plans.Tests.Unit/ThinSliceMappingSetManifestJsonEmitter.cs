@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.RelationalModel.Naming;
 
 namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
@@ -171,9 +172,9 @@ internal static class ThinSliceMappingSetManifestJsonEmitter
         writer.WritePropertyName("order_by_key_columns_in_order");
         writer.WriteStartArray();
 
-        foreach (var keyColumn in tablePlan.TableModel.Key.Columns)
+        foreach (var orderByKeyColumn in GetOrderByKeyColumnsInCompilerOrder(tablePlan.TableModel))
         {
-            writer.WriteStringValue(keyColumn.ColumnName.Value);
+            writer.WriteStringValue(orderByKeyColumn.Value);
         }
 
         writer.WriteEndArray();
@@ -193,6 +194,43 @@ internal static class ThinSliceMappingSetManifestJsonEmitter
         writer.WriteString("project_name", resource.ProjectName);
         writer.WriteString("resource_name", resource.ResourceName);
         writer.WriteEndObject();
+    }
+
+    private static IReadOnlyList<DbColumnName> GetOrderByKeyColumnsInCompilerOrder(DbTableModel rootTable)
+    {
+        var rootDocumentIdKeyColumns = rootTable
+            .Key.Columns.Where(column => RelationalNameConventions.IsDocumentIdColumn(column.ColumnName))
+            .Select(static column => column.ColumnName)
+            .ToArray();
+
+        if (rootDocumentIdKeyColumns.Length != 1)
+        {
+            var keyColumnList = string.Join(
+                ", ",
+                rootTable.Key.Columns.Select(column => column.ColumnName.Value)
+            );
+
+            throw new InvalidOperationException(
+                $"Thin-slice manifest expects exactly one root document-id key column for '{rootTable.Table}'. "
+                    + $"Found {rootDocumentIdKeyColumns.Length}. Key columns: [{keyColumnList}]."
+            );
+        }
+
+        var rootDocumentIdKeyColumn = rootDocumentIdKeyColumns[0];
+
+        List<DbColumnName> orderByKeyColumns = [rootDocumentIdKeyColumn];
+
+        foreach (var keyColumn in rootTable.Key.Columns)
+        {
+            if (keyColumn.ColumnName == rootDocumentIdKeyColumn)
+            {
+                continue;
+            }
+
+            orderByKeyColumns.Add(keyColumn.ColumnName);
+        }
+
+        return orderByKeyColumns;
     }
 
     private static void WriteWriteValueSource(Utf8JsonWriter writer, WriteValueSource valueSource)

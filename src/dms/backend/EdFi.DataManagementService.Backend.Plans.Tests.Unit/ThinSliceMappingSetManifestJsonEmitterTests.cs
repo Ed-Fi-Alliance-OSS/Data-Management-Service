@@ -5,6 +5,8 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Plans;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -59,6 +61,18 @@ public class Given_ThinSliceMappingSetManifestJsonEmitter
         resourceNamesByDialect["pgsql"].Should().Equal("Ed-Fi.School", "Ed-Fi.Student");
     }
 
+    [Test]
+    public void It_should_emit_order_by_key_columns_in_compiled_sql_order_for_non_document_id_first_keys()
+    {
+        var mappingSets = BuildMappingSetsWithNonDocumentIdFirstStudentReadModel();
+        var manifest = ThinSliceMappingSetManifestJsonEmitter.Emit(mappingSets);
+        var orderByColumnsByDialect = ReadStudentOrderByColumnsByDialect(manifest);
+
+        orderByColumnsByDialect.Keys.Should().BeEquivalentTo("mssql", "pgsql");
+        orderByColumnsByDialect["mssql"].Should().Equal("DocumentId", "SchoolYear");
+        orderByColumnsByDialect["pgsql"].Should().Equal("DocumentId", "SchoolYear");
+    }
+
     private static IReadOnlyList<MappingSet> BuildPermutedMappingSets(bool reverseMappingSetOrder)
     {
         var compiler = new MappingSetCompiler();
@@ -73,6 +87,31 @@ public class Given_ThinSliceMappingSetManifestJsonEmitter
         }
 
         return mappingSets;
+    }
+
+    private static IReadOnlyList<MappingSet> BuildMappingSetsWithNonDocumentIdFirstStudentReadModel()
+    {
+        return BuildPermutedMappingSets(reverseMappingSetOrder: false)
+            .Select(InjectNonDocumentIdFirstStudentReadPlan)
+            .ToArray();
+    }
+
+    private static MappingSet InjectNonDocumentIdFirstStudentReadPlan(MappingSet mappingSet)
+    {
+        var studentResource = new QualifiedResourceName("Ed-Fi", "Student");
+        var model = CreateRootOnlyModelWithNonDocumentIdFirstKeyOrder(studentResource);
+        var readPlan = new RootOnlyReadPlanCompiler(mappingSet.Key.Dialect).Compile(model);
+        var readPlansByResource = mappingSet.ReadPlansByResource.ToDictionary(
+            entry => entry.Key,
+            entry => entry.Value
+        );
+
+        readPlansByResource[studentResource] = readPlan;
+
+        return mappingSet with
+        {
+            ReadPlansByResource = readPlansByResource,
+        };
     }
 
     private static MappingSet PermutePlanDictionaries(MappingSet mappingSet)
@@ -100,6 +139,57 @@ public class Given_ThinSliceMappingSetManifestJsonEmitter
     private static string ResourceSortKey(QualifiedResourceName resource)
     {
         return $"{resource.ProjectName}.{resource.ResourceName}";
+    }
+
+    private static RelationalResourceModel CreateRootOnlyModelWithNonDocumentIdFirstKeyOrder(
+        QualifiedResourceName resource
+    )
+    {
+        var rootTable = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), resource.ResourceName),
+            JsonScope: new JsonPathExpression("$", []),
+            Key: new TableKey(
+                ConstraintName: $"PK_{resource.ResourceName}",
+                Columns:
+                [
+                    new DbKeyColumn(new DbColumnName("SchoolYear"), ColumnKind.Scalar),
+                    new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart),
+                ]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("SchoolYear"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: new JsonPathExpression(
+                        "$.schoolYear",
+                        [new JsonPathSegment.Property("schoolYear")]
+                    ),
+                    TargetResource: null
+                ),
+            ],
+            Constraints: []
+        );
+
+        return new RelationalResourceModel(
+            Resource: resource,
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTable,
+            TablesInDependencyOrder: [rootTable],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
     }
 
     private static IReadOnlyList<string> ReadMappingSetDialects(string manifest)
@@ -145,6 +235,46 @@ public class Given_ThinSliceMappingSetManifestJsonEmitter
         return resourceNamesByDialect;
     }
 
+    private static IReadOnlyDictionary<string, IReadOnlyList<string>> ReadStudentOrderByColumnsByDialect(
+        string manifest
+    )
+    {
+        Dictionary<string, IReadOnlyList<string>> orderByColumnsByDialect = [];
+
+        foreach (var mappingSetObject in ParseMappingSetObjects(manifest))
+        {
+            var dialect = mappingSetObject["mapping_set_key"]?["dialect"]?.GetValue<string>();
+
+            if (dialect is null)
+            {
+                throw new InvalidOperationException("Manifest mapping set key dialect is required.");
+            }
+
+            var studentResource = FindResource(mappingSetObject, "Ed-Fi", "Student");
+            var orderByNode = studentResource["read_plan"]?["order_by_key_columns_in_order"];
+
+            if (orderByNode is not JsonArray orderByColumns)
+            {
+                throw new InvalidOperationException(
+                    "Manifest Student read-plan order_by_key_columns_in_order array is required."
+                );
+            }
+
+            orderByColumnsByDialect[dialect] = orderByColumns
+                .Select(column => column?.GetValue<string>())
+                .Select(value =>
+                    value is null
+                        ? throw new InvalidOperationException(
+                            "Manifest order-by key column name is required."
+                        )
+                        : value
+                )
+                .ToArray();
+        }
+
+        return orderByColumnsByDialect;
+    }
+
     private static string ReadResourceName(JsonNode? resourceNode)
     {
         var projectName = resourceNode?["resource"]?["project_name"]?.GetValue<string>();
@@ -156,6 +286,34 @@ public class Given_ThinSliceMappingSetManifestJsonEmitter
         }
 
         return $"{projectName}.{resourceName}";
+    }
+
+    private static JsonObject FindResource(
+        JsonObject mappingSetObject,
+        string projectName,
+        string resourceName
+    )
+    {
+        if (mappingSetObject["resources"] is not JsonArray resources)
+        {
+            throw new InvalidOperationException("Manifest mapping set resources array is required.");
+        }
+
+        foreach (var resource in resources)
+        {
+            var candidateProjectName = resource?["resource"]?["project_name"]?.GetValue<string>();
+            var candidateResourceName = resource?["resource"]?["resource_name"]?.GetValue<string>();
+
+            if (candidateProjectName == projectName && candidateResourceName == resourceName)
+            {
+                return resource as JsonObject
+                    ?? throw new InvalidOperationException(
+                        "Manifest mapping set resources entries must be JSON objects."
+                    );
+            }
+        }
+
+        throw new InvalidOperationException($"Manifest resource '{projectName}.{resourceName}' is required.");
     }
 
     private static JsonArray ParseMappingSetArray(string manifest)
