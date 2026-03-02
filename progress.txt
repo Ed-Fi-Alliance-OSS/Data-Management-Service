@@ -24,3 +24,11 @@
 - Files changed:
   - src/dms/clis/EdFi.DataManagementService.SchemaTools/Provisioning/MssqlDatabaseProvisioner.cs
 - Build succeeds, all 43 unit tests pass
+
+## Task: Remove unnecessary CloneEffectiveSchemaSet call (01-ddl-provision-command)
+- DdlProvisionCommand now passes effectiveSchemaSet directly to modelSetBuilder.Build()
+- Clone was copied from DdlEmitCommand's multi-dialect loop but provision only processes one dialect
+- CloneEffectiveSchemaSet helper retained in DdlCommandHelpers (still used by DdlEmitCommand)
+- Files changed:
+  - src/dms/clis/EdFi.DataManagementService.SchemaTools/Commands/DdlProvisionCommand.cs
+- Build succeeds, all 43 unit tests pass
