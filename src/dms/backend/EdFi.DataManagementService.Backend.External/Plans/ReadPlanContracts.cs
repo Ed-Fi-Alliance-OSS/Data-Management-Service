@@ -85,11 +85,34 @@ public sealed record ResourceReadPlan
 /// <summary>
 /// Compiled read SQL for one table in a resource hydration flow.
 /// </summary>
-/// <param name="TableModel">The table shape model.</param>
-/// <param name="SelectByKeysetSql">
-/// Parameterized SQL that joins to a materialized keyset table and returns rows for the page.
-/// </param>
-public sealed record TableReadPlan(DbTableModel TableModel, string SelectByKeysetSql);
+public sealed record TableReadPlan
+{
+    /// <summary>
+    /// Initializes a new instance of the <see cref="TableReadPlan" /> record.
+    /// </summary>
+    /// <param name="TableModel">The table shape model.</param>
+    /// <param name="SelectByKeysetSql">
+    /// Parameterized SQL that joins to a materialized keyset table and returns rows for the page.
+    /// </param>
+    public TableReadPlan(DbTableModel TableModel, string SelectByKeysetSql)
+    {
+        ArgumentNullException.ThrowIfNull(TableModel);
+        ArgumentNullException.ThrowIfNull(SelectByKeysetSql);
+
+        this.TableModel = TableModel;
+        this.SelectByKeysetSql = SelectByKeysetSql;
+    }
+
+    /// <summary>
+    /// The table model the SQL targets.
+    /// </summary>
+    public DbTableModel TableModel { get; init; }
+
+    /// <summary>
+    /// Parameterized SQL that joins to a materialized keyset table and returns rows for the page.
+    /// </summary>
+    public string SelectByKeysetSql { get; init; }
+}
 
 /// <summary>
 /// Names the materialized keyset table and its <c>DocumentId</c> column used by hydration SQL.
