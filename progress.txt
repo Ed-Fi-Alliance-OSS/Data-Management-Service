@@ -1,0 +1,10 @@
+## Task: Split MSSQL DDL on GO batch separators (01-ddl-provision-command)
+- MssqlDatabaseProvisioner.ExecuteInTransaction now splits SQL on standalone GO lines before execution
+- Used GeneratedRegex with pattern ^\s*GO\s*$ (multiline+ignorecase)
+- Each non-empty batch executed as separate SqlCommand within the same SqlTransaction
+- Class made partial to support GeneratedRegex source generator
+- Added 5 test fixtures covering: basic splitting, no GO, case insensitivity, GO-in-identifiers, empty batches
+- Files changed:
+  - src/dms/clis/EdFi.DataManagementService.SchemaTools/Provisioning/MssqlDatabaseProvisioner.cs
+  - src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/DatabaseProvisionerTests.cs
+- All 43 unit tests pass

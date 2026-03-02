@@ -169,4 +169,124 @@ public class DatabaseProvisionerTests
             action.Should().NotThrow();
         }
     }
+
+    [TestFixture]
+    public class Given_Mssql_Sql_With_Go_Batch_Separators
+    {
+        private List<string> _batches = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var sql =
+                "CREATE TABLE t1 (id INT);\nGO\nCREATE OR ALTER TRIGGER tr1\nON t1\nFOR INSERT AS\nBEGIN\n  RETURN\nEND;\nGO\nINSERT INTO t1 VALUES (1);";
+            _batches = MssqlDatabaseProvisioner.SplitOnGoBatchSeparator(sql).ToList();
+        }
+
+        [Test]
+        public void It_splits_into_three_batches()
+        {
+            _batches.Should().HaveCount(3);
+        }
+
+        [Test]
+        public void It_returns_first_batch_before_go()
+        {
+            _batches[0].Should().Be("CREATE TABLE t1 (id INT);");
+        }
+
+        [Test]
+        public void It_returns_trigger_batch()
+        {
+            _batches[1].Should().Contain("CREATE OR ALTER TRIGGER");
+        }
+
+        [Test]
+        public void It_returns_last_batch_after_go()
+        {
+            _batches[2].Should().Be("INSERT INTO t1 VALUES (1);");
+        }
+    }
+
+    [TestFixture]
+    public class Given_Mssql_Sql_Without_Go_Separators
+    {
+        private List<string> _batches = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var sql = "CREATE TABLE t1 (id INT);\nCREATE TABLE t2 (id INT);";
+            _batches = MssqlDatabaseProvisioner.SplitOnGoBatchSeparator(sql).ToList();
+        }
+
+        [Test]
+        public void It_returns_single_batch()
+        {
+            _batches.Should().HaveCount(1);
+        }
+
+        [Test]
+        public void It_returns_the_full_sql()
+        {
+            _batches[0].Should().Be("CREATE TABLE t1 (id INT);\nCREATE TABLE t2 (id INT);");
+        }
+    }
+
+    [TestFixture]
+    public class Given_Mssql_Sql_With_Case_Insensitive_Go
+    {
+        private List<string> _batches = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var sql = "SELECT 1;\ngo\nSELECT 2;\n  Go  \nSELECT 3;";
+            _batches = MssqlDatabaseProvisioner.SplitOnGoBatchSeparator(sql).ToList();
+        }
+
+        [Test]
+        public void It_splits_on_all_go_variants()
+        {
+            _batches.Should().HaveCount(3);
+        }
+    }
+
+    [TestFixture]
+    public class Given_Mssql_Sql_With_Go_In_Identifier
+    {
+        private List<string> _batches = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var sql = "CREATE TABLE category (id INT);";
+            _batches = MssqlDatabaseProvisioner.SplitOnGoBatchSeparator(sql).ToList();
+        }
+
+        [Test]
+        public void It_does_not_split_on_go_within_words()
+        {
+            _batches.Should().HaveCount(1);
+        }
+    }
+
+    [TestFixture]
+    public class Given_Mssql_Sql_With_Empty_Batches_Between_Go
+    {
+        private List<string> _batches = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var sql = "SELECT 1;\nGO\n\nGO\nSELECT 2;";
+            _batches = MssqlDatabaseProvisioner.SplitOnGoBatchSeparator(sql).ToList();
+        }
+
+        [Test]
+        public void It_filters_out_empty_batches()
+        {
+            _batches.Should().HaveCount(2);
+        }
+    }
 }
