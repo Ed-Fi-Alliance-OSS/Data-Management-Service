@@ -38,7 +38,7 @@
       "Run: dotnet build src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj",
       "Run: dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Simplification",
