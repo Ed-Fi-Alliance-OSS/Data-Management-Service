@@ -540,7 +540,7 @@ One row per document; PK is `DocumentId` (shared surrogate key).
 Typical structure:
 - `DocumentId BIGINT` **PK/FK** → `dms.Document(DocumentId)` ON DELETE CASCADE
 - Natural key columns (from `identityJsonPaths`) → **API-semantic** unique constraint over the identity **binding/path** columns.
-"  - For identity elements that come from a document reference object, the unique constraint uses the corresponding `..._DocumentId` FK column (stable) plus the per-site identity-part binding columns.
+  - For identity elements that come from a document reference object, the unique constraint uses the corresponding `..._DocumentId` FK column (stable) plus the per-site identity-part binding columns.
   - Under key unification, per-site identity-part binding columns may be generated/persisted aliases of canonical storage columns; the natural-key unique constraint remains defined over binding columns to preserve API path/presence semantics.
 - Reference key columns → **FK-supporting** unique constraint over `(DocumentId, <StorageIdentityParts...>)` (the referenced key used by composite reference FKs).
   - Under key unification, `<StorageIdentityParts...>` uses canonical storage columns (never per-site `UnifiedAlias` binding columns); see `key-unification.md`.
