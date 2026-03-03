@@ -80,6 +80,8 @@ public static class DdlManifestEmitter
     /// </summary>
     internal static string ComputeSha256(string sqlText)
     {
+        ArgumentNullException.ThrowIfNull(sqlText);
+
         // Rent a pooled buffer instead of allocating via Encoding.UTF8.GetBytes(string)
         // to avoid large byte[] allocations that pressure GC when hashing real-world
         // DDL texts (which can be hundreds of KB per dialect). The 32-byte hash output
@@ -121,22 +123,22 @@ public static class DdlManifestEmitter
     }
 
     /// <summary>
-    /// Counts MSSQL statements by splitting on standalone GO lines.
+    /// Counts MSSQL statements by scanning for standalone GO lines.
     /// Before the first GO: counts lines ending with semicolons (plain DDL/DML).
     /// After each GO: counts the batch as one statement (trigger definition).
+    /// Uses span-based line enumeration to avoid per-line string allocations.
     /// </summary>
     private static int CountMssqlStatements(string sqlText)
     {
-        var lines = sqlText.Split('\n');
         int count = 0;
         bool pastFirstGo = false;
         bool currentBatchHasContent = false;
 
-        foreach (var line in lines)
+        foreach (var rawLine in sqlText.AsSpan().EnumerateLines())
         {
-            var trimmed = line.TrimEnd('\r');
+            var line = rawLine.TrimEnd('\r');
 
-            if (trimmed == "GO")
+            if (line.SequenceEqual("GO"))
             {
                 if (pastFirstGo && currentBatchHasContent)
                 {
@@ -150,14 +152,14 @@ public static class DdlManifestEmitter
 
             if (!pastFirstGo)
             {
-                if (trimmed.Length > 0 && trimmed[^1] == ';')
+                if (line.Length > 0 && line[^1] == ';')
                 {
                     count++;
                 }
             }
             else
             {
-                if (trimmed.Trim().Length > 0)
+                if (!line.Trim().IsEmpty)
                 {
                     currentBatchHasContent = true;
                 }
@@ -188,18 +190,17 @@ public static class DdlManifestEmitter
     /// </remarks>
     private static int CountPgsqlStatements(string sqlText)
     {
-        var lines = sqlText.Split('\n');
         int count = 0;
         bool insideDollarQuote = false;
 
-        foreach (var line in lines)
+        foreach (var rawLine in sqlText.AsSpan().EnumerateLines())
         {
             // Trim all whitespace to match $$-delimiters on indented lines
-            var trimmed = line.TrimEnd('\r').Trim();
+            var trimmed = rawLine.TrimEnd('\r').Trim();
 
             if (insideDollarQuote)
             {
-                if (trimmed == "END $$;" || trimmed.StartsWith("$$"))
+                if (trimmed.SequenceEqual("END $$;") || trimmed.StartsWith("$$"))
                 {
                     insideDollarQuote = false;
                 }
