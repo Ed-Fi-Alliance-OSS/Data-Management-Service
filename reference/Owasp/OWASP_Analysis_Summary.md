@@ -100,23 +100,22 @@ This summary documents the OWASP attack path coverage achieved in branch `DMS-41
 
 ## Summary Table
 
-| Scenario | Covered | Gap Type | Action Needed |
-|---|---|---|---|
-| SQLi (query/body) | Yes | — | — |
-| CSRF (Origin/Cookie/Form) | Yes | — | — |
+| Scenario | Covered | Gap Type | Action Needed | Ticket |
+|---|---|---|---|---|
+| SQLi (query/body) | Yes | — | — | — |
+| CSRF (Origin/Cookie/Form) | Yes | — | — | — |
 | Path traversal | Yes | — | — |
-| Forwarded header spoofing | Yes | — | — |
-| CORS policy | Yes | - | - |
-| Malformed JSON error leak | Yes | - | - |
-| Broken authentication (missing/tampered JWT) | Yes | - | - |
-| Function-level auth (CMS read-only) | Yes | - | - |
-| Security headers | No | Code | Add middleware or proxy config |
-| Rate limiting | Partial | Test | Add E2E 429 test |
-| Content-Type enforcement | No | Code | Add media-type constraint |
-| Oversized body handling | Partial | Test | Stabilize/enable 413 E2E scenario |
-| Tenant isolation | Yes | - | - |
-| Property-level auth | No | Code/Test | Add enforcement + tests |
-| RequireHttpsMetadata | Partial | Code | Enforce in prod |
+| Forwarded header spoofing | Yes | — | — | — |
+| CORS policy | Yes | - | - | — |
+| Malformed JSON error leak | Yes | - | - | — |
+| Broken authentication (missing/tampered JWT) | Partial | - | - | DMS-1071 |
+| Function-level auth (CMS read-only) | Yes | - | - | — |
+| Security headers | No | Code | Add middleware or proxy config | DMS-1066 |
+| Rate limiting | Partial | Test | Add E2E 429 test | DMS-1070 |
+| Content-Type enforcement | No | Code | Add media-type constraint | DMS-1068 |
+| Oversized body handling | Partial | Test | Stabilize/enable 413 E2E scenario | DMS-1069 |
+| Tenant isolation | Yes | - | - | — |
+| RequireHttpsMetadata | Partial | Code | Enforce in prod | — |
 
 ---
 
