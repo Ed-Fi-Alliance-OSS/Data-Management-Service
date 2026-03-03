@@ -22,7 +22,7 @@ public interface IDatabaseProvisioner
     /// Opens a connection to the target database, begins a transaction, executes
     /// the full DDL SQL string, and commits on success. Rolls back on failure.
     /// </summary>
-    void ExecuteInTransaction(string connectionString, string sql);
+    void ExecuteInTransaction(string connectionString, string sql, int commandTimeoutSeconds = 300);
 
     /// <summary>
     /// SQL Server only: configures or checks MVCC isolation settings.

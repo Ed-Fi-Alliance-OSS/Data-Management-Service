@@ -26,14 +26,13 @@ internal static class DdlCommandHelpers
     );
 
     /// <summary>
-    /// Builds the EffectiveSchemaSet, derives the relational model, logs diagnostics,
-    /// and generates the combined DDL SQL for a single dialect.
+    /// Builds the EffectiveSchemaSet from normalized schema nodes and logs summary info.
+    /// This is dialect-independent and can be called once, then reused across dialects.
     /// </summary>
-    internal static DdlBuildResult BuildDdl(
+    internal static EffectiveSchemaSet BuildEffectiveSchemaSet(
         ILogger logger,
         EffectiveSchemaSetBuilder schemaSetBuilder,
-        ApiSchemaDocumentNodes normalizedNodes,
-        SqlDialect dialect
+        ApiSchemaDocumentNodes normalizedNodes
     )
     {
         var effectiveSchemaSet = schemaSetBuilder.Build(normalizedNodes);
@@ -45,6 +44,21 @@ internal static class DdlCommandHelpers
             effectiveSchemaInfo.ResourceKeyCount
         );
 
+        return effectiveSchemaSet;
+    }
+
+    /// <summary>
+    /// Derives the relational model and generates combined DDL SQL for a single dialect
+    /// from a pre-built EffectiveSchemaSet. Deep-clones the schema set to avoid mutating
+    /// the original tree.
+    /// </summary>
+    internal static DdlBuildResult BuildDdlFromSchemaSet(
+        ILogger logger,
+        EffectiveSchemaSet effectiveSchemaSet,
+        SqlDialect dialect
+    )
+    {
+        var effectiveSchemaInfo = effectiveSchemaSet.EffectiveSchema;
         var (sqlDialect, dialectRules) = CreateDialect(dialect);
 
         // Deep-clone the effective schema set because
@@ -66,6 +80,21 @@ internal static class DdlCommandHelpers
         var combinedSql = coreDdl + relationalDdl + seedDml;
 
         return new DdlBuildResult(effectiveSchemaSet, modelSet, combinedSql);
+    }
+
+    /// <summary>
+    /// Convenience method that builds the EffectiveSchemaSet, derives the relational model,
+    /// logs diagnostics, and generates the combined DDL SQL for a single dialect.
+    /// </summary>
+    internal static DdlBuildResult BuildDdl(
+        ILogger logger,
+        EffectiveSchemaSetBuilder schemaSetBuilder,
+        ApiSchemaDocumentNodes normalizedNodes,
+        SqlDialect dialect
+    )
+    {
+        var effectiveSchemaSet = BuildEffectiveSchemaSet(logger, schemaSetBuilder, normalizedNodes);
+        return BuildDdlFromSchemaSet(logger, effectiveSchemaSet, dialect);
     }
 
     internal static (ISqlDialect Dialect, ISqlDialectRules Rules) CreateDialect(SqlDialect dialect)
