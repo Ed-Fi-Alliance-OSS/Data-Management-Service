@@ -176,13 +176,11 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
             );
 
             using var rcsiCommand = connection.CreateCommand();
-            rcsiCommand.CommandText =
-                $"ALTER DATABASE {quotedName} SET READ_COMMITTED_SNAPSHOT ON WITH ROLLBACK IMMEDIATE";
+            rcsiCommand.CommandText = $"ALTER DATABASE {quotedName} SET READ_COMMITTED_SNAPSHOT ON";
             rcsiCommand.ExecuteNonQuery();
 
             using var snapshotCommand = connection.CreateCommand();
-            snapshotCommand.CommandText =
-                $"ALTER DATABASE {quotedName} SET ALLOW_SNAPSHOT_ISOLATION ON WITH ROLLBACK IMMEDIATE";
+            snapshotCommand.CommandText = $"ALTER DATABASE {quotedName} SET ALLOW_SNAPSHOT_ISOLATION ON";
             snapshotCommand.ExecuteNonQuery();
 
             logger.LogInformation(

@@ -813,6 +813,9 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
             writer.AppendLine("END");
         }
         writer.AppendLine("END;");
+        // Close the batch so that subsequent DDL (e.g., relational model DDL
+        // concatenated after core DDL) starts in a fresh batch.
+        writer.AppendLine("GO");
         writer.AppendLine();
     }
 

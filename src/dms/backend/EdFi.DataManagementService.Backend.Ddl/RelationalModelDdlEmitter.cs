@@ -456,6 +456,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             EmitTriggerBody(writer, trigger);
         }
         writer.AppendLine("END;");
+        // Close the batch so that the next trigger (or any subsequent DDL/DML
+        // concatenated after the relational model DDL) starts in a fresh batch.
+        writer.AppendLine("GO");
         writer.AppendLine();
     }
 

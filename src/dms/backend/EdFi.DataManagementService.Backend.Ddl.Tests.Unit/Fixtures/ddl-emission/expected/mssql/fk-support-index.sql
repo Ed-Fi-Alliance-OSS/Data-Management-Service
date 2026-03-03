@@ -59,6 +59,7 @@ BEGIN
         WHERE (i.[EnrollmentId] <> del.[EnrollmentId] OR (i.[EnrollmentId] IS NULL AND del.[EnrollmentId] IS NOT NULL) OR (i.[EnrollmentId] IS NOT NULL AND del.[EnrollmentId] IS NULL)) OR (i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL));
     END
 END;
+GO
 
 GO
 CREATE OR ALTER TRIGGER [edfi].[TR_School_Stamp]
@@ -82,4 +83,5 @@ BEGIN
         WHERE (i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL));
     END
 END;
+GO
 
