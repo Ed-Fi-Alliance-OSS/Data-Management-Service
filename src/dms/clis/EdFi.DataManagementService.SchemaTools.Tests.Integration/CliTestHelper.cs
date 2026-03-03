@@ -125,4 +125,11 @@ public static class CliTestHelper
         var testBinDir = Path.GetDirectoryName(assemblyLocation)!;
         return Path.Combine(testBinDir, "Fixtures", "minimal-api-schema.json");
     }
+
+    public static string GetAlternateMinimalFixturePath()
+    {
+        var assemblyLocation = typeof(CliTestHelper).Assembly.Location;
+        var testBinDir = Path.GetDirectoryName(assemblyLocation)!;
+        return Path.Combine(testBinDir, "Fixtures", "minimal-api-schema-alt.json");
+    }
 }

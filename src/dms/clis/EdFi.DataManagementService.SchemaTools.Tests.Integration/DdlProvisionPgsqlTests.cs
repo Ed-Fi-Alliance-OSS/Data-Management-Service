@@ -22,18 +22,11 @@ public class Given_A_Fresh_Database_Provisioned_With_Create_Database_Flag
     {
         _databaseName = PostgresTestDatabaseHelper.GenerateUniqueDatabaseName();
         var connectionString = PostgresTestDatabaseHelper.BuildConnectionString(_databaseName);
-        var fixturePath = CliTestHelper.GetMinimalFixturePath();
 
-        (_exitCode, _output, _error) = CliTestHelper.RunCli(
-            "ddl",
-            "provision",
-            "--schema",
-            fixturePath,
-            "--connection-string",
-            connectionString,
-            "--dialect",
+        (_exitCode, _output, _error) = ProvisionTestHelper.RunProvision(
             "pgsql",
-            "--create-database"
+            connectionString,
+            createDatabase: true
         );
     }
 
@@ -87,33 +80,11 @@ public class Given_A_Fresh_Database_Provisioned_With_Create_Database_Flag
     [Test]
     public void It_creates_core_tables()
     {
-        var expectedTables = new[]
-        {
-            "Document",
-            "ResourceKey",
-            "Descriptor",
-            "ReferentialIdentity",
-            "EffectiveSchema",
-            "SchemaComponent",
-            "DocumentCache",
-            "DocumentChangeEvent",
-        };
-
         using var connection = new NpgsqlConnection(
             PostgresTestDatabaseHelper.BuildConnectionString(_databaseName)
         );
         connection.Open();
-
-        foreach (var table in expectedTables)
-        {
-            using var command = connection.CreateCommand();
-            command.CommandText =
-                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'dms' AND table_name = @table;";
-            command.Parameters.AddWithValue("table", table);
-
-            var result = command.ExecuteScalar();
-            result.Should().NotBeNull($"table dms.\"{table}\" should exist");
-        }
+        ProvisionTestHelper.AssertCoreTablesExist(connection);
     }
 
     [Test]
@@ -123,18 +94,7 @@ public class Given_A_Fresh_Database_Provisioned_With_Create_Database_Flag
             PostgresTestDatabaseHelper.BuildConnectionString(_databaseName)
         );
         connection.Open();
-
-        using var command = connection.CreateCommand();
-        command.CommandText = """SELECT COUNT(*) FROM dms."EffectiveSchema";""";
-
-        var count = (long)command.ExecuteScalar()!;
-        count.Should().Be(1, "there should be exactly one EffectiveSchema row");
-
-        using var hashCommand = connection.CreateCommand();
-        hashCommand.CommandText = """SELECT "EffectiveSchemaHash" FROM dms."EffectiveSchema";""";
-
-        var hash = (string)hashCommand.ExecuteScalar()!;
-        hash.Should().NotBeNullOrEmpty("the effective schema hash should be non-empty");
+        ProvisionTestHelper.AssertEffectiveSchemaSeeded(connection, "pgsql");
     }
 
     [Test]
@@ -144,12 +104,7 @@ public class Given_A_Fresh_Database_Provisioned_With_Create_Database_Flag
             PostgresTestDatabaseHelper.BuildConnectionString(_databaseName)
         );
         connection.Open();
-
-        using var command = connection.CreateCommand();
-        command.CommandText = """SELECT COUNT(*) FROM dms."SchemaComponent";""";
-
-        var count = (long)command.ExecuteScalar()!;
-        count.Should().BeGreaterThan(0, "there should be at least one SchemaComponent row");
+        ProvisionTestHelper.AssertSchemaComponentsSeeded(connection, "pgsql");
     }
 
     [Test]
@@ -159,13 +114,7 @@ public class Given_A_Fresh_Database_Provisioned_With_Create_Database_Flag
             PostgresTestDatabaseHelper.BuildConnectionString(_databaseName)
         );
         connection.Open();
-
-        using var command = connection.CreateCommand();
-        command.CommandText = """SELECT COUNT(*) FROM dms."ResourceKey";""";
-
-        var count = (long)command.ExecuteScalar()!;
-        // The minimal fixture defines Widget and Gadget
-        count.Should().BeGreaterThanOrEqualTo(2, "ResourceKey should have rows for Widget and Gadget");
+        ProvisionTestHelper.AssertResourceKeysSeeded(connection, "pgsql", 2);
     }
 
     [Test]
@@ -201,39 +150,24 @@ public class Given_Provisioning_Rerun_On_Same_Database
     {
         _databaseName = PostgresTestDatabaseHelper.GenerateUniqueDatabaseName();
         var connectionString = PostgresTestDatabaseHelper.BuildConnectionString(_databaseName);
-        var fixturePath = CliTestHelper.GetMinimalFixturePath();
 
         // First provisioning run
-        (_firstExitCode, _, _) = CliTestHelper.RunCli(
-            "ddl",
-            "provision",
-            "--schema",
-            fixturePath,
-            "--connection-string",
-            connectionString,
-            "--dialect",
+        (_firstExitCode, _, _) = ProvisionTestHelper.RunProvision(
             "pgsql",
-            "--create-database"
+            connectionString,
+            createDatabase: true
         );
 
         // Capture resource key count after first run
         using var connection = new NpgsqlConnection(connectionString);
         connection.Open();
-        using var command = connection.CreateCommand();
-        command.CommandText = """SELECT COUNT(*) FROM dms."ResourceKey";""";
-        _firstResourceKeyCount = (long)command.ExecuteScalar()!;
+        _firstResourceKeyCount = ProvisionTestHelper.GetDmsTableCount(connection, "pgsql", "ResourceKey");
 
         // Second provisioning run (idempotent rerun)
-        (_secondExitCode, _secondOutput, _secondError) = CliTestHelper.RunCli(
-            "ddl",
-            "provision",
-            "--schema",
-            fixturePath,
-            "--connection-string",
-            connectionString,
-            "--dialect",
+        (_secondExitCode, _secondOutput, _secondError) = ProvisionTestHelper.RunProvision(
             "pgsql",
-            "--create-database"
+            connectionString,
+            createDatabase: true
         );
     }
 
@@ -263,11 +197,10 @@ public class Given_Provisioning_Rerun_On_Same_Database
         );
         connection.Open();
 
-        using var command = connection.CreateCommand();
-        command.CommandText = """SELECT COUNT(*) FROM dms."EffectiveSchema";""";
-
-        var count = (long)command.ExecuteScalar()!;
-        count.Should().Be(1, "rerun should not duplicate the EffectiveSchema row");
+        ProvisionTestHelper
+            .GetDmsTableCount(connection, "pgsql", "EffectiveSchema")
+            .Should()
+            .Be(1, "rerun should not duplicate the EffectiveSchema row");
     }
 
     [Test]
@@ -278,11 +211,10 @@ public class Given_Provisioning_Rerun_On_Same_Database
         );
         connection.Open();
 
-        using var command = connection.CreateCommand();
-        command.CommandText = """SELECT COUNT(*) FROM dms."ResourceKey";""";
-
-        var count = (long)command.ExecuteScalar()!;
-        count.Should().Be(_firstResourceKeyCount, "rerun should not duplicate ResourceKey rows");
+        ProvisionTestHelper
+            .GetDmsTableCount(connection, "pgsql", "ResourceKey")
+            .Should()
+            .Be(_firstResourceKeyCount, "rerun should not duplicate ResourceKey rows");
     }
 }
 
@@ -302,18 +234,8 @@ public class Given_Provisioning_Without_Create_Database_Against_Existing_Empty_D
         PostgresTestDatabaseHelper.CreateDatabase(_databaseName);
 
         var connectionString = PostgresTestDatabaseHelper.BuildConnectionString(_databaseName);
-        var fixturePath = CliTestHelper.GetMinimalFixturePath();
 
-        (_exitCode, _output, _error) = CliTestHelper.RunCli(
-            "ddl",
-            "provision",
-            "--schema",
-            fixturePath,
-            "--connection-string",
-            connectionString,
-            "--dialect",
-            "pgsql"
-        );
+        (_exitCode, _output, _error) = ProvisionTestHelper.RunProvision("pgsql", connectionString);
     }
 
     [TearDown]
@@ -331,33 +253,11 @@ public class Given_Provisioning_Without_Create_Database_Against_Existing_Empty_D
     [Test]
     public void It_creates_core_tables()
     {
-        var expectedTables = new[]
-        {
-            "Document",
-            "ResourceKey",
-            "Descriptor",
-            "ReferentialIdentity",
-            "EffectiveSchema",
-            "SchemaComponent",
-            "DocumentCache",
-            "DocumentChangeEvent",
-        };
-
         using var connection = new NpgsqlConnection(
             PostgresTestDatabaseHelper.BuildConnectionString(_databaseName)
         );
         connection.Open();
-
-        foreach (var table in expectedTables)
-        {
-            using var command = connection.CreateCommand();
-            command.CommandText =
-                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'dms' AND table_name = @table;";
-            command.Parameters.AddWithValue("table", table);
-
-            var result = command.ExecuteScalar();
-            result.Should().NotBeNull($"table dms.\"{table}\" should exist");
-        }
+        ProvisionTestHelper.AssertCoreTablesExist(connection);
     }
 }
 
@@ -375,19 +275,9 @@ public class Given_Provisioning_Without_Create_Database_Against_Missing_Db
     {
         _databaseName = PostgresTestDatabaseHelper.GenerateUniqueDatabaseName();
         var connectionString = PostgresTestDatabaseHelper.BuildConnectionString(_databaseName);
-        var fixturePath = CliTestHelper.GetMinimalFixturePath();
 
         // Do NOT create the database — run without --create-database
-        (_exitCode, _output, _error) = CliTestHelper.RunCli(
-            "ddl",
-            "provision",
-            "--schema",
-            fixturePath,
-            "--connection-string",
-            connectionString,
-            "--dialect",
-            "pgsql"
-        );
+        (_exitCode, _output, _error) = ProvisionTestHelper.RunProvision("pgsql", connectionString);
     }
 
     [TearDown]
@@ -427,18 +317,11 @@ public class Given_Create_Database_Flag_With_Existing_Database
         PostgresTestDatabaseHelper.CreateDatabase(_databaseName);
 
         var connectionString = PostgresTestDatabaseHelper.BuildConnectionString(_databaseName);
-        var fixturePath = CliTestHelper.GetMinimalFixturePath();
 
-        (_exitCode, _output, _error) = CliTestHelper.RunCli(
-            "ddl",
-            "provision",
-            "--schema",
-            fixturePath,
-            "--connection-string",
-            connectionString,
-            "--dialect",
+        (_exitCode, _output, _error) = ProvisionTestHelper.RunProvision(
             "pgsql",
-            "--create-database"
+            connectionString,
+            createDatabase: true
         );
     }
 
@@ -462,10 +345,97 @@ public class Given_Create_Database_Flag_With_Existing_Database
         );
         connection.Open();
 
-        using var command = connection.CreateCommand();
-        command.CommandText = """SELECT COUNT(*) FROM dms."EffectiveSchema";""";
+        ProvisionTestHelper
+            .GetDmsTableCount(connection, "pgsql", "EffectiveSchema")
+            .Should()
+            .Be(1, "there should be exactly one EffectiveSchema row");
+    }
+}
 
-        var count = (long)command.ExecuteScalar()!;
-        count.Should().Be(1, "there should be exactly one EffectiveSchema row");
+[TestFixture]
+[Category("DatabaseIntegration")]
+public class Given_Schema_Hash_Mismatch_On_Provisioning
+{
+    private string _databaseName = null!;
+    private int _firstExitCode;
+    private string _firstOutput = null!;
+    private int _secondExitCode;
+    private string _secondError = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        _databaseName = PostgresTestDatabaseHelper.GenerateUniqueDatabaseName();
+        var connectionString = PostgresTestDatabaseHelper.BuildConnectionString(_databaseName);
+
+        // First provisioning run with schema A (minimal)
+        var fixturePathA = CliTestHelper.GetMinimalFixturePath();
+        (_firstExitCode, _firstOutput, _) = ProvisionTestHelper.RunProvision(
+            "pgsql",
+            connectionString,
+            fixturePathA,
+            createDatabase: true
+        );
+
+        // Second provisioning run with schema B (alternate minimal)
+        var fixturePathB = CliTestHelper.GetAlternateMinimalFixturePath();
+        (_secondExitCode, _, _secondError) = ProvisionTestHelper.RunProvision(
+            "pgsql",
+            connectionString,
+            fixturePathB
+        );
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        PostgresTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+    }
+
+    [Test]
+    public void It_succeeds_on_first_provisioning()
+    {
+        _firstExitCode.Should().Be(0, $"first provisioning should succeed; stdout: {_firstOutput}");
+    }
+
+    [Test]
+    public void It_returns_nonzero_exit_code_on_mismatch()
+    {
+        _secondExitCode.Should().NotBe(0, "provisioning with a different schema should fail");
+    }
+
+    [Test]
+    public void It_reports_schema_hash_mismatch_in_stderr()
+    {
+        _secondError.Should().Contain("Schema hash mismatch");
+    }
+
+    [Test]
+    public void It_includes_the_stored_hash_in_error_output()
+    {
+        var hashA = ProvisionTestHelper.ExtractHashFromOutput(_firstOutput);
+        hashA.Should().NotBeNullOrEmpty("should be able to extract hash from first run output");
+
+        _secondError.Should().Contain(hashA!, "stderr should include the hash stored in the database");
+    }
+
+    [Test]
+    public void It_includes_the_expected_hash_in_error_output()
+    {
+        _secondError.Should().Contain("but the current schema produces hash");
+    }
+
+    [Test]
+    public void It_does_not_create_additional_effective_schema_rows()
+    {
+        using var connection = new NpgsqlConnection(
+            PostgresTestDatabaseHelper.BuildConnectionString(_databaseName)
+        );
+        connection.Open();
+
+        ProvisionTestHelper
+            .GetDmsTableCount(connection, "pgsql", "EffectiveSchema")
+            .Should()
+            .Be(1, "the preflight check should prevent any additional rows");
     }
 }
