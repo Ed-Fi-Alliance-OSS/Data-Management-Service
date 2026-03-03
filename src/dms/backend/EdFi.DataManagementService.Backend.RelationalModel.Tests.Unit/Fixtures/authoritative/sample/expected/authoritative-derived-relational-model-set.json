@@ -43152,7 +43152,8 @@
         ],
         "ignored_by_reason": {
           "cross_table": 2
-        }
+        },
+        "skipped": []
       },
       "document_reference_bindings": [
         {
@@ -44050,7 +44051,8 @@
         ],
         "redundant": [],
         "ignored": [],
-        "ignored_by_reason": {}
+        "ignored_by_reason": {},
+        "skipped": []
       },
       "document_reference_bindings": [
         {
@@ -45006,7 +45008,8 @@
         ],
         "redundant": [],
         "ignored": [],
-        "ignored_by_reason": {}
+        "ignored_by_reason": {},
+        "skipped": []
       },
       "document_reference_bindings": [
         {
@@ -46431,7 +46434,8 @@
         ],
         "redundant": [],
         "ignored": [],
-        "ignored_by_reason": {}
+        "ignored_by_reason": {},
+        "skipped": []
       },
       "document_reference_bindings": [
         {

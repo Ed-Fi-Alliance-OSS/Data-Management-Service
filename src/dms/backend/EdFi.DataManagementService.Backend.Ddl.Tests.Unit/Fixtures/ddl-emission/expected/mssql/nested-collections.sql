@@ -81,7 +81,6 @@ BEGIN
 END;
 GO
 
-GO
 CREATE OR ALTER TRIGGER [edfi].[TR_School_Stamp]
 ON [edfi].[School]
 AFTER INSERT, UPDATE, DELETE
@@ -105,7 +104,6 @@ BEGIN
 END;
 GO
 
-GO
 CREATE OR ALTER TRIGGER [edfi].[TR_SchoolAddress_Stamp]
 ON [edfi].[SchoolAddress]
 AFTER INSERT, UPDATE, DELETE
@@ -120,7 +118,6 @@ BEGIN
 END;
 GO
 
-GO
 CREATE OR ALTER TRIGGER [edfi].[TR_SchoolAddressPhoneNumber_Stamp]
 ON [edfi].[SchoolAddressPhoneNumber]
 AFTER INSERT, UPDATE, DELETE

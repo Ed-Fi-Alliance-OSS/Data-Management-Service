@@ -236,6 +236,7 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
         List<AppliedConstraintCandidate> appliedConstraints = [];
         List<KeyUnificationRedundantConstraint> redundantConstraints = [];
         List<KeyUnificationIgnoredConstraint> ignoredConstraints = [];
+        List<KeyUnificationSkippedConstraint> skippedConstraints = [];
 
         foreach (var constraint in constraints)
         {
@@ -245,6 +246,19 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
             // Skip constraints where an endpoint path is not bound to any column
             if (leftCandidates is null || rightCandidates is null)
             {
+                var unresolvedEndpoint = (leftCandidates is null, rightCandidates is null) switch
+                {
+                    (true, true) => "both",
+                    (true, false) => "source",
+                    _ => "target",
+                };
+                skippedConstraints.Add(
+                    new KeyUnificationSkippedConstraint(
+                        constraint.SourcePath,
+                        constraint.TargetPath,
+                        unresolvedEndpoint
+                    )
+                );
                 continue;
             }
 
@@ -338,7 +352,8 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
         var diagnostics = BuildEqualityConstraintDiagnostics(
             FinalizeAppliedConstraints(appliedConstraints, tables, resource),
             redundantConstraints,
-            ignoredConstraints
+            ignoredConstraints,
+            skippedConstraints
         );
         var updatedModel = resourceModel with { KeyUnificationEqualityConstraints = diagnostics };
 
@@ -635,7 +650,8 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
     private static KeyUnificationEqualityConstraintDiagnostics BuildEqualityConstraintDiagnostics(
         IReadOnlyList<KeyUnificationAppliedConstraint> appliedConstraints,
         IReadOnlyList<KeyUnificationRedundantConstraint> redundantConstraints,
-        IReadOnlyList<KeyUnificationIgnoredConstraint> ignoredConstraints
+        IReadOnlyList<KeyUnificationIgnoredConstraint> ignoredConstraints,
+        IReadOnlyList<KeyUnificationSkippedConstraint> skippedConstraints
     )
     {
         var applied = appliedConstraints
@@ -669,8 +685,19 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
             .OrderBy(group => group.Key.ToString(), StringComparer.Ordinal)
             .Select(group => new KeyUnificationIgnoredByReasonEntry(group.Key, group.Count()))
             .ToArray();
+        var skipped = skippedConstraints
+            .OrderBy(constraint => constraint.SourcePath.Canonical, StringComparer.Ordinal)
+            .ThenBy(constraint => constraint.TargetPath.Canonical, StringComparer.Ordinal)
+            .ThenBy(constraint => constraint.UnresolvedEndpoint, StringComparer.Ordinal)
+            .ToArray();
 
-        return new KeyUnificationEqualityConstraintDiagnostics(applied, redundant, ignored, ignoredByReason);
+        return new KeyUnificationEqualityConstraintDiagnostics(
+            applied,
+            redundant,
+            ignored,
+            ignoredByReason,
+            skipped
+        );
     }
 
     /// <summary>

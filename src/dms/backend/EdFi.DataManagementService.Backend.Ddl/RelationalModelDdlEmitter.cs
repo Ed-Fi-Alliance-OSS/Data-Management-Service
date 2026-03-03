@@ -327,6 +327,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private void EmitTriggers(SqlWriter writer, IReadOnlyList<DbTriggerInfo> triggers)
     {
+        // MSSQL requires a batch boundary before the first CREATE OR ALTER TRIGGER.
+        // Each trigger emits its own trailing GO, so only the leading GO is needed here.
+        if (_dialect.Rules.Dialect == SqlDialect.Mssql && triggers.Count > 0)
+        {
+            writer.AppendLine("GO");
+        }
+
         foreach (var trigger in triggers)
         {
             // Dispatch by dialect enum rather than pattern abstraction for trigger generation.
@@ -433,8 +440,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private void EmitMssqlTrigger(SqlWriter writer, DbTriggerInfo trigger)
     {
-        // CREATE OR ALTER TRIGGER must be the first statement in a T-SQL batch.
-        writer.AppendLine("GO");
         writer.Append("CREATE OR ALTER TRIGGER ");
         writer.Append(Quote(trigger.Table.Schema));
         writer.Append(".");

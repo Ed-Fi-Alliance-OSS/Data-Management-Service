@@ -41,7 +41,8 @@ internal static class RelationalScalarTypeResolver
             schema,
             sourcePath,
             context.TryGetDecimalPropertyValidationInfo,
-            context.StringMaxLengthOmissionPaths
+            context.StringMaxLengthOmissionPaths,
+            context.DecimalPrecisionFallbacks
         );
     }
 
@@ -151,11 +152,13 @@ internal static class RelationalScalarTypeResolver
 
     private static RelationalScalarType ResolveDecimalType(
         JsonPathExpression sourcePath,
-        TryGetDecimalPropertyValidationInfo tryGetDecimalPropertyValidationInfo
+        TryGetDecimalPropertyValidationInfo tryGetDecimalPropertyValidationInfo,
+        List<DecimalPrecisionFallback>? fallbacks = null
     )
     {
         if (!tryGetDecimalPropertyValidationInfo(sourcePath, out var validationInfo))
         {
+            fallbacks?.Add(new DecimalPrecisionFallback(sourcePath, "missing"));
             return new RelationalScalarType(
                 ScalarKind.Decimal,
                 Decimal: (DefaultTotalDigits, DefaultDecimalPlaces)
@@ -164,6 +167,7 @@ internal static class RelationalScalarTypeResolver
 
         if (validationInfo.TotalDigits is null || validationInfo.DecimalPlaces is null)
         {
+            fallbacks?.Add(new DecimalPrecisionFallback(sourcePath, "incomplete"));
             return new RelationalScalarType(
                 ScalarKind.Decimal,
                 Decimal: (DefaultTotalDigits, DefaultDecimalPlaces)
@@ -218,7 +222,8 @@ internal static class RelationalScalarTypeResolver
         JsonObject schema,
         JsonPathExpression sourcePath,
         TryGetDecimalPropertyValidationInfo tryGetDecimalPropertyValidationInfo,
-        IReadOnlySet<string> stringMaxLengthOmissionPaths
+        IReadOnlySet<string> stringMaxLengthOmissionPaths,
+        List<DecimalPrecisionFallback>? fallbacks = null
     )
     {
         ArgumentNullException.ThrowIfNull(tryGetDecimalPropertyValidationInfo);
@@ -230,7 +235,7 @@ internal static class RelationalScalarTypeResolver
         {
             "string" => ResolveStringType(schema, sourcePath, stringMaxLengthOmissionPaths),
             "integer" => ResolveIntegerType(schema, sourcePath),
-            "number" => ResolveDecimalType(sourcePath, tryGetDecimalPropertyValidationInfo),
+            "number" => ResolveDecimalType(sourcePath, tryGetDecimalPropertyValidationInfo, fallbacks),
             "boolean" => new RelationalScalarType(ScalarKind.Boolean),
             _ => throw new InvalidOperationException(
                 $"Unsupported scalar type '{schemaType}' at {sourcePath.Canonical}."

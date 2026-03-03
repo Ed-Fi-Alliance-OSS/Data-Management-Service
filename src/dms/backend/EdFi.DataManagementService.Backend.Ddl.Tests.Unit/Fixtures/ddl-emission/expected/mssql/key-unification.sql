@@ -76,7 +76,6 @@ BEGIN
 END;
 GO
 
-GO
 CREATE OR ALTER TRIGGER [edfi].[TR_CourseRegistration_Stamp]
 ON [edfi].[CourseRegistration]
 AFTER INSERT, UPDATE, DELETE
@@ -100,7 +99,6 @@ BEGIN
 END;
 GO
 
-GO
 CREATE OR ALTER TRIGGER [edfi].[TR_School_Propagation]
 ON [edfi].[School]
 AFTER UPDATE
@@ -120,7 +118,6 @@ BEGIN
 END;
 GO
 
-GO
 CREATE OR ALTER TRIGGER [edfi].[TR_School_ReferentialIdentity]
 ON [edfi].[School]
 AFTER INSERT, UPDATE
@@ -151,7 +148,6 @@ BEGIN
 END;
 GO
 
-GO
 CREATE OR ALTER TRIGGER [edfi].[TR_School_Stamp]
 ON [edfi].[School]
 AFTER INSERT, UPDATE, DELETE
