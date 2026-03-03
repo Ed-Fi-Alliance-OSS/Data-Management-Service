@@ -294,6 +294,50 @@ public class Given_DdlManifestEmitter_CountStatements_For_Mssql
 }
 
 [TestFixture]
+public class Given_DdlManifestEmitter_CountStatements_With_Empty_Input
+{
+    [Test]
+    public void It_should_return_zero_for_empty_pgsql_input()
+    {
+        DdlManifestEmitter.CountStatements(SqlDialect.Pgsql, "").Should().Be(0);
+    }
+
+    [Test]
+    public void It_should_return_zero_for_empty_mssql_input()
+    {
+        DdlManifestEmitter.CountStatements(SqlDialect.Mssql, "").Should().Be(0);
+    }
+}
+
+[TestFixture]
+public class Given_DdlManifestEmitter_Emit_With_Empty_Entries
+{
+    private string _manifest = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var schema = ManifestTestData.BuildEffectiveSchema();
+        _manifest = DdlManifestEmitter.Emit(schema, []);
+    }
+
+    [Test]
+    public void It_should_produce_valid_json_with_empty_ddl_array()
+    {
+        var doc = JsonDocument.Parse(_manifest);
+        doc.RootElement.GetProperty("ddl").GetArrayLength().Should().Be(0);
+    }
+
+    [Test]
+    public void It_should_still_include_schema_metadata()
+    {
+        var doc = JsonDocument.Parse(_manifest);
+        doc.RootElement.GetProperty("effective_schema_hash").GetString().Should().Be("abc123def456");
+        doc.RootElement.GetProperty("relational_mapping_version").GetString().Should().Be("1.0.0");
+    }
+}
+
+[TestFixture]
 public class Given_DdlManifestEmitter_Emit_Json_Format
 {
     private string _manifest = default!;

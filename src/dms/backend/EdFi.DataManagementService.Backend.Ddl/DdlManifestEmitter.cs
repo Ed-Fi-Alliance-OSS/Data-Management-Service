@@ -76,11 +76,27 @@ public static class DdlManifestEmitter
 
     /// <summary>
     /// Computes the SHA-256 hash of the SQL text (UTF-8, no BOM) as a lowercase hex string.
+    /// Uses a rented buffer to reduce GC pressure for large SQL texts.
     /// </summary>
     internal static string ComputeSha256(string sqlText)
     {
-        var bytes = Encoding.UTF8.GetBytes(sqlText);
-        return Convert.ToHexStringLower(SHA256.HashData(bytes));
+        // Rent a pooled buffer instead of allocating via Encoding.UTF8.GetBytes(string)
+        // to avoid large byte[] allocations that pressure GC when hashing real-world
+        // DDL texts (which can be hundreds of KB per dialect). The 32-byte hash output
+        // fits on the stack via stackalloc.
+        var maxByteCount = Encoding.UTF8.GetMaxByteCount(sqlText.Length);
+        var rented = ArrayPool<byte>.Shared.Rent(maxByteCount);
+        try
+        {
+            var bytesWritten = Encoding.UTF8.GetBytes(sqlText, rented);
+            Span<byte> hash = stackalloc byte[SHA256.HashSizeInBytes];
+            SHA256.HashData(rented.AsSpan(0, bytesWritten), hash);
+            return Convert.ToHexStringLower(hash);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(rented);
+        }
     }
 
     /// <summary>
@@ -178,6 +194,7 @@ public static class DdlManifestEmitter
 
         foreach (var line in lines)
         {
+            // Trim all whitespace to match $$-delimiters on indented lines
             var trimmed = line.TrimEnd('\r').Trim();
 
             if (insideDollarQuote)
