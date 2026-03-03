@@ -34,29 +34,36 @@ internal class DeleteByIdHandler(
         // Resolve repository from service provider within request scope
         var documentStoreRepository = _serviceProvider.GetRequiredService<IDocumentStoreRepository>();
 
-        var deleteResult = await _resiliencePipeline.ExecuteAsync(async t =>
-            await documentStoreRepository.DeleteDocumentById(
-                new DeleteRequest(
-                    DocumentUuid: requestInfo.PathComponents.DocumentUuid,
-                    ResourceInfo: requestInfo.ResourceInfo,
-                    TraceId: requestInfo.FrontendRequest.TraceId,
-                    ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
-                        requestInfo.AuthorizationStrategyEvaluators,
-                        requestInfo.AuthorizationSecurableInfo,
-                        authorizationServiceFactory,
-                        _logger
-                    ),
-                    ResourceAuthorizationPathways: requestInfo.AuthorizationPathways,
-                    DeleteInEdOrgHierarchy: (
-                        requestInfo.ProjectSchema.EducationOrganizationTypes.Contains(
-                            requestInfo.ResourceSchema.ResourceName
-                        )
-                    ),
-                    Headers: requestInfo.FrontendRequest.Headers
-                )
-            )
+        var deleteResult = await ExecuteWithRetryLogging(
+            _resiliencePipeline,
+            _logger,
+            "delete",
+            requestInfo.FrontendRequest.TraceId,
+            r => IsRetryableResult(r),
+            r => r is DeleteSuccess,
+            async ct =>
+                await documentStoreRepository.DeleteDocumentById(
+                    new DeleteRequest(
+                        DocumentUuid: requestInfo.PathComponents.DocumentUuid,
+                        ResourceInfo: requestInfo.ResourceInfo,
+                        TraceId: requestInfo.FrontendRequest.TraceId,
+                        ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
+                            requestInfo.AuthorizationStrategyEvaluators,
+                            requestInfo.AuthorizationSecurableInfo,
+                            authorizationServiceFactory,
+                            _logger
+                        ),
+                        ResourceAuthorizationPathways: requestInfo.AuthorizationPathways,
+                        DeleteInEdOrgHierarchy: (
+                            requestInfo.ProjectSchema.EducationOrganizationTypes.Contains(
+                                requestInfo.ResourceSchema.ResourceName
+                            )
+                        ),
+                        Headers: requestInfo.FrontendRequest.Headers
+                    )
+                ),
+            requestInfo
         );
-
         _logger.LogDebug(
             "Document store DeleteDocumentById returned {DeleteResult}- {TraceId}",
             deleteResult.GetType().FullName,
@@ -83,7 +90,13 @@ internal class DeleteByIdHandler(
                 ),
                 Headers: []
             ),
-            DeleteFailureWriteConflict => new FrontendResponse(StatusCode: 409, Body: null, Headers: []),
+            // Returns 500 to match ODS/API behavior: after retries are exhausted for a deadlock,
+            // the client receives a generic system error rather than a retryable status code.
+            DeleteFailureWriteConflict => new FrontendResponse(
+                StatusCode: 500,
+                Body: FailureResponse.ForSystemError(requestInfo.FrontendRequest.TraceId),
+                Headers: []
+            ),
             DeleteFailureETagMisMatch => new FrontendResponse(
                 StatusCode: 412,
                 Body: FailureResponse.ForETagMisMatch(

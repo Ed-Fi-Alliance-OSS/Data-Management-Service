@@ -199,7 +199,8 @@ public class DeleteByIdHandlerTests
         [Test]
         public void It_has_the_correct_response()
         {
-            _requestInfo.FrontendResponse.StatusCode.Should().Be(409);
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(500);
+            _requestInfo.FrontendResponse.Body.Should().NotBeNull();
         }
     }
 

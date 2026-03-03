@@ -38,34 +38,42 @@ internal class UpsertHandler(
         // Resolve repository from service provider within request scope
         var documentStoreRepository = _serviceProvider.GetRequiredService<IDocumentStoreRepository>();
 
-        var upsertResult = await _resiliencePipeline.ExecuteAsync(async t =>
-        {
-            // A document uuid that will be assigned if this is a new document
-            DocumentUuid candidateDocumentUuid = new(FastGuid.NewPostgreSqlGuid());
+        var updateCascadeHandler = new UpdateCascadeHandler(_apiSchemaProvider, _logger);
 
-            var updateCascadeHandler = new UpdateCascadeHandler(_apiSchemaProvider, _logger);
+        var upsertResult = await ExecuteWithRetryLogging(
+            _resiliencePipeline,
+            _logger,
+            "upsert",
+            requestInfo.FrontendRequest.TraceId,
+            r => IsRetryableResult(r),
+            r => r is InsertSuccess or UpdateSuccess,
+            async ct =>
+            {
+                // A document uuid that will be assigned if this is a new document
+                DocumentUuid candidateDocumentUuid = new(FastGuid.NewPostgreSqlGuid());
 
-            return await documentStoreRepository.UpsertDocument(
-                new UpsertRequest(
-                    ResourceInfo: requestInfo.ResourceInfo,
-                    DocumentInfo: requestInfo.DocumentInfo,
-                    EdfiDoc: requestInfo.ParsedBody,
-                    Headers: requestInfo.FrontendRequest.Headers,
-                    TraceId: requestInfo.FrontendRequest.TraceId,
-                    DocumentUuid: candidateDocumentUuid,
-                    DocumentSecurityElements: requestInfo.DocumentSecurityElements,
-                    UpdateCascadeHandler: updateCascadeHandler,
-                    ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
-                        requestInfo.AuthorizationStrategyEvaluators,
-                        requestInfo.AuthorizationSecurableInfo,
-                        authorizationServiceFactory,
-                        _logger
-                    ),
-                    ResourceAuthorizationPathways: requestInfo.AuthorizationPathways
-                )
-            );
-        });
-
+                return await documentStoreRepository.UpsertDocument(
+                    new UpsertRequest(
+                        ResourceInfo: requestInfo.ResourceInfo,
+                        DocumentInfo: requestInfo.DocumentInfo,
+                        EdfiDoc: requestInfo.ParsedBody,
+                        Headers: requestInfo.FrontendRequest.Headers,
+                        TraceId: requestInfo.FrontendRequest.TraceId,
+                        DocumentUuid: candidateDocumentUuid,
+                        DocumentSecurityElements: requestInfo.DocumentSecurityElements,
+                        UpdateCascadeHandler: updateCascadeHandler,
+                        ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
+                            requestInfo.AuthorizationStrategyEvaluators,
+                            requestInfo.AuthorizationSecurableInfo,
+                            authorizationServiceFactory,
+                            _logger
+                        ),
+                        ResourceAuthorizationPathways: requestInfo.AuthorizationPathways
+                    )
+                );
+            },
+            requestInfo
+        );
         _logger.LogDebug(
             "Document store UpsertDocument returned {UpsertResult}- {TraceId}",
             upsertResult.GetType().FullName,
@@ -128,7 +136,13 @@ internal class UpsertHandler(
                 ),
                 Headers: []
             ),
-            UpsertFailureWriteConflict => new(StatusCode: 409, Body: null, Headers: []),
+            // Returns 500 to match ODS/API behavior: after retries are exhausted for a deadlock,
+            // the client receives a generic system error rather than a retryable status code.
+            UpsertFailureWriteConflict => new(
+                StatusCode: 500,
+                Body: ForSystemError(requestInfo.FrontendRequest.TraceId),
+                Headers: []
+            ),
             UpsertFailureNotAuthorized failure => new(
                 StatusCode: 403,
                 Body: ForForbidden(

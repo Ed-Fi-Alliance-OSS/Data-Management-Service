@@ -211,6 +211,17 @@ public static class FailureResponse
             errors: []
         );
 
+    public static JsonNode ForSystemError(TraceId traceId) =>
+        CreateBaseJsonObject(
+            detail: "An unexpected problem has occurred.",
+            type: $"{_typePrefix}:system",
+            title: "System Error",
+            status: 500,
+            correlationId: traceId.Value,
+            validationErrors: [],
+            errors: []
+        );
+
     public static JsonNode ForDataPolicyEnforced(string profileName, TraceId traceId) =>
         CreateBaseJsonObject(
             detail: "The data cannot be saved because a data policy has been applied to the request that prevents it.",
