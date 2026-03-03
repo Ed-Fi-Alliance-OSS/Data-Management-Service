@@ -7083,7 +7083,6 @@
         "DocumentId",
         "LocalCourseCode",
         "SchoolId_Unified",
-        "SchoolId_Unified",
         "Session_SchoolYear",
         "Session_SessionName"
       ]
@@ -10066,8 +10065,6 @@
         "SchoolYear_Unified",
         "StudentSectionAssociation_BeginDate",
         "StudentSectionAssociation_LocalCourseCode",
-        "SchoolId_Unified",
-        "SchoolYear_Unified",
         "StudentSectionAssociation_SectionIdentifier",
         "StudentSectionAssociation_SessionName",
         "StudentSectionAssociation_StudentUniqueId"
@@ -27422,8 +27419,6 @@
         "Namespace_Unified",
         "SurveyIdentifier_Unified",
         "SurveyResponse_SurveyResponseIdentifier",
-        "Namespace_Unified",
-        "SurveyIdentifier_Unified",
         "SurveySection_SurveySectionTitle"
       ]
     },
