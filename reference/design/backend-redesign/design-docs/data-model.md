@@ -78,6 +78,9 @@ CREATE TABLE dms.Document (
     DocumentUuid uuid NOT NULL,
     ResourceKeyId smallint NOT NULL REFERENCES dms.ResourceKey (ResourceKeyId),
 
+    -- Ownership-based authorization stamp (see reference/design/backend-redesign/design-docs/auth-redesign.md)
+    CreatedByOwnershipTokenId smallint NULL,
+
     -- Update tracking tokens (see reference/design/backend-redesign/design-docs/update-tracking.md)
     -- Note: emitted DDL must create dms.ChangeVersionSequence before dms.Document.
     ContentVersion bigint NOT NULL DEFAULT nextval('dms.ChangeVersionSequence'),
@@ -92,6 +95,9 @@ CREATE TABLE dms.Document (
 
 CREATE INDEX IX_Document_ResourceKeyId_DocumentId
     ON dms.Document (ResourceKeyId, DocumentId);
+
+CREATE INDEX IX_Document_CreatedByOwnershipTokenId
+    ON dms.Document (CreatedByOwnershipTokenId);
 ```
 
 **SQL Server**
@@ -104,6 +110,9 @@ CREATE TABLE dms.Document (
     DocumentUuid uniqueidentifier NOT NULL,
 
     ResourceKeyId smallint NOT NULL,
+
+    -- Ownership-based authorization stamp (see reference/design/backend-redesign/design-docs/auth-redesign.md)
+    CreatedByOwnershipTokenId smallint NULL,
 
     -- Update tracking tokens (see reference/design/backend-redesign/design-docs/update-tracking.md)
     -- Note: emitted DDL must create dms.ChangeVersionSequence before dms.Document.
@@ -121,11 +130,15 @@ CREATE TABLE dms.Document (
 
 CREATE INDEX IX_Document_ResourceKeyId_DocumentId
     ON dms.Document (ResourceKeyId, DocumentId);
+
+CREATE INDEX IX_Document_CreatedByOwnershipTokenId
+    ON dms.Document (CreatedByOwnershipTokenId);
 ```
 
 Notes:
 - `DocumentUuid` remains stable across identity updates; identity-based upserts map to it via `dms.ReferentialIdentity` for **all** identities (self-contained, reference-bearing, and abstract/superclass aliases), because `dms.ReferentialIdentity` is maintained transactionally (including cascades) on identity changes.
 - `ResourceKeyId` identifies the document’s concrete resource type; use `dms.ResourceKey` for `(ProjectName, ResourceName)` when needed (diagnostics, CDC metadata).
+- `CreatedByOwnershipTokenId` is stamped from the authenticated client context on create and is used by the ownership-based authorization strategy; it is not client-writable (see [auth-redesign.md](auth-redesign.md)).
 - Update tracking columns (brief semantics; see `reference/design/backend-redesign/design-docs/update-tracking.md` for the normative rules):
   - `ContentVersion` / `ContentLastModifiedAt`: bump when the document’s served representation changes (local write, or cascaded update to reference-identity storage columns and any dependent generated aliases).
   - `IdentityVersion` / `IdentityLastModifiedAt`: bump when the document’s identity/URI projection changes (directly or via cascaded updates to identity-component reference identity columns).
@@ -526,6 +539,21 @@ CREATE INDEX IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt
 Uses:
 - Faster GET/query responses (skip reconstitution)
 - Easier CDC streaming (Debezium) / OpenSearch indexing / external integrations
+
+### Authorization companion objects (schema: `auth`)
+
+DMS authorization is enforced using a small set of companion tables/views, aligned with the ODS authorization strategy model and adapted for a relational primary store. See [auth-redesign.md](auth-redesign.md) for the normative behavior and query patterns.
+
+Baseline objects:
+
+- `auth.EducationOrganizationIdToEducationOrganizationId` (table): EdOrg hierarchy closure used by relationship-based authorization strategies.
+- Relationship views that output **DocumentIds** for person types (hard-coded definitions; used by relationship-based strategies):
+  - `auth.EducationOrganizationIdToStudentDocumentId`
+  - `auth.EducationOrganizationIdToContactDocumentId`
+  - `auth.EducationOrganizationIdToStaffDocumentId`
+  - `auth.EducationOrganizationIdToStudentDocumentIdThroughResponsibility`
+
+Custom, implementer-defined authorization views (for `{BasisResource}With{SomeDescription}` strategies) are also in the `auth` schema, but are not derived from `ApiSchema.json` and are not listed exhaustively here. In DMS, these custom views should output the basis resource’s `DocumentId` rather than natural keys (see [auth-redesign.md](auth-redesign.md)).
 
 ### Resource tables (schema per project)
 

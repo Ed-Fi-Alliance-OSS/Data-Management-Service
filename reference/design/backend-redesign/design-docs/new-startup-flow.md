@@ -18,7 +18,8 @@ This is aligned with the backend redesign constraint:
    - ApiSchemas cannot be loaded/validated, or
    - any configured database instance is not provisioned for the same effective schema, or
    - mapping packs are missing/invalid (when packs are required), or
-   - runtime compilation fails (when compilation is allowed/required).
+   - runtime compilation fails (when compilation is allowed/required), or
+   - required authentication/authorization configuration is invalid (e.g., missing authority/keys configuration, or missing required claim-set metadata).
 2. **No per-request schema work**: requests should not lazily load ApiSchemas or build merged/derived schema
    views.
 3. **No per-request mapping work**: requests should not load/compile mapping sets or validate
@@ -69,6 +70,10 @@ The new lifecycle splits startup into explicit phases:
      - read the database fingerprint (`dms.EffectiveSchema`, `dms.SchemaComponent`),
      - validate `ResourceKeySeedHash/Count` (fast path) and cache `ResourceKeyId` maps,
      - fail fast on mismatch.
+5. **Initialize authentication/authorization metadata caches** (startup-time, best-effort warmup):
+   - warm OIDC discovery/JWKS metadata (if configured),
+   - retrieve and cache claim-set/strategy metadata used by request authorization (see `auth-redesign.md`),
+   - fail fast only when configured as required for the deployment.
 
 After these phases, request processing becomes purely “consume cached schema + cached mapping”.
 
@@ -81,7 +86,7 @@ becomes:
 2. Optional DB deploy (`InitializeDatabase(app)`; already present)
 3. **New**: `InitializeApiSchemas(app)` (Core)
 4. **New**: `InitializeBackendMappings(app)` (backend-specific)
-5. Other warmups (`RetrieveAndCacheClaimSets`, OIDC metadata warmup, etc.)
+5. Other warmups (`RetrieveAndCacheClaimSets`, OIDC/JWKS metadata warmup, etc.; see `auth-redesign.md`)
 6. Start request routing
 
 ApiSchema loading can occur before or after DB deploy. Mapping initialization must occur after instances are
@@ -190,6 +195,7 @@ Example tasks:
 - `LoadAndValidateApiSchemaTask` (Core)
 - `BuildEffectiveApiSchemaTask` (Core)
 - `InitializeRelationalMappingsTask` (backend-specific)
+- `WarmupAuthMetadataTask` (frontend/Core; OIDC metadata + claim-set/strategy caches; see `auth-redesign.md`)
 
 The orchestrator can live in Core so the host only needs one call at startup.
 

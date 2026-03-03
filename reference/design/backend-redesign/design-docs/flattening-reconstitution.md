@@ -8,6 +8,7 @@ This document is the flattening/reconstitution deep dive for `overview.md`.
 
 - Overview: [overview.md](overview.md)
 - Data model: [data-model.md](data-model.md)
+- Authentication & authorization: [auth-redesign.md](auth-redesign.md)
 - Extensions: [extensions.md](extensions.md)
 - Transactions, concurrency, and cascades: [transactions-and-concurrency.md](transactions-and-concurrency.md)
 - DDL Generation: [ddl-generation.md](ddl-generation.md)
@@ -364,6 +365,21 @@ Where `OrdinalPath[]` is the vector of array ordinals along the wildcard path:
 
 During row materialization, the flattener already knows the current row’s `OrdinalPath` because it is enumerating the arrays. It performs an O(1) lookup to populate each FK column (no per-row hashing).
 
+### 5.2.2 Authorization integration (pre-write checks)
+
+Authorization is enforced before any write statements that would materialize unauthorized state. The authorization design (strategies, SQL patterns, batching, and required `auth.*` companion objects) is defined in [auth-redesign.md](auth-redesign.md).
+
+Write-path ordering (high level):
+1. Resolve references/descriptors to `DocumentId`s (this section), so authorization checks can use surrogate keys (especially for people-based checks and custom view-based strategies).
+2. Execute authorization checks:
+   - For POST-create, authorize request-body values before inserting `dms.Document` + resource tables.
+   - For PUT/DELETE, authorize against stored values early (before reconstitution) and, when identifying values change, also authorize the requested new values.
+   - For POST-upsert that resolves to an existing document, treat it as an inline PUT (authorize stored + requested values).
+3. Proceed with write materialization and execution.
+
+Ownership-based authorization integration:
+- On create, stamp `dms.Document.CreatedByOwnershipTokenId` from the authenticated client context (not from request JSON) as described in `auth-redesign.md`.
+
 ### 5.3 Row materialization (in-memory)
 
 Using the compiled `ResourceWritePlan`, materialize:
@@ -530,6 +546,36 @@ The page case must not become “GET by id repeated N times”.
 
 - **GET by id**: resolve `DocumentUuid → DocumentId`, then the keyset is a single `DocumentId`.
 - **GET by query**: compile a parameterized SQL over the **resource root table** that selects the `DocumentId`s in the requested page (filters + `ORDER BY r.DocumentId` + paging).
+
+Authorization integration:
+- Authorization MUST be applied before hydration/reconstitution, and should be applied at the keyset-selection step so only authorized `DocumentId`s enter the page (avoid reconstituting unauthorized rows).
+- For **GET by id**, authorize against stored values after `DocumentUuid → DocumentId` resolution and before hydration.
+- For **GET by query**, incorporate authorization filters into `<PageDocumentIdSql>` (or use an authorization-prefiltered `DocumentId` set) using the strategy patterns defined in [auth-redesign.md](auth-redesign.md). Ownership-based checks typically require joining the root table to `dms.Document` to filter on `CreatedByOwnershipTokenId`.
+
+Example (sketch): query + authorization combined in `<PageDocumentIdSql>` for `Course`
+
+```sql
+SELECT r.DocumentId
+FROM edfi.Course r
+JOIN dms.Document d ON d.DocumentId = r.DocumentId
+WHERE
+  d.CreatedByOwnershipTokenId IN (/* @OwnershipTokens */)
+  AND (
+    r.EducationOrganizationId IN (
+      SELECT TargetEducationOrganizationId
+      FROM auth.EducationOrganizationIdToEducationOrganizationId
+      WHERE SourceEducationOrganizationId IN (/* @TokenEdOrgIds */)
+    )
+    OR r.EducationOrganizationId IN (
+      SELECT SourceEducationOrganizationId
+      FROM auth.EducationOrganizationIdToEducationOrganizationId
+      WHERE TargetEducationOrganizationId IN (/* @TokenEdOrgIds */)
+    )
+  )
+  AND r.CourseCode = @CourseCode
+ORDER BY r.DocumentId
+OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY;
+```
 
 All subsequent reads “hydrate” root + child tables by joining to that keyset.
 Extension tables (in extension project schemas) are hydrated the same way: select by the page keyset and attach by the same key/ordinal columns (see [extensions.md](extensions.md)).

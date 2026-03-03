@@ -9,15 +9,15 @@ jira_url: https://edfi.atlassian.net/browse/DMS-1026
 
 Produce an implementation-ready authorization design for the relational primary store.
 
-The current authorization document is intentionally incomplete and is retained as a sketch:
+The authorization design for the relational primary store is defined in:
 
-- `reference/design/backend-redesign/design-docs/auth.md`
+- `reference/design/backend-redesign/design-docs/auth-redesign.md`
 
-This spike turns that sketch into a complete v1 design and identifies the follow-on implementation work (DDL + runtime).
+This story tracks follow-on implementation work (DDL + runtime) and verification.
 
 ## Acceptance Criteria
 
-- `reference/design/backend-redesign/design-docs/auth.md` is updated to an implementation-ready design with:
+- `reference/design/backend-redesign/design-docs/auth-redesign.md` is an implementation-ready design with:
   - explicit v1 scope and non-goals,
   - concrete strategy semantics mapped to existing DMS concepts,
   - a selected baseline storage/query approach,
@@ -28,7 +28,7 @@ This spike turns that sketch into a complete v1 design and identifies the follow
 
 ## Tasks
 
-1. Finalize the authorization design document (`reference/design/backend-redesign/design-docs/auth.md`) and explicitly mark v1 scope vs out-of-scope.
+1. Finalize the authorization design document (`reference/design/backend-redesign/design-docs/auth-redesign.md`) and explicitly mark v1 scope vs out-of-scope.
 2. Decide the baseline authorization model:
   - view-based authorization (`auth.*` views) vs materialized membership tables, and
   - EdOrg hierarchy expansion strategy (recursive vs closure/tuple table).

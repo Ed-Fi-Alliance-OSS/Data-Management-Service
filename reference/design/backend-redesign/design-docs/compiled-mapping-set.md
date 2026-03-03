@@ -8,6 +8,7 @@ It exists to prevent drift between:
 - DDL generation (`ddl-generation.md`)
 - runtime compilation and execution (`flattening-reconstitution.md`)
 - mapping packs (optional AOT mode: `aot-compilation.md`, wire format: `mpack-format-v1.md`)
+- authorization companion objects, required indexes, and schema-derived authorization metadata used to build SQL authorization checks (`auth-redesign.md`)
 
 The key idea is to centralize “what was derived/compiled” into a single shape that all producers/consumers use.
 
@@ -170,6 +171,9 @@ public enum DbIndexKind
     // Non-unique index required by the FK index policy (see `ddl-generation.md`).
     ForeignKeySupport,
 
+    // Index required for authorization query performance (see `auth-redesign.md`).
+    Authorization,
+
     // Explicit non-query indexes called out in the design (rare outside core `dms.*` tables).
     Explicit
 }
@@ -244,7 +248,7 @@ Notes:
 - `TableConstraint` here refers to the model-level constraint inventory used by DDL emission. The mapping-pack/runtime subset may not need to serialize every constraint kind.
 - Index/trigger inventories are dialect-aware (“SQL-free DDL intent”), derived deterministically from the derived tables/constraints plus the policies in `ddl-generation.md`.
  - `IdentityProjectionColumns` is a null-safe value-diff compare set, not an `UPDATE(column)` gate list.
-  - Scope: schema-derived project objects only (resource/extension/abstract-identity tables). Core `dms.*` indexes/triggers are owned by core DDL emission.
+  - Scope: schema-derived project objects only (resource/extension/abstract-identity tables). This includes authorization-required indexes on resource tables derived from `securableElements` (see `auth-redesign.md`). Core `dms.*` / `auth.*` objects (and their indexes/triggers) are owned by core DDL emission.
 - `IndexesInCreateOrder` / `TriggersInCreateOrder` are stored in canonical deterministic order (schema, table, name), not a dependency-aware DDL execution order; DDL emission chooses any required creation sequence.
 
 ### 2.3 Mapping set (dialect-specific)
@@ -422,3 +426,22 @@ For a read request targeting resource `R`:
    - Include descriptor projection as an additional result set in the same multi-result hydration command (still page-sized and batched, no N+1), returning `(DescriptorId, Uri)` for all descriptor ids referenced by the page.
    - Avoid left-joining `dms.Descriptor` into every per-table hydration SELECT: it requires many joins (one per descriptor FK) and bloats the compiled per-table SQL.
    - Key unification note: descriptor FK emission uses storage-column mapping and may de-duplicate multiple descriptor binding columns into one FK per `(table, storage_column)`, reporting deterministic `descriptor_fk_deduplications[]` diagnostics in manifests (see `key-unification.md`).
+
+### 4.4 Authorization usage (read + write)
+
+Authorization is applied using token-derived authorization context and ODS-style strategy semantics, but adapted for `DocumentId`-centric relational storage; see [auth-redesign.md](auth-redesign.md).
+
+Mapping-set integration points:
+- **Physical column resolution**: authorization checks need to reference the correct physical columns for `Namespace`, EdOrg ids, and person/document relationships. These column names come from the same derived relational model used for reads/writes.
+- **Join-path precomputation**: some securable elements (e.g., `Student` for `CourseTranscript`) may only be reachable transitively via references. A schema-derived “securable element column path” resolver can be built once per `(EffectiveSchemaHash, resource, securableElement)` and cached, using the `RelationalResourceModel` tables/columns plus ApiSchema `securableElements`.
+- **Authorization-required index inventory**: the derived index inventory includes `DbIndexKind.Authorization` entries for:
+  - per-resource `Namespace` indexes (for namespace-based checks),
+  - per-resource EdOrg-id indexes (for relationship-based checks), and
+  - join-column indexes used to reach person `DocumentId`s (for people-related relationship checks).
+
+Example (sketch): resolving the `Student` securable element for `CourseTranscript`
+- ApiSchema marks `$.studentAcademicRecordReference.studentUniqueId` as a `Student` securable element.
+- The derived relational model maps this to a join chain:
+  - `edfi.CourseTranscript.StudentAcademicRecord_DocumentId` → `edfi.StudentAcademicRecord.DocumentId`
+  - `edfi.StudentAcademicRecord.Student_DocumentId` → `edfi.Student.DocumentId`
+- Relationship-based authorization can then be expressed against the terminal `Student.DocumentId` using `auth.EducationOrganizationIdToStudentDocumentId` (which outputs `StudentDocumentId`), without joining on natural keys.
