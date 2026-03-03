@@ -99,6 +99,7 @@ BEGIN
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
+GO
 
 GO
 CREATE OR ALTER TRIGGER [edfi].[TR_School_Stamp]
@@ -122,6 +123,7 @@ BEGIN
         WHERE (i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL));
     END
 END;
+GO
 
 GO
 CREATE OR ALTER TRIGGER [edfi].[TR_SchoolAddress_Stamp]
@@ -136,6 +138,7 @@ BEGIN
     FROM [dms].[Document] d
     INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
 END;
+GO
 
 GO
 CREATE OR ALTER TRIGGER [sample].[TR_SchoolAddressExtension_Stamp]
@@ -150,6 +153,7 @@ BEGIN
     FROM [dms].[Document] d
     INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
 END;
+GO
 
 GO
 CREATE OR ALTER TRIGGER [sample].[TR_SchoolExtension_Stamp]
@@ -164,4 +168,5 @@ BEGIN
     FROM [dms].[Document] d
     INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
 END;
+GO
 
