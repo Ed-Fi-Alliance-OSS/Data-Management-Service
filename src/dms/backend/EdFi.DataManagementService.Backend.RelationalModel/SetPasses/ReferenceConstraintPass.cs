@@ -673,11 +673,13 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
             entry.Model.RelationalModel.Root,
             targetInfo.Resource
         );
-        var uniqueColumns = new List<DbColumnName>(1 + targetIdentityColumns.Count)
+        HashSet<string> seenColumns = new(StringComparer.Ordinal);
+        List<DbColumnName> uniqueColumns = new(1 + targetIdentityColumns.Count);
+        AddUniqueColumn(RelationalNameConventions.DocumentIdColumnName, uniqueColumns, seenColumns);
+        foreach (var column in targetIdentityColumns)
         {
-            RelationalNameConventions.DocumentIdColumnName,
-        };
-        uniqueColumns.AddRange(targetIdentityColumns);
+            AddUniqueColumn(column, uniqueColumns, seenColumns);
+        }
 
         if (
             !ContainsUniqueConstraint(
