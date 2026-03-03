@@ -10,7 +10,7 @@ This document defines the on-disk bytes for a **Mapping Pack** (“`.mpack`”) 
 - Effective schema fingerprinting: `reference/design/backend-redesign/design-docs/data-model.md` (`EffectiveSchemaHash`)
 - DDL generator workflow and `dms.ResourceKey` seeding: `reference/design/backend-redesign/design-docs/ddl-generation.md`
 
-Authorization is intentionally out of scope.
+Authorization is addressed separately in [auth-redesign.md](auth-redesign.md).
 
 ---
 

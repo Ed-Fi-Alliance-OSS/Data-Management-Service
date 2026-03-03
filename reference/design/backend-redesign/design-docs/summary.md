@@ -28,7 +28,7 @@ Source documents:
 - Relationships are stored as stable `DocumentId` foreign keys, with referenced identity natural-key fields available locally for query/reconstitution and kept consistent via dialect-specific propagation rules (no FK rewrites): PostgreSQL uses `ON UPDATE CASCADE` for abstract targets and concrete targets with `allowIdentityUpdates=true` (`ON UPDATE NO ACTION` otherwise), while SQL Server uses `ON UPDATE NO ACTION` for all reference composite FKs and `DbTriggerKind.IdentityPropagationFallback` triggers for eligible propagation targets (abstract targets and concrete targets with `allowIdentityUpdates=true`). Under key unification, equality-constrained per-site/per-path bindings may be generated/persisted, presence-gated aliases of canonical stored columns (see `key-unification.md`).
 - Keep `ReferentialId` (UUIDv5 of `(ProjectName, ResourceName, DocumentIdentity)`) as the uniform natural-identity key for resolution and upserts.
 - SQL Server + PostgreSQL parity is required.
-- Authorization is intentionally out of scope for this redesign phase.
+- Authorization is addressed separately in [auth-redesign.md](auth-redesign.md).
 - DMS does not hot-reload or auto-migrate schemas in-process; it validates schema compatibility per database on first use of that database connection string (cached) via an effective schema fingerprint and fails fast if no matching mapping is available.
 
 ## Core concepts and terms

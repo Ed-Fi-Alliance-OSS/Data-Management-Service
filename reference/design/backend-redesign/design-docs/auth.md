@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft.
+This draft holds the initial authorization redesign ideas, kept for documentation purposes. For the latest redesign, refer to the [auth-redesign.md](auth-redesign.md) document.
 
 Out of scope for this redesign phase. This file is retained as a placeholder for future authorization design work, and the DDL generator produces **no** authorization objects (`auth.*`, `dms.DocumentSubject`, etc.).
 

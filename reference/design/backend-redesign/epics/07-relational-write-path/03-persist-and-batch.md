@@ -22,6 +22,10 @@ Persist flattened row buffers to the database in a single transaction:
 - Bulk operations avoid N+1 insert/update patterns.
 - Implementation works on both PostgreSQL and SQL Server with appropriate batching/parameterization behavior.
 
+## Authorization Batching Consideration
+
+Authorization is out of scope for this story, but the transaction and batching structure should be designed to allow authorization check statements to be prepended within the same roundtrip. For POST, auth checks are batched into the roundtrip that creates the `dms.Document` row; for PUT, auth checks run in the roundtrip that precedes the persist step. See `reference/design/backend-redesign/design-docs/auth-redesign.md` §"Performance improvements over ODS" (POST roundtrip #3, PUT roundtrip #3).
+
 ## Tasks
 
 1. Implement a write executor that applies the compiled `ResourceWritePlan` table-by-table in dependency order.

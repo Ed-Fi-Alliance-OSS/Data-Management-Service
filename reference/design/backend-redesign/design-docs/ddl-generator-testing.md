@@ -12,7 +12,7 @@ Define an end-to-end verification harness for the new relational-primary-store D
 - cross-engine correctness (PostgreSQL + SQL Server),
 - and runtime compatibility gates (a provisioned DB selects/validates the matching mapping pack by `EffectiveSchemaHash`).
 
-Authorization-related objects are explicitly out of scope for this harness until the authorization design is finalized.
+Authorization-related objects should be included in this harness as authorization work progresses. See [auth-redesign.md](auth-redesign.md) for the authorization design.
 
 ## Design principles
 

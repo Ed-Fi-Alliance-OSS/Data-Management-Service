@@ -36,7 +36,7 @@ Defines how Ed-Fi-style extensions (`_ext`) are represented in the relational pr
 - extension fields under `_ext` inside common types, including within collections and nested collections
 - multiple extension projects (e.g., Sample + TPDM) simultaneously
 
-Authorization is intentionally out of scope for this redesign phase.
+Authorization is addressed separately in [auth-redesign.md](auth-redesign.md).
 
 ## Goals & Constraints
 

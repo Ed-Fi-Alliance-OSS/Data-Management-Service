@@ -131,7 +131,7 @@ Notes:
   - `IdentityVersion` / `IdentityLastModifiedAt`: bump when the document’s identity/URI projection changes (directly or via cascaded updates to identity-component reference identity columns).
   - API `_etag`, `_lastModifiedDate`, and per-item `ChangeVersion` are served from these stored stamps (no read-time dependency derivation).
 - Time semantics: store timestamps as UTC instants. In PostgreSQL, use `timestamp with time zone` and format response values as UTC (e.g., `...Z`). In SQL Server, use `datetime2` with UTC writers (e.g., `sysutcdatetime()`).
-- Authorization is intentionally out of scope for this redesign phase.
+- Authorization is addressed separately in [auth-redesign.md](auth-redesign.md).
 
 ##### 1a) `dms.ChangeVersionSequence`
 
@@ -802,7 +802,7 @@ To keep schema management tractable and avoid rename cascades, physical names mu
 
 - Fixed schemas:
   - `dms` (core tables)
-  - `auth` (authorization companion objects; not fully specified in this redesign)
+  - `auth` (authorization companion objects; see [auth-redesign.md](auth-redesign.md))
 - Project schemas (core + extensions): derived from `projectSchema.projectEndpointName`:
   - `lowercase`
   - remove all non-alphanumerics

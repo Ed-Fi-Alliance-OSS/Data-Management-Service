@@ -1,0 +1,1117 @@
+# Authorization Design for Relational Primary Store (Tables per Resource)
+
+## Why not use `dms.DocumentSubject`
+
+See the original authorization redesign draft in [auth.draft.md](auth.draft.md). This updated redesign does not use the proposed `dms.DocumentSubject` table for the following reasons:
+
+- The `dms.DocumentSubject` table could grow very large if the EdOrg hierarchy is deep, potentially requiring partitioning.
+- Avoiding *phantoms* when the hierarchy is updated requires special consideration (such as a locking table). For example, if a `StudentSchoolAssociation.SchoolId` changes, we need to remove the old School authorization from the related Contacts and grant them the new School authorization. If a StudentContactAssociation is created concurrently during this process, the Contact might not receive the new School authorization.
+- The `dms.DocumentSubject` approach assumes that PrimaryAssociations (such as StudentSchoolAssociation and StudentContactAssociation) are seldom created, updated, or deleted; however, we have no usage statistics to confirm this.
+
+ODS's authorization logic has been tested over the years, and its performance characteristics are known and accepted in the field. Therefore, the rest of this document follows the same approach as ODS, with minor optimizations such as reducing the number of auth-related DB roundtrips by batching all auth queries with other roundtrips.
+
+## How authorization currently works in ODS
+
+This section provides a brief explanation of how the authorization strategies work in ODS.
+
+The `auth.EducationOrganizationIdToEducationOrganizationId` table indicates which EdOrgIds are accessible from a given EdOrgId, either directly or transitively. Because EducationOrganizations are rarely modified, ODS maintains this table using triggers ([here](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/main/Application/EdFi.Ods.Standard/Standard/6.0.0/Artifacts/MsSql/Structure/Ods/1302-CreateEdOrgToEdOrgTriggers.sql)).
+
+PrimaryAssociations are modified frequently. Determining whether a Contact is accessible by a given EdOrgId becomes expensive when StudentSchoolAssociations or StudentContactAssociations change. This is why ODS uses views rather than triggers to maintain this information (e.g., the `auth.EducationOrganizationIdToContactUSI` view).
+
+### What are SecurableElements
+
+SecurableElements are the resource's fields that can participate in an authorization decision, more specifically, the EducationOrganization and Student/Contact/Staff IDs that are not role-named.
+
+Note that DMS already makes these fields available in the ApiSchema.json. Consider `CourseTranscript`:
+
+```json
+"securableElements": {
+    "Contact": [
+    ],
+    "EducationOrganization": [
+        {
+            "jsonPath": "$.studentAcademicRecordReference.educationOrganizationId",
+            "metaEdName": "EducationOrganizationId"
+        }
+    ],
+    "Namespace": [
+    ],
+    "Staff": [
+    ],
+    "Student": [
+        "$.studentAcademicRecordReference.studentUniqueId"
+    ]
+}
+```
+
+### Relationship-based authorization strategies
+
+In this example, we will authorize CRUD operations for the `CourseTranscript` resource, which has the following fields that are considered `securableElements`:
+
+- EducationOrganizationId
+- StudentUSI
+
+The `RelationshipsWithEdOrgsAndPeople` strategy states that securableElements related to EdOrgs or People participate in the authorization decision. If CourseTranscript had a `Namespace` securableElement, it would be ignored by this strategy. Similarly, if we used the `RelationshipsWithEdOrgsOnly` strategy, the `StudentUSI` securableElement would be ignored.
+
+In this example, we authorize using the RelationshipsWithEdOrgsAndPeople strategy, meaning both securableElements participate in the authorization decision. The token must have access to all securableElements (they are always combined with AND).
+
+The strategy logic iterates through the securableElements and constructs a DB view/table name following the convention `auth.EducationOrganizationIdTo{securableElementName}`. For this example, the securableElements are authorized using the following DB views/tables:
+
+- auth.EducationOrganizationIdToEducationOrganizationId
+- auth.EducationOrganizationIdToStudentUSI
+
+For single-record authorization, ODS executes the following query using the above auth views/tables:
+
+```sql
+SELECT 
+  CASE WHEN (
+    EXISTS (
+      SELECT 1 
+      FROM 
+        auth.EducationOrganizationIdToEducationOrganizationId AS authvw 
+      WHERE 
+        authvw.TargetEducationOrganizationId = @EducationOrganizationId 
+        AND authvw.SourceEducationOrganizationId IN ( {EdOrgIdsFromToken} )
+    ) 
+    AND EXISTS (
+      SELECT 1 
+      FROM 
+        auth.EducationOrganizationIdToStudentUSI AS authvw 
+      WHERE 
+        authvw.StudentUSI = @StudentUSI 
+        AND authvw.SourceEducationOrganizationId IN ( {EdOrgIdsFromToken} )
+    )
+  ) THEN 1 ELSE 0 END AS IsAuthorized
+```
+
+To authorize multiple entries, ODS executes the following query:
+
+```sql
+WITH authView299284 AS (
+  SELECT 
+    DISTINCT av.TargetEducationOrganizationId 
+  FROM 
+    auth.EducationOrganizationIdToEducationOrganizationId AS av 
+  WHERE 
+    av.SourceEducationOrganizationId IN ( {EdOrgIdsFromToken} )
+), 
+authView251e52 AS (
+  SELECT 
+    DISTINCT av.StudentUSI 
+  FROM 
+    auth.EducationOrganizationIdToStudentUSI AS av 
+  WHERE 
+    av.SourceEducationOrganizationId IN ( {EdOrgIdsFromToken} )
+) 
+SELECT 
+  r.AggregateId, 
+  r.AggregateData, 
+  r.LastModifiedDate 
+FROM 
+  edfi.CourseTranscript AS r 
+  INNER JOIN authView299284 ON r.EducationOrganizationId = authView299284.TargetEducationOrganizationId 
+  INNER JOIN authView251e52 ON r.StudentUSI = authView251e52.StudentUSI 
+ORDER BY 
+  r.AggregateId OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
+```
+
+When multiple authorization strategies are configured for a given resource, relationship-based strategies are combined with OR, while the remaining strategies are combined with AND. For example: (`RelationshipsWithEdOrgsAndPeopleInverted` OR `RelationshipsWithEdOrgsAndPeople`) AND `NamespaceBased`.
+
+#### Inverted strategies
+
+Traditionally, when a token has access to a parent EducationOrganization, it implicitly has access to the child EducationOrganizations (e.g., a token with LEA access also has access to its Schools). However, some use cases require the reverse: access to a child EducationOrganization should grant access to its parent EducationOrganizations. An example use case is described in [ODS-2092](https://edfi.atlassian.net/browse/ODS-2092). This is where inverted relationships come into play, such as the `RelationshipsWithEdOrgsAndPeopleInverted` strategy.
+
+Consider the `Course` resource, which uses the following authorization strategies for GET requests:
+
+- RelationshipsWithEdOrgsAndPeople
+- RelationshipsWithEdOrgsAndPeopleInverted
+
+When a GET-by-ID request is made for Course, ODS authorizes it with:
+
+```sql
+SELECT 
+  CASE WHEN (
+    EXISTS (
+      SELECT 1 
+      FROM 
+        auth.EducationOrganizationIdToEducationOrganizationId AS authvw 
+      WHERE 
+        authvw.TargetEducationOrganizationId = @EducationOrganizationId 
+        AND authvw.SourceEducationOrganizationId IN ( {EdOrgIdsFromToken} ) -- Traditional top-to-bottom filter
+    )
+  ) 
+  OR ( -- Relationship-based strategies are combined with `OR`
+    EXISTS (
+      SELECT 1 
+      FROM 
+        auth.EducationOrganizationIdToEducationOrganizationId AS authvw 
+      WHERE 
+        authvw.SourceEducationOrganizationId = @EducationOrganizationId 
+        AND authvw.TargetEducationOrganizationId IN ( {EdOrgIdsFromToken} ) -- Inverted, bottom-to-top filter
+    )
+  ) THEN 1 ELSE 0 END AS IsAuthorized
+```
+
+#### List of Relationship-based strategies
+
+The complete list of Relationship-based strategies is:
+
+- RelationshipsWithEdOrgsAndPeople
+- RelationshipsWithEdOrgsAndPeopleInverted
+- RelationshipsWithEdOrgsOnly
+- RelationshipsWithEdOrgsOnlyInverted
+- RelationshipsWithPeopleOnly
+- RelationshipsWithStudentsOnly
+- RelationshipsWithStudentsOnlyThroughResponsibility
+
+Excluding the `*Inverted` and `*ThroughResponsibility` strategies, these strategies are very similar; the only difference is which securableElements are included during authorization. For example, the `RelationshipsWithStudentsOnly` strategy ignores any EducationOrganization, Contact, and Staff that might appear in the resource.
+
+The `RelationshipsWithStudentsOnlyThroughResponsibility` strategy uses the `EducationOrganizationIdToStudentUSIThroughResponsibility` view, which uses `StudentEducationOrganizationResponsibilityAssociation` instead of `StudentSchoolAssociation` to establish the relationship.
+
+### View-based authorization strategy
+
+Some use cases require additional authorization restrictions based on student enrollment in specific courses (e.g., "Students enrolled in CTE courses") or grade levels (e.g., "Primary third grade students").
+
+For example, suppose we want to return only CourseTranscripts whose student is enrolled in CTE courses. To do this, we add the `StudentWithCTECourseEnrollments` authorization strategy to the CourseTranscript resource and create a view with the same name:
+
+```sql
+CREATE OR REPLACE VIEW auth.StudentWithCTECourseEnrollments AS
+SELECT DISTINCT
+    ssa.StudentUSI
+FROM
+    edfi.StudentSectionAssociation ssa
+        INNER JOIN edfi.CourseOffering co ON co.LocalCourseCode = ssa.LocalCourseCode
+          AND co.SchoolId = ssa.SchoolId
+          AND co.SchoolYear = ssa.SchoolYear
+          AND co.SessionName = ssa.SessionName
+        INNER JOIN edfi.CourseAcademicSubject csubj ON csubj.CourseCode = co.CourseCode
+          AND csubj.EducationOrganizationId = co.EducationOrganizationId
+        INNER JOIN edfi.descriptor d ON csubj.AcademicSubjectDescriptorId = d.descriptorid
+WHERE
+    d.CodeValue = 'Career and Technical Education';
+```
+
+The view must follow this naming convention: `{BasisResource}With{SomeDescription}`.
+
+When a GET request for CourseTranscript arrives, if the configured authorization strategy name is unknown, we fallback to the custom view-based strategy and extract from the strategy name the *basis resource*. In this case, `auth.StudentWithCTECourseEnrollments` maps to `Student`. Then, we validate that all the primary key columns from `Student` appear in `CourseTranscript`. These columns will be used to join with the custom view and authorize the request.
+
+Non-primary key and role-named columns are allowed for the target resource ([more info here](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/511cf65e71b1f3d96a7e3801a3ed71dc84239e20/Application/EdFi.Ods.Common/Security/Authorization/CustomViewBasedAuthorizationStrategy.cs#L69)). For example, assume that the `StudentUniqueId` is nullable in `CourseTranscript`; the strategy will allow it. However, for GET-many requests it will only return non-null values that match the result from the view, and for GET-by-ID it will return an unauthorized error if the entry has a null `StudentUniqueId`. Change query endpoints cannot be authorized with this strategy if it maps to non-PK columns in the target resource ([more info here](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/511cf65e71b1f3d96a7e3801a3ed71dc84239e20/Application/EdFi.Ods.Api/Security/AuthorizationStrategies/CustomViewBased/CustomViewBasedAuthorizationFilterDefinitionsFactory.cs#L147)).
+
+When searching for the *basis resource*, we prioritize resources from the standard over resources from extensions (for example `edfi.Student` gets selected instead of `homograph.Student`).
+
+These strategies are view-based (like relationship-based strategies) but are combined using AND semantics. As such, they serve as a means for applying **additional** filter criteria rather than defining new ways to associate Education Organizations and People. These strategies can be defined without requiring code changes, compilation, or deployment.
+
+### Ownership-based authorization strategy
+
+In ODS, this authorization strategy requires the `OwnershipBasedAuthorization` feature to be enabled (it's disabled by default). When enabled, it adds a `CreatedByOwnershipTokenId` column (smallint) to each root entity. The ApiClient must be configured with a `CreatorOwnershipTokenId`, which is used to set the `CreatedByOwnershipTokenId` column whenever a resource is created.
+
+This authorization strategy is intended to be used in conjunction with existing relationship-based authorization strategies. More information is available on our [documentation page](https://docs.ed-fi.org/reference/ods-api/platform-dev-guide/features/ownership-based-authorization/).
+
+Key considerations:
+
+- If disabled, the `CreatedByOwnershipTokenId` column is NOT created on each root entity.
+- If disabled, the Admin DB still has the related tables and columns, but with null values.
+- If enabled and the user has not configured the ApiClient with a `CreatorOwnershipTokenId`, entries are stamped with a null `CreatedByOwnershipTokenId`.
+- If enabled and the `CreatorOwnershipTokenId` is configured on the ApiClient, all created entries are stamped regardless of whether the resource is configured to use the `OwnershipBased` strategy.
+- An ApiClient can read/modify multiple OwnershipTokens (defined in the `ApiClientOwnershipTokens` table), but it has only one `CreatorOwnershipTokenId` used to stamp created entries.
+- There is no unique constraint on `ApiClients.CreatorOwnershipTokenId` in the Admin DB, meaning multiple ApiClients can share the same CreatorOwnershipTokenId.
+- Users can transfer an ApiClient's `CreatorOwnershipTokenId` to a different ApiClient.
+- Entries with `CreatedByOwnershipTokenId=null` are not returned.
+
+When a GET-many request is made for Students, ODS authorizes it with:
+
+```sql
+SELECT 
+  r.AggregateId, 
+  r.AggregateData, 
+  r.LastModifiedDate, 
+  r.StudentUsi AS SurrogateId 
+FROM 
+  edfi.Student AS r 
+WHERE 
+  r.StudentUSI = @p0 
+  AND r.StudentUniqueId = @p1 
+  AND CreatedByOwnershipTokenId IN ( {ApiClientOwnershipTokens} ) 
+ORDER BY 
+  r.AggregateId OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
+```
+
+GET-by-ID, Update, and Delete are authorized by first retrieving the resource from the DB and materializing it in C#, then checking whether the ApiClient has an OwnershipToken that matches the resource's. This consumes resources unnecessarily if the client is not authorized.
+
+### Namespace-based authorization strategy
+
+A Vendor can be configured with multiple namespace prefixes (such as `uri://ed-fi.org`). When a request arrives, ODS performs a prefix match to verify that the namespace assigned to the root entity begins with one of the namespace prefixes assigned to the API client.
+
+For example, a GET-many request for GradebookEntry produces:
+
+```sql
+SELECT 
+  r.AggregateId, 
+  r.AggregateData, 
+  r.LastModifiedDate 
+FROM 
+  edfi.GradebookEntry AS r 
+WHERE 
+  r.Namespace IS NOT NULL 
+  AND (
+    r.Namespace LIKE @p0 
+    OR r.Namespace LIKE @p1 
+    OR r.Namespace LIKE @p2
+  ) 
+ORDER BY 
+  r.AggregateId OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
+```
+
+Similar to Ownership-based, GET-by-ID, Update, Create, and Delete are authorized by retrieving the resource from the DB and materializing it in C#, then checking whether the ApiClient has a namespace prefix that matches the resource's. This consumes resources unnecessarily if the client is not authorized.
+
+### Execution order
+
+When multiple authorization strategies are configured for a resource, the order in which they execute is important because, when the request is not authorized, ODS returns the error message of the first strategy that failed.
+
+Strategies that get combined with `AND` are executed first, which are:
+
+- Namespace-based
+- Custom view-based
+- Ownership-based
+
+Within this list, ODS states that Ownership-based must be executed last. Namespace-based and Custom view-based are executed in the order they were set up in the Admin DB.
+
+Strategies that are combined with `OR` (Relationship-based) execute afterward. The order in which each gets executed doesn't matter because, for Relationship-based strategies, we combine and return the error hints of all of them, regardless of whether only one failed.
+
+When updating a resource, we first authorize against the values that are currently stored in the DB, and then authorize against the new values (the ones that come in the request body).
+
+## What needs to be done in DMS
+
+Unless specified in the remainder of this document, DMS will implement the same authorization design as ODS.
+
+### Ownership-based authorization strategy
+
+In DMS we have a shared table where all resource entries are tracked (`dms.Document`), meaning that we don't need to add the `CreatedByOwnershipTokenId` to each resource root table as we did in ODS; we should add it to the `dms.Document` table as nullable and always create it regardless of whether the `OwnershipBasedAuthorization` feature is enabled. We should also remove the feature flag entirely, since toggling its value does not require DB changes.
+
+Storing the `CreatedByOwnershipTokenId` in `dms.Document` also means that we must join with `dms.Document` to authorize the resource entries.
+
+### View-based authorization strategy
+
+In DMS we aim to apply joins using the DocumentId surrogate key instead of natural keys, meaning that the custom authorization views used by this strategy must output the DocumentId/DescriptorId of the basis resource instead of the natural keys.
+
+In the example above, the `auth.StudentWithCTECourseEnrollments` view will return the Student's DocumentId instead of the StudentUsi.
+
+See the `Resolving the DB columns used for authorization` section below for more information.
+
+### Performance improvements over ODS
+
+ODS executes an additional DB roundtrip for single-record authorizations, presumably because NHibernate limitations make batching difficult. In DMS, we have fine-grained control over the SQL queries we execute. Below are the expected DB roundtrips per operation.
+
+#### PUT
+
+- Roundtrip #1
+  - Retrieve the DocumentId and etag by its Uuid (to abort if not found, and for reconstitution) (etag to enforce `If-Match`, if applicable)
+- Roundtrip #2
+  - Run authorization check using the already-stored values (throw if unauthorized)
+  - Run authorization check using the values from the request body (throw if unauthorized) (only if identifying values changed)
+  - Retrieve the referenced resources' DocumentIds (using `dms.ReferentialIdentity`)
+  - Reconstitute the record
+- Roundtrip #3
+  - Execute update (only if it actually changed)
+
+ODS requires at least 4 roundtrips for the same operation, and more if the resource has child tables.
+
+#### POST
+
+- Roundtrip #1
+  - Retrieve the referenced resources' DocumentIds (using `dms.ReferentialIdentity`).
+- Roundtrip #2
+  - Retrieve the DocumentId and etag by its identifying values (to check if already exists, and for reconstitution) (etag to enforce `If-Match`, if applicable)
+- Roundtrip #3
+  - If a record with the same identifying values already exists:
+    - Inline PUT Roundtrip #2 steps (excluding steps already executed)
+  - Otherwise:
+    - Run authorization check using the values from the request body (throw if unauthorized)
+    - Insert into `dms.Document` and return its generated ID
+- Roundtrip #4
+  - Insert the resource tables, or inline PUT Roundtrip #3 steps
+
+ODS requires 4 roundtrips for the same operation, and more if the resource has child tables.
+
+#### DELETE
+
+- Roundtrip #1
+  - Retrieve the DocumentId and etag by its Uuid (to abort if not found) (etag to enforce `If-Match`, if applicable)
+- Roundtrip #2
+  - Run authorization check using the already-stored values (throw if unauthorized)
+  - Execute delete
+
+ODS requires 3 roundtrips for the same operation.
+
+#### GET-by-id
+
+- Roundtrip #1
+  - Retrieve the DocumentId and etag by its Uuid (to abort if not found, and for reconstitution) (etag to enforce `If-None-Match`, if applicable)
+- Roundtrip #2
+  - Run authorization check using the already-stored values (throw if unauthorized)
+  - Reconstitute the record
+
+ODS requires 2 roundtrips for the same operation.
+
+#### GET-many
+
+- Roundtrip #1
+  - If filtering by Descriptor(s), convert DescriptorUris -> DocumentIds. We could avoid it if we cache descriptors as in ODS.
+- Roundtrip #2
+  - Get the page's DocumentIds (apply authorization, filters, and offset/limit)
+  - Get the TotalCount (if applicable)
+- Roundtrip #3
+  - Reconstitute the page
+
+ODS requires 1 roundtrip for the same operation.
+
+---
+
+Even though the number of roundtrips above seems to be the same as in ODS, we should expect fewer roundtrips on average because DMS populates child tables in a single roundtrip.
+
+We could further decrease the number of roundtrips if we implement the following measures:
+
+- Cache DescriptorUris -> DocumentIds mapping (similar to ODS)
+- Change the reconstitution queries to use Uuid instead of DocumentId (requires joining with the Document table)
+- Existence and Etag checks can be inlined to throw and abort the batch (similar to the auth checks)
+
+NOTE: These counts do not include roundtrips related to authentication, which are typically served from the cache.
+
+### Proof of concept
+
+The C# program below showcases batching, how multiple strategies are combined, their execution order, and how problem details can be calculated.
+
+Notice that auth checks are executed as early as possible (i.e. before reconstitution) to avoid spending compute resources on unauthorized requests.
+
+```C#
+using BatchedSqlTest;
+using Npgsql;
+
+await new ODS().RunTests();
+
+
+await using var conn = new NpgsqlConnection("host=localhost;port=5432;username=postgres;database=EdFi_Ods_Sandbox_l54o9KBSGjVvrHuEUD6nh");
+await conn.OpenAsync();
+
+var token = (
+    educationOrganizationIds: new[] { 255901L, 19255901L },
+    namespacePrefixes: new[] { "uri://ed-fi.org", "uri://gbisd.edu" },
+    ownershipTokens: new[] { 1 }
+);
+
+await GetManyCourses();
+await PostCourseTranscript();
+await GetGradeBookEntryById();
+
+async Task GetManyCourses()
+{
+    // GET: /courses?limit=25&totalCount=true&courseCode=ALG-2
+
+    // For this example, Course is configured with the authorization strategies:
+    // - OwnershipBased
+    // - RelationshipsWithEdOrgsAndPeople
+    // - RelationshipsWithEdOrgsAndPeopleInverted
+
+    // Omitted roundtrip #1: If filtering by Descriptor(s), convert DescriptorUris -> DocumentIds (using dms.ReferentialIdentity)
+
+    var filterSql = @"
+        SELECT edfi.Course.DocumentId
+        FROM edfi.Course
+        JOIN dms.Document ON dms.Document.DocumentId = edfi.Course.DocumentId     -- This join is only needed to authorize the CreatedByOwnershipTokenId
+        WHERE
+          dms.Document.CreatedByOwnershipTokenId = ANY(@OwnershipTokens)
+          AND (
+         EducationOrganizationId IN (SELECT TargetEducationOrganizationId FROM auth.EducationOrganizationIdToEducationOrganizationId WHERE SourceEducationOrganizationId = ANY(@TokenEducationOrganizationIds))
+         OR EducationOrganizationId IN (SELECT SourceEducationOrganizationId FROM auth.EducationOrganizationIdToEducationOrganizationId WHERE TargetEducationOrganizationId = ANY(@TokenEducationOrganizationIds))
+          )
+          AND CourseCode = @CourseCode";
+
+    await using var roundtrip2 = new NpgsqlCommand(@$"
+        WITH filteredEntries AS ({filterSql})
+        SELECT DocumentId FROM filteredEntries
+        ORDER BY DocumentId
+        OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY;
+
+        WITH filteredEntries AS ({filterSql})
+        SELECT COUNT(1) AS TotalCount FROM filteredEntries", conn);
+
+    roundtrip2.Parameters.AddWithValue("OwnershipTokens", token.ownershipTokens);
+    roundtrip2.Parameters.AddWithValue("TokenEducationOrganizationIds", token.educationOrganizationIds);
+    roundtrip2.Parameters.AddWithValue("CourseCode", "ALG-2");
+    roundtrip2.Parameters.AddWithValue("Offset", 0);
+    roundtrip2.Parameters.AddWithValue("Limit", 25);
+
+    await using var roundtrip2Reader = await roundtrip2.ExecuteReaderAsync();
+
+    // Omitted roundtrip #3: Reconstitution queries
+
+    while (await roundtrip2Reader.ReadAsync())
+    {
+        Console.WriteLine($"DocumentId: {roundtrip2Reader.GetInt64(roundtrip2Reader.GetOrdinal("DocumentId"))}");
+    }
+
+    await roundtrip2Reader.NextResultAsync();
+
+    while (await roundtrip2Reader.ReadAsync())
+    {
+        Console.WriteLine($"TotalCount: {roundtrip2Reader.GetInt64(roundtrip2Reader.GetOrdinal("TotalCount"))}");
+    }
+}
+
+async Task PostCourseTranscript()
+{
+    // POST: /courseTranscripts
+
+    // For this example, CourseTranscript is configured with the authorization strategies:
+    // - StudentWithCTECourseEnrollments (custom, view-based)
+    // - OwnershipBased
+    // - RelationshipsWithEdOrgsAndPeople
+
+    var requestBody = new
+    {
+        courseAttemptResultDescriptor = "uri://ed-fi.org/CourseAttemptResultDescriptor#Pass",
+        courseReference = new
+        {
+            courseCode = "ART3-EM",
+            educationOrganizationId = 255901001L,
+        },
+        studentAcademicRecordReference = new
+        {
+            educationOrganizationId = 255901001,
+            schoolYear = 2022,
+            studentUniqueId = "365155",
+            termDescriptor = "uri://ed-fi.org/TermDescriptor#Spring Semester"
+        }
+    };
+
+    // Omitted roundtrip #1: Retrieve referenced resources using dms.ReferentialIdentity, the next values are dummy
+    var resolvedCourseAttemptResultDescriptorId = 12;
+    var resolvedCourseDocumentId = 34;
+    var resolvedStudentAcademicRecordDocumentId = 56;
+
+    await using var roundtrip2 = new NpgsqlCommand(@"
+        SELECT
+          dms.Document.DocumentId,
+          dms.Document.ContentVersion
+        FROM edfi.CourseTranscript
+        JOIN dms.Document ON dms.Document.DocumentId = edfi.CourseTranscript.DocumentId
+        WHERE
+          CourseAttemptResultDescriptor_DescriptorId = @CourseAttemptResultDescriptor_DescriptorId
+          AND Course_DocumentId = @Course_DocumentId
+          AND StudentAcademicRecord_DocumentId = @StudentAcademicRecord_DocumentId", conn);
+
+    roundtrip2.Parameters.AddWithValue("CourseAttemptResultDescriptor_DescriptorId", resolvedCourseAttemptResultDescriptorId);
+    roundtrip2.Parameters.AddWithValue("Course_DocumentId", resolvedCourseDocumentId);
+    roundtrip2.Parameters.AddWithValue("StudentAcademicRecord_DocumentId", resolvedStudentAcademicRecordDocumentId);
+
+    // Initialized only if the resource already exists (by its identifying values)
+    long? documentId = null;
+    long? contentVersion = null;
+
+    await using (var roundtrip2Reader = await roundtrip2.ExecuteReaderAsync())
+    {
+        while (await roundtrip2Reader.ReadAsync())
+        {
+            documentId = roundtrip2Reader.GetInt64(roundtrip2Reader.GetOrdinal("DocumentId"));
+            contentVersion = roundtrip2Reader.GetInt64(roundtrip2Reader.GetOrdinal("ContentVersion"));
+        }
+    }
+
+    if (documentId == null)
+    {
+        // POST results in create
+
+        await using var roundtrip3 = new NpgsqlCommand(@"
+            -- Authorize request body values: view-based
+            SELECT CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM StudentAcademicRecord
+                    WHERE 
+                        DocumentId = @StudentAcademicRecord_DocumentId
+                        AND Student_DocumentId IN (SELECT DocumentId FROM auth.StudentWithCTECourseEnrollments)
+                )
+                THEN 1 ELSE throw_error('AUTH1', 'Unauthorized, index: 0')
+            END;
+
+            -- NOTE: No need to authorize the OwnershipToken when creating an entry
+
+            -- Authorize request body values: relationship-based
+            SELECT CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    WHERE
+                        @EducationOrganizationId IN (SELECT TargetEducationOrganizationId FROM auth.EducationOrganizationIdToEducationOrganizationId WHERE SourceEducationOrganizationId = ANY(@TokenEducationOrganizationIds))
+                        AND (SELECT Student_DocumentId FROM StudentAcademicRecord WHERE DocumentId = @StudentAcademicRecord_DocumentId)
+                            IN (SELECT Student_DocumentId FROM auth.EducationOrganizationIdToStudentDocumentId WHERE SourceEducationOrganizationId = ANY(@TokenEducationOrganizationIds))
+                )
+                THEN 1 ELSE throw_error('AUTH1', 'Unauthorized, index: 1')
+            END;", conn);
+        roundtrip3.Parameters.AddWithValue("StudentAcademicRecord_DocumentId", resolvedStudentAcademicRecordDocumentId);
+        roundtrip3.Parameters.AddWithValue("EducationOrganizationId", requestBody.studentAcademicRecordReference.educationOrganizationId);
+        roundtrip3.Parameters.AddWithValue("TokenEducationOrganizationIds", token.educationOrganizationIds);
+
+        // Omitted command: Insert into `dms.Document` and return its generated ID
+
+        try
+        {
+            await using var roundtrip3Reader = await roundtrip3.ExecuteReaderAsync();
+        }
+        catch (PostgresException ex) when (ex.SqlState == "AUTH1")
+        {
+            var authCheckIndex = int.Parse(ex.MessageText.Split("index: ")[1]);
+
+            (string type, string detail, string[] errors) problemDetail = authCheckIndex switch
+            {
+                0 => ("urn:ed-fi:api:security:authorization", "Hint: You may need a Student with CTE Course Enrollments.", ["The caller is not authorized to perform the requested operation on the item based on the existing values of one or more of the following properties of the item: 'StudentUniqueId'."]),
+                1 => ("urn:ed-fi:api:security:authorization", "Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.", [$"No relationships have been established between the caller's education organization id claims ({string.Join(',', token.educationOrganizationIds)}) and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StudentUniqueId'."]),
+                _ => throw new InvalidOperationException()
+            };
+        }
+    }
+    else
+    {
+        // POST results in update
+
+        await using var roundtrip3 = new NpgsqlCommand(@"
+            -- Authorize stored values: view-based
+            SELECT CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM edfi.CourseTranscript
+                    JOIN edfi.StudentAcademicRecord ON StudentAcademicRecord.DocumentId = CourseTranscript.StudentAcademicRecord_DocumentId
+                    WHERE
+                        edfi.CourseTranscript.DocumentId = @DocumentId
+                        AND StudentAcademicRecord.Student_DocumentId IN (SELECT DocumentId FROM auth.StudentWithCTECourseEnrollments)
+                )
+                THEN 1 ELSE throw_error('AUTH1', 'Unauthorized, index: 0')
+            END;
+
+            -- Authorize stored values: ownership-based
+            SELECT CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM edfi.CourseTranscript
+                    JOIN dms.Document ON dms.Document.DocumentId = edfi.CourseTranscript.DocumentId
+                    WHERE
+                        edfi.CourseTranscript.DocumentId = @DocumentId
+                        AND dms.Document.CreatedByOwnershipTokenId = ANY(@OwnershipTokens)
+                )
+                THEN 1 ELSE throw_error('AUTH1', 'Unauthorized, index: 1')
+            END;
+
+            -- Authorize stored values: relationship-based
+            SELECT CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM edfi.CourseTranscript
+                    JOIN edfi.StudentAcademicRecord ON StudentAcademicRecord.DocumentId = CourseTranscript.StudentAcademicRecord_DocumentId
+                    WHERE
+                        edfi.CourseTranscript.DocumentId = @DocumentId
+                        AND StudentAcademicRecord_EducationOrganizationId IN (SELECT TargetEducationOrganizationId FROM auth.EducationOrganizationIdToEducationOrganizationId WHERE SourceEducationOrganizationId = ANY(@TokenEducationOrganizationIds))
+                        AND StudentAcademicRecord.Student_DocumentId IN (SELECT Student_DocumentId FROM auth.EducationOrganizationIdToStudentDocumentId WHERE SourceEducationOrganizationId = ANY(@TokenEducationOrganizationIds))
+                )
+                THEN 1 ELSE throw_error('AUTH1', 'Unauthorized, index: 2')
+            END;
+
+            -- The next authorization checks use the new values (from the request body), they are only needed if the identifying values changed
+
+            -- Authorize request body values: view-based
+            SELECT CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM StudentAcademicRecord
+                    WHERE 
+                        DocumentId = @NewStudentAcademicRecord_DocumentId
+                        AND Student_DocumentId IN (SELECT DocumentId FROM auth.StudentWithCTECourseEnrollments)
+                )
+                THEN 1 ELSE throw_error('AUTH1', 'Unauthorized, index: 3')
+            END;
+
+            -- NOTE: The CreatedByOwnershipTokenId cannot be changed by POST/PUT, so no ownership-based check needed
+
+            -- Authorize request body values: relationship-based
+            SELECT CASE
+                WHEN EXISTS (
+                    SELECT 1
+                        @NewEducationOrganizationId IN (SELECT TargetEducationOrganizationId FROM auth.EducationOrganizationIdToEducationOrganizationId WHERE SourceEducationOrganizationId = ANY(@TokenEducationOrganizationIds))
+                        AND (SELECT Student_DocumentId FROM StudentAcademicRecord WHERE DocumentId = @NewStudentAcademicRecord_DocumentId)
+                            IN (SELECT Student_DocumentId FROM auth.EducationOrganizationIdToStudentDocumentId WHERE SourceEducationOrganizationId = ANY(@TokenEducationOrganizationIds))
+                )
+                THEN 1 ELSE throw_error('AUTH1', 'Unauthorized, index: 4')
+            END;", conn);
+        roundtrip3.Parameters.AddWithValue("DocumentId", documentId);
+        roundtrip3.Parameters.AddWithValue("OwnershipTokens", token.ownershipTokens);
+        roundtrip3.Parameters.AddWithValue("TokenEducationOrganizationIds", token.educationOrganizationIds);
+        roundtrip3.Parameters.AddWithValue("NewStudentAcademicRecord_DocumentId", resolvedStudentAcademicRecordDocumentId);
+        roundtrip3.Parameters.AddWithValue("NewEducationOrganizationId", requestBody.studentAcademicRecordReference.educationOrganizationId);
+
+        // Omitted command: Retrieve referenced resources using dms.ReferentialIdentity
+        // Omitted command: Reconstitution queries
+
+        try
+        {
+            await using var roundtrip3Reader = await roundtrip3.ExecuteReaderAsync();
+        }
+        catch (PostgresException ex) when (ex.SqlState == "AUTH1")
+        {
+            var authCheckIndex = int.Parse(ex.MessageText.Split("index: ")[1]);
+
+            (string type, string detail, string[] errors) problemDetail = authCheckIndex switch
+            {
+                0 or 3 => ("urn:ed-fi:api:security:authorization", "Hint: You may need a Student with CTE Course Enrollments.", ["The caller is not authorized to perform the requested operation on the item based on the existing values of one or more of the following properties of the item: 'StudentUniqueId'."]),
+                1 => ("urn:ed-fi:api:security:authorization:ownership:access-denied:ownership-mismatch", "The item is not owned by the caller.", []),
+                2 or 4 => ("urn:ed-fi:api:security:authorization", "Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.", [$"No relationships have been established between the caller's education organization id claims ({string.Join(',', token.educationOrganizationIds)}) and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StudentUniqueId'."]),
+                _ => throw new InvalidOperationException()
+            };
+        }
+    }
+
+    // Omitted task: If update, calculate deltas
+
+    // Omitted roundtrip #4: If create, insert the resource tables. If update, apply it
+}
+
+async Task GetGradeBookEntryById()
+{
+    // GET: /gradebookEntries/{id}
+
+    // For this example, GradeBookEntry is configured with the authorization strategies:
+    // - NamespaceBased
+
+    var requestParams = new
+    {
+        uuid = new Guid("2af0e37e-9bb1-4770-8d0f-32d1b91c3984"),
+        etag = 123
+    };
+
+    await using var roundtrip1 = new NpgsqlCommand(@"
+        SELECT
+          dms.Document.DocumentId,
+          dms.Document.ContentVersion
+        FROM edfi.GradeBookEntry
+        JOIN dms.Document ON dms.Document.DocumentId = edfi.GradeBookEntry.DocumentId
+        WHERE
+          dms.Document.DocumentUuid = @uuid", conn);
+    roundtrip1.Parameters.AddWithValue("uuid", requestParams.uuid);
+
+    long? documentId = null;
+    long? contentVersion = null;
+
+    await using (var roundtrip1Reader = await roundtrip1.ExecuteReaderAsync())
+    {
+        while (await roundtrip1Reader.ReadAsync())
+        {
+            documentId = roundtrip1Reader.GetInt64(roundtrip1Reader.GetOrdinal("DocumentId"));
+            contentVersion = roundtrip1Reader.GetInt64(roundtrip1Reader.GetOrdinal("ContentVersion"));
+        }
+    }
+
+    if (documentId == null)
+    {
+        throw new InvalidOperationException(message: "Not found");
+    }
+
+    if (requestParams.etag == contentVersion) // TBD Calculate the etag based on the ContentVersion
+    {
+        throw new InvalidOperationException(message: "Not modified");
+    }
+
+    await using var roundtrip2 = new NpgsqlCommand(@"
+        -- Authorize stored values: namespace-based
+        SELECT CASE
+            WHEN EXISTS (
+                SELECT 1
+                FROM edfi.GradeBookEntry
+                WHERE
+                    DocumentId = @DocumentId
+                    AND Namespace LIKE ANY (@NamespacePrefixes)
+            )
+            THEN 1 ELSE throw_error('AUTH1', 'Unauthorized, index: 0')
+        END;", conn);
+    roundtrip2.Parameters.AddWithValue("DocumentId", documentId);
+    roundtrip2.Parameters.AddWithValue("NamespacePrefixes", token.namespacePrefixes.Select(n => $"{n}%").ToArray());
+
+    // Omitted command: Reconstitution queries
+
+    try
+    {
+        await using var roundtrip2Reader = await roundtrip2.ExecuteReaderAsync();
+    }
+    catch (PostgresException ex) when (ex.SqlState == "AUTH1")
+    {
+        var authCheckIndex = int.Parse(ex.MessageText.Split("index: ")[1]);
+
+        (string type, string detail, string[] errors) problemDetail = authCheckIndex switch
+        {
+            0 => ("urn:ed-fi:api:security:authorization:namespace:access-denied:namespace-mismatch", $"The existing 'Namespace' value of the data does not start with any of the caller's associated namespace prefixes ('{token.namespacePrefixes[0]}', '{token.namespacePrefixes[1]}').", []),
+            _ => throw new InvalidOperationException()
+        };
+    }
+}
+```
+
+#### Error handling
+
+Look at the `PostCourseTranscript` method in the POC above, I throw an error when an authorization check fails, which aborts any remaining statements in the batch. This is an important design decision that allows us to include statements that would otherwise go in separate roundtrips, for example, I insert the `dms.Document` entry after the auth check, in the same batch.
+
+I use the `AUTH1` error code when throwing authorization exceptions so that I can catch it in a try block in C#. I also include the authorization check index in the error description (for example: `Unauthorized, index: 0`). This way, when authorization errors happen I can trace them back to the specific authorization strategy that caused it, and generate the corresponding ProblemDetails. If necessary, we can do additional roundtrips to provide further information in the ProblemDetails.
+
+The generated ProblemDetails should follow the same structure defined in ODS, refer to the next documents:
+
+- [Error Response Knowledge Base](https://edfi.atlassian.net/wiki/spaces/ODSAPIS3V72/pages/56655873/Error+Response+Knowledge+Base#urn:ed-fi:api:security:authorization)
+- [ODS-6285 Add hints to relationship-based authorization failure messages](https://edfi.atlassian.net/browse/ODS-6285)
+- [ODS-6031 API error response for missing references related to authorization](https://edfi.atlassian.net/browse/ODS-6031)
+
+#### Parameters and batching
+
+Both SQL Server and PostgreSQL allow sending and executing dynamic Transact-SQL and PL/pgSQL respectively. These languages support procedural logic (like `IF` and `THROW` statements), however, PostgreSQL has an important limitation, dynamic PL/pgSQL cannot be parameterized, meaning that we would need to construct the query using string concatenation, which is too problematic.
+
+Because of this limitation I tried to stay as close as possible to standard SQL, and rely on a custom `throw_error` function in PostgreSQL:
+
+```sql
+CREATE OR REPLACE FUNCTION dms.throw_error(code text, msg text)
+RETURNS integer AS $$
+BEGIN
+    RAISE EXCEPTION '%', msg USING ERRCODE = code;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+SQL Server doesn't allow throwing exceptions from custom scalar functions, like I do above. In SQL Server we have the following options:
+
+- Intentionally raise an invalid cast exception: `SELECT CAST('AUTH1 - Unauthorized, index: 0' AS INT)`. Although ugly, it easily substitutes the `throw_error` function, making both PgSQL and MsSql queries similar, this is the recommended approach.
+- Use Transact-SQL (which supports parameterizing) with `IF` and `THROW` statements, the main downside is that the resulting SQL would be very different than PgSQL.
+
+#### Sub-queries instead of joins
+
+Notice how ODS joins against the authorization views whereas I use an `IN` subquery in the POC above.
+
+ODS has to use `DISTINCT` to ensure that multiple entries in the auth views don't result in duplicate rows during GET-many. Avoiding the `DISTINCT` clause results in simpler execution plans and performance improvements.
+
+#### Resolving the DB columns used for authorization
+
+We should avoid joining the people auth views against the resource tables using the UniqueIds as they are nvarchar-32. ODS joins using USIs (bigint), the DMS equivalent is the DocumentId, meaning that auth views that used to return USIs should now return DocumentIds.
+
+However, consider that the person DocumentId column is only available on the resource table when it references the person resource *directly*. `CourseTranscript`, for example, references `Student` transitively through the `StudentAcademicRecord`, so the Student DocumentId column isn't available in the `CourseTranscript` table, so we must join `StudentAcademicRecord` to reach the Student DocumentId in order to authorize it (as shown in the POC above).
+
+The `Namespace` and `EducationOrganizationId` columns are simpler to get since they are always available in the resource being authorized; no joining is needed.
+
+We need a helper function that, given the resource that we are trying to authorize, returns the necessary information to construct the SQL authorization check.
+
+**ResolveSecurableElementColumnPath(sourceResourceFullName, securableElement)**
+
+- The `sourceResourceFullName` parameter gets initialized with the value from `projectSchema.resourceSchemas.courseTranscripts.resourceName` from the ApiSchema.json, plus its project name
+- The `securableElement` parameter gets initialized with the securable element from the ApiSchema.json, for example:
+
+  ```json
+  {    
+    "Student": [
+      "$.studentAcademicRecordReference.studentUniqueId"
+    ]
+  }
+  ```
+
+- For the `CourseTranscript` example, the function should return the following collection
+
+  ```json
+  [
+    {
+      "sourceTable": {
+        "schema": "edfi",
+        "name": "CourseTranscript"
+      },
+      "sourceColumnName": "StudentAcademicRecord_DocumentId",
+      "targetTable": {
+        "schema": "edfi",
+        "name": "StudentAcademicRecord"
+      },
+      "targetColumnName": "DocumentId"
+    },
+    {
+      "sourceTable": {
+        "schema": "edfi",
+        "name": "StudentAcademicRecord"
+      },
+      "sourceColumnName": "Student_DocumentId",
+      "targetTable": {
+        "schema": "edfi",
+        "name": "Student"
+      },
+      "targetColumnName": "DocumentId"
+    },
+  ]
+  ```
+
+The high-level logic is as follows:
+
+1. For each given securable element path, look in the `documentPathsMapping` of the resource for an entry where the securable element *path* matches the `referenceJsonPath`
+2. Take the `resourceName` from the matching entry from the previous step, get its securable element, and repeat the process until it reaches the top (i.e. until it has reached the Student/Staff/Contact resource)
+3. Use the Derived Relational Model to calculate the tables and columns needed to build the result
+
+Note that a securableElement might have multiple paths when key unification takes place, in this situation it should follow each path and pick the shortest one so that we end with the least number of joins. Use the canonical column instead of the alias since the canonical column will be indexed.
+
+When the provided securableElement is a `Namespace` or an `EducationOrganization`, it should extract the column name directly (no need to visit references) because those are always available on the root resource table.
+
+For example if the `securableElement` is:
+
+```json
+{
+  "EducationOrganization": [
+    {
+      "jsonPath": "$.studentEducationOrganizationAssociationReference.educationOrganizationId",
+      "metaEdName": "EducationOrganizationId"
+    }
+  ]
+}
+```
+
+The helper function should return:
+
+```json
+[
+  {
+    "sourceTable": {
+      "schema": "edfi",
+      "name": "StudentAssessmentRegistration"
+    },
+    "sourceColumnName": "StudentEducationOrganizationAssociation_EducationOrganizationId",
+    "targetTable": null,
+    "targetColumnName": null
+  }
+]
+```
+
+Similarly, if the `securableElement` is:
+
+```json
+{
+  "Namespace": [
+    "$.assessmentAdministrationReference.namespace"
+  ]
+}
+```
+
+The helper function should return:
+
+```json
+[
+  {
+    "sourceTable": {
+      "schema": "edfi",
+      "name": "StudentAssessmentRegistration"
+    },
+    "sourceColumnName": "AssessmentAdministration_Namespace",
+    "targetTable": null,
+    "targetColumnName": null
+  }
+]
+```
+
+---
+
+In the View-based authorization strategy, the basis resource *is* the securableElement, meaning that we need a similar helper function that takes the source and the target resource.
+
+**ResolveSecurableElementColumnPath(sourceResourceFullName, targetResourceFullName)**
+
+- The `sourceResourceFullName` parameter gets initialized with the value from `projectSchema.resourceSchemas.courseTranscripts.resourceName` from the ApiSchema.json, plus its project name
+- The `targetResourceFullName` parameter gets initialized with the name of the basis resource (like Student), plus its project name
+- The returned value is the same as the example above
+
+The high-level logic is as follows, recursively traverse all the references from the sourceResource and take note of those that reach the target resource. There can be multiple paths, pick the winning path based on:
+
+1. Prioritize references that are part of identity
+2. Prioritize required references over optional
+3. Prioritize non-role named references
+4. Shortest path
+
+Note that non-part-of-identity references are only allowed in the sourceResource (not in the middle of the path).
+
+#### TVPs in SQL Server
+
+There are a few SQL queries that must filter based on a list:
+
+1. Filter `auth.EducationOrganizationIdToEducationOrganizationId` based on the EdOrgIds defined in the token
+2. Filter the resource's Namespace based on the prefixes defined in the token
+3. In the GET-many scenario, filter the page by the authorized DocumentIds
+4. When retrieving the referenced resources DocumentIds using the `dms.ReferentialIdentity` table, we need to filter by a list of ReferentialIds
+
+PostgreSQL allows sending arrays as parameters (as shown in the POC above) the equivalent in SQL Server are the Table Valued Parameters (TVPs). Consider that TVPs seem to degrade performance as reported [here](https://dba.stackexchange.com/a/344923).
+
+When the list has <2000 records, ODS uses `IN(@p1, @p2, @p3...)`, otherwise it uses TVPs to avoid hitting the parameter limit and presumably to improve performance.
+
+DMS should follow a similar approach for SQL Server, when any of the lists mentioned above have <2000 records it should fall back to a parameterized `IN` clause (or an `OR` clause for Namespace prefixes), and use TVPs when the list has >=2000 entries.
+
+Meaning that the DDL generator has to create the following User-Defined Table Types:
+
+- Table of bigint (covers point 1. and 3. from the list above)
+- Table of nvarchar 255 (covers point 2.)
+- Table of uniqueidentifier (covers point 4.)
+
+```sql
+CREATE TYPE dms.BigIntTable AS TABLE(
+  Id BIGINT NOT NULL
+);
+
+CREATE TYPE dms.NamespaceTable AS TABLE(
+  Namespace NVARCHAR(255) NOT NULL
+);
+
+CREATE TYPE dms.UniqueIdentifierTable AS TABLE(
+ Id uniqueidentifier NOT NULL
+);
+```
+
+### SQL caching and AOT
+The resource-specific auth SQL should be lazily generated on first request and cached by the EffectiveSchemaHash.
+
+The [aot-compilation.md](aot-compilation.md) document says that SQL should be pre-computed and stored in .mpac files. This is out of scope for now. If we want to precompute the authorization statements, consider that View-based statements cannot be pre-computed because it can be defined and configured after the ApiSchema.json has been generated.
+
+### What is missing from the POC
+
+The DELETE operation isn't shown in the POC as it would be very similar to the `GetGradeBookEntryById` example, but it deletes the entry instead of reconstituting it.
+
+PUT would be a combination of what's shown in `PostCourseTranscript` and `GetGradeBookEntryById`, see the roundtrips specification above for details.
+
+When creating or updating an entry configured with the Namespace-based strategy, we should authorize using a SQL similar to:
+
+```sql
+-- Authorize request body values: namespace-based
+SELECT CASE
+    WHEN EXISTS (
+        SELECT 1
+        WHERE 'uri://ed-fi.org/GradebookEntry/GradebookEntry.xml' LIKE ANY (ARRAY[
+            'uri://ed-fi.org%',
+            'uri://gbisd.edu%'
+        ])
+    )
+    THEN 1 ELSE throw_error('AUTH1', 'Unauthorized, index: 0')
+END;
+```
+
+The example above is illustrative; the actual implementation should parameterize the namespaces.
+
+Note that ODS does this check in C# before hitting the DB, we will do it in SQL to keep it simple and consistent with the other authorization strategies. We can move this check to C# post v1.0 if performance tests show that SQL is too expensive.
+
+The `*Relationships` strategies below aren't shown in the POC as they are very similar to the `RelationshipsWithEdOrgsAndPeople` and `RelationshipsWithEdOrgsAndPeopleInverted` strategies:
+
+- RelationshipsWithEdOrgsOnly
+- RelationshipsWithEdOrgsOnlyInverted
+- RelationshipsWithPeopleOnly
+- RelationshipsWithStudentsOnly
+- RelationshipsWithStudentsOnlyThroughResponsibility
+
+The `NoFurtherAuthorizationRequired` strategy isn't shown since it simply grants access after authentication checks succeeded.
+
+#### Further performance improvements
+
+There are performance optimizations that we could implement for specific scenarios. I decided to keep them out of scope to prioritize simplicity. If we identify bottlenecks during performance tests, we can consider implementing the following optimizations.
+
+- Don't execute the `Authorize request body values` step if the identifying values didn't change (on POST/PUT)
+- Some Namespace and Ownership checks can be done in C#, and if unauthorized, reject the request before hitting the DB
+- If the resource's EducationOrganizationId appears directly in the client's token, we can grant access without generating the SQL check
+- Update the bulk reference resolution logic to also resolve people's DocumentIds that are referenced either directly or transitively, this would avoid the joins on the POST/PUT `Authorize request body values` step
+- Convert the authorization views from *normal* views to Indexed Views (only applicable for SQL Server)
+
+### Database Model
+
+#### Education Organization Hierarchy
+
+The `auth.EducationOrganizationIdToEducationOrganizationId` will remain the same as in ODS.
+
+**PostgreSQL**
+
+```sql
+CREATE TABLE IF NOT EXISTS auth.EducationOrganizationIdToEducationOrganizationId
+(
+    SourceEducationOrganizationId bigint NOT NULL,
+    TargetEducationOrganizationId bigint NOT NULL,
+    CONSTRAINT EducationOrganizationIdToEducationOrganizationId_PK PRIMARY KEY (SourceEducationOrganizationId, TargetEducationOrganizationId)
+)
+```
+
+The `*Inverted` authorization strategies benefit from the following index:
+
+```sql
+CREATE INDEX IX_EducationOrganizationIdToEducationOrganizationId ON auth.EducationOrganizationIdToEducationOrganizationId
+(
+ TargetEducationOrganizationId
+) INCLUDE (SourceEducationOrganizationId);
+```
+
+We also need to bring the same triggers that update the Education Organization hierarchy, [defined in ODS here](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/main/Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/PgSql/Structure/Ods/1302-CreateEdOrgToEdOrgTriggers.sql). These triggers should use denormalized EdOrgId columns (do not join with the EducationOrganization table), use the *unified* columns when available (i.e. we should use the *stored* columns).
+
+To avoid triggers, we could maintain the `auth.EducationOrganizationIdToEducationOrganizationId` table from C#. We will start with similar triggers as ODS for DMS v1.0 to save development time and migrate them to C# post v1.0 if necessary. At first glance, these triggers do not appear to be phantom-safe. Education Organizations likely change so rarely that phantoms are unlikely to occur in practice. However, if we migrate the triggers to C#, we should account for phantoms and consider introducing a locking table because performing this logic in C# adds latency due to DB roundtrips.
+
+#### People auth views
+
+We have to bring the following people auth views from ODS:
+
+- [EducationOrganizationIdToStudentDocumentId](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/main/Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/PgSql/Structure/Ods/1303-AuthViewEducationOrganizationIdToStudentUSI.sql)
+- [EducationOrganizationIdToContactDocumentId](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/main/Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/PgSql/Structure/Ods/1304-AuthViewEducationOrganizationIdToContactUSI.sql)
+- [EducationOrganizationIdToStaffDocumentId](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/main/Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/PgSql/Structure/Ods/1305-AuthViewsEducationOrganizationIdToStaffUSI.sql)
+- [EducationOrganizationIdToStudentDocumentIdThroughResponsibility](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/main/Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/PgSql/Structure/Ods/1306-AuthViewEducationOrganizationIdToStudentUSIThroughResponsibility.sql)
+
+In DMS, these views should output the DocumentId instead of the USI (for example, `Student_DocumentId` instead of `StudentUSI`). Note that for clarity, we should add the person type name as the prefix to the `DocumentId` column.
+
+Given that people types rarely get added/modified (in the DS or extensions), and their definition isn't easily generalizable (Staff joins against 2 association tables, Contact goes through Student), the view definitions should be *hard coded*.
+
+#### Indexes
+
+The following indexes are needed to run the authorization checks efficiently.
+NOTE: Index the canonical columns (when available) as alias columns cannot be indexed.
+
+**Ownership-based strategy**
+There should be an index on the `dms.Document.CreatedByOwnershipTokenId` column.
+
+**Namespace-based strategy**
+The resources that have a `Namespace` securableElement should have an index on the corresponding column (use the Derived Relational Model to map from the securable element path to the DB column).
+
+**Relationship-based strategies**
+The `auth.EducationOrganizationIdToEducationOrganizationId` table should have the following indexes:
+
+- `SourceEducationOrganizationId`, include `TargetEducationOrganizationId`
+- `TargetEducationOrganizationId`, include `SourceEducationOrganizationId`
+
+PrimaryAssociations should have the following indexes:
+
+- `edfi.StudentSchoolAssociation` should have an index on the `SchoolId` column, include the `Student_DocumentId`
+- `edfi.StudentContactAssociation` should have an index on the `Student_DocumentId` column, include the `Contact_DocumentId`
+- `edfi.StaffEducationOrganizationAssignmentAssociation` should have an index on the `EducationOrganization_EducationOrganizationId` column, include the `Staff_DocumentId`
+- `edfi.StaffEducationOrganizationEmploymentAssociation` should have an index on the `EducationOrganization_EducationOrganizationId` column, include the `Staff_DocumentId`
+- `edfi.StudentEducationOrganizationResponsibilityAssociation` should have an index on the `EducationOrganization_EducationOrganizationId` column, include the `Student_DocumentId`
+
+The resources that have an EducationOrganization securableElement should have an index on the corresponding column (use the Derived Relational Model to map from the securable element path to the DB column), do not create the index if it's already covered in the list above.
+
+There should be an index on all resources that participate in a person join (see the `Resolving the DB columns used for authorization` section above). For example, `CourseTranscript` references `StudentAcademicRecord`, which references `Student` meaning that there should be an index on the following columns:
+
+- `edfi.CourseTranscript` should have an index on the `StudentAcademicRecord_DocumentId` column, include its own `DocumentId`
+- `edfi.StudentAcademicRecord` should have an index on the `Student_DocumentId` column, include its own `DocumentId`
+
+**View-based strategy**
+Given that View-based views are created after MetaEd has generated the ApiSchema.json, there's no way to know what fields need to be indexed beforehand (other than indexing every possible reference), so implementers are responsible for creating the necessary indexes.
+
+Indexing in ODS was relatively simple because it uses natural keys so all the columns that participate in authorization decisions are always available in the resource being authorized. In DMS the DocumentIds used for authorization aren't always available in the resource (as shown in `CourseTranscript`) meaning that implementers need to figure out what tables and columns participate in the join in order to create the necessary indexes.
+
+One option is to create a tool that analyzes the current authorization metadata and outputs the necessary indexes, this is out of the scope of this design.
+
+### Extensions
+Resources that are created in extensions (such as `tpdm.Candidate`) are authorized in the same way as core resources; MetaEd already identifies them and initializes the corresponding securableElements in their ApiSchema.json.
+
+Authorization cannot be applied on fields added to core resources (such as `edfi.Credential._ext.tpdm.certificationRouteDescriptor`) as these fields do not qualify as securableElements.
+
+### Improve batch caching by using NpgsqlBatch
+
+The POC above builds a single (large) command composed of many statements, PostgreSQL caches the plan and reuses it if it sees another command that is *exactly* the same.
+
+The likelihood that another command is exactly the same is not as high because of the authorization queries that can vary between tokens. To improve plan reusability we could use [NpgsqlBatch](https://www.npgsql.org/doc/api/Npgsql.NpgsqlBatch.html), which allows breaking the large command into multiple, smaller commands, each would be cached independently.
+
+### Row-level security
+
+Both SQL Server and PostgreSQL support row-level security; however, the recommendation is to not use it for DMS v1.0 given the short development timeline and the uncertainty surrounding the feature. If we adopt it and it turns out to have show-stopping limitations or unacceptable performance, it could jeopardize the release.
+
+### Out of scope
+
+- ChangeQueries and the related `*IncludingDeletes` authorization strategies are out of scope, they will be covered in a future spike.
+- Automatically discovering new person types in extensions is out of scope given that it is an unlikely scenario.
+- Supporting DS4 requires additional logic because it uses `Parent` instead of `Contact`, this is out of scope.
