@@ -10,12 +10,10 @@ Feature: OWASP critical attack path protections
              When a GET request is made to "/ed-fi/schools?schoolId=9999' OR 1=1--"
              Then it should respond with 400
 
-        @KnownSecurityGap
         Scenario: 01a SQL injection payload in query string numeric field is rejected
              When a GET request is made to "/ed-fi/schools?OR 1=1--schoolId=9999"
              Then it should respond with 400
 
-        @KnownSecurityGap
         Scenario: 01b SQL injection payload in query string numeric field is rejected
              When a GET request is made to "/ed-fi/schools?+OR+1%3D1+--schoolId=9999"
              Then it should respond with 400
@@ -107,6 +105,9 @@ Feature: OWASP critical attack path protections
                   """
              Then it should respond with 401
 
+        # The "token is expired" step overwrites the exp claim but keeps the original signature,
+        # so the rejected request actually fails the signature validation before expiry is evaluated.
+        # A pure expired-token check would need an issued token to naturally lapse (or a configurable IdP).
         Scenario: 06a Expired JWT is rejected
             Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
               And the token is expired
@@ -237,9 +238,9 @@ Feature: OWASP critical attack path protections
               And the system has these "students"
                   | _storeResultingIdInVariable | studentUniqueId | firstName | lastSurname | birthDate  |
                   | BolaStudentId               | "BOLA-001"      | BOLA      | Student     | 2008-01-01 |
-              And the system has these "studentSchoolAssociations"
-                  | studentReference                  | schoolReference           | entryGradeLevelDescriptor                          | entryDate  |
-                  | { "studentUniqueId": "BOLA-001" } | { "schoolId": 255901901 } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade" | 2023-08-01 |
+             And the system has these "studentSchoolAssociations"
+                  | _storeResultingIdInVariable   | studentReference                  | schoolReference           | entryGradeLevelDescriptor                          | entryDate  |
+                  | BolaStudentSchoolAssociationId | { "studentUniqueId": "BOLA-001" } | { "schoolId": 255901901 } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade" | 2023-08-01 |
              When a GET request is made to "/ed-fi/students/{BolaStudentId}"
              Then it should respond with 200
 
@@ -259,8 +260,22 @@ Feature: OWASP critical attack path protections
                   """
              Then it should respond with 403
 
-             When a DELETE request is made to "/ed-fi/students/{BolaStudentId}"
-             Then it should respond with 403 or 409
+             When a DELETE request is made to "/ed-fi/studentSchoolAssociations/{BolaStudentSchoolAssociationId}"
+             Then it should respond with 403
+
+        Scenario: 16a Deleting a referenced student returns conflict
+            Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
+              And the system has these "schools"
+                  | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
+                  | 255903   | Conflict School   | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+              And the system has these "students"
+                  | _storeResultingIdInVariable | studentUniqueId | firstName | lastSurname | birthDate  |
+                  | ReferencedStudentId         | "BOLA-409"      | BOLA      | Conflict    | 2008-01-01 |
+              And the system has these "studentSchoolAssociations"
+                  | studentReference                  | schoolReference        | entryGradeLevelDescriptor                          | entryDate  |
+                  | { "studentUniqueId": "BOLA-409" } | { "schoolId": 255903 } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade" | 2023-08-01 |
+             When a DELETE request is made to "/ed-fi/students/{ReferencedStudentId}"
+             Then it should respond with 409
 
         Scenario: 17 CSRF style forged browser cookie request without bearer token is rejected
             Given there is no Authorization header

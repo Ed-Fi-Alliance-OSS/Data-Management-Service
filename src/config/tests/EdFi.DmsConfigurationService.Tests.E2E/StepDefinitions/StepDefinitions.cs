@@ -252,21 +252,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     [When("a Form URL Encoded POST request is made to {string} with")]
     public async Task WhenAFormUrlPostIsMade(string url, DataTable formData)
     {
-        url = await ReplaceIdsAsync(url);
-        Dictionary<string, string> formDataDictionary = formData.Rows.ToDictionary(
-            x => x["Key"].ToString(),
-            y => ReplaceIds(y["Value"].ToString())
-        );
-        var content = new FormUrlEncodedContent(formDataDictionary);
-        APIRequestContextOptions? options = new()
-        {
-            Headers = new Dictionary<string, string>
-            {
-                { "Content-Type", "application/x-www-form-urlencoded" },
-            },
-            Data = await content.ReadAsStringAsync(),
-        };
-        _apiResponse = await playwrightContext.ApiRequestContext!.PostAsync(url, options);
+        await PostFormUrlEncoded(url, formData, includeAuth: true);
     }
 
     [When("an unauthenticated Form URL Encoded POST request is made to {string} with")]
@@ -275,18 +261,30 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         DataTable formData
     )
     {
+        await PostFormUrlEncoded(url, formData, includeAuth: false);
+    }
+
+    private async Task PostFormUrlEncoded(string url, DataTable formData, bool includeAuth)
+    {
         url = await ReplaceIdsAsync(url);
         Dictionary<string, string> formDataDictionary = formData.Rows.ToDictionary(
             x => x["Key"].ToString(),
             y => ReplaceIds(y["Value"].ToString())
         );
         var content = new FormUrlEncodedContent(formDataDictionary);
+        var headers = new Dictionary<string, string>
+        {
+            { "Content-Type", "application/x-www-form-urlencoded" },
+        };
+
+        if (includeAuth && !string.IsNullOrWhiteSpace(_token))
+        {
+            headers["Authorization"] = $"Bearer {_token}";
+        }
+
         APIRequestContextOptions? options = new()
         {
-            Headers = new Dictionary<string, string>
-            {
-                { "Content-Type", "application/x-www-form-urlencoded" },
-            },
+            Headers = headers,
             Data = await content.ReadAsStringAsync(),
         };
         _apiResponse = await playwrightContext.ApiRequestContext!.PostAsync(url, options);
