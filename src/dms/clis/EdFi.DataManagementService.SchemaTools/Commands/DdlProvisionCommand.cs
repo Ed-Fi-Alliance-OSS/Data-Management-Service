@@ -138,49 +138,7 @@ public static class DdlProvisionCommand
                 var modelSet = modelSetBuilder.Build(clonedSchemaSet, dialect, dialectRules);
 
                 // Log diagnostics for skipped key-unification constraints and decimal precision fallbacks
-                foreach (var resource in modelSet.ConcreteResourcesInNameOrder)
-                {
-                    var resourceLabel = LoggingSanitizer.SanitizeForLogging(
-                        $"{resource.ResourceKey.Resource.ProjectName}:{resource.ResourceKey.Resource.ResourceName}"
-                    );
-
-                    var skipped = resource.RelationalModel.KeyUnificationEqualityConstraints.Skipped;
-                    if (skipped.Count > 0)
-                    {
-                        logger.LogDebug(
-                            "Resource {Resource}: {Count} key-unification constraint(s) skipped due to unresolved binding paths",
-                            resourceLabel,
-                            skipped.Count
-                        );
-                        foreach (var entry in skipped)
-                        {
-                            logger.LogDebug(
-                                "  Skipped: source={Source}, target={Target}, unresolved={Endpoint}",
-                                LoggingSanitizer.SanitizeForLogging(entry.SourcePath.Canonical),
-                                LoggingSanitizer.SanitizeForLogging(entry.TargetPath.Canonical),
-                                LoggingSanitizer.SanitizeForLogging(entry.UnresolvedEndpoint)
-                            );
-                        }
-                    }
-
-                    var fallbacks = resource.RelationalModel.DecimalPrecisionFallbacks;
-                    if (fallbacks.Count > 0)
-                    {
-                        logger.LogDebug(
-                            "Resource {Resource}: {Count} decimal property/ies fell back to default precision (18,4)",
-                            resourceLabel,
-                            fallbacks.Count
-                        );
-                        foreach (var entry in fallbacks)
-                        {
-                            logger.LogDebug(
-                                "  Fallback: path={Path}, reason={Reason}",
-                                LoggingSanitizer.SanitizeForLogging(entry.SourcePath.Canonical),
-                                LoggingSanitizer.SanitizeForLogging(entry.Reason)
-                            );
-                        }
-                    }
-                }
+                DdlCommandHelpers.LogModelDiagnostics(logger, modelSet);
 
                 // Emit DDL: core + relational model + seed DML
                 var coreDdl = new CoreDdlEmitter(sqlDialect).Emit();
@@ -199,7 +157,13 @@ public static class DdlProvisionCommand
                     databaseWasCreated = provisioner.CreateDatabaseIfNotExists(connectionString);
                 }
 
-                // TODO(DMS-952): Preflight hash-mismatch check before provisioning
+                // Fail-fast: if the database already has a different schema hash, abort
+                // before executing any DDL. The in-SQL preflight in SeedDmlEmitter remains
+                // as defense-in-depth inside the transaction.
+                provisioner.PreflightSchemaHashCheck(
+                    connectionString,
+                    effectiveSchemaInfo.EffectiveSchemaHash
+                );
 
                 // Execute DDL in a transaction
                 provisioner.ExecuteInTransaction(connectionString, combinedSql);

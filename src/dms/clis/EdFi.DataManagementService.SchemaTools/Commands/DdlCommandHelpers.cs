@@ -6,6 +6,8 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Core.Utilities;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.SchemaTools.Commands;
 
@@ -49,5 +51,55 @@ internal static class DdlCommandHelpers
             .ToList();
 
         return new EffectiveSchemaSet(original.EffectiveSchema, clonedProjects);
+    }
+
+    /// <summary>
+    /// Logs diagnostics for skipped key-unification constraints and decimal precision fallbacks.
+    /// </summary>
+    internal static void LogModelDiagnostics(ILogger logger, DerivedRelationalModelSet modelSet)
+    {
+        foreach (var resource in modelSet.ConcreteResourcesInNameOrder)
+        {
+            var resourceLabel = LoggingSanitizer.SanitizeForLogging(
+                $"{resource.ResourceKey.Resource.ProjectName}:{resource.ResourceKey.Resource.ResourceName}"
+            );
+
+            var skipped = resource.RelationalModel.KeyUnificationEqualityConstraints.Skipped;
+            if (skipped.Count > 0)
+            {
+                logger.LogDebug(
+                    "Resource {Resource}: {Count} key-unification constraint(s) skipped due to unresolved binding paths",
+                    resourceLabel,
+                    skipped.Count
+                );
+                foreach (var entry in skipped)
+                {
+                    logger.LogDebug(
+                        "  Skipped: source={Source}, target={Target}, unresolved={Endpoint}",
+                        LoggingSanitizer.SanitizeForLogging(entry.SourcePath.Canonical),
+                        LoggingSanitizer.SanitizeForLogging(entry.TargetPath.Canonical),
+                        LoggingSanitizer.SanitizeForLogging(entry.UnresolvedEndpoint)
+                    );
+                }
+            }
+
+            var fallbacks = resource.RelationalModel.DecimalPrecisionFallbacks;
+            if (fallbacks.Count > 0)
+            {
+                logger.LogDebug(
+                    "Resource {Resource}: {Count} decimal property/ies fell back to default precision (18,4)",
+                    resourceLabel,
+                    fallbacks.Count
+                );
+                foreach (var entry in fallbacks)
+                {
+                    logger.LogDebug(
+                        "  Fallback: path={Path}, reason={Reason}",
+                        LoggingSanitizer.SanitizeForLogging(entry.SourcePath.Canonical),
+                        LoggingSanitizer.SanitizeForLogging(entry.Reason)
+                    );
+                }
+            }
+        }
     }
 }

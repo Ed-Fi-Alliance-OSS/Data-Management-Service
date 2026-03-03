@@ -125,6 +125,44 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisioner
         }
     }
 
+    public void PreflightSchemaHashCheck(string connectionString, string expectedHash)
+    {
+        using var connection = new NpgsqlConnection(connectionString);
+        connection.Open();
+
+        // Check if the dms.EffectiveSchema table exists
+        using var existsCommand = connection.CreateCommand();
+        existsCommand.CommandText =
+            "SELECT 1 FROM information_schema.tables WHERE table_schema = 'dms' AND table_name = 'EffectiveSchema'";
+        if (existsCommand.ExecuteScalar() is null)
+        {
+            return; // New database — no table yet, proceed with provisioning
+        }
+
+        // Table exists — check the stored hash
+        using var hashCommand = connection.CreateCommand();
+        hashCommand.CommandText =
+            """SELECT "EffectiveSchemaHash" FROM dms."EffectiveSchema" WHERE "EffectiveSchemaSingletonId" = 1""";
+        var storedHash = hashCommand.ExecuteScalar() as string;
+
+        if (storedHash is null)
+        {
+            return; // No row yet, proceed with provisioning
+        }
+
+        if (!string.Equals(storedHash, expectedHash, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Schema hash mismatch: the database contains schema hash '{LoggingSanitizer.SanitizeForLogging(storedHash)}' "
+                    + $"but the current schema produces hash '{LoggingSanitizer.SanitizeForLogging(expectedHash)}'. "
+                    + "A different schema version has already been provisioned. "
+                    + "To re-provision, drop and recreate the database."
+            );
+        }
+
+        logger.LogInformation("Preflight schema hash check passed (hash matches existing database)");
+    }
+
     /// <summary>
     /// No-op for PostgreSQL. MVCC is the default isolation behavior.
     /// </summary>

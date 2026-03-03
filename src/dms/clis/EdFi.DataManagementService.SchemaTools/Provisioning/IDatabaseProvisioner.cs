@@ -33,6 +33,14 @@ public interface IDatabaseProvisioner
     void CheckOrConfigureMvcc(string connectionString, bool databaseWasCreated);
 
     /// <summary>
+    /// Performs a lightweight preflight check: if dms.EffectiveSchema exists and
+    /// its hash differs from <paramref name="expectedHash"/>, throws an
+    /// InvalidOperationException. If the table does not exist or the hash matches,
+    /// returns normally.
+    /// </summary>
+    void PreflightSchemaHashCheck(string connectionString, string expectedHash);
+
+    /// <summary>
     /// Extracts the target database name from the connection string.
     /// </summary>
     string GetDatabaseName(string connectionString);
