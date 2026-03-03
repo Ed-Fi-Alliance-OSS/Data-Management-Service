@@ -139,6 +139,16 @@ internal static class RelationalScalarTypeResolver
     /// Resolves a decimal schema to a relational decimal type using the required totalDigits/decimalPlaces
     /// metadata.
     /// </summary>
+    /// <summary>
+    /// Default total digits used when decimal property validation info is not provided.
+    /// </summary>
+    private const short DefaultTotalDigits = 18;
+
+    /// <summary>
+    /// Default decimal places used when decimal property validation info is not provided.
+    /// </summary>
+    private const short DefaultDecimalPlaces = 4;
+
     private static RelationalScalarType ResolveDecimalType(
         JsonPathExpression sourcePath,
         TryGetDecimalPropertyValidationInfo tryGetDecimalPropertyValidationInfo
@@ -146,15 +156,17 @@ internal static class RelationalScalarTypeResolver
     {
         if (!tryGetDecimalPropertyValidationInfo(sourcePath, out var validationInfo))
         {
-            throw new InvalidOperationException(
-                $"Decimal property validation info is required for number properties at {sourcePath.Canonical}."
+            return new RelationalScalarType(
+                ScalarKind.Decimal,
+                Decimal: (DefaultTotalDigits, DefaultDecimalPlaces)
             );
         }
 
         if (validationInfo.TotalDigits is null || validationInfo.DecimalPlaces is null)
         {
-            throw new InvalidOperationException(
-                $"Decimal property validation info must include totalDigits and decimalPlaces at {sourcePath.Canonical}."
+            return new RelationalScalarType(
+                ScalarKind.Decimal,
+                Decimal: (DefaultTotalDigits, DefaultDecimalPlaces)
             );
         }
 

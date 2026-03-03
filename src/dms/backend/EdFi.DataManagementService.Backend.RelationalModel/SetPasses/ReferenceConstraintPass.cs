@@ -304,6 +304,7 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
         var targetMappingContext = ReferenceMappingContextFormatter.Build(mapping, mapping.TargetResource);
         Dictionary<DbColumnName, DbColumnName> targetByLocalStorageColumn = new();
         HashSet<(DbColumnName LocalStorageColumn, DbColumnName TargetStorageColumn)> seenPairs = [];
+        HashSet<DbColumnName> seenTargetColumns = [];
         List<DbColumnName> localStorageColumns = [];
         List<DbColumnName> targetStorageColumns = [];
 
@@ -342,7 +343,12 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
 
             targetByLocalStorageColumn[localStorageColumn] = targetStorageColumn;
 
-            if (seenPairs.Add((localStorageColumn, targetStorageColumn)))
+            // Deduplicate by both (local, target) pair and by target column alone.
+            // SQL foreign keys cannot reference the same target column more than once.
+            if (
+                seenPairs.Add((localStorageColumn, targetStorageColumn))
+                && seenTargetColumns.Add(targetStorageColumn)
+            )
             {
                 localStorageColumns.Add(localStorageColumn);
                 targetStorageColumns.Add(targetStorageColumn);

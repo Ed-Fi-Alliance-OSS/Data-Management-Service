@@ -68,10 +68,42 @@ internal static class ArrayUniquenessConstraintsExtractor
                 );
             }
 
+            // Support flat format: each entry is a JsonArray of path strings
+            if (constraint is JsonArray flatPathsArray)
+            {
+                List<JsonPathExpression> flatPaths = new(flatPathsArray.Count);
+
+                foreach (var pathNode in flatPathsArray)
+                {
+                    if (pathNode is not JsonValue flatPathValue)
+                    {
+                        throw new InvalidOperationException(
+                            "Expected arrayUniquenessConstraints flat array entries to be strings, "
+                                + "invalid ApiSchema."
+                        );
+                    }
+
+                    flatPaths.Add(JsonPathExpressionCompiler.Compile(flatPathValue.GetValue<string>()));
+                }
+
+                if (flatPaths.Count > 0)
+                {
+                    constraints.Add(
+                        new ArrayUniquenessConstraintInput(
+                            null,
+                            flatPaths.ToArray(),
+                            Array.Empty<ArrayUniquenessConstraintInput>()
+                        )
+                    );
+                }
+
+                continue;
+            }
+
             if (constraint is not JsonObject constraintObject)
             {
                 throw new InvalidOperationException(
-                    "Expected arrayUniquenessConstraints entries to be objects, invalid ApiSchema."
+                    "Expected arrayUniquenessConstraints entries to be objects or arrays, invalid ApiSchema."
                 );
             }
 
