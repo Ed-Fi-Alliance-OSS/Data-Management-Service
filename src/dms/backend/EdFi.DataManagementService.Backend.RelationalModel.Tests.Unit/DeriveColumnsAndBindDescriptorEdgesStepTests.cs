@@ -885,11 +885,12 @@ public class Given_A_Number_Property_With_Decimal_Validation
 
 /// <summary>
 /// Test fixture for a number property without decimal validation.
+/// Falls back to default decimal precision (18, 4) when no validation info is provided.
 /// </summary>
 [TestFixture]
 public class Given_A_Number_Property_Without_Decimal_Validation
 {
-    private Exception? _exception;
+    private DbColumnModel _column = default!;
 
     /// <summary>
     /// Sets up the test fixture.
@@ -904,34 +905,30 @@ public class Given_A_Number_Property_Without_Decimal_Validation
             ["required"] = new JsonArray("amount"),
         };
 
-        try
-        {
-            _ = DeriveColumnsAndBindDescriptorEdgesStepTestContext.BuildContext(schema);
-        }
-        catch (Exception exception)
-        {
-            _exception = exception;
-        }
+        var context = DeriveColumnsAndBindDescriptorEdgesStepTestContext.BuildContext(schema);
+
+        _column = context.ResourceModel!.Root.Columns.Single(column => column.ColumnName.Value == "Amount");
     }
 
     /// <summary>
-    /// It should fail with a schema compilation error.
+    /// It should default to standard decimal precision.
     /// </summary>
     [Test]
-    public void It_should_fail_with_a_schema_compilation_error()
+    public void It_should_default_to_standard_decimal_precision()
     {
-        _exception.Should().BeOfType<InvalidOperationException>();
-        _exception?.Message.Should().Contain("$.amount");
+        _column.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Decimal, Decimal: (18, 4)));
+        _column.IsNullable.Should().BeFalse();
     }
 }
 
 /// <summary>
 /// Test fixture for a number property with incomplete decimal validation.
+/// Falls back to default decimal precision (18, 4) when validation info is incomplete.
 /// </summary>
 [TestFixture]
 public class Given_A_Number_Property_With_Incomplete_Decimal_Validation
 {
-    private Exception? _exception;
+    private DbColumnModel _column = default!;
 
     /// <summary>
     /// Sets up the test fixture.
@@ -949,36 +946,31 @@ public class Given_A_Number_Property_With_Incomplete_Decimal_Validation
         var decimalPath = JsonPathExpressionCompiler.Compile("$.amount");
         var decimalInfo = new DecimalPropertyValidationInfo(decimalPath, null, 2);
 
-        try
-        {
-            _ = DeriveColumnsAndBindDescriptorEdgesStepTestContext.BuildContext(
-                schema,
-                builderContext =>
+        var context = DeriveColumnsAndBindDescriptorEdgesStepTestContext.BuildContext(
+            schema,
+            builderContext =>
+            {
+                builderContext.DecimalPropertyValidationInfosByPath = new Dictionary<
+                    string,
+                    DecimalPropertyValidationInfo
+                >(StringComparer.Ordinal)
                 {
-                    builderContext.DecimalPropertyValidationInfosByPath = new Dictionary<
-                        string,
-                        DecimalPropertyValidationInfo
-                    >(StringComparer.Ordinal)
-                    {
-                        [decimalPath.Canonical] = decimalInfo,
-                    };
-                }
-            );
-        }
-        catch (Exception exception)
-        {
-            _exception = exception;
-        }
+                    [decimalPath.Canonical] = decimalInfo,
+                };
+            }
+        );
+
+        _column = context.ResourceModel!.Root.Columns.Single(column => column.ColumnName.Value == "Amount");
     }
 
     /// <summary>
-    /// It should fail with a schema compilation error.
+    /// It should default to standard decimal precision.
     /// </summary>
     [Test]
-    public void It_should_fail_with_a_schema_compilation_error()
+    public void It_should_default_to_standard_decimal_precision()
     {
-        _exception.Should().BeOfType<InvalidOperationException>();
-        _exception?.Message.Should().Contain("$.amount");
+        _column.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Decimal, Decimal: (18, 4)));
+        _column.IsNullable.Should().BeFalse();
     }
 }
 
