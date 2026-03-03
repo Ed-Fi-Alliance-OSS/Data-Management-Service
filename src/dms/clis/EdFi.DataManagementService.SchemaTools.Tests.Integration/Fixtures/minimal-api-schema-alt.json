@@ -1,0 +1,70 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "AltTestProject",
+    "projectVersion": "1.0.0",
+    "projectEndpointName": "alttestproject",
+    "isExtensionProject": false,
+    "description": "Alternate minimal test project for schema-hash mismatch testing",
+    "abstractResources": {},
+    "resourceNameMapping": {
+      "Widget": "widgets"
+    },
+    "caseInsensitiveEndpointNameMapping": {
+      "widgets": "widgets"
+    },
+    "educationOrganizationHierarchy": {},
+    "educationOrganizationTypes": [],
+    "domains": [],
+    "resourceSchemas": {
+      "widgets": {
+        "resourceName": "Widget",
+        "allowIdentityUpdates": false,
+        "isDescriptor": false,
+        "isSchoolYearEnumeration": false,
+        "isSubclass": false,
+        "isResourceExtension": false,
+        "identityJsonPaths": [
+          "$.widgetId"
+        ],
+        "documentPathsMapping": {
+          "WidgetId": {
+            "isPartOfIdentity": true,
+            "isReference": false,
+            "isRequired": true,
+            "path": "$.widgetId",
+            "type": "integer"
+          },
+          "WidgetName": {
+            "isPartOfIdentity": false,
+            "isReference": false,
+            "isRequired": true,
+            "path": "$.widgetName",
+            "type": "string"
+          }
+        },
+        "equalityConstraints": [],
+        "jsonSchemaForInsert": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "widgetId": {
+              "type": "integer",
+              "description": "Widget identifier."
+            },
+            "widgetName": {
+              "type": "string",
+              "maxLength": 75,
+              "description": "The name of the widget."
+            }
+          },
+          "required": [
+            "widgetId",
+            "widgetName"
+          ],
+          "additionalProperties": false
+        }
+      }
+    }
+  }
+}

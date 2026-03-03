@@ -4,9 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.CommandLine;
-using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Backend.RelationalModel.Build;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Utilities;
 using EdFi.DataManagementService.SchemaTools.Bridge;
@@ -113,38 +111,13 @@ public static class DdlProvisionCommand
             "DDL provisioning",
             () =>
             {
-                // Build EffectiveSchemaSet
-                var effectiveSchemaSet = schemaSetBuilder.Build(success.NormalizedNodes);
-                var effectiveSchemaInfo = effectiveSchemaSet.EffectiveSchema;
-
-                logger.LogInformation(
-                    "Effective schema hash: {Hash}, resource keys: {ResourceKeyCount}",
-                    effectiveSchemaInfo.EffectiveSchemaHash,
-                    effectiveSchemaInfo.ResourceKeyCount
+                var result = DdlCommandHelpers.BuildDdl(
+                    logger,
+                    schemaSetBuilder,
+                    success.NormalizedNodes,
+                    dialect
                 );
-
-                // Create dialect-specific objects
-                var (sqlDialect, dialectRules) = DdlCommandHelpers.CreateDialect(dialect);
-
-                // Deep-clone the effective schema set because
-                // DerivedRelationalModelSetBuilder assigns JsonNode.Parent on ProjectSchema
-                // nodes, which prevents reuse of the original tree.
-                var clonedSchemaSet = DdlCommandHelpers.CloneEffectiveSchemaSet(effectiveSchemaSet);
-
-                // Build relational model
-                var modelSetBuilder = new DerivedRelationalModelSetBuilder(
-                    RelationalModelSetPasses.CreateDefault()
-                );
-                var modelSet = modelSetBuilder.Build(clonedSchemaSet, dialect, dialectRules);
-
-                // Log diagnostics for skipped key-unification constraints and decimal precision fallbacks
-                DdlCommandHelpers.LogModelDiagnostics(logger, modelSet);
-
-                // Emit DDL: core + relational model + seed DML
-                var coreDdl = new CoreDdlEmitter(sqlDialect).Emit();
-                var relationalDdl = new RelationalModelDdlEmitter(sqlDialect).Emit(modelSet);
-                var seedDml = new SeedDmlEmitter(sqlDialect).Emit(effectiveSchemaInfo);
-                var combinedSql = coreDdl + relationalDdl + seedDml;
+                var effectiveSchemaInfo = result.EffectiveSchemaSet.EffectiveSchema;
 
                 // Create the appropriate provisioner
                 var provisioner = CreateProvisioner(dialect, logger);
@@ -166,7 +139,7 @@ public static class DdlProvisionCommand
                 );
 
                 // Execute DDL in a transaction
-                provisioner.ExecuteInTransaction(connectionString, combinedSql);
+                provisioner.ExecuteInTransaction(connectionString, result.CombinedSql);
 
                 // Check/configure MVCC (SQL Server only; no-op for PostgreSQL)
                 provisioner.CheckOrConfigureMvcc(connectionString, databaseWasCreated);

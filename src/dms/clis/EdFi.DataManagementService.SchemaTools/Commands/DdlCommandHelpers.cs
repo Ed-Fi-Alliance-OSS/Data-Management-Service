@@ -6,7 +6,10 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.RelationalModel.Build;
+using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Utilities;
+using EdFi.DataManagementService.SchemaTools.Bridge;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.SchemaTools.Commands;
@@ -16,6 +19,55 @@ namespace EdFi.DataManagementService.SchemaTools.Commands;
 /// </summary>
 internal static class DdlCommandHelpers
 {
+    internal record DdlBuildResult(
+        EffectiveSchemaSet EffectiveSchemaSet,
+        DerivedRelationalModelSet ModelSet,
+        string CombinedSql
+    );
+
+    /// <summary>
+    /// Builds the EffectiveSchemaSet, derives the relational model, logs diagnostics,
+    /// and generates the combined DDL SQL for a single dialect.
+    /// </summary>
+    internal static DdlBuildResult BuildDdl(
+        ILogger logger,
+        EffectiveSchemaSetBuilder schemaSetBuilder,
+        ApiSchemaDocumentNodes normalizedNodes,
+        SqlDialect dialect
+    )
+    {
+        var effectiveSchemaSet = schemaSetBuilder.Build(normalizedNodes);
+        var effectiveSchemaInfo = effectiveSchemaSet.EffectiveSchema;
+
+        logger.LogInformation(
+            "Effective schema hash: {Hash}, resource keys: {ResourceKeyCount}",
+            effectiveSchemaInfo.EffectiveSchemaHash,
+            effectiveSchemaInfo.ResourceKeyCount
+        );
+
+        var (sqlDialect, dialectRules) = CreateDialect(dialect);
+
+        // Deep-clone the effective schema set because
+        // DerivedRelationalModelSetBuilder assigns JsonNode.Parent on ProjectSchema
+        // nodes, which prevents reuse of the original tree.
+        var clonedSchemaSet = CloneEffectiveSchemaSet(effectiveSchemaSet);
+
+        var modelSetBuilder = new DerivedRelationalModelSetBuilder(RelationalModelSetPasses.CreateDefault());
+        var modelSet = modelSetBuilder.Build(clonedSchemaSet, dialect, dialectRules);
+
+        LogModelDiagnostics(logger, modelSet);
+
+        // Emit DDL: core + relational model + seed DML.
+        // SeedDmlEmitter uses the original effectiveSchemaInfo (not the cloned set)
+        // because EffectiveSchemaInfo is an immutable record unaffected by model builder mutation.
+        var coreDdl = new CoreDdlEmitter(sqlDialect).Emit();
+        var relationalDdl = new RelationalModelDdlEmitter(sqlDialect).Emit(modelSet);
+        var seedDml = new SeedDmlEmitter(sqlDialect).Emit(effectiveSchemaInfo);
+        var combinedSql = coreDdl + relationalDdl + seedDml;
+
+        return new DdlBuildResult(effectiveSchemaSet, modelSet, combinedSql);
+    }
+
     internal static (ISqlDialect Dialect, ISqlDialectRules Rules) CreateDialect(SqlDialect dialect)
     {
         return dialect switch
