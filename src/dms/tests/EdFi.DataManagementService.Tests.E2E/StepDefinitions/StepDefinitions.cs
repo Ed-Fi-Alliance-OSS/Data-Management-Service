@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -52,6 +53,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         private ScenarioVariables _scenarioVariables = new();
         private Dictionary<string, string> _relationships = [];
         private int _lastUploadStatusCode = 0;
+        private int? _directResponseStatusCode;
 
         #region Given
 
@@ -196,7 +198,39 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             var segments = token.Split('.');
             var signature = segments[2].ToCharArray();
             new Random().Shuffle(signature);
-            _scenarioContext["dmsToken"] = $"{segments[0]}.{segments[1]}.{signature}";
+            _scenarioContext["dmsToken"] = $"{segments[0]}.{segments[1]}.{new string(signature)}";
+        }
+
+        [Given("the token is expired")]
+        public void GivenTheTokenIsExpired()
+        {
+            var token = GetDmsTokenFromContext().Replace("Bearer ", string.Empty);
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                throw new InvalidOperationException("No JWT token available to expire.");
+            }
+
+            var segments = token.Split('.');
+            if (segments.Length < 2)
+            {
+                throw new InvalidOperationException("Token is not a valid JWT.");
+            }
+
+            var payloadJson = Encoding.UTF8.GetString(Base64UrlDecode(segments[1]));
+            var payload =
+                JsonNode.Parse(payloadJson)?.AsObject()
+                ?? throw new InvalidOperationException("Token payload is not valid JSON.");
+
+            payload["exp"] = DateTimeOffset.UtcNow.AddMinutes(-5).ToUnixTimeSeconds();
+
+            var updatedPayload = Base64UrlEncode(Encoding.UTF8.GetBytes(payload.ToJsonString()));
+            var updatedToken = segments.Length switch
+            {
+                2 => $"{segments[0]}.{updatedPayload}",
+                _ => $"{segments[0]}.{updatedPayload}.{segments[2]}",
+            };
+
+            _scenarioContext["dmsToken"] = $"Bearer {updatedToken}";
         }
 
         private static (string, Dictionary<string, object>) ExtractDescriptorBody(string descriptorValue)
@@ -347,10 +381,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             if (body.Contains("{token}"))
             {
-                body = body.Replace(
-                    "{token}",
-                    GetDmsTokenFromContext().Replace("Bearer ", string.Empty)
-                );
+                body = body.Replace("{token}", GetDmsTokenFromContext().Replace("Bearer ", string.Empty));
             }
 
             await ExecutePostRequest(url, body);
@@ -421,18 +452,80 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information($"POST url: {url}");
             _logger.log.Information($"POST body: {body}");
 
-            // Add custom header
-            var httpHeaders = new List<KeyValuePair<string, string>> { new(header, value) };
-            httpHeaders.AddRange(GetHeaders());
+            var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var authHeader in GetHeaders())
+            {
+                headers[authHeader.Key] = authHeader.Value;
+            }
+
+            headers[header] = value;
 
             _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
                 url,
-                new() { Data = body, Headers = httpHeaders }
+                new() { Data = body, Headers = headers }
             )!;
             _featureContext["_waitOnNextQuery"] = true;
             _logger.log.Information(_apiResponse.TextAsync().Result);
 
             _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
+        }
+
+        [When("an unauthenticated POST request is made to {string} with header {string} value {string} and")]
+        public async Task WhenAnUnauthenticatedPostRequestIsMadeToWithHeaderAnd(
+            string url,
+            string header,
+            string value,
+            string body
+        )
+        {
+            url = AddDataPrefixIfNecessary(url)
+                .Replace("{id}", _id)
+                .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+            body = body.Replace("{id}", _id)
+                .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
+            var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Content-Type"] = "application/json",
+                [header] = value,
+            };
+
+            _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
+                url,
+                new() { Data = body, Headers = headers }
+            )!;
+            _featureContext["_waitOnNextQuery"] = true;
+            _logger.log.Information(await _apiResponse.TextAsync());
+        }
+
+        [When("an unauthenticated Form URL Encoded POST request is made to {string} with")]
+        public async Task WhenAnUnauthenticatedFormUrlEncodedPostRequestIsMadeToWith(
+            string url,
+            DataTable formData
+        )
+        {
+            url = AddDataPrefixIfNecessary(url)
+                .Replace("{id}", _id)
+                .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
+            Dictionary<string, string> formDataDictionary = formData.Rows.ToDictionary(
+                x => x["Key"],
+                y => y["Value"].ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName)
+            );
+            var content = new FormUrlEncodedContent(formDataDictionary);
+
+            _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
+                url,
+                new()
+                {
+                    Headers = new Dictionary<string, string>
+                    {
+                        ["Content-Type"] = "application/x-www-form-urlencoded",
+                    },
+                    Data = await content.ReadAsStringAsync(),
+                }
+            )!;
+            _featureContext["_waitOnNextQuery"] = true;
         }
 
         [When("a POST request is made for dependent resource {string} with")]
@@ -583,6 +676,107 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Headers = GetHeaders() }
             )!;
+        }
+
+        [When("a GET request is made to {string} with header {string} value {string}")]
+        public async Task WhenAGETRequestIsMadeToWithHeader(string url, string header, string value)
+        {
+            url = AddDataPrefixIfNecessary(url)
+                .Replace("{id}", _id)
+                .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
+            var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var authHeader in GetHeaders())
+            {
+                headers[authHeader.Key] = authHeader.Value;
+            }
+
+            headers[header] = value;
+
+            _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(
+                url,
+                new() { Headers = headers }
+            )!;
+        }
+
+        // Alias used in OWASP security scenarios to make their intent explicit in feature files.
+        // Behaviour is identical to WhenAGETRequestIsMadeToWithHeader.
+        [When("a security GET request is made to {string} with header {string} value {string}")]
+        public async Task WhenASecurityGetRequestIsMadeToWithHeader(
+            string url,
+            string header,
+            string value
+        ) => await WhenAGETRequestIsMadeToWithHeader(url, header, value);
+
+        [When("an {string} request is made to {string} with headers")]
+        public async Task WhenAnRequestIsMadeToWithHeaders(string method, string url, DataTable headersTable)
+        {
+            url = AddDataPrefixIfNecessary(url)
+                .Replace("{id}", _id)
+                .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
+            var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var authHeader in GetHeaders())
+            {
+                headers[authHeader.Key] = authHeader.Value;
+            }
+
+            foreach (var row in headersTable.Rows)
+            {
+                headers[row["Key"]] = row["Value"];
+            }
+
+            _apiResponse = await _playwrightContext.ApiRequestContext!.FetchAsync(
+                url,
+                new() { Method = method, Headers = headers }
+            );
+        }
+
+        [When("a POST request larger than {int} MB is made to {string}")]
+        public async Task WhenAPostRequestLargerThanMbIsMadeTo(int sizeInMb, string url)
+        {
+            url = AddDataPrefixIfNecessary(url);
+
+            // Build a valid JSON payload body that exceeds the configured max body size.
+            var oversizedValue = new string('A', sizeInMb * 1024 * 1024);
+            var body = $$"""
+                {
+                    "schoolId": 1701,
+                    "nameOfInstitution": "{{oversizedValue}}",
+                    "gradeLevels": [
+                        {
+                            "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"
+                        }
+                    ],
+                    "educationOrganizationCategories": [
+                        {
+                            "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                        }
+                    ]
+                }
+                """;
+
+            using var httpClient = new HttpClient
+            {
+                BaseAddress = new Uri(_playwrightContext.ApiUrl.TrimEnd('/') + "/"),
+                Timeout = TimeSpan.FromSeconds(30),
+            };
+            using var request = new HttpRequestMessage(HttpMethod.Post, url);
+            request.Headers.TryAddWithoutValidation("Authorization", GetDmsTokenFromContext());
+            request.Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
+
+            using var response = await httpClient.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead
+            );
+            _directResponseStatusCode = (int)response.StatusCode;
+        }
+
+        [Then("the direct response should be {int}")]
+        public void ThenTheDirectResponseShouldBe(int statusCode)
+        {
+            _directResponseStatusCode.Should().NotBeNull("a direct request status should have been captured");
+            _directResponseStatusCode.Should().Be(statusCode);
         }
 
         [When("a DELETE if-match {string} request is made to {string}")]
@@ -1109,6 +1303,13 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             AreEqual(expectedBodyJson, responseJson).Should().BeTrue();
         }
 
+        [Then("the response body should not contain {string}")]
+        public async Task ThenTheResponseBodyShouldNotContain(string text)
+        {
+            string body = await _apiResponse.TextAsync();
+            body.Should().NotContain(text);
+        }
+
         // Use Regex to find all occurrences of {id} in the body
         private static readonly Regex _findIds = IdRegex();
 
@@ -1232,6 +1433,16 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         {
             var headers = _apiResponse.Headers;
             headers.ContainsKey("total-count").Should().BeFalse();
+        }
+
+        [Then("the response header {string} is not present")]
+        public void ThenTheResponseHeaderIsNotPresent(string headerName)
+        {
+            var key = _apiResponse.Headers.Keys.FirstOrDefault(k =>
+                k.Equals(headerName, StringComparison.OrdinalIgnoreCase)
+            );
+
+            key.Should().BeNull($"Header '{headerName}' should not be present.");
         }
 
         [Then("getting less schools than the total-count")]
@@ -1485,6 +1696,24 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         private string GetDmsTokenFromContext()
         {
             return _scenarioContext.GetValueOrDefault("dmsToken")?.ToString() ?? string.Empty;
+        }
+
+        private static string Base64UrlEncode(byte[] input)
+        {
+            return Convert.ToBase64String(input).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        }
+
+        private static byte[] Base64UrlDecode(string input)
+        {
+            string padded = input.Replace('-', '+').Replace('_', '/');
+            padded = (padded.Length % 4) switch
+            {
+                2 => padded + "==",
+                3 => padded + "=",
+                _ => padded,
+            };
+
+            return Convert.FromBase64String(padded);
         }
     }
 }
