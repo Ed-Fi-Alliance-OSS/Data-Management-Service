@@ -242,6 +242,12 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
             var leftCandidates = ResolveEndpointCandidates(bindingsByPath, constraint.SourcePath, resource);
             var rightCandidates = ResolveEndpointCandidates(bindingsByPath, constraint.TargetPath, resource);
 
+            // Skip constraints where an endpoint path is not bound to any column
+            if (leftCandidates is null || rightCandidates is null)
+            {
+                continue;
+            }
+
             var leftTableIndex = ResolveEndpointTableIndex(constraint.SourcePath, leftCandidates, resource);
             var rightTableIndex = ResolveEndpointTableIndex(constraint.TargetPath, rightCandidates, resource);
 
@@ -386,7 +392,7 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
     /// <summary>
     /// Resolves one source-path endpoint to all distinct physical table/column bindings.
     /// </summary>
-    private static TableBoundColumn[] ResolveEndpointCandidates(
+    private static TableBoundColumn[]? ResolveEndpointCandidates(
         IReadOnlyDictionary<string, List<TableBoundColumn>> bindingsByPath,
         JsonPathExpression endpointPath,
         QualifiedResourceName resource
@@ -394,10 +400,7 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
     {
         if (!bindingsByPath.TryGetValue(endpointPath.Canonical, out var rawCandidates))
         {
-            throw new InvalidOperationException(
-                $"Equality constraint endpoint '{endpointPath.Canonical}' on resource "
-                    + $"'{FormatResource(resource)}' was not bound to any column."
-            );
+            return null;
         }
 
         return rawCandidates
