@@ -136,9 +136,9 @@ public static class DdlManifestEmitter
 
         foreach (var rawLine in sqlText.AsSpan().EnumerateLines())
         {
-            var line = rawLine.TrimEnd('\r');
+            var trimmed = rawLine.TrimEnd('\r').Trim();
 
-            if (line.SequenceEqual("GO"))
+            if (trimmed.SequenceEqual("GO"))
             {
                 if (pastFirstGo && currentBatchHasContent)
                 {
@@ -152,14 +152,14 @@ public static class DdlManifestEmitter
 
             if (!pastFirstGo)
             {
-                if (line.Length > 0 && line[^1] == ';')
+                if (trimmed.Length > 0 && trimmed[^1] == ';')
                 {
                     count++;
                 }
             }
             else
             {
-                if (!line.Trim().IsEmpty)
+                if (!trimmed.IsEmpty)
                 {
                     currentBatchHasContent = true;
                 }
@@ -219,13 +219,14 @@ public static class DdlManifestEmitter
         return count;
     }
 
-    private static string ToManifestDialect(SqlDialect dialect)
-    {
-        return dialect switch
+    /// <summary>
+    /// Returns the lowercase label for the given dialect (e.g., <c>"pgsql"</c>, <c>"mssql"</c>).
+    /// </summary>
+    public static string ToManifestDialect(SqlDialect dialect) =>
+        dialect switch
         {
-            SqlDialect.Mssql => "mssql",
             SqlDialect.Pgsql => "pgsql",
+            SqlDialect.Mssql => "mssql",
             _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported SQL dialect."),
         };
-    }
 }

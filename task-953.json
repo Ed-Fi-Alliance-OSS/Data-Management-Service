@@ -1,0 +1,124 @@
+{
+  "ticket": "DMS-953",
+  "title": "Emit ddl.manifest.json (Deterministic DDL Summary)",
+  "epic": "DMS-948 — Provisioning Workflow (Create-Only)",
+  "status": "in_review",
+  "created": "2026-03-02",
+  "plan_file": "DMS-953.md",
+  "review": {
+    "date": "2026-03-03",
+    "scope": "DMS-953-specific commits only (a1cdc3a4..3ac4ee97), 13 files",
+    "findings": [
+      {
+        "id": "CR-953-1",
+        "category": "correctness",
+        "severity": "low",
+        "title": "MSSQL statement counter does not trim leading whitespace",
+        "file": "src/dms/backend/EdFi.DataManagementService.Backend.Ddl/DdlManifestEmitter.cs",
+        "line": 139,
+        "description": "CountMssqlStatements uses TrimEnd('\\r') only, while CountPgsqlStatements uses full Trim(). If the MSSQL emitter ever produces indented GO lines, statement_count will be wrong.",
+        "recommendation": "Apply Trim() consistently for the GO check and semicolon check.",
+        "status": "resolved"
+      },
+      {
+        "id": "CR-953-2",
+        "category": "design-drift",
+        "severity": "low",
+        "title": "Spec says ddl.manifest.json is optional, implementation always emits it",
+        "file": "reference/design/backend-redesign/design-docs/ddl-generator-testing.md",
+        "line": 99,
+        "description": "Design doc says 'Optional (recommended)' but DdlEmitCommand always emits the manifest.",
+        "recommendation": "Update spec from 'Optional (recommended)' to 'Always emitted'.",
+        "status": "skipped",
+        "resolution": "Design docs are authoritative; implementation follows the spec (manifest is recommended, not mandatory)."
+      },
+      {
+        "id": "CR-953-3",
+        "category": "test-coverage",
+        "severity": "low",
+        "title": "No test for single-dialect manifest emission",
+        "file": "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/DdlManifestEmitterTests.cs",
+        "line": null,
+        "description": "All tests pass two entries. No test verifies Emit with a single DdlManifestEntry (as would happen with --dialect pgsql).",
+        "recommendation": "Add Given_DdlManifestEmitter_Emit_With_Single_Dialect test fixture.",
+        "status": "resolved"
+      },
+      {
+        "id": "CR-953-4",
+        "category": "simplification",
+        "severity": "low",
+        "title": "Duplicate dialect-to-string mapping in DdlManifestEmitter and DdlEmitCommand",
+        "file": "src/dms/backend/EdFi.DataManagementService.Backend.Ddl/DdlManifestEmitter.cs",
+        "line": 222,
+        "relatedFile": "src/dms/clis/EdFi.DataManagementService.SchemaTools/Commands/DdlEmitCommand.cs",
+        "relatedLine": 217,
+        "description": "ToManifestDialect and DialectLabel perform identical SqlDialect to string mapping.",
+        "recommendation": "Extract to shared extension method or make ToManifestDialect internal and reuse.",
+        "status": "resolved"
+      }
+    ]
+  },
+  "tasks": [
+    {
+      "id": "T1",
+      "phase": 1,
+      "subject": "Define normalization rules and statement counting strategy",
+      "status": "completed"
+    },
+    {
+      "id": "T2",
+      "phase": 2,
+      "subject": "Implement DdlManifestEmitter class",
+      "status": "completed",
+      "files": [
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl/DdlManifestEmitter.cs"
+      ]
+    },
+    {
+      "id": "T3",
+      "phase": 3,
+      "subject": "Integrate DdlManifestEmitter into DdlEmitCommand CLI",
+      "status": "completed",
+      "files": [
+        "src/dms/clis/EdFi.DataManagementService.SchemaTools/Commands/DdlEmitCommand.cs"
+      ]
+    },
+    {
+      "id": "T4",
+      "phase": 4,
+      "subject": "Add unit tests for DdlManifestEmitter",
+      "status": "completed",
+      "files": [
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/DdlManifestEmitterTests.cs"
+      ]
+    },
+    {
+      "id": "T5",
+      "phase": 5,
+      "subject": "Add golden test coverage for ddl.manifest.json",
+      "status": "completed",
+      "files": [
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/DdlEmissionGoldenTests.cs"
+      ]
+    },
+    {
+      "id": "T6",
+      "phase": 6,
+      "subject": "Address code review findings",
+      "status": "completed",
+      "depends_on": ["T5"],
+      "description": "Address findings from CR-953-1 through CR-953-4."
+    }
+  ],
+  "key_files": {
+    "new": [
+      "src/dms/backend/EdFi.DataManagementService.Backend.Ddl/DdlManifestEmitter.cs",
+      "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/DdlManifestEmitterTests.cs",
+      "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/ddl-emission/expected/ddl-manifest/*.json"
+    ],
+    "modified": [
+      "src/dms/clis/EdFi.DataManagementService.SchemaTools/Commands/DdlEmitCommand.cs",
+      "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/DdlEmissionGoldenTests.cs"
+    ]
+  }
+}

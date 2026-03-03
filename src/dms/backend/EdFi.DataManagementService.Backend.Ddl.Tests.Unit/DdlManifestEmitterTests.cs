@@ -338,6 +338,59 @@ public class Given_DdlManifestEmitter_Emit_With_Empty_Entries
 }
 
 [TestFixture]
+public class Given_DdlManifestEmitter_Emit_With_Single_Dialect
+{
+    private string _manifest = default!;
+    private JsonDocument _doc = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var schema = ManifestTestData.BuildEffectiveSchema();
+        var entries = new List<DdlManifestEntry> { new(SqlDialect.Pgsql, "CREATE TABLE foo (id INT);\n") };
+
+        _manifest = DdlManifestEmitter.Emit(schema, entries);
+        _doc = JsonDocument.Parse(_manifest);
+    }
+
+    [Test]
+    public void It_should_produce_valid_json()
+    {
+        var act = () => JsonDocument.Parse(_manifest);
+
+        act.Should().NotThrow();
+    }
+
+    [Test]
+    public void It_should_have_ddl_array_with_one_element()
+    {
+        _doc.RootElement.GetProperty("ddl").GetArrayLength().Should().Be(1);
+    }
+
+    [Test]
+    public void It_should_have_correct_dialect()
+    {
+        _doc.RootElement.GetProperty("ddl")[0].GetProperty("dialect").GetString().Should().Be("pgsql");
+    }
+
+    [Test]
+    public void It_should_include_statement_count()
+    {
+        _doc.RootElement.GetProperty("ddl")[0].GetProperty("statement_count").GetInt32().Should().Be(1);
+    }
+
+    [Test]
+    public void It_should_include_normalized_sql_sha256()
+    {
+        _doc.RootElement.GetProperty("ddl")[0]
+            .GetProperty("normalized_sql_sha256")
+            .GetString()
+            .Should()
+            .MatchRegex("^[0-9a-f]{64}$");
+    }
+}
+
+[TestFixture]
 public class Given_DdlManifestEmitter_Emit_Json_Format
 {
     private string _manifest = default!;

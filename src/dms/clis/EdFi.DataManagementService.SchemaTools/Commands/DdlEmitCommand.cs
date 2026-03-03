@@ -160,7 +160,7 @@ public static class DdlEmitCommand
                     ddlManifestEntries.Add(new DdlManifestEntry(dialect, combinedSql));
 
                     // Write SQL file (always dialect-prefixed, matching {dialect}.sql convention)
-                    var dialectLabel = DialectLabel(dialect);
+                    var dialectLabel = DdlManifestEmitter.ToManifestDialect(dialect);
                     var sqlFileName = $"{dialectLabel}.sql";
                     var sqlPath = Path.Combine(outputDir, sqlFileName);
                     WriteFileWithUnixLineEndings(sqlPath, combinedSql);
@@ -213,14 +213,6 @@ public static class DdlEmitCommand
             }
         );
     }
-
-    private static string DialectLabel(SqlDialect dialect) =>
-        dialect switch
-        {
-            SqlDialect.Pgsql => "pgsql",
-            SqlDialect.Mssql => "mssql",
-            _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported dialect"),
-        };
 
     private static List<SqlDialect> ParseDialect(string dialectName)
     {
