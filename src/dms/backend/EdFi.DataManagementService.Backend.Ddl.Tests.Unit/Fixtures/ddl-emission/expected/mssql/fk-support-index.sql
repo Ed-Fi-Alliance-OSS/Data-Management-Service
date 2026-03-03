@@ -61,7 +61,6 @@ BEGIN
 END;
 GO
 
-GO
 CREATE OR ALTER TRIGGER [edfi].[TR_School_Stamp]
 ON [edfi].[School]
 AFTER INSERT, UPDATE, DELETE

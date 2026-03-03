@@ -99,7 +99,6 @@ BEGIN
 END;
 GO
 
-GO
 CREATE OR ALTER TRIGGER [edfi].[TR_LocalEducationAgency_ReferentialIdentity]
 ON [edfi].[LocalEducationAgency]
 AFTER INSERT, UPDATE
@@ -140,7 +139,6 @@ BEGIN
 END;
 GO
 
-GO
 CREATE OR ALTER TRIGGER [edfi].[TR_LocalEducationAgency_Stamp]
 ON [edfi].[LocalEducationAgency]
 AFTER INSERT, UPDATE, DELETE
@@ -164,7 +162,6 @@ BEGIN
 END;
 GO
 
-GO
 CREATE OR ALTER TRIGGER [edfi].[TR_School_AbstractIdentity]
 ON [edfi].[School]
 AFTER INSERT, UPDATE
@@ -195,7 +192,6 @@ BEGIN
 END;
 GO
 
-GO
 CREATE OR ALTER TRIGGER [edfi].[TR_School_ReferentialIdentity]
 ON [edfi].[School]
 AFTER INSERT, UPDATE
@@ -236,7 +232,6 @@ BEGIN
 END;
 GO
 
-GO
 CREATE OR ALTER TRIGGER [edfi].[TR_School_Stamp]
 ON [edfi].[School]
 AFTER INSERT, UPDATE, DELETE
