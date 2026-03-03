@@ -46,7 +46,7 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisioner
         checkCommand.CommandText = "SELECT 1 FROM pg_database WHERE datname = @dbName";
         checkCommand.Parameters.AddWithValue("@dbName", targetDatabase);
 
-        var exists = checkCommand.ExecuteScalar() != null;
+        var exists = checkCommand.ExecuteScalar() is not null;
 
         if (exists)
         {
@@ -68,7 +68,22 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisioner
         using var createCommand = connection.CreateCommand();
         var quotedName = $"\"{targetDatabase.Replace("\"", "\"\"")}\"";
         createCommand.CommandText = $"CREATE DATABASE {quotedName}";
-        createCommand.ExecuteNonQuery();
+
+        try
+        {
+            createCommand.ExecuteNonQuery();
+        }
+        catch (PostgresException ex) when (ex.SqlState == "42P04")
+        {
+            // 42P04 = "duplicate_database" — a concurrent process created it
+            // between our check and our CREATE. Treat as "already existed".
+            logger.LogInformation(
+                ex,
+                "Database was created concurrently by another process: {DatabaseName}",
+                LoggingSanitizer.SanitizeForLogging(targetDatabase)
+            );
+            return false;
+        }
 
         logger.LogInformation(
             "Database created successfully: {DatabaseName}",
@@ -78,7 +93,7 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisioner
         return true;
     }
 
-    public void ExecuteInTransaction(string connectionString, string sql)
+    public void ExecuteInTransaction(string connectionString, string sql, int commandTimeoutSeconds = 300)
     {
         var targetDatabase = GetDatabaseName(connectionString);
 
@@ -96,7 +111,7 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisioner
             using var command = connection.CreateCommand();
             command.Transaction = transaction;
             command.CommandText = sql;
-            command.CommandTimeout = 300; // 5 minutes for large DDL scripts
+            command.CommandTimeout = commandTimeoutSeconds;
             command.ExecuteNonQuery();
 
             transaction.Commit();

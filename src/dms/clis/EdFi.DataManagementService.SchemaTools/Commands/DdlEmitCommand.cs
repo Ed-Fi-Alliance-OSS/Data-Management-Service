@@ -74,6 +74,12 @@ public static class DdlEmitCommand
         string dialectName
     )
     {
+        if (schemaPaths.Length == 0)
+        {
+            Console.Error.WriteLine("At least one --schema path is required.");
+            return 1;
+        }
+
         // Dialect is validated at parse time by AcceptOnlyFromAmong
         var dialects = ParseDialect(dialectName);
 
@@ -118,18 +124,19 @@ public static class DdlEmitCommand
                 }
 
                 var emittedFiles = new List<string>();
-                EffectiveSchemaInfo? effectiveSchemaInfo = null;
+
+                // Build the dialect-independent EffectiveSchemaSet once
+                var effectiveSchemaSet = DdlCommandHelpers.BuildEffectiveSchemaSet(
+                    logger,
+                    schemaSetBuilder,
+                    success.NormalizedNodes
+                );
+                var effectiveSchemaInfo = effectiveSchemaSet.EffectiveSchema;
 
                 // Build DDL and write per-dialect outputs
                 foreach (var dialect in dialects)
                 {
-                    var result = DdlCommandHelpers.BuildDdl(
-                        logger,
-                        schemaSetBuilder,
-                        success.NormalizedNodes,
-                        dialect
-                    );
-                    effectiveSchemaInfo ??= result.EffectiveSchemaSet.EffectiveSchema;
+                    var result = DdlCommandHelpers.BuildDdlFromSchemaSet(logger, effectiveSchemaSet, dialect);
 
                     // Write SQL file (always dialect-prefixed, matching {dialect}.sql convention)
                     var dialectLabel = DialectLabel(dialect);
@@ -152,7 +159,7 @@ public static class DdlEmitCommand
 
                 // Emit effective schema manifest (dialect-independent, emitted once)
                 var schemaManifest = EffectiveSchemaManifestEmitter.Emit(
-                    effectiveSchemaInfo!,
+                    effectiveSchemaInfo,
                     includeResourceKeys: true
                 );
                 WriteFileWithUnixLineEndings(
@@ -165,7 +172,7 @@ public static class DdlEmitCommand
                 Console.WriteLine(
                     $"DDL emission complete. Output directory: {LoggingSanitizer.SanitizeForConsole(outputDir)}"
                 );
-                Console.WriteLine($"Effective schema hash: {effectiveSchemaInfo!.EffectiveSchemaHash}");
+                Console.WriteLine($"Effective schema hash: {effectiveSchemaInfo.EffectiveSchemaHash}");
                 Console.WriteLine($"Resource key count: {effectiveSchemaInfo.ResourceKeyCount}");
                 Console.WriteLine("Files written:");
                 foreach (var file in emittedFiles)

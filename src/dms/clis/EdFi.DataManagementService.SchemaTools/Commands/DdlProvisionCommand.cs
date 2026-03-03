@@ -51,11 +51,18 @@ public static class DdlProvisionCommand
             DefaultValueFactory = _ => false,
         };
 
+        var timeoutOption = new Option<int>("--timeout", "-t")
+        {
+            Description = "Command timeout in seconds for DDL execution (default: 300).",
+            DefaultValueFactory = _ => 300,
+        };
+
         var command = new Command("provision", "Generate DDL and execute it against a target database");
         command.Options.Add(schemaOption);
         command.Options.Add(connectionStringOption);
         command.Options.Add(dialectOption);
         command.Options.Add(createDatabaseOption);
+        command.Options.Add(timeoutOption);
 
         command.SetAction(parseResult =>
         {
@@ -63,6 +70,7 @@ public static class DdlProvisionCommand
             var connectionString = parseResult.GetValue(connectionStringOption)!;
             var dialect = parseResult.GetValue(dialectOption)!;
             var createDatabase = parseResult.GetValue(createDatabaseOption);
+            var timeout = parseResult.GetValue(timeoutOption);
             return Execute(
                 logger,
                 fileLoader,
@@ -70,7 +78,8 @@ public static class DdlProvisionCommand
                 schemas,
                 connectionString,
                 dialect,
-                createDatabase
+                createDatabase,
+                timeout
             );
         });
 
@@ -84,9 +93,16 @@ public static class DdlProvisionCommand
         string[] schemaPaths,
         string connectionString,
         string dialectName,
-        bool createDatabase
+        bool createDatabase,
+        int commandTimeoutSeconds
     )
     {
+        if (schemaPaths.Length == 0)
+        {
+            Console.Error.WriteLine("At least one --schema path is required.");
+            return 1;
+        }
+
         var dialect = ParseDialect(dialectName);
 
         // Load schemas
@@ -130,6 +146,12 @@ public static class DdlProvisionCommand
                     databaseWasCreated = provisioner.CreateDatabaseIfNotExists(connectionString);
                 }
 
+                // Check/configure MVCC (SQL Server only; no-op for PostgreSQL).
+                // Runs before DDL so a post-DDL MVCC failure cannot turn a successful
+                // provision into exit code 1. Safe because ALTER DATABASE runs on
+                // master independently of the target DB connection.
+                provisioner.CheckOrConfigureMvcc(connectionString, databaseWasCreated);
+
                 // Fail-fast: if the database already has a different schema hash, abort
                 // before executing any DDL. The in-SQL preflight in SeedDmlEmitter remains
                 // as defense-in-depth inside the transaction.
@@ -139,10 +161,7 @@ public static class DdlProvisionCommand
                 );
 
                 // Execute DDL in a transaction
-                provisioner.ExecuteInTransaction(connectionString, result.CombinedSql);
-
-                // Check/configure MVCC (SQL Server only; no-op for PostgreSQL)
-                provisioner.CheckOrConfigureMvcc(connectionString, databaseWasCreated);
+                provisioner.ExecuteInTransaction(connectionString, result.CombinedSql, commandTimeoutSeconds);
 
                 // Print summary
                 Console.WriteLine(
