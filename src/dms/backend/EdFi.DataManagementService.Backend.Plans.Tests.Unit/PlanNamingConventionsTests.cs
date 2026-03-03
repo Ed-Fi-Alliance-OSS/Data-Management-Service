@@ -124,6 +124,20 @@ public class Given_PlanNamingConventions
     }
 
     [Test]
+    public void It_should_deduplicate_fallback_parameter_names_when_multiple_columns_sanitize_to_p()
+    {
+        // Column "" sanitizes to "p" (fallback), column "P" base-names to "p" (camel-case),
+        // column "p" base-names to "p" (already lowercase). All three collide case-insensitively.
+        var parameterNames = PlanNamingConventions.DeriveWriteParameterNamesInOrder([
+            new DbColumnName(""),
+            new DbColumnName("P"),
+            new DbColumnName("p"),
+        ]);
+
+        parameterNames.Should().Equal("p", "p_2", "p_3");
+    }
+
+    [Test]
     public void It_should_return_deterministic_fixed_aliases_by_role()
     {
         PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Root).Should().Be("r");

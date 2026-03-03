@@ -191,6 +191,23 @@ public class Given_DdlManifestEmitter_CountStatements_For_Pgsql
     }
 
     [Test]
+    public void It_should_count_dollar_quoted_block_closed_with_language_clause_as_one_statement()
+    {
+        var sql = string.Join(
+            "\n",
+            "CREATE TABLE foo (id INT);",
+            "CREATE OR REPLACE FUNCTION my_func() RETURNS TRIGGER AS $$",
+            "BEGIN",
+            "    INSERT INTO bar VALUES (1);",
+            "    RETURN NEW;",
+            "$$ LANGUAGE plpgsql;",
+            ""
+        );
+
+        DdlManifestEmitter.CountStatements(SqlDialect.Pgsql, sql).Should().Be(2);
+    }
+
+    [Test]
     public void It_should_ignore_dollar_sign_inside_string_literals()
     {
         var sql = string.Join(
@@ -254,6 +271,24 @@ public class Given_DdlManifestEmitter_CountStatements_For_Mssql
         );
 
         // 1 semicolon before first GO + 0 (empty batch) + 1 trigger batch = 2
+        DdlManifestEmitter.CountStatements(SqlDialect.Mssql, sql).Should().Be(2);
+    }
+
+    [Test]
+    public void It_should_count_trailing_batch_after_last_go_without_trailing_go_separator()
+    {
+        var sql = string.Join(
+            "\n",
+            "CREATE TABLE foo (id INT);",
+            "GO",
+            "CREATE TRIGGER my_trigger ON foo",
+            "AFTER INSERT AS",
+            "BEGIN",
+            "    RETURN;",
+            "END;"
+        );
+
+        // 1 semicolon before first GO + 1 trailing batch (no closing GO) = 2
         DdlManifestEmitter.CountStatements(SqlDialect.Mssql, sql).Should().Be(2);
     }
 }

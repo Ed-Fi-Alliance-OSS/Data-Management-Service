@@ -223,7 +223,6 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                 group.OrderBy(static parameterName => parameterName, StringComparer.Ordinal).ToArray()
             )
             .OrderBy(static group => group[0], StringComparer.OrdinalIgnoreCase)
-            .ThenBy(static group => group[0], StringComparer.Ordinal)
             .ToArray();
 
         if (duplicateGroups.Length == 0)

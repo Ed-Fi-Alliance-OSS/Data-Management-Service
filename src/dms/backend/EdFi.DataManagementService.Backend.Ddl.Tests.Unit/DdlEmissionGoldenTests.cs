@@ -176,6 +176,13 @@ public abstract class DdlEmissionGoldenTestBase
     /// Builds model sets for both dialects, combines core + relational + seed DDL,
     /// then calls <see cref="DdlManifestEmitter.Emit"/> to produce the manifest JSON.
     /// </summary>
+    /// <remarks>
+    /// The golden expected files use a synthetic <c>effective_schema_hash</c> value (e.g., <c>"hash"</c>)
+    /// rather than a real 64-char SHA-256 hex string. This is intentional: test fixtures build models
+    /// from inline ApiSchema fragments whose <see cref="EffectiveSchemaInfo.EffectiveSchemaHash"/>
+    /// is a placeholder. Hash format validation is covered by <c>DdlManifestEmitterTests</c> and
+    /// <c>EffectiveSchemaManifestEmitter</c> unit tests, not by golden snapshot comparison.
+    /// </remarks>
     protected static GoldenTestPaths EmitDdlManifest(
         string fixtureName,
         Func<SqlDialect, DerivedRelationalModelSet> buildModelSet

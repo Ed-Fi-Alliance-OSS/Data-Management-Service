@@ -161,6 +161,15 @@ public static class DdlManifestEmitter
     /// Only <c>$$</c> at line boundaries (start or end of trimmed line) toggles state,
     /// avoiding false matches like <c>'$$.schoolId='</c> inside string literals.
     /// </summary>
+    /// <remarks>
+    /// The heuristic supports exactly three dollar-quote exit patterns produced by the DDL emitters:
+    /// <list type="bullet">
+    ///   <item><c>END $$;</c> — PL/pgSQL function/trigger body end</item>
+    ///   <item><c>$$ LANGUAGE plpgsql;</c> (or any <c>$$</c>-prefixed line) — alternative body close</item>
+    ///   <item><c>$$</c> alone on a line — bare dollar-quote close (no trailing semicolon)</item>
+    /// </list>
+    /// If the emitter produces a new pattern, this method must be updated and re-validated.
+    /// </remarks>
     private static int CountPgsqlStatements(string sqlText)
     {
         var lines = sqlText.Split('\n');

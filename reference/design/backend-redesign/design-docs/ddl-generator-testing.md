@@ -141,7 +141,7 @@ Minimum required fields:
   - `payload_sha256`
   - `resource_key_count`, `resource_key_seed_hash`
   - `resources[]` plan summaries:
-    - per plan: `normalized_sql_sha256` (store SQL hashes, not the raw SQL text for large fixtures)
+    - per plan type (write, read, query): `normalized_sql_sha256` (store SQL hashes, not the raw SQL text for large fixtures). Each plan type hashes its own SQL independently — write plan SQL (insert/update/delete), read plan SQL (select-by-keyset per table), and query plan SQL (page-DocumentId + optional total-count) each produce a separate hash. Projection SQL (descriptor URI projection and reference identity projection metadata within read plans) contributes to the read plan hash, not a separate hash.
     - binding order metadata required for correctness (parameter order, keyset ordering, etc.)
   - Must include the same key-unification model surface required by `relational-model.{dialect}.manifest.json` (per-column `storage`, per-table `key_unification_classes`, descriptor-FK de-duplication diagnostics, and per-resource equality-constraint diagnostics).
 - `mappingset.manifest.json`

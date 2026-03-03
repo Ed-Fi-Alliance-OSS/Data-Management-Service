@@ -180,7 +180,9 @@ public static class DdlEmitCommand
                     emittedFiles.Add(manifestFileName);
                 }
 
-                // Emit DDL manifest (DMS-953)
+                // Emit DDL manifest (DMS-953).
+                // The manifest reflects only the dialect(s) selected via --dialect.
+                // When --dialect is "pgsql" or "mssql", the ddl[] array contains a single entry.
                 var ddlManifest = DdlManifestEmitter.Emit(effectiveSchemaInfo, ddlManifestEntries);
                 var ddlManifestPath = Path.Combine(outputDir, "ddl.manifest.json");
                 WriteFileWithUnixLineEndings(ddlManifestPath, ddlManifest);
