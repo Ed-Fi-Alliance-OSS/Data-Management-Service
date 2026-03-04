@@ -520,10 +520,13 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
     /// </summary>
     private static void AddProjectSchema(JsonObject componentsSchemas, string schemaName, JsonObject schema)
     {
-        if (!componentsSchemas.ContainsKey(schemaName))
+        if (componentsSchemas.ContainsKey(schemaName))
         {
-            componentsSchemas.Add(schemaName, schema);
+            throw new InvalidOperationException(
+                $"Duplicate schema name '{schemaName}' encountered while building OpenAPI document."
+            );
         }
+        componentsSchemas.Add(schemaName, schema);
     }
 
     /// <summary>
@@ -1219,6 +1222,13 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
                 continue;
             }
 
+            if (overrideEntry is not JsonObject)
+            {
+                throw new InvalidOperationException(
+                    $"Expected a JsonObject override entry, but encountered {overrideEntry.GetType().Name}."
+                );
+            }
+
             var insertionLocations = overrideEntry["insertionLocations"]?.AsArray();
             var schemaFragment = overrideEntry["schemaFragment"]?.AsObject();
 
@@ -1240,6 +1250,15 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
                 throw new InvalidOperationException(
                     $"Common extension override entry in resource '{resourceName}' "
                         + $"is missing required field(s): {missing}."
+                );
+            }
+
+            if (insertionLocations.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    $"Common extension override entry in resource '{resourceName}' "
+                        + $"has an empty 'insertionLocations' array. "
+                        + $"An override entry must have at least one insertion location."
                 );
             }
 
@@ -1328,15 +1347,24 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
     {
         var suffix = $"_{resourceName}";
 
-        return componentsSchemas
-                .Select(kvp => kvp.Key)
-                .SingleOrDefault(key =>
-                    key.EndsWith(suffix, StringComparison.Ordinal)
-                    && key.IndexOf('_') == key.Length - suffix.Length
-                )
-            ?? throw new InvalidOperationException(
+        var matches = componentsSchemas
+            .Select(kvp => kvp.Key)
+            .Where(key =>
+                key.EndsWith(suffix, StringComparison.Ordinal)
+                && key.IndexOf('_') == key.Length - suffix.Length
+            )
+            .ToList();
+
+        return matches.Count switch
+        {
+            0 => throw new InvalidOperationException(
                 $"Resource '{resourceName}' has commonExtensionOverrides but no matching core schema found."
-            );
+            ),
+            1 => matches[0],
+            _ => throw new InvalidOperationException(
+                $"Resource '{resourceName}' has commonExtensionOverrides but matched multiple core schemas: [{string.Join(", ", matches)}]."
+            ),
+        };
     }
 
     /// <summary>
@@ -1394,6 +1422,13 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
         if (node is null)
         {
             return (null, currentSchemaName);
+        }
+
+        if (node is not JsonObject)
+        {
+            throw new InvalidOperationException(
+                $"Expected a JsonObject node while resolving $ref at schema '{currentSchemaName}', but encountered {node.GetType().Name}."
+            );
         }
 
         var refValue = node["$ref"]?.GetValue<string>();
@@ -1706,16 +1741,27 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
             {
                 ResourceSchema resourceSchema = new(resourceSchemaNode);
 
+                // Check if this resource has commonExtensionOverrides
+                bool hasCommonExtensionOverrides =
+                    resourceSchemaNode["commonExtensionOverrides"] is JsonArray overridesCheck
+                    && overridesCheck.Count > 0;
+
                 // Skip if this resource doesn't have OpenAPI fragments
-                if (resourceSchema.OpenApiFragments == null)
+                if (resourceSchema.OpenApiFragments is null)
                 {
+                    if (hasCommonExtensionOverrides)
+                    {
+                        throw new InvalidOperationException(
+                            $"Resource '{resourceSchema.ResourceName.Value}' has commonExtensionOverrides but openApiFragments is null."
+                        );
+                    }
                     continue;
                 }
 
                 JsonNode fragmentsNode = resourceSchema.OpenApiFragments;
 
                 // Skip if this resource doesn't have fragments for this document type
-                if (fragmentsNode[documentTypeKey] == null)
+                if (fragmentsNode[documentTypeKey] is null)
                 {
                     continue;
                 }
