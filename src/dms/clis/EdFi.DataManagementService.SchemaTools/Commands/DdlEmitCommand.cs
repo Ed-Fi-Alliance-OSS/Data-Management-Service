@@ -49,8 +49,8 @@ public static class DdlEmitCommand
 
         var ddlManifestOption = new Option<bool>("--ddl-manifest")
         {
-            Description = "Emit ddl.manifest.json (default: true)",
-            DefaultValueFactory = _ => true,
+            Description = "Emit ddl.manifest.json (default: false)",
+            DefaultValueFactory = _ => false,
         };
 
         var command = new Command(

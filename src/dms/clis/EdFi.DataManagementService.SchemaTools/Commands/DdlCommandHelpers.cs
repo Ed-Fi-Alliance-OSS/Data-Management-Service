@@ -58,7 +58,6 @@ internal static class DdlCommandHelpers
         SqlDialect dialect
     )
     {
-        var effectiveSchemaInfo = effectiveSchemaSet.EffectiveSchema;
         var (sqlDialect, dialectRules) = CreateDialect(dialect);
 
         // Deep-clone the effective schema set because
@@ -71,13 +70,7 @@ internal static class DdlCommandHelpers
 
         LogModelDiagnostics(logger, modelSet);
 
-        // Emit DDL: core + relational model + seed DML.
-        // SeedDmlEmitter uses the original effectiveSchemaInfo (not the cloned set)
-        // because EffectiveSchemaInfo is an immutable record unaffected by model builder mutation.
-        var coreDdl = new CoreDdlEmitter(sqlDialect).Emit();
-        var relationalDdl = new RelationalModelDdlEmitter(sqlDialect).Emit(modelSet);
-        var seedDml = new SeedDmlEmitter(sqlDialect).Emit(effectiveSchemaInfo);
-        var combinedSql = coreDdl + relationalDdl + seedDml;
+        var combinedSql = FullDdlEmitter.Emit(sqlDialect, modelSet);
 
         return new DdlBuildResult(effectiveSchemaSet, modelSet, combinedSql);
     }

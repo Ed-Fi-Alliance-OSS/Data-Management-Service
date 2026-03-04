@@ -211,10 +211,7 @@ public abstract class DdlEmissionGoldenTestBase
             effectiveSchema ??= modelSet.EffectiveSchema;
 
             var sqlDialect = SqlDialectFactory.Create(dialect);
-            var coreDdl = new CoreDdlEmitter(sqlDialect).Emit();
-            var relationalDdl = new RelationalModelDdlEmitter(sqlDialect).Emit(modelSet);
-            var seedDml = new SeedDmlEmitter(sqlDialect).Emit(modelSet.EffectiveSchema);
-            var combinedSql = coreDdl + relationalDdl + seedDml;
+            var combinedSql = FullDdlEmitter.Emit(sqlDialect, modelSet);
 
             entries.Add(new DdlManifestEntry(dialect, combinedSql));
         }
