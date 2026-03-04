@@ -33,3 +33,9 @@ Task completed: Key Unification - synthetic presence validation hardening (nulla
 Decisions: validate synthetic presence exactly when presence SourceJsonPath is null; fail fast unless presence column is nullable boolean and table has matching TableConstraint.NullOrTrue; keep reference-site presence (SourceJsonPath not null) unconstrained by NullOrTrue.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/RootOnlyWritePlanCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RootOnlyWritePlanCompilerTests.cs; tasks.json; progress.txt.
 Blockers/notes: no blockers. Next iteration can enforce remaining key-unification invariants around Precomputed producer accounting.
+
+2026-03-03 - DMS-1045 / reference/design/backend-redesign/epics/15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md
+Task completed: Key Unification - enforce Precomputed producer/accounting invariants (orphan + duplicate fail-fast).
+Decisions: treated Precomputed as key-unification-only; require key-unification inventory whenever any Precomputed binding exists; enforce canonical + synthetic presence producers are Precomputed and count producer ownership exactly once per Precomputed binding; fail fast for orphan and duplicate producers with column-level diagnostics.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/RootOnlyWritePlanCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RootOnlyWritePlanCompilerTests.cs; tasks.json; progress.txt.
+Blockers/notes: no blockers. Next iteration can move to MappingSetCompiler integration to compile write plans for all relational-table resources.

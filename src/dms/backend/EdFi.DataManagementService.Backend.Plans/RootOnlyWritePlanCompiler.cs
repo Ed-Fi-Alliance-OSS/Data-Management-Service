@@ -172,10 +172,7 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
         IReadOnlyList<WriteColumnBinding> bindingsInColumnOrder
     )
     {
-        if (tableModel.KeyUnificationClasses.Count == 0)
-        {
-            return [];
-        }
+        var precomputedBindingIndices = GetPrecomputedBindingIndices(bindingsInColumnOrder);
 
         var columnByName = new Dictionary<DbColumnName, DbColumnModel>(tableModel.Columns.Count);
 
@@ -243,6 +240,18 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
                     bindingIndexByColumn
                 );
 
+                if (
+                    presenceIsSynthetic
+                    && presenceBindingIndex is int syntheticPresenceBindingIndex
+                    && bindingsInColumnOrder[syntheticPresenceBindingIndex].Source
+                        is not WriteValueSource.Precomputed
+                )
+                {
+                    throw new InvalidOperationException(
+                        $"Cannot compile key-unification plan for '{tableModel.Table}': synthetic presence column '{presenceColumn!.Value}' for member '{memberPathColumnName.Value}' must bind as {nameof(WriteValueSource.Precomputed)}."
+                    );
+                }
+
                 membersInOrder[memberIndex] = CreateKeyUnificationMemberWritePlan(
                     tableModel,
                     keyClass.CanonicalColumn,
@@ -261,7 +270,130 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
             );
         }
 
+        ValidatePrecomputedBindingProducerAccounting(
+            tableModel,
+            bindingsInColumnOrder,
+            keyUnificationPlans,
+            precomputedBindingIndices
+        );
+
         return keyUnificationPlans;
+    }
+
+    private static int[] GetPrecomputedBindingIndices(IReadOnlyList<WriteColumnBinding> bindingsInColumnOrder)
+    {
+        return bindingsInColumnOrder
+            .Select((binding, index) => (binding, index))
+            .Where(static tuple => tuple.binding.Source is WriteValueSource.Precomputed)
+            .Select(static tuple => tuple.index)
+            .ToArray();
+    }
+
+    private static void ValidatePrecomputedBindingProducerAccounting(
+        DbTableModel tableModel,
+        IReadOnlyList<WriteColumnBinding> bindingsInColumnOrder,
+        IReadOnlyList<KeyUnificationWritePlan> keyUnificationPlans,
+        IReadOnlyList<int> precomputedBindingIndices
+    )
+    {
+        if (precomputedBindingIndices.Count == 0)
+        {
+            return;
+        }
+
+        if (keyUnificationPlans.Count == 0)
+        {
+            var precomputedColumns = string.Join(
+                ", ",
+                precomputedBindingIndices.Select(index =>
+                    $"'{bindingsInColumnOrder[index].Column.ColumnName.Value}'"
+                )
+            );
+
+            throw new InvalidOperationException(
+                $"Cannot compile key-unification plan for '{tableModel.Table}': precomputed bindings {precomputedColumns} require key-unification inventory."
+            );
+        }
+
+        var producerCountByBindingIndex = precomputedBindingIndices.ToDictionary(
+            static bindingIndex => bindingIndex,
+            static _ => 0
+        );
+
+        foreach (var keyUnificationPlan in keyUnificationPlans)
+        {
+            IncrementPrecomputedProducerCount(
+                tableModel,
+                bindingsInColumnOrder,
+                producerCountByBindingIndex,
+                keyUnificationPlan.CanonicalBindingIndex
+            );
+
+            foreach (var member in keyUnificationPlan.MembersInOrder)
+            {
+                if (!member.PresenceIsSynthetic || member.PresenceBindingIndex is not int bindingIndex)
+                {
+                    continue;
+                }
+
+                IncrementPrecomputedProducerCount(
+                    tableModel,
+                    bindingsInColumnOrder,
+                    producerCountByBindingIndex,
+                    bindingIndex
+                );
+            }
+        }
+
+        var orphanedPrecomputedColumns = producerCountByBindingIndex
+            .Where(static entry => entry.Value == 0)
+            .Select(entry => $"'{bindingsInColumnOrder[entry.Key].Column.ColumnName.Value}'")
+            .ToArray();
+
+        if (orphanedPrecomputedColumns.Length > 0)
+        {
+            throw new InvalidOperationException(
+                $"Cannot compile key-unification plan for '{tableModel.Table}': precomputed bindings not produced by key-unification inventory: {string.Join(", ", orphanedPrecomputedColumns)}."
+            );
+        }
+
+        var duplicateProducerColumns = producerCountByBindingIndex
+            .Where(static entry => entry.Value > 1)
+            .Select(entry => $"'{bindingsInColumnOrder[entry.Key].Column.ColumnName.Value}'")
+            .ToArray();
+
+        if (duplicateProducerColumns.Length > 0)
+        {
+            throw new InvalidOperationException(
+                $"Cannot compile key-unification plan for '{tableModel.Table}': precomputed bindings produced multiple times by key-unification inventory: {string.Join(", ", duplicateProducerColumns)}."
+            );
+        }
+    }
+
+    private static void IncrementPrecomputedProducerCount(
+        DbTableModel tableModel,
+        IReadOnlyList<WriteColumnBinding> bindingsInColumnOrder,
+        IDictionary<int, int> producerCountByBindingIndex,
+        int bindingIndex
+    )
+    {
+        if (
+            bindingIndex < 0
+            || bindingIndex >= bindingsInColumnOrder.Count
+            || !producerCountByBindingIndex.ContainsKey(bindingIndex)
+        )
+        {
+            var columnName =
+                bindingIndex >= 0 && bindingIndex < bindingsInColumnOrder.Count
+                    ? bindingsInColumnOrder[bindingIndex].Column.ColumnName.Value
+                    : $"<binding-index-{bindingIndex}>";
+
+            throw new InvalidOperationException(
+                $"Cannot compile key-unification plan for '{tableModel.Table}': binding '{columnName}' must bind as {nameof(WriteValueSource.Precomputed)}."
+            );
+        }
+
+        producerCountByBindingIndex[bindingIndex]++;
     }
 
     /// <summary>

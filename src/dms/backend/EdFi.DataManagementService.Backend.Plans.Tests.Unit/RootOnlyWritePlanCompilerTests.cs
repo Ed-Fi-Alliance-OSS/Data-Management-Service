@@ -225,23 +225,16 @@ public class Given_RootOnlyWritePlanCompiler
     }
 
     [Test]
-    public void It_should_allow_precomputed_stored_non_key_columns_for_write_compilation()
+    public void It_should_fail_fast_for_precomputed_binding_without_key_unification_inventory()
     {
         var precomputedColumnModel = CreateRootOnlyModelWithStoredPrecomputedNonKeyColumn();
-        var compiler = new RootOnlyWritePlanCompiler(SqlDialect.Pgsql);
+        var act = () => new RootOnlyWritePlanCompiler(SqlDialect.Pgsql).Compile(precomputedColumnModel);
 
-        RootOnlyWritePlanCompiler.IsSupported(precomputedColumnModel).Should().BeTrue();
-
-        var wasCompiled = compiler.TryCompile(precomputedColumnModel, out var writePlan);
-
-        wasCompiled.Should().BeTrue();
-        writePlan.Should().NotBeNull();
-        writePlan!
-            .TablePlansInDependencyOrder.Single()
-            .ColumnBindings.Where(binding => binding.Column.ColumnName.Value == "CanonicalSchoolYear")
-            .Single()
-            .Source.Should()
-            .BeOfType<WriteValueSource.Precomputed>();
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile key-unification plan for 'edfi.Student': precomputed bindings 'CanonicalSchoolYear' require key-unification inventory.*"
+            );
     }
 
     [Test]
@@ -542,6 +535,15 @@ public class Given_RootOnlyWritePlanCompiler
                     PresenceIsSynthetic: false
                 )
             );
+
+        var syntheticPresenceBindingIndex = (
+            (KeyUnificationMemberWritePlan.DescriptorMember)descriptorClassPlan.MembersInOrder[0]
+        ).PresenceBindingIndex;
+        syntheticPresenceBindingIndex.Should().NotBeNull();
+        tablePlan
+            .ColumnBindings[syntheticPresenceBindingIndex!.Value]
+            .Source.Should()
+            .BeOfType<WriteValueSource.Precomputed>();
     }
 
     [Test]
@@ -585,6 +587,32 @@ public class Given_RootOnlyWritePlanCompiler
             .Throw<InvalidOperationException>()
             .WithMessage(
                 "Cannot compile key-unification plan for 'edfi.Student': canonical column 'SchoolYear' must bind as Precomputed.*"
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_key_unification_inventory_does_not_account_for_all_precomputed_bindings()
+    {
+        var unsupportedModel = CreateRootOnlyModelWithOrphanPrecomputedBinding();
+        var act = () => new RootOnlyWritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile key-unification plan for 'edfi.Student': precomputed bindings not produced by key-unification inventory: 'SchoolYearCanonicalOrphan'.*"
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_precomputed_binding_has_multiple_key_unification_producers()
+    {
+        var unsupportedModel = CreateRootOnlyModelWithDuplicatePrecomputedProducer();
+        var act = () => new RootOnlyWritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile key-unification plan for 'edfi.Student': precomputed bindings produced multiple times by key-unification inventory: 'SchoolYearCanonical'.*"
             );
     }
 
@@ -922,6 +950,54 @@ public class Given_RootOnlyWritePlanCompiler
         };
     }
 
+    private static RelationalResourceModel CreateRootOnlyModelWithOrphanPrecomputedBinding()
+    {
+        var model = CreateRootOnlyModelWithCompiledKeyUnificationInventory();
+        var rootTable = model.Root with
+        {
+            Columns =
+            [
+                .. model.Root.Columns,
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("SchoolYearCanonicalOrphan"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: true,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+        };
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
+        };
+    }
+
+    private static RelationalResourceModel CreateRootOnlyModelWithDuplicatePrecomputedProducer()
+    {
+        var model = CreateRootOnlyModelWithCompiledKeyUnificationInventory();
+        var rootTable = model.Root with
+        {
+            KeyUnificationClasses =
+            [
+                .. model.Root.KeyUnificationClasses,
+                new KeyUnificationClass(
+                    CanonicalColumn: new DbColumnName("SchoolYearCanonical"),
+                    MemberPathColumns: [new DbColumnName("SchoolYearPrimary")]
+                ),
+            ],
+        };
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
+        };
+    }
+
     private static RelationalResourceModel CreateRootOnlyModelWithUnifiedAliasKeyColumn()
     {
         var model = CreateSupportedRootOnlyModel();
@@ -1244,6 +1320,23 @@ public class Given_RootOnlyWritePlanCompiler
                     TargetResource: null
                 ),
                 new DbColumnModel(
+                    ColumnName: new DbColumnName("ProgramTypeCodeAlias"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.String),
+                    IsNullable: true,
+                    SourceJsonPath: CreatePath(
+                        "$.addresses[*].programTypeCode",
+                        new JsonPathSegment.Property("addresses"),
+                        new JsonPathSegment.AnyArrayElement(),
+                        new JsonPathSegment.Property("programTypeCode")
+                    ),
+                    TargetResource: null,
+                    Storage: new ColumnStorage.UnifiedAlias(
+                        CanonicalColumn: new DbColumnName("CanonicalProgramTypeCode"),
+                        PresenceColumn: null
+                    )
+                ),
+                new DbColumnModel(
                     ColumnName: new DbColumnName("ProgramTypeDescriptorIdAlias"),
                     Kind: ColumnKind.DescriptorFk,
                     ScalarType: new RelationalScalarType(ScalarKind.Int64),
@@ -1262,7 +1355,16 @@ public class Given_RootOnlyWritePlanCompiler
                 ),
             ],
             Constraints: []
-        );
+        )
+        {
+            KeyUnificationClasses =
+            [
+                new KeyUnificationClass(
+                    CanonicalColumn: new DbColumnName("CanonicalProgramTypeCode"),
+                    MemberPathColumns: [new DbColumnName("ProgramTypeCodeAlias")]
+                ),
+            ],
+        };
 
         return new RelationalResourceModel(
             Resource: new QualifiedResourceName("Ed-Fi", "StudentAddress"),
