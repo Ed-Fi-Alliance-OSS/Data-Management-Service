@@ -196,7 +196,7 @@
       "Run: rg -n \"RootOnlyWritePlanCompiler\" src/dms/backend (should be 0 after rename except historical docs if any)",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Write Plan Compiler",

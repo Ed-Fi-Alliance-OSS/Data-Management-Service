@@ -10,7 +10,7 @@ using EdFi.DataManagementService.Backend.External.Plans;
 namespace EdFi.DataManagementService.Backend.Plans;
 
 /// <summary>
-/// Compiles a thin-slice mapping set from a derived relational model set.
+/// Compiles a mapping set from a derived relational model set.
 /// </summary>
 public sealed class MappingSetCompiler
 {
@@ -28,7 +28,7 @@ public sealed class MappingSetCompiler
         );
 
         var readPlanCompiler = new RootOnlyReadPlanCompiler(modelSet.Dialect);
-        var writePlanCompiler = new RootOnlyWritePlanCompiler(modelSet.Dialect);
+        var writePlanCompiler = new WritePlanCompiler(modelSet.Dialect);
 
         var writePlansByResource = new Dictionary<QualifiedResourceName, ResourceWritePlan>();
         var readPlansByResource = new Dictionary<QualifiedResourceName, ResourceReadPlan>();

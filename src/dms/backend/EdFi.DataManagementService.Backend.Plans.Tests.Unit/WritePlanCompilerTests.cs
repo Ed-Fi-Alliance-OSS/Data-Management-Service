@@ -12,7 +12,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
 [TestFixture]
-public class Given_RootOnlyWritePlanCompiler
+public class Given_WritePlanCompiler
 {
     private RelationalResourceModel _supportedRootOnlyModel = null!;
 
@@ -25,7 +25,7 @@ public class Given_RootOnlyWritePlanCompiler
     [Test]
     public void It_should_compile_stored_column_bindings_in_model_order_with_deterministic_parameter_names()
     {
-        var writePlan = new RootOnlyWritePlanCompiler(SqlDialect.Pgsql).Compile(_supportedRootOnlyModel);
+        var writePlan = new WritePlanCompiler(SqlDialect.Pgsql).Compile(_supportedRootOnlyModel);
         var tablePlan = writePlan.TablePlansInDependencyOrder.Single();
 
         tablePlan
@@ -54,7 +54,7 @@ public class Given_RootOnlyWritePlanCompiler
     [Test]
     public void It_should_emit_canonical_pgsql_insert_sql_using_binding_column_and_parameter_order()
     {
-        var writePlan = new RootOnlyWritePlanCompiler(SqlDialect.Pgsql).Compile(_supportedRootOnlyModel);
+        var writePlan = new WritePlanCompiler(SqlDialect.Pgsql).Compile(_supportedRootOnlyModel);
         var tablePlan = writePlan.TablePlansInDependencyOrder.Single();
 
         tablePlan
@@ -82,7 +82,7 @@ public class Given_RootOnlyWritePlanCompiler
     [Test]
     public void It_should_emit_canonical_mssql_insert_sql_using_binding_column_and_parameter_order()
     {
-        var writePlan = new RootOnlyWritePlanCompiler(SqlDialect.Mssql).Compile(_supportedRootOnlyModel);
+        var writePlan = new WritePlanCompiler(SqlDialect.Mssql).Compile(_supportedRootOnlyModel);
         var tablePlan = writePlan.TablePlansInDependencyOrder.Single();
 
         tablePlan
@@ -115,7 +115,7 @@ public class Given_RootOnlyWritePlanCompiler
     [TestCase(SqlDialect.Mssql)]
     public void It_should_emit_insert_sql_from_column_bindings_in_order(SqlDialect dialect)
     {
-        var tablePlan = new RootOnlyWritePlanCompiler(dialect)
+        var tablePlan = new WritePlanCompiler(dialect)
             .Compile(_supportedRootOnlyModel)
             .TablePlansInDependencyOrder.Single();
 
@@ -134,7 +134,7 @@ public class Given_RootOnlyWritePlanCompiler
         SqlDialect dialect
     )
     {
-        var compiler = new RootOnlyWritePlanCompiler(dialect);
+        var compiler = new WritePlanCompiler(dialect);
 
         var firstInsertSql = compiler
             .Compile(_supportedRootOnlyModel)
@@ -158,7 +158,7 @@ public class Given_RootOnlyWritePlanCompiler
     [Test]
     public void It_should_emit_canonical_pgsql_update_sql_using_non_key_set_columns_and_key_where_columns()
     {
-        var writePlan = new RootOnlyWritePlanCompiler(SqlDialect.Pgsql).Compile(_supportedRootOnlyModel);
+        var writePlan = new WritePlanCompiler(SqlDialect.Pgsql).Compile(_supportedRootOnlyModel);
         var tablePlan = writePlan.TablePlansInDependencyOrder.Single();
 
         tablePlan
@@ -180,7 +180,7 @@ public class Given_RootOnlyWritePlanCompiler
     [Test]
     public void It_should_emit_canonical_mssql_update_sql_using_non_key_set_columns_and_key_where_columns()
     {
-        var writePlan = new RootOnlyWritePlanCompiler(SqlDialect.Mssql).Compile(_supportedRootOnlyModel);
+        var writePlan = new WritePlanCompiler(SqlDialect.Mssql).Compile(_supportedRootOnlyModel);
         var tablePlan = writePlan.TablePlansInDependencyOrder.Single();
 
         tablePlan
@@ -202,7 +202,7 @@ public class Given_RootOnlyWritePlanCompiler
     [Test]
     public void It_should_reuse_column_binding_parameter_names_for_update_where_predicates_in_key_order()
     {
-        var writePlan = new RootOnlyWritePlanCompiler(SqlDialect.Pgsql).Compile(
+        var writePlan = new WritePlanCompiler(SqlDialect.Pgsql).Compile(
             CreateRootOnlyModelWithUpdateKeyParameterNameCollision()
         );
         var tablePlan = writePlan.TablePlansInDependencyOrder.Single();
@@ -234,7 +234,7 @@ public class Given_RootOnlyWritePlanCompiler
     {
         var keyOnlyModel = CreateRootOnlyKeyOnlyModel();
 
-        var writePlan = new RootOnlyWritePlanCompiler(SqlDialect.Pgsql).Compile(keyOnlyModel);
+        var writePlan = new WritePlanCompiler(SqlDialect.Pgsql).Compile(keyOnlyModel);
         var tablePlan = writePlan.TablePlansInDependencyOrder.Single();
 
         tablePlan.UpdateSql.Should().BeNull();
@@ -244,7 +244,7 @@ public class Given_RootOnlyWritePlanCompiler
     public void It_should_compile_resources_with_root_key_unification_classes()
     {
         var keyUnificationModel = CreateRootOnlyModelWithCompiledKeyUnificationInventory();
-        var writePlan = new RootOnlyWritePlanCompiler(SqlDialect.Pgsql).Compile(keyUnificationModel);
+        var writePlan = new WritePlanCompiler(SqlDialect.Pgsql).Compile(keyUnificationModel);
         var tablePlan = writePlan.TablePlansInDependencyOrder.Single();
 
         tablePlan
@@ -256,7 +256,7 @@ public class Given_RootOnlyWritePlanCompiler
     public void It_should_fail_fast_for_precomputed_binding_without_key_unification_inventory()
     {
         var precomputedColumnModel = CreateRootOnlyModelWithStoredPrecomputedNonKeyColumn();
-        var act = () => new RootOnlyWritePlanCompiler(SqlDialect.Pgsql).Compile(precomputedColumnModel);
+        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(precomputedColumnModel);
 
         act.Should()
             .Throw<InvalidOperationException>()
@@ -270,7 +270,7 @@ public class Given_RootOnlyWritePlanCompiler
     {
         var model = CreateSingleTableModelCoveringWriteValueSourceKinds();
 
-        var writePlan = new RootOnlyWritePlanCompiler(SqlDialect.Pgsql).Compile(model);
+        var writePlan = new WritePlanCompiler(SqlDialect.Pgsql).Compile(model);
         var tablePlan = writePlan.TablePlansInDependencyOrder.Single();
 
         tablePlan
@@ -359,7 +359,7 @@ public class Given_RootOnlyWritePlanCompiler
     public void It_should_fail_fast_when_key_column_is_unified_alias()
     {
         var unsupportedModel = CreateRootOnlyModelWithUnifiedAliasKeyColumn();
-        var act = () => new RootOnlyWritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
+        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
 
         act.Should()
             .Throw<InvalidOperationException>()
@@ -372,7 +372,7 @@ public class Given_RootOnlyWritePlanCompiler
     public void It_should_compile_table_plans_for_all_tables_in_dependency_order_for_multi_table_resources()
     {
         var model = CreateSupportedMultiTableModel();
-        var writePlan = new RootOnlyWritePlanCompiler(SqlDialect.Pgsql).Compile(model);
+        var writePlan = new WritePlanCompiler(SqlDialect.Pgsql).Compile(model);
 
         writePlan.TablePlansInDependencyOrder.Should().HaveCount(model.TablesInDependencyOrder.Count);
         writePlan
@@ -407,7 +407,7 @@ public class Given_RootOnlyWritePlanCompiler
     [TestCase(SqlDialect.Mssql)]
     public void It_should_derive_bulk_insert_batching_for_each_compiled_table_plan(SqlDialect dialect)
     {
-        var writePlan = new RootOnlyWritePlanCompiler(dialect).Compile(CreateSupportedMultiTableModel());
+        var writePlan = new WritePlanCompiler(dialect).Compile(CreateSupportedMultiTableModel());
 
         foreach (var tablePlan in writePlan.TablePlansInDependencyOrder)
         {
@@ -426,7 +426,7 @@ public class Given_RootOnlyWritePlanCompiler
         SqlDialect dialect
     )
     {
-        var writePlan = new RootOnlyWritePlanCompiler(dialect).Compile(CreateSupportedMultiTableModel());
+        var writePlan = new WritePlanCompiler(dialect).Compile(CreateSupportedMultiTableModel());
 
         static TableWritePlan GetTablePlan(ResourceWritePlan plan, string tableName)
         {
@@ -517,7 +517,7 @@ public class Given_RootOnlyWritePlanCompiler
     [Test]
     public void It_should_compile_deterministic_table_plans_for_multi_table_resources_under_unified_alias_column_permutations()
     {
-        var compiler = new RootOnlyWritePlanCompiler(SqlDialect.Pgsql);
+        var compiler = new WritePlanCompiler(SqlDialect.Pgsql);
 
         var first = compiler.Compile(CreateSupportedMultiTableModel());
         var second = compiler.Compile(CreateSupportedMultiTableModel());
@@ -537,7 +537,7 @@ public class Given_RootOnlyWritePlanCompiler
         var multiTableModel = CreateSupportedMultiTableModel();
         multiTableModel.TablesInDependencyOrder.Count.Should().BeGreaterThan(1);
 
-        var writePlan = new RootOnlyWritePlanCompiler(SqlDialect.Pgsql).Compile(multiTableModel);
+        var writePlan = new WritePlanCompiler(SqlDialect.Pgsql).Compile(multiTableModel);
 
         writePlan
             .TablePlansInDependencyOrder.Should()
@@ -552,7 +552,7 @@ public class Given_RootOnlyWritePlanCompiler
             StorageKind = ResourceStorageKind.SharedDescriptorTable,
         };
 
-        var act = () => new RootOnlyWritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
+        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
 
         act.Should()
             .Throw<NotSupportedException>()
@@ -563,7 +563,7 @@ public class Given_RootOnlyWritePlanCompiler
     public void It_should_compile_key_unification_plans_with_scalar_and_descriptor_members_in_member_order()
     {
         var model = CreateRootOnlyModelWithCompiledKeyUnificationInventory();
-        var tablePlan = new RootOnlyWritePlanCompiler(SqlDialect.Pgsql)
+        var tablePlan = new WritePlanCompiler(SqlDialect.Pgsql)
             .Compile(model)
             .TablePlansInDependencyOrder.Single();
 
@@ -669,7 +669,7 @@ public class Given_RootOnlyWritePlanCompiler
     public void It_should_fail_fast_when_synthetic_presence_column_is_missing_null_or_true_constraint()
     {
         var unsupportedModel = CreateRootOnlyModelWithMissingSyntheticPresenceConstraint();
-        var act = () => new RootOnlyWritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
+        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
 
         act.Should()
             .Throw<InvalidOperationException>()
@@ -682,7 +682,7 @@ public class Given_RootOnlyWritePlanCompiler
     public void It_should_treat_presence_columns_with_source_paths_as_non_synthetic_without_null_or_true_constraint()
     {
         var model = CreateRootOnlyModelWithReferenceSitePresence();
-        var tablePlan = new RootOnlyWritePlanCompiler(SqlDialect.Pgsql)
+        var tablePlan = new WritePlanCompiler(SqlDialect.Pgsql)
             .Compile(model)
             .TablePlansInDependencyOrder.Single();
         var descriptorClassPlan = tablePlan.KeyUnificationPlans[1];
@@ -700,7 +700,7 @@ public class Given_RootOnlyWritePlanCompiler
     public void It_should_fail_fast_when_key_unification_canonical_column_is_not_precomputed()
     {
         var unsupportedModel = CreateRootOnlyModelWithKeyUnificationClass();
-        var act = () => new RootOnlyWritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
+        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
 
         act.Should()
             .Throw<InvalidOperationException>()
@@ -713,7 +713,7 @@ public class Given_RootOnlyWritePlanCompiler
     public void It_should_fail_fast_when_key_unification_inventory_does_not_account_for_all_precomputed_bindings()
     {
         var unsupportedModel = CreateRootOnlyModelWithOrphanPrecomputedBinding();
-        var act = () => new RootOnlyWritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
+        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
 
         act.Should()
             .Throw<InvalidOperationException>()
@@ -726,7 +726,7 @@ public class Given_RootOnlyWritePlanCompiler
     public void It_should_fail_fast_when_precomputed_binding_has_multiple_key_unification_producers()
     {
         var unsupportedModel = CreateRootOnlyModelWithDuplicatePrecomputedProducer();
-        var act = () => new RootOnlyWritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
+        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
 
         act.Should()
             .Throw<InvalidOperationException>()

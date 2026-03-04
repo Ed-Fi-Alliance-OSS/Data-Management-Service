@@ -12,7 +12,7 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// <summary>
 /// Compiles deterministic relational write plans across all dependency-ordered tables for relational-table resources.
 /// </summary>
-public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
+public sealed class WritePlanCompiler(SqlDialect dialect)
 {
     private readonly SqlDialect _dialect = dialect;
     private readonly SimpleInsertSqlEmitter _insertSqlEmitter = new(dialect);
