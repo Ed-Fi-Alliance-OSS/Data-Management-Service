@@ -569,10 +569,7 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         var keyColumns = keyColumnsInKeyOrder.ToHashSet();
 
         var writableNonKeyBindingsInOrder = bindingsInColumnOrder
-            .Where(binding =>
-                binding.Column.Storage is ColumnStorage.Stored
-                && !keyColumns.Contains(binding.Column.ColumnName)
-            )
+            .Where(binding => !keyColumns.Contains(binding.Column.ColumnName))
             .ToArray();
 
         if (writableNonKeyBindingsInOrder.Length == 0)
@@ -580,28 +577,13 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
             return null;
         }
 
-        var parameterNameByColumn = new Dictionary<DbColumnName, string>(bindingsInColumnOrder.Count);
-
-        foreach (var binding in bindingsInColumnOrder)
-        {
-            parameterNameByColumn[binding.Column.ColumnName] = binding.ParameterName;
-        }
-
-        var keyParameterNamesInKeyOrder = new string[keyColumnsInKeyOrder.Length];
-
-        for (var index = 0; index < keyColumnsInKeyOrder.Length; index++)
-        {
-            var keyColumn = keyColumnsInKeyOrder[index];
-
-            if (!parameterNameByColumn.TryGetValue(keyColumn, out var keyParameterName))
-            {
-                throw new InvalidOperationException(
-                    $"Cannot emit update SQL for '{tableModel.Table}': key column '{keyColumn.Value}' does not have a write binding parameter."
-                );
-            }
-
-            keyParameterNamesInKeyOrder[index] = keyParameterName;
-        }
+        var parameterNameByColumn = BuildParameterNameByColumn(bindingsInColumnOrder);
+        var keyParameterNamesInKeyOrder = DeriveRequiredKeyParameterNamesInOrder(
+            tableModel,
+            keyColumnsInKeyOrder,
+            parameterNameByColumn,
+            sqlOperation: "update"
+        );
 
         return _updateSqlEmitter.Emit(
             tableModel.Table,
@@ -638,6 +620,21 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
             );
         }
 
+        var parameterNameByColumn = BuildParameterNameByColumn(bindingsInColumnOrder);
+        var keyParameterNamesInOrder = DeriveRequiredKeyParameterNamesInOrder(
+            tableModel,
+            keyColumnsInOrder,
+            parameterNameByColumn,
+            sqlOperation: "delete-by-parent"
+        );
+
+        return _deleteSqlEmitter.Emit(tableModel.Table, keyColumnsInOrder, keyParameterNamesInOrder);
+    }
+
+    private static Dictionary<DbColumnName, string> BuildParameterNameByColumn(
+        IReadOnlyList<WriteColumnBinding> bindingsInColumnOrder
+    )
+    {
         var parameterNameByColumn = new Dictionary<DbColumnName, string>(bindingsInColumnOrder.Count);
 
         foreach (var binding in bindingsInColumnOrder)
@@ -645,23 +642,33 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
             parameterNameByColumn[binding.Column.ColumnName] = binding.ParameterName;
         }
 
-        var keyParameterNamesInOrder = new string[keyColumnsInOrder.Length];
+        return parameterNameByColumn;
+    }
 
-        for (var index = 0; index < keyColumnsInOrder.Length; index++)
+    private static string[] DeriveRequiredKeyParameterNamesInOrder(
+        DbTableModel tableModel,
+        IReadOnlyList<DbColumnName> keyColumnsInOrder,
+        IReadOnlyDictionary<DbColumnName, string> parameterNameByColumn,
+        string sqlOperation
+    )
+    {
+        var keyParameterNamesInOrder = new string[keyColumnsInOrder.Count];
+
+        for (var index = 0; index < keyColumnsInOrder.Count; index++)
         {
             var keyColumn = keyColumnsInOrder[index];
 
             if (!parameterNameByColumn.TryGetValue(keyColumn, out var keyParameterName))
             {
                 throw new InvalidOperationException(
-                    $"Cannot emit delete-by-parent SQL for '{tableModel.Table}': key column '{keyColumn.Value}' does not have a write binding parameter."
+                    $"Cannot emit {sqlOperation} SQL for '{tableModel.Table}': key column '{keyColumn.Value}' does not have a write binding parameter."
                 );
             }
 
             keyParameterNamesInOrder[index] = keyParameterName;
         }
 
-        return _deleteSqlEmitter.Emit(tableModel.Table, keyColumnsInOrder, keyParameterNamesInOrder);
+        return keyParameterNamesInOrder;
     }
 
     /// <summary>

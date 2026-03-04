@@ -230,9 +230,9 @@
     "description": "Remove duplication in TryEmitUpdateSql and TryEmitDeleteByParentSql. Acceptance: extract a helper that builds a parameter-name lookup from bindings (e.g., Dictionary<DbColumnName,string>) and reuse it in both emitters. Remove redundant ColumnStorage.Stored checks where bindings are already stored-only, without changing emitted SQL or exceptions. Update/keep unit tests to lock identical SQL output and error messages.",
     "steps-to-verify": [
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj",
-      "Run: rg -n \"new Dictionary<DbColumnName, string>\\(\" src/dms/backend/EdFi.DataManagementService.Backend.Plans/RootOnlyWritePlanCompiler.cs (ensure duplication is removed)"
+      "Run: rg -n \"new Dictionary<DbColumnName, string>\\(\" src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanCompiler.cs (ensure duplication is removed)"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Refactor",
