@@ -111,6 +111,50 @@ public class Given_RootOnlyWritePlanCompiler
         tablePlan.BulkInsertBatching.MaxParametersPerCommand.Should().Be(2100);
     }
 
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_emit_insert_sql_from_column_bindings_in_order(SqlDialect dialect)
+    {
+        var tablePlan = new RootOnlyWritePlanCompiler(dialect)
+            .Compile(_supportedRootOnlyModel)
+            .TablePlansInDependencyOrder.Single();
+
+        var expectedInsertSql = new SimpleInsertSqlEmitter(dialect).Emit(
+            tablePlan.TableModel.Table,
+            tablePlan.ColumnBindings.Select(static binding => binding.Column.ColumnName).ToArray(),
+            tablePlan.ColumnBindings.Select(static binding => binding.ParameterName).ToArray()
+        );
+
+        tablePlan.InsertSql.Should().Be(expectedInsertSql);
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_emit_identical_insert_sql_across_repeated_compilation_and_permuted_non_writable_column_order(
+        SqlDialect dialect
+    )
+    {
+        var compiler = new RootOnlyWritePlanCompiler(dialect);
+
+        var firstInsertSql = compiler
+            .Compile(_supportedRootOnlyModel)
+            .TablePlansInDependencyOrder.Single()
+            .InsertSql;
+
+        var secondInsertSql = compiler
+            .Compile(_supportedRootOnlyModel)
+            .TablePlansInDependencyOrder.Single()
+            .InsertSql;
+
+        var permutedInsertSql = compiler
+            .Compile(CreateSupportedRootOnlyModelWithUnifiedAliasColumnFirst())
+            .TablePlansInDependencyOrder.Single()
+            .InsertSql;
+
+        firstInsertSql.Should().Be(secondInsertSql);
+        permutedInsertSql.Should().Be(firstInsertSql);
+    }
+
     [Test]
     public void It_should_emit_canonical_pgsql_update_sql_using_non_key_set_columns_and_key_where_columns()
     {
@@ -572,6 +616,27 @@ public class Given_RootOnlyWritePlanCompiler
                 ]
             ),
         };
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
+        };
+    }
+
+    private static RelationalResourceModel CreateSupportedRootOnlyModelWithUnifiedAliasColumnFirst()
+    {
+        var model = CreateSupportedRootOnlyModel();
+
+        var unifiedAliasColumns = model
+            .Root.Columns.Where(static column => column.Storage is ColumnStorage.UnifiedAlias)
+            .ToArray();
+
+        var storedColumns = model
+            .Root.Columns.Where(static column => column.Storage is ColumnStorage.Stored)
+            .ToArray();
+
+        var rootTable = model.Root with { Columns = [.. unifiedAliasColumns, .. storedColumns] };
 
         return model with
         {

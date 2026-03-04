@@ -9,3 +9,9 @@ Task completed: Write Plan Compiler - deterministic single-table stored/writable
 Decisions: allow stored non-key columns without SourceJsonPath in thin-slice support and bind as WriteValueSource.Precomputed placeholder; keep UnifiedAlias excluded from bindings; fail fast when a key column is UnifiedAlias (non-writable); added source-coverage test for DocumentId/ParentKeyPart/Ordinal/Scalar(scope-relative incl "$" )/DocumentReference/DescriptorReference/Precomputed.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/ThinSliceWritePlanSupportEvaluator.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/RootOnlyWritePlanCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RootOnlyWritePlanCompilerTests.cs; tasks.json; progress.txt.
 Blockers/notes: no blockers. Next iteration can focus on SQL emission stabilization tasks (Insert/Update/DeleteByParent).
+
+2026-03-03 - DMS-1045 / reference/design/backend-redesign/epics/15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md
+Task completed: SQL Emission - InsertSql from compiled ColumnBindings + deterministic repeat/permuted-input coverage (pgsql/mssql).
+Decisions: emit InsertSql from TableWritePlan.ColumnBindings column/parameter order to hard-lock SQL metadata parity; permutation coverage reorders UnifiedAlias input columns (non-writable) to prove stable InsertSql under non-authoritative input ordering.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/RootOnlyWritePlanCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RootOnlyWritePlanCompilerTests.cs; tasks.json; progress.txt.
+Blockers/notes: no blockers. Next iteration can focus on UpdateSql coverage for 1:1 tables.

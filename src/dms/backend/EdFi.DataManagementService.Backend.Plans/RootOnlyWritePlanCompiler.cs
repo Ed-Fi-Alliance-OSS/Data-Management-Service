@@ -114,7 +114,11 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
             );
         }
 
-        var insertSql = _insertSqlEmitter.Emit(rootTable.Table, orderedColumnNames, orderedParameterNames);
+        var insertSql = _insertSqlEmitter.Emit(
+            rootTable.Table,
+            columnBindings.Select(static binding => binding.Column.ColumnName).ToArray(),
+            columnBindings.Select(static binding => binding.ParameterName).ToArray()
+        );
         var updateSql = TryEmitUpdateSql(rootTable, columnBindings);
         var bulkInsertBatching = PlanWriteBatchingConventions.DeriveBulkInsertBatchingInfo(
             _dialect,

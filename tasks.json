@@ -24,7 +24,7 @@
       "Add unit tests that compile the same model twice (and with permuted input ordering) and assert identical InsertSql for both pgsql and mssql",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "SQL Emission",
