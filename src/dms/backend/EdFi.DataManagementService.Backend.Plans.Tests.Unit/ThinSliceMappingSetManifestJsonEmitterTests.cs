@@ -57,8 +57,8 @@ public class Given_ThinSliceMappingSetManifestJsonEmitter
         var resourceNamesByDialect = ReadResourceNamesByDialect(_manifest);
 
         resourceNamesByDialect.Keys.Should().BeEquivalentTo("mssql", "pgsql");
-        resourceNamesByDialect["mssql"].Should().Equal("Ed-Fi.School", "Ed-Fi.Student");
-        resourceNamesByDialect["pgsql"].Should().Equal("Ed-Fi.School", "Ed-Fi.Student");
+        resourceNamesByDialect["mssql"].Should().Equal("Ed-Fi.School");
+        resourceNamesByDialect["pgsql"].Should().Equal("Ed-Fi.School");
     }
 
     [Test]

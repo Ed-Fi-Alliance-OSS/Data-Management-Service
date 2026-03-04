@@ -19,6 +19,7 @@ public class Given_MappingSetLookupExtensions
     private QualifiedResourceName _descriptorResource;
     private QualifiedResourceName _nonRootOnlyResource;
     private QualifiedResourceName _keyUnificationResource;
+    private QualifiedResourceName _projectionMetadataResource;
 
     [SetUp]
     public void Setup()
@@ -30,6 +31,7 @@ public class Given_MappingSetLookupExtensions
         _descriptorResource = fixture.DescriptorResource;
         _nonRootOnlyResource = fixture.NonRootOnlyResource;
         _keyUnificationResource = fixture.KeyUnificationResource;
+        _projectionMetadataResource = fixture.ProjectionMetadataResource;
     }
 
     [Test]
@@ -99,6 +101,18 @@ public class Given_MappingSetLookupExtensions
     }
 
     [Test]
+    public void It_should_throw_actionable_projection_metadata_message_for_omitted_read_plan()
+    {
+        var act = () => _mappingSet.GetReadPlanOrThrow(_projectionMetadataResource);
+
+        act.Should()
+            .Throw<NotSupportedException>()
+            .WithMessage(
+                "*requires reference-identity projection metadata*DocumentReferenceBindings count: 1*E15-S06*"
+            );
+    }
+
+    [Test]
     public void It_should_throw_actionable_key_unification_message_for_omitted_write_plan()
     {
         var act = () => _mappingSet.GetWritePlanOrThrow(_keyUnificationResource);
@@ -133,11 +147,16 @@ public class Given_MappingSetLookupExtensions
         var descriptorResource = new QualifiedResourceName("Ed-Fi", "AcademicSubjectDescriptor");
         var keyUnificationResource = new QualifiedResourceName("Ed-Fi", "Program");
         var supportedResource = new QualifiedResourceName("Ed-Fi", "Student");
+        var projectionMetadataResource = new QualifiedResourceName("Ed-Fi", "StudentProjection");
         var nonRootOnlyResource = new QualifiedResourceName("Ed-Fi", "StudentAddress");
 
         var descriptorModel = CreateDescriptorModel(descriptorResource);
         var keyUnificationModel = CreateRootOnlyModelWithKeyUnification(keyUnificationResource, "Program");
         var supportedModel = CreateRootOnlyModel(supportedResource, "Student");
+        var projectionMetadataModel = CreateRootOnlyModelWithDocumentReferenceBindings(
+            projectionMetadataResource,
+            "StudentProjection"
+        );
         var nonRootOnlyModel = CreateNonRootOnlyModel(nonRootOnlyResource, "StudentAddress");
 
         var resourceKeysInIdOrder = new ResourceKeyEntry[]
@@ -145,7 +164,8 @@ public class Given_MappingSetLookupExtensions
             new(100, descriptorResource, "5.2.0", false),
             new(101, keyUnificationResource, "5.2.0", false),
             new(102, supportedResource, "5.2.0", false),
-            new(103, nonRootOnlyResource, "5.2.0", false),
+            new(103, projectionMetadataResource, "5.2.0", false),
+            new(104, nonRootOnlyResource, "5.2.0", false),
         };
 
         var effectiveSchemaInfo = new EffectiveSchemaInfo(
@@ -200,6 +220,11 @@ public class Given_MappingSetLookupExtensions
                 new ConcreteResourceModel(
                     resourceKeysInIdOrder[3],
                     ResourceStorageKind.RelationalTables,
+                    projectionMetadataModel
+                ),
+                new ConcreteResourceModel(
+                    resourceKeysInIdOrder[4],
+                    ResourceStorageKind.RelationalTables,
                     nonRootOnlyModel
                 ),
             ],
@@ -210,6 +235,7 @@ public class Given_MappingSetLookupExtensions
         );
 
         var writePlan = CreateWritePlan(supportedModel);
+        var projectionMetadataWritePlan = CreateWritePlan(projectionMetadataModel);
         var supportedReadPlan = CreateReadPlan(supportedModel);
         var keyUnificationReadPlan = CreateReadPlan(keyUnificationModel);
 
@@ -233,6 +259,7 @@ public class Given_MappingSetLookupExtensions
                 WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>
                 {
                     [supportedResource] = writePlan,
+                    [projectionMetadataResource] = projectionMetadataWritePlan,
                 },
                 ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>
                 {
@@ -245,7 +272,8 @@ public class Given_MappingSetLookupExtensions
             SupportedResource: supportedResource,
             DescriptorResource: descriptorResource,
             NonRootOnlyResource: nonRootOnlyResource,
-            KeyUnificationResource: keyUnificationResource
+            KeyUnificationResource: keyUnificationResource,
+            ProjectionMetadataResource: projectionMetadataResource
         );
     }
 
@@ -333,6 +361,42 @@ public class Given_MappingSetLookupExtensions
         {
             Root = rootTableWithKeyUnification,
             TablesInDependencyOrder = [rootTableWithKeyUnification],
+        };
+    }
+
+    private static RelationalResourceModel CreateRootOnlyModelWithDocumentReferenceBindings(
+        QualifiedResourceName resource,
+        string tableName
+    )
+    {
+        var model = CreateRootOnlyModel(resource, tableName);
+        var binding = new DocumentReferenceBinding(
+            IsIdentityComponent: false,
+            ReferenceObjectPath: new JsonPathExpression(
+                "$.schoolReference",
+                [new JsonPathSegment.Property("schoolReference")]
+            ),
+            Table: model.Root.Table,
+            FkColumn: new DbColumnName("SchoolYear"),
+            TargetResource: new QualifiedResourceName("Ed-Fi", "School"),
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    ReferenceJsonPath: new JsonPathExpression(
+                        "$.schoolReference.schoolId",
+                        [
+                            new JsonPathSegment.Property("schoolReference"),
+                            new JsonPathSegment.Property("schoolId"),
+                        ]
+                    ),
+                    Column: new DbColumnName("SchoolYear")
+                ),
+            ]
+        );
+
+        return model with
+        {
+            DocumentReferenceBindings = [binding],
         };
     }
 
@@ -486,6 +550,7 @@ public class Given_MappingSetLookupExtensions
         QualifiedResourceName SupportedResource,
         QualifiedResourceName DescriptorResource,
         QualifiedResourceName NonRootOnlyResource,
-        QualifiedResourceName KeyUnificationResource
+        QualifiedResourceName KeyUnificationResource,
+        QualifiedResourceName ProjectionMetadataResource
     );
 }

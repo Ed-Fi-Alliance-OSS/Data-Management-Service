@@ -28,10 +28,12 @@ public class Given_MappingSetCompiler
 
         mappingSet.ReadPlansByResource.Should().ContainKey(fixture.SupportedResource);
         mappingSet.ReadPlansByResource.Should().ContainKey(fixture.KeyUnificationResource);
+        mappingSet.ReadPlansByResource.Should().NotContainKey(fixture.ProjectionMetadataResource);
         mappingSet.ReadPlansByResource.Should().NotContainKey(fixture.NonRootOnlyResource);
         mappingSet.ReadPlansByResource.Should().NotContainKey(fixture.DescriptorResource);
 
         mappingSet.WritePlansByResource.Should().ContainKey(fixture.SupportedResource);
+        mappingSet.WritePlansByResource.Should().ContainKey(fixture.ProjectionMetadataResource);
         mappingSet.WritePlansByResource.Should().NotContainKey(fixture.KeyUnificationResource);
         mappingSet.WritePlansByResource.Should().NotContainKey(fixture.NonRootOnlyResource);
         mappingSet.WritePlansByResource.Should().NotContainKey(fixture.DescriptorResource);
@@ -124,12 +126,17 @@ public class Given_MappingSetCompiler
         var descriptorResource = new QualifiedResourceName("Ed-Fi", "AcademicSubjectDescriptor");
         var keyUnificationResource = new QualifiedResourceName("Ed-Fi", "Program");
         var supportedResource = new QualifiedResourceName("Ed-Fi", "Student");
+        var projectionMetadataResource = new QualifiedResourceName("Ed-Fi", "StudentProjection");
         var nonRootOnlyResource = new QualifiedResourceName("Ed-Fi", "StudentAddress");
         var abstractResource = new QualifiedResourceName("Ed-Fi", "EducationOrganization");
 
         var descriptorModel = CreateDescriptorModel(descriptorResource);
         var keyUnificationModel = CreateRootOnlyModelWithKeyUnification(keyUnificationResource, "Program");
         var supportedModel = CreateRootOnlyModel(supportedResource, "Student");
+        var projectionMetadataModel = CreateRootOnlyModelWithDocumentReferenceBindings(
+            projectionMetadataResource,
+            "StudentProjection"
+        );
         var nonRootOnlyModel = CreateNonRootOnlyModel(nonRootOnlyResource, "StudentAddress");
 
         var resourceKeysInIdOrder = new ResourceKeyEntry[]
@@ -137,8 +144,9 @@ public class Given_MappingSetCompiler
             new(100, descriptorResource, "5.2.0", false),
             new(101, keyUnificationResource, "5.2.0", false),
             new(102, supportedResource, "5.2.0", false),
-            new(103, nonRootOnlyResource, "5.2.0", false),
-            new(104, abstractResource, "5.2.0", true),
+            new(103, projectionMetadataResource, "5.2.0", false),
+            new(104, nonRootOnlyResource, "5.2.0", false),
+            new(105, abstractResource, "5.2.0", true),
         };
 
         var effectiveSchemaInfo = new EffectiveSchemaInfo(
@@ -193,6 +201,11 @@ public class Given_MappingSetCompiler
                 new ConcreteResourceModel(
                     resourceKeysInIdOrder[3],
                     ResourceStorageKind.RelationalTables,
+                    projectionMetadataModel
+                ),
+                new ConcreteResourceModel(
+                    resourceKeysInIdOrder[4],
+                    ResourceStorageKind.RelationalTables,
                     nonRootOnlyModel
                 ),
             ],
@@ -206,6 +219,7 @@ public class Given_MappingSetCompiler
             ModelSet: modelSet,
             SupportedResource: supportedResource,
             KeyUnificationResource: keyUnificationResource,
+            ProjectionMetadataResource: projectionMetadataResource,
             NonRootOnlyResource: nonRootOnlyResource,
             DescriptorResource: descriptorResource,
             ResourceKeysInIdOrder: resourceKeysInIdOrder
@@ -257,6 +271,42 @@ public class Given_MappingSetCompiler
         {
             Root = rootTableWithKeyUnification,
             TablesInDependencyOrder = [rootTableWithKeyUnification],
+        };
+    }
+
+    private static RelationalResourceModel CreateRootOnlyModelWithDocumentReferenceBindings(
+        QualifiedResourceName resource,
+        string tableName
+    )
+    {
+        var model = CreateRootOnlyModel(resource, tableName);
+        var binding = new DocumentReferenceBinding(
+            IsIdentityComponent: false,
+            ReferenceObjectPath: new JsonPathExpression(
+                "$.schoolReference",
+                [new JsonPathSegment.Property("schoolReference")]
+            ),
+            Table: model.Root.Table,
+            FkColumn: new DbColumnName("SchoolYear"),
+            TargetResource: new QualifiedResourceName("Ed-Fi", "School"),
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    ReferenceJsonPath: new JsonPathExpression(
+                        "$.schoolReference.schoolId",
+                        [
+                            new JsonPathSegment.Property("schoolReference"),
+                            new JsonPathSegment.Property("schoolId"),
+                        ]
+                    ),
+                    Column: new DbColumnName("SchoolYear")
+                ),
+            ]
+        );
+
+        return model with
+        {
+            DocumentReferenceBindings = [binding],
         };
     }
 
@@ -409,6 +459,7 @@ public class Given_MappingSetCompiler
         DerivedRelationalModelSet ModelSet,
         QualifiedResourceName SupportedResource,
         QualifiedResourceName KeyUnificationResource,
+        QualifiedResourceName ProjectionMetadataResource,
         QualifiedResourceName NonRootOnlyResource,
         QualifiedResourceName DescriptorResource,
         IReadOnlyList<ResourceKeyEntry> ResourceKeysInIdOrder

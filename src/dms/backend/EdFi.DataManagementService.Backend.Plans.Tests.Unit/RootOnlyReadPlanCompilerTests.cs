@@ -167,6 +167,22 @@ public class Given_RootOnlyReadPlanCompiler
     }
 
     [Test]
+    public void It_should_mark_root_only_resources_with_document_reference_bindings_as_unsupported()
+    {
+        var unsupportedModel = CreateRootOnlyModelWithDocumentReferenceBindings();
+
+        RootOnlyReadPlanCompiler.IsSupported(unsupportedModel).Should().BeFalse();
+    }
+
+    [Test]
+    public void It_should_mark_root_only_resources_with_descriptor_edge_sources_as_unsupported()
+    {
+        var unsupportedModel = CreateRootOnlyModelWithDescriptorEdgeSources();
+
+        RootOnlyReadPlanCompiler.IsSupported(unsupportedModel).Should().BeFalse();
+    }
+
+    [Test]
     public void It_should_fail_fast_for_unsupported_resources()
     {
         var unsupportedModel = _supportedRootOnlyModel with
@@ -178,7 +194,9 @@ public class Given_RootOnlyReadPlanCompiler
 
         act.Should()
             .Throw<NotSupportedException>()
-            .WithMessage("Only root-only relational-table resources are supported.*");
+            .WithMessage(
+                "Only root-only relational-table resources without projection metadata dependencies are supported.*"
+            );
     }
 
     [Test]
@@ -192,6 +210,28 @@ public class Given_RootOnlyReadPlanCompiler
             .WithMessage(
                 "Cannot compile read plan for '*': expected exactly one root document-id key column*"
             );
+    }
+
+    [Test]
+    public void It_should_fail_fast_for_root_only_resources_that_require_reference_identity_projection_metadata()
+    {
+        var unsupportedModel = CreateRootOnlyModelWithDocumentReferenceBindings();
+        var act = () => new RootOnlyReadPlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
+
+        act.Should()
+            .Throw<NotSupportedException>()
+            .WithMessage("*without projection metadata dependencies*DocumentReferenceBindingCount: 1*");
+    }
+
+    [Test]
+    public void It_should_fail_fast_for_root_only_resources_that_require_descriptor_projection_metadata()
+    {
+        var unsupportedModel = CreateRootOnlyModelWithDescriptorEdgeSources();
+        var act = () => new RootOnlyReadPlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
+
+        act.Should()
+            .Throw<NotSupportedException>()
+            .WithMessage("*without projection metadata dependencies*DescriptorEdgeSourceCount: 1*");
     }
 
     [Test]
@@ -284,6 +324,59 @@ public class Given_RootOnlyReadPlanCompiler
             DocumentReferenceBindings: [],
             DescriptorEdgeSources: []
         );
+    }
+
+    private static RelationalResourceModel CreateRootOnlyModelWithDocumentReferenceBindings()
+    {
+        var model = CreateSupportedRootOnlyModel();
+        var binding = new DocumentReferenceBinding(
+            IsIdentityComponent: false,
+            ReferenceObjectPath: new JsonPathExpression(
+                "$.schoolReference",
+                [new JsonPathSegment.Property("schoolReference")]
+            ),
+            Table: model.Root.Table,
+            FkColumn: new DbColumnName("LocalEducationAgencyId"),
+            TargetResource: new QualifiedResourceName("Ed-Fi", "School"),
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    ReferenceJsonPath: new JsonPathExpression(
+                        "$.schoolReference.schoolId",
+                        [
+                            new JsonPathSegment.Property("schoolReference"),
+                            new JsonPathSegment.Property("schoolId"),
+                        ]
+                    ),
+                    Column: new DbColumnName("LocalEducationAgencyId")
+                ),
+            ]
+        );
+
+        return model with
+        {
+            DocumentReferenceBindings = [binding],
+        };
+    }
+
+    private static RelationalResourceModel CreateRootOnlyModelWithDescriptorEdgeSources()
+    {
+        var model = CreateSupportedRootOnlyModel();
+        var descriptorEdgeSource = new DescriptorEdgeSource(
+            IsIdentityComponent: false,
+            DescriptorValuePath: new JsonPathExpression(
+                "$.academicSubjectDescriptor",
+                [new JsonPathSegment.Property("academicSubjectDescriptor")]
+            ),
+            Table: model.Root.Table,
+            FkColumn: new DbColumnName("LocalEducationAgencyId"),
+            DescriptorResource: new QualifiedResourceName("Ed-Fi", "AcademicSubjectDescriptor")
+        );
+
+        return model with
+        {
+            DescriptorEdgeSources = [descriptorEdgeSource],
+        };
     }
 
     private static RelationalResourceModel CreateRootOnlyModelWithoutDocumentIdInKey()

@@ -26,8 +26,7 @@ public sealed class RootOnlyReadPlanCompiler(SqlDialect dialect)
     {
         ArgumentNullException.ThrowIfNull(resourceModel);
 
-        return resourceModel.StorageKind == ResourceStorageKind.RelationalTables
-            && resourceModel.TablesInDependencyOrder.Count == 1;
+        return ThinSliceReadPlanSupportEvaluator.Evaluate(resourceModel).IsSupported;
     }
 
     /// <summary>
@@ -39,14 +38,15 @@ public sealed class RootOnlyReadPlanCompiler(SqlDialect dialect)
     )
     {
         ArgumentNullException.ThrowIfNull(resourceModel);
+        var supportResult = ThinSliceReadPlanSupportEvaluator.Evaluate(resourceModel);
 
-        if (!IsSupported(resourceModel))
+        if (!supportResult.IsSupported)
         {
             readPlan = null;
             return false;
         }
 
-        readPlan = Compile(resourceModel);
+        readPlan = CompileCore(resourceModel, supportResult);
         return true;
     }
 
@@ -56,14 +56,28 @@ public sealed class RootOnlyReadPlanCompiler(SqlDialect dialect)
     public ResourceReadPlan Compile(RelationalResourceModel resourceModel)
     {
         ArgumentNullException.ThrowIfNull(resourceModel);
+        var supportResult = ThinSliceReadPlanSupportEvaluator.Evaluate(resourceModel);
 
-        if (!IsSupported(resourceModel))
+        return CompileCore(resourceModel, supportResult);
+    }
+
+    /// <summary>
+    /// Compiles a root-table read plan using deterministic select-list ordering, keyset joins, and ordering clauses.
+    /// </summary>
+    private ResourceReadPlan CompileCore(
+        RelationalResourceModel resourceModel,
+        ThinSliceReadPlanSupportResult supportResult
+    )
+    {
+        if (!supportResult.IsSupported)
         {
             throw new NotSupportedException(
-                "Only root-only relational-table resources are supported. "
+                "Only root-only relational-table resources without projection metadata dependencies are supported. "
                     + $"Resource: {resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}, "
-                    + $"StorageKind: {resourceModel.StorageKind}, "
-                    + $"TableCount: {resourceModel.TablesInDependencyOrder.Count}."
+                    + $"StorageKind: {supportResult.StorageKind}, "
+                    + $"TableCount: {supportResult.TableCount}, "
+                    + $"DocumentReferenceBindingCount: {supportResult.DocumentReferenceBindingCount}, "
+                    + $"DescriptorEdgeSourceCount: {supportResult.DescriptorEdgeSourceCount}."
             );
         }
 

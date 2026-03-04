@@ -22,6 +22,7 @@ Design references:
 - Owns the first end-to-end runtime compilation fallback that returns a usable `MappingSet` for a selection key.
 - “Root-only” means the resource’s `RelationalResourceModel.TablesInDependencyOrder` contains exactly one table (the root), with no child/collection tables and no `_ext` tables for that resource.
 - Descriptor resources stored in `dms.Descriptor` are out of scope for this story (handled by the descriptor read/write stories).
+- For read plans, root-only resources that require projection metadata (`DocumentReferenceBindings` and/or `DescriptorEdgeSources`) are intentionally omitted in this thin slice; lookups must fail fast with an actionable next-story pointer to `E15-S06 (06-projection-plan-compilers.md)`.
 
 ## Acceptance Criteria
 
@@ -40,6 +41,9 @@ Design references:
 - For non-root-only resources, behavior is deterministic:
   - either plans are omitted and lookups fail fast with an actionable error message, or
   - the compiler rejects the mapping set at compile time with an actionable error message.
+- For root-only resources that require projection metadata, behavior is deterministic:
+  - read plans are omitted, and
+  - read-plan lookup fails fast with an actionable error message that points to `E15-S06 (06-projection-plan-compilers.md)`.
 - Unit tests validate:
   - canonicalization stability,
   - parameter naming determinism,

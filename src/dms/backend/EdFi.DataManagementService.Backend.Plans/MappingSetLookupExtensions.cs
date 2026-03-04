@@ -16,6 +16,7 @@ public static class MappingSetLookupExtensions
     private const string WriteCollectionsAndKeyUnificationStoryRef =
         "E15-S04 (04-write-plan-compiler-collections-and-extensions.md)";
     private const string ReadHydrationStoryRef = "E15-S05 (05-read-plan-compiler-hydration.md)";
+    private const string ReadProjectionStoryRef = "E15-S06 (06-projection-plan-compilers.md)";
     private const string DescriptorWriteStoryRef = "E07-S06 (06-descriptor-writes.md)";
     private const string DescriptorReadStoryRef = "E08-S05 (05-descriptor-endpoints.md)";
 
@@ -117,16 +118,44 @@ public static class MappingSetLookupExtensions
             );
         }
 
-        var resourceModel = concreteResourceModel.RelationalModel;
+        var supportResult = ThinSliceReadPlanSupportEvaluator.Evaluate(concreteResourceModel.RelationalModel);
 
-        if (resourceModel.TablesInDependencyOrder.Count != 1)
+        switch (supportResult.UnsupportedReason)
         {
-            throw new NotSupportedException(
-                $"Read plan for resource '{FormatResource(resource)}' was intentionally omitted: "
-                    + "thin-slice read compilation supports only root-only resources "
-                    + $"(TablesInDependencyOrder.Count == 1, actual {resourceModel.TablesInDependencyOrder.Count}). "
-                    + $"Next story: {ReadHydrationStoryRef}."
-            );
+            case ThinSliceReadPlanUnsupportedReason.None:
+                break;
+            case ThinSliceReadPlanUnsupportedReason.NonRootOnly:
+                throw new NotSupportedException(
+                    $"Read plan for resource '{FormatResource(resource)}' was intentionally omitted: "
+                        + "thin-slice read compilation supports only root-only resources "
+                        + $"(TablesInDependencyOrder.Count == 1, actual {supportResult.TableCount}). "
+                        + $"Next story: {ReadHydrationStoryRef}."
+                );
+            case ThinSliceReadPlanUnsupportedReason.RequiresReferenceIdentityProjectionMetadata:
+                throw new NotSupportedException(
+                    $"Read plan for resource '{FormatResource(resource)}' was intentionally omitted: "
+                        + $"resource requires reference-identity projection metadata "
+                        + $"(DocumentReferenceBindings count: {supportResult.DocumentReferenceBindingCount}). "
+                        + $"Next story: {ReadProjectionStoryRef}."
+                );
+            case ThinSliceReadPlanUnsupportedReason.RequiresDescriptorProjectionMetadata:
+                throw new NotSupportedException(
+                    $"Read plan for resource '{FormatResource(resource)}' was intentionally omitted: "
+                        + $"resource requires descriptor projection metadata "
+                        + $"(DescriptorEdgeSources count: {supportResult.DescriptorEdgeSourceCount}). "
+                        + $"Next story: {ReadProjectionStoryRef}."
+                );
+            case ThinSliceReadPlanUnsupportedReason.NonRelationalStorage:
+                throw new NotSupportedException(
+                    $"Read plan for resource '{FormatResource(resource)}' was intentionally omitted: "
+                        + $"storage kind '{supportResult.StorageKind}' is out of thin-slice read runtime compilation scope. "
+                        + $"Next story: {ReadHydrationStoryRef}."
+                );
+            default:
+                throw new InvalidOperationException(
+                    $"Read plan lookup failed for resource '{FormatResource(resource)}': "
+                        + $"unsupported reason '{supportResult.UnsupportedReason}' is not recognized."
+                );
         }
 
         throw new InvalidOperationException(
