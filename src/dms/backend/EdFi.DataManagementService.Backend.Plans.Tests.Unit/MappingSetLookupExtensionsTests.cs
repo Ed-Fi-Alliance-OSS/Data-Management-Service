@@ -146,6 +146,31 @@ public class Given_MappingSetLookupExtensions
             .WithMessage("*does not contain resource*Ed-Fi.UnknownResource*");
     }
 
+    [Test]
+    public void It_should_match_legacy_scan_behavior_for_omitted_write_plan_lookup()
+    {
+        var unknownResource = new QualifiedResourceName("Ed-Fi", "UnknownResource");
+
+        QualifiedResourceName[] resourcesToCompare =
+        [
+            _descriptorResource,
+            _nonRootOnlyResource,
+            _keyUnificationResource,
+            unknownResource,
+        ];
+
+        foreach (var resource in resourcesToCompare)
+        {
+            var expectedException = CaptureException(() =>
+                GetWritePlanOrThrowUsingLegacyConcreteResourceScan(_mappingSet, resource)
+            );
+            var actualException = CaptureException(() => _mappingSet.GetWritePlanOrThrow(resource));
+
+            actualException.GetType().Should().Be(expectedException.GetType());
+            actualException.Message.Should().Be(expectedException.Message);
+        }
+    }
+
     private static MappingSetLookupFixture CreateFixture()
     {
         var descriptorResource = new QualifiedResourceName("Ed-Fi", "AcademicSubjectDescriptor");
@@ -547,6 +572,87 @@ public class Given_MappingSetLookupExtensions
         }
 
         return resourceKeySeedHash;
+    }
+
+    private static void GetWritePlanOrThrowUsingLegacyConcreteResourceScan(
+        MappingSet mappingSet,
+        QualifiedResourceName resource
+    )
+    {
+        if (mappingSet.WritePlansByResource.TryGetValue(resource, out var writePlan))
+        {
+            _ = writePlan;
+            return;
+        }
+
+        var concreteResourceModel = GetConcreteResourceModelOrThrowByLegacyScan(mappingSet, resource);
+
+        if (concreteResourceModel.StorageKind == ResourceStorageKind.SharedDescriptorTable)
+        {
+            throw new NotSupportedException(
+                $"Write plan for resource '{FormatResource(resource)}' was intentionally omitted: "
+                    + $"storage kind '{ResourceStorageKind.SharedDescriptorTable}' uses the descriptor write path instead of compiled relational-table write plans. "
+                    + "Next story: E07-S06 (06-descriptor-writes.md)."
+            );
+        }
+
+        if (concreteResourceModel.StorageKind == ResourceStorageKind.RelationalTables)
+        {
+            throw new InvalidOperationException(
+                $"Write plan lookup failed for resource '{FormatResource(resource)}' in mapping set "
+                    + $"'{FormatMappingSetKey(mappingSet.Key)}': resource storage kind "
+                    + $"'{ResourceStorageKind.RelationalTables}' should always have a compiled relational-table write plan, but no entry "
+                    + "was found. This indicates an internal compilation/selection bug."
+            );
+        }
+
+        throw new InvalidOperationException(
+            $"Write plan lookup failed for resource '{FormatResource(resource)}' in mapping set "
+                + $"'{FormatMappingSetKey(mappingSet.Key)}': storage kind '{concreteResourceModel.StorageKind}' "
+                + "is not recognized."
+        );
+    }
+
+    private static ConcreteResourceModel GetConcreteResourceModelOrThrowByLegacyScan(
+        MappingSet mappingSet,
+        QualifiedResourceName resource
+    )
+    {
+        foreach (var concreteResourceModel in mappingSet.Model.ConcreteResourcesInNameOrder)
+        {
+            if (concreteResourceModel.RelationalModel.Resource.Equals(resource))
+            {
+                return concreteResourceModel;
+            }
+        }
+
+        throw new KeyNotFoundException(
+            $"Mapping set '{FormatMappingSetKey(mappingSet.Key)}' does not contain resource '{FormatResource(resource)}' in ConcreteResourcesInNameOrder."
+        );
+    }
+
+    private static Exception CaptureException(Action action)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception exception)
+        {
+            return exception;
+        }
+
+        throw new AssertionException("Expected the action to throw, but it completed successfully.");
+    }
+
+    private static string FormatResource(QualifiedResourceName resource)
+    {
+        return $"{resource.ProjectName}.{resource.ResourceName}";
+    }
+
+    private static string FormatMappingSetKey(MappingSetKey key)
+    {
+        return $"{key.EffectiveSchemaHash}/{key.Dialect}/{key.RelationalMappingVersion}";
     }
 
     private sealed record MappingSetLookupFixture(

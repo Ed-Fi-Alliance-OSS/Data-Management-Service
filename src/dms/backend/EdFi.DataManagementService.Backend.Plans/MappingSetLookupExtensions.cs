@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Frozen;
+using System.Runtime.CompilerServices;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 
@@ -17,6 +19,10 @@ public static class MappingSetLookupExtensions
     private const string ReadProjectionStoryRef = "E15-S06 (06-projection-plan-compilers.md)";
     private const string DescriptorWriteStoryRef = "E07-S06 (06-descriptor-writes.md)";
     private const string DescriptorReadStoryRef = "E08-S05 (05-descriptor-endpoints.md)";
+    private static readonly ConditionalWeakTable<
+        MappingSet,
+        IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel>
+    > ConcreteResourceModelsByResource = new();
 
     /// <summary>
     /// Gets the compiled write plan for <paramref name="resource" /> or throws a deterministic actionable exception.
@@ -141,12 +147,27 @@ public static class MappingSetLookupExtensions
         QualifiedResourceName resource
     )
     {
-        foreach (var concreteResourceModel in mappingSet.Model.ConcreteResourcesInNameOrder)
-        {
-            if (concreteResourceModel.RelationalModel.Resource.Equals(resource))
+        var concreteResourcesByResource = ConcreteResourceModelsByResource.GetValue(
+            mappingSet,
+            static staticMappingSet =>
             {
-                return concreteResourceModel;
+                var resourcesByName = new Dictionary<QualifiedResourceName, ConcreteResourceModel>();
+
+                foreach (var concreteResourceModel in staticMappingSet.Model.ConcreteResourcesInNameOrder)
+                {
+                    _ = resourcesByName.TryAdd(
+                        concreteResourceModel.RelationalModel.Resource,
+                        concreteResourceModel
+                    );
+                }
+
+                return resourcesByName.ToFrozenDictionary();
             }
+        );
+
+        if (concreteResourcesByResource.TryGetValue(resource, out var concreteResourceModel))
+        {
+            return concreteResourceModel;
         }
 
         throw new KeyNotFoundException(
