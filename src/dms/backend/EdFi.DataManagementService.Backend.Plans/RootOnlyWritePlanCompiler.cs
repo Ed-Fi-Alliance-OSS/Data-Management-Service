@@ -11,7 +11,12 @@ using EdFi.DataManagementService.Backend.RelationalModel.Naming;
 namespace EdFi.DataManagementService.Backend.Plans;
 
 /// <summary>
-/// Compiles thin-slice root-table write plans for root-only relational resources.
+/// Compiles deterministic relational write plans.
+/// <para>
+/// <see cref="TryCompile(RelationalResourceModel, out ResourceWritePlan?)" /> remains thin-slice gated for the
+/// current mapping-set loop. <see cref="Compile(RelationalResourceModel)" /> compiles all tables in dependency order
+/// for relational-table resources that do not yet require key-unification plan inventory.
+/// </para>
 /// </summary>
 public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
 {
@@ -46,53 +51,110 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
             return false;
         }
 
-        writePlan = CompileCore(resourceModel, supportResult);
+        writePlan = Compile(resourceModel);
         return true;
     }
 
     /// <summary>
-    /// Compiles a root-only write plan for a single supported resource.
+    /// Compiles a relational-table write plan across all tables in dependency order.
     /// </summary>
     /// <param name="resourceModel">The resource model to compile.</param>
     public ResourceWritePlan Compile(RelationalResourceModel resourceModel)
     {
         ArgumentNullException.ThrowIfNull(resourceModel);
-        var supportResult = ThinSliceWritePlanSupportEvaluator.Evaluate(resourceModel);
+        ValidateCompileEligibility(resourceModel);
 
-        return CompileCore(resourceModel, supportResult);
+        var tablePlans = resourceModel
+            .TablesInDependencyOrder.Select(tableModel => CompileTablePlan(resourceModel, tableModel))
+            .ToArray();
+
+        return new ResourceWritePlan(resourceModel, tablePlans);
     }
 
     /// <summary>
-    /// Compiles a root-table write plan using deterministic binding order, parameter naming, and canonical SQL emission.
+    /// Validates compile-time support constraints for relational write-plan compilation.
     /// </summary>
-    private ResourceWritePlan CompileCore(
-        RelationalResourceModel resourceModel,
-        ThinSliceWritePlanSupportResult supportResult
-    )
+    private static void ValidateCompileEligibility(RelationalResourceModel resourceModel)
     {
-        if (!supportResult.IsSupported)
+        if (resourceModel.StorageKind is not ResourceStorageKind.RelationalTables)
         {
             throw new NotSupportedException(
-                "Only root-only relational-table resources are supported. "
+                "Only relational-table resources are supported for write-plan compilation. "
                     + $"Resource: {resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}, "
-                    + $"StorageKind: {supportResult.StorageKind}, "
-                    + $"TableCount: {supportResult.TableCount}, "
-                    + $"RootKeyUnificationClassCount: {supportResult.RootKeyUnificationClassCount}, "
-                    + $"RootStoredNonKeyColumnsWithoutSourceJsonPath: {supportResult.RootStoredNonKeyColumnsWithoutSourceJsonPathCount}."
+                    + $"StorageKind: {resourceModel.StorageKind}."
             );
         }
 
-        var rootTable = resourceModel.TablesInDependencyOrder[0];
-        ValidateWritableKeyColumns(rootTable);
+        if (resourceModel.TablesInDependencyOrder.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Cannot compile write plan for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}': no tables were found in dependency order."
+            );
+        }
 
-        var storedColumnsInOrder = rootTable
+        var tablesWithKeyUnification = resourceModel
+            .TablesInDependencyOrder.Where(static table => table.KeyUnificationClasses.Count > 0)
+            .Select(static table =>
+                $"{table.Table} (KeyUnificationClassCount: {table.KeyUnificationClasses.Count})"
+            )
+            .ToArray();
+
+        if (tablesWithKeyUnification.Length > 0)
+        {
+            throw new NotSupportedException(
+                "Write-plan compilation for key-unification tables is not implemented yet. "
+                    + $"Resource: {resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}, "
+                    + $"Tables: {string.Join(", ", tablesWithKeyUnification)}."
+            );
+        }
+    }
+
+    /// <summary>
+    /// Compiles one table write plan using deterministic column bindings and canonical SQL emission.
+    /// </summary>
+    private TableWritePlan CompileTablePlan(RelationalResourceModel resourceModel, DbTableModel tableModel)
+    {
+        ValidateWritableKeyColumns(tableModel);
+        var columnBindings = CompileStoredColumnBindings(resourceModel, tableModel);
+
+        var insertSql = _insertSqlEmitter.Emit(
+            tableModel.Table,
+            columnBindings.Select(static binding => binding.Column.ColumnName).ToArray(),
+            columnBindings.Select(static binding => binding.ParameterName).ToArray()
+        );
+        var updateSql = TryEmitUpdateSql(tableModel, columnBindings);
+        var bulkInsertBatching = PlanWriteBatchingConventions.DeriveBulkInsertBatchingInfo(
+            _dialect,
+            columnBindings
+        );
+
+        return new TableWritePlan(
+            TableModel: tableModel,
+            InsertSql: insertSql,
+            UpdateSql: updateSql,
+            DeleteByParentSql: null,
+            BulkInsertBatching: bulkInsertBatching,
+            ColumnBindings: columnBindings,
+            KeyUnificationPlans: []
+        );
+    }
+
+    /// <summary>
+    /// Compiles deterministic stored-column bindings for one table.
+    /// </summary>
+    private static WriteColumnBinding[] CompileStoredColumnBindings(
+        RelationalResourceModel resourceModel,
+        DbTableModel tableModel
+    )
+    {
+        var storedColumnsInOrder = tableModel
             .Columns.Where(static column => column.Storage is ColumnStorage.Stored)
             .ToArray();
 
         if (storedColumnsInOrder.Length == 0)
         {
             throw new InvalidOperationException(
-                $"Cannot compile write plan for '{rootTable.Table}': no stored columns were found."
+                $"Cannot compile write plan for '{tableModel.Table}': no stored columns were found."
             );
         }
 
@@ -109,33 +171,12 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
 
             columnBindings[index] = new WriteColumnBinding(
                 Column: column,
-                Source: DeriveWriteValueSource(resourceModel, rootTable, column),
+                Source: DeriveWriteValueSource(resourceModel, tableModel, column),
                 ParameterName: orderedParameterNames[index]
             );
         }
 
-        var insertSql = _insertSqlEmitter.Emit(
-            rootTable.Table,
-            columnBindings.Select(static binding => binding.Column.ColumnName).ToArray(),
-            columnBindings.Select(static binding => binding.ParameterName).ToArray()
-        );
-        var updateSql = TryEmitUpdateSql(rootTable, columnBindings);
-        var bulkInsertBatching = PlanWriteBatchingConventions.DeriveBulkInsertBatchingInfo(
-            _dialect,
-            columnBindings
-        );
-
-        var tablePlan = new TableWritePlan(
-            TableModel: rootTable,
-            InsertSql: insertSql,
-            UpdateSql: updateSql,
-            DeleteByParentSql: null,
-            BulkInsertBatching: bulkInsertBatching,
-            ColumnBindings: columnBindings,
-            KeyUnificationPlans: []
-        );
-
-        return new ResourceWritePlan(resourceModel, [tablePlan]);
+        return columnBindings;
     }
 
     /// <summary>
@@ -173,14 +214,19 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
     }
 
     /// <summary>
-    /// Emits root-table <c>UPDATE</c> SQL when at least one stored non-key column is writable; otherwise returns <see langword="null" />.
+    /// Emits table <c>UPDATE</c> SQL for 1:1 tables (no ordinal key column) when at least one stored non-key column is writable.
     /// </summary>
     private string? TryEmitUpdateSql(
-        DbTableModel rootTable,
+        DbTableModel tableModel,
         IReadOnlyList<WriteColumnBinding> bindingsInColumnOrder
     )
     {
-        var keyColumnsInKeyOrder = rootTable
+        if (tableModel.Key.Columns.Any(static keyColumn => keyColumn.Kind is ColumnKind.Ordinal))
+        {
+            return null;
+        }
+
+        var keyColumnsInKeyOrder = tableModel
             .Key.Columns.Select(static keyColumn => keyColumn.ColumnName)
             .ToArray();
         var keyColumns = keyColumnsInKeyOrder.ToHashSet();
@@ -213,7 +259,7 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
             if (!parameterNameByColumn.TryGetValue(keyColumn, out var keyParameterName))
             {
                 throw new InvalidOperationException(
-                    $"Cannot emit update SQL for '{rootTable.Table}': key column '{keyColumn.Value}' does not have a write binding parameter."
+                    $"Cannot emit update SQL for '{tableModel.Table}': key column '{keyColumn.Value}' does not have a write binding parameter."
                 );
             }
 
@@ -221,7 +267,7 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
         }
 
         return _updateSqlEmitter.Emit(
-            rootTable.Table,
+            tableModel.Table,
             writableNonKeyBindingsInOrder.Select(static binding => binding.Column.ColumnName).ToArray(),
             writableNonKeyBindingsInOrder.Select(static binding => binding.ParameterName).ToArray(),
             keyColumnsInKeyOrder,

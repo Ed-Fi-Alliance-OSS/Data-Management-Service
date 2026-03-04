@@ -373,53 +373,63 @@ public class Given_RootOnlyWritePlanCompiler
     }
 
     [Test]
-    public void It_should_fail_fast_for_non_root_only_resources()
+    public void It_should_compile_table_plans_for_all_tables_in_dependency_order_for_multi_table_resources()
     {
-        var childTable = new DbTableModel(
-            Table: new DbTableName(new DbSchemaName("edfi"), "StudentAddress"),
-            JsonScope: new JsonPathExpression(
-                "$.addresses[*]",
-                [new JsonPathSegment.Property("addresses"), new JsonPathSegment.AnyArrayElement()]
-            ),
-            Key: new TableKey(
-                "PK_StudentAddress",
-                [
-                    new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart),
-                    new DbKeyColumn(new DbColumnName("Ordinal"), ColumnKind.Ordinal),
-                ]
-            ),
-            Columns:
-            [
-                new DbColumnModel(
-                    ColumnName: new DbColumnName("DocumentId"),
-                    Kind: ColumnKind.ParentKeyPart,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    ColumnName: new DbColumnName("Ordinal"),
-                    Kind: ColumnKind.Ordinal,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-            ],
-            Constraints: []
-        );
+        var model = CreateSupportedMultiTableModel();
+        var writePlan = new RootOnlyWritePlanCompiler(SqlDialect.Pgsql).Compile(model);
 
-        var unsupportedModel = _supportedRootOnlyModel with
+        writePlan.TablePlansInDependencyOrder.Should().HaveCount(model.TablesInDependencyOrder.Count);
+        writePlan
+            .TablePlansInDependencyOrder.Select(static tablePlan => tablePlan.TableModel.Table)
+            .Should()
+            .Equal(model.TablesInDependencyOrder.Select(static table => table.Table));
+
+        var rootPlan = writePlan.TablePlansInDependencyOrder[0];
+        var rootExtensionPlan = writePlan.TablePlansInDependencyOrder[1];
+        var childPlan = writePlan.TablePlansInDependencyOrder[2];
+
+        rootPlan.UpdateSql.Should().NotBeNull();
+        rootExtensionPlan.UpdateSql.Should().NotBeNull();
+        childPlan.UpdateSql.Should().BeNull();
+
+        foreach (var tablePlan in writePlan.TablePlansInDependencyOrder)
         {
-            TablesInDependencyOrder = [_supportedRootOnlyModel.Root, childTable],
-        };
+            tablePlan.InsertSql.Should().NotBeNullOrWhiteSpace();
+            tablePlan.DeleteByParentSql.Should().BeNull();
+            tablePlan.BulkInsertBatching.ParametersPerRow.Should().Be(tablePlan.ColumnBindings.Length);
+            tablePlan.KeyUnificationPlans.Should().BeEmpty();
+        }
+    }
 
-        var act = () => new RootOnlyWritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
+    [Test]
+    public void It_should_compile_deterministic_table_plans_for_multi_table_resources_under_unified_alias_column_permutations()
+    {
+        var compiler = new RootOnlyWritePlanCompiler(SqlDialect.Pgsql);
 
-        act.Should()
-            .Throw<NotSupportedException>()
-            .WithMessage("Only root-only relational-table resources are supported.*");
+        var first = compiler.Compile(CreateSupportedMultiTableModel());
+        var second = compiler.Compile(CreateSupportedMultiTableModel());
+        var permuted = compiler.Compile(CreateSupportedMultiTableModelWithUnifiedAliasColumnsFirst());
+
+        var firstFingerprint = CreateWritePlanFingerprint(first);
+        var secondFingerprint = CreateWritePlanFingerprint(second);
+        var permutedFingerprint = CreateWritePlanFingerprint(permuted);
+
+        secondFingerprint.Should().Be(firstFingerprint);
+        permutedFingerprint.Should().Be(firstFingerprint);
+    }
+
+    [Test]
+    public void It_should_keep_try_compile_limited_to_thin_slice_root_only_resources()
+    {
+        var multiTableModel = CreateSupportedMultiTableModel();
+        var compiler = new RootOnlyWritePlanCompiler(SqlDialect.Pgsql);
+
+        RootOnlyWritePlanCompiler.IsSupported(multiTableModel).Should().BeFalse();
+
+        var wasCompiled = compiler.TryCompile(multiTableModel, out var writePlan);
+
+        wasCompiled.Should().BeFalse();
+        writePlan.Should().BeNull();
     }
 
     [Test]
@@ -434,7 +444,7 @@ public class Given_RootOnlyWritePlanCompiler
 
         act.Should()
             .Throw<NotSupportedException>()
-            .WithMessage("Only root-only relational-table resources are supported.*");
+            .WithMessage("Only relational-table resources are supported for write-plan compilation.*");
     }
 
     [Test]
@@ -445,9 +455,7 @@ public class Given_RootOnlyWritePlanCompiler
 
         act.Should()
             .Throw<NotSupportedException>()
-            .WithMessage(
-                "Only root-only relational-table resources are supported.*RootKeyUnificationClassCount: 1*"
-            );
+            .WithMessage("Write-plan compilation for key-unification tables is not implemented yet.*");
     }
 
     private static RelationalResourceModel CreateSupportedRootOnlyModel()
@@ -645,6 +653,181 @@ public class Given_RootOnlyWritePlanCompiler
         };
     }
 
+    private static RelationalResourceModel CreateSupportedMultiTableModel()
+    {
+        var model = CreateSupportedRootOnlyModel();
+        var rootTable = model.Root;
+        var rootScopeExtensionTable = CreateRootScopeExtensionTable();
+        var childCollectionTable = CreateChildCollectionTable();
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable, rootScopeExtensionTable, childCollectionTable],
+        };
+    }
+
+    private static RelationalResourceModel CreateSupportedMultiTableModelWithUnifiedAliasColumnsFirst()
+    {
+        var model = CreateSupportedMultiTableModel();
+        var permutedTables = model.TablesInDependencyOrder.Select(ReorderUnifiedAliasColumnsFirst).ToArray();
+
+        return model with
+        {
+            Root = permutedTables[0],
+            TablesInDependencyOrder = permutedTables,
+        };
+    }
+
+    private static DbTableModel ReorderUnifiedAliasColumnsFirst(DbTableModel tableModel)
+    {
+        var unifiedAliasColumns = tableModel
+            .Columns.Where(static column => column.Storage is ColumnStorage.UnifiedAlias)
+            .ToArray();
+
+        if (unifiedAliasColumns.Length == 0)
+        {
+            return tableModel;
+        }
+
+        var storedColumns = tableModel
+            .Columns.Where(static column => column.Storage is ColumnStorage.Stored)
+            .ToArray();
+
+        return tableModel with
+        {
+            Columns = [.. unifiedAliasColumns, .. storedColumns],
+        };
+    }
+
+    private static DbTableModel CreateRootScopeExtensionTable()
+    {
+        return new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("sample"), "StudentExtension"),
+            JsonScope: CreatePath(
+                "$._ext.sample",
+                new JsonPathSegment.Property("_ext"),
+                new JsonPathSegment.Property("sample")
+            ),
+            Key: new TableKey(
+                ConstraintName: "PK_StudentExtension",
+                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("FavoriteColor"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.String),
+                    IsNullable: true,
+                    SourceJsonPath: CreatePath(
+                        "$._ext.sample.favoriteColor",
+                        new JsonPathSegment.Property("_ext"),
+                        new JsonPathSegment.Property("sample"),
+                        new JsonPathSegment.Property("favoriteColor")
+                    ),
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("FavoriteColorAlias"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.String),
+                    IsNullable: true,
+                    SourceJsonPath: CreatePath(
+                        "$._ext.sample.favoriteColor",
+                        new JsonPathSegment.Property("_ext"),
+                        new JsonPathSegment.Property("sample"),
+                        new JsonPathSegment.Property("favoriteColor")
+                    ),
+                    TargetResource: null,
+                    Storage: new ColumnStorage.UnifiedAlias(
+                        CanonicalColumn: new DbColumnName("FavoriteColor"),
+                        PresenceColumn: null
+                    )
+                ),
+            ],
+            Constraints: []
+        );
+    }
+
+    private static DbTableModel CreateChildCollectionTable()
+    {
+        return new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "StudentAddress"),
+            JsonScope: CreatePath(
+                "$.addresses[*]",
+                new JsonPathSegment.Property("addresses"),
+                new JsonPathSegment.AnyArrayElement()
+            ),
+            Key: new TableKey(
+                ConstraintName: "PK_StudentAddress",
+                Columns:
+                [
+                    new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart),
+                    new DbKeyColumn(new DbColumnName("Ordinal"), ColumnKind.Ordinal),
+                ]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("Ordinal"),
+                    Kind: ColumnKind.Ordinal,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("City"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.String),
+                    IsNullable: true,
+                    SourceJsonPath: CreatePath(
+                        "$.addresses[*].city",
+                        new JsonPathSegment.Property("addresses"),
+                        new JsonPathSegment.AnyArrayElement(),
+                        new JsonPathSegment.Property("city")
+                    ),
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("CityAlias"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.String),
+                    IsNullable: true,
+                    SourceJsonPath: CreatePath(
+                        "$.addresses[*].city",
+                        new JsonPathSegment.Property("addresses"),
+                        new JsonPathSegment.AnyArrayElement(),
+                        new JsonPathSegment.Property("city")
+                    ),
+                    TargetResource: null,
+                    Storage: new ColumnStorage.UnifiedAlias(
+                        CanonicalColumn: new DbColumnName("City"),
+                        PresenceColumn: null
+                    )
+                ),
+            ],
+            Constraints: []
+        );
+    }
+
     private static RelationalResourceModel CreateSingleTableModelCoveringWriteValueSourceKinds()
     {
         var table = new DbTableModel(
@@ -812,6 +995,28 @@ public class Given_RootOnlyWritePlanCompiler
     private static JsonPathExpression CreatePath(string canonical, params JsonPathSegment[] segments)
     {
         return new JsonPathExpression(canonical, segments);
+    }
+
+    private static string CreateWritePlanFingerprint(ResourceWritePlan plan)
+    {
+        return string.Join(
+            "\n--TABLE--\n",
+            plan.TablePlansInDependencyOrder.Select(static tablePlan =>
+                string.Join(
+                    "\n",
+                    tablePlan.TableModel.Table.ToString(),
+                    tablePlan.InsertSql,
+                    tablePlan.UpdateSql ?? "<null>",
+                    tablePlan.DeleteByParentSql ?? "<null>",
+                    string.Join(
+                        "|",
+                        tablePlan.ColumnBindings.Select(binding =>
+                            $"{binding.Column.ColumnName.Value}:{binding.ParameterName}:{binding.Source.GetType().Name}"
+                        )
+                    )
+                )
+            )
+        );
     }
 
     private static ResourceReadPlan CreateRootOnlyReadPlanStub(RelationalResourceModel resourceModel)
