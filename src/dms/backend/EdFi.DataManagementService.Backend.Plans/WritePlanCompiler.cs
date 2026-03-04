@@ -36,11 +36,12 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     {
         ArgumentNullException.ThrowIfNull(resourceModel);
         ValidateCompileEligibility(resourceModel);
+        var rootScopeTableModel = ResolveRootScopeTableModelOrThrow(resourceModel);
         var writeSourceLookup = BuildWriteSourceLookup(resourceModel);
 
         var tablePlans = resourceModel
             .TablesInDependencyOrder.Select(tableModel =>
-                CompileTablePlan(resourceModel, tableModel, writeSourceLookup)
+                CompileTablePlan(rootScopeTableModel, tableModel, writeSourceLookup)
             )
             .ToArray();
 
@@ -67,6 +68,43 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
                 $"Cannot compile write plan for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}': no tables were found in dependency order."
             );
         }
+    }
+
+    private static DbTableModel ResolveRootScopeTableModelOrThrow(RelationalResourceModel resourceModel)
+    {
+        if (!IsRootJsonScope(resourceModel.Root.JsonScope))
+        {
+            throw new InvalidOperationException(
+                $"Cannot compile write plan for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}': resourceModel.Root must have JsonScope '$', but was '{resourceModel.Root.JsonScope.Canonical}'."
+            );
+        }
+
+        var rootScopeTables = resourceModel
+            .TablesInDependencyOrder.Where(static tableModel => IsRootJsonScope(tableModel.JsonScope))
+            .ToArray();
+
+        if (rootScopeTables.Length != 1)
+        {
+            throw new InvalidOperationException(
+                $"Cannot compile write plan for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}': expected exactly one root-scope table (JsonScope '$') in TablesInDependencyOrder, but found {rootScopeTables.Length}."
+            );
+        }
+
+        var rootScopeTable = rootScopeTables[0];
+
+        if (!rootScopeTable.Table.Equals(resourceModel.Root.Table))
+        {
+            throw new InvalidOperationException(
+                $"Cannot compile write plan for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}': root-scope table '{rootScopeTable.Table}' does not match resourceModel.Root table '{resourceModel.Root.Table}'."
+            );
+        }
+
+        return rootScopeTable;
+    }
+
+    private static bool IsRootJsonScope(JsonPathExpression jsonScope)
+    {
+        return jsonScope.Canonical == "$" && jsonScope.Segments.Count == 0;
     }
 
     private static WriteSourceLookup BuildWriteSourceLookup(RelationalResourceModel resourceModel)
@@ -114,7 +152,7 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     /// Compiles one table write plan using deterministic column bindings and canonical SQL emission.
     /// </summary>
     private TableWritePlan CompileTablePlan(
-        RelationalResourceModel resourceModel,
+        DbTableModel rootScopeTableModel,
         DbTableModel tableModel,
         WriteSourceLookup writeSourceLookup
     )
@@ -129,7 +167,7 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
             columnBindings.Select(static binding => binding.ParameterName).ToArray()
         );
         var updateSql = TryEmitUpdateSql(tableModel, columnBindings);
-        var deleteByParentSql = TryEmitDeleteByParentSql(resourceModel, tableModel, columnBindings);
+        var deleteByParentSql = TryEmitDeleteByParentSql(rootScopeTableModel, tableModel, columnBindings);
         var bulkInsertBatching = PlanWriteBatchingConventions.DeriveBulkInsertBatchingInfo(
             _dialect,
             columnBindings
@@ -704,12 +742,12 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     /// Emits table <c>DELETE</c> SQL for replace semantics by parent key for all non-root tables.
     /// </summary>
     private string? TryEmitDeleteByParentSql(
-        RelationalResourceModel resourceModel,
+        DbTableModel rootScopeTableModel,
         DbTableModel tableModel,
         IReadOnlyList<WriteColumnBinding> bindingsInColumnOrder
     )
     {
-        if (tableModel.Equals(resourceModel.Root))
+        if (tableModel.Table.Equals(rootScopeTableModel.Table) && IsRootJsonScope(tableModel.JsonScope))
         {
             return null;
         }

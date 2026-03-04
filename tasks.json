@@ -321,5 +321,59 @@
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
     "completed": true
+  },
+  {
+    "category": "Hardening",
+    "description": "Harden root-table detection for DeleteByParentSql emission. Acceptance: WritePlanCompiler must determine root-table identity for delete-by-parent emission using stable semantics (e.g., JsonScope == \"$\" and/or matching Root.Table), not DbTableModel positional-record equality. Root table plans must have DeleteByParentSql == null. All non-root tables (including root-scope _ext 1:1 tables) must have non-null DeleteByParentSql. Add a deterministic validation that the resource model contains exactly one root-scope table and that it corresponds to resourceModel.Root; fail fast with an actionable error if invariants are violated.",
+    "steps-to-verify": [
+      "Add unit tests that (a) prove root DeleteByParentSql remains null even when resourceModel.Root and TablesInDependencyOrder[0] are not record-equal but represent the same root scope, and (b) assert deterministic failure when no \"$\"-scope table exists (or more than one exists)",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Hardening",
+    "description": "Do not treat DocumentFk columns as Precomputed when SourceJsonPath is null. Acceptance: for ColumnKind.DocumentFk stored columns, WritePlanCompiler must always bind WriteValueSource.DocumentReference using the resource's DocumentReferenceBindings lookup and must fail fast with deterministic messages for missing/duplicate bindings, regardless of SourceJsonPath. Add unit tests for a DocumentFk with SourceJsonPath == null and for missing/duplicated bindings to ensure behavior and messages remain correct.",
+    "steps-to-verify": [
+      "Add/adjust WritePlanCompilerTests to cover DocumentFk binding behavior when SourceJsonPath is null and to assert deterministic missing/duplicate-binding errors",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Hardening",
+    "description": "Make Precomputed binding assumptions explicit and actionable. Acceptance: WritePlanCompiler must emit WriteValueSource.Precomputed only for explicitly supported precompute targets (canonical key-unification columns and synthetic presence columns, and any future explicitly declared roles). If a stored, writable, non-key column has SourceJsonPath == null but is not an allowed precompute target, compilation must fail fast with a deterministic error message describing how to fix (e.g., mark IsWritable=false or add a producer plan). Add unit tests that assert this failure path and message.",
+    "steps-to-verify": [
+      "Add unit tests that construct a table with an unexpected stored/writable SourceJsonPath==null non-key column and assert deterministic failure with an actionable message",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Hardening",
+    "description": "Fail fast on duplicate resources when building the ConcreteResourcesInNameOrder lookup index in MappingSetLookupExtensions. Acceptance: MappingSetLookupExtensions.GetConcreteResourceModelOrThrow must throw InvalidOperationException when ConcreteResourcesInNameOrder contains duplicate QualifiedResourceName entries (instead of silently keeping the first). The message must include the mapping set key and the duplicated resource name. Add a unit test that constructs a MappingSet with duplicate concrete-resource entries and asserts deterministic failure.",
+    "steps-to-verify": [
+      "Add a MappingSetLookupExtensionsTests case that builds a MappingSet with duplicated ConcreteResourcesInNameOrder resources and asserts deterministic InvalidOperationException message",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactor",
+    "description": "Refactor WritePlanCompiler into smaller components and reuse a per-table compilation context. Acceptance: extract repeated per-table maps (columnByName, bindingIndexByColumn, parameterNameByColumn, keyColumnNames, requiredPrecomputedColumns) into a single immutable context created once per table and passed through helper methods; extract key-unification plan compilation into its own class. No behavior changes: emitted SQL hashes, ColumnBindings ordering, and exception messages remain identical; all unit and golden fixture tests pass.",
+    "steps-to-verify": [
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj",
+      "Run: set UPDATE_GOLDENS=0 and ensure golden fixture tests pass with no manifest diffs"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactor / Hardening",
+    "description": "Simplify WriteSourceLookup duplicate handling in WritePlanCompiler. Acceptance: replace the dual \"dictionary + duplicate-key-set\" pattern with a single lookup API that preserves current deterministic error semantics for missing/duplicate document-reference bindings and descriptor edge sources (e.g., \"Multiple document-reference bindings match ...\", \"No descriptor edge source matches ...\"). Reduce duplicated code paths without changing emitted SQL/bindings. Existing tests asserting duplicate/missing behavior must continue to pass with the same messages.",
+    "steps-to-verify": [
+      "Ensure WritePlanCompilerTests cases for missing and duplicated document-reference bindings and descriptor edge sources still pass (including message matching)",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
   }
 ]

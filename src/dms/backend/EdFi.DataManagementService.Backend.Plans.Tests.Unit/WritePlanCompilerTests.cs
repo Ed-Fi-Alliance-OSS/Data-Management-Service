@@ -342,7 +342,9 @@ public class Given_WritePlanCompiler
         var model = CreateSingleTableModelCoveringWriteValueSourceKinds();
 
         var writePlan = new WritePlanCompiler(SqlDialect.Pgsql).Compile(model);
-        var tablePlan = writePlan.TablePlansInDependencyOrder.Single();
+        var tablePlan = writePlan.TablePlansInDependencyOrder.Single(tablePlan =>
+            tablePlan.TableModel.Table.Equals(new DbTableName(new DbSchemaName("edfi"), "StudentAddress"))
+        );
 
         tablePlan
             .ColumnBindings.Select(binding => binding.Column.ColumnName.Value)
@@ -669,6 +671,65 @@ public class Given_WritePlanCompiler
                     """,
                     _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, null),
                 }
+            );
+    }
+
+    [Test]
+    public void It_should_treat_root_scope_table_as_root_for_delete_by_parent_when_root_table_instance_differs()
+    {
+        var model = CreateSupportedMultiTableModelWithClonedRootScopeTableInDependencyOrder();
+        model.TablesInDependencyOrder[0].Equals(model.Root).Should().BeFalse();
+
+        var writePlan = new WritePlanCompiler(SqlDialect.Pgsql).Compile(model);
+        var rootPlan = writePlan.TablePlansInDependencyOrder.Single(tablePlan =>
+            tablePlan.TableModel.Table.Equals(model.Root.Table)
+            && tablePlan.TableModel.JsonScope.Canonical == "$"
+        );
+
+        rootPlan.DeleteByParentSql.Should().BeNull();
+
+        writePlan
+            .TablePlansInDependencyOrder.Where(tablePlan => tablePlan.TableModel.JsonScope.Canonical != "$")
+            .Should()
+            .AllSatisfy(tablePlan => tablePlan.DeleteByParentSql.Should().NotBeNull());
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_tables_in_dependency_order_has_no_root_scope_table()
+    {
+        var unsupportedModel = CreateSupportedMultiTableModelWithoutRootScopeTable();
+        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile write plan for resource 'Ed-Fi.Student': expected exactly one root-scope table (JsonScope '$') in TablesInDependencyOrder, but found 0."
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_tables_in_dependency_order_has_multiple_root_scope_tables()
+    {
+        var unsupportedModel = CreateSupportedMultiTableModelWithMultipleRootScopeTables();
+        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile write plan for resource 'Ed-Fi.Student': expected exactly one root-scope table (JsonScope '$') in TablesInDependencyOrder, but found 2."
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_root_scope_table_does_not_match_resource_model_root_table()
+    {
+        var unsupportedModel = CreateSupportedMultiTableModelWithMismatchedRootScopeTable();
+        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile write plan for resource 'Ed-Fi.Student': root-scope table 'edfi.StudentShadow' does not match resourceModel.Root table 'edfi.Student'."
             );
     }
 
@@ -1586,6 +1647,57 @@ public class Given_WritePlanCompiler
         };
     }
 
+    private static RelationalResourceModel CreateSupportedMultiTableModelWithClonedRootScopeTableInDependencyOrder()
+    {
+        var model = CreateSupportedMultiTableModel();
+        var clonedRootScopeTable = model.Root with { Columns = [.. model.Root.Columns] };
+
+        return model with
+        {
+            TablesInDependencyOrder = [clonedRootScopeTable, .. model.TablesInDependencyOrder.Skip(1)],
+        };
+    }
+
+    private static RelationalResourceModel CreateSupportedMultiTableModelWithoutRootScopeTable()
+    {
+        var model = CreateSupportedMultiTableModel();
+
+        return model with
+        {
+            TablesInDependencyOrder = [.. model.TablesInDependencyOrder.Skip(1)],
+        };
+    }
+
+    private static RelationalResourceModel CreateSupportedMultiTableModelWithMultipleRootScopeTables()
+    {
+        var model = CreateSupportedMultiTableModel();
+        var duplicateRootScopeTable = model.Root with
+        {
+            Table = new DbTableName(new DbSchemaName("edfi"), "StudentShadow"),
+            Columns = [.. model.Root.Columns],
+        };
+
+        return model with
+        {
+            TablesInDependencyOrder = [.. model.TablesInDependencyOrder, duplicateRootScopeTable],
+        };
+    }
+
+    private static RelationalResourceModel CreateSupportedMultiTableModelWithMismatchedRootScopeTable()
+    {
+        var model = CreateSupportedMultiTableModel();
+        var shadowRootScopeTable = model.Root with
+        {
+            Table = new DbTableName(new DbSchemaName("edfi"), "StudentShadow"),
+            Columns = [.. model.Root.Columns],
+        };
+
+        return model with
+        {
+            TablesInDependencyOrder = [shadowRootScopeTable, .. model.TablesInDependencyOrder.Skip(1)],
+        };
+    }
+
     private static RelationalResourceModel CreateSupportedMultiTableModelWithUnifiedAliasColumnsFirst()
     {
         var model = CreateSupportedMultiTableModel();
@@ -1815,7 +1927,28 @@ public class Given_WritePlanCompiler
 
     private static RelationalResourceModel CreateSingleTableModelCoveringWriteValueSourceKinds()
     {
-        var table = new DbTableModel(
+        var rootTable = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "StudentAddressRoot"),
+            JsonScope: CreatePath("$"),
+            Key: new TableKey(
+                ConstraintName: "PK_StudentAddressRoot",
+                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            Constraints: []
+        );
+
+        var childTable = new DbTableModel(
             Table: new DbTableName(new DbSchemaName("edfi"), "StudentAddress"),
             JsonScope: CreatePath(
                 "$.addresses[*]",
@@ -1967,8 +2100,8 @@ public class Given_WritePlanCompiler
             Resource: new QualifiedResourceName("Ed-Fi", "StudentAddress"),
             PhysicalSchema: new DbSchemaName("edfi"),
             StorageKind: ResourceStorageKind.RelationalTables,
-            Root: table,
-            TablesInDependencyOrder: [table],
+            Root: rootTable,
+            TablesInDependencyOrder: [rootTable, childTable],
             DocumentReferenceBindings:
             [
                 new DocumentReferenceBinding(
@@ -1979,7 +2112,7 @@ public class Given_WritePlanCompiler
                         new JsonPathSegment.AnyArrayElement(),
                         new JsonPathSegment.Property("schoolReference")
                     ),
-                    Table: table.Table,
+                    Table: childTable.Table,
                     FkColumn: new DbColumnName("School_DocumentId"),
                     TargetResource: new QualifiedResourceName("Ed-Fi", "School"),
                     IdentityBindings: []
@@ -1995,7 +2128,7 @@ public class Given_WritePlanCompiler
                         new JsonPathSegment.AnyArrayElement(),
                         new JsonPathSegment.Property("programTypeDescriptor")
                     ),
-                    Table: table.Table,
+                    Table: childTable.Table,
                     FkColumn: new DbColumnName("ProgramTypeDescriptorId"),
                     DescriptorResource: new QualifiedResourceName("Ed-Fi", "ProgramTypeDescriptor")
                 ),
