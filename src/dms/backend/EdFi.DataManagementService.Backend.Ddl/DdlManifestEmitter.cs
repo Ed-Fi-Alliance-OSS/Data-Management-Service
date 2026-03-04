@@ -118,6 +118,8 @@ public static class DdlManifestEmitter
     /// </remarks>
     internal static int CountStatements(SqlDialect dialect, string sqlText)
     {
+        ArgumentNullException.ThrowIfNull(sqlText);
+
         return dialect switch
         {
             SqlDialect.Mssql => CountMssqlStatements(sqlText),
