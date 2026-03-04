@@ -248,12 +248,13 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
             var result = checkCommand.ExecuteScalar();
             if (result is null)
             {
-                logger.LogError(
-                    "Database not found in sys.databases: {DatabaseName}",
-                    LoggingSanitizer.SanitizeForLogging(targetDatabase)
+                throw new InvalidOperationException(
+                    $"Database '{LoggingSanitizer.SanitizeForConsole(targetDatabase)}' does not exist. "
+                        + "Use the --create-database flag to create it automatically."
                 );
             }
-            else if (!Convert.ToBoolean(result))
+
+            if (!Convert.ToBoolean(result))
             {
                 var warning =
                     $"READ_COMMITTED_SNAPSHOT is OFF for database '{LoggingSanitizer.SanitizeForConsole(targetDatabase)}'. "
