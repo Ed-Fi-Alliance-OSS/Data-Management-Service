@@ -453,6 +453,19 @@ public class Given_WritePlanCompiler
     }
 
     [Test]
+    public void It_should_fail_fast_when_key_column_kind_is_not_parent_key_part_or_ordinal()
+    {
+        var unsupportedModel = CreateRootOnlyModelWithUnsupportedKeyColumnKind();
+        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile write plan for 'edfi.Student': key column 'SchoolYear' has unsupported kind 'Scalar'. Supported key kinds are ParentKeyPart and Ordinal."
+            );
+    }
+
+    [Test]
     public void It_should_compile_table_plans_for_all_tables_in_dependency_order_for_multi_table_resources()
     {
         var model = CreateSupportedMultiTableModel();
@@ -1398,7 +1411,7 @@ public class Given_WritePlanCompiler
                 Columns:
                 [
                     new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart),
-                    new DbKeyColumn(new DbColumnName("SchoolYearAlias"), ColumnKind.Scalar),
+                    new DbKeyColumn(new DbColumnName("SchoolYearAlias"), ColumnKind.ParentKeyPart),
                 ]
             ),
         };
@@ -1420,7 +1433,29 @@ public class Given_WritePlanCompiler
                 Columns:
                 [
                     new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart),
-                    new DbKeyColumn(new DbColumnName("MissingSchoolYear"), ColumnKind.Scalar),
+                    new DbKeyColumn(new DbColumnName("MissingSchoolYear"), ColumnKind.ParentKeyPart),
+                ]
+            ),
+        };
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
+        };
+    }
+
+    private static RelationalResourceModel CreateRootOnlyModelWithUnsupportedKeyColumnKind()
+    {
+        var model = CreateSupportedRootOnlyModel();
+        var rootTable = model.Root with
+        {
+            Key = new TableKey(
+                ConstraintName: "PK_Student",
+                Columns:
+                [
+                    new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart),
+                    new DbKeyColumn(new DbColumnName("SchoolYear"), ColumnKind.Scalar),
                 ]
             ),
         };

@@ -597,6 +597,14 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
 
         foreach (var keyColumn in tableModel.Key.Columns)
         {
+            if (keyColumn.Kind is not ColumnKind.ParentKeyPart and not ColumnKind.Ordinal)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot compile write plan for '{tableModel.Table}': key column '{keyColumn.ColumnName.Value}' has unsupported kind '{keyColumn.Kind}'. "
+                        + $"Supported key kinds are {nameof(ColumnKind.ParentKeyPart)} and {nameof(ColumnKind.Ordinal)}."
+                );
+            }
+
             if (!columnByName.TryGetValue(keyColumn.ColumnName, out var matchingColumn))
             {
                 throw new InvalidOperationException(
@@ -679,14 +687,14 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         }
 
         var keyColumnsInOrder = tableModel
-            .Key.Columns.Where(static keyColumn => keyColumn.Kind is not ColumnKind.Ordinal)
+            .Key.Columns.Where(static keyColumn => keyColumn.Kind is ColumnKind.ParentKeyPart)
             .Select(static keyColumn => keyColumn.ColumnName)
             .ToArray();
 
         if (keyColumnsInOrder.Length == 0)
         {
             throw new InvalidOperationException(
-                $"Cannot emit delete-by-parent SQL for '{tableModel.Table}': no key columns remain after excluding ordinal key columns."
+                $"Cannot emit delete-by-parent SQL for '{tableModel.Table}': no parent key columns were found."
             );
         }
 
