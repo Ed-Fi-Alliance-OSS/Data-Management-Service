@@ -152,6 +152,15 @@ public class Given_DdlManifestEmitter_ComputeSha256_With_Known_Input
 
         hash.Should().MatchRegex("^[0-9a-f]{64}$");
     }
+
+    [Test]
+    public void It_should_produce_identical_hash_for_crlf_and_lf_content()
+    {
+        var hashLf = DdlManifestEmitter.ComputeSha256("CREATE TABLE foo (id INT);\n");
+        var hashCrLf = DdlManifestEmitter.ComputeSha256("CREATE TABLE foo (id INT);\r\n");
+
+        hashCrLf.Should().Be(hashLf, "line endings are normalized before hashing");
+    }
 }
 
 [TestFixture]
@@ -216,6 +225,14 @@ public class Given_DdlManifestEmitter_CountStatements_For_Pgsql
             "INSERT INTO bar VALUES (1);",
             ""
         );
+
+        DdlManifestEmitter.CountStatements(SqlDialect.Pgsql, sql).Should().Be(2);
+    }
+
+    [Test]
+    public void It_should_count_statements_with_crlf_line_endings()
+    {
+        var sql = "CREATE TABLE foo (id INT);\r\nCREATE TABLE bar (id INT);\r\n";
 
         DdlManifestEmitter.CountStatements(SqlDialect.Pgsql, sql).Should().Be(2);
     }
@@ -289,6 +306,14 @@ public class Given_DdlManifestEmitter_CountStatements_For_Mssql
         );
 
         // 1 semicolon before first GO + 1 trailing batch (no closing GO) = 2
+        DdlManifestEmitter.CountStatements(SqlDialect.Mssql, sql).Should().Be(2);
+    }
+
+    [Test]
+    public void It_should_count_statements_with_crlf_line_endings()
+    {
+        var sql = "CREATE TABLE foo (id INT);\r\nCREATE TABLE bar (id INT);\r\n";
+
         DdlManifestEmitter.CountStatements(SqlDialect.Mssql, sql).Should().Be(2);
     }
 }

@@ -82,6 +82,10 @@ public static class DdlManifestEmitter
     {
         ArgumentNullException.ThrowIfNull(sqlText);
 
+        // Normalize line endings so the hash matches the on-disk .sql file
+        // (which is always written with \n via WriteFileWithUnixLineEndings).
+        sqlText = sqlText.ReplaceLineEndings("\n");
+
         // Rent a pooled buffer instead of allocating via Encoding.UTF8.GetBytes(string)
         // to avoid large byte[] allocations that pressure GC when hashing real-world
         // DDL texts (which can be hundreds of KB per dialect). The 32-byte hash output
