@@ -439,3 +439,213 @@ public class Given_Schema_Hash_Mismatch_On_Provisioning
             .Be(1, "the preflight check should prevent any additional rows");
     }
 }
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+public class Given_ResourceKey_Tampered_After_Provisioning
+{
+    private string _databaseName = null!;
+    private int _firstExitCode;
+    private string _firstOutput = null!;
+    private string _firstError = null!;
+    private int _secondExitCode;
+    private string _secondOutput = null!;
+    private string _secondError = null!;
+    private const string TamperedProjectName = "TamperedProject";
+
+    [SetUp]
+    public void SetUp()
+    {
+        _databaseName = PostgresTestDatabaseHelper.GenerateUniqueDatabaseName();
+        var connectionString = PostgresTestDatabaseHelper.BuildConnectionString(_databaseName);
+
+        // First provisioning run
+        (_firstExitCode, _firstOutput, _firstError) = ProvisionTestHelper.RunProvision(
+            "pgsql",
+            connectionString,
+            createDatabase: true
+        );
+
+        // Tamper with a ResourceKey row
+        using (var connection = new NpgsqlConnection(connectionString))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                UPDATE dms."ResourceKey"
+                SET "ProjectName" = 'TamperedProject'
+                WHERE "ResourceKeyId" = (SELECT MIN("ResourceKeyId") FROM dms."ResourceKey")
+                """;
+            var rowsAffected = command.ExecuteNonQuery();
+            if (rowsAffected == 0)
+            {
+                throw new InvalidOperationException("Test setup failed: no ResourceKey rows to tamper with");
+            }
+        }
+
+        // Second provisioning run (should detect tampering)
+        (_secondExitCode, _secondOutput, _secondError) = ProvisionTestHelper.RunProvision(
+            "pgsql",
+            connectionString
+        );
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        PostgresTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+    }
+
+    [Test]
+    public void It_succeeds_on_first_provisioning()
+    {
+        _firstExitCode.Should().Be(0, $"stdout: {_firstOutput}\nstderr: {_firstError}");
+    }
+
+    [Test]
+    public void It_returns_nonzero_exit_code_on_tampered_rerun()
+    {
+        _secondExitCode.Should().NotBe(0, "provisioning with tampered ResourceKey should fail");
+    }
+
+    [Test]
+    public void It_reports_seed_data_mismatch_in_stderr()
+    {
+        _secondError.Should().Contain("ResourceKey", "stderr should mention the affected table");
+    }
+
+    [Test]
+    public void It_includes_row_level_diff_in_stderr()
+    {
+        _secondError.Should().Contain("ProjectName", "stderr should identify the tampered column");
+    }
+
+    [Test]
+    public void It_includes_the_tampered_value_in_stderr()
+    {
+        _secondError.Should().Contain(TamperedProjectName, "stderr should show the tampered value");
+    }
+
+    [Test]
+    public void It_still_has_the_tampered_row_in_database()
+    {
+        using var connection = new NpgsqlConnection(
+            PostgresTestDatabaseHelper.BuildConnectionString(_databaseName)
+        );
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*) FROM dms."ResourceKey"
+            WHERE "ProjectName" = 'TamperedProject'
+            """;
+        var count = Convert.ToInt64(command.ExecuteScalar());
+        count.Should().Be(1, "preflight should stop before DDL execution, leaving tampered row intact");
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+public class Given_SchemaComponent_Tampered_After_Provisioning
+{
+    private string _databaseName = null!;
+    private int _firstExitCode;
+    private string _firstOutput = null!;
+    private string _firstError = null!;
+    private int _secondExitCode;
+    private string _secondOutput = null!;
+    private string _secondError = null!;
+    private const string TamperedProjectName = "TamperedProject";
+
+    [SetUp]
+    public void SetUp()
+    {
+        _databaseName = PostgresTestDatabaseHelper.GenerateUniqueDatabaseName();
+        var connectionString = PostgresTestDatabaseHelper.BuildConnectionString(_databaseName);
+
+        // First provisioning run
+        (_firstExitCode, _firstOutput, _firstError) = ProvisionTestHelper.RunProvision(
+            "pgsql",
+            connectionString,
+            createDatabase: true
+        );
+
+        // Tamper with a SchemaComponent row
+        using (var connection = new NpgsqlConnection(connectionString))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                UPDATE dms."SchemaComponent"
+                SET "ProjectName" = 'TamperedProject'
+                WHERE "ProjectEndpointName" = (SELECT MIN("ProjectEndpointName") FROM dms."SchemaComponent")
+                """;
+            var rowsAffected = command.ExecuteNonQuery();
+            if (rowsAffected == 0)
+            {
+                throw new InvalidOperationException(
+                    "Test setup failed: no SchemaComponent rows to tamper with"
+                );
+            }
+        }
+
+        // Second provisioning run (should detect tampering)
+        (_secondExitCode, _secondOutput, _secondError) = ProvisionTestHelper.RunProvision(
+            "pgsql",
+            connectionString
+        );
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        PostgresTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+    }
+
+    [Test]
+    public void It_succeeds_on_first_provisioning()
+    {
+        _firstExitCode.Should().Be(0, $"stdout: {_firstOutput}\nstderr: {_firstError}");
+    }
+
+    [Test]
+    public void It_returns_nonzero_exit_code_on_tampered_rerun()
+    {
+        _secondExitCode.Should().NotBe(0, "provisioning with tampered SchemaComponent should fail");
+    }
+
+    [Test]
+    public void It_reports_seed_data_mismatch_in_stderr()
+    {
+        _secondError.Should().Contain("SchemaComponent", "stderr should mention the affected table");
+    }
+
+    [Test]
+    public void It_includes_row_level_diff_in_stderr()
+    {
+        _secondError.Should().Contain("ProjectName", "stderr should identify the tampered column");
+    }
+
+    [Test]
+    public void It_includes_the_tampered_value_in_stderr()
+    {
+        _secondError.Should().Contain(TamperedProjectName, "stderr should show the tampered value");
+    }
+
+    [Test]
+    public void It_still_has_the_tampered_row_in_database()
+    {
+        using var connection = new NpgsqlConnection(
+            PostgresTestDatabaseHelper.BuildConnectionString(_databaseName)
+        );
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*) FROM dms."SchemaComponent"
+            WHERE "ProjectName" = 'TamperedProject'
+            """;
+        var count = Convert.ToInt64(command.ExecuteScalar());
+        count.Should().Be(1, "preflight should stop before DDL execution, leaving tampered row intact");
+    }
+}

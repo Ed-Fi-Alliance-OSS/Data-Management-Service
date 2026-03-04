@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.RegularExpressions;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
@@ -198,6 +199,89 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
         var storedHash = hashCommand.ExecuteScalar() as string;
 
         SchemaHashChecker.ValidateOrThrow(storedHash, expectedHash, logger);
+    }
+
+    public void PreflightSeedValidation(string connectionString, EffectiveSchemaInfo expectedSchema)
+    {
+        using var connection = new SqlConnection(connectionString);
+        connection.Open();
+
+        // Check if the dms.EffectiveSchema table exists — if not, this is a fresh database
+        using var existsCommand = connection.CreateCommand();
+        existsCommand.CommandText =
+            "SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dms' AND TABLE_NAME = 'EffectiveSchema'";
+        if (existsCommand.ExecuteScalar() is null)
+        {
+            return;
+        }
+
+        // Read the current EffectiveSchemaHash to scope the SchemaComponent query
+        using var hashCommand = connection.CreateCommand();
+        hashCommand.CommandText =
+            """SELECT [EffectiveSchemaHash] FROM [dms].[EffectiveSchema] WHERE [EffectiveSchemaSingletonId] = 1""";
+        var currentHash = hashCommand.ExecuteScalar() as string;
+
+        // If no row exists in EffectiveSchema, treat as a fresh provisioning run
+        if (currentHash is null)
+        {
+            return;
+        }
+
+        // --- Validate ResourceKey rows ---
+        var actualResourceKeys = new List<ResourceKeyRow>();
+        using (var rkCommand = connection.CreateCommand())
+        {
+            rkCommand.CommandText =
+                @"SELECT [ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion] FROM [dms].[ResourceKey] ORDER BY [ResourceKeyId]";
+            using var reader = rkCommand.ExecuteReader();
+            while (reader.Read())
+            {
+                actualResourceKeys.Add(
+                    new ResourceKeyRow(
+                        reader.GetInt16(0),
+                        reader.GetString(1),
+                        reader.GetString(2),
+                        reader.GetString(3)
+                    )
+                );
+            }
+        }
+
+        SeedValidator.ValidateResourceKeysOrThrow(
+            actualResourceKeys,
+            expectedSchema.ResourceKeysInIdOrder,
+            logger
+        );
+
+        // --- Validate SchemaComponent rows ---
+        var actualSchemaComponents = new List<SchemaComponentRow>();
+        using (var scCommand = connection.CreateCommand())
+        {
+            scCommand.CommandText =
+                @"SELECT [ProjectEndpointName], [ProjectName], [ProjectVersion], [IsExtensionProject] FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = @hash ORDER BY [ProjectEndpointName]";
+            var param = scCommand.CreateParameter();
+            param.ParameterName = "@hash";
+            param.Value = currentHash;
+            scCommand.Parameters.Add(param);
+            using var reader = scCommand.ExecuteReader();
+            while (reader.Read())
+            {
+                actualSchemaComponents.Add(
+                    new SchemaComponentRow(
+                        reader.GetString(0),
+                        reader.GetString(1),
+                        reader.GetString(2),
+                        reader.GetBoolean(3)
+                    )
+                );
+            }
+        }
+
+        SeedValidator.ValidateSchemaComponentsOrThrow(
+            actualSchemaComponents,
+            expectedSchema.SchemaComponentsInEndpointOrder,
+            logger
+        );
     }
 
     public void CheckOrConfigureMvcc(string connectionString, bool databaseWasCreated)

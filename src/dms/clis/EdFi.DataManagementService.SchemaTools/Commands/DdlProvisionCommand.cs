@@ -160,6 +160,10 @@ public static class DdlProvisionCommand
                     effectiveSchemaInfo.EffectiveSchemaHash
                 );
 
+                // Fail-fast: validate that seed data (ResourceKey, SchemaComponent) has not
+                // been tampered with since the last provisioning run.
+                provisioner.PreflightSeedValidation(connectionString, effectiveSchemaInfo);
+
                 // Execute DDL in a transaction
                 provisioner.ExecuteInTransaction(connectionString, result.CombinedSql, commandTimeoutSeconds);
 

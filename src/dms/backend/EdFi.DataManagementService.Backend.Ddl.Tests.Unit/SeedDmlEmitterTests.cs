@@ -287,6 +287,14 @@ public class Given_SeedDmlEmitter_With_PgsqlDialect_And_SeedData
     }
 
     [Test]
+    public void It_should_include_resource_key_ids_in_content_mismatch_error()
+    {
+        _ddl.Should().Contain("ResourceKeyIds: %");
+        _ddl.Should().Contain("string_agg(sub.id, ', ')");
+        _ddl.Should().Contain("LIMIT 10");
+    }
+
+    [Test]
     public void It_should_emit_effective_schema_insert_with_on_conflict()
     {
         _ddl.Should().Contain("ON CONFLICT (\"EffectiveSchemaSingletonId\") DO NOTHING;");
@@ -314,6 +322,13 @@ public class Given_SeedDmlEmitter_With_PgsqlDialect_And_SeedData
     {
         _ddl.Should().Contain("dms.SchemaComponent count mismatch");
         _ddl.Should().Contain("dms.SchemaComponent contents mismatch");
+    }
+
+    [Test]
+    public void It_should_include_project_endpoint_names_in_schema_component_mismatch_error()
+    {
+        _ddl.Should().Contain("ProjectEndpointNames: %");
+        _ddl.Should().Contain("string_agg(sub.name, ', ')");
     }
 
     [Test]
@@ -417,6 +432,14 @@ public class Given_SeedDmlEmitter_With_MssqlDialect_And_SeedData
     }
 
     [Test]
+    public void It_should_include_resource_key_ids_in_content_mismatch_error()
+    {
+        _ddl.Should().Contain("ResourceKeyIds: ");
+        _ddl.Should().Contain("STRING_AGG(sub.[ResourceKeyId], N', ')");
+        _ddl.Should().Contain("TOP 10");
+    }
+
+    [Test]
     public void It_should_wrap_mssql_validation_throws_in_begin_end()
     {
         _ddl.Should().Contain("BEGIN");
@@ -454,6 +477,13 @@ public class Given_SeedDmlEmitter_With_MssqlDialect_And_SeedData
     {
         _ddl.Should().Contain("dms.SchemaComponent count mismatch: expected 2, found");
         _ddl.Should().Contain("dms.SchemaComponent contents mismatch:");
+    }
+
+    [Test]
+    public void It_should_include_project_endpoint_names_in_schema_component_mismatch_error()
+    {
+        _ddl.Should().Contain("ProjectEndpointNames: ");
+        _ddl.Should().Contain("STRING_AGG(sub.[ProjectEndpointName], N', ')");
     }
 
     [Test]

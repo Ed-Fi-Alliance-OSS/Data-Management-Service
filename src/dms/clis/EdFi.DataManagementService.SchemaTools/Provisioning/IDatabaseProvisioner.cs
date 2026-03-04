@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.External;
+
 namespace EdFi.DataManagementService.SchemaTools.Provisioning;
 
 /// <summary>
@@ -46,6 +48,14 @@ public interface IDatabaseProvisioner
     /// returns normally.
     /// </summary>
     void PreflightSchemaHashCheck(string connectionString, string expectedHash);
+
+    /// <summary>
+    /// Validates that the contents of dms.ResourceKey and dms.SchemaComponent match
+    /// the expected seed data from <paramref name="expectedSchema"/>. If dms.EffectiveSchema
+    /// does not exist (new database), returns immediately. On mismatch, throws
+    /// <see cref="InvalidOperationException"/> with a row-level diff report.
+    /// </summary>
+    void PreflightSeedValidation(string connectionString, EffectiveSchemaInfo expectedSchema);
 
     /// <summary>
     /// Extracts the target database name from the connection string.
