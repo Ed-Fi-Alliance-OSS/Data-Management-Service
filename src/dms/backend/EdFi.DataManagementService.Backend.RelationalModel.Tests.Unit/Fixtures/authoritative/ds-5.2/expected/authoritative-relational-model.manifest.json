@@ -17,7 +17,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -37,7 +38,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -57,7 +59,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -239,7 +242,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -259,7 +263,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -279,7 +284,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -518,7 +524,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -538,7 +545,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -558,7 +566,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -578,7 +587,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -598,7 +608,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -618,7 +629,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -638,7 +650,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -1032,7 +1045,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -1526,7 +1540,8 @@
           ],
           "ignored_by_reason": {
             "cross_table": 2
-          }
+          },
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -1875,7 +1890,8 @@
           ],
           "ignored_by_reason": {
             "cross_table": 2
-          }
+          },
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -1895,7 +1911,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -1915,7 +1932,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -1935,7 +1953,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -1955,7 +1974,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -2432,7 +2452,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -2466,7 +2487,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -2486,7 +2508,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -2961,7 +2984,8 @@
           ],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -4819,7 +4843,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -5022,7 +5047,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -5042,7 +5068,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -5062,7 +5089,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -5280,7 +5308,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -5314,7 +5343,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -5334,7 +5364,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -5847,7 +5878,8 @@
           ],
           "ignored_by_reason": {
             "cross_table": 1
-          }
+          },
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -5881,7 +5913,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -6156,7 +6189,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -6190,7 +6224,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -6210,7 +6245,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -6533,7 +6569,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -6580,7 +6617,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -7553,7 +7591,8 @@
           ],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -7600,7 +7639,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -7620,7 +7660,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -7640,7 +7681,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -7892,7 +7934,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -7912,7 +7955,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -7932,7 +7976,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -7952,7 +7997,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -7972,7 +8018,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -8373,7 +8420,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -9832,7 +9880,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -10268,7 +10317,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -11859,7 +11909,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -12075,7 +12126,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -12290,7 +12342,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -12324,7 +12377,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -14186,7 +14240,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -14415,7 +14470,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -14435,7 +14491,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -14455,7 +14512,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -14475,7 +14533,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -14495,7 +14554,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -14515,7 +14575,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -14535,7 +14596,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -14555,7 +14617,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -14575,7 +14638,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -14805,7 +14869,6 @@
                 "columns": [
                   "DocumentId",
                   "LocalCourseCode",
-                  "SchoolId_Unified",
                   "SchoolId_Unified",
                   "Session_SchoolYear",
                   "Session_SessionName"
@@ -15224,7 +15287,8 @@
           ],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -15284,7 +15348,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -16917,7 +16982,8 @@
           ],
           "ignored_by_reason": {
             "cross_table": 2
-          }
+          },
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -18151,7 +18217,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -18302,7 +18369,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -18322,7 +18390,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -18883,7 +18952,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -18995,7 +19065,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -19015,7 +19086,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -19174,7 +19246,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -19208,7 +19281,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -19228,7 +19302,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -19248,7 +19323,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -19268,7 +19344,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -19493,7 +19570,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -19527,7 +19605,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -19547,7 +19626,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -19567,7 +19647,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -19587,7 +19668,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -19607,7 +19689,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -19627,7 +19710,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -19647,7 +19731,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -20383,7 +20468,8 @@
           ],
           "ignored_by_reason": {
             "cross_table": 1
-          }
+          },
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -20443,7 +20529,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -20463,7 +20550,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -21086,7 +21174,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -21172,7 +21261,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -21192,7 +21282,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -21212,7 +21303,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -22244,7 +22336,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -22343,7 +22436,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -22363,7 +22457,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -22383,7 +22478,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -22597,7 +22693,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -22795,7 +22892,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -24229,7 +24327,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -24573,7 +24672,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -24593,7 +24693,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -26049,7 +26150,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -26226,7 +26328,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -26246,7 +26349,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -26266,7 +26370,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -26286,7 +26391,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -26306,7 +26412,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -26326,7 +26433,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -26346,7 +26454,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -26366,7 +26475,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -26386,7 +26496,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -26716,7 +26827,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -26789,7 +26901,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -26809,7 +26922,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -27021,7 +27135,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -27041,7 +27156,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -27259,7 +27375,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -27491,7 +27608,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -27525,7 +27643,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -27545,7 +27664,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -27565,7 +27685,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -28198,7 +28319,8 @@
           ],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -28245,7 +28367,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -28618,8 +28741,6 @@
                   "SchoolYear_Unified",
                   "StudentSectionAssociation_BeginDate",
                   "StudentSectionAssociation_LocalCourseCode",
-                  "SchoolId_Unified",
-                  "SchoolYear_Unified",
                   "StudentSectionAssociation_SectionIdentifier",
                   "StudentSectionAssociation_SessionName",
                   "StudentSectionAssociation_StudentUniqueId"
@@ -28986,7 +29107,8 @@
           ],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -29059,7 +29181,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -29335,7 +29458,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -29369,7 +29493,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -30696,7 +30821,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -30886,7 +31012,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -30906,7 +31033,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -30926,7 +31054,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -30946,7 +31075,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -30966,7 +31096,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -30986,7 +31117,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -31006,7 +31138,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -31026,7 +31159,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -31046,7 +31180,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -31066,7 +31201,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -31086,7 +31222,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -31106,7 +31243,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -31126,7 +31264,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -31146,7 +31285,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -31166,7 +31306,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -31186,7 +31327,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -31206,7 +31348,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -32109,7 +32252,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -33318,7 +33462,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -34709,7 +34854,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -34808,7 +34954,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -34828,7 +34975,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -34848,7 +34996,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -34868,7 +35017,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -35111,7 +35261,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -35145,7 +35296,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -35165,7 +35317,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -35981,7 +36134,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -36067,7 +36221,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -36087,7 +36242,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -36107,7 +36263,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -36127,7 +36284,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -36527,7 +36685,8 @@
           ],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -36750,7 +36909,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -36973,7 +37133,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -37248,7 +37409,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -39242,7 +39404,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -39471,7 +39634,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -39680,7 +39844,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -39955,7 +40120,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -39989,7 +40155,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -40159,7 +40326,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -40179,7 +40347,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -40199,7 +40368,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -40219,7 +40389,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -40239,7 +40410,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -40259,7 +40431,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -40279,7 +40452,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -40299,7 +40473,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -40319,7 +40494,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -40339,7 +40515,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -40359,7 +40536,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -40577,7 +40755,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -41633,7 +41812,8 @@
           ],
           "ignored_by_reason": {
             "cross_table": 2
-          }
+          },
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -42192,7 +42372,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -42291,7 +42472,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -42509,7 +42691,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -43999,7 +44182,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -44189,7 +44373,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -44209,7 +44394,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -44229,7 +44415,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -44353,7 +44540,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -44387,7 +44575,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -44407,7 +44596,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -44427,7 +44617,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -44447,7 +44638,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -44467,7 +44659,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -44487,7 +44680,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -44703,7 +44897,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -44737,7 +44932,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -46296,7 +46492,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -46512,7 +46709,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -46532,7 +46730,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -46552,7 +46751,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -46572,7 +46772,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -46592,7 +46793,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -46612,7 +46814,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -46632,7 +46835,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -46850,7 +47054,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -47694,7 +47899,8 @@
           ],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -48240,7 +48446,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -48313,7 +48520,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -48333,7 +48541,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -48754,7 +48963,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -48827,7 +49037,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -48847,7 +49058,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -49342,7 +49554,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -49402,7 +49615,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -49422,7 +49636,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -49640,7 +49855,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -49674,7 +49890,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -49694,7 +49911,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -49714,7 +49932,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -49734,7 +49953,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -49754,7 +49974,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -49774,7 +49995,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -49794,7 +50016,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -49814,7 +50037,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -49834,7 +50058,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -49854,7 +50079,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -49874,7 +50100,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -49894,7 +50121,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -50615,8 +50843,6 @@
                   "Grade_GradingPeriodSchoolYear",
                   "Grade_BeginDate",
                   "Grade_LocalCourseCode",
-                  "Grade_StudentSectionAssociationReferenceSchoolId",
-                  "Grade_SchoolYear",
                   "Grade_SectionIdentifier",
                   "Grade_SessionName",
                   "Grade_StudentUniqueId"
@@ -50634,8 +50860,6 @@
                   "SchoolYear_Unified",
                   "StudentSectionAssociation_BeginDate",
                   "StudentSectionAssociation_LocalCourseCode",
-                  "SchoolId_Unified",
-                  "SchoolYear_Unified",
                   "StudentSectionAssociation_SectionIdentifier",
                   "StudentSectionAssociation_SessionName",
                   "StudentSectionAssociation_StudentUniqueId"
@@ -51129,7 +51353,8 @@
           ],
           "ignored_by_reason": {
             "cross_table": 10
-          }
+          },
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -51228,7 +51453,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -51248,7 +51474,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -51268,7 +51495,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -51288,7 +51516,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -51308,7 +51537,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -51328,7 +51558,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -51914,7 +52145,8 @@
           ],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -51974,7 +52206,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -51994,7 +52227,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -52014,7 +52248,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -52034,7 +52269,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -52054,7 +52290,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -52074,7 +52311,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -52094,7 +52332,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -52212,7 +52451,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -54108,7 +54348,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -54402,7 +54643,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -54818,7 +55060,8 @@
           ],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -54838,7 +55081,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -54858,7 +55102,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -55253,7 +55498,6 @@
                   "CourseOffering_DocumentId",
                   "CourseOffering_LocalCourseCode",
                   "CourseOffering_SchoolReferenceSchoolId",
-                  "CourseOffering_SessionReferenceSchoolId",
                   "CourseOffering_SchoolYear",
                   "CourseOffering_SessionName"
                 ],
@@ -55264,7 +55508,6 @@
                 "target_columns": [
                   "DocumentId",
                   "LocalCourseCode",
-                  "SchoolId_Unified",
                   "SchoolId_Unified",
                   "Session_SchoolYear",
                   "Session_SessionName"
@@ -56052,7 +56295,8 @@
           ],
           "ignored_by_reason": {
             "cross_table": 1
-          }
+          },
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -56203,7 +56447,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -56223,7 +56468,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -56243,7 +56489,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -56865,7 +57112,8 @@
           ],
           "ignored_by_reason": {
             "cross_table": 3
-          }
+          },
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -56912,7 +57160,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -57130,7 +57379,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -57164,7 +57414,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -57184,7 +57435,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -57204,7 +57456,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -57224,7 +57477,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -57417,7 +57671,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -57451,7 +57706,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -57679,7 +57935,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -57967,7 +58224,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -58480,7 +58738,8 @@
           ],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -59216,7 +59475,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -59727,7 +59987,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -59800,7 +60061,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -59820,7 +60082,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -60023,7 +60286,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -60296,7 +60560,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -60909,7 +61174,8 @@
           ],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -61278,7 +61544,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -64371,7 +64638,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -64756,7 +65024,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -66388,7 +66657,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -68317,7 +68587,8 @@
           ],
           "ignored_by_reason": {
             "cross_table": 2
-          }
+          },
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -68802,7 +69073,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -69271,7 +69543,8 @@
           ],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -70068,7 +70341,8 @@
           ],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -71977,7 +72251,8 @@
           ],
           "ignored_by_reason": {
             "cross_table": 4
-          }
+          },
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -72896,7 +73171,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -72982,7 +73258,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -73372,7 +73649,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -74213,7 +74491,8 @@
           ],
           "ignored_by_reason": {
             "cross_table": 2
-          }
+          },
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -74543,7 +74822,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -74995,7 +75275,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -75323,7 +75604,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -75618,7 +75900,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -78760,7 +79043,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -79367,7 +79651,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -79735,7 +80020,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -80406,7 +80692,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -81091,7 +81378,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -81177,7 +81465,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -81654,7 +81943,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -82007,7 +82297,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -82895,7 +83186,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -83730,7 +84022,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -84486,7 +84779,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -85184,7 +85478,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -85619,7 +85914,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -87057,7 +87353,8 @@
           ],
           "ignored_by_reason": {
             "cross_table": 12
-          }
+          },
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -88385,7 +88682,8 @@
           ],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -88955,7 +89253,8 @@
           ],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -89600,7 +89899,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -90202,7 +90502,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -90900,7 +91201,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -91486,7 +91788,8 @@
           ],
           "ignored_by_reason": {
             "cross_table": 1
-          }
+          },
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -92887,7 +93190,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -93536,7 +93840,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -94236,7 +94541,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -94795,7 +95101,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -95984,7 +96291,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -96174,7 +96482,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -96194,7 +96503,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -96214,7 +96524,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -96421,7 +96732,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -96441,7 +96753,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -96679,7 +96992,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -97279,7 +97593,8 @@
           ],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -97851,7 +98166,8 @@
           ],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -98072,7 +98388,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -98280,7 +98597,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -98757,7 +99075,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -99025,7 +99344,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -99208,34 +99528,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_SurveySectionResponseEducationOrganizationTargetA_50ee8d8eca",
-                "columns": [
-                  "SurveySectionResponse_DocumentId",
-                  "SurveySectionResponse_SurveyResponseReferenceNamespace",
-                  "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier",
-                  "SurveySectionResponse_SurveyResponseIdentifier",
-                  "SurveySectionResponse_SurveySectionReferenceNamespace",
-                  "SurveySectionResponse_SurveySectionReferenceSurveyIdentifier",
-                  "SurveySectionResponse_SurveySectionTitle"
-                ],
-                "target_table": {
-                  "schema": "edfi",
-                  "name": "SurveySectionResponse"
-                },
-                "target_columns": [
-                  "DocumentId",
-                  "Namespace_Unified",
-                  "SurveyIdentifier_Unified",
-                  "SurveyResponse_SurveyResponseIdentifier",
-                  "Namespace_Unified",
-                  "SurveyIdentifier_Unified",
-                  "SurveySection_SurveySectionTitle"
-                ],
-                "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_SurveySectionResponseEducationOrganizationTargetA_ab304c1dcc",
                 "columns": [
                   "EducationOrganization_DocumentId",
@@ -99251,6 +99543,30 @@
                 ],
                 "on_delete": "NoAction",
                 "on_update": "Cascade"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_SurveySectionResponseEducationOrganizationTargetA_ba69e4aa87",
+                "columns": [
+                  "SurveySectionResponse_DocumentId",
+                  "SurveySectionResponse_SurveyResponseReferenceNamespace",
+                  "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier",
+                  "SurveySectionResponse_SurveyResponseIdentifier",
+                  "SurveySectionResponse_SurveySectionTitle"
+                ],
+                "target_table": {
+                  "schema": "edfi",
+                  "name": "SurveySectionResponse"
+                },
+                "target_columns": [
+                  "DocumentId",
+                  "Namespace_Unified",
+                  "SurveyIdentifier_Unified",
+                  "SurveyResponse_SurveyResponseIdentifier",
+                  "SurveySection_SurveySectionTitle"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
               },
               {
                 "kind": "AllOrNoneNullability",
@@ -99280,7 +99596,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -99482,14 +99799,12 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_SurveySectionResponseStaffTargetAssociation_Surve_82efc48b45",
+                "name": "FK_SurveySectionResponseStaffTargetAssociation_Surve_9d8ebe9365",
                 "columns": [
                   "SurveySectionResponse_DocumentId",
                   "SurveySectionResponse_SurveyResponseReferenceNamespace",
                   "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier",
                   "SurveySectionResponse_SurveyResponseIdentifier",
-                  "SurveySectionResponse_SurveySectionReferenceNamespace",
-                  "SurveySectionResponse_SurveySectionReferenceSurveyIdentifier",
                   "SurveySectionResponse_SurveySectionTitle"
                 ],
                 "target_table": {
@@ -99501,8 +99816,6 @@
                   "Namespace_Unified",
                   "SurveyIdentifier_Unified",
                   "SurveyResponse_SurveyResponseIdentifier",
-                  "Namespace_Unified",
-                  "SurveyIdentifier_Unified",
                   "SurveySection_SurveySectionTitle"
                 ],
                 "on_delete": "NoAction",
@@ -99536,7 +99849,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -99760,8 +100074,6 @@
                   "Namespace_Unified",
                   "SurveyIdentifier_Unified",
                   "SurveyResponse_SurveyResponseIdentifier",
-                  "Namespace_Unified",
-                  "SurveyIdentifier_Unified",
                   "SurveySection_SurveySectionTitle"
                 ]
               },
@@ -99875,7 +100187,8 @@
           ],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -100039,7 +100352,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -100418,7 +100732,8 @@
           ],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [
           {
@@ -100452,7 +100767,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -100472,7 +100788,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -100492,7 +100809,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -100512,7 +100830,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -100532,7 +100851,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -100552,7 +100872,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -100572,7 +100893,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -100592,7 +100914,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -100612,7 +100935,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -100632,7 +100956,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -100652,7 +100977,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -100672,7 +100998,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -100692,7 +101019,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -100712,7 +101040,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []
@@ -100732,7 +101061,8 @@
           "applied": [],
           "redundant": [],
           "ignored": [],
-          "ignored_by_reason": {}
+          "ignored_by_reason": {},
+          "skipped": []
         },
         "descriptor_edge_sources": [],
         "extension_sites": []

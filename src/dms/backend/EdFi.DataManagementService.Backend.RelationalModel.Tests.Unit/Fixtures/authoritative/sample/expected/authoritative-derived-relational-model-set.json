@@ -7083,7 +7083,6 @@
         "DocumentId",
         "LocalCourseCode",
         "SchoolId_Unified",
-        "SchoolId_Unified",
         "Session_SchoolYear",
         "Session_SessionName"
       ]
@@ -10066,8 +10065,6 @@
         "SchoolYear_Unified",
         "StudentSectionAssociation_BeginDate",
         "StudentSectionAssociation_LocalCourseCode",
-        "SchoolId_Unified",
-        "SchoolYear_Unified",
         "StudentSectionAssociation_SectionIdentifier",
         "StudentSectionAssociation_SessionName",
         "StudentSectionAssociation_StudentUniqueId"
@@ -15469,7 +15466,7 @@
       ]
     },
     {
-      "name": "IX_ReportCardGrade_Grade_DocumentId_Grade_GradeTypeD_d44763261a",
+      "name": "IX_ReportCardGrade_Grade_DocumentId_Grade_GradeTypeD_26a5e520b2",
       "table": {
         "schema": "edfi",
         "name": "ReportCardGrade"
@@ -15485,8 +15482,6 @@
         "Grade_GradingPeriodSchoolYear",
         "Grade_BeginDate",
         "Grade_LocalCourseCode",
-        "Grade_StudentSectionAssociationReferenceSchoolId",
-        "Grade_SchoolYear",
         "Grade_SectionIdentifier",
         "Grade_SessionName",
         "Grade_StudentUniqueId"
@@ -16413,7 +16408,7 @@
       ]
     },
     {
-      "name": "IX_Section_CourseOffering_DocumentId_CourseOffering__2fd82ca546",
+      "name": "IX_Section_CourseOffering_DocumentId_CourseOffering__b7cec3dde3",
       "table": {
         "schema": "edfi",
         "name": "Section"
@@ -16424,7 +16419,6 @@
         "CourseOffering_DocumentId",
         "CourseOffering_LocalCourseCode",
         "CourseOffering_SchoolReferenceSchoolId",
-        "CourseOffering_SessionReferenceSchoolId",
         "CourseOffering_SchoolYear",
         "CourseOffering_SessionName"
       ]
@@ -27422,13 +27416,11 @@
         "Namespace_Unified",
         "SurveyIdentifier_Unified",
         "SurveyResponse_SurveyResponseIdentifier",
-        "Namespace_Unified",
-        "SurveyIdentifier_Unified",
         "SurveySection_SurveySectionTitle"
       ]
     },
     {
-      "name": "IX_SurveySectionResponseEducationOrganizationTargetA_741f83623e",
+      "name": "IX_SurveySectionResponseEducationOrganizationTargetA_75b62d2e13",
       "table": {
         "schema": "edfi",
         "name": "SurveySectionResponseEducationOrganizationTargetAssociation"
@@ -27440,8 +27432,6 @@
         "SurveySectionResponse_SurveyResponseReferenceNamespace",
         "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier",
         "SurveySectionResponse_SurveyResponseIdentifier",
-        "SurveySectionResponse_SurveySectionReferenceNamespace",
-        "SurveySectionResponse_SurveySectionReferenceSurveyIdentifier",
         "SurveySectionResponse_SurveySectionTitle"
       ]
     },
@@ -27497,7 +27487,7 @@
       ]
     },
     {
-      "name": "IX_SurveySectionResponseStaffTargetAssociation_Surve_2b9dcd306d",
+      "name": "IX_SurveySectionResponseStaffTargetAssociation_Surve_431135bea0",
       "table": {
         "schema": "edfi",
         "name": "SurveySectionResponseStaffTargetAssociation"
@@ -27509,8 +27499,6 @@
         "SurveySectionResponse_SurveyResponseReferenceNamespace",
         "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier",
         "SurveySectionResponse_SurveyResponseIdentifier",
-        "SurveySectionResponse_SurveySectionReferenceNamespace",
-        "SurveySectionResponse_SurveySectionReferenceSurveyIdentifier",
         "SurveySectionResponse_SurveySectionTitle"
       ]
     },
@@ -43164,7 +43152,8 @@
         ],
         "ignored_by_reason": {
           "cross_table": 2
-        }
+        },
+        "skipped": []
       },
       "document_reference_bindings": [
         {
@@ -44062,7 +44051,8 @@
         ],
         "redundant": [],
         "ignored": [],
-        "ignored_by_reason": {}
+        "ignored_by_reason": {},
+        "skipped": []
       },
       "document_reference_bindings": [
         {
@@ -45018,7 +45008,8 @@
         ],
         "redundant": [],
         "ignored": [],
-        "ignored_by_reason": {}
+        "ignored_by_reason": {},
+        "skipped": []
       },
       "document_reference_bindings": [
         {
@@ -46443,7 +46434,8 @@
         ],
         "redundant": [],
         "ignored": [],
-        "ignored_by_reason": {}
+        "ignored_by_reason": {},
+        "skipped": []
       },
       "document_reference_bindings": [
         {

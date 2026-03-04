@@ -69,7 +69,7 @@ public static class HashCommand
 
         return CommandErrorHandler.Execute(
             logger,
-            "hash computation",
+            "Hash computation",
             () =>
             {
                 var nodes = success.NormalizedNodes;
@@ -90,7 +90,7 @@ public static class HashCommand
                         .ExtensionApiSchemaRootNodes.Select(n =>
                             n["projectSchema"]?["projectEndpointName"]?.GetValue<string>()
                         )
-                        .Where(n => n != null);
+                        .Where(n => n is not null);
 
                     logger.LogInformation(
                         "Extension endpoints: {Extensions}",

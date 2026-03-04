@@ -74,8 +74,8 @@ BEGIN
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
-
 GO
+
 CREATE OR ALTER TRIGGER [edfi].[TR_CourseRegistration_Stamp]
 ON [edfi].[CourseRegistration]
 AFTER INSERT, UPDATE, DELETE
@@ -97,8 +97,8 @@ BEGIN
         WHERE (i.[SchoolId_Unified] <> del.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND del.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND del.[SchoolId_Unified] IS NULL)) OR (i.[CourseOffering_LocalCourseCode] <> del.[CourseOffering_LocalCourseCode] OR (i.[CourseOffering_LocalCourseCode] IS NULL AND del.[CourseOffering_LocalCourseCode] IS NOT NULL) OR (i.[CourseOffering_LocalCourseCode] IS NOT NULL AND del.[CourseOffering_LocalCourseCode] IS NULL)) OR (i.[RegistrationDate] <> del.[RegistrationDate] OR (i.[RegistrationDate] IS NULL AND del.[RegistrationDate] IS NOT NULL) OR (i.[RegistrationDate] IS NOT NULL AND del.[RegistrationDate] IS NULL));
     END
 END;
-
 GO
+
 CREATE OR ALTER TRIGGER [edfi].[TR_School_Propagation]
 ON [edfi].[School]
 AFTER UPDATE
@@ -116,8 +116,8 @@ BEGIN
 
     END
 END;
-
 GO
+
 CREATE OR ALTER TRIGGER [edfi].[TR_School_ReferentialIdentity]
 ON [edfi].[School]
 AFTER INSERT, UPDATE
@@ -146,8 +146,8 @@ BEGIN
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
-
 GO
+
 CREATE OR ALTER TRIGGER [edfi].[TR_School_Stamp]
 ON [edfi].[School]
 AFTER INSERT, UPDATE, DELETE
@@ -169,4 +169,5 @@ BEGIN
         WHERE (i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL));
     END
 END;
+GO
 

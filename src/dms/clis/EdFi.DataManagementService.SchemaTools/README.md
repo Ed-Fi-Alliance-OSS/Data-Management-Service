@@ -87,6 +87,48 @@ dms-schema ddl emit -s core/ApiSchema.json -s extensions/tpdm/ApiSchema.json -o 
 All output files use Unix line endings (`\n`) for deterministic, byte-for-byte
 stable output across platforms.
 
+### `ddl provision` — Generate DDL and execute against a database
+
+Generates dialect-specific DDL and executes it against a target database in a
+single transaction. Provisions one database at a time (`--dialect both` is not
+accepted).
+
+```bash
+dms-schema ddl provision --schema <paths...> --connection-string <connstr> --dialect <dialect> [--create-database] [--timeout <seconds>]
+```
+
+**Options:**
+
+| Option | Short | Required | Default | Description |
+|---|---|---|---|---|
+| `--schema` | `-s` | Yes | — | `ApiSchema.json` path(s). First is core, rest are extensions. |
+| `--connection-string` | `-c` | Yes | — | ADO.NET connection string for the target database. |
+| `--dialect` | `-d` | Yes | — | SQL dialect: `pgsql` or `mssql` (not `both`). |
+| `--create-database` | — | No | `false` | Create the target database if it does not exist before provisioning. |
+| `--timeout` | `-t` | No | `300` | Command timeout in seconds for DDL execution. |
+
+**Examples:**
+
+```bash
+# Provision a PostgreSQL database
+dms-schema ddl provision --schema core/ApiSchema.json --connection-string "Host=localhost;Port=5432;Database=edfi_dms;Username=postgres;Password=secret" --dialect pgsql --create-database
+
+# Provision a SQL Server database (database must already exist)
+dms-schema ddl provision -s core/ApiSchema.json -c "Server=localhost;Initial Catalog=edfi_dms;User Id=sa;Password=secret;TrustServerCertificate=true" -d mssql
+
+# Core + extension, PostgreSQL
+dms-schema ddl provision -s core/ApiSchema.json -s extensions/tpdm/ApiSchema.json -c "Host=localhost;Database=edfi_dms;Username=postgres;Password=secret" -d pgsql --create-database
+```
+
+**Behavior:**
+
+1. Loads and normalizes schema files, builds the effective schema set
+2. Generates DDL (core tables, relational model, seed DML) for the specified dialect
+3. Optionally creates the database if `--create-database` is set
+4. Executes all DDL in a single transaction against the target database
+5. For SQL Server: configures Read Committed Snapshot Isolation (RCSI) on newly
+   created databases; warns if RCSI is disabled on existing databases
+
 ## Determinism guarantee
 
 For a fixed set of `(ApiSchema.json inputs, dialect, relational mapping version)`,
@@ -101,6 +143,49 @@ This enables reliable golden-file testing and change detection.
 | 1 | Error (invalid arguments, missing files, schema validation failure, etc.) |
 
 Errors are written to stderr with descriptive messages.
+
+## Integration tests
+
+### PostgreSQL
+
+PostgreSQL integration tests run automatically and require a PostgreSQL server.
+The connection string is configured in `appsettings.json` in the
+`SchemaTools.Tests.Integration` project (port 5432 for CI, overridden to 5435
+locally via `appsettings.Test.json`). If PostgreSQL is unreachable, the tests
+fail — this is intentional so CI detects infrastructure problems.
+
+### SQL Server
+
+SQL Server integration tests are **opt-in**. They are skipped unless a
+`MssqlAdmin` connection string is configured. To enable them locally:
+
+1. Create `appsettings.Test.json` in the `SchemaTools.Tests.Integration` project
+   directory (this file is gitignored):
+
+   ```json
+   {
+       "ConnectionStrings": {
+           "PostgresAdmin": "Host=localhost;Port=5435;Database=postgres;Username=postgres;Password=abcdefgh1!;",
+           "MssqlAdmin": "Server=localhost;Database=master;User Id=sa;Password=YourPassword;TrustServerCertificate=true;"
+       }
+   }
+   ```
+
+2. Ensure SQL Server is running (e.g., via Docker):
+
+   ```bash
+   docker run -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=YourPassword" -p 1433:1433 -d mcr.microsoft.com/mssql/server:2022-latest
+   ```
+
+3. Run the integration tests:
+
+   ```bash
+   dotnet test src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration
+   ```
+
+When `MssqlAdmin` is not configured, the SQL Server tests report as skipped
+(not failed). When it is configured, they run and fail on any server issue —
+same behavior as the PostgreSQL tests.
 
 ## Breaking changes
 

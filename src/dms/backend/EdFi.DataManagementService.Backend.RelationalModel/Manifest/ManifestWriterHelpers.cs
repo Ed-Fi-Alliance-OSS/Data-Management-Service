@@ -488,6 +488,18 @@ internal static class ManifestWriterHelpers
         }
         writer.WriteEndObject();
 
+        writer.WritePropertyName("skipped");
+        writer.WriteStartArray();
+        foreach (var skipped in diagnostics.Skipped)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("source_path", skipped.SourcePath.Canonical);
+            writer.WriteString("target_path", skipped.TargetPath.Canonical);
+            writer.WriteString("unresolved_endpoint", skipped.UnresolvedEndpoint);
+            writer.WriteEndObject();
+        }
+        writer.WriteEndArray();
+
         writer.WriteEndObject();
     }
 

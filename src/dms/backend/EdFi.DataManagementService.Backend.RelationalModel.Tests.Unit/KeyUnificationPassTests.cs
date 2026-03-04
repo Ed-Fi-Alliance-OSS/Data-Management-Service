@@ -539,7 +539,8 @@ public class Given_Key_Unification_With_Duplicate_Table_Names_Across_Scopes
 }
 
 /// <summary>
-/// Test fixture for unresolved equality-constraint endpoint failures.
+/// Test fixture for unresolved equality-constraint endpoint handling.
+/// Constraints with unresolved endpoints are silently skipped.
 /// </summary>
 [TestFixture]
 public class Given_Key_Unification_With_An_Unresolved_Endpoint
@@ -557,12 +558,12 @@ public class Given_Key_Unification_With_An_Unresolved_Endpoint
     }
 
     /// <summary>
-    /// It should fail fast when an endpoint does not bind to any source path.
+    /// It should silently skip constraints with unresolved endpoints.
     /// </summary>
     [Test]
-    public void It_should_fail_fast_for_unresolved_endpoints()
+    public void It_should_skip_constraints_with_unresolved_endpoints()
     {
-        _act.Should().Throw<InvalidOperationException>().WithMessage("*was not bound to any column*");
+        _act.Should().NotThrow();
     }
 }
 

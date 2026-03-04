@@ -4,10 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.CommandLine;
-using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Backend.RelationalModel.Build;
 using EdFi.DataManagementService.Backend.RelationalModel.Manifest;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Utilities;
@@ -77,6 +74,12 @@ public static class DdlEmitCommand
         string dialectName
     )
     {
+        if (schemaPaths.Length == 0)
+        {
+            Console.Error.WriteLine("At least one --schema path is required.");
+            return 1;
+        }
+
         // Dialect is validated at parse time by AcceptOnlyFromAmong
         var dialects = ParseDialect(dialectName);
 
@@ -102,16 +105,6 @@ public static class DdlEmitCommand
             "DDL emission",
             () =>
             {
-                // Build EffectiveSchemaSet
-                var effectiveSchemaSet = schemaSetBuilder.Build(success.NormalizedNodes);
-                var effectiveSchemaInfo = effectiveSchemaSet.EffectiveSchema;
-
-                logger.LogInformation(
-                    "Effective schema hash: {Hash}, resource keys: {ResourceKeyCount}",
-                    effectiveSchemaInfo.EffectiveSchemaHash,
-                    effectiveSchemaInfo.ResourceKeyCount
-                );
-
                 // Create output directory (must be empty or new to avoid stale artifacts)
                 Directory.CreateDirectory(outputDir);
 
@@ -132,36 +125,23 @@ public static class DdlEmitCommand
 
                 var emittedFiles = new List<string>();
 
-                // Emit DDL and model manifests per dialect
+                // Build the dialect-independent EffectiveSchemaSet once
+                var effectiveSchemaSet = DdlCommandHelpers.BuildEffectiveSchemaSet(
+                    logger,
+                    schemaSetBuilder,
+                    success.NormalizedNodes
+                );
+                var effectiveSchemaInfo = effectiveSchemaSet.EffectiveSchema;
+
+                // Build DDL and write per-dialect outputs
                 foreach (var dialect in dialects)
                 {
-                    var (sqlDialect, dialectRules) = CreateDialect(dialect);
-
-                    // Deep-clone the effective schema set for each dialect because
-                    // DerivedRelationalModelSetBuilder assigns JsonNode.Parent on ProjectSchema
-                    // nodes, which prevents reuse across builds. Ideally the builder should
-                    // treat inputs as immutable, but until then we clone before each build.
-                    var clonedSchemaSet = CloneEffectiveSchemaSet(effectiveSchemaSet);
-
-                    // Build relational model
-                    var modelSetBuilder = new DerivedRelationalModelSetBuilder(
-                        RelationalModelSetPasses.CreateDefault()
-                    );
-                    var modelSet = modelSetBuilder.Build(clonedSchemaSet, dialect, dialectRules);
-
-                    // Emit DDL: core + relational model + seed DML.
-                    // SeedDmlEmitter uses the original effectiveSchemaInfo (not the cloned set)
-                    // because EffectiveSchemaInfo is an immutable record unaffected by model builder mutation.
-                    var coreDdl = new CoreDdlEmitter(sqlDialect).Emit();
-                    var relationalDdl = new RelationalModelDdlEmitter(sqlDialect).Emit(modelSet);
-                    var seedDml = new SeedDmlEmitter(sqlDialect).Emit(effectiveSchemaInfo);
-                    var combinedSql = coreDdl + relationalDdl + seedDml;
+                    var result = DdlCommandHelpers.BuildDdlFromSchemaSet(logger, effectiveSchemaSet, dialect);
 
                     // Write SQL file (always dialect-prefixed, matching {dialect}.sql convention)
                     var dialectLabel = DialectLabel(dialect);
                     var sqlFileName = $"{dialectLabel}.sql";
-                    var sqlPath = Path.Combine(outputDir, sqlFileName);
-                    WriteFileWithUnixLineEndings(sqlPath, combinedSql);
+                    WriteFileWithUnixLineEndings(Path.Combine(outputDir, sqlFileName), result.CombinedSql);
                     emittedFiles.Add(sqlFileName);
 
                     // Emit relational model manifest (always dialect-suffixed because the
@@ -169,12 +149,11 @@ public static class DdlEmitCommand
                     // Pass all concrete resources as detailedResources to include the full
                     // resource inventory with key-unification surface per the design spec.
                     var allResources = new HashSet<QualifiedResourceName>(
-                        modelSet.ConcreteResourcesInNameOrder.Select(r => r.ResourceKey.Resource)
+                        result.ModelSet.ConcreteResourcesInNameOrder.Select(r => r.ResourceKey.Resource)
                     );
-                    var modelManifest = DerivedModelSetManifestEmitter.Emit(modelSet, allResources);
+                    var modelManifest = DerivedModelSetManifestEmitter.Emit(result.ModelSet, allResources);
                     var manifestFileName = $"relational-model.{dialectLabel}.manifest.json";
-                    var manifestPath = Path.Combine(outputDir, manifestFileName);
-                    WriteFileWithUnixLineEndings(manifestPath, modelManifest);
+                    WriteFileWithUnixLineEndings(Path.Combine(outputDir, manifestFileName), modelManifest);
                     emittedFiles.Add(manifestFileName);
                 }
 
@@ -183,8 +162,10 @@ public static class DdlEmitCommand
                     effectiveSchemaInfo,
                     includeResourceKeys: true
                 );
-                var schemaManifestPath = Path.Combine(outputDir, "effective-schema.manifest.json");
-                WriteFileWithUnixLineEndings(schemaManifestPath, schemaManifest);
+                WriteFileWithUnixLineEndings(
+                    Path.Combine(outputDir, "effective-schema.manifest.json"),
+                    schemaManifest
+                );
                 emittedFiles.Add("effective-schema.manifest.json");
 
                 // Print summary
@@ -225,43 +206,6 @@ public static class DdlEmitCommand
                 "Invalid dialect (should be rejected by AcceptOnlyFromAmong)"
             ),
         };
-    }
-
-    private static (ISqlDialect Dialect, ISqlDialectRules Rules) CreateDialect(SqlDialect dialect)
-    {
-        return dialect switch
-        {
-            SqlDialect.Pgsql => CreatePgsqlDialect(),
-            SqlDialect.Mssql => CreateMssqlDialect(),
-            _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported dialect"),
-        };
-
-        static (ISqlDialect, ISqlDialectRules) CreatePgsqlDialect()
-        {
-            var rules = new PgsqlDialectRules();
-            return (new PgsqlDialect(rules), rules);
-        }
-
-        static (ISqlDialect, ISqlDialectRules) CreateMssqlDialect()
-        {
-            var rules = new MssqlDialectRules();
-            return (new MssqlDialect(rules), rules);
-        }
-    }
-
-    private static EffectiveSchemaSet CloneEffectiveSchemaSet(EffectiveSchemaSet original)
-    {
-        var clonedProjects = original
-            .ProjectsInEndpointOrder.Select(p => new EffectiveProjectSchema(
-                p.ProjectEndpointName,
-                p.ProjectName,
-                p.ProjectVersion,
-                p.IsExtensionProject,
-                (JsonObject)p.ProjectSchema.DeepClone()
-            ))
-            .ToList();
-
-        return new EffectiveSchemaSet(original.EffectiveSchema, clonedProjects);
     }
 
     private static void WriteFileWithUnixLineEndings(string path, string content)

@@ -256,6 +256,8 @@ public class Given_SeedDmlEmitter_With_PgsqlDialect_And_SeedData
     {
         _ddl.Should().Contain("EffectiveSchemaHash mismatch");
         _ddl.Should().Contain("RAISE EXCEPTION");
+        _ddl.Should().Contain("_stored_hash");
+        _ddl.Should().Contain("but expected");
         _ddl.Should().Contain("'abc123def456'");
     }
 
@@ -288,6 +290,13 @@ public class Given_SeedDmlEmitter_With_PgsqlDialect_And_SeedData
     public void It_should_emit_effective_schema_insert_with_on_conflict()
     {
         _ddl.Should().Contain("ON CONFLICT (\"EffectiveSchemaSingletonId\") DO NOTHING;");
+    }
+
+    [Test]
+    public void It_should_emit_effective_schema_validation_block()
+    {
+        _ddl.Should().Contain("dms.EffectiveSchema ResourceKeyCount mismatch");
+        _ddl.Should().Contain("dms.EffectiveSchema ResourceKeySeedHash mismatch");
     }
 
     [Test]
@@ -378,7 +387,8 @@ public class Given_SeedDmlEmitter_With_MssqlDialect_And_SeedData
     {
         _ddl.Should().Contain("EffectiveSchemaHash mismatch");
         _ddl.Should().Contain("THROW 50000");
-        _ddl.Should().Contain("(expected: ', N'abc123def456'");
+        _ddl.Should().Contain("@preflight_stored_hash");
+        _ddl.Should().Contain("but expected ''', N'abc123def456'");
     }
 
     [Test]
@@ -420,6 +430,13 @@ public class Given_SeedDmlEmitter_With_MssqlDialect_And_SeedData
             .Contain(
                 "IF NOT EXISTS (SELECT 1 FROM [dms].[EffectiveSchema] WHERE [EffectiveSchemaSingletonId] = 1)"
             );
+    }
+
+    [Test]
+    public void It_should_emit_effective_schema_validation_block()
+    {
+        _ddl.Should().Contain("dms.EffectiveSchema ResourceKeyCount mismatch: expected 3, found");
+        _ddl.Should().Contain("dms.EffectiveSchema ResourceKeySeedHash mismatch:");
     }
 
     [Test]

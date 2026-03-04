@@ -32,10 +32,10 @@ BEGIN
     END IF;
 END $$;
 
-CREATE INDEX IF NOT EXISTS "edfi"."IX_Enrollment_SchoolId" ON "edfi"."Enrollment" ("SchoolId");
+CREATE INDEX IF NOT EXISTS "IX_Enrollment_SchoolId" ON "edfi"."Enrollment" ("SchoolId");
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Enrollment_Stamp"()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
@@ -53,7 +53,7 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Enrollment_Stamp" ON "edfi"."Enrollment";
 CREATE TRIGGER "TR_Enrollment_Stamp"
@@ -62,7 +62,7 @@ FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Enrollment_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_Stamp"()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER AS $func$
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
@@ -80,7 +80,7 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$func$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_School_Stamp" ON "edfi"."School";
 CREATE TRIGGER "TR_School_Stamp"

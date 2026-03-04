@@ -327,6 +327,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private void EmitTriggers(SqlWriter writer, IReadOnlyList<DbTriggerInfo> triggers)
     {
+        // MSSQL requires a batch boundary before the first CREATE OR ALTER TRIGGER.
+        // Each trigger emits its own trailing GO, so only the leading GO is needed here.
+        if (_dialect.Rules.Dialect == SqlDialect.Mssql && triggers.Count > 0)
+        {
+            writer.AppendLine("GO");
+        }
+
         foreach (var trigger in triggers)
         {
             // Dispatch by dialect enum rather than pattern abstraction for trigger generation.
@@ -359,7 +366,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append(".");
         writer.Append(Quote(funcName));
         writer.AppendLine("()");
-        writer.AppendLine("RETURNS TRIGGER AS $$");
+        writer.AppendLine("RETURNS TRIGGER AS $func$");
         writer.AppendLine("BEGIN");
         using (writer.Indent())
         {
@@ -401,7 +408,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.AppendLine("RETURN NEW;");
         }
         writer.AppendLine("END;");
-        writer.AppendLine("$$ LANGUAGE plpgsql;");
+        writer.AppendLine("$func$ LANGUAGE plpgsql;");
         writer.AppendLine();
 
         // Trigger: Use DROP + CREATE pattern per design (ddl-generation.md:260-262)
@@ -433,8 +440,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private void EmitMssqlTrigger(SqlWriter writer, DbTriggerInfo trigger)
     {
-        // CREATE OR ALTER TRIGGER must be the first statement in a T-SQL batch.
-        writer.AppendLine("GO");
         writer.Append("CREATE OR ALTER TRIGGER ");
         writer.Append(Quote(trigger.Table.Schema));
         writer.Append(".");
@@ -456,6 +461,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             EmitTriggerBody(writer, trigger);
         }
         writer.AppendLine("END;");
+        // Close the batch so that the next trigger (or any subsequent DDL/DML
+        // concatenated after the relational model DDL) starts in a fresh batch.
+        writer.AppendLine("GO");
         writer.AppendLine();
     }
 

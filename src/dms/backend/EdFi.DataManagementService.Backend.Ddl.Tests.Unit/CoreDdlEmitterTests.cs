@@ -481,15 +481,16 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     {
         _ddl.Should().Contain("CREATE TRIGGER \"TR_Document_Journal\"");
         _ddl.Should().Contain("AFTER INSERT OR UPDATE OF \"ContentVersion\"");
-        _ddl.Should().Contain("REFERENCING NEW TABLE AS new_table");
-        _ddl.Should().Contain("FOR EACH STATEMENT");
+        _ddl.Should().Contain("FOR EACH ROW");
         _ddl.Should().Contain("EXECUTE FUNCTION \"dms\".\"TF_Document_Journal\"()");
     }
 
     [Test]
-    public void It_should_use_distinct_on_in_trigger_function()
+    public void It_should_use_new_record_in_trigger_function()
     {
-        _ddl.Should().Contain("DISTINCT ON (\"DocumentId\")");
+        _ddl.Should().Contain("NEW.\"ContentVersion\"");
+        _ddl.Should().Contain("NEW.\"DocumentId\"");
+        _ddl.Should().Contain("NEW.\"ResourceKeyId\"");
     }
 
     [Test]

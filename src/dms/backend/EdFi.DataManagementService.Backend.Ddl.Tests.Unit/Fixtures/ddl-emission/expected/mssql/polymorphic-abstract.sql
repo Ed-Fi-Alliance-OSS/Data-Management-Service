@@ -97,8 +97,8 @@ BEGIN
         VALUES (s.[DocumentId], s.[EducationOrganizationId], N'Ed-Fi:LocalEducationAgency');
     END
 END;
-
 GO
+
 CREATE OR ALTER TRIGGER [edfi].[TR_LocalEducationAgency_ReferentialIdentity]
 ON [edfi].[LocalEducationAgency]
 AFTER INSERT, UPDATE
@@ -137,8 +137,8 @@ BEGIN
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
-
 GO
+
 CREATE OR ALTER TRIGGER [edfi].[TR_LocalEducationAgency_Stamp]
 ON [edfi].[LocalEducationAgency]
 AFTER INSERT, UPDATE, DELETE
@@ -160,8 +160,8 @@ BEGIN
         WHERE (i.[EducationOrganizationId] <> del.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND del.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND del.[EducationOrganizationId] IS NULL));
     END
 END;
-
 GO
+
 CREATE OR ALTER TRIGGER [edfi].[TR_School_AbstractIdentity]
 ON [edfi].[School]
 AFTER INSERT, UPDATE
@@ -190,8 +190,8 @@ BEGIN
         VALUES (s.[DocumentId], s.[EducationOrganizationId], N'Ed-Fi:School');
     END
 END;
-
 GO
+
 CREATE OR ALTER TRIGGER [edfi].[TR_School_ReferentialIdentity]
 ON [edfi].[School]
 AFTER INSERT, UPDATE
@@ -230,8 +230,8 @@ BEGIN
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
-
 GO
+
 CREATE OR ALTER TRIGGER [edfi].[TR_School_Stamp]
 ON [edfi].[School]
 AFTER INSERT, UPDATE, DELETE
@@ -253,4 +253,5 @@ BEGIN
         WHERE (i.[EducationOrganizationId] <> del.[EducationOrganizationId] OR (i.[EducationOrganizationId] IS NULL AND del.[EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganizationId] IS NOT NULL AND del.[EducationOrganizationId] IS NULL));
     END
 END;
+GO
 
