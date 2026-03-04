@@ -440,9 +440,55 @@ public class Given_WritePlanCompiler
     }
 
     [Test]
+    public void It_should_bind_document_fk_as_document_reference_when_source_json_path_is_null()
+    {
+        var model = CreateSingleTableModelCoveringWriteValueSourceKinds(useNullDocumentFkSourcePath: true);
+        var tablePlan = new WritePlanCompiler(SqlDialect.Pgsql)
+            .Compile(model)
+            .TablePlansInDependencyOrder.Single(tablePlan =>
+                tablePlan.TableModel.Table.Equals(new DbTableName(new DbSchemaName("edfi"), "StudentAddress"))
+            );
+
+        tablePlan
+            .ColumnBindings.Single(binding =>
+                binding.Column.ColumnName.Equals(new DbColumnName("School_DocumentId"))
+            )
+            .Source.Should()
+            .BeEquivalentTo(new WriteValueSource.DocumentReference(BindingIndex: 0));
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_document_reference_binding_is_missing_for_document_fk_column_with_null_source_json_path()
+    {
+        var model = CreateSingleTableModelWithMissingDocumentReferenceBinding(
+            useNullDocumentFkSourcePath: true
+        );
+        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(model);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("No document-reference binding matches 'edfi.StudentAddress.School_DocumentId'.");
+    }
+
+    [Test]
     public void It_should_fail_fast_when_document_reference_binding_is_duplicated_for_document_fk_column()
     {
         var model = CreateSingleTableModelWithDuplicateDocumentReferenceBinding();
+        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(model);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Multiple document-reference bindings match 'edfi.StudentAddress.School_DocumentId'."
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_document_reference_binding_is_duplicated_for_document_fk_column_with_null_source_json_path()
+    {
+        var model = CreateSingleTableModelWithDuplicateDocumentReferenceBinding(
+            useNullDocumentFkSourcePath: true
+        );
         var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(model);
 
         act.Should()
@@ -1925,7 +1971,9 @@ public class Given_WritePlanCompiler
         );
     }
 
-    private static RelationalResourceModel CreateSingleTableModelCoveringWriteValueSourceKinds()
+    private static RelationalResourceModel CreateSingleTableModelCoveringWriteValueSourceKinds(
+        bool useNullDocumentFkSourcePath = false
+    )
     {
         var rootTable = new DbTableModel(
             Table: new DbTableName(new DbSchemaName("edfi"), "StudentAddressRoot"),
@@ -2020,12 +2068,14 @@ public class Given_WritePlanCompiler
                     Kind: ColumnKind.DocumentFk,
                     ScalarType: new RelationalScalarType(ScalarKind.Int64),
                     IsNullable: true,
-                    SourceJsonPath: CreatePath(
-                        "$.addresses[*].schoolReference",
-                        new JsonPathSegment.Property("addresses"),
-                        new JsonPathSegment.AnyArrayElement(),
-                        new JsonPathSegment.Property("schoolReference")
-                    ),
+                    SourceJsonPath: useNullDocumentFkSourcePath
+                        ? null
+                        : CreatePath(
+                            "$.addresses[*].schoolReference",
+                            new JsonPathSegment.Property("addresses"),
+                            new JsonPathSegment.AnyArrayElement(),
+                            new JsonPathSegment.Property("schoolReference")
+                        ),
                     TargetResource: new QualifiedResourceName("Ed-Fi", "School")
                 ),
                 new DbColumnModel(
@@ -2136,9 +2186,11 @@ public class Given_WritePlanCompiler
         );
     }
 
-    private static RelationalResourceModel CreateSingleTableModelWithMissingDocumentReferenceBinding()
+    private static RelationalResourceModel CreateSingleTableModelWithMissingDocumentReferenceBinding(
+        bool useNullDocumentFkSourcePath = false
+    )
     {
-        var model = CreateSingleTableModelCoveringWriteValueSourceKinds();
+        var model = CreateSingleTableModelCoveringWriteValueSourceKinds(useNullDocumentFkSourcePath);
 
         return model with
         {
@@ -2146,9 +2198,11 @@ public class Given_WritePlanCompiler
         };
     }
 
-    private static RelationalResourceModel CreateSingleTableModelWithDuplicateDocumentReferenceBinding()
+    private static RelationalResourceModel CreateSingleTableModelWithDuplicateDocumentReferenceBinding(
+        bool useNullDocumentFkSourcePath = false
+    )
     {
-        var model = CreateSingleTableModelCoveringWriteValueSourceKinds();
+        var model = CreateSingleTableModelCoveringWriteValueSourceKinds(useNullDocumentFkSourcePath);
         var binding = model.DocumentReferenceBindings.Single();
 
         return model with

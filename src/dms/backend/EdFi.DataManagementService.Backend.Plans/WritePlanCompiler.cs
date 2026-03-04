@@ -895,10 +895,9 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
                 GetParentKeyPartIndex(tableModel, column)
             ),
             ColumnKind.Ordinal => new WriteValueSource.Ordinal(),
-            ColumnKind.DocumentFk when column.SourceJsonPath is not null =>
-                new WriteValueSource.DocumentReference(
-                    FindDocumentReferenceBindingIndex(tableModel.Table, column.ColumnName, writeSourceLookup)
-                ),
+            ColumnKind.DocumentFk => new WriteValueSource.DocumentReference(
+                FindDocumentReferenceBindingIndex(tableModel.Table, column.ColumnName, writeSourceLookup)
+            ),
             ColumnKind.DescriptorFk when column.SourceJsonPath is JsonPathExpression sourcePath =>
                 CreateDescriptorReferenceSource(
                     tableModel.Table,
