@@ -236,6 +236,48 @@ public class Given_DdlManifestEmitter_CountStatements_For_Pgsql
 
         DdlManifestEmitter.CountStatements(SqlDialect.Pgsql, sql).Should().Be(2);
     }
+
+    [Test]
+    public void It_should_handle_bare_dollar_quote_close_without_semicolon()
+    {
+        var sql = string.Join(
+            "\n",
+            "CREATE TABLE foo (id INT);",
+            "CREATE OR REPLACE FUNCTION my_func() RETURNS TRIGGER AS $$",
+            "BEGIN",
+            "    INSERT INTO bar VALUES (1);",
+            "    RETURN NEW;",
+            "$$",
+            "LANGUAGE plpgsql;",
+            ""
+        );
+
+        // 1 CREATE TABLE + 1 function (closed by bare $$, LANGUAGE plpgsql; counted) = 2
+        DdlManifestEmitter.CountStatements(SqlDialect.Pgsql, sql).Should().Be(2);
+    }
+
+    [Test]
+    public void It_should_count_multiple_dollar_quoted_blocks_independently()
+    {
+        var sql = string.Join(
+            "\n",
+            "CREATE TABLE foo (id INT);",
+            "CREATE OR REPLACE FUNCTION func_a() RETURNS TRIGGER AS $$",
+            "BEGIN",
+            "    INSERT INTO foo VALUES (1);",
+            "    RETURN NEW;",
+            "END $$;",
+            "CREATE OR REPLACE FUNCTION func_b() RETURNS TRIGGER AS $$",
+            "BEGIN",
+            "    INSERT INTO foo VALUES (2);",
+            "    RETURN NEW;",
+            "END $$;",
+            ""
+        );
+
+        // 1 CREATE TABLE + 2 functions = 3
+        DdlManifestEmitter.CountStatements(SqlDialect.Pgsql, sql).Should().Be(3);
+    }
 }
 
 [TestFixture]
@@ -314,6 +356,24 @@ public class Given_DdlManifestEmitter_CountStatements_For_Mssql
     {
         var sql = "CREATE TABLE foo (id INT);\r\nCREATE TABLE bar (id INT);\r\n";
 
+        DdlManifestEmitter.CountStatements(SqlDialect.Mssql, sql).Should().Be(2);
+    }
+
+    [Test]
+    public void It_should_count_trailing_batch_without_semicolons_after_last_go()
+    {
+        var sql = string.Join(
+            "\n",
+            "CREATE TABLE foo (id INT);",
+            "GO",
+            "CREATE TRIGGER my_trigger ON foo",
+            "AFTER INSERT AS",
+            "BEGIN",
+            "    RETURN",
+            "END"
+        );
+
+        // 1 semicolon before first GO + 1 trailing batch (no semicolons, no closing GO) = 2
         DdlManifestEmitter.CountStatements(SqlDialect.Mssql, sql).Should().Be(2);
     }
 }
