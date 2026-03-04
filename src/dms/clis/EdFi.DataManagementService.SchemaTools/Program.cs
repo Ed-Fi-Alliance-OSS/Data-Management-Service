@@ -57,9 +57,26 @@ finally
 
 void ConfigureServices(IServiceCollection services, bool enableVerbose)
 {
-    var logConfiguration = new LoggerConfiguration()
-        .MinimumLevel.Is(enableVerbose ? LogEventLevel.Debug : LogEventLevel.Information)
-        .WriteTo.File("logs/dms-schema.log", rollingInterval: RollingInterval.Day);
+    var logConfiguration = new LoggerConfiguration().MinimumLevel.Is(
+        enableVerbose ? LogEventLevel.Debug : LogEventLevel.Information
+    );
+
+    try
+    {
+        // Attempt file logging; fall back to console-only in restricted environments.
+        var logDir = Path.Combine(Directory.GetCurrentDirectory(), "logs");
+        Directory.CreateDirectory(logDir);
+        logConfiguration.WriteTo.File(
+            Path.Combine(logDir, "dms-schema.log"),
+            rollingInterval: RollingInterval.Day
+        );
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+    {
+        Console.Error.WriteLine(
+            $"Warning: Unable to create log file, continuing with console-only logging ({ex.GetType().Name})."
+        );
+    }
 
     if (Console.IsOutputRedirected)
     {
