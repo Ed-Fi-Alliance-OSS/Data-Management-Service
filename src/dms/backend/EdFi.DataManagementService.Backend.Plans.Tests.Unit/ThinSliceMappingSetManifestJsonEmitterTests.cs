@@ -52,13 +52,61 @@ public class Given_ThinSliceMappingSetManifestJsonEmitter
     }
 
     [Test]
-    public void It_should_include_only_resources_with_both_read_and_write_plans()
+    public void It_should_include_all_resources_in_deterministic_name_order()
     {
         var resourceNamesByDialect = ReadResourceNamesByDialect(_manifest);
 
         resourceNamesByDialect.Keys.Should().BeEquivalentTo("mssql", "pgsql");
-        resourceNamesByDialect["mssql"].Should().Equal("Ed-Fi.Program", "Ed-Fi.School");
-        resourceNamesByDialect["pgsql"].Should().Equal("Ed-Fi.Program", "Ed-Fi.School");
+        resourceNamesByDialect["mssql"]
+            .Should()
+            .Equal(
+                "Ed-Fi.AcademicSubjectDescriptor",
+                "Ed-Fi.Program",
+                "Ed-Fi.School",
+                "Ed-Fi.Student",
+                "Ed-Fi.StudentAddressCollection"
+            );
+        resourceNamesByDialect["pgsql"]
+            .Should()
+            .Equal(
+                "Ed-Fi.AcademicSubjectDescriptor",
+                "Ed-Fi.Program",
+                "Ed-Fi.School",
+                "Ed-Fi.Student",
+                "Ed-Fi.StudentAddressCollection"
+            );
+    }
+
+    [Test]
+    public void It_should_emit_write_and_read_plan_properties_as_explicit_object_or_null()
+    {
+        var planPresenceByDialect = ReadPlanPresenceByDialect(_manifest);
+
+        planPresenceByDialect.Keys.Should().BeEquivalentTo("mssql", "pgsql");
+
+        foreach (var dialect in planPresenceByDialect.Keys)
+        {
+            planPresenceByDialect[dialect]
+                ["Ed-Fi.AcademicSubjectDescriptor"]
+                .Should()
+                .Be(new PlanPresence(WritePlanIsNull: true, ReadPlanIsNull: true));
+            planPresenceByDialect[dialect]
+                ["Ed-Fi.Program"]
+                .Should()
+                .Be(new PlanPresence(WritePlanIsNull: false, ReadPlanIsNull: false));
+            planPresenceByDialect[dialect]
+                ["Ed-Fi.School"]
+                .Should()
+                .Be(new PlanPresence(WritePlanIsNull: false, ReadPlanIsNull: false));
+            planPresenceByDialect[dialect]
+                ["Ed-Fi.Student"]
+                .Should()
+                .Be(new PlanPresence(WritePlanIsNull: false, ReadPlanIsNull: true));
+            planPresenceByDialect[dialect]
+                ["Ed-Fi.StudentAddressCollection"]
+                .Should()
+                .Be(new PlanPresence(WritePlanIsNull: true, ReadPlanIsNull: true));
+        }
     }
 
     [Test]
@@ -275,6 +323,58 @@ public class Given_ThinSliceMappingSetManifestJsonEmitter
         return orderByColumnsByDialect;
     }
 
+    private static IReadOnlyDictionary<
+        string,
+        IReadOnlyDictionary<string, PlanPresence>
+    > ReadPlanPresenceByDialect(string manifest)
+    {
+        Dictionary<string, IReadOnlyDictionary<string, PlanPresence>> planPresenceByDialect = [];
+
+        foreach (var mappingSetObject in ParseMappingSetObjects(manifest))
+        {
+            var dialect = mappingSetObject["mapping_set_key"]?["dialect"]?.GetValue<string>();
+
+            if (dialect is null)
+            {
+                throw new InvalidOperationException("Manifest mapping set key dialect is required.");
+            }
+
+            if (mappingSetObject["resources"] is not JsonArray resources)
+            {
+                throw new InvalidOperationException("Manifest mapping set resources array is required.");
+            }
+
+            Dictionary<string, PlanPresence> resourcePlanPresence = [];
+
+            foreach (var resource in resources)
+            {
+                if (resource is not JsonObject resourceObject)
+                {
+                    throw new InvalidOperationException(
+                        "Manifest mapping set resources entries must be JSON objects."
+                    );
+                }
+
+                if (!resourceObject.ContainsKey("write_plan") || !resourceObject.ContainsKey("read_plan"))
+                {
+                    throw new InvalidOperationException(
+                        "Manifest resource entries must contain write_plan and read_plan properties."
+                    );
+                }
+
+                var resourceIdentity = ReadResourceName(resourceObject);
+                resourcePlanPresence[resourceIdentity] = new PlanPresence(
+                    WritePlanIsNull: resourceObject["write_plan"] is null,
+                    ReadPlanIsNull: resourceObject["read_plan"] is null
+                );
+            }
+
+            planPresenceByDialect[dialect] = resourcePlanPresence;
+        }
+
+        return planPresenceByDialect;
+    }
+
     private static string ReadResourceName(JsonNode? resourceNode)
     {
         var projectName = resourceNode?["resource"]?["project_name"]?.GetValue<string>();
@@ -344,4 +444,6 @@ public class Given_ThinSliceMappingSetManifestJsonEmitter
             )
             .ToArray();
     }
+
+    private sealed record PlanPresence(bool WritePlanIsNull, bool ReadPlanIsNull);
 }

@@ -109,23 +109,55 @@ public class Given_ThinSlice_RuntimePlanCompilation_Determinism
                     throw new InvalidOperationException("Manifest resources entries must be JSON objects.");
                 }
 
-                var resourceIdentity = ReadResourceIdentity(resourceObject);
-                var writePlan = RequireObject(resourceObject["write_plan"], "write_plan");
-                var readPlan = RequireObject(resourceObject["read_plan"], "read_plan");
-                var columnBindingsInOrder = writePlan["column_bindings_in_order"] as JsonArray;
-
-                if (columnBindingsInOrder is null)
+                if (!resourceObject.ContainsKey("write_plan") || !resourceObject.ContainsKey("read_plan"))
                 {
                     throw new InvalidOperationException(
-                        "Manifest write plan column_bindings_in_order is required."
+                        "Manifest resource entries must contain write_plan and read_plan properties."
                     );
                 }
 
+                var resourceIdentity = ReadResourceIdentity(resourceObject);
+                var writePlanNode = resourceObject["write_plan"];
+                var readPlanNode = resourceObject["read_plan"];
+                var writePlanIsNull = writePlanNode is null;
+                var readPlanIsNull = readPlanNode is null;
+
+                string? insertSqlSha256 = null;
+                string? updateSqlSha256 = null;
+                string? columnBindingsInOrderJson = null;
+
+                if (!writePlanIsNull)
+                {
+                    var writePlan = RequireObject(writePlanNode, "write_plan");
+                    var columnBindingsInOrder = writePlan["column_bindings_in_order"] as JsonArray;
+
+                    if (columnBindingsInOrder is null)
+                    {
+                        throw new InvalidOperationException(
+                            "Manifest write plan column_bindings_in_order is required."
+                        );
+                    }
+
+                    insertSqlSha256 = RequireString(writePlan, "insert_sql_sha256");
+                    updateSqlSha256 = ReadOptionalString(writePlan, "update_sql_sha256");
+                    columnBindingsInOrderJson = columnBindingsInOrder.ToJsonString(_compactJson);
+                }
+
+                string? selectByKeysetSqlSha256 = null;
+
+                if (!readPlanIsNull)
+                {
+                    var readPlan = RequireObject(readPlanNode, "read_plan");
+                    selectByKeysetSqlSha256 = RequireString(readPlan, "select_by_keyset_sql_sha256");
+                }
+
                 resourceFingerprints[resourceIdentity] = new ResourcePlanFingerprint(
-                    InsertSqlSha256: RequireString(writePlan, "insert_sql_sha256"),
-                    UpdateSqlSha256: ReadOptionalString(writePlan, "update_sql_sha256"),
-                    SelectByKeysetSqlSha256: RequireString(readPlan, "select_by_keyset_sql_sha256"),
-                    ColumnBindingsInOrderJson: columnBindingsInOrder.ToJsonString(_compactJson)
+                    WritePlanIsNull: writePlanIsNull,
+                    ReadPlanIsNull: readPlanIsNull,
+                    InsertSqlSha256: insertSqlSha256,
+                    UpdateSqlSha256: updateSqlSha256,
+                    SelectByKeysetSqlSha256: selectByKeysetSqlSha256,
+                    ColumnBindingsInOrderJson: columnBindingsInOrderJson
                 );
             }
 
@@ -220,9 +252,11 @@ public class Given_ThinSlice_RuntimePlanCompilation_Determinism
     }
 
     private sealed record ResourcePlanFingerprint(
-        string InsertSqlSha256,
+        bool WritePlanIsNull,
+        bool ReadPlanIsNull,
+        string? InsertSqlSha256,
         string? UpdateSqlSha256,
-        string SelectByKeysetSqlSha256,
-        string ColumnBindingsInOrderJson
+        string? SelectByKeysetSqlSha256,
+        string? ColumnBindingsInOrderJson
     );
 }

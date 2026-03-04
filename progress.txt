@@ -69,3 +69,9 @@ Task completed: SQL Emission - UpdateSql for 1:1 tables task closure with parame
 Decisions: compiler behavior already satisfied acceptance; added targeted collision fixture (non-key "DocumentId" + key "documentId") so binding dedup assigns key param `documentId_2`; asserted UpdateSql uses key order and reuses binding parameter names (no key-only re-derivation path).
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RootOnlyWritePlanCompilerTests.cs; tasks.json; progress.txt.
 Blockers/notes: no blockers. Next iteration can move to Manifest tasks (resource inclusion + explicit null plan properties).
+
+2026-03-03 - DMS-1045 / reference/design/backend-redesign/epics/15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md
+Task completed: Manifest - generalized resource inclusion + explicit null plan properties.
+Decisions: manifest now emits every concrete resource in deterministic (project_name, resource_name) order and always writes both write_plan/read_plan properties. Emits object only for currently thin-slice-serializable single-table plans; emits explicit null for missing plans and non-single-table plans until table-inventory manifest shape is implemented.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ThinSliceMappingSetManifestJsonEmitter.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ThinSliceMappingSetManifestJsonEmitterTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ThinSliceRuntimeCompilationDeterminismTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Fixtures/runtime-plan-compilation/minimal/expected/mappingset.manifest.json; tasks.json; progress.txt.
+Blockers/notes: no blockers. Next iteration can implement write_plan table_plans_in_dependency_order inventory + SQL hash/batching/binding details.

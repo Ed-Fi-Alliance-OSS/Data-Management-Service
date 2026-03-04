@@ -64,17 +64,30 @@ internal static class ThinSliceMappingSetManifestJsonEmitter
         writer.WritePropertyName("resources");
         writer.WriteStartArray();
 
-        foreach (var resource in GetSupportedResourcesInNameOrder(mappingSet))
+        foreach (var resource in GetResourcesInNameOrder(mappingSet))
         {
+            ResourceWritePlan? writePlan = mappingSet.WritePlansByResource.TryGetValue(
+                resource,
+                out var writePlanCandidate
+            )
+                ? writePlanCandidate
+                : null;
+            ResourceReadPlan? readPlan = mappingSet.ReadPlansByResource.TryGetValue(
+                resource,
+                out var readPlanCandidate
+            )
+                ? readPlanCandidate
+                : null;
+
             writer.WriteStartObject();
             writer.WritePropertyName("resource");
             WriteQualifiedResourceName(writer, resource);
 
             writer.WritePropertyName("write_plan");
-            WriteWritePlan(writer, mappingSet.WritePlansByResource[resource]);
+            WriteWritePlanOrNull(writer, writePlan);
 
             writer.WritePropertyName("read_plan");
-            WriteReadPlan(writer, mappingSet.ReadPlansByResource[resource]);
+            WriteReadPlanOrNull(writer, readPlan);
 
             writer.WriteEndObject();
         }
@@ -83,27 +96,27 @@ internal static class ThinSliceMappingSetManifestJsonEmitter
         writer.WriteEndObject();
     }
 
-    private static IEnumerable<QualifiedResourceName> GetSupportedResourcesInNameOrder(MappingSet mappingSet)
+    private static IEnumerable<QualifiedResourceName> GetResourcesInNameOrder(MappingSet mappingSet)
     {
         return mappingSet
             .Model.ConcreteResourcesInNameOrder.Select(resource => resource.ResourceKey.Resource)
-            .Where(resource =>
-                mappingSet.WritePlansByResource.ContainsKey(resource)
-                && mappingSet.ReadPlansByResource.ContainsKey(resource)
-            )
             .OrderBy(resource => resource.ProjectName, StringComparer.Ordinal)
             .ThenBy(resource => resource.ResourceName, StringComparer.Ordinal);
     }
 
-    private static void WriteWritePlan(Utf8JsonWriter writer, ResourceWritePlan writePlan)
+    private static void WriteWritePlanOrNull(Utf8JsonWriter writer, ResourceWritePlan? writePlan)
     {
-        if (writePlan.TablePlansInDependencyOrder.Length != 1)
+        if (writePlan is null || writePlan.TablePlansInDependencyOrder.Length != 1)
         {
-            throw new InvalidOperationException(
-                $"Thin-slice manifest expects a single root write table plan. Found: {writePlan.TablePlansInDependencyOrder.Length}."
-            );
+            writer.WriteNullValue();
+            return;
         }
 
+        WriteWritePlan(writer, writePlan);
+    }
+
+    private static void WriteWritePlan(Utf8JsonWriter writer, ResourceWritePlan writePlan)
+    {
         var tablePlan = writePlan.TablePlansInDependencyOrder[0];
 
         writer.WriteStartObject();
@@ -142,15 +155,19 @@ internal static class ThinSliceMappingSetManifestJsonEmitter
         writer.WriteEndObject();
     }
 
-    private static void WriteReadPlan(Utf8JsonWriter writer, ResourceReadPlan readPlan)
+    private static void WriteReadPlanOrNull(Utf8JsonWriter writer, ResourceReadPlan? readPlan)
     {
-        if (readPlan.TablePlansInDependencyOrder.Length != 1)
+        if (readPlan is null || readPlan.TablePlansInDependencyOrder.Length != 1)
         {
-            throw new InvalidOperationException(
-                $"Thin-slice manifest expects a single root read table plan. Found: {readPlan.TablePlansInDependencyOrder.Length}."
-            );
+            writer.WriteNullValue();
+            return;
         }
 
+        WriteReadPlan(writer, readPlan);
+    }
+
+    private static void WriteReadPlan(Utf8JsonWriter writer, ResourceReadPlan readPlan)
+    {
         var tablePlan = readPlan.TablePlansInDependencyOrder[0];
 
         writer.WriteStartObject();
