@@ -142,7 +142,7 @@
       "Add unit tests for the multi-project fixture builder (including determinism under input order reversal)",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Fixtures",

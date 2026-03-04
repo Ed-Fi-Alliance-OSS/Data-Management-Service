@@ -17,6 +17,8 @@ internal static class ThinSliceFixtureModelSetBuilder
 {
     private const string ProjectFileName = "EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj";
     private const string RelationalMappingVersion = "1.0.0";
+    private const string FixtureInputsPropertyName = "inputs";
+    private const string FixtureInputsDirectoryName = "inputs";
 
     public static DerivedRelationalModelSet Build(string fixtureRelativePath, SqlDialect dialect)
     {
@@ -29,7 +31,26 @@ internal static class ThinSliceFixtureModelSetBuilder
         bool reverseResourceSchemaOrder
     )
     {
-        var effectiveSchemaSet = LoadEffectiveSchemaSet(fixtureRelativePath, reverseResourceSchemaOrder);
+        return Build(
+            fixtureRelativePath,
+            dialect,
+            reverseResourceSchemaOrder,
+            reverseFixtureInputOrder: false
+        );
+    }
+
+    public static DerivedRelationalModelSet Build(
+        string fixtureRelativePath,
+        SqlDialect dialect,
+        bool reverseResourceSchemaOrder,
+        bool reverseFixtureInputOrder
+    )
+    {
+        var effectiveSchemaSet = LoadEffectiveSchemaSet(
+            fixtureRelativePath,
+            reverseResourceSchemaOrder,
+            reverseFixtureInputOrder
+        );
         ISqlDialectRules dialectRules = dialect switch
         {
             SqlDialect.Pgsql => new PgsqlDialectRules(),
@@ -46,17 +67,129 @@ internal static class ThinSliceFixtureModelSetBuilder
 
     private static EffectiveSchemaSet LoadEffectiveSchemaSet(
         string fixtureRelativePath,
-        bool reverseResourceSchemaOrder
+        bool reverseResourceSchemaOrder,
+        bool reverseFixtureInputOrder
     )
     {
         var fixturePath = GetFixturePath(fixtureRelativePath);
-        var rootNode = JsonNode.Parse(File.ReadAllText(fixturePath));
+        var root = ParseJsonObject(fixturePath, "Fixture");
+        var fixtureProjects = LoadFixtureProjects(
+            root,
+            fixturePath,
+            reverseResourceSchemaOrder,
+            reverseFixtureInputOrder
+        );
+        var projectsInEndpointOrder = fixtureProjects
+            .OrderBy(project => project.Project.ProjectEndpointName, StringComparer.Ordinal)
+            .ToArray();
+        var effectiveProjectsInEndpointOrder = projectsInEndpointOrder
+            .Select(project => project.Project)
+            .ToArray();
+        var apiSchemaVersion = ResolveApiSchemaVersion(projectsInEndpointOrder);
+        var resourceKeysInIdOrder = BuildResourceKeys(effectiveProjectsInEndpointOrder);
+        var seedHash = BuildSeedHash(resourceKeysInIdOrder);
+        var effectiveSchemaHash = BuildHashHex("effective-schema", seedHash);
 
-        if (rootNode is not JsonObject root)
+        var schemaInfo = new EffectiveSchemaInfo(
+            ApiSchemaFormatVersion: apiSchemaVersion,
+            RelationalMappingVersion: RelationalMappingVersion,
+            EffectiveSchemaHash: effectiveSchemaHash,
+            ResourceKeyCount: resourceKeysInIdOrder.Count,
+            ResourceKeySeedHash: seedHash,
+            SchemaComponentsInEndpointOrder: projectsInEndpointOrder
+                .Select(project => new SchemaComponentInfo(
+                    ProjectEndpointName: project.Project.ProjectEndpointName,
+                    ProjectName: project.Project.ProjectName,
+                    ProjectVersion: project.Project.ProjectVersion,
+                    IsExtensionProject: project.Project.IsExtensionProject,
+                    ProjectHash: project.ProjectHash
+                ))
+                .ToArray(),
+            ResourceKeysInIdOrder: resourceKeysInIdOrder
+        );
+
+        return new EffectiveSchemaSet(schemaInfo, effectiveProjectsInEndpointOrder);
+    }
+
+    private static IReadOnlyList<FixtureProjectInput> LoadFixtureProjects(
+        JsonObject root,
+        string fixturePath,
+        bool reverseResourceSchemaOrder,
+        bool reverseFixtureInputOrder
+    )
+    {
+        var hasProjectSchema = root.ContainsKey("projectSchema");
+        var hasFixtureInputs = root.ContainsKey(FixtureInputsPropertyName);
+
+        if (hasProjectSchema && hasFixtureInputs)
         {
-            throw new InvalidOperationException($"Fixture '{fixturePath}' parsed null or non-object.");
+            throw new InvalidOperationException(
+                $"Fixture '{fixturePath}' cannot contain both projectSchema and {FixtureInputsPropertyName}."
+            );
         }
 
+        if (hasProjectSchema)
+        {
+            return [LoadProjectInputFromApiSchemaRoot(root, reverseResourceSchemaOrder, false)];
+        }
+
+        if (!hasFixtureInputs)
+        {
+            throw new InvalidOperationException(
+                $"Fixture '{fixturePath}' must contain either projectSchema or {FixtureInputsPropertyName}."
+            );
+        }
+
+        var fixtureInputEntries = ParseFixtureInputEntries(
+            RequireArray(root[FixtureInputsPropertyName], FixtureInputsPropertyName)
+        );
+
+        if (reverseFixtureInputOrder)
+        {
+            fixtureInputEntries.Reverse();
+        }
+
+        List<FixtureProjectInput> projects = new(fixtureInputEntries.Count);
+
+        foreach (var fixtureInputEntry in fixtureInputEntries)
+        {
+            var fixtureInputPath = GetFixtureInputPath(fixturePath, fixtureInputEntry.FileName);
+            var fixtureInputRoot = ParseJsonObject(fixtureInputPath, "Fixture input");
+            projects.Add(
+                LoadProjectInputFromApiSchemaRoot(
+                    fixtureInputRoot,
+                    reverseResourceSchemaOrder,
+                    fixtureInputEntry.IsExtensionProject
+                )
+            );
+        }
+
+        return projects;
+    }
+
+    private static string ResolveApiSchemaVersion(IReadOnlyList<FixtureProjectInput> projectsInEndpointOrder)
+    {
+        var apiSchemaVersions = projectsInEndpointOrder
+            .Select(project => project.ApiSchemaVersion)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (apiSchemaVersions.Length != 1)
+        {
+            throw new InvalidOperationException(
+                $"Expected one apiSchemaVersion across fixture inputs, found {apiSchemaVersions.Length}."
+            );
+        }
+
+        return apiSchemaVersions[0];
+    }
+
+    private static FixtureProjectInput LoadProjectInputFromApiSchemaRoot(
+        JsonObject root,
+        bool reverseResourceSchemaOrder,
+        bool isExtensionProject
+    )
+    {
         var apiSchemaVersion = RequireString(root, "apiSchemaVersion");
         var projectSchema = PrepareProjectSchema(
             RequireObject(root["projectSchema"], "projectSchema"),
@@ -65,39 +198,73 @@ internal static class ThinSliceFixtureModelSetBuilder
         var projectEndpointName = RequireString(projectSchema, "projectEndpointName");
         var projectName = RequireString(projectSchema, "projectName");
         var projectVersion = RequireString(projectSchema, "projectVersion");
-        var resourceKeysInIdOrder = BuildResourceKeys(projectSchema, projectName, projectVersion);
-        var seedHash = BuildSeedHash(resourceKeysInIdOrder);
-        var effectiveSchemaHash = BuildHashHex("effective-schema", seedHash);
         var projectHash = BuildHashHex("project", Encoding.UTF8.GetBytes(projectName));
-
         var effectiveProjectSchema = new EffectiveProjectSchema(
             projectEndpointName,
             projectName,
             projectVersion,
-            false,
+            isExtensionProject,
             projectSchema
         );
 
-        var schemaInfo = new EffectiveSchemaInfo(
-            ApiSchemaFormatVersion: apiSchemaVersion,
-            RelationalMappingVersion: RelationalMappingVersion,
-            EffectiveSchemaHash: effectiveSchemaHash,
-            ResourceKeyCount: resourceKeysInIdOrder.Count,
-            ResourceKeySeedHash: seedHash,
-            SchemaComponentsInEndpointOrder:
-            [
-                new SchemaComponentInfo(
-                    ProjectEndpointName: projectEndpointName,
-                    ProjectName: projectName,
-                    ProjectVersion: projectVersion,
-                    IsExtensionProject: false,
-                    ProjectHash: projectHash
-                ),
-            ],
-            ResourceKeysInIdOrder: resourceKeysInIdOrder
-        );
+        return new FixtureProjectInput(apiSchemaVersion, effectiveProjectSchema, projectHash);
+    }
 
-        return new EffectiveSchemaSet(schemaInfo, [effectiveProjectSchema]);
+    private static List<FixtureInputEntry> ParseFixtureInputEntries(JsonArray fixtureInputs)
+    {
+        if (fixtureInputs.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "Expected inputs to contain at least one fixture input entry."
+            );
+        }
+
+        List<FixtureInputEntry> entries = new(fixtureInputs.Count);
+
+        for (var i = 0; i < fixtureInputs.Count; i++)
+        {
+            var entryNode = fixtureInputs[i];
+            var entryObject = RequireObject(entryNode, $"inputs[{i}]");
+            entries.Add(
+                new FixtureInputEntry(
+                    RequireString(entryObject, "fileName"),
+                    RequireBool(entryObject, "isExtensionProject")
+                )
+            );
+        }
+
+        return entries;
+    }
+
+    private static string GetFixtureInputPath(string fixturePath, string fixtureInputFileName)
+    {
+        var fixtureDirectory = Path.GetDirectoryName(fixturePath);
+
+        if (fixtureDirectory is null)
+        {
+            throw new InvalidOperationException($"Fixture '{fixturePath}' directory could not be resolved.");
+        }
+
+        var path = Path.Combine(fixtureDirectory, FixtureInputsDirectoryName, fixtureInputFileName);
+
+        if (!File.Exists(path))
+        {
+            throw new FileNotFoundException($"Fixture input not found: {path}", path);
+        }
+
+        return path;
+    }
+
+    private static JsonObject ParseJsonObject(string path, string description)
+    {
+        var rootNode = JsonNode.Parse(File.ReadAllText(path));
+
+        if (rootNode is not JsonObject root)
+        {
+            throw new InvalidOperationException($"{description} '{path}' parsed null or non-object.");
+        }
+
+        return root;
     }
 
     private static JsonObject PrepareProjectSchema(JsonObject projectSchema, bool reverseResourceSchemaOrder)
@@ -146,36 +313,77 @@ internal static class ThinSliceFixtureModelSetBuilder
     }
 
     private static IReadOnlyList<ResourceKeyEntry> BuildResourceKeys(
-        JsonObject projectSchema,
-        string projectName,
-        string projectVersion
+        IReadOnlyList<EffectiveProjectSchema> projectsInEndpointOrder
     )
     {
-        var resourceSchemas = RequireObject(
-            projectSchema["resourceSchemas"],
-            "projectSchema.resourceSchemas"
-        );
-        var orderedResourceNames = resourceSchemas
-            .Select(entry => new
+        List<FixtureResourceKeySeed> seeds = [];
+
+        foreach (var project in projectsInEndpointOrder)
+        {
+            var projectSchema =
+                project.ProjectSchema
+                ?? throw new InvalidOperationException("Expected ProjectSchema to be provided.");
+
+            AddResourceKeySeeds(
+                seeds,
+                RequireObject(projectSchema["resourceSchemas"], "projectSchema.resourceSchemas"),
+                project.ProjectName,
+                project.ProjectVersion,
+                isAbstractResource: false,
+                resourceSchemasPath: "projectSchema.resourceSchemas"
+            );
+
+            if (projectSchema["abstractResources"] is JsonObject abstractResources)
             {
-                ResourceName = ResolveResourceName(entry.Key, entry.Value),
-                EndpointName = entry.Key,
-            })
-            .OrderBy(entry => entry.ResourceName, StringComparer.Ordinal)
-            .ThenBy(entry => entry.EndpointName, StringComparer.Ordinal)
+                AddResourceKeySeeds(
+                    seeds,
+                    abstractResources,
+                    project.ProjectName,
+                    project.ProjectVersion,
+                    isAbstractResource: true,
+                    resourceSchemasPath: "projectSchema.abstractResources"
+                );
+            }
+        }
+
+        var orderedSeeds = seeds
+            .OrderBy(seed => seed.Resource.ProjectName, StringComparer.Ordinal)
+            .ThenBy(seed => seed.Resource.ResourceName, StringComparer.Ordinal)
             .ToArray();
 
-        List<ResourceKeyEntry> keys = new(orderedResourceNames.Length);
+        for (var i = 1; i < orderedSeeds.Length; i++)
+        {
+            if (
+                string.Equals(
+                    orderedSeeds[i].Resource.ProjectName,
+                    orderedSeeds[i - 1].Resource.ProjectName,
+                    StringComparison.Ordinal
+                )
+                && string.Equals(
+                    orderedSeeds[i].Resource.ResourceName,
+                    orderedSeeds[i - 1].Resource.ResourceName,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                throw new InvalidOperationException(
+                    $"Duplicate resource key seed detected: ({orderedSeeds[i].Resource.ProjectName}, {orderedSeeds[i].Resource.ResourceName}). "
+                        + "Each (ProjectName, ResourceName) pair must be unique in the fixture schema."
+                );
+            }
+        }
+
+        List<ResourceKeyEntry> keys = new(orderedSeeds.Length);
         short nextId = 1;
 
-        foreach (var resource in orderedResourceNames)
+        foreach (var seed in orderedSeeds)
         {
             keys.Add(
                 new ResourceKeyEntry(
                     ResourceKeyId: nextId,
-                    Resource: new QualifiedResourceName(projectName, resource.ResourceName),
-                    ResourceVersion: projectVersion,
-                    IsAbstractResource: false
+                    Resource: seed.Resource,
+                    ResourceVersion: seed.ResourceVersion,
+                    IsAbstractResource: seed.IsAbstractResource
                 )
             );
             nextId++;
@@ -184,22 +392,49 @@ internal static class ThinSliceFixtureModelSetBuilder
         return keys;
     }
 
-    private static string ResolveResourceName(string endpointName, JsonNode? resourceSchemaNode)
+    private static void AddResourceKeySeeds(
+        ICollection<FixtureResourceKeySeed> seeds,
+        JsonObject resourceSchemas,
+        string projectName,
+        string projectVersion,
+        bool isAbstractResource,
+        string resourceSchemasPath
+    )
     {
-        if (resourceSchemaNode is null)
+        foreach (var resourceSchemaEntry in resourceSchemas)
         {
-            throw new InvalidOperationException(
-                "Expected projectSchema.resourceSchemas entries to be non-null, invalid ApiSchema."
+            if (resourceSchemaEntry.Value is null)
+            {
+                throw new InvalidOperationException(
+                    $"Expected {resourceSchemasPath} entries to be non-null, invalid ApiSchema."
+                );
+            }
+
+            if (resourceSchemaEntry.Value is not JsonObject resourceSchema)
+            {
+                throw new InvalidOperationException(
+                    $"Expected {resourceSchemasPath} entries to be objects, invalid ApiSchema."
+                );
+            }
+
+            if (!isAbstractResource && ReadOptionalBool(resourceSchema, "isResourceExtension"))
+            {
+                continue;
+            }
+
+            var resourceName = ResolveResourceName(resourceSchemaEntry.Key, resourceSchema);
+            seeds.Add(
+                new FixtureResourceKeySeed(
+                    new QualifiedResourceName(projectName, resourceName),
+                    projectVersion,
+                    isAbstractResource
+                )
             );
         }
+    }
 
-        if (resourceSchemaNode is not JsonObject resourceSchema)
-        {
-            throw new InvalidOperationException(
-                "Expected projectSchema.resourceSchemas entries to be objects, invalid ApiSchema."
-            );
-        }
-
+    private static string ResolveResourceName(string endpointName, JsonObject resourceSchema)
+    {
         if (!resourceSchema.TryGetPropertyValue("resourceName", out var resourceNameNode))
         {
             return RequireNonEmpty(endpointName, "resourceName");
@@ -252,6 +487,20 @@ internal static class ThinSliceFixtureModelSetBuilder
         };
     }
 
+    private static JsonArray RequireArray(JsonNode? node, string propertyName)
+    {
+        return node switch
+        {
+            JsonArray jsonArray => jsonArray,
+            null => throw new InvalidOperationException(
+                $"Expected {propertyName} to be present, invalid ApiSchema."
+            ),
+            _ => throw new InvalidOperationException(
+                $"Expected {propertyName} to be an array, invalid ApiSchema."
+            ),
+        };
+    }
+
     private static string RequireString(JsonObject node, string propertyName)
     {
         var value = node[propertyName] switch
@@ -268,6 +517,36 @@ internal static class ThinSliceFixtureModelSetBuilder
         return RequireNonEmpty(value, propertyName);
     }
 
+    private static bool RequireBool(JsonObject node, string propertyName)
+    {
+        return node[propertyName] switch
+        {
+            JsonValue jsonValue => jsonValue.GetValue<bool>(),
+            null => throw new InvalidOperationException(
+                $"Expected {propertyName} to be present, invalid ApiSchema."
+            ),
+            _ => throw new InvalidOperationException(
+                $"Expected {propertyName} to be a bool, invalid ApiSchema."
+            ),
+        };
+    }
+
+    private static bool ReadOptionalBool(JsonObject node, string propertyName)
+    {
+        if (!node.TryGetPropertyValue(propertyName, out var boolNode) || boolNode is null)
+        {
+            return false;
+        }
+
+        return boolNode switch
+        {
+            JsonValue jsonValue => jsonValue.GetValue<bool>(),
+            _ => throw new InvalidOperationException(
+                $"Expected {propertyName} to be a bool, invalid ApiSchema."
+            ),
+        };
+    }
+
     private static string RequireNonEmpty(string? value, string propertyName)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -279,4 +558,18 @@ internal static class ThinSliceFixtureModelSetBuilder
 
         return value;
     }
+
+    private sealed record FixtureInputEntry(string FileName, bool IsExtensionProject);
+
+    private sealed record FixtureProjectInput(
+        string ApiSchemaVersion,
+        EffectiveProjectSchema Project,
+        string ProjectHash
+    );
+
+    private sealed record FixtureResourceKeySeed(
+        QualifiedResourceName Resource,
+        string ResourceVersion,
+        bool IsAbstractResource
+    );
 }
