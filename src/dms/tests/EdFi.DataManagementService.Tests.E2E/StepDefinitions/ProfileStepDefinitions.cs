@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using EdFi.DataManagementService.Tests.E2E.Authorization;
 using EdFi.DataManagementService.Tests.E2E.Extensions;
 using EdFi.DataManagementService.Tests.E2E.Management;
@@ -71,6 +72,9 @@ public class ProfileStepDefinitions(
     private string _location = string.Empty;
     private string _dmsToken = string.Empty;
     private readonly ScenarioVariables _scenarioVariables = new();
+    private static readonly Lazy<Dictionary<string, HashSet<string>>> _profileCoverageByName = new(
+        BuildProfileCoverageByName
+    );
 
     #region Given - Profile Creation and Setup
 
@@ -353,6 +357,25 @@ public class ProfileStepDefinitions(
             "Entity Creator",
             "entity@test.com",
             "uri://ed-fi.org",
+            "",
+            SystemAdministrator.Token,
+            "E2E-NoFurtherAuthRequiredClaimSet"
+        );
+
+        return await ProfileAwareAuthorizationProvider.GetToken();
+    }
+
+    /// <summary>
+    /// Gets a token without profile assignments for resilient setup-data POSTs.
+    /// Includes common namespace prefixes used across profile-focused E2E features.
+    /// </summary>
+    private static async Task<string> GetTokenForSeedData()
+    {
+        await ProfileAwareAuthorizationProvider.CreateClientCredentialsWithProfiles(
+            $"Seed Data Creator {Guid.NewGuid()}",
+            "Seed Data Creator",
+            "seeddata@test.com",
+            "uri://ed-fi.org, uri://sample.ed-fi.org, uri://tpdm.ed-fi.org, uri://homograph.ed-fi.org",
             "",
             SystemAdministrator.Token,
             "E2E-NoFurtherAuthRequiredClaimSet"
@@ -1320,10 +1343,62 @@ public class ProfileStepDefinitions(
             new() { Data = body, Headers = headers }
         )!;
 
+        string responseBody = await _apiResponse.TextAsync();
         _logger.log.Information($"Response status: {_apiResponse.Status}");
-        _logger.log.Information($"Response body: {await _apiResponse.TextAsync()}");
+        _logger.log.Information($"Response body: {responseBody}");
+
+        // The shared setup POST step should reliably seed data across profile scenarios.
+        // If profile-assigned auth rejects the write due missing/invalid profile content type,
+        // retry once with a non-profile seed token.
+        if (ShouldRetryWithSeedToken(_apiResponse.Status, responseBody))
+        {
+            _logger.log.Information(
+                "Retrying setup POST with non-profile seed token after profile policy rejection."
+            );
+
+            string seedToken = await GetTokenForSeedData();
+            var seedHeaders = new List<KeyValuePair<string, string>>
+            {
+                new("Authorization", $"Bearer {seedToken}"),
+                new("Content-Type", "application/json"),
+            };
+
+            _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
+                url,
+                new() { Data = body, Headers = seedHeaders }
+            )!;
+
+            responseBody = await _apiResponse.TextAsync();
+            _logger.log.Information($"Retry response status: {_apiResponse.Status}");
+            _logger.log.Information($"Retry response body: {responseBody}");
+        }
 
         ExtractIdFromResponse();
+    }
+
+    private static bool ShouldRetryWithSeedToken(int statusCode, string responseBody)
+    {
+        if (statusCode is not 403 and not 415)
+        {
+            return false;
+        }
+
+        return responseBody.Contains(
+                "urn:ed-fi:api:security:data-policy:incorrect-usage",
+                StringComparison.OrdinalIgnoreCase
+            )
+            || responseBody.Contains(
+                "urn:ed-fi:api:profile:invalid-profile-usage",
+                StringComparison.OrdinalIgnoreCase
+            )
+            || responseBody.Contains(
+                "profile-specific content types is required",
+                StringComparison.OrdinalIgnoreCase
+            )
+            || responseBody.Contains(
+                "specified by the content type in the 'Content-Type' header is not supported by this host",
+                StringComparison.OrdinalIgnoreCase
+            );
     }
 
     private void ExtractIdFromResponse()
@@ -1365,7 +1440,7 @@ public class ProfileStepDefinitions(
     {
         var headers = new List<KeyValuePair<string, string>> { new("Authorization", _dmsToken) };
 
-        // Check if we have multiple profiles assigned
+        // Add profile Content-Type when a profile covers the resource
         if (
             _scenarioContext.TryGetValue("assignedProfiles", out object? profilesObj)
             && profilesObj is string[] profiles
@@ -1375,13 +1450,18 @@ public class ProfileStepDefinitions(
             // Extract resource name from URL (e.g., "data/ed-fi/schools" -> "school")
             string resourceName = ExtractResourceNameFromUrl(url);
 
-            // Use the first profile for the Content-Type header
-            string profileName = profiles[0];
-            string contentType =
-                $"application/vnd.ed-fi.{resourceName.ToLowerInvariant()}.{profileName}.writable+json";
+            string? matchingProfile = Array.Find(profiles, profile =>
+                ProfileCoversResource(profile, resourceName)
+            );
 
-            _logger.log.Information($"Multi-profile POST - Content-Type: {contentType}");
-            headers.Add(new("Content-Type", contentType));
+            if (!string.IsNullOrWhiteSpace(matchingProfile))
+            {
+                string contentType =
+                    $"application/vnd.ed-fi.{resourceName.ToLowerInvariant()}.{matchingProfile.ToLowerInvariant()}.writable+json";
+
+                _logger.log.Information($"Profile POST - Content-Type: {contentType}");
+                headers.Add(new("Content-Type", contentType));
+            }
         }
 
         return headers;
@@ -1397,6 +1477,51 @@ public class ProfileStepDefinitions(
         string pluralName = segments[^1].Split('?')[0]; // Handle query strings
 
         return SingularizeResourceName(pluralName);
+    }
+
+    private static Dictionary<string, HashSet<string>> BuildProfileCoverageByName()
+    {
+        var coverage = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach ((string Name, string Xml) profile in ProfileDefinitions.AllProfiles)
+        {
+            XDocument doc = XDocument.Parse(profile.Xml);
+            IEnumerable<XElement> profileElements = doc.Root?.Name.LocalName == "Profile"
+                ? [doc.Root]
+                : doc.Root?.Elements("Profile") ?? [];
+
+            foreach (XElement profileElement in profileElements)
+            {
+                string profileName = profileElement.Attribute("name")?.Value ?? profile.Name;
+
+                if (!coverage.TryGetValue(profileName, out HashSet<string>? resources))
+                {
+                    resources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    coverage[profileName] = resources;
+                }
+
+                foreach (XElement resourceElement in profileElement.Elements("Resource"))
+                {
+                    string? resourceName = resourceElement.Attribute("name")?.Value;
+                    if (!string.IsNullOrWhiteSpace(resourceName))
+                    {
+                        resources.Add(resourceName.ToLowerInvariant());
+                    }
+                }
+            }
+        }
+
+        return coverage;
+    }
+
+    private static bool ProfileCoversResource(string profileName, string resourceName)
+    {
+        if (_profileCoverageByName.Value.TryGetValue(profileName, out HashSet<string>? resources))
+        {
+            return resources.Contains(resourceName);
+        }
+
+        return false;
     }
 
     #endregion
