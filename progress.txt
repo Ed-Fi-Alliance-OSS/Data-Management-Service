@@ -51,3 +51,9 @@ Task completed: Mapping Set Compiler - compile write plans for all ResourceStora
 Decisions: MappingSetCompiler now compiles write plans via RootOnlyWritePlanCompiler.Compile for every relational-table resource (no thin-slice gating on writes); keep RootOnlyReadPlanCompiler.TryCompile behavior unchanged. Updated mapping-set fixture key-unification resource to valid canonical Precomputed inventory so full compile path is exercised; updated thin-slice manifest tests/golden because Program now has both read+write plans and is included.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetCompilerTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ThinSliceMappingSetManifestJsonEmitterTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Fixtures/runtime-plan-compilation/minimal/expected/mappingset.manifest.json; tasks.json; progress.txt.
 Blockers/notes: no blockers. Next iteration can implement Lookup Extensions task for relational missing-write-plan messaging.
+
+2026-03-03 - DMS-1045 / reference/design/backend-redesign/epics/15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md
+Task completed: Write Plan Compiler - compute BulkInsertBatching for every compiled TableWritePlan.
+Decisions: kept compiler batching source-of-truth at PlanWriteBatchingConventions(columnBindings.Count); added explicit per-table assertion for multi-table compilation that TableWritePlan.BulkInsertBatching equals convention-derived values for both pgsql and mssql.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RootOnlyWritePlanCompilerTests.cs; tasks.json; progress.txt.
+Blockers/notes: no blockers. Next iteration can implement SQL Emission UpdateSql task bookkeeping or move to Lookup Extensions/Manifest tasks.

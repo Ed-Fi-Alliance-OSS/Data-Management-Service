@@ -402,6 +402,23 @@ public class Given_RootOnlyWritePlanCompiler
 
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
+    public void It_should_derive_bulk_insert_batching_for_each_compiled_table_plan(SqlDialect dialect)
+    {
+        var writePlan = new RootOnlyWritePlanCompiler(dialect).Compile(CreateSupportedMultiTableModel());
+
+        foreach (var tablePlan in writePlan.TablePlansInDependencyOrder)
+        {
+            var expectedBatching = PlanWriteBatchingConventions.DeriveBulkInsertBatchingInfo(
+                dialect,
+                tablePlan.ColumnBindings
+            );
+
+            tablePlan.BulkInsertBatching.Should().BeEquivalentTo(expectedBatching);
+        }
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
     public void It_should_emit_delete_by_parent_sql_for_direct_child_nested_child_and_root_scope_extension_tables(
         SqlDialect dialect
     )
