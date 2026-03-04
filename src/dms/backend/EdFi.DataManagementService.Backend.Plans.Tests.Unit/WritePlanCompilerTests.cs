@@ -52,6 +52,77 @@ public class Given_WritePlanCompiler
     }
 
     [Test]
+    public void It_should_exclude_non_writable_stored_non_key_columns_from_bindings_and_sql_column_lists()
+    {
+        var model = CreateSupportedRootOnlyModelWithNonWritableSchoolYear();
+        var tablePlan = new WritePlanCompiler(SqlDialect.Pgsql)
+            .Compile(model)
+            .TablePlansInDependencyOrder.Single();
+
+        tablePlan
+            .ColumnBindings.Select(static binding => binding.Column.ColumnName.Value)
+            .Should()
+            .Equal("DocumentId", "LocalEducationAgencyId");
+
+        tablePlan
+            .InsertSql.Should()
+            .Be(
+                """
+                INSERT INTO "edfi"."Student"
+                (
+                    "DocumentId",
+                    "LocalEducationAgencyId"
+                )
+                VALUES
+                (
+                    @documentId,
+                    @localEducationAgencyId
+                )
+                ;
+
+                """
+            );
+
+        tablePlan
+            .UpdateSql.Should()
+            .Be(
+                """
+                UPDATE "edfi"."Student"
+                SET
+                    "LocalEducationAgencyId" = @localEducationAgencyId
+                WHERE
+                    ("DocumentId" = @documentId)
+                ;
+
+                """
+            );
+    }
+
+    [Test]
+    public void It_should_keep_required_key_and_key_unification_precomputed_targets_when_marked_non_writable()
+    {
+        var model = CreateRootOnlyModelWithNonWritableStoredKeyAndPrecomputedTargets();
+        var tablePlan = new WritePlanCompiler(SqlDialect.Pgsql)
+            .Compile(model)
+            .TablePlansInDependencyOrder.Single();
+
+        tablePlan
+            .ColumnBindings.Select(static binding => binding.Column.ColumnName.Value)
+            .Should()
+            .Equal(
+                "DocumentId",
+                "SchoolYearCanonical",
+                "SchoolYearTypeDescriptorIdCanonical",
+                "SchoolYearTypeDescriptorSecondary_Present"
+            );
+
+        tablePlan.ColumnBindings[0].Source.Should().BeOfType<WriteValueSource.DocumentId>();
+        tablePlan.ColumnBindings[1].Source.Should().BeOfType<WriteValueSource.Precomputed>();
+        tablePlan.ColumnBindings[2].Source.Should().BeOfType<WriteValueSource.Precomputed>();
+        tablePlan.ColumnBindings[3].Source.Should().BeOfType<WriteValueSource.Precomputed>();
+    }
+
+    [Test]
     public void It_should_emit_canonical_pgsql_insert_sql_using_binding_column_and_parameter_order()
     {
         var writePlan = new WritePlanCompiler(SqlDialect.Pgsql).Compile(_supportedRootOnlyModel);
@@ -832,6 +903,31 @@ public class Given_WritePlanCompiler
         );
     }
 
+    private static RelationalResourceModel CreateSupportedRootOnlyModelWithNonWritableSchoolYear()
+    {
+        var model = CreateSupportedRootOnlyModel();
+        var schoolYearColumnName = new DbColumnName("SchoolYear");
+        var rootTable = model.Root with
+        {
+            Columns = model
+                .Root.Columns.Select(column =>
+                    column.ColumnName.Equals(schoolYearColumnName)
+                        ? column with
+                        {
+                            IsWritable = false,
+                        }
+                        : column
+                )
+                .ToArray(),
+        };
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
+        };
+    }
+
     private static RelationalResourceModel CreateRootOnlyKeyOnlyModel()
     {
         var rootTable = new DbTableModel(
@@ -958,6 +1054,25 @@ public class Given_WritePlanCompiler
             useSyntheticPresenceColumn: true,
             includeNullOrTrueConstraintForSyntheticPresence: true
         );
+    }
+
+    private static RelationalResourceModel CreateRootOnlyModelWithNonWritableStoredKeyAndPrecomputedTargets()
+    {
+        var model = CreateRootOnlyModelWithCompiledKeyUnificationInventory();
+        var rootTable = model.Root with
+        {
+            Columns = model
+                .Root.Columns.Select(column =>
+                    column.Storage is ColumnStorage.Stored ? column with { IsWritable = false } : column
+                )
+                .ToArray(),
+        };
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
+        };
     }
 
     private static RelationalResourceModel CreateRootOnlyModelWithMissingSyntheticPresenceConstraint()

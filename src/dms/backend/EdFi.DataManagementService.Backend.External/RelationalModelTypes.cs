@@ -407,7 +407,7 @@ public sealed record DbKeyColumn(DbColumnName ColumnName, ColumnKind Kind);
 /// <summary>
 /// Discriminated union describing how a derived table column is physically stored.
 /// <list type="bullet">
-/// <item><see cref="Stored"/> — the column is directly stored and writable.</item>
+/// <item><see cref="Stored"/> — the column is directly stored.</item>
 /// <item><see cref="UnifiedAlias"/> — the column is a generated (persisted computed) alias
 /// over a canonical stored column, optionally gated by a presence column.</item>
 /// </list>
@@ -415,7 +415,7 @@ public sealed record DbKeyColumn(DbColumnName ColumnName, ColumnKind Kind);
 public abstract record ColumnStorage
 {
     /// <summary>
-    /// Column is physically stored and writable.
+    /// Column is physically stored.
     /// </summary>
     public sealed record Stored : ColumnStorage;
 
@@ -438,6 +438,11 @@ public abstract record ColumnStorage
 /// <param name="SourceJsonPath">The JSONPath that sources the column value (when applicable).</param>
 /// <param name="TargetResource">The referenced resource type for FK columns (when applicable).</param>
 /// <param name="Storage">Storage metadata for bind-vs-storage behavior.</param>
+/// <param name="IsWritable">
+/// Whether this stored column is writable by write-plan compilation. Defaults to
+/// <see langword="true" /> for <see cref="ColumnStorage.Stored"/> columns and
+/// <see langword="false" /> for <see cref="ColumnStorage.UnifiedAlias"/> columns.
+/// </param>
 public sealed record DbColumnModel(
     DbColumnName ColumnName,
     ColumnKind Kind,
@@ -448,6 +453,12 @@ public sealed record DbColumnModel(
     ColumnStorage Storage
 )
 {
+    /// <summary>
+    /// Whether the column should participate in write bindings when stored.
+    /// Key columns and key-unification precomputed targets may still be required by write-plan compilation.
+    /// </summary>
+    public bool IsWritable { get; init; } = Storage is ColumnStorage.Stored;
+
     /// <summary>
     /// Initializes a new instance with stored-column default behavior.
     /// </summary>

@@ -91,14 +91,28 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
 
     /// <summary>
     /// Compiles deterministic stored-column bindings for one table.
+    /// Includes writable stored columns plus key columns and key-unification precomputed targets.
     /// </summary>
     private static WriteColumnBinding[] CompileStoredColumnBindings(
         RelationalResourceModel resourceModel,
         DbTableModel tableModel
     )
     {
+        var keyColumnNames = tableModel
+            .Key.Columns.Select(static keyColumn => keyColumn.ColumnName)
+            .ToHashSet();
+        var requiredKeyUnificationPrecomputedColumns = DeriveRequiredKeyUnificationPrecomputedColumns(
+            tableModel
+        );
         var storedColumnsInOrder = tableModel
-            .Columns.Where(static column => column.Storage is ColumnStorage.Stored)
+            .Columns.Where(column =>
+                column.Storage is ColumnStorage.Stored
+                && (
+                    column.IsWritable
+                    || keyColumnNames.Contains(column.ColumnName)
+                    || requiredKeyUnificationPrecomputedColumns.Contains(column.ColumnName)
+                )
+            )
             .ToArray();
 
         if (storedColumnsInOrder.Length == 0)
@@ -127,6 +141,49 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         }
 
         return columnBindings;
+    }
+
+    private static ISet<DbColumnName> DeriveRequiredKeyUnificationPrecomputedColumns(DbTableModel tableModel)
+    {
+        if (tableModel.KeyUnificationClasses.Count == 0)
+        {
+            return new HashSet<DbColumnName>();
+        }
+
+        var columnByName = new Dictionary<DbColumnName, DbColumnModel>(tableModel.Columns.Count);
+
+        foreach (var column in tableModel.Columns)
+        {
+            if (!columnByName.ContainsKey(column.ColumnName))
+            {
+                columnByName[column.ColumnName] = column;
+            }
+        }
+
+        var requiredColumns = new HashSet<DbColumnName>();
+
+        foreach (var keyClass in tableModel.KeyUnificationClasses)
+        {
+            requiredColumns.Add(keyClass.CanonicalColumn);
+
+            foreach (var memberPathColumnName in keyClass.MemberPathColumns)
+            {
+                if (
+                    !columnByName.TryGetValue(memberPathColumnName, out var memberPathColumn)
+                    || memberPathColumn.Storage
+                        is not ColumnStorage.UnifiedAlias { PresenceColumn: { } presenceColumn }
+                    || !columnByName.TryGetValue(presenceColumn, out var presenceColumnModel)
+                    || presenceColumnModel.SourceJsonPath is not null
+                )
+                {
+                    continue;
+                }
+
+                requiredColumns.Add(presenceColumn);
+            }
+        }
+
+        return requiredColumns;
     }
 
     /// <summary>
