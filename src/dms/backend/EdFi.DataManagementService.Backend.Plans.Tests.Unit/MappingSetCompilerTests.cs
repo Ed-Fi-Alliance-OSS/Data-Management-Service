@@ -16,7 +16,7 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 public class Given_MappingSetCompiler
 {
     [Test]
-    public void It_should_compile_supported_read_and_write_plans_and_omit_unsupported_resources()
+    public void It_should_compile_write_plans_for_all_relational_resources_while_read_plans_remain_thin_slice_gated()
     {
         var fixture = CreateMixedResourceFixture(SqlDialect.Pgsql);
         var compiler = new MappingSetCompiler();
@@ -34,8 +34,8 @@ public class Given_MappingSetCompiler
 
         mappingSet.WritePlansByResource.Should().ContainKey(fixture.SupportedResource);
         mappingSet.WritePlansByResource.Should().ContainKey(fixture.ProjectionMetadataResource);
-        mappingSet.WritePlansByResource.Should().NotContainKey(fixture.KeyUnificationResource);
-        mappingSet.WritePlansByResource.Should().NotContainKey(fixture.NonRootOnlyResource);
+        mappingSet.WritePlansByResource.Should().ContainKey(fixture.KeyUnificationResource);
+        mappingSet.WritePlansByResource.Should().ContainKey(fixture.NonRootOnlyResource);
         mappingSet.WritePlansByResource.Should().NotContainKey(fixture.DescriptorResource);
     }
 
@@ -255,23 +255,64 @@ public class Given_MappingSetCompiler
         string tableName
     )
     {
-        var model = CreateRootOnlyModel(resource, tableName);
-        var rootTableWithKeyUnification = model.Root with
+        var rootTable = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), tableName),
+            JsonScope: new JsonPathExpression("$", []),
+            Key: new TableKey(
+                ConstraintName: $"PK_{tableName}",
+                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("SchoolYearCanonical"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: true,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("SchoolYear"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: true,
+                    SourceJsonPath: new JsonPathExpression(
+                        "$.schoolYear",
+                        [new JsonPathSegment.Property("schoolYear")]
+                    ),
+                    TargetResource: null
+                ),
+            ],
+            Constraints: []
+        )
         {
             KeyUnificationClasses =
             [
                 new KeyUnificationClass(
-                    CanonicalColumn: new DbColumnName("SchoolYear"),
+                    CanonicalColumn: new DbColumnName("SchoolYearCanonical"),
                     MemberPathColumns: [new DbColumnName("SchoolYear")]
                 ),
             ],
         };
 
-        return model with
-        {
-            Root = rootTableWithKeyUnification,
-            TablesInDependencyOrder = [rootTableWithKeyUnification],
-        };
+        return new RelationalResourceModel(
+            Resource: resource,
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTable,
+            TablesInDependencyOrder: [rootTable],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
     }
 
     private static RelationalResourceModel CreateRootOnlyModelWithDocumentReferenceBindings(

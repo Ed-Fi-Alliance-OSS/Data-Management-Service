@@ -47,8 +47,10 @@ public sealed class MappingSetCompiler
                 }
             }
 
-            if (writePlanCompiler.TryCompile(resourceModel, out var writePlan))
+            if (resourceModel.StorageKind is ResourceStorageKind.RelationalTables)
             {
+                var writePlan = writePlanCompiler.Compile(resourceModel);
+
                 if (!writePlansByResource.TryAdd(resourceModel.Resource, writePlan))
                 {
                     throw new InvalidOperationException(

@@ -97,7 +97,7 @@
       "Update MappingSetCompilerTests to assert: write plan exists for a non-root-only resource; read plan is null/omitted for that resource until story 05",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Lookup Extensions",

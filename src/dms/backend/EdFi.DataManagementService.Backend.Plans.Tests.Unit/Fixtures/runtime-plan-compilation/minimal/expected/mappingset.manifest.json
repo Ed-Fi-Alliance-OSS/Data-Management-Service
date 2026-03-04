@@ -10,6 +10,79 @@
         {
           "resource": {
             "project_name": "Ed-Fi",
+            "resource_name": "Program"
+          },
+          "write_plan": {
+            "insert_sql_sha256": "e161ba9ed53e2c9668d55c38773e15034a44c89bbdaa69a7779a9657884cc926",
+            "update_sql_sha256": "0b0636f10f50af0cc9778f135635feb3da284f8d8d32f42ca6eafb702898d107",
+            "column_bindings_in_order": [
+              {
+                "column_name": "DocumentId",
+                "column_kind": "parent_key_part",
+                "parameter_name": "documentId",
+                "write_value_source": {
+                  "kind": "document_id"
+                }
+              },
+              {
+                "column_name": "EducationOrganizationCategoryDescriptor_Present",
+                "column_kind": "scalar",
+                "parameter_name": "educationOrganizationCategoryDescriptor_Present",
+                "write_value_source": {
+                  "kind": "precomputed"
+                }
+              },
+              {
+                "column_name": "EducationOrganizationCategoryDescriptor_Unified",
+                "column_kind": "scalar",
+                "parameter_name": "educationOrganizationCategoryDescriptor_Unified",
+                "write_value_source": {
+                  "kind": "precomputed"
+                }
+              },
+              {
+                "column_name": "ProgramTypeDescriptor_Present",
+                "column_kind": "scalar",
+                "parameter_name": "programTypeDescriptor_Present",
+                "write_value_source": {
+                  "kind": "precomputed"
+                }
+              },
+              {
+                "column_name": "ProgramName",
+                "column_kind": "scalar",
+                "parameter_name": "programName",
+                "write_value_source": {
+                  "kind": "scalar",
+                  "relative_path": "$.programName",
+                  "scalar_kind": "string"
+                }
+              }
+            ]
+          },
+          "read_plan": {
+            "select_by_keyset_sql_sha256": "456538fa4ceb51306fd6311920643a6f5d13764dab29e3fd25c649bda403fd27",
+            "select_list_columns_in_order": [
+              "DocumentId",
+              "EducationOrganizationCategoryDescriptor_Present",
+              "EducationOrganizationCategoryDescriptor_Unified",
+              "ProgramTypeDescriptor_Present",
+              "EducationOrganizationCategoryDescriptor",
+              "ProgramName",
+              "ProgramTypeDescriptor"
+            ],
+            "order_by_key_columns_in_order": [
+              "DocumentId"
+            ],
+            "keyset_table": {
+              "temp_table_name": "#page",
+              "document_id_column_name": "DocumentId"
+            }
+          }
+        },
+        {
+          "resource": {
+            "project_name": "Ed-Fi",
             "resource_name": "School"
           },
           "write_plan": {
@@ -71,6 +144,79 @@
         "relational_mapping_version": "1.0.0"
       },
       "resources": [
+        {
+          "resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "Program"
+          },
+          "write_plan": {
+            "insert_sql_sha256": "cac9ea215ef633ed2229f19d2b879d0c9769093126b88c4125abdeb1c9235c20",
+            "update_sql_sha256": "9d83c75ee77087469350519be92f04e8c8f5aa674de8d32e6433c336bd308ddd",
+            "column_bindings_in_order": [
+              {
+                "column_name": "DocumentId",
+                "column_kind": "parent_key_part",
+                "parameter_name": "documentId",
+                "write_value_source": {
+                  "kind": "document_id"
+                }
+              },
+              {
+                "column_name": "EducationOrganizationCategoryDescriptor_Present",
+                "column_kind": "scalar",
+                "parameter_name": "educationOrganizationCategoryDescriptor_Present",
+                "write_value_source": {
+                  "kind": "precomputed"
+                }
+              },
+              {
+                "column_name": "EducationOrganizationCategoryDescriptor_Unified",
+                "column_kind": "scalar",
+                "parameter_name": "educationOrganizationCategoryDescriptor_Unified",
+                "write_value_source": {
+                  "kind": "precomputed"
+                }
+              },
+              {
+                "column_name": "ProgramTypeDescriptor_Present",
+                "column_kind": "scalar",
+                "parameter_name": "programTypeDescriptor_Present",
+                "write_value_source": {
+                  "kind": "precomputed"
+                }
+              },
+              {
+                "column_name": "ProgramName",
+                "column_kind": "scalar",
+                "parameter_name": "programName",
+                "write_value_source": {
+                  "kind": "scalar",
+                  "relative_path": "$.programName",
+                  "scalar_kind": "string"
+                }
+              }
+            ]
+          },
+          "read_plan": {
+            "select_by_keyset_sql_sha256": "b1328a8f36bed7b07828671bad6cb563e72b7cb9cac689ec869576d7028505e1",
+            "select_list_columns_in_order": [
+              "DocumentId",
+              "EducationOrganizationCategoryDescriptor_Present",
+              "EducationOrganizationCategoryDescriptor_Unified",
+              "ProgramTypeDescriptor_Present",
+              "EducationOrganizationCategoryDescriptor",
+              "ProgramName",
+              "ProgramTypeDescriptor"
+            ],
+            "order_by_key_columns_in_order": [
+              "DocumentId"
+            ],
+            "keyset_table": {
+              "temp_table_name": "page",
+              "document_id_column_name": "DocumentId"
+            }
+          }
+        },
         {
           "resource": {
             "project_name": "Ed-Fi",
