@@ -38,9 +38,7 @@ public static class DdlManifestEmitter
         ArgumentNullException.ThrowIfNull(effectiveSchema);
         ArgumentNullException.ThrowIfNull(entries);
 
-        var sortedEntries = entries
-            .OrderBy(e => ToManifestDialect(e.Dialect), StringComparer.Ordinal)
-            .ToList();
+        var sortedEntries = entries.OrderBy(e => DialectLabel(e.Dialect), StringComparer.Ordinal).ToList();
 
         var buffer = new ArrayBufferWriter<byte>();
 
@@ -68,7 +66,7 @@ public static class DdlManifestEmitter
     private static void WriteDdlEntry(Utf8JsonWriter writer, DdlManifestEntry entry)
     {
         writer.WriteStartObject();
-        writer.WriteString("dialect", ToManifestDialect(entry.Dialect));
+        writer.WriteString("dialect", DialectLabel(entry.Dialect));
         writer.WriteString("normalized_sql_sha256", ComputeSha256(entry.SqlText));
         writer.WriteNumber("statement_count", CountStatements(entry.Dialect, entry.SqlText));
         writer.WriteEndObject();
@@ -228,7 +226,7 @@ public static class DdlManifestEmitter
     /// <summary>
     /// Returns the lowercase label for the given dialect (e.g., <c>"pgsql"</c>, <c>"mssql"</c>).
     /// </summary>
-    public static string ToManifestDialect(SqlDialect dialect) =>
+    public static string DialectLabel(SqlDialect dialect) =>
         dialect switch
         {
             SqlDialect.Pgsql => "pgsql",
