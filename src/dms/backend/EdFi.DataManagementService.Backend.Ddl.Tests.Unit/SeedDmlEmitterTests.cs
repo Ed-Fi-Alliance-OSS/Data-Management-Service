@@ -291,6 +291,13 @@ public class Given_SeedDmlEmitter_With_PgsqlDialect_And_SeedData
     }
 
     [Test]
+    public void It_should_emit_effective_schema_validation_block()
+    {
+        _ddl.Should().Contain("dms.EffectiveSchema ResourceKeyCount mismatch");
+        _ddl.Should().Contain("dms.EffectiveSchema ResourceKeySeedHash mismatch");
+    }
+
+    [Test]
     public void It_should_emit_schema_component_inserts_in_endpoint_order()
     {
         var edfi = _ddl.IndexOf("'ed-fi'", StringComparison.Ordinal);
@@ -420,6 +427,13 @@ public class Given_SeedDmlEmitter_With_MssqlDialect_And_SeedData
             .Contain(
                 "IF NOT EXISTS (SELECT 1 FROM [dms].[EffectiveSchema] WHERE [EffectiveSchemaSingletonId] = 1)"
             );
+    }
+
+    [Test]
+    public void It_should_emit_effective_schema_validation_block()
+    {
+        _ddl.Should().Contain("dms.EffectiveSchema ResourceKeyCount mismatch: expected 3, found");
+        _ddl.Should().Contain("dms.EffectiveSchema ResourceKeySeedHash mismatch:");
     }
 
     [Test]

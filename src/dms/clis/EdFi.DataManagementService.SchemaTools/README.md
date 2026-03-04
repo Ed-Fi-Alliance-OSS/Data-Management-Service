@@ -94,7 +94,7 @@ single transaction. Provisions one database at a time (`--dialect both` is not
 accepted).
 
 ```bash
-dms-schema ddl provision --schema <paths...> --connection-string <connstr> --dialect <dialect> [--create-database]
+dms-schema ddl provision --schema <paths...> --connection-string <connstr> --dialect <dialect> [--create-database] [--timeout <seconds>]
 ```
 
 **Options:**
@@ -105,6 +105,7 @@ dms-schema ddl provision --schema <paths...> --connection-string <connstr> --dia
 | `--connection-string` | `-c` | Yes | — | ADO.NET connection string for the target database. |
 | `--dialect` | `-d` | Yes | — | SQL dialect: `pgsql` or `mssql` (not `both`). |
 | `--create-database` | — | No | `false` | Create the target database if it does not exist before provisioning. |
+| `--timeout` | `-t` | No | `300` | Command timeout in seconds for DDL execution. |
 
 **Examples:**
 
