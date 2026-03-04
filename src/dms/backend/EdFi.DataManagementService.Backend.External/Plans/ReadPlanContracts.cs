@@ -36,21 +36,18 @@ public sealed record ResourceReadPlan
         IEnumerable<DescriptorProjectionPlan> DescriptorProjectionPlansInOrder
     )
     {
-        ArgumentNullException.ThrowIfNull(Model);
-        ArgumentNullException.ThrowIfNull(KeysetTable);
-
-        this.Model = Model;
-        this.KeysetTable = KeysetTable;
-        this.TablePlansInDependencyOrder = PlanContractCollectionCloner.ToImmutableArray(
+        this.Model = PlanContractArgumentValidator.RequireNotNull(Model, nameof(Model));
+        this.KeysetTable = PlanContractArgumentValidator.RequireNotNull(KeysetTable, nameof(KeysetTable));
+        this.TablePlansInDependencyOrder = PlanContractArgumentValidator.RequireImmutableArray(
             TablePlansInDependencyOrder,
             nameof(TablePlansInDependencyOrder)
         );
         this.ReferenceIdentityProjectionPlansInDependencyOrder =
-            PlanContractCollectionCloner.ToImmutableArray(
+            PlanContractArgumentValidator.RequireImmutableArray(
                 ReferenceIdentityProjectionPlansInDependencyOrder,
                 nameof(ReferenceIdentityProjectionPlansInDependencyOrder)
             );
-        this.DescriptorProjectionPlansInOrder = PlanContractCollectionCloner.ToImmutableArray(
+        this.DescriptorProjectionPlansInOrder = PlanContractArgumentValidator.RequireImmutableArray(
             DescriptorProjectionPlansInOrder,
             nameof(DescriptorProjectionPlansInOrder)
         );

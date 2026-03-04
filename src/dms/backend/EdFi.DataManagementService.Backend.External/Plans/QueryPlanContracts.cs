@@ -20,23 +20,36 @@ public sealed record PageDocumentIdSqlPlan
     /// </summary>
     /// <param name="PageDocumentIdSql">SQL selecting a page of <c>DocumentId</c>s.</param>
     /// <param name="TotalCountSql">Optional SQL selecting a total row count over the same filters.</param>
-    /// <param name="ParametersInOrder">
-    /// Deterministic inventory of plan parameters in canonical order (filters as emitted, then paging roles).
+    /// <param name="PageParametersInOrder">
+    /// Deterministic inventory of page-query parameters in canonical order
+    /// (filters as emitted, then paging roles).
     /// Executors bind parameters by name; this ordering does not necessarily match placeholder appearance per dialect.
+    /// </param>
+    /// <param name="TotalCountParametersInOrder">
+    /// Optional deterministic inventory of total-count query parameters in canonical order (filters only).
+    /// Must be null when <paramref name="TotalCountSql" /> is null.
     /// </param>
     public PageDocumentIdSqlPlan(
         string PageDocumentIdSql,
         string? TotalCountSql,
-        IEnumerable<QuerySqlParameter> ParametersInOrder
+        IEnumerable<QuerySqlParameter> PageParametersInOrder,
+        IEnumerable<QuerySqlParameter>? TotalCountParametersInOrder
     )
     {
-        ArgumentNullException.ThrowIfNull(PageDocumentIdSql);
-
-        this.PageDocumentIdSql = PageDocumentIdSql;
+        this.PageDocumentIdSql = PlanContractArgumentValidator.RequireNotNull(
+            PageDocumentIdSql,
+            nameof(PageDocumentIdSql)
+        );
         this.TotalCountSql = TotalCountSql;
-        this.ParametersInOrder = PlanContractCollectionCloner.ToImmutableArray(
-            ParametersInOrder,
-            nameof(ParametersInOrder)
+        this.PageParametersInOrder = PlanContractArgumentValidator.RequireImmutableArray(
+            PageParametersInOrder,
+            nameof(PageParametersInOrder)
+        );
+        this.TotalCountParametersInOrder = PlanContractArgumentValidator.RequireImmutableArrayWhenSqlPresent(
+            TotalCountSql,
+            nameof(TotalCountSql),
+            TotalCountParametersInOrder,
+            nameof(TotalCountParametersInOrder)
         );
     }
 
@@ -51,9 +64,14 @@ public sealed record PageDocumentIdSqlPlan
     public string? TotalCountSql { get; init; }
 
     /// <summary>
-    /// Deterministic inventory of query parameters in canonical order.
+    /// Deterministic inventory of page-query parameters in canonical order.
     /// </summary>
-    public ImmutableArray<QuerySqlParameter> ParametersInOrder { get; init; }
+    public ImmutableArray<QuerySqlParameter> PageParametersInOrder { get; init; }
+
+    /// <summary>
+    /// Optional deterministic inventory of total-count query parameters in canonical order (filters only).
+    /// </summary>
+    public ImmutableArray<QuerySqlParameter>? TotalCountParametersInOrder { get; init; }
 }
 
 /// <summary>

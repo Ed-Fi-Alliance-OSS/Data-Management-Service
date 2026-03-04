@@ -175,11 +175,15 @@ public class Given_NormalizedPlanContractDtos
         _queryPlan = new PageDocumentIdSqlPlanDto(
             PageDocumentIdSql: "SELECT r.[DocumentId]\r\nFROM [edfi].[StudentSchoolAssociation] r\r\nORDER BY r.[DocumentId] ASC\r\nOFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY\r\n;",
             TotalCountSql: "SELECT COUNT(1)\r\nFROM [edfi].[StudentSchoolAssociation] r\r\nWHERE r.[SchoolYear] = @schoolYear\r\n;",
-            ParametersInOrder:
+            PageParametersInOrder:
             [
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Filter, "schoolYear"),
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Offset, "offset"),
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Limit, "limit"),
+            ],
+            TotalCountParametersInOrder:
+            [
+                new QuerySqlParameterDto(QuerySqlParameterRoleDto.Filter, "schoolYear"),
             ]
         );
     }
@@ -216,9 +220,14 @@ public class Given_NormalizedPlanContractDtos
             .Equal("$.schoolReference.schoolId", "$.schoolReference.schoolYear");
 
         _queryPlan
-            .ParametersInOrder.Select(parameter => parameter.ParameterName)
+            .PageParametersInOrder.Select(parameter => parameter.ParameterName)
             .Should()
             .Equal("schoolYear", "offset", "limit");
+        _queryPlan.TotalCountParametersInOrder.Should().NotBeNull();
+        _queryPlan
+            .TotalCountParametersInOrder!.Value.Select(parameter => parameter.ParameterName)
+            .Should()
+            .Equal("schoolYear");
     }
 
     [Test]
@@ -260,7 +269,7 @@ public class Given_NormalizedPlanContractDtos
     {
         var reorderedQueryPlan = _queryPlan with
         {
-            ParametersInOrder =
+            PageParametersInOrder =
             [
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Filter, "schoolYear"),
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Limit, "limit"),

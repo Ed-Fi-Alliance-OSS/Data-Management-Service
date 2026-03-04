@@ -1,0 +1,132 @@
+{
+  "mapping_sets": [
+    {
+      "mapping_set_key": {
+        "effective_schema_hash": "8530e8748a0101d8132a3908b6eb4cc200e7dfe546c8d747f8251b78fcda3574",
+        "dialect": "mssql",
+        "relational_mapping_version": "1.0.0"
+      },
+      "resources": [
+        {
+          "resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "School"
+          },
+          "write_plan": {
+            "insert_sql_sha256": "0cb9a236aabc8c50e9f3ce930b38dffafc9c55a9291215a9de8fbccc6f76632a",
+            "update_sql_sha256": "1107b4888af31afc2130e27401740eb08fb7a318f137e87b65f6aec6983b4c11",
+            "column_bindings_in_order": [
+              {
+                "column_name": "DocumentId",
+                "column_kind": "parent_key_part",
+                "parameter_name": "documentId",
+                "write_value_source": {
+                  "kind": "document_id"
+                }
+              },
+              {
+                "column_name": "NameOfInstitution",
+                "column_kind": "scalar",
+                "parameter_name": "nameOfInstitution",
+                "write_value_source": {
+                  "kind": "scalar",
+                  "relative_path": "$.nameOfInstitution",
+                  "scalar_kind": "string"
+                }
+              },
+              {
+                "column_name": "SchoolId",
+                "column_kind": "scalar",
+                "parameter_name": "schoolId",
+                "write_value_source": {
+                  "kind": "scalar",
+                  "relative_path": "$.schoolId",
+                  "scalar_kind": "int32"
+                }
+              }
+            ]
+          },
+          "read_plan": {
+            "select_by_keyset_sql_sha256": "d7a3421806ad3a17ebb6a5aad975b928f5a9defb4f9dd342dfbaf1eca35690af",
+            "select_list_columns_in_order": [
+              "DocumentId",
+              "NameOfInstitution",
+              "SchoolId"
+            ],
+            "order_by_key_columns_in_order": [
+              "DocumentId"
+            ],
+            "keyset_table": {
+              "temp_table_name": "#page",
+              "document_id_column_name": "DocumentId"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "mapping_set_key": {
+        "effective_schema_hash": "8530e8748a0101d8132a3908b6eb4cc200e7dfe546c8d747f8251b78fcda3574",
+        "dialect": "pgsql",
+        "relational_mapping_version": "1.0.0"
+      },
+      "resources": [
+        {
+          "resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "School"
+          },
+          "write_plan": {
+            "insert_sql_sha256": "d73fde7b11668b5e1b3235a75f61f4b9a09dea41ce51fcd407fe80a7c633b56b",
+            "update_sql_sha256": "5daa822bc2283e7974c9bc6a6dc488e5854a239b8ee8dea98afc9eacbee493fb",
+            "column_bindings_in_order": [
+              {
+                "column_name": "DocumentId",
+                "column_kind": "parent_key_part",
+                "parameter_name": "documentId",
+                "write_value_source": {
+                  "kind": "document_id"
+                }
+              },
+              {
+                "column_name": "NameOfInstitution",
+                "column_kind": "scalar",
+                "parameter_name": "nameOfInstitution",
+                "write_value_source": {
+                  "kind": "scalar",
+                  "relative_path": "$.nameOfInstitution",
+                  "scalar_kind": "string"
+                }
+              },
+              {
+                "column_name": "SchoolId",
+                "column_kind": "scalar",
+                "parameter_name": "schoolId",
+                "write_value_source": {
+                  "kind": "scalar",
+                  "relative_path": "$.schoolId",
+                  "scalar_kind": "int32"
+                }
+              }
+            ]
+          },
+          "read_plan": {
+            "select_by_keyset_sql_sha256": "36223892da5c8525807c546734af1747dd20caf8a6491d358b6cdb5cc8a6b989",
+            "select_list_columns_in_order": [
+              "DocumentId",
+              "NameOfInstitution",
+              "SchoolId"
+            ],
+            "order_by_key_columns_in_order": [
+              "DocumentId"
+            ],
+            "keyset_table": {
+              "temp_table_name": "page",
+              "document_id_column_name": "DocumentId"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
