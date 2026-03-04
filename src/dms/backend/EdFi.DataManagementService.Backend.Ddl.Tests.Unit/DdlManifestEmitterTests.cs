@@ -152,14 +152,44 @@ public class Given_DdlManifestEmitter_ComputeSha256_With_Known_Input
 
         hash.Should().MatchRegex("^[0-9a-f]{64}$");
     }
+}
+
+[TestFixture]
+public class Given_DdlManifestEmitter_NormalizeSql
+{
+    [Test]
+    public void It_should_convert_crlf_to_lf()
+    {
+        var normalized = DdlManifestEmitter.NormalizeSql("CREATE TABLE foo (id INT);\r\n");
+
+        normalized.Should().Be("CREATE TABLE foo (id INT);\n");
+    }
 
     [Test]
-    public void It_should_produce_identical_hash_for_crlf_and_lf_content()
+    public void It_should_leave_lf_content_unchanged()
     {
-        var hashLf = DdlManifestEmitter.ComputeSha256("CREATE TABLE foo (id INT);\n");
-        var hashCrLf = DdlManifestEmitter.ComputeSha256("CREATE TABLE foo (id INT);\r\n");
+        var input = "CREATE TABLE foo (id INT);\n";
 
-        hashCrLf.Should().Be(hashLf, "line endings are normalized before hashing");
+        DdlManifestEmitter.NormalizeSql(input).Should().Be(input);
+    }
+
+    [Test]
+    public void It_should_ensure_hash_and_count_use_same_normalized_input()
+    {
+        var crlfSql = "CREATE TABLE foo (id INT);\r\nCREATE TABLE bar (id INT);\r\n";
+        var lfSql = "CREATE TABLE foo (id INT);\nCREATE TABLE bar (id INT);\n";
+
+        var normalizedCrlf = DdlManifestEmitter.NormalizeSql(crlfSql);
+        var normalizedLf = DdlManifestEmitter.NormalizeSql(lfSql);
+
+        DdlManifestEmitter
+            .ComputeSha256(normalizedCrlf)
+            .Should()
+            .Be(DdlManifestEmitter.ComputeSha256(normalizedLf));
+        DdlManifestEmitter
+            .CountStatements(SqlDialect.Pgsql, normalizedCrlf)
+            .Should()
+            .Be(DdlManifestEmitter.CountStatements(SqlDialect.Pgsql, normalizedLf));
     }
 }
 

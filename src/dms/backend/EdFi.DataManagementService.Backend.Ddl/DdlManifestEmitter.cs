@@ -65,24 +65,35 @@ public static class DdlManifestEmitter
 
     private static void WriteDdlEntry(Utf8JsonWriter writer, DdlManifestEntry entry)
     {
+        var normalized = NormalizeSql(entry.SqlText);
+
         writer.WriteStartObject();
         writer.WriteString("dialect", DialectLabel(entry.Dialect));
-        writer.WriteString("normalized_sql_sha256", ComputeSha256(entry.SqlText));
-        writer.WriteNumber("statement_count", CountStatements(entry.Dialect, entry.SqlText));
+        writer.WriteString("normalized_sql_sha256", ComputeSha256(normalized));
+        writer.WriteNumber("statement_count", CountStatements(entry.Dialect, normalized));
         writer.WriteEndObject();
     }
 
     /// <summary>
+    /// Normalizes SQL text by converting all line endings to LF.
+    /// This ensures the hash and statement count match the on-disk .sql file
+    /// (which is always written with LF via WriteFileWithUnixLineEndings).
+    /// </summary>
+    internal static string NormalizeSql(string sqlText)
+    {
+        ArgumentNullException.ThrowIfNull(sqlText);
+
+        return sqlText.ReplaceLineEndings("\n");
+    }
+
+    /// <summary>
     /// Computes the SHA-256 hash of the SQL text (UTF-8, no BOM) as a lowercase hex string.
+    /// Callers must pass already-normalized SQL (via <see cref="NormalizeSql"/>).
     /// Uses a rented buffer to reduce GC pressure for large SQL texts.
     /// </summary>
     internal static string ComputeSha256(string sqlText)
     {
         ArgumentNullException.ThrowIfNull(sqlText);
-
-        // Normalize line endings so the hash matches the on-disk .sql file
-        // (which is always written with \n via WriteFileWithUnixLineEndings).
-        sqlText = sqlText.ReplaceLineEndings("\n");
 
         // Rent a pooled buffer instead of allocating via Encoding.UTF8.GetBytes(string)
         // to avoid large byte[] allocations that pressure GC when hashing real-world
