@@ -122,25 +122,17 @@ public class Given_ThinSlice_RuntimePlanCompilation_Determinism
                 var writePlanIsNull = writePlanNode is null;
                 var readPlanIsNull = readPlanNode is null;
 
-                string? insertSqlSha256 = null;
-                string? updateSqlSha256 = null;
-                string? columnBindingsInOrderJson = null;
+                string? tablePlansInDependencyOrderJson = null;
 
                 if (!writePlanIsNull)
                 {
                     var writePlan = RequireObject(writePlanNode, "write_plan");
-                    var columnBindingsInOrder = writePlan["column_bindings_in_order"] as JsonArray;
-
-                    if (columnBindingsInOrder is null)
-                    {
-                        throw new InvalidOperationException(
-                            "Manifest write plan column_bindings_in_order is required."
-                        );
-                    }
-
-                    insertSqlSha256 = RequireString(writePlan, "insert_sql_sha256");
-                    updateSqlSha256 = ReadOptionalString(writePlan, "update_sql_sha256");
-                    columnBindingsInOrderJson = columnBindingsInOrder.ToJsonString(_compactJson);
+                    var tablePlans = RequireArray(
+                        writePlan["table_plans_in_dependency_order"],
+                        "table_plans_in_dependency_order"
+                    );
+                    ValidateWritePlanTableInventory(tablePlans);
+                    tablePlansInDependencyOrderJson = tablePlans.ToJsonString(_compactJson);
                 }
 
                 string? selectByKeysetSqlSha256 = null;
@@ -154,10 +146,8 @@ public class Given_ThinSlice_RuntimePlanCompilation_Determinism
                 resourceFingerprints[resourceIdentity] = new ResourcePlanFingerprint(
                     WritePlanIsNull: writePlanIsNull,
                     ReadPlanIsNull: readPlanIsNull,
-                    InsertSqlSha256: insertSqlSha256,
-                    UpdateSqlSha256: updateSqlSha256,
                     SelectByKeysetSqlSha256: selectByKeysetSqlSha256,
-                    ColumnBindingsInOrderJson: columnBindingsInOrderJson
+                    TablePlansInDependencyOrderJson: tablePlansInDependencyOrderJson
                 );
             }
 
@@ -210,6 +200,74 @@ public class Given_ThinSlice_RuntimePlanCompilation_Determinism
         return $"{projectName}.{resourceName}";
     }
 
+    private static void ValidateWritePlanTableInventory(JsonArray tablePlans)
+    {
+        foreach (var tablePlanNode in tablePlans)
+        {
+            var tablePlan = RequireObject(tablePlanNode, "table_plans_in_dependency_order entry");
+            _ = RequireObject(tablePlan["table"], "table");
+            _ = RequireString(tablePlan, "insert_sql_sha256");
+            _ = ReadOptionalString(tablePlan, "update_sql_sha256");
+            _ = ReadOptionalString(tablePlan, "delete_by_parent_sql_sha256");
+
+            var batching = RequireObject(tablePlan["bulk_insert_batching"], "bulk_insert_batching");
+            _ = RequireInt(batching, "max_rows_per_batch");
+            _ = RequireInt(batching, "parameters_per_row");
+            _ = RequireInt(batching, "max_parameters_per_command");
+
+            var columnBindings = RequireArray(
+                tablePlan["column_bindings_in_order"],
+                "column_bindings_in_order"
+            );
+
+            foreach (var columnBindingNode in columnBindings)
+            {
+                var columnBinding = RequireObject(columnBindingNode, "column_bindings_in_order entry");
+                _ = RequireString(columnBinding, "column_name");
+                _ = RequireString(columnBinding, "column_kind");
+                _ = RequireString(columnBinding, "parameter_name");
+                _ = RequireObject(columnBinding["write_value_source"], "write_value_source");
+            }
+
+            var keyUnificationPlans = RequireArray(
+                tablePlan["key_unification_plans"],
+                "key_unification_plans"
+            );
+
+            foreach (var keyUnificationPlanNode in keyUnificationPlans)
+            {
+                var keyUnificationPlan = RequireObject(keyUnificationPlanNode, "key_unification_plans entry");
+                _ = RequireString(keyUnificationPlan, "canonical_column_name");
+                _ = RequireInt(keyUnificationPlan, "canonical_binding_index");
+
+                var membersInOrder = RequireArray(keyUnificationPlan["members_in_order"], "members_in_order");
+
+                foreach (var memberNode in membersInOrder)
+                {
+                    var member = RequireObject(memberNode, "members_in_order entry");
+                    _ = RequireString(member, "kind");
+                    _ = RequireString(member, "member_path_column_name");
+                    _ = RequireString(member, "relative_path");
+                    _ = ReadOptionalString(member, "presence_column_name");
+                    _ = ReadOptionalInt(member, "presence_binding_index");
+                    _ = RequireBool(member, "presence_is_synthetic");
+                }
+            }
+        }
+    }
+
+    private static JsonArray RequireArray(JsonNode? node, string propertyName)
+    {
+        return node switch
+        {
+            JsonArray jsonArray => jsonArray,
+            null => throw new InvalidOperationException($"Manifest property '{propertyName}' is required."),
+            _ => throw new InvalidOperationException(
+                $"Manifest property '{propertyName}' must be a JSON array."
+            ),
+        };
+    }
+
     private static JsonObject RequireObject(JsonNode? node, string propertyName)
     {
         return node switch
@@ -251,12 +309,46 @@ public class Given_ThinSlice_RuntimePlanCompilation_Determinism
         };
     }
 
+    private static int RequireInt(JsonObject node, string propertyName)
+    {
+        return node[propertyName] switch
+        {
+            JsonValue jsonValue => jsonValue.GetValue<int>(),
+            null => throw new InvalidOperationException($"Manifest property '{propertyName}' is required."),
+            _ => throw new InvalidOperationException(
+                $"Manifest property '{propertyName}' must be an integer."
+            ),
+        };
+    }
+
+    private static int? ReadOptionalInt(JsonObject node, string propertyName)
+    {
+        return node[propertyName] switch
+        {
+            JsonValue jsonValue => jsonValue.GetValue<int>(),
+            null => null,
+            _ => throw new InvalidOperationException(
+                $"Manifest property '{propertyName}' must be an integer or null."
+            ),
+        };
+    }
+
+    private static bool RequireBool(JsonObject node, string propertyName)
+    {
+        return node[propertyName] switch
+        {
+            JsonValue jsonValue => jsonValue.GetValue<bool>(),
+            null => throw new InvalidOperationException($"Manifest property '{propertyName}' is required."),
+            _ => throw new InvalidOperationException(
+                $"Manifest property '{propertyName}' must be a boolean."
+            ),
+        };
+    }
+
     private sealed record ResourcePlanFingerprint(
         bool WritePlanIsNull,
         bool ReadPlanIsNull,
-        string? InsertSqlSha256,
-        string? UpdateSqlSha256,
         string? SelectByKeysetSqlSha256,
-        string? ColumnBindingsInOrderJson
+        string? TablePlansInDependencyOrderJson
     );
 }

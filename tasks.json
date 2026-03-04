@@ -124,7 +124,7 @@
       "Update/extend manifest emitter tests to validate table plan arrays, hashes, and ordering invariants",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Manifest",

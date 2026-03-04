@@ -106,7 +106,7 @@ internal static class ThinSliceMappingSetManifestJsonEmitter
 
     private static void WriteWritePlanOrNull(Utf8JsonWriter writer, ResourceWritePlan? writePlan)
     {
-        if (writePlan is null || writePlan.TablePlansInDependencyOrder.Length != 1)
+        if (writePlan is null)
         {
             writer.WriteNullValue();
             return;
@@ -117,9 +117,24 @@ internal static class ThinSliceMappingSetManifestJsonEmitter
 
     private static void WriteWritePlan(Utf8JsonWriter writer, ResourceWritePlan writePlan)
     {
-        var tablePlan = writePlan.TablePlansInDependencyOrder[0];
-
         writer.WriteStartObject();
+        writer.WritePropertyName("table_plans_in_dependency_order");
+        writer.WriteStartArray();
+
+        foreach (var tablePlan in writePlan.TablePlansInDependencyOrder)
+        {
+            WriteWriteTablePlan(writer, tablePlan);
+        }
+
+        writer.WriteEndArray();
+        writer.WriteEndObject();
+    }
+
+    private static void WriteWriteTablePlan(Utf8JsonWriter writer, TableWritePlan tablePlan)
+    {
+        writer.WriteStartObject();
+        writer.WritePropertyName("table");
+        WriteTableName(writer, tablePlan.TableModel.Table);
         writer.WriteString(
             "insert_sql_sha256",
             PlanManifestConventions.ComputeNormalizedSha256(tablePlan.InsertSql)
@@ -137,6 +152,28 @@ internal static class ThinSliceMappingSetManifestJsonEmitter
             );
         }
 
+        if (tablePlan.DeleteByParentSql is null)
+        {
+            writer.WriteNull("delete_by_parent_sql_sha256");
+        }
+        else
+        {
+            writer.WriteString(
+                "delete_by_parent_sql_sha256",
+                PlanManifestConventions.ComputeNormalizedSha256(tablePlan.DeleteByParentSql)
+            );
+        }
+
+        writer.WritePropertyName("bulk_insert_batching");
+        writer.WriteStartObject();
+        writer.WriteNumber("max_rows_per_batch", tablePlan.BulkInsertBatching.MaxRowsPerBatch);
+        writer.WriteNumber("parameters_per_row", tablePlan.BulkInsertBatching.ParametersPerRow);
+        writer.WriteNumber(
+            "max_parameters_per_command",
+            tablePlan.BulkInsertBatching.MaxParametersPerCommand
+        );
+        writer.WriteEndObject();
+
         writer.WritePropertyName("column_bindings_in_order");
         writer.WriteStartArray();
 
@@ -148,6 +185,27 @@ internal static class ThinSliceMappingSetManifestJsonEmitter
             writer.WriteString("parameter_name", binding.ParameterName);
             writer.WritePropertyName("write_value_source");
             WriteWriteValueSource(writer, binding.Source);
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
+        writer.WritePropertyName("key_unification_plans");
+        writer.WriteStartArray();
+
+        foreach (var keyUnificationPlan in tablePlan.KeyUnificationPlans)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("canonical_column_name", keyUnificationPlan.CanonicalColumn.Value);
+            writer.WriteNumber("canonical_binding_index", keyUnificationPlan.CanonicalBindingIndex);
+            writer.WritePropertyName("members_in_order");
+            writer.WriteStartArray();
+
+            foreach (var member in keyUnificationPlan.MembersInOrder)
+            {
+                WriteKeyUnificationMember(writer, member);
+            }
+
+            writer.WriteEndArray();
             writer.WriteEndObject();
         }
 
@@ -210,6 +268,14 @@ internal static class ThinSliceMappingSetManifestJsonEmitter
         writer.WriteStartObject();
         writer.WriteString("project_name", resource.ProjectName);
         writer.WriteString("resource_name", resource.ResourceName);
+        writer.WriteEndObject();
+    }
+
+    private static void WriteTableName(Utf8JsonWriter writer, DbTableName tableName)
+    {
+        writer.WriteStartObject();
+        writer.WriteString("schema", tableName.Schema.Value);
+        writer.WriteString("name", tableName.Name);
         writer.WriteEndObject();
     }
 
@@ -313,6 +379,68 @@ internal static class ThinSliceMappingSetManifestJsonEmitter
         }
 
         writer.WriteEndObject();
+    }
+
+    private static void WriteKeyUnificationMember(Utf8JsonWriter writer, KeyUnificationMemberWritePlan member)
+    {
+        writer.WriteStartObject();
+
+        switch (member)
+        {
+            case KeyUnificationMemberWritePlan.ScalarMember scalar:
+                writer.WriteString("kind", "scalar");
+                writer.WriteString("member_path_column_name", scalar.MemberPathColumn.Value);
+                writer.WriteString("relative_path", scalar.RelativePath.Canonical);
+                WriteNullableString(writer, "presence_column_name", scalar.PresenceColumn?.Value);
+                WriteNullableInt(writer, "presence_binding_index", scalar.PresenceBindingIndex);
+                writer.WriteBoolean("presence_is_synthetic", scalar.PresenceIsSynthetic);
+                writer.WriteString("scalar_kind", ToScalarKindToken(scalar.ScalarType.Kind));
+                break;
+
+            case KeyUnificationMemberWritePlan.DescriptorMember descriptor:
+                writer.WriteString("kind", "descriptor");
+                writer.WriteString("member_path_column_name", descriptor.MemberPathColumn.Value);
+                writer.WriteString("relative_path", descriptor.RelativePath.Canonical);
+                WriteNullableString(writer, "presence_column_name", descriptor.PresenceColumn?.Value);
+                WriteNullableInt(writer, "presence_binding_index", descriptor.PresenceBindingIndex);
+                writer.WriteBoolean("presence_is_synthetic", descriptor.PresenceIsSynthetic);
+                writer.WritePropertyName("descriptor_resource");
+                WriteQualifiedResourceName(writer, descriptor.DescriptorResource);
+                break;
+
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(member),
+                    member.GetType().Name,
+                    "Unsupported key-unification member plan."
+                );
+        }
+
+        writer.WriteEndObject();
+    }
+
+    private static void WriteNullableInt(Utf8JsonWriter writer, string propertyName, int? value)
+    {
+        if (value is null)
+        {
+            writer.WriteNull(propertyName);
+        }
+        else
+        {
+            writer.WriteNumber(propertyName, value.Value);
+        }
+    }
+
+    private static void WriteNullableString(Utf8JsonWriter writer, string propertyName, string? value)
+    {
+        if (value is null)
+        {
+            writer.WriteNull(propertyName);
+        }
+        else
+        {
+            writer.WriteString(propertyName, value);
+        }
     }
 
     private static string ToColumnKindToken(ColumnKind columnKind)

@@ -105,7 +105,7 @@ public class Given_ThinSliceMappingSetManifestJsonEmitter
             planPresenceByDialect[dialect]
                 ["Ed-Fi.StudentAddressCollection"]
                 .Should()
-                .Be(new PlanPresence(WritePlanIsNull: true, ReadPlanIsNull: true));
+                .Be(new PlanPresence(WritePlanIsNull: false, ReadPlanIsNull: true));
         }
     }
 
@@ -119,6 +119,84 @@ public class Given_ThinSliceMappingSetManifestJsonEmitter
         orderByColumnsByDialect.Keys.Should().BeEquivalentTo("mssql", "pgsql");
         orderByColumnsByDialect["mssql"].Should().Equal("DocumentId", "SchoolYear");
         orderByColumnsByDialect["pgsql"].Should().Equal("DocumentId", "SchoolYear");
+    }
+
+    [Test]
+    public void It_should_emit_write_plan_table_inventory_in_dependency_order_with_required_metadata()
+    {
+        var summariesByDialect = ReadWriteTablePlanSummariesByDialect(
+            _manifest,
+            "Ed-Fi",
+            "StudentAddressCollection"
+        );
+        var expectedTableNamesByDialect = ReadCompiledTableNamesByDialect(
+            BuildPermutedMappingSets(reverseMappingSetOrder: false),
+            new QualifiedResourceName("Ed-Fi", "StudentAddressCollection")
+        );
+
+        summariesByDialect.Keys.Should().BeEquivalentTo("mssql", "pgsql");
+
+        foreach (var dialect in summariesByDialect.Keys)
+        {
+            var tableSummaries = summariesByDialect[dialect];
+            tableSummaries
+                .Select(summary => summary.TableName)
+                .Should()
+                .Equal(expectedTableNamesByDialect[dialect]);
+
+            tableSummaries
+                .Select(summary => summary.InsertSqlSha256)
+                .Should()
+                .OnlyContain(static value => !string.IsNullOrWhiteSpace(value));
+            tableSummaries
+                .Select(summary => summary.ColumnBindingCount)
+                .Should()
+                .OnlyContain(static count => count > 0);
+            tableSummaries
+                .Select(summary => summary.BulkInsertBatching.MaxRowsPerBatch)
+                .Should()
+                .OnlyContain(static maxRows => maxRows > 0);
+            tableSummaries
+                .Select(summary => summary.BulkInsertBatching.ParametersPerRow)
+                .Should()
+                .OnlyContain(static width => width > 0);
+            tableSummaries
+                .Select(summary => summary.BulkInsertBatching.MaxParametersPerCommand)
+                .Should()
+                .OnlyContain(static maxParams => maxParams > 0);
+
+            tableSummaries[0].DeleteByParentSqlSha256.Should().BeNull();
+
+            if (tableSummaries.Count > 1)
+            {
+                tableSummaries
+                    .Skip(1)
+                    .Select(summary => summary.DeleteByParentSqlSha256)
+                    .Should()
+                    .OnlyContain(static hash => !string.IsNullOrWhiteSpace(hash));
+            }
+        }
+    }
+
+    [Test]
+    public void It_should_preserve_key_unification_member_order_in_manifest()
+    {
+        var expectedMemberPathsByDialect = ReadCompiledKeyUnificationMemberPathsByDialect(
+            BuildPermutedMappingSets(reverseMappingSetOrder: false),
+            new QualifiedResourceName("Ed-Fi", "Program")
+        );
+        var actualMemberPathsByDialect = ReadManifestKeyUnificationMemberPathsByDialect(
+            _manifest,
+            "Ed-Fi",
+            "Program"
+        );
+
+        actualMemberPathsByDialect.Keys.Should().BeEquivalentTo("mssql", "pgsql");
+
+        foreach (var dialect in actualMemberPathsByDialect.Keys)
+        {
+            actualMemberPathsByDialect[dialect].Should().Equal(expectedMemberPathsByDialect[dialect]);
+        }
     }
 
     private static IReadOnlyList<MappingSet> BuildPermutedMappingSets(bool reverseMappingSetOrder)
@@ -187,6 +265,63 @@ public class Given_ThinSliceMappingSetManifestJsonEmitter
     private static string ResourceSortKey(QualifiedResourceName resource)
     {
         return $"{resource.ProjectName}.{resource.ResourceName}";
+    }
+
+    private static IReadOnlyDictionary<string, IReadOnlyList<string>> ReadCompiledTableNamesByDialect(
+        IReadOnlyList<MappingSet> mappingSets,
+        QualifiedResourceName resource
+    )
+    {
+        Dictionary<string, IReadOnlyList<string>> tableNamesByDialect = [];
+
+        foreach (var mappingSet in mappingSets)
+        {
+            var dialect = PlanManifestConventions.ToManifestDialect(mappingSet.Key.Dialect);
+
+            if (!mappingSet.WritePlansByResource.TryGetValue(resource, out var writePlan))
+            {
+                throw new InvalidOperationException(
+                    $"Compiled write plan for resource '{resource.ProjectName}.{resource.ResourceName}' is required."
+                );
+            }
+
+            tableNamesByDialect[dialect] = writePlan
+                .TablePlansInDependencyOrder.Select(tablePlan => tablePlan.TableModel.Table.Name)
+                .ToArray();
+        }
+
+        return tableNamesByDialect;
+    }
+
+    private static IReadOnlyDictionary<
+        string,
+        IReadOnlyList<string>
+    > ReadCompiledKeyUnificationMemberPathsByDialect(
+        IReadOnlyList<MappingSet> mappingSets,
+        QualifiedResourceName resource
+    )
+    {
+        Dictionary<string, IReadOnlyList<string>> memberPathsByDialect = [];
+
+        foreach (var mappingSet in mappingSets)
+        {
+            var dialect = PlanManifestConventions.ToManifestDialect(mappingSet.Key.Dialect);
+
+            if (!mappingSet.WritePlansByResource.TryGetValue(resource, out var writePlan))
+            {
+                throw new InvalidOperationException(
+                    $"Compiled write plan for resource '{resource.ProjectName}.{resource.ResourceName}' is required."
+                );
+            }
+
+            memberPathsByDialect[dialect] = writePlan
+                .TablePlansInDependencyOrder.SelectMany(tablePlan => tablePlan.KeyUnificationPlans)
+                .SelectMany(keyUnificationPlan => keyUnificationPlan.MembersInOrder)
+                .Select(member => member.MemberPathColumn.Value)
+                .ToArray();
+        }
+
+        return memberPathsByDialect;
     }
 
     private static RelationalResourceModel CreateRootOnlyModelWithNonDocumentIdFirstKeyOrder(
@@ -375,6 +510,133 @@ public class Given_ThinSliceMappingSetManifestJsonEmitter
         return planPresenceByDialect;
     }
 
+    private static IReadOnlyDictionary<
+        string,
+        IReadOnlyList<WriteTablePlanSummary>
+    > ReadWriteTablePlanSummariesByDialect(string manifest, string projectName, string resourceName)
+    {
+        Dictionary<string, IReadOnlyList<WriteTablePlanSummary>> summariesByDialect = [];
+
+        foreach (var mappingSetObject in ParseMappingSetObjects(manifest))
+        {
+            var dialect = mappingSetObject["mapping_set_key"]?["dialect"]?.GetValue<string>();
+
+            if (dialect is null)
+            {
+                throw new InvalidOperationException("Manifest mapping set key dialect is required.");
+            }
+
+            var resource = FindResource(mappingSetObject, projectName, resourceName);
+            var writePlan = RequireObject(resource["write_plan"], "write_plan");
+            var tablePlans = RequireArray(
+                writePlan["table_plans_in_dependency_order"],
+                "table_plans_in_dependency_order"
+            );
+
+            summariesByDialect[dialect] = tablePlans
+                .Select(tablePlanNode =>
+                    RequireObject(tablePlanNode, "table_plans_in_dependency_order entry")
+                )
+                .Select(ReadWriteTablePlanSummary)
+                .ToArray();
+        }
+
+        return summariesByDialect;
+    }
+
+    private static IReadOnlyDictionary<
+        string,
+        IReadOnlyList<string>
+    > ReadManifestKeyUnificationMemberPathsByDialect(string manifest, string projectName, string resourceName)
+    {
+        Dictionary<string, IReadOnlyList<string>> memberPathsByDialect = [];
+
+        foreach (var mappingSetObject in ParseMappingSetObjects(manifest))
+        {
+            var dialect = mappingSetObject["mapping_set_key"]?["dialect"]?.GetValue<string>();
+
+            if (dialect is null)
+            {
+                throw new InvalidOperationException("Manifest mapping set key dialect is required.");
+            }
+
+            var resource = FindResource(mappingSetObject, projectName, resourceName);
+            var writePlan = RequireObject(resource["write_plan"], "write_plan");
+            var tablePlans = RequireArray(
+                writePlan["table_plans_in_dependency_order"],
+                "table_plans_in_dependency_order"
+            );
+
+            memberPathsByDialect[dialect] = tablePlans
+                .SelectMany(tablePlanNode =>
+                    RequireArray(
+                        RequireObject(tablePlanNode, "table_plans_in_dependency_order entry")[
+                            "key_unification_plans"
+                        ],
+                        "key_unification_plans"
+                    )
+                )
+                .SelectMany(keyPlanNode =>
+                    RequireArray(
+                        RequireObject(keyPlanNode, "key_unification_plans entry")["members_in_order"],
+                        "members_in_order"
+                    )
+                )
+                .Select(memberNode =>
+                    RequireString(
+                        RequireObject(memberNode, "members_in_order entry"),
+                        "member_path_column_name"
+                    )
+                )
+                .ToArray();
+        }
+
+        return memberPathsByDialect;
+    }
+
+    private static WriteTablePlanSummary ReadWriteTablePlanSummary(JsonObject tablePlan)
+    {
+        var table = RequireObject(tablePlan["table"], "table");
+        var batching = RequireObject(tablePlan["bulk_insert_batching"], "bulk_insert_batching");
+        var columnBindings = RequireArray(tablePlan["column_bindings_in_order"], "column_bindings_in_order");
+        var keyUnificationPlans = RequireArray(tablePlan["key_unification_plans"], "key_unification_plans");
+
+        // Validate key-unification member metadata shape while building summary.
+        foreach (var keyUnificationPlanNode in keyUnificationPlans)
+        {
+            var keyUnificationPlan = RequireObject(keyUnificationPlanNode, "key_unification_plans entry");
+            _ = RequireString(keyUnificationPlan, "canonical_column_name");
+            _ = RequireInt(keyUnificationPlan, "canonical_binding_index");
+
+            var membersInOrder = RequireArray(keyUnificationPlan["members_in_order"], "members_in_order");
+
+            foreach (var memberNode in membersInOrder)
+            {
+                var member = RequireObject(memberNode, "members_in_order entry");
+                _ = RequireString(member, "kind");
+                _ = RequireString(member, "member_path_column_name");
+                _ = RequireString(member, "relative_path");
+                _ = ReadOptionalString(member, "presence_column_name");
+                _ = ReadOptionalInt(member, "presence_binding_index");
+                _ = RequireBool(member, "presence_is_synthetic");
+            }
+        }
+
+        return new WriteTablePlanSummary(
+            Schema: RequireString(table, "schema"),
+            TableName: RequireString(table, "name"),
+            InsertSqlSha256: RequireString(tablePlan, "insert_sql_sha256"),
+            UpdateSqlSha256: ReadOptionalString(tablePlan, "update_sql_sha256"),
+            DeleteByParentSqlSha256: ReadOptionalString(tablePlan, "delete_by_parent_sql_sha256"),
+            BulkInsertBatching: new BulkInsertBatchingSummary(
+                MaxRowsPerBatch: RequireInt(batching, "max_rows_per_batch"),
+                ParametersPerRow: RequireInt(batching, "parameters_per_row"),
+                MaxParametersPerCommand: RequireInt(batching, "max_parameters_per_command")
+            ),
+            ColumnBindingCount: columnBindings.Count
+        );
+    }
+
     private static string ReadResourceName(JsonNode? resourceNode)
     {
         var projectName = resourceNode?["resource"]?["project_name"]?.GetValue<string>();
@@ -416,6 +678,97 @@ public class Given_ThinSliceMappingSetManifestJsonEmitter
         throw new InvalidOperationException($"Manifest resource '{projectName}.{resourceName}' is required.");
     }
 
+    private static JsonArray RequireArray(JsonNode? node, string propertyName)
+    {
+        return node switch
+        {
+            JsonArray array => array,
+            null => throw new InvalidOperationException($"Manifest property '{propertyName}' is required."),
+            _ => throw new InvalidOperationException(
+                $"Manifest property '{propertyName}' must be a JSON array."
+            ),
+        };
+    }
+
+    private static JsonObject RequireObject(JsonNode? node, string propertyName)
+    {
+        return node switch
+        {
+            JsonObject jsonObject => jsonObject,
+            null => throw new InvalidOperationException($"Manifest property '{propertyName}' is required."),
+            _ => throw new InvalidOperationException(
+                $"Manifest property '{propertyName}' must be a JSON object."
+            ),
+        };
+    }
+
+    private static string RequireString(JsonObject node, string propertyName)
+    {
+        var value = node[propertyName] switch
+        {
+            JsonValue jsonValue => jsonValue.GetValue<string>(),
+            null => throw new InvalidOperationException($"Manifest property '{propertyName}' is required."),
+            _ => throw new InvalidOperationException($"Manifest property '{propertyName}' must be a string."),
+        };
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidOperationException($"Manifest property '{propertyName}' must be non-empty.");
+        }
+
+        return value;
+    }
+
+    private static string? ReadOptionalString(JsonObject node, string propertyName)
+    {
+        return node[propertyName] switch
+        {
+            JsonValue jsonValue => jsonValue.GetValue<string>(),
+            null => null,
+            _ => throw new InvalidOperationException(
+                $"Manifest property '{propertyName}' must be a string or null."
+            ),
+        };
+    }
+
+    private static int RequireInt(JsonObject node, string propertyName)
+    {
+        var value = node[propertyName] switch
+        {
+            JsonValue jsonValue => jsonValue.GetValue<int>(),
+            null => throw new InvalidOperationException($"Manifest property '{propertyName}' is required."),
+            _ => throw new InvalidOperationException(
+                $"Manifest property '{propertyName}' must be an integer."
+            ),
+        };
+
+        return value;
+    }
+
+    private static int? ReadOptionalInt(JsonObject node, string propertyName)
+    {
+        return node[propertyName] switch
+        {
+            JsonValue jsonValue => jsonValue.GetValue<int>(),
+            null => null,
+            _ => throw new InvalidOperationException(
+                $"Manifest property '{propertyName}' must be an integer or null."
+            ),
+        };
+    }
+
+    private static bool RequireBool(JsonObject node, string propertyName)
+    {
+        return node[propertyName] switch
+        {
+            JsonValue jsonValue => jsonValue.GetValue<bool>(),
+            null => throw new InvalidOperationException($"Manifest property '{propertyName}' is required."),
+            _ => throw new InvalidOperationException(
+                $"Manifest property '{propertyName}' must be a boolean."
+            ),
+        };
+    }
+
     private static JsonArray ParseMappingSetArray(string manifest)
     {
         var root = JsonNode.Parse(manifest);
@@ -446,4 +799,20 @@ public class Given_ThinSliceMappingSetManifestJsonEmitter
     }
 
     private sealed record PlanPresence(bool WritePlanIsNull, bool ReadPlanIsNull);
+
+    private sealed record BulkInsertBatchingSummary(
+        int MaxRowsPerBatch,
+        int ParametersPerRow,
+        int MaxParametersPerCommand
+    );
+
+    private sealed record WriteTablePlanSummary(
+        string Schema,
+        string TableName,
+        string InsertSqlSha256,
+        string? UpdateSqlSha256,
+        string? DeleteByParentSqlSha256,
+        BulkInsertBatchingSummary BulkInsertBatching,
+        int ColumnBindingCount
+    );
 }
