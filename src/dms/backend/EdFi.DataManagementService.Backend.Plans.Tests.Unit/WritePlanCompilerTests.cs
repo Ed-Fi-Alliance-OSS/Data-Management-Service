@@ -427,6 +427,54 @@ public class Given_WritePlanCompiler
     }
 
     [Test]
+    public void It_should_fail_fast_when_document_reference_binding_is_missing_for_document_fk_column()
+    {
+        var model = CreateSingleTableModelWithMissingDocumentReferenceBinding();
+        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(model);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("No document-reference binding matches 'edfi.StudentAddress.School_DocumentId'.");
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_document_reference_binding_is_duplicated_for_document_fk_column()
+    {
+        var model = CreateSingleTableModelWithDuplicateDocumentReferenceBinding();
+        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(model);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Multiple document-reference bindings match 'edfi.StudentAddress.School_DocumentId'."
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_descriptor_edge_source_is_missing_for_descriptor_fk_column()
+    {
+        var model = CreateSingleTableModelWithMissingDescriptorEdgeSource();
+        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(model);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("No descriptor edge source matches 'edfi.StudentAddress.ProgramTypeDescriptorId'.");
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_descriptor_edge_source_is_duplicated_for_descriptor_fk_column()
+    {
+        var model = CreateSingleTableModelWithDuplicateDescriptorEdgeSource();
+        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(model);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Multiple descriptor edge sources match 'edfi.StudentAddress.ProgramTypeDescriptorId'."
+            );
+    }
+
+    [Test]
     public void It_should_fail_fast_when_key_column_is_unified_alias()
     {
         var unsupportedModel = CreateRootOnlyModelWithUnifiedAliasKeyColumn();
@@ -1924,6 +1972,48 @@ public class Given_WritePlanCompiler
                 ),
             ]
         );
+    }
+
+    private static RelationalResourceModel CreateSingleTableModelWithMissingDocumentReferenceBinding()
+    {
+        var model = CreateSingleTableModelCoveringWriteValueSourceKinds();
+
+        return model with
+        {
+            DocumentReferenceBindings = [],
+        };
+    }
+
+    private static RelationalResourceModel CreateSingleTableModelWithDuplicateDocumentReferenceBinding()
+    {
+        var model = CreateSingleTableModelCoveringWriteValueSourceKinds();
+        var binding = model.DocumentReferenceBindings.Single();
+
+        return model with
+        {
+            DocumentReferenceBindings = [.. model.DocumentReferenceBindings, binding],
+        };
+    }
+
+    private static RelationalResourceModel CreateSingleTableModelWithMissingDescriptorEdgeSource()
+    {
+        var model = CreateSingleTableModelCoveringWriteValueSourceKinds();
+
+        return model with
+        {
+            DescriptorEdgeSources = [],
+        };
+    }
+
+    private static RelationalResourceModel CreateSingleTableModelWithDuplicateDescriptorEdgeSource()
+    {
+        var model = CreateSingleTableModelCoveringWriteValueSourceKinds();
+        var edgeSource = model.DescriptorEdgeSources.Single();
+
+        return model with
+        {
+            DescriptorEdgeSources = [.. model.DescriptorEdgeSources, edgeSource],
+        };
     }
 
     private static JsonPathExpression CreatePath(string canonical, params JsonPathSegment[] segments)

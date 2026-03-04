@@ -19,6 +19,15 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     private readonly SimpleUpdateSqlEmitter _updateSqlEmitter = new(dialect);
     private readonly SimpleDeleteSqlEmitter _deleteSqlEmitter = new(dialect);
 
+    private readonly record struct WriteSourceLookupKey(DbTableName Table, DbColumnName Column);
+
+    private sealed record WriteSourceLookup(
+        IReadOnlyDictionary<WriteSourceLookupKey, int> DocumentReferenceBindingIndexByKey,
+        IReadOnlySet<WriteSourceLookupKey> DuplicateDocumentReferenceBindingKeys,
+        IReadOnlyDictionary<WriteSourceLookupKey, DescriptorEdgeSource> DescriptorEdgeSourceByKey,
+        IReadOnlySet<WriteSourceLookupKey> DuplicateDescriptorEdgeSourceKeys
+    );
+
     /// <summary>
     /// Compiles a relational-table write plan across all tables in dependency order.
     /// </summary>
@@ -27,9 +36,12 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     {
         ArgumentNullException.ThrowIfNull(resourceModel);
         ValidateCompileEligibility(resourceModel);
+        var writeSourceLookup = BuildWriteSourceLookup(resourceModel);
 
         var tablePlans = resourceModel
-            .TablesInDependencyOrder.Select(tableModel => CompileTablePlan(resourceModel, tableModel))
+            .TablesInDependencyOrder.Select(tableModel =>
+                CompileTablePlan(resourceModel, tableModel, writeSourceLookup)
+            )
             .ToArray();
 
         return new ResourceWritePlan(resourceModel, tablePlans);
@@ -57,13 +69,58 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         }
     }
 
+    private static WriteSourceLookup BuildWriteSourceLookup(RelationalResourceModel resourceModel)
+    {
+        var documentReferenceBindingIndexByKey = new Dictionary<WriteSourceLookupKey, int>(
+            resourceModel.DocumentReferenceBindings.Count
+        );
+        var duplicateDocumentReferenceBindingKeys = new HashSet<WriteSourceLookupKey>();
+
+        for (var index = 0; index < resourceModel.DocumentReferenceBindings.Count; index++)
+        {
+            var binding = resourceModel.DocumentReferenceBindings[index];
+            var lookupKey = new WriteSourceLookupKey(binding.Table, binding.FkColumn);
+
+            if (!documentReferenceBindingIndexByKey.TryAdd(lookupKey, index))
+            {
+                duplicateDocumentReferenceBindingKeys.Add(lookupKey);
+            }
+        }
+
+        var descriptorEdgeSourceByKey = new Dictionary<WriteSourceLookupKey, DescriptorEdgeSource>(
+            resourceModel.DescriptorEdgeSources.Count
+        );
+        var duplicateDescriptorEdgeSourceKeys = new HashSet<WriteSourceLookupKey>();
+
+        foreach (var edgeSource in resourceModel.DescriptorEdgeSources)
+        {
+            var lookupKey = new WriteSourceLookupKey(edgeSource.Table, edgeSource.FkColumn);
+
+            if (!descriptorEdgeSourceByKey.TryAdd(lookupKey, edgeSource))
+            {
+                duplicateDescriptorEdgeSourceKeys.Add(lookupKey);
+            }
+        }
+
+        return new WriteSourceLookup(
+            DocumentReferenceBindingIndexByKey: documentReferenceBindingIndexByKey,
+            DuplicateDocumentReferenceBindingKeys: duplicateDocumentReferenceBindingKeys,
+            DescriptorEdgeSourceByKey: descriptorEdgeSourceByKey,
+            DuplicateDescriptorEdgeSourceKeys: duplicateDescriptorEdgeSourceKeys
+        );
+    }
+
     /// <summary>
     /// Compiles one table write plan using deterministic column bindings and canonical SQL emission.
     /// </summary>
-    private TableWritePlan CompileTablePlan(RelationalResourceModel resourceModel, DbTableModel tableModel)
+    private TableWritePlan CompileTablePlan(
+        RelationalResourceModel resourceModel,
+        DbTableModel tableModel,
+        WriteSourceLookup writeSourceLookup
+    )
     {
         ValidateWritableKeyColumns(tableModel);
-        var columnBindings = CompileStoredColumnBindings(resourceModel, tableModel);
+        var columnBindings = CompileStoredColumnBindings(tableModel, writeSourceLookup);
         var keyUnificationPlans = CompileKeyUnificationPlans(tableModel, columnBindings);
 
         var insertSql = _insertSqlEmitter.Emit(
@@ -94,8 +151,8 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     /// Includes writable stored columns plus key columns and key-unification precomputed targets.
     /// </summary>
     private static WriteColumnBinding[] CompileStoredColumnBindings(
-        RelationalResourceModel resourceModel,
-        DbTableModel tableModel
+        DbTableModel tableModel,
+        WriteSourceLookup writeSourceLookup
     )
     {
         var keyColumnNames = tableModel
@@ -135,7 +192,7 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
 
             columnBindings[index] = new WriteColumnBinding(
                 Column: column,
-                Source: DeriveWriteValueSource(resourceModel, tableModel, column),
+                Source: DeriveWriteValueSource(tableModel, column, writeSourceLookup),
                 ParameterName: orderedParameterNames[index]
             );
         }
@@ -753,9 +810,9 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     /// Derives a deterministic write-time value source contract for a stored column binding.
     /// </summary>
     private static WriteValueSource DeriveWriteValueSource(
-        RelationalResourceModel resourceModel,
         DbTableModel tableModel,
-        DbColumnModel column
+        DbColumnModel column,
+        WriteSourceLookup writeSourceLookup
     )
     {
         if (IsDocumentIdKeyColumn(tableModel, column))
@@ -771,14 +828,14 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
             ColumnKind.Ordinal => new WriteValueSource.Ordinal(),
             ColumnKind.DocumentFk when column.SourceJsonPath is not null =>
                 new WriteValueSource.DocumentReference(
-                    FindDocumentReferenceBindingIndex(resourceModel, tableModel.Table, column.ColumnName)
+                    FindDocumentReferenceBindingIndex(tableModel.Table, column.ColumnName, writeSourceLookup)
                 ),
             ColumnKind.DescriptorFk when column.SourceJsonPath is JsonPathExpression sourcePath =>
                 CreateDescriptorReferenceSource(
-                    resourceModel,
                     tableModel.Table,
                     column.ColumnName,
-                    WritePlanJsonPathConventions.DeriveScopeRelativePath(tableModel.JsonScope, sourcePath)
+                    WritePlanJsonPathConventions.DeriveScopeRelativePath(tableModel.JsonScope, sourcePath),
+                    writeSourceLookup
                 ),
             _ => CreateScalarOrPrecomputedSource(tableModel, column),
         };
@@ -821,33 +878,23 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     /// Finds the document-reference binding inventory index for a specific FK column on a table.
     /// </summary>
     private static int FindDocumentReferenceBindingIndex(
-        RelationalResourceModel resourceModel,
         DbTableName table,
-        DbColumnName fkColumn
+        DbColumnName fkColumn,
+        WriteSourceLookup writeSourceLookup
     )
     {
-        var matchingIndex = -1;
+        var lookupKey = new WriteSourceLookupKey(table, fkColumn);
 
-        for (var index = 0; index < resourceModel.DocumentReferenceBindings.Count; index++)
+        if (writeSourceLookup.DuplicateDocumentReferenceBindingKeys.Contains(lookupKey))
         {
-            var binding = resourceModel.DocumentReferenceBindings[index];
-
-            if (!binding.Table.Equals(table) || !binding.FkColumn.Equals(fkColumn))
-            {
-                continue;
-            }
-
-            if (matchingIndex >= 0)
-            {
-                throw new InvalidOperationException(
-                    $"Multiple document-reference bindings match '{table}.{fkColumn.Value}'."
-                );
-            }
-
-            matchingIndex = index;
+            throw new InvalidOperationException(
+                $"Multiple document-reference bindings match '{table}.{fkColumn.Value}'."
+            );
         }
 
-        if (matchingIndex >= 0)
+        if (
+            writeSourceLookup.DocumentReferenceBindingIndexByKey.TryGetValue(lookupKey, out var matchingIndex)
+        )
         {
             return matchingIndex;
         }
@@ -861,32 +908,22 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     /// Creates a descriptor-reference write value source by matching the descriptor edge source metadata.
     /// </summary>
     private static WriteValueSource CreateDescriptorReferenceSource(
-        RelationalResourceModel resourceModel,
         DbTableName table,
         DbColumnName fkColumn,
-        JsonPathExpression relativePath
+        JsonPathExpression relativePath,
+        WriteSourceLookup writeSourceLookup
     )
     {
-        DescriptorEdgeSource? matchingEdgeSource = null;
+        var lookupKey = new WriteSourceLookupKey(table, fkColumn);
 
-        foreach (var edgeSource in resourceModel.DescriptorEdgeSources)
+        if (writeSourceLookup.DuplicateDescriptorEdgeSourceKeys.Contains(lookupKey))
         {
-            if (!edgeSource.Table.Equals(table) || !edgeSource.FkColumn.Equals(fkColumn))
-            {
-                continue;
-            }
-
-            if (matchingEdgeSource is not null)
-            {
-                throw new InvalidOperationException(
-                    $"Multiple descriptor edge sources match '{table}.{fkColumn.Value}'."
-                );
-            }
-
-            matchingEdgeSource = edgeSource;
+            throw new InvalidOperationException(
+                $"Multiple descriptor edge sources match '{table}.{fkColumn.Value}'."
+            );
         }
 
-        if (matchingEdgeSource is null)
+        if (!writeSourceLookup.DescriptorEdgeSourceByKey.TryGetValue(lookupKey, out var matchingEdgeSource))
         {
             throw new InvalidOperationException(
                 $"No descriptor edge source matches '{table}.{fkColumn.Value}'."
