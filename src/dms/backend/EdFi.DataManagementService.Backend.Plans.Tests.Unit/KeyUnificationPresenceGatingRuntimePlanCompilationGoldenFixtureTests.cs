@@ -6,7 +6,6 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
-using EdFi.DataManagementService.Backend.Tests.Common;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -17,6 +16,7 @@ public class Given_KeyUnificationPresenceGating_RuntimePlanCompilation_GoldenFix
 {
     private const string FixturePath =
         "Fixtures/runtime-plan-compilation/key-unification-presence-gating/fixture.manifest.json";
+    private const string FixtureFolderName = "key-unification-presence-gating";
     private static readonly QualifiedResourceName _presenceGateResource = new("Ed-Fi", "PresenceGateExample");
 
     private string _diffOutput = null!;
@@ -25,43 +25,13 @@ public class Given_KeyUnificationPresenceGating_RuntimePlanCompilation_GoldenFix
     [SetUp]
     public void Setup()
     {
-        var projectRoot = GoldenFixtureTestHelpers.FindProjectRoot(
-            TestContext.CurrentContext.TestDirectory,
-            "EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+        var result = RuntimePlanCompilationGoldenFixtureTestHelper.BuildAndDiffManifest(
+            FixtureFolderName,
+            BuildManifest
         );
 
-        var expectedPath = Path.Combine(
-            projectRoot,
-            "Fixtures",
-            "runtime-plan-compilation",
-            "key-unification-presence-gating",
-            "expected",
-            "mappingset.manifest.json"
-        );
-        var actualPath = Path.Combine(
-            TestContext.CurrentContext.WorkDirectory,
-            "runtime-plan-compilation",
-            "key-unification-presence-gating",
-            "actual",
-            "mappingset.manifest.json"
-        );
-
-        _manifest = BuildManifest();
-
-        Directory.CreateDirectory(Path.GetDirectoryName(actualPath)!);
-        File.WriteAllText(actualPath, _manifest);
-
-        if (GoldenFixtureTestHelpers.ShouldUpdateGoldens())
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(expectedPath)!);
-            File.WriteAllText(expectedPath, _manifest);
-        }
-
-        File.Exists(expectedPath)
-            .Should()
-            .BeTrue($"mappingset manifest missing at {expectedPath}. Set UPDATE_GOLDENS=1 to generate.");
-
-        _diffOutput = GoldenFixtureTestHelpers.RunGitDiff(expectedPath, actualPath);
+        _manifest = result.Manifest;
+        _diffOutput = result.DiffOutput;
     }
 
     [Test]
