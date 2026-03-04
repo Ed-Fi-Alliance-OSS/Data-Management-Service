@@ -1,25 +1,7 @@
 [
   {
-    "category": "Write Plan Compiler",
-    "description": "Implement a full ResourceWritePlan compiler for all ResourceStorageKind.RelationalTables resources (not just root-only). Acceptance: for each RelationalResourceModel, compile a TableWritePlan for every DbTableModel in TablesInDependencyOrder with deterministic ColumnBindings and canonical SQL. Emit InsertSql for all tables; emit UpdateSql for any 1:1 table (table key contains no ColumnKind.Ordinal) only when there is at least one stored non-key column to set; and compute BulkInsertBatching via PlanWriteBatchingConventions using ColumnBindings.Count. ColumnBindings must include only ColumnStorage.Stored columns (never UnifiedAlias) and must be in authoritative parameter/value order that matches the emitted InsertSql parameter placeholder order.",
-    "steps-to-verify": [
-      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj",
-      "Run: dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln"
-    ],
-    "completed": false
-  },
-  {
-    "category": "SQL Emission",
-    "description": "Add DeleteByParentSql compilation for replace semantics. Acceptance: for every non-root table plan (any table other than resourceModel.Root), emit DeleteByParentSql with WHERE predicates on exactly the table key columns excluding the table’s own ColumnKind.Ordinal (if present), in key order. Parameter names used in DeleteByParentSql must reuse the same bare parameter names as the corresponding key columns’ WriteColumnBinding.ParameterName (no separate naming). Root-scope _ext tables (1:1 by DocumentId) must emit DeleteByParentSql that deletes by DocumentId (so runtime can remove the row when $._ext.{p} is absent). SQL must be canonicalized (\\n only, stable indentation, dialect quoting).",
-    "steps-to-verify": [
-      "Add/adjust unit tests covering delete predicates for: (a) a direct child table, (b) a nested child table, and (c) a root-scope _ext table",
-      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
-    ],
-    "completed": false
-  },
-  {
     "category": "JSON Paths",
-    "description": "Implement scope-relative JsonPathExpression compilation for write plans. Acceptance: treat DbColumnModel.SourceJsonPath as absolute and always compile to a scope-relative JsonPathExpression by stripping the table’s DbTableModel.JsonScope prefix segments. If the column path exactly equals the scope path, emit canonical value-at-scope \"$\" (zero segments). Validate that the scope is a true prefix and that no [*] segments remain after stripping; fail fast otherwise. Use this for WriteValueSource.Scalar, WriteValueSource.DescriptorReference.RelativePath, and key-unification member RelativePath.",
+    "description": "Add a scope-relative JsonPathExpression helper for plan compilation. Acceptance: given DbTableModel.JsonScope (absolute) and a DbColumnModel.SourceJsonPath (absolute), produce a scope-relative JsonPathExpression by stripping the scope's prefix segments. If the column path exactly equals the scope path, return canonical value-at-scope \"$\" (zero segments). Validate the scope is a true prefix (or equal) and that no [*] segments remain after stripping; fail fast otherwise.",
     "steps-to-verify": [
       "Add unit tests for: exact scope match -> \"$\"; scope-not-prefix failure; leftover [*] failure",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
@@ -27,27 +9,126 @@
     "completed": false
   },
   {
-    "category": "Key Unification",
-    "description": "Integrate key unification into write-plan compilation and enforce invariants. Acceptance: for each DbTableModel with KeyUnificationClasses, compile TableWritePlan.KeyUnificationPlans (one per class) and ensure: (1) UnifiedAlias columns are excluded from ColumnBindings and SQL column lists (any attempt to write a UnifiedAlias fails compile); (2) canonical storage columns and synthetic presence flag columns are included in ColumnBindings as WriteValueSource.Precomputed; (3) every WriteValueSource.Precomputed binding is produced by exactly one KeyUnificationWritePlan (no orphan precomputed columns); (4) PresenceIsSynthetic is derived by presenceColumn.SourceJsonPath is null, and synthetic presence columns are validated hard: nullable boolean scalar shape and a matching TableConstraint.NullOrTrue exists, otherwise throw. MembersInOrder must preserve KeyUnificationClass.MemberPathColumns ordering, and member RelativePath must be scope-relative with no [*] segments (\"$\" allowed for value-at-scope).",
+    "category": "Write Plan Compiler",
+    "description": "Compile deterministic stored-column bindings for a single table (no SQL yet). Acceptance: for a DbTableModel, enumerate stored/writable columns (ColumnStorage.Stored only) in deterministic order, derive WriteColumnBinding.ParameterName using PlanNamingConventions, and derive WriteValueSource using: DocumentId, ParentKeyPart(i), Ordinal, Scalar(scope-relative path + scalar type), DocumentReference(binding index), DescriptorReference(descriptor resource + scope-relative path), and Precomputed (only as a placeholder for storage-only columns until key-unification compilation is added). UnifiedAlias columns must be excluded from bindings (fail fast if encountered as writable).",
     "steps-to-verify": [
-      "Add unit tests for: (a) descriptor-member unification, (b) synthetic presence validation (NullOrTrue required), (c) orphan Precomputed failure, (d) UnifiedAlias write exclusion failure",
+      "Add unit tests that assert: binding order is deterministic; parameter names are stable; scalar paths are compiled as scope-relative (including \"$\" value-at-scope)",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
     "completed": false
   },
   {
-    "category": "Mapping Set Compiler",
-    "description": "Update MappingSetCompiler to compile write plans for every ResourceStorageKind.RelationalTables resource (even when read plans remain gated until story 05/06). Acceptance: MappingSetCompiler must throw (fail the whole mapping set) if any relational-table resource write plan cannot be compiled due to invariant violations. Keep RootOnlyReadPlanCompiler behavior unchanged (root-only read plans only); non-root-only resources must continue to have read plans omitted and read-plan lookup must throw with the existing next-story pointer behavior. Write plans must be present for all relational-table resources so GetWritePlanOrThrow does not emit story-04 ‘omitted’ errors for those resources.",
+    "category": "SQL Emission",
+    "description": "Emit InsertSql for a table from its compiled bindings. Acceptance: emitted InsertSql uses SimpleInsertSqlEmitter with ordered columns matching TableWritePlan.ColumnBindings order and ordered parameters matching WriteColumnBinding.ParameterName order. SQL must be canonicalized (\\n only, stable indentation, dialect quoting) and byte-for-byte stable across runs.",
     "steps-to-verify": [
-      "Update/extend MappingSetCompilerTests to assert: write plans exist for a multi-table resource; read plan is null/omitted for that resource until story 05",
+      "Add unit tests that compile the same model twice (and with permuted input ordering) and assert identical InsertSql for both pgsql and mssql",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "SQL Emission",
+    "description": "Emit UpdateSql for 1:1 tables. Acceptance: emit UpdateSql for any table whose key contains no ColumnKind.Ordinal, but only when at least one stored non-key column exists to set. UpdateSql must use key columns in key order and must reuse the same parameter names already assigned in ColumnBindings (no re-derivation). SQL must be canonicalized and stable for both dialects.",
+    "steps-to-verify": [
+      "Add unit tests covering: (a) UpdateSql present for root and root-scope _ext 1:1 tables with non-key columns, (b) UpdateSql omitted when only key columns exist",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "SQL Emission",
+    "description": "Emit DeleteByParentSql for replace semantics. Acceptance: for every non-root table plan (any table other than resourceModel.Root), emit DeleteByParentSql with WHERE predicates on exactly the table key columns excluding the table's own ColumnKind.Ordinal (if present), in key order. Parameter names in DeleteByParentSql must reuse the same bare parameter names as the corresponding key columns' WriteColumnBinding.ParameterName. Root-scope _ext 1:1 tables must also emit DeleteByParentSql that deletes by DocumentId (so runtime can remove the row when $._ext.{p} is absent). SQL must be canonicalized and stable for both dialects.",
+    "steps-to-verify": [
+      "Add/adjust unit tests covering delete predicates for: (a) a direct child table, (b) a nested child table, and (c) a root-scope _ext 1:1 table",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Write Plan Compiler",
+    "description": "Compute BulkInsertBatching for every compiled TableWritePlan. Acceptance: BulkInsertBatchingInfo is derived via PlanWriteBatchingConventions from ColumnBindings.Count (parameters per row) and stored on each TableWritePlan. Batch size derivation must fail fast when a table's parameter width exceeds the dialect limit. Add coverage for both pgsql and mssql.",
+    "steps-to-verify": [
+      "Add unit tests validating batching calculations for representative small and large column counts",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Write Plan Compiler",
+    "description": "Compile ResourceWritePlan.TablePlansInDependencyOrder for multi-table resources. Acceptance: for each ResourceStorageKind.RelationalTables resource, compile a TableWritePlan for every DbTableModel in TablesInDependencyOrder, preserving that order. Each TableWritePlan must include InsertSql, optional UpdateSql, optional DeleteByParentSql, BulkInsertBatching, ColumnBindings, and (temporarily) empty KeyUnificationPlans. Compilation must be deterministic under input-order permutations; failures must throw with actionable diagnostics.",
+    "steps-to-verify": [
+      "Update/extend compiler unit tests to include a multi-table resource and assert: one table plan per table in dependency order",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Key Unification",
+    "description": "Compile KeyUnificationWritePlan inventory for tables with key unification classes. Acceptance: for each DbTableModel.KeyUnificationClasses entry, emit exactly one KeyUnificationWritePlan with CanonicalColumn and CanonicalBindingIndex pointing to a WriteValueSource.Precomputed binding for that canonical stored column. Emit MembersInOrder matching KeyUnificationClass.MemberPathColumns order; each member must record MemberPathColumn, scope-relative RelativePath (\"$\" allowed), and (when present) PresenceColumn and PresenceBindingIndex.",
+    "steps-to-verify": [
+      "Add unit tests covering both ScalarMember and DescriptorMember compilation and ordering invariants",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Key Unification",
+    "description": "Detect and validate synthetic presence columns. Acceptance: PresenceIsSynthetic is true iff PresenceColumn's DbColumnModel.SourceJsonPath is null. When PresenceIsSynthetic is true, validate hard that: (1) the presence column is nullable boolean/bit (RelationalScalarType kind bool + IsNullable true), and (2) the table has a matching TableConstraint.NullOrTrue for that column; otherwise throw. If PresenceIsSynthetic is false, treat it as reference-site presence (e.g., ..._DocumentId) and do not require NullOrTrue.",
+    "steps-to-verify": [
+      "Add unit tests for: synthetic presence happy path; missing NullOrTrue constraint failure; non-synthetic presence path",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Key Unification",
+    "description": "Enforce key-unification write-plan invariants (fail fast). Acceptance: (1) UnifiedAlias columns are never bound or written: exclude from ColumnBindings and from emitted SQL column lists; any attempt to include them fails compilation. (2) Canonical stored columns and synthetic presence-flag columns must be WriteValueSource.Precomputed. (3) Every WriteValueSource.Precomputed binding must be produced by exactly one KeyUnificationWritePlan; orphan precomputed bindings fail compilation. (4) If a table has any Precomputed bindings, it must have key-unification inventory that accounts for them (treat Precomputed as key-unification-only).",
+    "steps-to-verify": [
+      "Add unit tests for: UnifiedAlias write exclusion failure; orphan Precomputed failure; duplicate producer failure; canonical column must be Precomputed",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj",
       "Run: dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln"
     ],
     "completed": false
   },
   {
+    "category": "Mapping Set Compiler",
+    "description": "Compile write plans for every ResourceStorageKind.RelationalTables resource in MappingSetCompiler. Acceptance: MappingSetCompiler uses the new multi-table write-plan compiler for all relational-table resources (including resources with child tables, _ext tables, and key unification) and populates WritePlansByResource for all of them. Any invariant violation during write-plan compilation throws and fails the whole mapping set. RootOnlyReadPlanCompiler behavior remains unchanged: read plans are compiled only for thin-slice supported resources and omitted otherwise.",
+    "steps-to-verify": [
+      "Update MappingSetCompilerTests to assert: write plan exists for a non-root-only resource; read plan is null/omitted for that resource until story 05",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Lookup Extensions",
+    "description": "Update GetWritePlanOrThrow messaging now that write plans exist for all relational-table resources. Acceptance: after this story, missing write plans for ResourceStorageKind.RelationalTables should be treated as an internal compilation/selection bug (throw InvalidOperationException with mapping set key + resource). SharedDescriptorTable resources should continue to throw NotSupportedException pointing to the descriptor write story. Read-plan lookup behavior and next-story pointers remain unchanged.",
+    "steps-to-verify": [
+      "Update/extend MappingSetLookupExtensionsTests to cover: descriptor write-plan message; relational-table missing-plan treated as bug",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
     "category": "Manifest",
-    "description": "Evolve ThinSliceMappingSetManifestJsonEmitter into a general mapping-set manifest emitter. Acceptance: mappingset.manifest.json must include all resources deterministically and represent write_plan and read_plan as either an object or explicit null (never omit the property). For write_plan, emit table_plans_in_dependency_order, each containing: insert_sql_sha256, update_sql_sha256, delete_by_parent_sql_sha256, bulk_insert_batching, column_bindings_in_order (including write_value_source details), and key_unification_plans. Ordering must be deterministic: mapping sets by key; resources by (project_name, resource_name); tables in dependency order; bindings in binding order; key-unification members in member order (do not sort). Update the existing thin-slice golden fixture Fixtures/runtime-plan-compilation/minimal/expected/mappingset.manifest.json to the new schema.",
+    "description": "Generalize mappingset.manifest.json resource inclusion and null plan representation. Acceptance: the manifest emitter includes every resource deterministically and emits both write_plan and read_plan properties as either an object or explicit null (never omit the property). Ordering must be deterministic: mapping sets by key; resources by (project_name, resource_name).",
+    "steps-to-verify": [
+      "Update manifest emitter tests to assert property presence and determinism under input permutation",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Manifest",
+    "description": "Emit write-plan table inventory in mappingset.manifest.json. Acceptance: for write_plan, emit table_plans_in_dependency_order, each with insert_sql_sha256, update_sql_sha256, delete_by_parent_sql_sha256, bulk_insert_batching, column_bindings_in_order (including write_value_source details), and key_unification_plans. Tables must be in dependency order; bindings must be in binding order; key-unification members must preserve member order (do not sort). SQL hashes must be computed over normalized multiline SQL.",
+    "steps-to-verify": [
+      "Update/extend manifest emitter tests to validate table plan arrays, hashes, and ordering invariants",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Manifest",
+    "description": "Update the existing minimal thin-slice golden manifest to the generalized schema. Acceptance: Fixtures/runtime-plan-compilation/minimal/expected/mappingset.manifest.json matches the new schema and remains stable across runs for both pgsql and mssql.",
     "steps-to-verify": [
       "Run (to refresh goldens when needed): UPDATE_GOLDENS=1 dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
@@ -56,7 +137,7 @@
   },
   {
     "category": "Fixtures",
-    "description": "Add a multi-project plans fixture builder (core + extension) driven by a tiny fixture manifest file. Acceptance: a fixture folder contains inputs/ with multiple ApiSchema JSON files and a fixture manifest listing input file names and isExtensionProject flags. The builder must load all inputs, build an EffectiveSchemaSet with correct IsExtensionProject flags, and compile DerivedRelationalModelSet for both dialects. Fixture output must be deterministic even if the fixture manifest input order is permuted (builder must canonicalize ordering where required).",
+    "description": "Implement a multi-project plans fixture builder for plan compilation tests. Acceptance: fixture folder contains inputs/ with multiple ApiSchema files plus a tiny fixture manifest listing file names and isExtensionProject flags. Builder loads all inputs, builds an EffectiveSchemaSet with correct IsExtensionProject flags, and compiles DerivedRelationalModelSet for both dialects. Output must be deterministic even when the fixture manifest input order is permuted.",
     "steps-to-verify": [
       "Add unit tests for the multi-project fixture builder (including determinism under input order reversal)",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
@@ -64,8 +145,17 @@
     "completed": false
   },
   {
-    "category": "Golden Fixture (_ext + Collections)",
-    "description": "Create a runtime plan compilation golden fixture that covers nested collections + _ext at root and inside collection elements. Acceptance: fixture contains a small base resource with addresses[*] and addresses[*].periods[*] plus a few scalars, and an extension project that adds _ext.sample fields at: (a) root, (b) inside addresses[*], and (c) inside periods[*]. Expected mappingset.manifest.json (pgsql + mssql) must include write plans with: child-table DeleteByParentSql hashes, batching info, deterministic bindings, and extension table plans in dependency order. Read plans for this resource remain null until story 05, and the manifest must represent read_plan as null.",
+    "category": "Fixtures",
+    "description": "Add a collections + nested collections + _ext fixture input set. Acceptance: add a base project resource schema for a small readable resource with addresses[*] and addresses[*].periods[*] plus a few scalars. Add an extension project (IsExtensionProject=true, isResourceExtension=true) that adds _ext.sample fields at: (a) root, (b) inside addresses[*], and (c) inside periods[*]. Include a fixture manifest referencing both inputs.",
+    "steps-to-verify": [
+      "Build the DerivedRelationalModelSet from the fixture for pgsql and mssql and assert extension tables are derived and key-aligned to base scopes",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Fixtures",
+    "description": "Add a golden runtime plan compilation test for the collections + _ext fixture. Acceptance: expected mappingset.manifest.json (pgsql + mssql) includes write plans with correct DeleteByParentSql hashes for child and extension tables, deterministic binding order, batching metadata, and table plans in dependency order. Read_plan must be explicit null for this resource until story 05.",
     "steps-to-verify": [
       "Run (to refresh goldens when needed): UPDATE_GOLDENS=1 dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
@@ -73,22 +163,21 @@
     "completed": false
   },
   {
-    "category": "Golden Fixture (Key Unification Presence Gating)",
-    "description": "Create a runtime plan compilation golden fixture that covers key unification with synthetic presence flags (DescriptorMember case). Acceptance: fixture produces a table with at least one KeyUnificationClass over two optional descriptor endpoints such that derivation creates: (a) a canonical stored column with SourceJsonPath null, and (b) synthetic ..._Present columns with SourceJsonPath null and NullOrTrue constraints. Expected mappingset.manifest.json must show: Precomputed bindings for canonical + synthetic presence columns, compiled KeyUnificationPlans with PresenceIsSynthetic=true, and hard failures when the NullOrTrue constraint is absent (unit test for negative case).",
+    "category": "Fixtures",
+    "description": "Add a key-unification presence-gating fixture input set. Acceptance: add a small base project resource schema with two optional descriptor endpoints constrained by an equality constraint such that derivation produces: (a) a canonical stored column with SourceJsonPath null, and (b) synthetic ..._Present columns with SourceJsonPath null and TableConstraint.NullOrTrue constraints. Include a fixture manifest and keep the schema minimal and readable.",
     "steps-to-verify": [
-      "Run (to refresh goldens when needed): UPDATE_GOLDENS=1 dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj",
+      "Build the DerivedRelationalModelSet from the fixture and assert the derived table includes canonical + synthetic presence columns and NullOrTrue constraints",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
     "completed": false
   },
   {
-    "category": "Refactor/Regression",
-    "description": "Refactor or retire thin-slice-only write compilation code paths as needed without breaking read-plan thin-slice behavior. Acceptance: existing root-only write plan behavior remains supported via the new compiler, unit tests are updated accordingly, and all plan compilation tests (contracts, SQL foundations, caching, manifests) pass. MappingSetLookupExtensions messaging remains accurate: read-plan lookups still point to story 05/06 when omitted; write-plan lookups should not claim story-04 omission for relational-table resources after this story is implemented.",
+    "category": "Fixtures",
+    "description": "Add golden tests for the key-unification presence-gating fixture, plus a negative test. Acceptance: expected mappingset.manifest.json shows Precomputed bindings for canonical + synthetic presence columns, compiled KeyUnificationPlans with PresenceIsSynthetic=true, and stable SQL hashes. Add a deterministic negative test that fails compilation when a synthetic presence column is missing its NullOrTrue constraint (model/derivation bug).",
     "steps-to-verify": [
-      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj",
-      "Run: dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln"
+      "Run (to refresh goldens when needed): UPDATE_GOLDENS=1 dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
     "completed": false
   }
 ]
-
