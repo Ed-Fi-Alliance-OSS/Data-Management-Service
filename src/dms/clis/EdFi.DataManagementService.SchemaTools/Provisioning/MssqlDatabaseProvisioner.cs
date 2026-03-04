@@ -111,21 +111,24 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
         using var connection = new SqlConnection(connectionString);
         connection.Open();
 
+        var batchList = batches.ToList();
+        var currentBatch = 0;
+
         using var transaction = connection.BeginTransaction();
         try
         {
-            foreach (var batch in batches)
+            for (currentBatch = 0; currentBatch < batchList.Count; currentBatch++)
             {
                 using var command = connection.CreateCommand();
                 command.Transaction = transaction;
-                command.CommandText = batch;
+                command.CommandText = batchList[currentBatch];
                 command.CommandTimeout = commandTimeoutSeconds;
                 command.ExecuteNonQuery();
             }
 
             transaction.Commit();
         }
-        catch
+        catch (SqlException ex)
         {
             try
             {
@@ -140,11 +143,15 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
                 );
             }
 
-            throw;
+            throw new InvalidOperationException(
+                $"DDL batch {currentBatch + 1} of {batchList.Count} failed for database "
+                    + $"'{LoggingSanitizer.SanitizeForLogging(targetDatabase)}'",
+                ex
+            );
         }
 
-        // Clear the connection pool so pooled connections to the target database
-        // do not block subsequent ALTER DATABASE statements (e.g., MVCC configuration).
+        // Clear the connection pool so pooled connections are not reused with
+        // stale session state after DDL schema changes.
         SqlConnection.ClearPool(connection);
 
         logger.LogInformation(

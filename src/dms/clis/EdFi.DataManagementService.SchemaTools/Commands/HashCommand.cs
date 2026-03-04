@@ -69,7 +69,7 @@ public static class HashCommand
 
         return CommandErrorHandler.Execute(
             logger,
-            "hash computation",
+            "Hash computation",
             () =>
             {
                 var nodes = success.NormalizedNodes;
