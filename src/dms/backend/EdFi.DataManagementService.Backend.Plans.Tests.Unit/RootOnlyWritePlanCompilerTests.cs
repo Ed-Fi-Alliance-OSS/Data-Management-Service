@@ -448,14 +448,113 @@ public class Given_RootOnlyWritePlanCompiler
     }
 
     [Test]
-    public void It_should_fail_fast_when_root_table_has_key_unification_classes()
+    public void It_should_compile_key_unification_plans_with_scalar_and_descriptor_members_in_member_order()
+    {
+        var model = CreateRootOnlyModelWithCompiledKeyUnificationInventory();
+        var tablePlan = new RootOnlyWritePlanCompiler(SqlDialect.Pgsql)
+            .Compile(model)
+            .TablePlansInDependencyOrder.Single();
+
+        static int GetBindingIndex(TableWritePlan plan, string columnName)
+        {
+            return plan
+                .ColumnBindings.Select((binding, index) => (binding, index))
+                .Single(tuple => tuple.binding.Column.ColumnName.Value == columnName)
+                .index;
+        }
+
+        tablePlan.KeyUnificationPlans.Should().HaveCount(2);
+
+        var scalarClassPlan = tablePlan.KeyUnificationPlans[0];
+        scalarClassPlan.CanonicalColumn.Should().Be(new DbColumnName("SchoolYearCanonical"));
+        scalarClassPlan.CanonicalBindingIndex.Should().Be(GetBindingIndex(tablePlan, "SchoolYearCanonical"));
+        scalarClassPlan.MembersInOrder.Should().HaveCount(2);
+        scalarClassPlan
+            .MembersInOrder[0]
+            .Should()
+            .BeEquivalentTo(
+                new KeyUnificationMemberWritePlan.ScalarMember(
+                    MemberPathColumn: new DbColumnName("SchoolYearSecondary"),
+                    RelativePath: CreatePath(
+                        "$.localSchoolYear",
+                        new JsonPathSegment.Property("localSchoolYear")
+                    ),
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    PresenceColumn: null,
+                    PresenceBindingIndex: null,
+                    PresenceIsSynthetic: false
+                )
+            );
+        scalarClassPlan
+            .MembersInOrder[1]
+            .Should()
+            .BeEquivalentTo(
+                new KeyUnificationMemberWritePlan.ScalarMember(
+                    MemberPathColumn: new DbColumnName("SchoolYearPrimary"),
+                    RelativePath: CreatePath("$.schoolYear", new JsonPathSegment.Property("schoolYear")),
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    PresenceColumn: null,
+                    PresenceBindingIndex: null,
+                    PresenceIsSynthetic: false
+                )
+            );
+
+        var descriptorClassPlan = tablePlan.KeyUnificationPlans[1];
+        descriptorClassPlan
+            .CanonicalColumn.Should()
+            .Be(new DbColumnName("SchoolYearTypeDescriptorIdCanonical"));
+        descriptorClassPlan
+            .CanonicalBindingIndex.Should()
+            .Be(GetBindingIndex(tablePlan, "SchoolYearTypeDescriptorIdCanonical"));
+        descriptorClassPlan.MembersInOrder.Should().HaveCount(2);
+        descriptorClassPlan
+            .MembersInOrder[0]
+            .Should()
+            .BeEquivalentTo(
+                new KeyUnificationMemberWritePlan.DescriptorMember(
+                    MemberPathColumn: new DbColumnName("SchoolYearTypeDescriptorSecondary"),
+                    RelativePath: CreatePath(
+                        "$.localSchoolYearTypeDescriptor",
+                        new JsonPathSegment.Property("localSchoolYearTypeDescriptor")
+                    ),
+                    DescriptorResource: new QualifiedResourceName("Ed-Fi", "SchoolYearTypeDescriptor"),
+                    PresenceColumn: new DbColumnName("SchoolYearTypeDescriptorSecondary_Present"),
+                    PresenceBindingIndex: GetBindingIndex(
+                        tablePlan,
+                        "SchoolYearTypeDescriptorSecondary_Present"
+                    ),
+                    PresenceIsSynthetic: true
+                )
+            );
+        descriptorClassPlan
+            .MembersInOrder[1]
+            .Should()
+            .BeEquivalentTo(
+                new KeyUnificationMemberWritePlan.DescriptorMember(
+                    MemberPathColumn: new DbColumnName("SchoolYearTypeDescriptorPrimary"),
+                    RelativePath: CreatePath(
+                        "$.schoolYearTypeDescriptor",
+                        new JsonPathSegment.Property("schoolYearTypeDescriptor")
+                    ),
+                    DescriptorResource: new QualifiedResourceName("Ed-Fi", "SchoolYearTypeDescriptor"),
+                    PresenceColumn: null,
+                    PresenceBindingIndex: null,
+                    PresenceIsSynthetic: false
+                )
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_key_unification_canonical_column_is_not_precomputed()
     {
         var unsupportedModel = CreateRootOnlyModelWithKeyUnificationClass();
         var act = () => new RootOnlyWritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
 
         act.Should()
-            .Throw<NotSupportedException>()
-            .WithMessage("Write-plan compilation for key-unification tables is not implemented yet.*");
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile key-unification plan for 'edfi.Student': canonical column 'SchoolYear' must bind as Precomputed.*"
+            );
     }
 
     private static RelationalResourceModel CreateSupportedRootOnlyModel()
@@ -582,6 +681,143 @@ public class Given_RootOnlyWritePlanCompiler
             Root = rootTable,
             TablesInDependencyOrder = [rootTable],
         };
+    }
+
+    private static RelationalResourceModel CreateRootOnlyModelWithCompiledKeyUnificationInventory()
+    {
+        var descriptorResource = new QualifiedResourceName("Ed-Fi", "SchoolYearTypeDescriptor");
+        var rootTable = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "Student"),
+            JsonScope: CreatePath("$"),
+            Key: new TableKey(
+                ConstraintName: "PK_Student",
+                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("SchoolYearCanonical"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: true,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("SchoolYearTypeDescriptorIdCanonical"),
+                    Kind: ColumnKind.DescriptorFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: null,
+                    TargetResource: descriptorResource
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("SchoolYearTypeDescriptorSecondary_Present"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Boolean),
+                    IsNullable: true,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("SchoolYearPrimary"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: CreatePath("$.schoolYear", new JsonPathSegment.Property("schoolYear")),
+                    TargetResource: null,
+                    Storage: new ColumnStorage.UnifiedAlias(
+                        CanonicalColumn: new DbColumnName("SchoolYearCanonical"),
+                        PresenceColumn: null
+                    )
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("SchoolYearSecondary"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: true,
+                    SourceJsonPath: CreatePath(
+                        "$.localSchoolYear",
+                        new JsonPathSegment.Property("localSchoolYear")
+                    ),
+                    TargetResource: null,
+                    Storage: new ColumnStorage.UnifiedAlias(
+                        CanonicalColumn: new DbColumnName("SchoolYearCanonical"),
+                        PresenceColumn: null
+                    )
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("SchoolYearTypeDescriptorPrimary"),
+                    Kind: ColumnKind.DescriptorFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: CreatePath(
+                        "$.schoolYearTypeDescriptor",
+                        new JsonPathSegment.Property("schoolYearTypeDescriptor")
+                    ),
+                    TargetResource: descriptorResource,
+                    Storage: new ColumnStorage.UnifiedAlias(
+                        CanonicalColumn: new DbColumnName("SchoolYearTypeDescriptorIdCanonical"),
+                        PresenceColumn: null
+                    )
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("SchoolYearTypeDescriptorSecondary"),
+                    Kind: ColumnKind.DescriptorFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: CreatePath(
+                        "$.localSchoolYearTypeDescriptor",
+                        new JsonPathSegment.Property("localSchoolYearTypeDescriptor")
+                    ),
+                    TargetResource: descriptorResource,
+                    Storage: new ColumnStorage.UnifiedAlias(
+                        CanonicalColumn: new DbColumnName("SchoolYearTypeDescriptorIdCanonical"),
+                        PresenceColumn: new DbColumnName("SchoolYearTypeDescriptorSecondary_Present")
+                    )
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            KeyUnificationClasses =
+            [
+                new KeyUnificationClass(
+                    CanonicalColumn: new DbColumnName("SchoolYearCanonical"),
+                    MemberPathColumns:
+                    [
+                        new DbColumnName("SchoolYearSecondary"),
+                        new DbColumnName("SchoolYearPrimary"),
+                    ]
+                ),
+                new KeyUnificationClass(
+                    CanonicalColumn: new DbColumnName("SchoolYearTypeDescriptorIdCanonical"),
+                    MemberPathColumns:
+                    [
+                        new DbColumnName("SchoolYearTypeDescriptorSecondary"),
+                        new DbColumnName("SchoolYearTypeDescriptorPrimary"),
+                    ]
+                ),
+            ],
+        };
+
+        return new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "Student"),
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTable,
+            TablesInDependencyOrder: [rootTable],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
     }
 
     private static RelationalResourceModel CreateRootOnlyModelWithStoredPrecomputedNonKeyColumn()

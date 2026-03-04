@@ -15,7 +15,7 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// <para>
 /// <see cref="TryCompile(RelationalResourceModel, out ResourceWritePlan?)" /> remains thin-slice gated for the
 /// current mapping-set loop. <see cref="Compile(RelationalResourceModel)" /> compiles all tables in dependency order
-/// for relational-table resources that do not yet require key-unification plan inventory.
+/// for relational-table resources, including key-unification write-plan inventory.
 /// </para>
 /// </summary>
 public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
@@ -91,22 +91,6 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
                 $"Cannot compile write plan for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}': no tables were found in dependency order."
             );
         }
-
-        var tablesWithKeyUnification = resourceModel
-            .TablesInDependencyOrder.Where(static table => table.KeyUnificationClasses.Count > 0)
-            .Select(static table =>
-                $"{table.Table} (KeyUnificationClassCount: {table.KeyUnificationClasses.Count})"
-            )
-            .ToArray();
-
-        if (tablesWithKeyUnification.Length > 0)
-        {
-            throw new NotSupportedException(
-                "Write-plan compilation for key-unification tables is not implemented yet. "
-                    + $"Resource: {resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}, "
-                    + $"Tables: {string.Join(", ", tablesWithKeyUnification)}."
-            );
-        }
     }
 
     /// <summary>
@@ -116,6 +100,7 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
     {
         ValidateWritableKeyColumns(tableModel);
         var columnBindings = CompileStoredColumnBindings(resourceModel, tableModel);
+        var keyUnificationPlans = CompileKeyUnificationPlans(tableModel, columnBindings);
 
         var insertSql = _insertSqlEmitter.Emit(
             tableModel.Table,
@@ -135,7 +120,7 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
             DeleteByParentSql: null,
             BulkInsertBatching: bulkInsertBatching,
             ColumnBindings: columnBindings,
-            KeyUnificationPlans: []
+            KeyUnificationPlans: keyUnificationPlans
         );
     }
 
@@ -177,6 +162,212 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
         }
 
         return columnBindings;
+    }
+
+    /// <summary>
+    /// Compiles per-table key-unification plan inventory in deterministic class/member order.
+    /// </summary>
+    private static KeyUnificationWritePlan[] CompileKeyUnificationPlans(
+        DbTableModel tableModel,
+        IReadOnlyList<WriteColumnBinding> bindingsInColumnOrder
+    )
+    {
+        if (tableModel.KeyUnificationClasses.Count == 0)
+        {
+            return [];
+        }
+
+        var columnByName = new Dictionary<DbColumnName, DbColumnModel>(tableModel.Columns.Count);
+
+        foreach (var column in tableModel.Columns)
+        {
+            columnByName[column.ColumnName] = column;
+        }
+
+        var bindingIndexByColumn = new Dictionary<DbColumnName, int>(bindingsInColumnOrder.Count);
+
+        for (var bindingIndex = 0; bindingIndex < bindingsInColumnOrder.Count; bindingIndex++)
+        {
+            var binding = bindingsInColumnOrder[bindingIndex];
+            bindingIndexByColumn[binding.Column.ColumnName] = bindingIndex;
+        }
+
+        var keyUnificationPlans = new KeyUnificationWritePlan[tableModel.KeyUnificationClasses.Count];
+
+        for (var classIndex = 0; classIndex < tableModel.KeyUnificationClasses.Count; classIndex++)
+        {
+            var keyClass = tableModel.KeyUnificationClasses[classIndex];
+            var canonicalBindingIndex = GetRequiredBindingIndex(
+                tableModel,
+                keyClass.CanonicalColumn,
+                "canonical key-unification column",
+                bindingIndexByColumn
+            );
+            var canonicalBinding = bindingsInColumnOrder[canonicalBindingIndex];
+
+            if (canonicalBinding.Source is not WriteValueSource.Precomputed)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot compile key-unification plan for '{tableModel.Table}': canonical column '{keyClass.CanonicalColumn.Value}' must bind as {nameof(WriteValueSource.Precomputed)}."
+                );
+            }
+
+            var membersInOrder = new KeyUnificationMemberWritePlan[keyClass.MemberPathColumns.Count];
+
+            for (var memberIndex = 0; memberIndex < keyClass.MemberPathColumns.Count; memberIndex++)
+            {
+                var memberPathColumnName = keyClass.MemberPathColumns[memberIndex];
+
+                if (!columnByName.TryGetValue(memberPathColumnName, out var memberPathColumn))
+                {
+                    throw new InvalidOperationException(
+                        $"Cannot compile key-unification plan for '{tableModel.Table}': member path column '{memberPathColumnName.Value}' does not exist."
+                    );
+                }
+
+                if (memberPathColumn.SourceJsonPath is not JsonPathExpression sourcePath)
+                {
+                    throw new InvalidOperationException(
+                        $"Cannot compile key-unification plan for '{tableModel.Table}': member path column '{memberPathColumnName.Value}' must define a source JSON path."
+                    );
+                }
+
+                var relativePath = WritePlanJsonPathConventions.DeriveScopeRelativePath(
+                    tableModel.JsonScope,
+                    sourcePath
+                );
+                var (presenceColumn, presenceBindingIndex, presenceIsSynthetic) = DerivePresenceBindingInfo(
+                    tableModel,
+                    memberPathColumn,
+                    columnByName,
+                    bindingIndexByColumn
+                );
+
+                membersInOrder[memberIndex] = CreateKeyUnificationMemberWritePlan(
+                    tableModel,
+                    keyClass.CanonicalColumn,
+                    memberPathColumn,
+                    relativePath,
+                    presenceColumn,
+                    presenceBindingIndex,
+                    presenceIsSynthetic
+                );
+            }
+
+            keyUnificationPlans[classIndex] = new KeyUnificationWritePlan(
+                CanonicalColumn: keyClass.CanonicalColumn,
+                CanonicalBindingIndex: canonicalBindingIndex,
+                MembersInOrder: membersInOrder
+            );
+        }
+
+        return keyUnificationPlans;
+    }
+
+    /// <summary>
+    /// Gets the authoritative column-binding index for a key-unification participant column.
+    /// </summary>
+    private static int GetRequiredBindingIndex(
+        DbTableModel tableModel,
+        DbColumnName columnName,
+        string role,
+        IReadOnlyDictionary<DbColumnName, int> bindingIndexByColumn
+    )
+    {
+        if (bindingIndexByColumn.TryGetValue(columnName, out var bindingIndex))
+        {
+            return bindingIndex;
+        }
+
+        throw new InvalidOperationException(
+            $"Cannot compile key-unification plan for '{tableModel.Table}': {role} '{columnName.Value}' does not have a stored write binding."
+        );
+    }
+
+    /// <summary>
+    /// Derives optional presence metadata for a key-unification member.
+    /// </summary>
+    private static (
+        DbColumnName? PresenceColumn,
+        int? PresenceBindingIndex,
+        bool PresenceIsSynthetic
+    ) DerivePresenceBindingInfo(
+        DbTableModel tableModel,
+        DbColumnModel memberPathColumn,
+        IReadOnlyDictionary<DbColumnName, DbColumnModel> columnByName,
+        IReadOnlyDictionary<DbColumnName, int> bindingIndexByColumn
+    )
+    {
+        if (memberPathColumn.Storage is not ColumnStorage.UnifiedAlias { PresenceColumn: { } presenceColumn })
+        {
+            return (null, null, false);
+        }
+
+        if (!columnByName.TryGetValue(presenceColumn, out var presenceColumnModel))
+        {
+            throw new InvalidOperationException(
+                $"Cannot compile key-unification plan for '{tableModel.Table}': presence column '{presenceColumn.Value}' for member '{memberPathColumn.ColumnName.Value}' does not exist."
+            );
+        }
+
+        var presenceBindingIndex = GetRequiredBindingIndex(
+            tableModel,
+            presenceColumn,
+            $"presence column for member '{memberPathColumn.ColumnName.Value}'",
+            bindingIndexByColumn
+        );
+        var presenceIsSynthetic = presenceColumnModel.SourceJsonPath is null;
+
+        return (presenceColumn, presenceBindingIndex, presenceIsSynthetic);
+    }
+
+    /// <summary>
+    /// Compiles one key-unification member metadata record.
+    /// </summary>
+    private static KeyUnificationMemberWritePlan CreateKeyUnificationMemberWritePlan(
+        DbTableModel tableModel,
+        DbColumnName canonicalColumn,
+        DbColumnModel memberPathColumn,
+        JsonPathExpression relativePath,
+        DbColumnName? presenceColumn,
+        int? presenceBindingIndex,
+        bool presenceIsSynthetic
+    )
+    {
+        if (memberPathColumn.Kind is ColumnKind.DescriptorFk)
+        {
+            if (memberPathColumn.TargetResource is not QualifiedResourceName descriptorResource)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot compile key-unification plan for '{tableModel.Table}': descriptor member '{memberPathColumn.ColumnName.Value}' in canonical class '{canonicalColumn.Value}' does not define a descriptor resource."
+                );
+            }
+
+            return new KeyUnificationMemberWritePlan.DescriptorMember(
+                MemberPathColumn: memberPathColumn.ColumnName,
+                RelativePath: relativePath,
+                DescriptorResource: descriptorResource,
+                PresenceColumn: presenceColumn,
+                PresenceBindingIndex: presenceBindingIndex,
+                PresenceIsSynthetic: presenceIsSynthetic
+            );
+        }
+
+        if (memberPathColumn.ScalarType is not RelationalScalarType scalarType)
+        {
+            throw new InvalidOperationException(
+                $"Cannot compile key-unification plan for '{tableModel.Table}': scalar member '{memberPathColumn.ColumnName.Value}' in canonical class '{canonicalColumn.Value}' does not define a scalar type."
+            );
+        }
+
+        return new KeyUnificationMemberWritePlan.ScalarMember(
+            MemberPathColumn: memberPathColumn.ColumnName,
+            RelativePath: relativePath,
+            ScalarType: scalarType,
+            PresenceColumn: presenceColumn,
+            PresenceBindingIndex: presenceBindingIndex,
+            PresenceIsSynthetic: presenceIsSynthetic
+        );
     }
 
     /// <summary>
