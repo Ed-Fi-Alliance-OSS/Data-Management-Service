@@ -214,7 +214,7 @@
       "Run: rg -n \"root-table|root only|root-only\" src/dms/backend/EdFi.DataManagementService.Backend.Plans (review and update any misleading matches)",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Messaging",

@@ -9,7 +9,7 @@ using EdFi.DataManagementService.Backend.External;
 namespace EdFi.DataManagementService.Backend.Plans;
 
 /// <summary>
-/// Emits deterministic parameterized <c>UPDATE</c> SQL for root-table write plans.
+/// Emits deterministic parameterized <c>UPDATE</c> SQL for 1:1 table write plans (no <c>Ordinal</c> key column).
 /// </summary>
 public sealed class SimpleUpdateSqlEmitter(SqlDialect dialect)
 {

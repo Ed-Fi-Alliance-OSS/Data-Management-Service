@@ -158,3 +158,9 @@ Task completed: Refactor - optimize ValidateWritableKeyColumns key-column valida
 Decisions: replaced per-key linear table column scan with per-table Dictionary<DbColumnName, DbColumnModel> lookup; preserve first-seen column behavior to keep error semantics stable. Added missing-key regression test to lock exact InvalidOperationException message; kept existing UnifiedAlias key failure messaging unchanged.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/WritePlanCompilerTests.cs; tasks.json; progress.txt.
 Blockers/notes: no blockers. Verification: dotnet csharpier format on touched files; dotnet test plans unit (225/225). Next iteration can close remaining Docs / Comments root-only wording task.
+
+2026-03-04 - DMS-1045 / reference/design/backend-redesign/epics/15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md
+Task completed: Docs / Comments - corrected UpdateSql wording from root-table to 1:1-table semantics.
+Decisions: updated SimpleUpdateSqlEmitter XML summary to match plan contracts/current compiler behavior (UpdateSql applies to 1:1 tables with no Ordinal key). Reviewed remaining root-only wording hits; all are read-plan/root-query context and intentionally unchanged.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/SimpleUpdateSqlEmitter.cs; tasks.json; progress.txt.
+Blockers/notes: no blockers. Verification: rg root-only scan reviewed; dotnet test plans unit passes (225/225). All tasks in this story now marked complete.
