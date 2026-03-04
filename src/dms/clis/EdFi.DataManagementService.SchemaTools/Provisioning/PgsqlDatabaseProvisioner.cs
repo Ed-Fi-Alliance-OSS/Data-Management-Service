@@ -105,6 +105,8 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisioner
         using var connection = new NpgsqlConnection(connectionString);
         connection.Open();
 
+        // The entire script is sent as a single command, so commandTimeoutSeconds
+        // bounds the total execution time (unlike MSSQL which applies it per batch).
         using var transaction = connection.BeginTransaction();
         try
         {

@@ -106,6 +106,8 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
         // Split on GO batch separators. GO is not valid T-SQL; it is a sqlcmd/SSMS
         // directive. The emitted DDL uses GO to separate batches required by
         // CREATE OR ALTER statements for triggers and views.
+        // NOTE: commandTimeoutSeconds applies to each batch individually, so total
+        // execution time may exceed the timeout when the script contains many batches.
         var batches = SplitOnGoBatchSeparator(sql);
 
         using var connection = new SqlConnection(connectionString);

@@ -21,6 +21,13 @@ public interface IDatabaseProvisioner
     /// <summary>
     /// Opens a connection to the target database, begins a transaction, executes
     /// the full DDL SQL string, and commits on success. Rolls back on failure.
+    /// <para>
+    /// <b>Timeout semantics vary by provider:</b> PostgreSQL applies
+    /// <paramref name="commandTimeoutSeconds"/> to the entire script as a single command,
+    /// so total execution time is bounded by this value. SQL Server splits the script on
+    /// GO batch separators and applies the timeout to each batch independently, so total
+    /// execution time may exceed the timeout when the script contains multiple batches.
+    /// </para>
     /// </summary>
     void ExecuteInTransaction(string connectionString, string sql, int commandTimeoutSeconds = 300);
 
