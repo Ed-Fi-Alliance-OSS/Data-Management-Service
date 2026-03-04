@@ -111,3 +111,9 @@ Task completed: Fixtures - key-unification presence-gating golden runtime plan t
 Decisions: added dedicated golden fixture test for pgsql+mssql manifest output; validates canonical + synthetic presence bindings resolve to WriteValueSource.Precomputed and key-unification members are synthetic with bound presence indexes; added repeated-compilation SQL-hash stability assertion. Negative path mutates derived root-table constraints to remove synthetic NullOrTrue and asserts deterministic InvalidOperationException diagnostic across input-order permutations.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/KeyUnificationPresenceGatingRuntimePlanCompilationGoldenFixtureTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Fixtures/runtime-plan-compilation/key-unification-presence-gating/expected/mappingset.manifest.json; tasks.json; progress.txt.
 Blockers/notes: no blockers. Next iteration can reconcile remaining manifest bookkeeping task (minimal generalized-schema golden).
+
+2026-03-04 - DMS-1045 / reference/design/backend-redesign/epics/15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md
+Task completed: Manifest - minimal thin-slice golden updated/verified against generalized schema.
+Decisions: ran UPDATE_GOLDENS=1 plans-unit tests; no diff in minimal expected manifest, confirming golden already aligned to generalized schema; reran plans-unit tests to confirm stable pass on existing golden for pgsql+mssql outputs.
+Files changed: tasks.json; progress.txt.
+Blockers/notes: no blockers. All tasks in this story now marked complete.
