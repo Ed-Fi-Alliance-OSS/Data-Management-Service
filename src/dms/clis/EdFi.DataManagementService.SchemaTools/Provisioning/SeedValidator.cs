@@ -48,6 +48,9 @@ public sealed record SchemaComponentRow(
 /// </list>
 /// SeedValidator runs before the DDL transaction as a fail-fast check; SeedDmlEmitter's
 /// in-SQL validation runs inside the transaction as defense-in-depth.
+/// <para>In addition to row-level checks, the C# preflight also validates
+/// <c>EffectiveSchema.ResourceKeyCount</c> and <c>ResourceKeySeedHash</c> via
+/// <see cref="ValidateEffectiveSchemaOrThrow"/>.</para>
 /// <para><b>Important:</b> Changes to validation columns or comparison logic must be
 /// reflected in both locations to keep the dual-path strategy consistent.</para>
 /// </remarks>
@@ -65,15 +68,23 @@ public static class SeedValidator
         ILogger logger
     )
     {
-        var actualByKey = actualRows.ToDictionary(r => r.ResourceKeyId);
-        var expectedByKey = expectedKeys.ToDictionary(
+        var actualByKey = ToDictionaryOrThrow(
+            actualRows,
+            r => r.ResourceKeyId,
+            "actual ResourceKey",
+            "ResourceKeyId"
+        );
+        var expectedByKey = ToDictionaryOrThrow(
+            expectedKeys,
             e => e.ResourceKeyId,
             e => new ResourceKeyRow(
                 e.ResourceKeyId,
                 e.Resource.ProjectName,
                 e.Resource.ResourceName,
                 e.ResourceVersion
-            )
+            ),
+            "expected ResourceKey",
+            "ResourceKeyId"
         );
 
         var missingKeys = new List<string>();
@@ -120,8 +131,15 @@ public static class SeedValidator
         ILogger logger
     )
     {
-        var actualByKey = actualRows.ToDictionary(r => r.ProjectEndpointName, StringComparer.Ordinal);
-        var expectedByKey = expectedComponents.ToDictionary(
+        var actualByKey = ToDictionaryOrThrow(
+            actualRows,
+            r => r.ProjectEndpointName,
+            "actual SchemaComponent",
+            "ProjectEndpointName",
+            StringComparer.Ordinal
+        );
+        var expectedByKey = ToDictionaryOrThrow(
+            expectedComponents,
             e => e.ProjectEndpointName,
             e => new SchemaComponentRow(
                 e.ProjectEndpointName,
@@ -129,6 +147,8 @@ public static class SeedValidator
                 e.ProjectVersion,
                 e.IsExtensionProject
             ),
+            "expected SchemaComponent",
+            "ProjectEndpointName",
             StringComparer.Ordinal
         );
 
@@ -164,6 +184,46 @@ public static class SeedValidator
 
         var report = BuildDiffReport("SchemaComponent", missingKeys, unexpectedKeys, modifiedDetails);
         throw new InvalidOperationException(report);
+    }
+
+    /// <summary>
+    /// Validates EffectiveSchema.ResourceKeyCount and ResourceKeySeedHash against expected values.
+    /// Throws <see cref="InvalidOperationException"/> listing all mismatched fields.
+    /// </summary>
+    public static void ValidateEffectiveSchemaOrThrow(
+        short storedResourceKeyCount,
+        byte[] storedResourceKeySeedHash,
+        int expectedResourceKeyCount,
+        byte[] expectedResourceKeySeedHash,
+        ILogger logger
+    )
+    {
+        var issues = new List<string>();
+
+        if (storedResourceKeyCount != expectedResourceKeyCount)
+        {
+            issues.Add(
+                $"ResourceKeyCount: stored={storedResourceKeyCount}, expected={expectedResourceKeyCount}"
+            );
+        }
+
+        if (!storedResourceKeySeedHash.AsSpan().SequenceEqual(expectedResourceKeySeedHash))
+        {
+            issues.Add(
+                $"ResourceKeySeedHash: stored={Convert.ToHexString(storedResourceKeySeedHash)}, "
+                    + $"expected={Convert.ToHexString(expectedResourceKeySeedHash)}"
+            );
+        }
+
+        if (issues.Count == 0)
+        {
+            logger.LogInformation("Preflight EffectiveSchema seed validation passed");
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"dms.EffectiveSchema validation failed: {string.Join("; ", issues)}"
+        );
     }
 
     private static string BuildDiffReport(
@@ -262,5 +322,41 @@ public static class SeedValidator
         return diffs.Count > 0 ? string.Join(", ", diffs) : null;
     }
 
-    private static string Sanitize(string? input) => LoggingSanitizer.SanitizeForLogging(input);
+    private static Dictionary<TKey, TValue> ToDictionaryOrThrow<TSource, TKey, TValue>(
+        IReadOnlyList<TSource> source,
+        Func<TSource, TKey> keySelector,
+        Func<TSource, TValue> valueSelector,
+        string tableName,
+        string keyColumnName,
+        IEqualityComparer<TKey>? comparer = null
+    )
+        where TKey : notnull
+    {
+        var dict = new Dictionary<TKey, TValue>(comparer);
+        foreach (var item in source)
+        {
+            var key = keySelector(item);
+            if (!dict.TryAdd(key, valueSelector(item)))
+            {
+                throw new InvalidOperationException(
+                    $"Duplicate {keyColumnName} found in {tableName} input: {key}"
+                );
+            }
+        }
+        return dict;
+    }
+
+    private static Dictionary<TKey, TSource> ToDictionaryOrThrow<TSource, TKey>(
+        IReadOnlyList<TSource> source,
+        Func<TSource, TKey> keySelector,
+        string tableName,
+        string keyColumnName,
+        IEqualityComparer<TKey>? comparer = null
+    )
+        where TKey : notnull
+    {
+        return ToDictionaryOrThrow(source, keySelector, x => x, tableName, keyColumnName, comparer);
+    }
+
+    private static string Sanitize(string? input) => LoggingSanitizer.SanitizeForConsole(input);
 }

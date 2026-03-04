@@ -25,6 +25,9 @@ namespace EdFi.DataManagementService.Backend.Ddl;
 ///   <item>SchemaComponent: ProjectEndpointName, ProjectName, ProjectVersion, IsExtensionProject</item>
 /// </list>
 /// The in-SQL path runs inside the DDL transaction; SeedValidator runs before it as a fail-fast.
+/// <para>The in-SQL content mismatch messages include sampled key IDs/names and direct
+/// users to the <c>ddl provision</c> CLI command for detailed row-level diffs provided
+/// by <see cref="EdFi.DataManagementService.SchemaTools.Provisioning.SeedValidator"/>.</para>
 /// <para><b>Important:</b> Changes to validation columns or comparison logic must be
 /// reflected in both locations to keep the dual-path strategy consistent.</para>
 /// </remarks>
@@ -253,7 +256,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
                     }
                     writer.AppendLine(") sub;");
                     writer.AppendLine(
-                        "RAISE EXCEPTION 'dms.ResourceKey contents mismatch: % unexpected or modified rows (ResourceKeyIds: %)', _mismatched_count, _mismatched_ids;"
+                        "RAISE EXCEPTION 'dms.ResourceKey contents mismatch: % unexpected or modified rows (ResourceKeyIds: %). Run ddl provision for detailed row-level diff.', _mismatched_count, _mismatched_ids;"
                     );
                 }
                 writer.AppendLine("END IF;");
@@ -315,7 +318,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
                 }
                 writer.AppendLine(") sub;");
                 writer.AppendLine(
-                    "DECLARE @rk_content_msg nvarchar(500) = CONCAT(N'dms.ResourceKey contents mismatch: ', CAST(@mismatched_count AS nvarchar(10)), N' unexpected or modified rows (ResourceKeyIds: ', @rk_mismatched_ids, N')');"
+                    "DECLARE @rk_content_msg nvarchar(500) = CONCAT(N'dms.ResourceKey contents mismatch: ', CAST(@mismatched_count AS nvarchar(10)), N' unexpected or modified rows (ResourceKeyIds: ', @rk_mismatched_ids, N'). Run ddl provision for detailed row-level diff.');"
                 );
                 writer.AppendLine("THROW 50000, @rk_content_msg, 1;");
             }
@@ -595,7 +598,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
                     }
                     writer.AppendLine(") sub;");
                     writer.AppendLine(
-                        "RAISE EXCEPTION 'dms.SchemaComponent contents mismatch: % unexpected or modified rows (ProjectEndpointNames: %)', _mismatched_count, _mismatched_names;"
+                        "RAISE EXCEPTION 'dms.SchemaComponent contents mismatch: % unexpected or modified rows (ProjectEndpointNames: %). Run ddl provision for detailed row-level diff.', _mismatched_count, _mismatched_names;"
                     );
                 }
                 writer.AppendLine("END IF;");
@@ -659,7 +662,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
                 }
                 writer.AppendLine(") sub;");
                 writer.AppendLine(
-                    "DECLARE @sc_content_msg nvarchar(500) = CONCAT(N'dms.SchemaComponent contents mismatch: ', CAST(@sc_mismatched_count AS nvarchar(10)), N' unexpected or modified rows (ProjectEndpointNames: ', @sc_mismatched_names, N')');"
+                    "DECLARE @sc_content_msg nvarchar(500) = CONCAT(N'dms.SchemaComponent contents mismatch: ', CAST(@sc_mismatched_count AS nvarchar(10)), N' unexpected or modified rows (ProjectEndpointNames: ', @sc_mismatched_names, N'). Run ddl provision for detailed row-level diff.');"
                 );
                 writer.AppendLine("THROW 50000, @sc_content_msg, 1;");
             }

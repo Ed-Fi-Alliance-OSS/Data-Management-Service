@@ -237,6 +237,28 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
             );
         }
 
+        // --- Validate EffectiveSchema ResourceKeyCount and ResourceKeySeedHash ---
+        using (var esCommand = connection.CreateCommand())
+        {
+            esCommand.CommandText =
+                @"SELECT [ResourceKeyCount], [ResourceKeySeedHash] FROM [dms].[EffectiveSchema] WHERE [EffectiveSchemaSingletonId] = 1";
+            using var reader = esCommand.ExecuteReader();
+            if (reader.Read())
+            {
+                var storedCount = reader.GetInt16(0);
+                var storedHash = new byte[32];
+                reader.GetBytes(1, 0, storedHash, 0, 32);
+
+                SeedValidator.ValidateEffectiveSchemaOrThrow(
+                    storedCount,
+                    storedHash,
+                    expectedSchema.ResourceKeyCount,
+                    expectedSchema.ResourceKeySeedHash,
+                    logger
+                );
+            }
+        }
+
         // --- Validate ResourceKey rows ---
         var actualResourceKeys = new List<ResourceKeyRow>();
         using (var rkCommand = connection.CreateCommand())
