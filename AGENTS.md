@@ -1,30 +1,15 @@
 This repository contains the **Ed-Fi Data Management Service (DMS) Platform**, which consists of two main applications:
 
 1. **Ed-Fi Data Management Service (DMS)** - A functional implementation of Ed-Fi Resources API, Ed-Fi Descriptors API, and Ed-Fi Discovery API
+ - Code and solution file in `./src/dms`
 2. **Ed-Fi DMS Configuration Service (CMS)** - A functional implementation of the Ed-Fi Management API specification
+ - Code and solution file in `./src/config`
 
 ### Code Style
 
-- Obey the `.editorconfig` file settings at all times.
-- Run the appropriate build process and correct any build errors with the following scripts:
-  - If modifying code in `./src/dms` then run `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`
-  - If modifying code in `./src/config` then run `dotnet build --no-restore ./src/config/EdFi.DmsConfigurationService.sln`
 - Only use .NET 10 code style, including modern C# language features (e.g., primary constructors, pattern matching, records, target-typed new, collection expressions, and file-scoped namespaces).
-
-### Nullable Reference Types
-
 - Declare variables non-nullable.
 - Always use `is null` or `is not null` instead of `== null` or `!= null`.
-
-## Development Workflow
-
-### Build
-
-- `dotnet build <projectfile or solutionfile>`
-
-### Unit Test
-
-- `dotnet test <projectfile or solutionfile>`
 
 ### Format Code
 
