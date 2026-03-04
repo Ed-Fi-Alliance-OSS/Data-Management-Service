@@ -486,6 +486,47 @@ public class OpenApiDocumentTests
         return builder.AsSingleApiSchemaRootNode();
     }
 
+    internal static JsonNode CoreSchemaWithContactOnly()
+    {
+        JsonObject contactSchema = new()
+        {
+            ["description"] = "Contact description",
+            ["type"] = "object",
+            ["properties"] = new JsonObject { ["contactUniqueId"] = new JsonObject { ["type"] = "string" } },
+        };
+
+        JsonObject schemas = new() { ["EdFi_Contact"] = contactSchema };
+
+        var builder = new ApiSchemaBuilder()
+            .WithStartProject("ed-fi", "5.0.0")
+            .WithOpenApiBaseDocuments(
+                resourcesDoc: new JsonObject
+                {
+                    ["openapi"] = "3.0.1",
+                    ["info"] = new JsonObject { ["title"] = "Ed-Fi Resources API", ["version"] = "5.0.0" },
+                    ["components"] = new JsonObject { ["schemas"] = schemas },
+                    ["paths"] = new JsonObject
+                    {
+                        ["/ed-fi/contacts"] = new JsonObject
+                        {
+                            ["get"] = new JsonObject
+                            {
+                                ["description"] = "contacts get",
+                                ["tags"] = new JsonArray("contacts"),
+                            },
+                        },
+                    },
+                    ["tags"] = new JsonArray(
+                        new JsonObject { ["name"] = "contacts", ["description"] = "Contacts" }
+                    ),
+                }
+            )
+            .WithSimpleResource("Contact", false)
+            .WithEndProject();
+
+        return builder.AsSingleApiSchemaRootNode();
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_A_Simple_Core_Schema_Document : OpenApiDocumentTests
@@ -1650,7 +1691,7 @@ public class OpenApiDocumentTests
             var builder = new ApiSchemaBuilder().WithStartProject("sample", "1.0.0");
 
             builder
-                .WithStartResource("ContactExtension", isResourceExtension: true)
+                .WithStartResource("Contact", isResourceExtension: true)
                 .WithResourceExtensionFragments("resources", exts)
                 .WithCommonExtensionOverrides(commonOverrides)
                 .WithEndResource();
@@ -1777,7 +1818,7 @@ public class OpenApiDocumentTests
 
             var builder = new ApiSchemaBuilder().WithStartProject("sample", "1.0.0");
             builder
-                .WithStartResource("ContactExtension", isResourceExtension: true)
+                .WithStartResource("Contact", isResourceExtension: true)
                 .WithResourceExtensionFragments("resources", exts)
                 .WithCommonExtensionOverrides(commonOverrides)
                 .WithEndResource();
@@ -1824,7 +1865,7 @@ public class OpenApiDocumentTests
 
             var builder = new ApiSchemaBuilder().WithStartProject("tpdm", "5.0.0");
             builder
-                .WithStartResource("ContactExtension", isResourceExtension: true)
+                .WithStartResource("Contact", isResourceExtension: true)
                 .WithResourceExtensionFragments("resources", exts)
                 .WithCommonExtensionOverrides(commonOverrides)
                 .WithEndResource();
@@ -2006,7 +2047,7 @@ public class OpenApiDocumentTests
 
             var builder = new ApiSchemaBuilder().WithStartProject("sample", "1.0.0");
             builder
-                .WithStartResource("StudentExtension", isResourceExtension: true)
+                .WithStartResource("Student", isResourceExtension: true)
                 .WithResourceExtensionFragments("resources", exts)
                 .WithCommonExtensionOverrides(commonOverrides)
                 .WithEndResource();
@@ -2070,10 +2111,120 @@ public class OpenApiDocumentTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_An_Extension_With_Common_Overrides_And_Exts : OpenApiDocumentTests
+    {
+        private JsonNode openApiResourcesResult = new JsonObject();
+
+        private static JsonNode ExtensionWithCommonOverridesAndExts()
+        {
+            JsonObject exts = new()
+            {
+                ["EdFi_Contact"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject { ["pet"] = new JsonObject { ["type"] = "string" } },
+                },
+            };
+
+            JsonArray commonOverrides =
+            [
+                new JsonObject
+                {
+                    ["insertionLocations"] = new JsonArray("$.properties.addresses.items"),
+                    ["schemaFragment"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["sample"] = new JsonObject
+                            {
+                                ["type"] = "object",
+                                ["properties"] = new JsonObject
+                                {
+                                    ["complex"] = new JsonObject { ["type"] = "string" },
+                                },
+                            },
+                        },
+                    },
+                },
+            ];
+
+            var extensionBuilder = new ApiSchemaBuilder().WithStartProject("sample", "1.0.0");
+            extensionBuilder
+                .WithStartResource("Contact", isResourceExtension: true)
+                .WithResourceExtensionFragments("resources", exts)
+                .WithCommonExtensionOverrides(commonOverrides)
+                .WithEndResource();
+
+            return extensionBuilder.WithEndProject().AsSingleApiSchemaRootNode();
+        }
+
+        [SetUp]
+        public void Setup()
+        {
+            JsonNode coreSchemaRootNode = CoreSchemaWithContactAndAddress();
+            JsonNode[] extensionSchemaRootNodes = [ExtensionWithCommonOverridesAndExts()];
+
+            OpenApiDocument openApiDocument = new(NullLogger.Instance);
+            openApiResourcesResult = openApiDocument.CreateDocument(
+                new(coreSchemaRootNode, extensionSchemaRootNodes),
+                OpenApiDocument.OpenApiDocumentType.Resource
+            );
+        }
+
+        [Test]
+        public void It_should_succeed_and_return_a_document()
+        {
+            openApiResourcesResult.Should().NotBeNull();
+        }
+
+        [Test]
+        public void It_should_add_ext_to_common_type_using_derived_core_schema_name()
+        {
+            JsonPath jsonPath = JsonPath.Parse("$.components.schemas.EdFi_Contact_Address.properties._ext");
+            PathResult pathResult = jsonPath.Evaluate(openApiResourcesResult);
+
+            pathResult.Matches.Should().HaveCount(1);
+            var extRef = pathResult.Matches[0].Value?.AsObject();
+            extRef.Should().NotBeNull();
+            extRef
+                ?["$ref"]?.GetValue<string>()
+                .Should()
+                .Be("#/components/schemas/EdFi_Contact_AddressExtension");
+        }
+
+        [Test]
+        public void It_should_create_project_extension_schema_for_common_type()
+        {
+            JsonPath jsonPath = JsonPath.Parse("$.components.schemas.sample_EdFi_Contact_AddressExtension");
+            PathResult pathResult = jsonPath.Evaluate(openApiResourcesResult);
+
+            pathResult.Matches.Should().HaveCount(1);
+            var projectSchema = pathResult.Matches[0].Value?.AsObject();
+            projectSchema.Should().NotBeNull();
+            projectSchema?["properties"]?.AsObject().Should().ContainKey("complex");
+        }
+
+        [Test]
+        public void It_should_also_add_ext_to_top_level_resource()
+        {
+            JsonPath jsonPath = JsonPath.Parse("$.components.schemas.EdFi_Contact.properties._ext");
+            PathResult pathResult = jsonPath.Evaluate(openApiResourcesResult);
+
+            pathResult.Matches.Should().HaveCount(1);
+            var extRef = pathResult.Matches[0].Value?.AsObject();
+            extRef.Should().NotBeNull();
+            extRef?["$ref"]?.GetValue<string>().Should().Be("#/components/schemas/EdFi_ContactExtension");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_An_Extension_With_Common_Overrides_But_No_Exts : OpenApiDocumentTests
     {
-        [Test]
-        public void It_should_throw_with_actionable_message()
+        private JsonNode openApiResourcesResult = new JsonObject();
+
+        private static JsonNode ExtensionWithCommonOverridesButNoExts()
         {
             JsonArray commonOverrides =
             [
@@ -2100,26 +2251,58 @@ public class OpenApiDocumentTests
 
             var extensionBuilder = new ApiSchemaBuilder().WithStartProject("sample", "1.0.0");
             extensionBuilder
-                .WithStartResource("ContactExtension", isResourceExtension: true)
+                .WithStartResource("Contact", isResourceExtension: true)
                 .WithNewExtensionResourceFragments("resources")
                 .WithCommonExtensionOverrides(commonOverrides)
                 .WithEndResource();
-            var extensionSchema = extensionBuilder.WithEndProject().AsSingleApiSchemaRootNode();
 
-            JsonNode coreSchema = CoreSchemaRootNode();
+            return extensionBuilder.WithEndProject().AsSingleApiSchemaRootNode();
+        }
+
+        [SetUp]
+        public void Setup()
+        {
+            JsonNode coreSchemaRootNode = CoreSchemaWithContactAndAddress();
+            JsonNode[] extensionSchemaRootNodes = [ExtensionWithCommonOverridesButNoExts()];
 
             OpenApiDocument openApiDocument = new(NullLogger.Instance);
+            openApiResourcesResult = openApiDocument.CreateDocument(
+                new(coreSchemaRootNode, extensionSchemaRootNodes),
+                OpenApiDocument.OpenApiDocumentType.Resource
+            );
+        }
 
-            var action = () =>
-                openApiDocument.CreateDocument(
-                    new(coreSchema, [extensionSchema]),
-                    OpenApiDocument.OpenApiDocumentType.Resource
-                );
+        [Test]
+        public void It_should_succeed_and_return_a_document()
+        {
+            openApiResourcesResult.Should().NotBeNull();
+        }
 
-            action
+        [Test]
+        public void It_should_derive_core_schema_from_component_schemas()
+        {
+            JsonPath jsonPath = JsonPath.Parse("$.components.schemas.EdFi_Contact_Address.properties._ext");
+            PathResult pathResult = jsonPath.Evaluate(openApiResourcesResult);
+
+            pathResult.Matches.Should().HaveCount(1);
+            var extRef = pathResult.Matches[0].Value?.AsObject();
+            extRef.Should().NotBeNull();
+            extRef
+                ?["$ref"]?.GetValue<string>()
                 .Should()
-                .Throw<InvalidOperationException>()
-                .WithMessage("*commonExtensionOverrides*no 'exts'*");
+                .Be("#/components/schemas/EdFi_Contact_AddressExtension");
+        }
+
+        [Test]
+        public void It_should_create_project_extension_schema_for_common_type()
+        {
+            JsonPath jsonPath = JsonPath.Parse("$.components.schemas.sample_EdFi_Contact_AddressExtension");
+            PathResult pathResult = jsonPath.Evaluate(openApiResourcesResult);
+
+            pathResult.Matches.Should().HaveCount(1);
+            var projectSchema = pathResult.Matches[0].Value?.AsObject();
+            projectSchema.Should().NotBeNull();
+            projectSchema?["properties"]?.AsObject().Should().ContainKey("complex");
         }
     }
 
@@ -2127,56 +2310,6 @@ public class OpenApiDocumentTests
     [Parallelizable]
     public class Given_An_Extension_With_Unresolvable_Insertion_Location : OpenApiDocumentTests
     {
-        private JsonNode openApiResourcesResult = new JsonObject();
-
-        private static JsonNode CoreSchemaWithContactOnly()
-        {
-            JsonObject contactSchema = new()
-            {
-                ["description"] = "Contact description",
-                ["type"] = "object",
-                ["properties"] = new JsonObject
-                {
-                    ["contactUniqueId"] = new JsonObject { ["type"] = "string" },
-                },
-            };
-
-            JsonObject schemas = new() { ["EdFi_Contact"] = contactSchema };
-
-            var builder = new ApiSchemaBuilder()
-                .WithStartProject("ed-fi", "5.0.0")
-                .WithOpenApiBaseDocuments(
-                    resourcesDoc: new JsonObject
-                    {
-                        ["openapi"] = "3.0.1",
-                        ["info"] = new JsonObject
-                        {
-                            ["title"] = "Ed-Fi Resources API",
-                            ["version"] = "5.0.0",
-                        },
-                        ["components"] = new JsonObject { ["schemas"] = schemas },
-                        ["paths"] = new JsonObject
-                        {
-                            ["/ed-fi/contacts"] = new JsonObject
-                            {
-                                ["get"] = new JsonObject
-                                {
-                                    ["description"] = "contacts get",
-                                    ["tags"] = new JsonArray("contacts"),
-                                },
-                            },
-                        },
-                        ["tags"] = new JsonArray(
-                            new JsonObject { ["name"] = "contacts", ["description"] = "Contacts" }
-                        ),
-                    }
-                )
-                .WithSimpleResource("Contact", false)
-                .WithEndProject();
-
-            return builder.AsSingleApiSchemaRootNode();
-        }
-
         private static JsonNode ExtensionWithUnresolvableOverride()
         {
             JsonObject exts = new()
@@ -2216,7 +2349,500 @@ public class OpenApiDocumentTests
 
             var builder = new ApiSchemaBuilder().WithStartProject("sample", "1.0.0");
             builder
-                .WithStartResource("ContactExtension", isResourceExtension: true)
+                .WithStartResource("Contact", isResourceExtension: true)
+                .WithResourceExtensionFragments("resources", exts)
+                .WithCommonExtensionOverrides(commonOverrides)
+                .WithEndResource();
+
+            return builder.WithEndProject().AsSingleApiSchemaRootNode();
+        }
+
+        [Test]
+        public void It_should_throw_when_insertion_location_cannot_be_resolved()
+        {
+            JsonNode coreSchemaRootNode = CoreSchemaWithContactOnly();
+            JsonNode[] extensionSchemaRootNodes = [ExtensionWithUnresolvableOverride()];
+
+            OpenApiDocument doc = new(NullLogger.Instance);
+            var action = () =>
+                doc.CreateDocument(
+                    new(coreSchemaRootNode, extensionSchemaRootNodes),
+                    OpenApiDocument.OpenApiDocumentType.Resource
+                );
+
+            action
+                .Should()
+                .Throw<InvalidOperationException>()
+                .WithMessage("*Contact*")
+                .WithMessage("*nonExistentCollection*EdFi_Contact*");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Extension_With_Override_Missing_InsertionLocations : OpenApiDocumentTests
+    {
+        private static JsonNode ExtensionWithMissingInsertionLocations()
+        {
+            JsonObject exts = new()
+            {
+                ["EdFi_Contact"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["isSportsFan"] = new JsonObject { ["type"] = "boolean" },
+                    },
+                },
+            };
+
+            JsonArray commonOverrides =
+            [
+                new JsonObject
+                {
+                    ["schemaFragment"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["sample"] = new JsonObject { ["type"] = "string" },
+                        },
+                    },
+                },
+            ];
+
+            var builder = new ApiSchemaBuilder().WithStartProject("sample", "1.0.0");
+            builder
+                .WithStartResource("Contact", isResourceExtension: true)
+                .WithResourceExtensionFragments("resources", exts)
+                .WithCommonExtensionOverrides(commonOverrides)
+                .WithEndResource();
+
+            return builder.WithEndProject().AsSingleApiSchemaRootNode();
+        }
+
+        [Test]
+        public void It_should_throw_with_actionable_message()
+        {
+            JsonNode coreSchemaRootNode = CoreSchemaWithContactOnly();
+            JsonNode[] extensionSchemaRootNodes = [ExtensionWithMissingInsertionLocations()];
+
+            OpenApiDocument doc = new(NullLogger.Instance);
+            var action = () =>
+                doc.CreateDocument(
+                    new(coreSchemaRootNode, extensionSchemaRootNodes),
+                    OpenApiDocument.OpenApiDocumentType.Resource
+                );
+
+            action
+                .Should()
+                .Throw<InvalidOperationException>()
+                .WithMessage("*Contact*")
+                .WithMessage("*insertionLocations*");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Extension_With_Override_Missing_SchemaFragment : OpenApiDocumentTests
+    {
+        private static JsonNode ExtensionWithMissingSchemaFragment()
+        {
+            JsonObject exts = new()
+            {
+                ["EdFi_Contact"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["isSportsFan"] = new JsonObject { ["type"] = "boolean" },
+                    },
+                },
+            };
+
+            JsonArray commonOverrides =
+            [
+                new JsonObject { ["insertionLocations"] = new JsonArray("$.properties.contactUniqueId") },
+            ];
+
+            var builder = new ApiSchemaBuilder().WithStartProject("sample", "1.0.0");
+            builder
+                .WithStartResource("Contact", isResourceExtension: true)
+                .WithResourceExtensionFragments("resources", exts)
+                .WithCommonExtensionOverrides(commonOverrides)
+                .WithEndResource();
+
+            return builder.WithEndProject().AsSingleApiSchemaRootNode();
+        }
+
+        [Test]
+        public void It_should_throw_with_actionable_message()
+        {
+            JsonNode coreSchemaRootNode = CoreSchemaWithContactOnly();
+            JsonNode[] extensionSchemaRootNodes = [ExtensionWithMissingSchemaFragment()];
+
+            OpenApiDocument doc = new(NullLogger.Instance);
+            var action = () =>
+                doc.CreateDocument(
+                    new(coreSchemaRootNode, extensionSchemaRootNodes),
+                    OpenApiDocument.OpenApiDocumentType.Resource
+                );
+
+            action
+                .Should()
+                .Throw<InvalidOperationException>()
+                .WithMessage("*Contact*")
+                .WithMessage("*schemaFragment*");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Extension_With_Override_Missing_Both_InsertionLocations_And_SchemaFragment
+        : OpenApiDocumentTests
+    {
+        private static JsonNode ExtensionWithMissingBothFields()
+        {
+            JsonObject exts = new()
+            {
+                ["EdFi_Contact"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["isSportsFan"] = new JsonObject { ["type"] = "boolean" },
+                    },
+                },
+            };
+
+            JsonArray commonOverrides = [new JsonObject { ["foo"] = "bar" }];
+
+            var builder = new ApiSchemaBuilder().WithStartProject("sample", "1.0.0");
+            builder
+                .WithStartResource("Contact", isResourceExtension: true)
+                .WithResourceExtensionFragments("resources", exts)
+                .WithCommonExtensionOverrides(commonOverrides)
+                .WithEndResource();
+
+            return builder.WithEndProject().AsSingleApiSchemaRootNode();
+        }
+
+        [Test]
+        public void It_should_throw_with_actionable_message()
+        {
+            JsonNode coreSchemaRootNode = CoreSchemaWithContactOnly();
+            JsonNode[] extensionSchemaRootNodes = [ExtensionWithMissingBothFields()];
+
+            OpenApiDocument doc = new(NullLogger.Instance);
+            var action = () =>
+                doc.CreateDocument(
+                    new(coreSchemaRootNode, extensionSchemaRootNodes),
+                    OpenApiDocument.OpenApiDocumentType.Resource
+                );
+
+            action
+                .Should()
+                .Throw<InvalidOperationException>()
+                .WithMessage("*Contact*")
+                .WithMessage("*insertionLocations*")
+                .WithMessage("*schemaFragment*");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Extension_With_Override_Missing_Properties : OpenApiDocumentTests
+    {
+        private static JsonNode ExtensionWithSchemaFragmentMissingProperties()
+        {
+            JsonObject exts = new()
+            {
+                ["EdFi_Contact"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["isSportsFan"] = new JsonObject { ["type"] = "boolean" },
+                    },
+                },
+            };
+
+            JsonArray commonOverrides =
+            [
+                new JsonObject
+                {
+                    ["insertionLocations"] = new JsonArray("$.properties.contactUniqueId"),
+                    ["schemaFragment"] = new JsonObject { ["type"] = "object" },
+                },
+            ];
+
+            var builder = new ApiSchemaBuilder().WithStartProject("sample", "1.0.0");
+            builder
+                .WithStartResource("Contact", isResourceExtension: true)
+                .WithResourceExtensionFragments("resources", exts)
+                .WithCommonExtensionOverrides(commonOverrides)
+                .WithEndResource();
+
+            return builder.WithEndProject().AsSingleApiSchemaRootNode();
+        }
+
+        [Test]
+        public void It_should_throw_with_actionable_message()
+        {
+            JsonNode coreSchemaRootNode = CoreSchemaWithContactOnly();
+            JsonNode[] extensionSchemaRootNodes = [ExtensionWithSchemaFragmentMissingProperties()];
+
+            OpenApiDocument doc = new(NullLogger.Instance);
+            var action = () =>
+                doc.CreateDocument(
+                    new(coreSchemaRootNode, extensionSchemaRootNodes),
+                    OpenApiDocument.OpenApiDocumentType.Resource
+                );
+
+            action
+                .Should()
+                .Throw<InvalidOperationException>()
+                .WithMessage("*Contact*")
+                .WithMessage("*insertionLocations*")
+                .WithMessage("*properties*");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Extension_With_Override_Empty_JsonPath : OpenApiDocumentTests
+    {
+        private static JsonNode ExtensionWithEmptyJsonPath()
+        {
+            JsonObject exts = new()
+            {
+                ["EdFi_Contact"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["isSportsFan"] = new JsonObject { ["type"] = "boolean" },
+                    },
+                },
+            };
+
+            JsonArray commonOverrides =
+            [
+                new JsonObject
+                {
+                    ["insertionLocations"] = new JsonArray(""),
+                    ["schemaFragment"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["sample"] = new JsonObject { ["type"] = "string" },
+                        },
+                    },
+                },
+            ];
+
+            var builder = new ApiSchemaBuilder().WithStartProject("sample", "1.0.0");
+            builder
+                .WithStartResource("Contact", isResourceExtension: true)
+                .WithResourceExtensionFragments("resources", exts)
+                .WithCommonExtensionOverrides(commonOverrides)
+                .WithEndResource();
+
+            return builder.WithEndProject().AsSingleApiSchemaRootNode();
+        }
+
+        [Test]
+        public void It_should_throw_with_actionable_message()
+        {
+            JsonNode coreSchemaRootNode = CoreSchemaWithContactOnly();
+            JsonNode[] extensionSchemaRootNodes = [ExtensionWithEmptyJsonPath()];
+
+            OpenApiDocument doc = new(NullLogger.Instance);
+            var action = () =>
+                doc.CreateDocument(
+                    new(coreSchemaRootNode, extensionSchemaRootNodes),
+                    OpenApiDocument.OpenApiDocumentType.Resource
+                );
+
+            action
+                .Should()
+                .Throw<InvalidOperationException>()
+                .WithMessage("*Contact*")
+                .WithMessage("*null or empty*");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Extension_With_Target_Schema_Without_Properties : OpenApiDocumentTests
+    {
+        private static JsonNode CoreSchemaWithContactAndAddressWithoutProperties()
+        {
+            JsonObject addressSchema = new()
+            {
+                ["description"] = "Address without properties",
+                ["type"] = "object",
+            };
+
+            JsonObject contactSchema = new()
+            {
+                ["description"] = "Contact description",
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["contactUniqueId"] = new JsonObject { ["type"] = "string" },
+                    ["addresses"] = new JsonObject
+                    {
+                        ["type"] = "array",
+                        ["items"] = new JsonObject { ["$ref"] = "#/components/schemas/EdFi_Contact_Address" },
+                    },
+                },
+            };
+
+            JsonObject schemas = new()
+            {
+                ["EdFi_Contact"] = contactSchema,
+                ["EdFi_Contact_Address"] = addressSchema,
+            };
+
+            var builder = new ApiSchemaBuilder()
+                .WithStartProject("ed-fi", "5.0.0")
+                .WithOpenApiBaseDocuments(
+                    resourcesDoc: new JsonObject
+                    {
+                        ["openapi"] = "3.0.1",
+                        ["info"] = new JsonObject
+                        {
+                            ["title"] = "Ed-Fi Resources API",
+                            ["version"] = "5.0.0",
+                        },
+                        ["components"] = new JsonObject { ["schemas"] = schemas },
+                        ["paths"] = new JsonObject
+                        {
+                            ["/ed-fi/contacts"] = new JsonObject
+                            {
+                                ["get"] = new JsonObject
+                                {
+                                    ["description"] = "contacts get",
+                                    ["tags"] = new JsonArray("contacts"),
+                                },
+                            },
+                        },
+                        ["tags"] = new JsonArray(
+                            new JsonObject { ["name"] = "contacts", ["description"] = "Contacts" }
+                        ),
+                    }
+                )
+                .WithSimpleResource("Contact", false)
+                .WithEndProject();
+
+            return builder.AsSingleApiSchemaRootNode();
+        }
+
+        private static JsonNode ExtensionTargetingSchemaWithoutProperties()
+        {
+            JsonObject exts = new()
+            {
+                ["EdFi_Contact"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["isSportsFan"] = new JsonObject { ["type"] = "boolean" },
+                    },
+                },
+            };
+
+            JsonArray commonOverrides =
+            [
+                new JsonObject
+                {
+                    ["insertionLocations"] = new JsonArray("$.properties.addresses.items"),
+                    ["schemaFragment"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["sample"] = new JsonObject { ["type"] = "string" },
+                        },
+                    },
+                },
+            ];
+
+            var builder = new ApiSchemaBuilder().WithStartProject("sample", "1.0.0");
+            builder
+                .WithStartResource("Contact", isResourceExtension: true)
+                .WithResourceExtensionFragments("resources", exts)
+                .WithCommonExtensionOverrides(commonOverrides)
+                .WithEndResource();
+
+            return builder.WithEndProject().AsSingleApiSchemaRootNode();
+        }
+
+        [Test]
+        public void It_should_throw_with_actionable_message()
+        {
+            JsonNode coreSchemaRootNode = CoreSchemaWithContactAndAddressWithoutProperties();
+            JsonNode[] extensionSchemaRootNodes = [ExtensionTargetingSchemaWithoutProperties()];
+
+            OpenApiDocument doc = new(NullLogger.Instance);
+            var action = () =>
+                doc.CreateDocument(
+                    new(coreSchemaRootNode, extensionSchemaRootNodes),
+                    OpenApiDocument.OpenApiDocumentType.Resource
+                );
+
+            action
+                .Should()
+                .Throw<InvalidOperationException>()
+                .WithMessage("*Contact*")
+                .WithMessage("*no 'properties' object*");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Extension_With_Null_Override_Entries : OpenApiDocumentTests
+    {
+        private JsonNode openApiResourcesResult = new JsonObject();
+
+        private static JsonNode ExtensionWithNullOverrideEntries()
+        {
+            JsonObject validOverrideEntry = new()
+            {
+                ["insertionLocations"] = new JsonArray("$.properties.addresses.items"),
+                ["schemaFragment"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["sample"] = new JsonObject
+                        {
+                            ["type"] = "object",
+                            ["properties"] = new JsonObject
+                            {
+                                ["nullFilterTest"] = new JsonObject { ["type"] = "string" },
+                            },
+                        },
+                    },
+                },
+            };
+
+            JsonArray commonOverrides = new JsonArray(null, validOverrideEntry, null);
+
+            JsonObject exts = new()
+            {
+                ["EdFi_Contact"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject { ["pet"] = new JsonObject { ["type"] = "string" } },
+                },
+            };
+
+            var builder = new ApiSchemaBuilder().WithStartProject("sample", "1.0.0");
+            builder
+                .WithStartResource("Contact", isResourceExtension: true)
                 .WithResourceExtensionFragments("resources", exts)
                 .WithCommonExtensionOverrides(commonOverrides)
                 .WithEndResource();
@@ -2227,8 +2853,8 @@ public class OpenApiDocumentTests
         [SetUp]
         public void Setup()
         {
-            JsonNode coreSchemaRootNode = CoreSchemaWithContactOnly();
-            JsonNode[] extensionSchemaRootNodes = [ExtensionWithUnresolvableOverride()];
+            JsonNode coreSchemaRootNode = CoreSchemaWithContactAndAddress();
+            JsonNode[] extensionSchemaRootNodes = [ExtensionWithNullOverrideEntries()];
 
             OpenApiDocument openApiDocument = new(NullLogger.Instance);
             openApiResourcesResult = openApiDocument.CreateDocument(
@@ -2238,23 +2864,237 @@ public class OpenApiDocumentTests
         }
 
         [Test]
-        public void It_should_not_add_any_extension_schemas_for_unresolvable_path()
+        public void It_should_succeed_without_throwing()
         {
-            JsonPath jsonPath = JsonPath.Parse("$.components.schemas");
-            PathResult pathResult = jsonPath.Evaluate(openApiResourcesResult);
-
-            var schemas = pathResult.Matches[0].Value?.AsObject();
-            schemas.Should().NotContainKey("EdFi_Contact_AddressExtension");
-            schemas.Should().NotContainKey("sample_EdFi_Contact_AddressExtension");
+            openApiResourcesResult.Should().NotBeNull();
         }
 
         [Test]
-        public void It_should_still_process_top_level_ext()
+        public void It_should_process_valid_override_entry()
+        {
+            JsonPath jsonPath = JsonPath.Parse("$.components.schemas.EdFi_Contact_Address.properties._ext");
+            PathResult pathResult = jsonPath.Evaluate(openApiResourcesResult);
+
+            pathResult.Matches.Should().HaveCount(1);
+            var extRef = pathResult.Matches[0].Value?.AsObject();
+            extRef.Should().NotBeNull();
+            extRef
+                ?["$ref"]?.GetValue<string>()
+                .Should()
+                .Be("#/components/schemas/EdFi_Contact_AddressExtension");
+        }
+
+        [Test]
+        public void It_should_create_extension_schema_for_valid_override()
+        {
+            JsonPath jsonPath = JsonPath.Parse("$.components.schemas.sample_EdFi_Contact_AddressExtension");
+            PathResult pathResult = jsonPath.Evaluate(openApiResourcesResult);
+
+            pathResult.Matches.Should().HaveCount(1);
+            var projectSchema = pathResult.Matches[0].Value?.AsObject();
+            projectSchema.Should().NotBeNull();
+            projectSchema?["properties"]?.AsObject().Should().ContainKey("nullFilterTest");
+        }
+
+        [Test]
+        public void It_should_have_extension_schema_with_expected_property()
+        {
+            JsonPath jsonPath = JsonPath.Parse(
+                "$.components.schemas.sample_EdFi_Contact_AddressExtension.properties.nullFilterTest"
+            );
+            PathResult pathResult = jsonPath.Evaluate(openApiResourcesResult);
+
+            pathResult.Matches.Should().HaveCount(1);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Extension_With_Insertion_Location_Invalid_Final_Segment : OpenApiDocumentTests
+    {
+        private static JsonNode ExtensionWithInvalidFinalSegmentOverride()
+        {
+            JsonObject exts = new()
+            {
+                ["EdFi_Contact"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["isSportsFan"] = new JsonObject { ["type"] = "boolean" },
+                    },
+                },
+            };
+
+            JsonArray commonOverrides =
+            [
+                new JsonObject
+                {
+                    ["insertionLocations"] = new JsonArray("$.properties.addresses.nonExistent"),
+                    ["schemaFragment"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["sample"] = new JsonObject { ["type"] = "string" },
+                        },
+                    },
+                },
+            ];
+
+            var builder = new ApiSchemaBuilder().WithStartProject("sample", "1.0.0");
+            builder
+                .WithStartResource("Contact", isResourceExtension: true)
+                .WithResourceExtensionFragments("resources", exts)
+                .WithCommonExtensionOverrides(commonOverrides)
+                .WithEndResource();
+
+            return builder.WithEndProject().AsSingleApiSchemaRootNode();
+        }
+
+        [Test]
+        public void It_should_throw_when_final_segment_of_insertion_location_is_invalid()
+        {
+            JsonNode coreSchemaRootNode = CoreSchemaWithContactAndAddress();
+            JsonNode[] extensionSchemaRootNodes = [ExtensionWithInvalidFinalSegmentOverride()];
+
+            OpenApiDocument doc = new(NullLogger.Instance);
+            var action = () =>
+                doc.CreateDocument(
+                    new(coreSchemaRootNode, extensionSchemaRootNodes),
+                    OpenApiDocument.OpenApiDocumentType.Resource
+                );
+
+            action
+                .Should()
+                .Throw<InvalidOperationException>()
+                .WithMessage("*Contact*")
+                .WithMessage("*nonExistent*");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Extension_With_Multiple_Insertion_Locations : OpenApiDocumentTests
+    {
+        private JsonNode openApiResourcesResult = new JsonObject();
+
+        private static JsonNode ExtensionWithMultipleInsertionLocations()
+        {
+            JsonObject exts = new()
+            {
+                ["EdFi_Contact"] = new JsonObject
+                {
+                    ["description"] = "Sample Contact extension",
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["isSportsFan"] = new JsonObject { ["type"] = "boolean" },
+                    },
+                },
+            };
+
+            JsonArray commonOverrides =
+            [
+                new JsonObject
+                {
+                    ["insertionLocations"] = new JsonArray(
+                        "$.properties.contactUniqueId",
+                        "$.properties.addresses.items"
+                    ),
+                    ["schemaFragment"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["sample"] = new JsonObject
+                            {
+                                ["type"] = "object",
+                                ["properties"] = new JsonObject
+                                {
+                                    ["extraField"] = new JsonObject { ["type"] = "string" },
+                                },
+                            },
+                        },
+                    },
+                },
+            ];
+
+            var builder = new ApiSchemaBuilder().WithStartProject("sample", "1.0.0");
+
+            builder
+                .WithStartResource("Contact", isResourceExtension: true)
+                .WithResourceExtensionFragments("resources", exts)
+                .WithCommonExtensionOverrides(commonOverrides)
+                .WithEndResource();
+
+            return builder.WithEndProject().AsSingleApiSchemaRootNode();
+        }
+
+        [SetUp]
+        public void Setup()
+        {
+            JsonNode coreSchemaRootNode = CoreSchemaWithContactAndAddress();
+            JsonNode[] extensionSchemaRootNodes = [ExtensionWithMultipleInsertionLocations()];
+
+            OpenApiDocument openApiDocument = new(NullLogger.Instance);
+            openApiResourcesResult = openApiDocument.CreateDocument(
+                new(coreSchemaRootNode, extensionSchemaRootNodes),
+                OpenApiDocument.OpenApiDocumentType.Resource
+            );
+        }
+
+        [Test]
+        public void It_should_add_ext_to_addresses_items_schema()
+        {
+            JsonPath jsonPath = JsonPath.Parse("$.components.schemas.EdFi_Contact_Address.properties._ext");
+            PathResult pathResult = jsonPath.Evaluate(openApiResourcesResult);
+
+            pathResult.Matches.Should().HaveCount(1);
+            var extRef = pathResult.Matches[0].Value?.AsObject();
+            extRef.Should().NotBeNull();
+            extRef
+                ?["$ref"]?.GetValue<string>()
+                .Should()
+                .Be("#/components/schemas/EdFi_Contact_AddressExtension");
+        }
+
+        [Test]
+        public void It_should_add_ext_to_contact_schema_from_contact_unique_id_location()
         {
             JsonPath jsonPath = JsonPath.Parse("$.components.schemas.EdFi_Contact.properties._ext");
             PathResult pathResult = jsonPath.Evaluate(openApiResourcesResult);
 
             pathResult.Matches.Should().HaveCount(1);
+            var extRef = pathResult.Matches[0].Value?.AsObject();
+            extRef.Should().NotBeNull();
+            extRef?["$ref"]?.GetValue<string>().Should().Be("#/components/schemas/EdFi_ContactExtension");
+        }
+
+        [Test]
+        public void It_should_create_extension_schema_for_addresses_items()
+        {
+            JsonPath jsonPath = JsonPath.Parse("$.components.schemas.EdFi_Contact_AddressExtension");
+            PathResult pathResult = jsonPath.Evaluate(openApiResourcesResult);
+
+            pathResult.Matches.Should().HaveCount(1);
+            var extensionSchema = pathResult.Matches[0].Value?.AsObject();
+            extensionSchema.Should().NotBeNull();
+            extensionSchema?["type"]?.GetValue<string>().Should().Be("object");
+            extensionSchema?["properties"]?.AsObject().Should().ContainKey("sample");
+        }
+
+        [Test]
+        public void It_should_create_extension_schema_for_contact_resolved_from_contact_unique_id()
+        {
+            JsonPath jsonPath = JsonPath.Parse("$.components.schemas.EdFi_ContactExtension");
+            PathResult pathResult = jsonPath.Evaluate(openApiResourcesResult);
+
+            pathResult.Matches.Should().HaveCount(1);
+            var extensionSchema = pathResult.Matches[0].Value?.AsObject();
+            extensionSchema.Should().NotBeNull();
+            extensionSchema?["type"]?.GetValue<string>().Should().Be("object");
+            extensionSchema?["properties"]?.AsObject().Should().ContainKey("sample");
         }
     }
 }

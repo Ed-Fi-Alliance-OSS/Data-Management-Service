@@ -1205,16 +1205,13 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
     /// Navigates the OpenAPI spec's $ref chains to find the target component schema
     /// and adds extension references using the schemaFragment data.
     /// </summary>
-    private void InsertCommonExtensionOverrides(
+    private static void InsertCommonExtensionOverrides(
         JsonArray overrides,
-        JsonNode openApiSpec,
-        string coreComponentSchemaName
+        JsonObject componentsSchemas,
+        string coreComponentSchemaName,
+        string resourceName
     )
     {
-        var componentsSchemas =
-            openApiSpec.SelectNodeFromPath("$.components.schemas", _logger)?.AsObject()
-            ?? throw new InvalidOperationException("OpenAPI spec missing 'components.schemas'.");
-
         foreach (JsonNode? overrideEntry in overrides)
         {
             if (overrideEntry is null)
@@ -1227,13 +1224,38 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
 
             if (insertionLocations is null || schemaFragment is null)
             {
-                continue;
+                string missing;
+                if (insertionLocations is null && schemaFragment is null)
+                {
+                    missing = "'insertionLocations' and 'schemaFragment'";
+                }
+                else if (insertionLocations is null)
+                {
+                    missing = "'insertionLocations'";
+                }
+                else
+                {
+                    missing = "'schemaFragment'";
+                }
+                throw new InvalidOperationException(
+                    $"Common extension override entry in resource '{resourceName}' "
+                        + $"is missing required field(s): {missing}."
+                );
             }
 
             var fragmentProperties = schemaFragment["properties"]?.AsObject();
             if (fragmentProperties is null)
             {
-                continue;
+                var insertionPaths = string.Join(
+                    ", ",
+                    insertionLocations.Select(loc => loc?.GetValue<string>() ?? "(null)")
+                );
+                var fragmentKeys = string.Join(", ", schemaFragment.Select(kvp => kvp.Key));
+                throw new InvalidOperationException(
+                    $"Common extension override entry in resource '{resourceName}' "
+                        + $"(insertionLocations: [{insertionPaths}]) "
+                        + $"has a 'schemaFragment' missing the required 'properties' field. Fragment keys: [{fragmentKeys}]."
+                );
             }
 
             foreach (JsonNode? location in insertionLocations)
@@ -1241,7 +1263,15 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
                 var jsonPath = location?.GetValue<string>();
                 if (string.IsNullOrEmpty(jsonPath))
                 {
-                    continue;
+                    var insertionPaths = string.Join(
+                        ", ",
+                        insertionLocations.Select(loc => loc?.GetValue<string>() ?? "(null)")
+                    );
+                    throw new InvalidOperationException(
+                        $"Common extension override entry in resource '{resourceName}' "
+                            + $"(insertionLocations: [{insertionPaths}]) "
+                            + $"has a null or empty insertion location."
+                    );
                 }
 
                 var targetSchemaName = ResolveComponentSchemaFromInsertionLocation(
@@ -1252,29 +1282,29 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
 
                 if (targetSchemaName is null)
                 {
-                    _logger.LogWarning(
-                        "Could not resolve insertion location '{JsonPath}' to a component schema from '{CoreSchema}'",
-                        jsonPath,
-                        coreComponentSchemaName
+                    throw new InvalidOperationException(
+                        $"Common extension override entry in resource '{resourceName}': "
+                            + $"could not resolve insertion location '{jsonPath}' to a component schema starting from '{coreComponentSchemaName}'."
                     );
-                    continue;
                 }
 
                 var targetSchema = componentsSchemas[targetSchemaName]?.AsObject();
                 if (targetSchema?["properties"] is not JsonObject targetProperties)
                 {
-                    _logger.LogWarning(
-                        "Target component schema '{TargetSchema}' has no properties",
-                        targetSchemaName
+                    throw new InvalidOperationException(
+                        $"Common extension override entry in resource '{resourceName}': "
+                            + $"target component schema '{targetSchemaName}' resolved from path '{jsonPath}' has no 'properties' object."
                     );
-                    continue;
                 }
 
                 foreach ((string projectKey, JsonNode? projectSchemaValue) in fragmentProperties)
                 {
                     if (projectSchemaValue is not JsonObject projectSchema)
                     {
-                        continue;
+                        throw new InvalidOperationException(
+                            $"Common extension override entry in resource '{resourceName}': "
+                                + $"fragment property '{projectKey}' in schema '{targetSchemaName}' is not a valid JSON object."
+                        );
                     }
 
                     var schemaNames = CreateSchemaNames(targetSchemaName, projectKey);
@@ -1288,6 +1318,25 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Finds the core component schema name (e.g., "EdFi_Contact") by matching {Project}_{ResourceName}
+    /// in the existing component schemas.
+    /// </summary>
+    private static string FindCoreSchemaName(JsonObject componentsSchemas, string resourceName)
+    {
+        var suffix = $"_{resourceName}";
+
+        return componentsSchemas
+                .Select(kvp => kvp.Key)
+                .SingleOrDefault(key =>
+                    key.EndsWith(suffix, StringComparison.Ordinal)
+                    && key.IndexOf('_') == key.Length - suffix.Length
+                )
+            ?? throw new InvalidOperationException(
+                $"Resource '{resourceName}' has commonExtensionOverrides but no matching core schema found."
+            );
     }
 
     /// <summary>
@@ -1321,11 +1370,13 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
             current = current[segment];
         }
 
-        // Final $ref resolution at the target node
-        if (current is not null)
+        if (current is null)
         {
-            (_, resolvedSchemaName) = ResolveRef(current, componentsSchemas, resolvedSchemaName);
+            return null;
         }
+
+        // Final $ref resolution at the target node
+        (_, resolvedSchemaName) = ResolveRef(current, componentsSchemas, resolvedSchemaName);
 
         return resolvedSchemaName;
     }
@@ -1706,22 +1757,23 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
                     && commonOverrides.Count > 0
                 )
                 {
-                    if (fragmentExts is null)
-                    {
-                        throw new InvalidOperationException(
-                            $"Extension resource '{resourceSchema.ResourceName.Value}' has commonExtensionOverrides but no 'exts' in openApiFragments. "
-                                + "The 'exts' section is required to determine the core component schema name for common extension overrides."
-                        );
-                    }
-
-                    var coreSchemaName =
-                        fragmentExts.Select(kvp => kvp.Key).FirstOrDefault()
+                    var componentsSchemas =
+                        openApiSpecification["components"]?["schemas"] as JsonObject
                         ?? throw new InvalidOperationException(
-                            $"Extension resource '{resourceSchema.ResourceName.Value}' has commonExtensionOverrides but 'exts' is empty. "
-                                + "At least one core component schema name must be present in 'exts'."
+                            "components/schemas not found in OpenAPI specification."
                         );
 
-                    InsertCommonExtensionOverrides(commonOverrides, openApiSpecification, coreSchemaName);
+                    var coreSchemaName = FindCoreSchemaName(
+                        componentsSchemas,
+                        resourceSchema.ResourceName.Value
+                    );
+
+                    InsertCommonExtensionOverrides(
+                        commonOverrides,
+                        componentsSchemas,
+                        coreSchemaName,
+                        resourceSchema.ResourceName.Value
+                    );
                 }
             }
         }
