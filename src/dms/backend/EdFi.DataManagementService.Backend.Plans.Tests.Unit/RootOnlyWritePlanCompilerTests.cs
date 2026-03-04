@@ -200,6 +200,36 @@ public class Given_RootOnlyWritePlanCompiler
     }
 
     [Test]
+    public void It_should_reuse_column_binding_parameter_names_for_update_where_predicates_in_key_order()
+    {
+        var writePlan = new RootOnlyWritePlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateRootOnlyModelWithUpdateKeyParameterNameCollision()
+        );
+        var tablePlan = writePlan.TablePlansInDependencyOrder.Single();
+
+        tablePlan
+            .ColumnBindings.Select(static binding => binding.ParameterName)
+            .Should()
+            .Equal("documentId", "documentId_2", "schoolYear", "gradeLevel");
+
+        tablePlan
+            .UpdateSql.Should()
+            .Be(
+                """
+                UPDATE "edfi"."StudentCollision"
+                SET
+                    "DocumentId" = @documentId,
+                    "GradeLevel" = @gradeLevel
+                WHERE
+                    ("documentId" = @documentId_2)
+                    AND ("SchoolYear" = @schoolYear)
+                ;
+
+                """
+            );
+    }
+
+    [Test]
     public void It_should_leave_update_sql_null_when_no_stored_writable_non_key_columns_exist()
     {
         var keyOnlyModel = CreateRootOnlyKeyOnlyModel();
@@ -829,6 +859,71 @@ public class Given_RootOnlyWritePlanCompiler
 
         return new RelationalResourceModel(
             Resource: new QualifiedResourceName("Ed-Fi", "Student"),
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTable,
+            TablesInDependencyOrder: [rootTable],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+    }
+
+    private static RelationalResourceModel CreateRootOnlyModelWithUpdateKeyParameterNameCollision()
+    {
+        var rootTable = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "StudentCollision"),
+            JsonScope: new JsonPathExpression("$", []),
+            Key: new TableKey(
+                ConstraintName: "PK_StudentCollision",
+                Columns:
+                [
+                    new DbKeyColumn(new DbColumnName("documentId"), ColumnKind.ParentKeyPart),
+                    new DbKeyColumn(new DbColumnName("SchoolYear"), ColumnKind.ParentKeyPart),
+                ]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: CreatePath(
+                        "$.documentIdShadow",
+                        new JsonPathSegment.Property("documentIdShadow")
+                    ),
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("documentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: CreatePath("$.documentId", new JsonPathSegment.Property("documentId")),
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("SchoolYear"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: CreatePath("$.schoolYear", new JsonPathSegment.Property("schoolYear")),
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("GradeLevel"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.String),
+                    IsNullable: true,
+                    SourceJsonPath: CreatePath("$.gradeLevel", new JsonPathSegment.Property("gradeLevel")),
+                    TargetResource: null
+                ),
+            ],
+            Constraints: []
+        );
+
+        return new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "StudentCollision"),
             PhysicalSchema: new DbSchemaName("edfi"),
             StorageKind: ResourceStorageKind.RelationalTables,
             Root: rootTable,

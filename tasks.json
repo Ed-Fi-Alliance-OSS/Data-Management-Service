@@ -33,7 +33,7 @@
       "Add unit tests covering: (a) UpdateSql present for root and root-scope _ext 1:1 tables with non-key columns, (b) UpdateSql omitted when only key columns exist",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "SQL Emission",

@@ -63,3 +63,9 @@ Task completed: Lookup Extensions - GetWritePlanOrThrow treats missing relationa
 Decisions: removed thin-slice write support-evaluator branches from write lookup; keep SharedDescriptorTable write lookup as NotSupported with descriptor-write story pointer; relational-table miss now throws InvalidOperationException including mapping set key + resource for deterministic bug diagnostics; left read lookup behavior/messages unchanged.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetLookupExtensions.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetLookupExtensionsTests.cs; tasks.json; progress.txt.
 Blockers/notes: no blockers. Next iteration can implement remaining SQL Emission UpdateSql task or manifest generalization tasks.
+
+2026-03-03 - DMS-1045 / reference/design/backend-redesign/epics/15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md
+Task completed: SQL Emission - UpdateSql for 1:1 tables task closure with parameter-reuse/key-order coverage.
+Decisions: compiler behavior already satisfied acceptance; added targeted collision fixture (non-key "DocumentId" + key "documentId") so binding dedup assigns key param `documentId_2`; asserted UpdateSql uses key order and reuses binding parameter names (no key-only re-derivation path).
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RootOnlyWritePlanCompilerTests.cs; tasks.json; progress.txt.
+Blockers/notes: no blockers. Next iteration can move to Manifest tasks (resource inclusion + explicit null plan properties).
