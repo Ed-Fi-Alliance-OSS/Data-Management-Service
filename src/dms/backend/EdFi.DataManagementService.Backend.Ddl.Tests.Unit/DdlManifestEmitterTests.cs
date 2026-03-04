@@ -406,6 +406,46 @@ public class Given_DdlManifestEmitter_CountStatements_For_Mssql
         // 1 semicolon before first GO + 1 trailing batch (no semicolons, no closing GO) = 2
         DdlManifestEmitter.CountStatements(SqlDialect.Mssql, sql).Should().Be(2);
     }
+
+    [Test]
+    public void It_should_recognize_lowercase_go_batch_separator()
+    {
+        var sql = string.Join(
+            "\n",
+            "CREATE TABLE foo (id INT);",
+            "go",
+            "CREATE TRIGGER my_trigger ON foo",
+            "AFTER INSERT AS",
+            "BEGIN",
+            "    RETURN;",
+            "END;",
+            "go",
+            ""
+        );
+
+        // 1 semicolon before first go + 1 trigger batch = 2
+        DdlManifestEmitter.CountStatements(SqlDialect.Mssql, sql).Should().Be(2);
+    }
+
+    [Test]
+    public void It_should_recognize_mixed_case_go_batch_separator()
+    {
+        var sql = string.Join(
+            "\n",
+            "CREATE TABLE foo (id INT);",
+            "Go",
+            "CREATE TRIGGER my_trigger ON foo",
+            "AFTER INSERT AS",
+            "BEGIN",
+            "    RETURN;",
+            "END;",
+            "gO",
+            ""
+        );
+
+        // 1 semicolon before first Go + 1 trigger batch = 2
+        DdlManifestEmitter.CountStatements(SqlDialect.Mssql, sql).Should().Be(2);
+    }
 }
 
 [TestFixture]

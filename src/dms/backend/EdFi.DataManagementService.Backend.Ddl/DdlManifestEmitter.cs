@@ -153,7 +153,7 @@ public static class DdlManifestEmitter
         {
             var trimmed = rawLine.TrimEnd('\r').Trim();
 
-            if (trimmed.SequenceEqual("GO"))
+            if (trimmed.Equals("GO", StringComparison.OrdinalIgnoreCase))
             {
                 if (pastFirstGo && currentBatchHasContent)
                 {
