@@ -233,3 +233,8 @@ Decisions: ConcreteResourcesInNameOrder cache build now throws on duplicate Qual
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetLookupExtensions.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetLookupExtensionsTests.cs; tasks.json; progress.txt.
 Blockers/notes: no blockers. Verification: dotnet csharpier format (2 files); dotnet test --no-restore plans unit (244/244). Next iteration can tackle remaining WriteSourceLookup duplicate-handling refactor task.
 
+2026-03-04 - DMS-1045 / reference/design/backend-redesign/epics/15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md
+Task completed: Refactor/Hardening - simplify WriteSourceLookup duplicate handling in WritePlanCompiler.
+Decisions: replaced dual map+duplicate-set with single lookup-entry map (`HasDuplicateMatch`) for both document-reference bindings and descriptor edge sources; added shared `GetUniqueLookupMatchOrThrow` + `AddWriteSourceLookupEntry` helpers to remove duplicated missing/duplicate resolution code while preserving exact deterministic exception messages.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanCompiler.cs; tasks.json; progress.txt.
+Blockers/notes: no blockers. All remaining tasks now marked complete.

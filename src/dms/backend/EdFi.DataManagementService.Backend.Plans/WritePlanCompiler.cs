@@ -21,11 +21,17 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
 
     private readonly record struct WriteSourceLookupKey(DbTableName Table, DbColumnName Column);
 
+    private readonly record struct WriteSourceLookupEntry<TValue>(TValue Value, bool HasDuplicateMatch);
+
     private sealed record WriteSourceLookup(
-        IReadOnlyDictionary<WriteSourceLookupKey, int> DocumentReferenceBindingIndexByKey,
-        IReadOnlySet<WriteSourceLookupKey> DuplicateDocumentReferenceBindingKeys,
-        IReadOnlyDictionary<WriteSourceLookupKey, DescriptorEdgeSource> DescriptorEdgeSourceByKey,
-        IReadOnlySet<WriteSourceLookupKey> DuplicateDescriptorEdgeSourceKeys
+        IReadOnlyDictionary<
+            WriteSourceLookupKey,
+            WriteSourceLookupEntry<int>
+        > DocumentReferenceBindingIndexByKey,
+        IReadOnlyDictionary<
+            WriteSourceLookupKey,
+            WriteSourceLookupEntry<DescriptorEdgeSource>
+        > DescriptorEdgeSourceByKey
     );
 
     /// <summary>
@@ -109,43 +115,56 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
 
     private static WriteSourceLookup BuildWriteSourceLookup(RelationalResourceModel resourceModel)
     {
-        var documentReferenceBindingIndexByKey = new Dictionary<WriteSourceLookupKey, int>(
-            resourceModel.DocumentReferenceBindings.Count
-        );
-        var duplicateDocumentReferenceBindingKeys = new HashSet<WriteSourceLookupKey>();
+        var documentReferenceBindingIndexByKey = new Dictionary<
+            WriteSourceLookupKey,
+            WriteSourceLookupEntry<int>
+        >(resourceModel.DocumentReferenceBindings.Count);
 
         for (var index = 0; index < resourceModel.DocumentReferenceBindings.Count; index++)
         {
             var binding = resourceModel.DocumentReferenceBindings[index];
             var lookupKey = new WriteSourceLookupKey(binding.Table, binding.FkColumn);
 
-            if (!documentReferenceBindingIndexByKey.TryAdd(lookupKey, index))
-            {
-                duplicateDocumentReferenceBindingKeys.Add(lookupKey);
-            }
+            AddWriteSourceLookupEntry(documentReferenceBindingIndexByKey, lookupKey, index);
         }
 
-        var descriptorEdgeSourceByKey = new Dictionary<WriteSourceLookupKey, DescriptorEdgeSource>(
-            resourceModel.DescriptorEdgeSources.Count
-        );
-        var duplicateDescriptorEdgeSourceKeys = new HashSet<WriteSourceLookupKey>();
+        var descriptorEdgeSourceByKey = new Dictionary<
+            WriteSourceLookupKey,
+            WriteSourceLookupEntry<DescriptorEdgeSource>
+        >(resourceModel.DescriptorEdgeSources.Count);
 
         foreach (var edgeSource in resourceModel.DescriptorEdgeSources)
         {
             var lookupKey = new WriteSourceLookupKey(edgeSource.Table, edgeSource.FkColumn);
 
-            if (!descriptorEdgeSourceByKey.TryAdd(lookupKey, edgeSource))
-            {
-                duplicateDescriptorEdgeSourceKeys.Add(lookupKey);
-            }
+            AddWriteSourceLookupEntry(descriptorEdgeSourceByKey, lookupKey, edgeSource);
         }
 
         return new WriteSourceLookup(
             DocumentReferenceBindingIndexByKey: documentReferenceBindingIndexByKey,
-            DuplicateDocumentReferenceBindingKeys: duplicateDocumentReferenceBindingKeys,
-            DescriptorEdgeSourceByKey: descriptorEdgeSourceByKey,
-            DuplicateDescriptorEdgeSourceKeys: duplicateDescriptorEdgeSourceKeys
+            DescriptorEdgeSourceByKey: descriptorEdgeSourceByKey
         );
+    }
+
+    private static void AddWriteSourceLookupEntry<TValue>(
+        IDictionary<WriteSourceLookupKey, WriteSourceLookupEntry<TValue>> lookupByKey,
+        WriteSourceLookupKey lookupKey,
+        TValue value
+    )
+    {
+        if (!lookupByKey.TryGetValue(lookupKey, out var existingEntry))
+        {
+            lookupByKey.Add(
+                lookupKey,
+                new WriteSourceLookupEntry<TValue>(Value: value, HasDuplicateMatch: false)
+            );
+            return;
+        }
+
+        if (!existingEntry.HasDuplicateMatch)
+        {
+            lookupByKey[lookupKey] = existingEntry with { HasDuplicateMatch = true };
+        }
     }
 
     /// <summary>
@@ -615,24 +634,15 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         WriteSourceLookup writeSourceLookup
     )
     {
-        var lookupKey = new WriteSourceLookupKey(table, fkColumn);
-
-        if (writeSourceLookup.DuplicateDocumentReferenceBindingKeys.Contains(lookupKey))
-        {
-            throw new InvalidOperationException(
-                $"Multiple document-reference bindings match '{table}.{fkColumn.Value}'."
-            );
-        }
-
-        if (
-            writeSourceLookup.DocumentReferenceBindingIndexByKey.TryGetValue(lookupKey, out var matchingIndex)
-        )
-        {
-            return matchingIndex;
-        }
-
-        throw new InvalidOperationException(
-            $"No document-reference binding matches '{table}.{fkColumn.Value}'."
+        return GetUniqueLookupMatchOrThrow(
+            writeSourceLookup.DocumentReferenceBindingIndexByKey,
+            new WriteSourceLookupKey(table, fkColumn),
+            onDuplicate: static key => new InvalidOperationException(
+                $"Multiple document-reference bindings match '{key.Table}.{key.Column.Value}'."
+            ),
+            onMissing: static key => new InvalidOperationException(
+                $"No document-reference binding matches '{key.Table}.{key.Column.Value}'."
+            )
         );
     }
 
@@ -646,27 +656,42 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         WriteSourceLookup writeSourceLookup
     )
     {
-        var lookupKey = new WriteSourceLookupKey(table, fkColumn);
-
-        if (writeSourceLookup.DuplicateDescriptorEdgeSourceKeys.Contains(lookupKey))
-        {
-            throw new InvalidOperationException(
-                $"Multiple descriptor edge sources match '{table}.{fkColumn.Value}'."
-            );
-        }
-
-        if (!writeSourceLookup.DescriptorEdgeSourceByKey.TryGetValue(lookupKey, out var matchingEdgeSource))
-        {
-            throw new InvalidOperationException(
-                $"No descriptor edge source matches '{table}.{fkColumn.Value}'."
-            );
-        }
+        var matchingEdgeSource = GetUniqueLookupMatchOrThrow(
+            writeSourceLookup.DescriptorEdgeSourceByKey,
+            new WriteSourceLookupKey(table, fkColumn),
+            onDuplicate: static key => new InvalidOperationException(
+                $"Multiple descriptor edge sources match '{key.Table}.{key.Column.Value}'."
+            ),
+            onMissing: static key => new InvalidOperationException(
+                $"No descriptor edge source matches '{key.Table}.{key.Column.Value}'."
+            )
+        );
 
         return new WriteValueSource.DescriptorReference(
             DescriptorResource: matchingEdgeSource.DescriptorResource,
             RelativePath: relativePath,
             DescriptorValuePath: matchingEdgeSource.DescriptorValuePath
         );
+    }
+
+    private static TValue GetUniqueLookupMatchOrThrow<TValue>(
+        IReadOnlyDictionary<WriteSourceLookupKey, WriteSourceLookupEntry<TValue>> lookupByKey,
+        WriteSourceLookupKey lookupKey,
+        Func<WriteSourceLookupKey, InvalidOperationException> onDuplicate,
+        Func<WriteSourceLookupKey, InvalidOperationException> onMissing
+    )
+    {
+        if (!lookupByKey.TryGetValue(lookupKey, out var entry))
+        {
+            throw onMissing(lookupKey);
+        }
+
+        if (entry.HasDuplicateMatch)
+        {
+            throw onDuplicate(lookupKey);
+        }
+
+        return entry.Value;
     }
 
     /// <summary>
