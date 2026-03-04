@@ -104,3 +104,98 @@ public class Given_ThinSliceFixtureModelSetBuilder_MultiProjectFixture(SqlDialec
             );
     }
 }
+
+[TestFixture(SqlDialect.Pgsql)]
+[TestFixture(SqlDialect.Mssql)]
+public class Given_ThinSliceFixtureModelSetBuilder_CollectionsNestedExtensionFixture(SqlDialect dialect)
+{
+    private const string FixturePath =
+        "Fixtures/runtime-plan-compilation/collections-nested-extension/fixture.manifest.json";
+    private static readonly QualifiedResourceName _schoolResource = new("Ed-Fi", "School");
+    private IReadOnlyDictionary<string, DbTableModel> _tablesByScope = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var modelSet = ThinSliceFixtureModelSetBuilder.Build(
+            FixturePath,
+            dialect,
+            reverseResourceSchemaOrder: false,
+            reverseFixtureInputOrder: false
+        );
+        var resource = modelSet.ConcreteResourcesInNameOrder.Single(resource =>
+            resource.ResourceKey.Resource == _schoolResource
+        );
+        _tablesByScope = resource.RelationalModel.TablesInDependencyOrder.ToDictionary(table =>
+            table.JsonScope.Canonical
+        );
+    }
+
+    [Test]
+    public void It_should_derive_extension_tables_for_root_and_nested_collection_scopes()
+    {
+        _tablesByScope.Should().ContainKey("$");
+        _tablesByScope.Should().ContainKey("$.addresses[*]");
+        _tablesByScope.Should().ContainKey("$.addresses[*].periods[*]");
+        _tablesByScope.Should().ContainKey("$._ext.sample");
+        _tablesByScope.Should().ContainKey("$._ext.sample.addresses[*]._ext.sample");
+        _tablesByScope.Should().ContainKey("$._ext.sample.addresses[*].periods[*]._ext.sample");
+    }
+
+    [Test]
+    public void It_should_align_extension_table_keys_to_base_table_scopes()
+    {
+        AssertScopeKeyAlignment("$", "$._ext.sample");
+        AssertScopeKeyAlignment("$.addresses[*]", "$._ext.sample.addresses[*]._ext.sample");
+        AssertScopeKeyAlignment(
+            "$.addresses[*].periods[*]",
+            "$._ext.sample.addresses[*].periods[*]._ext.sample"
+        );
+    }
+
+    [Test]
+    public void It_should_map_extension_scalar_columns_to_expected_source_paths()
+    {
+        AssertExtensionScalarPath("$._ext.sample", "$._ext.sample.campusCode");
+        AssertExtensionScalarPath(
+            "$._ext.sample.addresses[*]._ext.sample",
+            "$._ext.sample.addresses[*]._ext.sample.zone"
+        );
+        AssertExtensionScalarPath(
+            "$._ext.sample.addresses[*].periods[*]._ext.sample",
+            "$._ext.sample.addresses[*].periods[*]._ext.sample.track"
+        );
+    }
+
+    private void AssertScopeKeyAlignment(string baseScope, string extensionScope)
+    {
+        _tablesByScope.Should().ContainKey(baseScope);
+        _tablesByScope.Should().ContainKey(extensionScope);
+        var baseTable = _tablesByScope[baseScope];
+        var extensionTable = _tablesByScope[extensionScope];
+        var baseKeyColumns = baseTable
+            .Key.Columns.Select(column => $"{column.ColumnName.Value}:{column.Kind}")
+            .ToArray();
+        var extensionKeyColumns = extensionTable
+            .Key.Columns.Select(column => $"{column.ColumnName.Value}:{column.Kind}")
+            .ToArray();
+
+        extensionKeyColumns.Should().Equal(baseKeyColumns);
+    }
+
+    private void AssertExtensionScalarPath(string extensionScope, string expectedSourcePath)
+    {
+        _tablesByScope.Should().ContainKey(extensionScope);
+
+        var scalarPaths = _tablesByScope[extensionScope]
+            .Columns.Where(column =>
+                column.Storage is ColumnStorage.Stored && column.SourceJsonPath is not null
+            )
+            .Select(column => column.SourceJsonPath?.Canonical)
+            .Where(path => path is not null)
+            .Cast<string>()
+            .ToArray();
+
+        scalarPaths.Should().Contain(expectedSourcePath);
+    }
+}

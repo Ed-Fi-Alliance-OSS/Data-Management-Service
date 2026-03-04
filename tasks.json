@@ -151,7 +151,7 @@
       "Build the DerivedRelationalModelSet from the fixture for pgsql and mssql and assert extension tables are derived and key-aligned to base scopes",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Fixtures",

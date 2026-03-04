@@ -1,0 +1,84 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Sample",
+    "projectEndpointName": "sample",
+    "projectVersion": "1.0.0",
+    "resourceSchemas": {
+      "schoolExtensions": {
+        "resourceName": "School",
+        "isDescriptor": false,
+        "isResourceExtension": true,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "identityJsonPaths": [],
+        "documentPathsMapping": {},
+        "equalityConstraints": [],
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "_ext": {
+              "type": "object",
+              "properties": {
+                "sample": {
+                  "type": "object",
+                  "properties": {
+                    "campusCode": {
+                      "type": "string",
+                      "maxLength": 20
+                    },
+                    "addresses": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "_ext": {
+                            "type": "object",
+                            "properties": {
+                              "sample": {
+                                "type": "object",
+                                "properties": {
+                                  "zone": {
+                                    "type": "string",
+                                    "maxLength": 20
+                                  }
+                                }
+                              }
+                            }
+                          },
+                          "periods": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "_ext": {
+                                  "type": "object",
+                                  "properties": {
+                                    "sample": {
+                                      "type": "object",
+                                      "properties": {
+                                        "track": {
+                                          "type": "string",
+                                          "maxLength": 20
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

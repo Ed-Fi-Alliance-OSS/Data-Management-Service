@@ -417,11 +417,6 @@ internal static class ThinSliceFixtureModelSetBuilder
                 );
             }
 
-            if (!isAbstractResource && ReadOptionalBool(resourceSchema, "isResourceExtension"))
-            {
-                continue;
-            }
-
             var resourceName = ResolveResourceName(resourceSchemaEntry.Key, resourceSchema);
             seeds.Add(
                 new FixtureResourceKeySeed(
@@ -525,22 +520,6 @@ internal static class ThinSliceFixtureModelSetBuilder
             null => throw new InvalidOperationException(
                 $"Expected {propertyName} to be present, invalid ApiSchema."
             ),
-            _ => throw new InvalidOperationException(
-                $"Expected {propertyName} to be a bool, invalid ApiSchema."
-            ),
-        };
-    }
-
-    private static bool ReadOptionalBool(JsonObject node, string propertyName)
-    {
-        if (!node.TryGetPropertyValue(propertyName, out var boolNode) || boolNode is null)
-        {
-            return false;
-        }
-
-        return boolNode switch
-        {
-            JsonValue jsonValue => jsonValue.GetValue<bool>(),
             _ => throw new InvalidOperationException(
                 $"Expected {propertyName} to be a bool, invalid ApiSchema."
             ),
