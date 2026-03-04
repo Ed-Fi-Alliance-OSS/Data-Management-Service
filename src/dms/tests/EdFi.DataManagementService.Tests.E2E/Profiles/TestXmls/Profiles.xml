@@ -38,8 +38,8 @@
   <Profile name="Test-Profile-Resource-Includes-Child-Collection-With-Non-Creatable-Items">
     <Resource name="School">
       <WriteContentType memberSelection="IncludeAll">
-        <Collection name="EducationOrganizationInternationalAddresses" memberSelection="ExcludeOnly"> <!-- Inherited Collection -->
-          <Property name="AddressLine1" /> <!-- Required, non-primary key property -->
+        <Collection name="internationalAddresses" memberSelection="ExcludeOnly">
+          <Property name="addressLine1" /> <!-- Required, non-primary key property -->
         </Collection>
       </WriteContentType>
     </Resource>
@@ -537,8 +537,8 @@
   <Profile name="Assessment-Writable-Includes-Non-Creatable-Embedded-Object">
     <Resource name="Assessment">
       <WriteContentType memberSelection="IncludeAll">
-        <Object name="AssessmentContentStandard" memberSelection="ExcludeOnly">
-          <Property name="Title" /> <!-- Required, non-primary key property -->
+        <Object name="contentStandard" memberSelection="ExcludeOnly">
+          <Property name="title" /> <!-- Required, non-primary key property -->
         </Object>
       </WriteContentType>
     </Resource>

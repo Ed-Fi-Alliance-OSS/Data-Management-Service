@@ -71,12 +71,22 @@ internal class ProfileFilteringMiddleware(
         };
 
         // Replace response with filtered version
+        string contentType = requestInfo.FrontendResponse.ContentType ?? "application/json";
+        if (requestInfo.ProfileContext is not null)
+        {
+            contentType = ProfileHeaderParser.BuildProfileContentType(
+                requestInfo.ResourceSchema.ResourceName.Value,
+                requestInfo.ProfileContext.ProfileName,
+                ProfileUsageType.Readable
+            );
+        }
+
         requestInfo.FrontendResponse = new FrontendResponse(
             StatusCode: requestInfo.FrontendResponse.StatusCode,
             Body: filteredBody,
             Headers: requestInfo.FrontendResponse.Headers,
             LocationHeaderPath: requestInfo.FrontendResponse.LocationHeaderPath,
-            ContentType: requestInfo.FrontendResponse.ContentType
+            ContentType: contentType
         );
 
         logger.LogDebug(

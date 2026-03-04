@@ -68,16 +68,24 @@ public static class ProfileHeaderParser
             return ProfileHeaderParseResult.NoProfileHeader();
         }
 
+        string trimmedHeader = headerValue.Trim();
+
         // Check if this is a standard JSON content type (not a profile header)
-        if (IsStandardJsonContentType(headerValue))
+        if (IsStandardJsonContentType(trimmedHeader))
         {
             return ProfileHeaderParseResult.NoProfileHeader();
         }
 
-        // Check if it looks like it should be a profile header but is malformed
-        if (headerValue.StartsWith("application/vnd.ed-fi.", StringComparison.OrdinalIgnoreCase))
+        string baseHeader = trimmedHeader;
+        if (trimmedHeader.Contains(';'))
         {
-            Match match = _profileHeaderRegex.Match(headerValue.Trim());
+            baseHeader = trimmedHeader.Split(';')[0].Trim();
+        }
+
+        // Check if it looks like it should be a profile header but is malformed
+        if (trimmedHeader.StartsWith("application/vnd.ed-fi.", StringComparison.OrdinalIgnoreCase))
+        {
+            Match match = _profileHeaderRegex.Match(baseHeader);
             if (!match.Success)
             {
                 return ProfileHeaderParseResult.Failure(

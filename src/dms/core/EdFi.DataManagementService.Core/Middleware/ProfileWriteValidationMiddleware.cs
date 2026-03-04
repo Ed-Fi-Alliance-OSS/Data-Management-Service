@@ -3,7 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
@@ -13,6 +15,8 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Response;
+using EdFi.DataManagementService.Core.Validation;
+using Json.Schema;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.External.Backend.GetResult;
@@ -29,10 +33,19 @@ namespace EdFi.DataManagementService.Core.Middleware;
 internal class ProfileWriteValidationMiddleware(
     IProfileResponseFilter profileFilter,
     IProfileCreatabilityValidator creatabilityValidator,
+    ICompiledSchemaCache schemaCache,
     IServiceProvider serviceProvider,
     ILogger<ProfileWriteValidationMiddleware> logger
 ) : IPipelineStep
 {
+    private readonly ICompiledSchemaCache _schemaCache = schemaCache;
+
+    private static readonly EvaluationOptions _evaluationOptions = new()
+    {
+        OutputFormat = OutputFormat.List,
+        RequireFormatValidation = true,
+    };
+
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         // Only process if profile context with WriteContentType exists
@@ -111,6 +124,31 @@ internal class ProfileWriteValidationMiddleware(
                 );
                 return;
             }
+
+            IReadOnlyList<string> nonCreatableNestedPaths = GetNonCreatableNestedPaths(
+                requestBody,
+                writeContentType
+            );
+
+            if (nonCreatableNestedPaths.Count > 0)
+            {
+                logger.LogDebug(
+                    "Profile {ProfileName} blocks creation because non-creatable nested members were supplied: {BlockedPaths} - {TraceId}",
+                    SanitizeForLog(requestInfo.ProfileContext.ProfileName),
+                    SanitizeForLog(string.Join(", ", nonCreatableNestedPaths)),
+                    requestInfo.FrontendRequest.TraceId.Value
+                );
+
+                requestInfo.FrontendResponse = new FrontendResponse(
+                    StatusCode: 400,
+                    Body: FailureResponse.ForDataPolicyEnforced(
+                        requestInfo.ProfileContext.ProfileName,
+                        requestInfo.FrontendRequest.TraceId
+                    ),
+                    Headers: []
+                );
+                return;
+            }
         }
 
         // Filter the request body according to profile rules
@@ -119,6 +157,19 @@ internal class ProfileWriteValidationMiddleware(
             writeContentType,
             identityPropertyNames
         );
+
+        if (requestInfo.Method == RequestMethod.POST && HasRequiredFieldViolations(requestInfo, filteredBody))
+        {
+            requestInfo.FrontendResponse = new FrontendResponse(
+                StatusCode: 400,
+                Body: FailureResponse.ForDataPolicyEnforced(
+                    requestInfo.ProfileContext.ProfileName,
+                    requestInfo.FrontendRequest.TraceId
+                ),
+                Headers: []
+            );
+            return;
+        }
 
         // For PUT requests, merge stripped fields from the existing document
         // This preserves values for fields the client cannot modify through this profile
@@ -150,6 +201,287 @@ internal class ProfileWriteValidationMiddleware(
         );
 
         await next();
+    }
+
+    private bool HasRequiredFieldViolations(RequestInfo requestInfo, JsonNode filteredBody)
+    {
+        JsonSchema schema;
+
+        try
+        {
+            schema = _schemaCache.GetOrAdd(
+                requestInfo.ProjectSchema.ProjectName,
+                requestInfo.ResourceSchema.ResourceName,
+                requestInfo.Method,
+                requestInfo.ApiSchemaReloadId,
+                () => CompileSchema(requestInfo.ResourceSchema, requestInfo.Method)
+            );
+        }
+        catch (InvalidOperationException)
+        {
+            // Unit tests may construct partial resource schemas that intentionally omit jsonSchema metadata.
+            // In production, resource schemas are expected to always include method-specific JSON schema.
+            return false;
+        }
+
+        var results = schema.Evaluate(filteredBody, _evaluationOptions);
+
+        return results.Details.Any(detail =>
+            detail.Errors?.Keys.Any(key => key.Equals("required", StringComparison.OrdinalIgnoreCase)) == true
+        );
+    }
+
+    private static JsonSchema CompileSchema(ResourceSchema resourceSchema, RequestMethod method)
+    {
+        JsonNode jsonSchemaForResource = resourceSchema.JsonSchemaForRequestMethod(method);
+        string stringifiedJsonSchema = JsonSerializer.Serialize(jsonSchemaForResource);
+        return JsonSchema.FromText(stringifiedJsonSchema);
+    }
+
+    private static IReadOnlyList<string> GetNonCreatableNestedPaths(
+        JsonObject requestBody,
+        ContentTypeDefinition writeContentType
+    )
+    {
+        var blockedPaths = new List<string>();
+
+        foreach (var kvp in writeContentType.ObjectRulesByName)
+        {
+            string objectName = kvp.Key;
+            ObjectRule objectRule = kvp.Value;
+
+            if (
+                TryGetPropertyValueCaseInsensitive(
+                    requestBody,
+                    objectName,
+                    out string matchedObjectName,
+                    out JsonNode? nestedNode
+                )
+                && nestedNode is JsonObject nestedObject
+            )
+            {
+                CollectNonCreatableObjectPaths(
+                    nestedObject,
+                    objectRule,
+                    $"$.{matchedObjectName}",
+                    blockedPaths
+                );
+            }
+        }
+
+        foreach (var kvp in writeContentType.CollectionRulesByName)
+        {
+            string collectionName = kvp.Key;
+            CollectionRule collectionRule = kvp.Value;
+
+            if (
+                TryGetPropertyValueCaseInsensitive(
+                    requestBody,
+                    collectionName,
+                    out string matchedCollectionName,
+                    out JsonNode? collectionNode
+                )
+                && collectionNode is JsonArray collection
+            )
+            {
+                CollectNonCreatableCollectionPaths(
+                    collection,
+                    collectionRule,
+                    $"$.{matchedCollectionName}",
+                    blockedPaths
+                );
+            }
+        }
+
+        return blockedPaths;
+    }
+
+    private static void CollectNonCreatableObjectPaths(
+        JsonObject sourceObject,
+        ObjectRule objectRule,
+        string pathPrefix,
+        List<string> blockedPaths
+    )
+    {
+        if (objectRule.MemberSelection == MemberSelection.ExcludeOnly)
+        {
+            foreach (string excludedPropertyName in objectRule.PropertyNameSet)
+            {
+                if (
+                    TryGetPropertyValueCaseInsensitive(
+                        sourceObject,
+                        excludedPropertyName,
+                        out string matchedPropertyName,
+                        out _
+                    )
+                )
+                {
+                    blockedPaths.Add($"{pathPrefix}.{matchedPropertyName}");
+                }
+            }
+        }
+
+        foreach (var kvp in objectRule.NestedObjectRulesByName)
+        {
+            string nestedObjectName = kvp.Key;
+            ObjectRule nestedObjectRule = kvp.Value;
+
+            if (
+                TryGetPropertyValueCaseInsensitive(
+                    sourceObject,
+                    nestedObjectName,
+                    out string matchedNestedObjectName,
+                    out JsonNode? nestedNode
+                )
+                && nestedNode is JsonObject nestedObject
+            )
+            {
+                CollectNonCreatableObjectPaths(
+                    nestedObject,
+                    nestedObjectRule,
+                    $"{pathPrefix}.{matchedNestedObjectName}",
+                    blockedPaths
+                );
+            }
+        }
+
+        foreach (var kvp in objectRule.CollectionRulesByName)
+        {
+            string nestedCollectionName = kvp.Key;
+            CollectionRule nestedCollectionRule = kvp.Value;
+
+            if (
+                TryGetPropertyValueCaseInsensitive(
+                    sourceObject,
+                    nestedCollectionName,
+                    out string matchedNestedCollectionName,
+                    out JsonNode? nestedCollectionNode
+                )
+                && nestedCollectionNode is JsonArray nestedCollection
+            )
+            {
+                CollectNonCreatableCollectionPaths(
+                    nestedCollection,
+                    nestedCollectionRule,
+                    $"{pathPrefix}.{matchedNestedCollectionName}",
+                    blockedPaths
+                );
+            }
+        }
+    }
+
+    private static void CollectNonCreatableCollectionPaths(
+        JsonArray sourceCollection,
+        CollectionRule collectionRule,
+        string pathPrefix,
+        List<string> blockedPaths
+    )
+    {
+        for (int i = 0; i < sourceCollection.Count; i++)
+        {
+            if (sourceCollection[i] is not JsonObject collectionItem)
+            {
+                continue;
+            }
+
+            string itemPath = $"{pathPrefix}[{i}]";
+
+            if (collectionRule.MemberSelection == MemberSelection.ExcludeOnly)
+            {
+                foreach (string excludedPropertyName in collectionRule.PropertyNameSet)
+                {
+                    if (
+                        TryGetPropertyValueCaseInsensitive(
+                            collectionItem,
+                            excludedPropertyName,
+                            out string matchedPropertyName,
+                            out _
+                        )
+                    )
+                    {
+                        blockedPaths.Add($"{itemPath}.{matchedPropertyName}");
+                    }
+                }
+            }
+
+            foreach (var kvp in collectionRule.NestedObjectRulesByName)
+            {
+                string nestedObjectName = kvp.Key;
+                ObjectRule nestedObjectRule = kvp.Value;
+
+                if (
+                    TryGetPropertyValueCaseInsensitive(
+                        collectionItem,
+                        nestedObjectName,
+                        out string matchedNestedObjectName,
+                        out JsonNode? nestedNode
+                    )
+                    && nestedNode is JsonObject nestedObject
+                )
+                {
+                    CollectNonCreatableObjectPaths(
+                        nestedObject,
+                        nestedObjectRule,
+                        $"{itemPath}.{matchedNestedObjectName}",
+                        blockedPaths
+                    );
+                }
+            }
+
+            foreach (var kvp in collectionRule.NestedCollectionRulesByName)
+            {
+                string nestedCollectionName = kvp.Key;
+                CollectionRule nestedCollectionRule = kvp.Value;
+
+                if (
+                    TryGetPropertyValueCaseInsensitive(
+                        collectionItem,
+                        nestedCollectionName,
+                        out string matchedNestedCollectionName,
+                        out JsonNode? nestedCollectionNode
+                    )
+                    && nestedCollectionNode is JsonArray nestedCollection
+                )
+                {
+                    CollectNonCreatableCollectionPaths(
+                        nestedCollection,
+                        nestedCollectionRule,
+                        $"{itemPath}.{matchedNestedCollectionName}",
+                        blockedPaths
+                    );
+                }
+            }
+        }
+    }
+
+    private static bool TryGetPropertyValueCaseInsensitive(
+        JsonObject sourceObject,
+        string propertyName,
+        out string matchedPropertyName,
+        out JsonNode? matchedNode
+    )
+    {
+        if (sourceObject.TryGetPropertyValue(propertyName, out matchedNode))
+        {
+            matchedPropertyName = propertyName;
+            return true;
+        }
+
+        foreach (var kvp in sourceObject)
+        {
+            if (!kvp.Key.Equals(propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            matchedPropertyName = kvp.Key;
+            matchedNode = kvp.Value;
+            return true;
+        }
+
+        matchedPropertyName = string.Empty;
+        matchedNode = null;
+        return false;
     }
 
     /// <summary>
