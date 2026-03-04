@@ -256,6 +256,8 @@ public class Given_SeedDmlEmitter_With_PgsqlDialect_And_SeedData
     {
         _ddl.Should().Contain("EffectiveSchemaHash mismatch");
         _ddl.Should().Contain("RAISE EXCEPTION");
+        _ddl.Should().Contain("_stored_hash");
+        _ddl.Should().Contain("but expected");
         _ddl.Should().Contain("'abc123def456'");
     }
 
@@ -385,7 +387,8 @@ public class Given_SeedDmlEmitter_With_MssqlDialect_And_SeedData
     {
         _ddl.Should().Contain("EffectiveSchemaHash mismatch");
         _ddl.Should().Contain("THROW 50000");
-        _ddl.Should().Contain("(expected: ', N'abc123def456'");
+        _ddl.Should().Contain("@preflight_stored_hash");
+        _ddl.Should().Contain("but expected ''', N'abc123def456'");
     }
 
     [Test]

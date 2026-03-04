@@ -76,21 +76,21 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
         if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
             writer.AppendLine("DO $$");
+            writer.AppendLine("DECLARE");
+            using (writer.Indent())
+            {
+                writer.AppendLine("_stored_hash text;");
+            }
             writer.AppendLine("BEGIN");
             using (writer.Indent())
             {
-                writer.AppendLine("IF EXISTS (");
-                using (writer.Indent())
-                {
-                    writer.AppendLine($"SELECT 1 FROM {table}");
-                    writer.AppendLine($"WHERE {Quote("EffectiveSchemaSingletonId")} = 1");
-                    writer.AppendLine($"AND {Quote("EffectiveSchemaHash")} <> {hashLiteral}");
-                }
-                writer.AppendLine(") THEN");
+                writer.AppendLine($"SELECT {Quote("EffectiveSchemaHash")} INTO _stored_hash FROM {table}");
+                writer.AppendLine($"WHERE {Quote("EffectiveSchemaSingletonId")} = 1;");
+                writer.AppendLine($"IF _stored_hash IS NOT NULL AND _stored_hash <> {hashLiteral} THEN");
                 using (writer.Indent())
                 {
                     writer.AppendLine(
-                        $"RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database is provisioned for a different schema hash (expected: %)', {hashLiteral};"
+                        $"RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database has ''%'' but expected ''%''', _stored_hash, {hashLiteral};"
                     );
                 }
                 writer.AppendLine("END IF;");
@@ -99,19 +99,18 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
         }
         else
         {
-            writer.AppendLine("IF EXISTS (");
-            using (writer.Indent())
-            {
-                writer.AppendLine($"SELECT 1 FROM {table}");
-                writer.AppendLine($"WHERE {Quote("EffectiveSchemaSingletonId")} = 1");
-                writer.AppendLine($"AND {Quote("EffectiveSchemaHash")} <> {hashLiteral}");
-            }
-            writer.AppendLine(")");
+            writer.AppendLine("DECLARE @preflight_stored_hash nvarchar(200);");
+            writer.AppendLine();
+            writer.AppendLine($"SELECT @preflight_stored_hash = {Quote("EffectiveSchemaHash")} FROM {table}");
+            writer.AppendLine($"WHERE {Quote("EffectiveSchemaSingletonId")} = 1;");
+            writer.AppendLine(
+                $"IF @preflight_stored_hash IS NOT NULL AND @preflight_stored_hash <> {hashLiteral}"
+            );
             writer.AppendLine("BEGIN");
             using (writer.Indent())
             {
                 writer.AppendLine(
-                    $"DECLARE @preflight_msg nvarchar(500) = CONCAT(N'EffectiveSchemaHash mismatch: database is provisioned for a different schema hash (expected: ', {hashLiteral}, N')');"
+                    $"DECLARE @preflight_msg nvarchar(500) = CONCAT(N'EffectiveSchemaHash mismatch: database has ''', @preflight_stored_hash, N''' but expected ''', {hashLiteral}, N'''');"
                 );
                 writer.AppendLine("THROW 50000, @preflight_msg, 1;");
             }
@@ -397,7 +396,8 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
                     using (writer.Indent())
                     {
                         writer.AppendLine(
-                            "RAISE EXCEPTION 'dms.EffectiveSchema ResourceKeySeedHash mismatch: stored hash does not match expected value';"
+                            "RAISE EXCEPTION 'dms.EffectiveSchema ResourceKeySeedHash mismatch: stored % but expected %', encode(_stored_hash, 'hex'), encode("
+                                + $"{expectedHash}, 'hex');"
                         );
                     }
                     writer.AppendLine("END IF;");
@@ -435,7 +435,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
                 using (writer.Indent())
                 {
                     writer.AppendLine(
-                        "DECLARE @es_hash_msg nvarchar(200) = N'dms.EffectiveSchema ResourceKeySeedHash mismatch: stored hash does not match expected value';"
+                        $"DECLARE @es_hash_msg nvarchar(200) = CONCAT(N'dms.EffectiveSchema ResourceKeySeedHash mismatch: stored ', CONVERT(nvarchar(66), @es_stored_hash, 1), N' but expected ', CONVERT(nvarchar(66), {expectedHash}, 1));"
                     );
                     writer.AppendLine("THROW 50000, @es_hash_msg, 1;");
                 }
