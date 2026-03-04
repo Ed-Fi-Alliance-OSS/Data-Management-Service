@@ -264,7 +264,12 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
 
             columnBindings[index] = new WriteColumnBinding(
                 Column: column,
-                Source: DeriveWriteValueSource(tableModel, column, writeSourceLookup),
+                Source: DeriveWriteValueSource(
+                    tableModel,
+                    column,
+                    writeSourceLookup,
+                    requiredKeyUnificationPrecomputedColumns
+                ),
                 ParameterName: orderedParameterNames[index]
             );
         }
@@ -535,7 +540,8 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     private static WriteValueSource DeriveWriteValueSource(
         DbTableModel tableModel,
         DbColumnModel column,
-        WriteSourceLookup writeSourceLookup
+        WriteSourceLookup writeSourceLookup,
+        IReadOnlySet<DbColumnName> requiredKeyUnificationPrecomputedColumns
     )
     {
         if (IsDocumentIdKeyColumn(tableModel, column))
@@ -559,7 +565,11 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
                     WritePlanJsonPathConventions.DeriveScopeRelativePath(tableModel.JsonScope, sourcePath),
                     writeSourceLookup
                 ),
-            _ => CreateScalarOrPrecomputedSource(tableModel, column),
+            _ => CreateScalarOrPrecomputedSource(
+                tableModel,
+                column,
+                requiredKeyUnificationPrecomputedColumns
+            ),
         };
     }
 
@@ -660,15 +670,24 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     }
 
     /// <summary>
-    /// Creates a scalar write value source when JSON-bound; otherwise creates a precomputed value source placeholder.
+    /// Creates a scalar write value source when JSON-bound; otherwise creates a precomputed value source for explicitly allowed targets.
     /// </summary>
     private static WriteValueSource CreateScalarOrPrecomputedSource(
         DbTableModel tableModel,
-        DbColumnModel column
+        DbColumnModel column,
+        IReadOnlySet<DbColumnName> requiredKeyUnificationPrecomputedColumns
     )
     {
         if (column.SourceJsonPath is null)
         {
+            if (!requiredKeyUnificationPrecomputedColumns.Contains(column.ColumnName))
+            {
+                throw new InvalidOperationException(
+                    $"Cannot compile write plan for '{tableModel.Table}': column '{column.ColumnName.Value}' has null SourceJsonPath but is not an explicitly supported precomputed target. "
+                        + "Mark the column IsWritable=false or add a producer plan (for example, key-unification canonical/synthetic presence)."
+                );
+            }
+
             return new WriteValueSource.Precomputed();
         }
 

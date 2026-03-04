@@ -324,7 +324,7 @@ public class Given_WritePlanCompiler
     }
 
     [Test]
-    public void It_should_fail_fast_for_precomputed_binding_without_key_unification_inventory()
+    public void It_should_fail_fast_when_writable_null_source_column_is_not_an_explicit_precomputed_target()
     {
         var precomputedColumnModel = CreateRootOnlyModelWithStoredPrecomputedNonKeyColumn();
         var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(precomputedColumnModel);
@@ -332,7 +332,7 @@ public class Given_WritePlanCompiler
         act.Should()
             .Throw<InvalidOperationException>()
             .WithMessage(
-                "Cannot compile key-unification plan for 'edfi.Student': precomputed bindings 'CanonicalSchoolYear' require key-unification inventory.*"
+                "Cannot compile write plan for 'edfi.Student': column 'CanonicalSchoolYear' has null SourceJsonPath but is not an explicitly supported precomputed target. Mark the column IsWritable=false or add a producer plan (for example, key-unification canonical/synthetic presence)."
             );
     }
 
@@ -975,7 +975,7 @@ public class Given_WritePlanCompiler
     }
 
     [Test]
-    public void It_should_fail_fast_when_key_unification_inventory_does_not_account_for_all_precomputed_bindings()
+    public void It_should_fail_fast_when_key_unification_models_contain_extra_null_source_writable_columns_without_producer_plans()
     {
         var unsupportedModel = CreateRootOnlyModelWithOrphanPrecomputedBinding();
         var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
@@ -983,7 +983,7 @@ public class Given_WritePlanCompiler
         act.Should()
             .Throw<InvalidOperationException>()
             .WithMessage(
-                "Cannot compile key-unification plan for 'edfi.Student': precomputed bindings not produced by key-unification inventory: 'SchoolYearCanonicalOrphan'.*"
+                "Cannot compile write plan for 'edfi.Student': column 'SchoolYearCanonicalOrphan' has null SourceJsonPath but is not an explicitly supported precomputed target. Mark the column IsWritable=false or add a producer plan (for example, key-unification canonical/synthetic presence)."
             );
     }
 
