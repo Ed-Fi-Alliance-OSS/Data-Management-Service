@@ -207,15 +207,7 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
             return new HashSet<DbColumnName>();
         }
 
-        var columnByName = new Dictionary<DbColumnName, DbColumnModel>(tableModel.Columns.Count);
-
-        foreach (var column in tableModel.Columns)
-        {
-            if (!columnByName.ContainsKey(column.ColumnName))
-            {
-                columnByName[column.ColumnName] = column;
-            }
-        }
+        var columnByName = BuildColumnByNameMapOrThrow(tableModel);
 
         var requiredColumns = new HashSet<DbColumnName>();
 
@@ -252,21 +244,8 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     )
     {
         var precomputedBindingIndices = GetPrecomputedBindingIndices(bindingsInColumnOrder);
-
-        var columnByName = new Dictionary<DbColumnName, DbColumnModel>(tableModel.Columns.Count);
-
-        foreach (var column in tableModel.Columns)
-        {
-            columnByName[column.ColumnName] = column;
-        }
-
-        var bindingIndexByColumn = new Dictionary<DbColumnName, int>(bindingsInColumnOrder.Count);
-
-        for (var bindingIndex = 0; bindingIndex < bindingsInColumnOrder.Count; bindingIndex++)
-        {
-            var binding = bindingsInColumnOrder[bindingIndex];
-            bindingIndexByColumn[binding.Column.ColumnName] = bindingIndex;
-        }
+        var columnByName = BuildColumnByNameMapOrThrow(tableModel);
+        var bindingIndexByColumn = BuildBindingIndexByColumnMapOrThrow(tableModel, bindingsInColumnOrder);
 
         var keyUnificationPlans = new KeyUnificationWritePlan[tableModel.KeyUnificationClasses.Count];
 
@@ -642,15 +621,7 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     /// </summary>
     private static void ValidateWritableKeyColumns(DbTableModel tableModel)
     {
-        var columnByName = new Dictionary<DbColumnName, DbColumnModel>(tableModel.Columns.Count);
-
-        foreach (var column in tableModel.Columns)
-        {
-            if (!columnByName.ContainsKey(column.ColumnName))
-            {
-                columnByName[column.ColumnName] = column;
-            }
-        }
+        var columnByName = BuildColumnByNameMapOrThrow(tableModel);
 
         foreach (var keyColumn in tableModel.Key.Columns)
         {
@@ -712,7 +683,7 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
             return null;
         }
 
-        var parameterNameByColumn = BuildParameterNameByColumn(bindingsInColumnOrder);
+        var parameterNameByColumn = BuildParameterNameByColumn(tableModel, bindingsInColumnOrder);
         var keyParameterNamesInKeyOrder = DeriveRequiredKeyParameterNamesInOrder(
             tableModel,
             keyColumnsInKeyOrder,
@@ -755,7 +726,7 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
             );
         }
 
-        var parameterNameByColumn = BuildParameterNameByColumn(bindingsInColumnOrder);
+        var parameterNameByColumn = BuildParameterNameByColumn(tableModel, bindingsInColumnOrder);
         var keyParameterNamesInOrder = DeriveRequiredKeyParameterNamesInOrder(
             tableModel,
             keyColumnsInOrder,
@@ -767,6 +738,7 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     }
 
     private static Dictionary<DbColumnName, string> BuildParameterNameByColumn(
+        DbTableModel tableModel,
         IReadOnlyList<WriteColumnBinding> bindingsInColumnOrder
     )
     {
@@ -774,10 +746,69 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
 
         foreach (var binding in bindingsInColumnOrder)
         {
-            parameterNameByColumn[binding.Column.ColumnName] = binding.ParameterName;
+            if (!parameterNameByColumn.TryAdd(binding.Column.ColumnName, binding.ParameterName))
+            {
+                throw CreateDuplicateColumnNameException(
+                    tableModel,
+                    binding.Column.ColumnName,
+                    "parameterNameByColumn"
+                );
+            }
         }
 
         return parameterNameByColumn;
+    }
+
+    private static Dictionary<DbColumnName, DbColumnModel> BuildColumnByNameMapOrThrow(
+        DbTableModel tableModel
+    )
+    {
+        var columnByName = new Dictionary<DbColumnName, DbColumnModel>(tableModel.Columns.Count);
+
+        foreach (var column in tableModel.Columns)
+        {
+            if (!columnByName.TryAdd(column.ColumnName, column))
+            {
+                throw CreateDuplicateColumnNameException(tableModel, column.ColumnName, "columnByName");
+            }
+        }
+
+        return columnByName;
+    }
+
+    private static Dictionary<DbColumnName, int> BuildBindingIndexByColumnMapOrThrow(
+        DbTableModel tableModel,
+        IReadOnlyList<WriteColumnBinding> bindingsInColumnOrder
+    )
+    {
+        var bindingIndexByColumn = new Dictionary<DbColumnName, int>(bindingsInColumnOrder.Count);
+
+        for (var bindingIndex = 0; bindingIndex < bindingsInColumnOrder.Count; bindingIndex++)
+        {
+            var binding = bindingsInColumnOrder[bindingIndex];
+
+            if (!bindingIndexByColumn.TryAdd(binding.Column.ColumnName, bindingIndex))
+            {
+                throw CreateDuplicateColumnNameException(
+                    tableModel,
+                    binding.Column.ColumnName,
+                    "bindingIndexByColumn"
+                );
+            }
+        }
+
+        return bindingIndexByColumn;
+    }
+
+    private static InvalidOperationException CreateDuplicateColumnNameException(
+        DbTableModel tableModel,
+        DbColumnName duplicateColumnName,
+        string mapName
+    )
+    {
+        return new InvalidOperationException(
+            $"Cannot compile write plan for '{tableModel.Table}': duplicate column name '{duplicateColumnName.Value}' encountered while building '{mapName}' map."
+        );
     }
 
     private static string[] DeriveRequiredKeyParameterNamesInOrder(

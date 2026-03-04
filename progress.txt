@@ -196,3 +196,9 @@ Task completed: Refactor / Perf - precomputed document-reference + descriptor-ed
 Decisions: built per-resource lookup inventory once in Compile() keyed by (DbTableName, DbColumnName); tracked duplicate keys separately so lookup-time behavior stays per-key and preserves deterministic missing/duplicate InvalidOperationException messages. Added explicit tests for missing/duplicate document-reference and descriptor-edge entries.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/WritePlanCompilerTests.cs; tasks.json; progress.txt.
 Blockers/notes: no blockers. Verification: UPDATE_GOLDENS=0 dotnet test --no-restore plans unit (235/235); dotnet build --no-restore src/dms/EdFi.DataManagementService.sln. Next iteration can address duplicate-column-name map hardening or golden-fixture boilerplate dedup.
+
+2026-03-04 - DMS-1045 / reference/design/backend-redesign/epics/15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md
+Task completed: Hardening - duplicate DbColumnName fail-fast for internal write-plan maps.
+Decisions: centralized map construction guards in WritePlanCompiler with TryAdd; duplicate name now throws deterministic InvalidOperationException including table + duplicate column + map name (`columnByName`, `bindingIndexByColumn`, `parameterNameByColumn`). Added regression fixture/test with duplicate `SchoolYear` column.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/WritePlanCompilerTests.cs; tasks.json; progress.txt.
+Blockers/notes: no blockers. Verification: dotnet csharpier format (2 files); dotnet test plans unit (236/236); dotnet build src/dms/EdFi.DataManagementService.sln.

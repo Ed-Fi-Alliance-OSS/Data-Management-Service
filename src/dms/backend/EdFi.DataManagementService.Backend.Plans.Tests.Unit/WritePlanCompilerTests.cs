@@ -514,6 +514,19 @@ public class Given_WritePlanCompiler
     }
 
     [Test]
+    public void It_should_fail_fast_when_table_contains_duplicate_column_names()
+    {
+        var unsupportedModel = CreateRootOnlyModelWithDuplicateColumnNames();
+        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile write plan for 'edfi.Student': duplicate column name 'SchoolYear' encountered while building 'columnByName' map."
+            );
+    }
+
+    [Test]
     public void It_should_compile_table_plans_for_all_tables_in_dependency_order_for_multi_table_resources()
     {
         var model = CreateSupportedMultiTableModel();
@@ -1507,6 +1520,22 @@ public class Given_WritePlanCompiler
                 ]
             ),
         };
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
+        };
+    }
+
+    private static RelationalResourceModel CreateRootOnlyModelWithDuplicateColumnNames()
+    {
+        var model = CreateSupportedRootOnlyModel();
+        var duplicateColumnName = new DbColumnName("SchoolYear");
+        var duplicateColumn = model.Root.Columns.Single(column =>
+            column.ColumnName.Equals(duplicateColumnName)
+        );
+        var rootTable = model.Root with { Columns = [.. model.Root.Columns, duplicateColumn] };
 
         return model with
         {
