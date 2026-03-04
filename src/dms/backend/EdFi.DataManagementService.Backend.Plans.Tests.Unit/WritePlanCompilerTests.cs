@@ -369,6 +369,19 @@ public class Given_WritePlanCompiler
     }
 
     [Test]
+    public void It_should_fail_fast_when_key_column_does_not_exist_in_table_columns()
+    {
+        var unsupportedModel = CreateRootOnlyModelWithMissingKeyColumn();
+        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile write plan for 'edfi.Student': key column 'MissingSchoolYear' does not exist in table columns."
+            );
+    }
+
+    [Test]
     public void It_should_compile_table_plans_for_all_tables_in_dependency_order_for_multi_table_resources()
     {
         var model = CreateSupportedMultiTableModel();
@@ -1232,6 +1245,28 @@ public class Given_WritePlanCompiler
                 [
                     new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart),
                     new DbKeyColumn(new DbColumnName("SchoolYearAlias"), ColumnKind.Scalar),
+                ]
+            ),
+        };
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
+        };
+    }
+
+    private static RelationalResourceModel CreateRootOnlyModelWithMissingKeyColumn()
+    {
+        var model = CreateSupportedRootOnlyModel();
+        var rootTable = model.Root with
+        {
+            Key = new TableKey(
+                ConstraintName: "PK_Student",
+                Columns:
+                [
+                    new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart),
+                    new DbKeyColumn(new DbColumnName("MissingSchoolYear"), ColumnKind.Scalar),
                 ]
             ),
         };

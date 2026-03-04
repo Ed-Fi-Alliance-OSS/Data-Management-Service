@@ -521,13 +521,19 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     /// </summary>
     private static void ValidateWritableKeyColumns(DbTableModel tableModel)
     {
+        var columnByName = new Dictionary<DbColumnName, DbColumnModel>(tableModel.Columns.Count);
+
+        foreach (var column in tableModel.Columns)
+        {
+            if (!columnByName.ContainsKey(column.ColumnName))
+            {
+                columnByName[column.ColumnName] = column;
+            }
+        }
+
         foreach (var keyColumn in tableModel.Key.Columns)
         {
-            var matchingColumn = tableModel.Columns.FirstOrDefault(column =>
-                column.ColumnName.Equals(keyColumn.ColumnName)
-            );
-
-            if (matchingColumn is null)
+            if (!columnByName.TryGetValue(keyColumn.ColumnName, out var matchingColumn))
             {
                 throw new InvalidOperationException(
                     $"Cannot compile write plan for '{tableModel.Table}': key column '{keyColumn.ColumnName.Value}' does not exist in table columns."
