@@ -832,6 +832,19 @@ public class Given_WritePlanCompiler
             );
     }
 
+    [Test]
+    public void It_should_fail_fast_when_key_unification_member_path_column_kind_is_not_supported()
+    {
+        var unsupportedModel = CreateRootOnlyModelWithUnsupportedKeyUnificationMemberPathColumnKind();
+        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile key-unification plan for 'edfi.Student': member path column 'SchoolYearSecondary' has unsupported kind 'ParentKeyPart'. Supported kinds are Scalar and DescriptorFk.*"
+            );
+    }
+
     private static RelationalResourceModel CreateSupportedRootOnlyModel()
     {
         var rootTable = new DbTableModel(
@@ -1336,6 +1349,32 @@ public class Given_WritePlanCompiler
                         ? column with
                         {
                             Storage = new ColumnStorage.Stored(),
+                        }
+                        : column
+                ),
+            ],
+        };
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
+        };
+    }
+
+    private static RelationalResourceModel CreateRootOnlyModelWithUnsupportedKeyUnificationMemberPathColumnKind()
+    {
+        var model = CreateRootOnlyModelWithCompiledKeyUnificationInventory();
+        var unsupportedMemberPathColumn = new DbColumnName("SchoolYearSecondary");
+        var rootTable = model.Root with
+        {
+            Columns =
+            [
+                .. model.Root.Columns.Select(column =>
+                    column.ColumnName.Equals(unsupportedMemberPathColumn)
+                        ? column with
+                        {
+                            Kind = ColumnKind.ParentKeyPart,
                         }
                         : column
                 ),

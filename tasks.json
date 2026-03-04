@@ -257,7 +257,7 @@
       "Add/adjust unit tests in WritePlanCompilerTests to cover unsupported member kinds for key unification",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Hardening",

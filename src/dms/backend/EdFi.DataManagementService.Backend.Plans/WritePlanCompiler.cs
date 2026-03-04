@@ -258,6 +258,13 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
                     );
                 }
 
+                if (memberPathColumn.Kind is not ColumnKind.Scalar and not ColumnKind.DescriptorFk)
+                {
+                    throw new InvalidOperationException(
+                        $"Cannot compile key-unification plan for '{tableModel.Table}': member path column '{memberPathColumnName.Value}' has unsupported kind '{memberPathColumn.Kind}'. Supported kinds are {nameof(ColumnKind.Scalar)} and {nameof(ColumnKind.DescriptorFk)}."
+                    );
+                }
+
                 if (memberPathColumn.SourceJsonPath is not JsonPathExpression sourcePath)
                 {
                     throw new InvalidOperationException(
