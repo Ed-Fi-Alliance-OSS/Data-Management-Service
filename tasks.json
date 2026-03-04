@@ -169,7 +169,7 @@
       "Build the DerivedRelationalModelSet from the fixture and assert the derived table includes canonical + synthetic presence columns and NullOrTrue constraints",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Fixtures",

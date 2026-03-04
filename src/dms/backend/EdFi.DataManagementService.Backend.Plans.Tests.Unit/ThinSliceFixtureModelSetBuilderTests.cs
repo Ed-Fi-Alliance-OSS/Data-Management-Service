@@ -199,3 +199,88 @@ public class Given_ThinSliceFixtureModelSetBuilder_CollectionsNestedExtensionFix
         scalarPaths.Should().Contain(expectedSourcePath);
     }
 }
+
+[TestFixture(SqlDialect.Pgsql)]
+[TestFixture(SqlDialect.Mssql)]
+public class Given_ThinSliceFixtureModelSetBuilder_KeyUnificationPresenceGatingFixture(SqlDialect dialect)
+{
+    private const string FixturePath =
+        "Fixtures/runtime-plan-compilation/key-unification-presence-gating/fixture.manifest.json";
+    private static readonly QualifiedResourceName _presenceGateResource = new("Ed-Fi", "PresenceGateExample");
+    private DbTableModel _rootTable = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var modelSet = ThinSliceFixtureModelSetBuilder.Build(
+            FixturePath,
+            dialect,
+            reverseResourceSchemaOrder: false,
+            reverseFixtureInputOrder: false
+        );
+        _rootTable = modelSet
+            .ConcreteResourcesInNameOrder.Single(resource =>
+                resource.ResourceKey.Resource == _presenceGateResource
+            )
+            .RelationalModel.Root;
+    }
+
+    [Test]
+    public void It_should_derive_source_less_canonical_storage_column_for_descriptor_unification()
+    {
+        var keyUnificationClass = _rootTable.KeyUnificationClasses.Should().ContainSingle().Subject;
+        var canonicalColumn = _rootTable.Columns.Single(column =>
+            column.ColumnName.Equals(keyUnificationClass.CanonicalColumn)
+        );
+
+        canonicalColumn.SourceJsonPath.Should().BeNull();
+        canonicalColumn.Storage.Should().BeOfType<ColumnStorage.Stored>();
+    }
+
+    [Test]
+    public void It_should_derive_synthetic_presence_columns_and_null_or_true_constraints()
+    {
+        var keyUnificationClass = _rootTable.KeyUnificationClasses.Should().ContainSingle().Subject;
+        var presenceColumns = keyUnificationClass
+            .MemberPathColumns.Select(ResolveSyntheticPresenceColumn)
+            .ToArray();
+        var expectedPresenceColumnNames = presenceColumns
+            .Select(column => column.ColumnName.Value)
+            .OrderBy(value => value, StringComparer.Ordinal)
+            .ToArray();
+        var nullOrTrueColumns = _rootTable
+            .Constraints.OfType<TableConstraint.NullOrTrue>()
+            .Select(constraint => constraint.Column.Value)
+            .OrderBy(value => value, StringComparer.Ordinal)
+            .ToArray();
+
+        expectedPresenceColumnNames.Should().HaveCount(2);
+        nullOrTrueColumns.Should().Equal(expectedPresenceColumnNames);
+
+        foreach (var presenceColumn in presenceColumns)
+        {
+            presenceColumn.Kind.Should().Be(ColumnKind.Scalar);
+            presenceColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Boolean));
+            presenceColumn.IsNullable.Should().BeTrue();
+            presenceColumn.SourceJsonPath.Should().BeNull();
+            presenceColumn.Storage.Should().BeOfType<ColumnStorage.Stored>();
+        }
+    }
+
+    private DbColumnModel ResolveSyntheticPresenceColumn(DbColumnName memberPathColumnName)
+    {
+        var memberPathColumn = _rootTable.Columns.Single(column =>
+            column.ColumnName.Equals(memberPathColumnName)
+        );
+        var aliasStorage = memberPathColumn.Storage.Should().BeOfType<ColumnStorage.UnifiedAlias>().Subject;
+
+        if (aliasStorage.PresenceColumn is not DbColumnName presenceColumnName)
+        {
+            throw new AssertionException(
+                $"Expected '{memberPathColumnName.Value}' to have a synthetic presence column."
+            );
+        }
+
+        return _rootTable.Columns.Single(column => column.ColumnName.Equals(presenceColumnName));
+    }
+}
