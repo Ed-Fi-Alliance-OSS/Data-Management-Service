@@ -187,6 +187,20 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
                     );
                 }
 
+                if (memberPathColumn.Storage is not ColumnStorage.UnifiedAlias)
+                {
+                    var storageType = memberPathColumn.Storage switch
+                    {
+                        ColumnStorage.Stored => nameof(ColumnStorage.Stored),
+                        ColumnStorage.UnifiedAlias => nameof(ColumnStorage.UnifiedAlias),
+                        _ => memberPathColumn.Storage.GetType().Name,
+                    };
+
+                    throw new InvalidOperationException(
+                        $"Cannot compile key-unification plan for '{tableModel.Table}': member path column '{memberPathColumnName.Value}' must use {nameof(ColumnStorage.UnifiedAlias)} storage, but was {storageType}."
+                    );
+                }
+
                 if (memberPathColumn.SourceJsonPath is not JsonPathExpression sourcePath)
                 {
                     throw new InvalidOperationException(

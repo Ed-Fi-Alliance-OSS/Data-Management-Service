@@ -129,3 +129,9 @@ Task completed: Naming / Comments - renamed RootOnlyWritePlanCompiler and tests 
 Decisions: promoted write compiler naming to authoritative full-scope abstraction (all dependency-ordered tables), updated MappingSetCompiler to instantiate WritePlanCompiler, and removed stale "thin-slice" wording in MappingSetCompiler summary.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/RootOnlyWritePlanCompiler.cs (renamed to WritePlanCompiler.cs); src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RootOnlyWritePlanCompilerTests.cs (renamed to WritePlanCompilerTests.cs); src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetCompiler.cs; tasks.json; progress.txt.
 Blockers/notes: no blockers. Verification: rg -n "RootOnlyWritePlanCompiler" src/dms/backend => 0 matches; plans unit tests pass (223/223).
+
+2026-03-04 - DMS-1045 / reference/design/backend-redesign/epics/15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md
+Task completed: Hardening - key-unification member-path storage invariant (UnifiedAlias required).
+Decisions: fail fast during key-unification compilation when any MemberPathColumns entry is not UnifiedAlias; diagnostic includes actual storage type for deterministic triage. Updated MappingSetCompiler key-unification fixture to use UnifiedAlias member storage so baseline mapping-set compilation remains valid. Added negative unit test mutating member-path column to Stored to lock deterministic InvalidOperationException.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/WritePlanCompilerTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetCompilerTests.cs; tasks.json; progress.txt.
+Blockers/notes: no blockers. Next iteration can address remaining refactor/docs/messaging tasks.

@@ -289,7 +289,11 @@ public class Given_MappingSetCompiler
                         "$.schoolYear",
                         [new JsonPathSegment.Property("schoolYear")]
                     ),
-                    TargetResource: null
+                    TargetResource: null,
+                    Storage: new ColumnStorage.UnifiedAlias(
+                        CanonicalColumn: new DbColumnName("SchoolYearCanonical"),
+                        PresenceColumn: null
+                    )
                 ),
             ],
             Constraints: []
