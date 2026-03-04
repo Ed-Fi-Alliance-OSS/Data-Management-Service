@@ -75,15 +75,21 @@ public static class DdlManifestEmitter
     }
 
     /// <summary>
-    /// Normalizes SQL text by converting all line endings to LF.
-    /// This ensures the hash and statement count match the on-disk .sql file
+    /// Normalizes SQL text by converting all line endings to LF and trimming trailing
+    /// whitespace from each line. This ensures the hash and statement count are stable
+    /// across non-semantic whitespace differences and match the on-disk .sql file
     /// (which is always written with LF via WriteFileWithUnixLineEndings).
     /// </summary>
     internal static string NormalizeSql(string sqlText)
     {
         ArgumentNullException.ThrowIfNull(sqlText);
 
-        return sqlText.ReplaceLineEndings("\n");
+        var lines = sqlText.ReplaceLineEndings("\n").Split('\n');
+        for (int i = 0; i < lines.Length; i++)
+        {
+            lines[i] = lines[i].TrimEnd();
+        }
+        return string.Join("\n", lines);
     }
 
     /// <summary>
@@ -121,9 +127,10 @@ public static class DdlManifestEmitter
     /// <para><b>MSSQL:</b> Splits by standalone <c>GO</c> lines. The first segment (plain DDL)
     /// counts lines ending with <c>;</c>. Each subsequent non-empty segment (trigger batch)
     /// counts as 1.</para>
-    /// <para><b>PostgreSQL:</b> Tracks <c>$$</c> dollar-quote state using line-boundary heuristics
-    /// (only <c>$$</c> at start or end of a line toggles state). Counts lines ending with <c>;</c>
-    /// only outside <c>$$</c> blocks.</para>
+    /// <para><b>PostgreSQL:</b> Tracks dollar-quote state using tag-aware matching for all tags
+    /// matching <c>$[A-Za-z0-9_]*$</c> (e.g. <c>$$</c>, <c>$func$</c>, <c>$uuidv5$</c>).
+    /// Only tags at line boundaries toggle state. Counts lines ending with <c>;</c>
+    /// only outside dollar-quoted blocks.</para>
     /// </remarks>
     internal static int CountStatements(SqlDialect dialect, string sqlText)
     {
@@ -190,48 +197,85 @@ public static class DdlManifestEmitter
     }
 
     /// <summary>
-    /// Counts PostgreSQL statements by tracking dollar-quote (<c>$$</c>) state.
-    /// Only <c>$$</c> at line boundaries (start or end of trimmed line) toggles state,
-    /// avoiding false matches like <c>'$$.schoolId='</c> inside string literals.
+    /// Counts PostgreSQL statements by tracking dollar-quote state with tag-aware matching.
+    /// Supports all PostgreSQL dollar-quote tags matching <c>$[A-Za-z0-9_]*$</c> (e.g.
+    /// <c>$$</c>, <c>$func$</c>, <c>$uuidv5$</c>). Only dollar-quote tags at line boundaries
+    /// (end of trimmed line for entry, start of trimmed line or after <c>END </c> for exit)
+    /// toggle state, avoiding false matches inside string literals.
     /// </summary>
     /// <remarks>
-    /// The heuristic supports exactly three dollar-quote exit patterns produced by the DDL emitters:
+    /// The heuristic supports dollar-quote exit patterns produced by the DDL emitters:
     /// <list type="bullet">
-    ///   <item><c>END $$;</c> — PL/pgSQL function/trigger body end</item>
-    ///   <item><c>$$ LANGUAGE plpgsql;</c> (or any <c>$$</c>-prefixed line) — alternative body close</item>
-    ///   <item><c>$$</c> alone on a line — bare dollar-quote close (no trailing semicolon)</item>
+    ///   <item><c>END $tag$;</c> — PL/pgSQL function/trigger body end</item>
+    ///   <item><c>$tag$ LANGUAGE plpgsql;</c> (or any line starting with the active tag) — alternative body close</item>
+    ///   <item><c>$tag$</c> alone on a line — bare dollar-quote close (no trailing semicolon)</item>
     /// </list>
-    /// If the emitter produces a new pattern, this method must be updated and re-validated.
+    /// If the emitter produces a new exit pattern, this method must be updated and re-validated.
     /// </remarks>
     private static int CountPgsqlStatements(string sqlText)
     {
         int count = 0;
-        bool insideDollarQuote = false;
+        string? activeDelimiter = null;
 
         foreach (var rawLine in sqlText.AsSpan().EnumerateLines())
         {
-            // Trim all whitespace to match $$-delimiters on indented lines
             var trimmed = rawLine.TrimEnd('\r').Trim();
 
-            if (insideDollarQuote)
+            if (activeDelimiter != null)
             {
-                if (trimmed.SequenceEqual("END $$;") || trimmed.StartsWith("$$"))
+                // Inside a dollar-quoted block — look for exit.
+                ReadOnlySpan<char> delim = activeDelimiter.AsSpan();
+                if (
+                    trimmed.StartsWith(delim)
+                    || (
+                        trimmed.StartsWith("END ")
+                        && trimmed.Length >= 4 + delim.Length
+                        && trimmed[4..].StartsWith(delim)
+                    )
+                )
                 {
-                    insideDollarQuote = false;
+                    activeDelimiter = null;
                 }
             }
-            else if (trimmed.EndsWith("$$"))
+            else
             {
-                insideDollarQuote = true;
+                activeDelimiter = TryExtractTrailingDollarQuote(trimmed);
             }
 
-            if (!insideDollarQuote && trimmed.Length > 0 && trimmed[^1] == ';')
+            if (activeDelimiter == null && trimmed.Length > 0 && trimmed[^1] == ';')
             {
                 count++;
             }
         }
 
         return count;
+    }
+
+    /// <summary>
+    /// Tries to extract a trailing dollar-quote tag (<c>$[A-Za-z0-9_]*$</c>) from the end of a
+    /// trimmed line. Returns the tag string if found, <c>null</c> otherwise.
+    /// </summary>
+    private static string? TryExtractTrailingDollarQuote(ReadOnlySpan<char> trimmedLine)
+    {
+        if (trimmedLine.Length < 2 || trimmedLine[^1] != '$')
+        {
+            return null;
+        }
+
+        for (int i = trimmedLine.Length - 2; i >= 0; i--)
+        {
+            char c = trimmedLine[i];
+            if (c == '$')
+            {
+                return trimmedLine[i..].ToString();
+            }
+            if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'))
+            {
+                break;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

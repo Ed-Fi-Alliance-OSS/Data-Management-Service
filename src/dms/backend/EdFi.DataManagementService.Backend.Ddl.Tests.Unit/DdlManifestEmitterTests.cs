@@ -191,6 +191,32 @@ public class Given_DdlManifestEmitter_NormalizeSql
             .Should()
             .Be(DdlManifestEmitter.CountStatements(SqlDialect.Pgsql, normalizedLf));
     }
+
+    [Test]
+    public void It_should_trim_trailing_whitespace_from_each_line()
+    {
+        var input = "CREATE TABLE foo (id INT);  \nCREATE TABLE bar (id INT);\t\n";
+
+        DdlManifestEmitter
+            .NormalizeSql(input)
+            .Should()
+            .Be("CREATE TABLE foo (id INT);\nCREATE TABLE bar (id INT);\n");
+    }
+
+    [Test]
+    public void It_should_produce_same_hash_regardless_of_trailing_whitespace()
+    {
+        var withSpaces = "CREATE TABLE foo (id INT);  \nCREATE TABLE bar (id INT);\t\n";
+        var withoutSpaces = "CREATE TABLE foo (id INT);\nCREATE TABLE bar (id INT);\n";
+
+        var normalizedWithSpaces = DdlManifestEmitter.NormalizeSql(withSpaces);
+        var normalizedWithoutSpaces = DdlManifestEmitter.NormalizeSql(withoutSpaces);
+
+        DdlManifestEmitter
+            .ComputeSha256(normalizedWithSpaces)
+            .Should()
+            .Be(DdlManifestEmitter.ComputeSha256(normalizedWithoutSpaces));
+    }
 }
 
 [TestFixture]
@@ -306,6 +332,86 @@ public class Given_DdlManifestEmitter_CountStatements_For_Pgsql
         );
 
         // 1 CREATE TABLE + 2 functions = 3
+        DdlManifestEmitter.CountStatements(SqlDialect.Pgsql, sql).Should().Be(3);
+    }
+
+    [Test]
+    public void It_should_count_tagged_func_dollar_quoted_block_with_language_clause_as_one_statement()
+    {
+        var sql = string.Join(
+            "\n",
+            "CREATE TABLE foo (id INT);",
+            "CREATE OR REPLACE FUNCTION my_func() RETURNS TRIGGER AS $func$",
+            "BEGIN",
+            "    INSERT INTO bar VALUES (1);",
+            "    RETURN NEW;",
+            "$func$ LANGUAGE plpgsql;",
+            ""
+        );
+
+        DdlManifestEmitter.CountStatements(SqlDialect.Pgsql, sql).Should().Be(2);
+    }
+
+    [Test]
+    public void It_should_count_tagged_func_dollar_quoted_block_with_end_keyword_as_one_statement()
+    {
+        var sql = string.Join(
+            "\n",
+            "CREATE TABLE foo (id INT);",
+            "CREATE OR REPLACE FUNCTION my_func() RETURNS TRIGGER AS $func$",
+            "BEGIN",
+            "    INSERT INTO bar VALUES (1);",
+            "    RETURN NEW;",
+            "END $func$;",
+            ""
+        );
+
+        DdlManifestEmitter.CountStatements(SqlDialect.Pgsql, sql).Should().Be(2);
+    }
+
+    [Test]
+    public void It_should_count_tagged_uuidv5_dollar_quoted_block_as_one_statement()
+    {
+        var sql = string.Join(
+            "\n",
+            "CREATE TABLE foo (id INT);",
+            "CREATE OR REPLACE FUNCTION uuidv5(namespace_uuid uuid, name_text text)",
+            "RETURNS uuid",
+            "LANGUAGE plpgsql",
+            "AS $uuidv5$",
+            "DECLARE",
+            "    hash bytea;",
+            "BEGIN",
+            "    hash := digest('test', 'sha1');",
+            "    RETURN encode(substring(hash from 1 for 16), 'hex')::uuid;",
+            "END",
+            "$uuidv5$;",
+            ""
+        );
+
+        DdlManifestEmitter.CountStatements(SqlDialect.Pgsql, sql).Should().Be(2);
+    }
+
+    [Test]
+    public void It_should_count_mixed_tagged_dollar_quoted_blocks_independently()
+    {
+        var sql = string.Join(
+            "\n",
+            "CREATE TABLE foo (id INT);",
+            "CREATE OR REPLACE FUNCTION uuidv5() RETURNS uuid AS $uuidv5$",
+            "BEGIN",
+            "    RETURN uuid_generate_v5(uuid_nil(), 'test');",
+            "END",
+            "$uuidv5$;",
+            "CREATE OR REPLACE FUNCTION my_func() RETURNS TRIGGER AS $func$",
+            "BEGIN",
+            "    INSERT INTO foo VALUES (1);",
+            "    RETURN NEW;",
+            "$func$ LANGUAGE plpgsql;",
+            ""
+        );
+
+        // 1 CREATE TABLE + 1 uuidv5 function + 1 trigger function = 3
         DdlManifestEmitter.CountStatements(SqlDialect.Pgsql, sql).Should().Be(3);
     }
 }
