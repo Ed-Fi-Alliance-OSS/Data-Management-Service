@@ -195,22 +195,7 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
             """SELECT [EffectiveSchemaHash] FROM [dms].[EffectiveSchema] WHERE [EffectiveSchemaSingletonId] = 1""";
         var storedHash = hashCommand.ExecuteScalar() as string;
 
-        if (storedHash is null)
-        {
-            return; // No row yet, proceed with provisioning
-        }
-
-        if (!string.Equals(storedHash, expectedHash, StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException(
-                $"Schema hash mismatch: the database contains schema hash '{LoggingSanitizer.SanitizeForLogging(storedHash)}' "
-                    + $"but the current schema produces hash '{LoggingSanitizer.SanitizeForLogging(expectedHash)}'. "
-                    + "A different schema version has already been provisioned. "
-                    + "To re-provision, drop and recreate the database."
-            );
-        }
-
-        logger.LogInformation("Preflight schema hash check passed (hash matches existing database)");
+        SchemaHashChecker.ValidateOrThrow(storedHash, expectedHash, logger);
     }
 
     public void CheckOrConfigureMvcc(string connectionString, bool databaseWasCreated)

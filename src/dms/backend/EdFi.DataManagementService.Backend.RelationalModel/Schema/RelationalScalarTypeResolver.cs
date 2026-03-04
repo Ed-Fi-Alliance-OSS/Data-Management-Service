@@ -137,10 +137,6 @@ internal static class RelationalScalarTypeResolver
     }
 
     /// <summary>
-    /// Resolves a decimal schema to a relational decimal type using the required totalDigits/decimalPlaces
-    /// metadata.
-    /// </summary>
-    /// <summary>
     /// Default total digits used when decimal property validation info is not provided.
     /// </summary>
     private const short DefaultTotalDigits = 18;
@@ -150,6 +146,10 @@ internal static class RelationalScalarTypeResolver
     /// </summary>
     private const short DefaultDecimalPlaces = 4;
 
+    /// <summary>
+    /// Resolves a decimal schema to a relational decimal type using the required totalDigits/decimalPlaces
+    /// metadata.
+    /// </summary>
     private static RelationalScalarType ResolveDecimalType(
         JsonPathExpression sourcePath,
         TryGetDecimalPropertyValidationInfo tryGetDecimalPropertyValidationInfo,
