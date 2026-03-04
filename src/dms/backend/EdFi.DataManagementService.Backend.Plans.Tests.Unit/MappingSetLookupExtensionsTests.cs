@@ -61,7 +61,7 @@ public class Given_MappingSetLookupExtensions
             .Throw<NotSupportedException>()
             .WithMessage(
                 "Write plan for resource 'Ed-Fi.AcademicSubjectDescriptor' was intentionally omitted: "
-                    + "storage kind 'SharedDescriptorTable' does not use thin-slice relational-table write plans. "
+                    + "storage kind 'SharedDescriptorTable' uses the descriptor write path instead of compiled relational-table write plans. "
                     + "Next story: E07-S06 (06-descriptor-writes.md)."
             );
     }

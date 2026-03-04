@@ -39,7 +39,7 @@ public static class MappingSetLookupExtensions
         {
             throw new NotSupportedException(
                 $"Write plan for resource '{FormatResource(resource)}' was intentionally omitted: "
-                    + $"storage kind '{ResourceStorageKind.SharedDescriptorTable}' does not use thin-slice relational-table write plans. "
+                    + $"storage kind '{ResourceStorageKind.SharedDescriptorTable}' uses the descriptor write path instead of compiled relational-table write plans. "
                     + $"Next story: {DescriptorWriteStoryRef}."
             );
         }
@@ -49,7 +49,7 @@ public static class MappingSetLookupExtensions
             throw new InvalidOperationException(
                 $"Write plan lookup failed for resource '{FormatResource(resource)}' in mapping set "
                     + $"'{FormatMappingSetKey(mappingSet.Key)}': resource storage kind "
-                    + $"'{ResourceStorageKind.RelationalTables}' requires a compiled write plan, but no entry "
+                    + $"'{ResourceStorageKind.RelationalTables}' should always have a compiled relational-table write plan, but no entry "
                     + "was found. This indicates an internal compilation/selection bug."
             );
         }

@@ -223,7 +223,7 @@
       "Run: rg -n \"thin-slice\" src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetLookupExtensions.cs (write-plan messaging should not use \"thin-slice\")",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Refactor",

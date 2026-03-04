@@ -146,3 +146,9 @@ Task completed: Refactor - removed TryEmitUpdateSql/TryEmitDeleteByParentSql par
 Decisions: extracted shared binding->parameter dictionary helper + shared key-parameter resolution helper; preserved existing InvalidOperationException message text by passing operation token (`update` / `delete-by-parent`); removed redundant stored-column predicate in update non-key binding filter because ColumnBindings are stored-only by compile contract.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanCompiler.cs; tasks.json; progress.txt.
 Blockers/notes: no blockers. Verification: dotnet csharpier format WritePlanCompiler.cs; dotnet test plans unit (224/224); dotnet build src/dms/EdFi.DataManagementService.sln. Next iteration can tackle ValidateWritableKeyColumns dictionary optimization.
+
+2026-03-04 - DMS-1045 / reference/design/backend-redesign/epics/15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md
+Task completed: Messaging - write-plan lookup exceptions no longer use thin-slice phrasing.
+Decisions: updated SharedDescriptorTable write-plan omission message to describe descriptor-specific write path vs compiled relational-table write plans; clarified RelationalTables missing-plan diagnostic as internal compiler/selection bug for expected compiled relational-table write plans; left read-plan messaging unchanged.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetLookupExtensions.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetLookupExtensionsTests.cs; tasks.json; progress.txt.
+Blockers/notes: no blockers. Verification: rg shows no thin-slice wording tied to write-plan messaging; plans unit tests pass (224/224). Next iteration can tackle remaining docs/comments or ValidateWritableKeyColumns refactor tasks.
