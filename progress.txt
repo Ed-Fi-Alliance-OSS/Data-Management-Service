@@ -117,3 +117,9 @@ Task completed: Manifest - minimal thin-slice golden updated/verified against ge
 Decisions: ran UPDATE_GOLDENS=1 plans-unit tests; no diff in minimal expected manifest, confirming golden already aligned to generalized schema; reran plans-unit tests to confirm stable pass on existing golden for pgsql+mssql outputs.
 Files changed: tasks.json; progress.txt.
 Blockers/notes: no blockers. All tasks in this story now marked complete.
+
+2026-03-04 - DMS-1045 / reference/design/backend-redesign/epics/15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md
+Task completed: Write Plan Compiler - update write thin-slice gating to current full-compile behavior.
+Decisions: chose acceptance path (b): removed ThinSliceWritePlanSupportEvaluator and removed RootOnlyWritePlanCompiler IsSupported/TryCompile wrappers because production write path already uses Compile() for relational-table resources. Updated compiler XML summary to reflect single authoritative compile path. Replaced outdated thin-slice-gating tests with compile-path assertions for valid key-unification and multi-table resources.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/RootOnlyWritePlanCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/ThinSliceWritePlanSupportEvaluator.cs (deleted); src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RootOnlyWritePlanCompilerTests.cs; tasks.json; progress.txt.
+Blockers/notes: initial test used intentionally invalid key-unification fixture and failed; switched assertion to compiled key-unification inventory fixture. Verification: rg shows no write thin-slice evaluator/IsSupported usage in write plans namespace; plans unit tests pass.

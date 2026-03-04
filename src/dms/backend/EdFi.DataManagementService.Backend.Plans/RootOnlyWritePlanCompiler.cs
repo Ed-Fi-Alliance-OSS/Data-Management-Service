@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Diagnostics.CodeAnalysis;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.RelationalModel.Naming;
@@ -11,12 +10,7 @@ using EdFi.DataManagementService.Backend.RelationalModel.Naming;
 namespace EdFi.DataManagementService.Backend.Plans;
 
 /// <summary>
-/// Compiles deterministic relational write plans.
-/// <para>
-/// <see cref="TryCompile(RelationalResourceModel, out ResourceWritePlan?)" /> remains thin-slice gated for the
-/// current mapping-set loop. <see cref="Compile(RelationalResourceModel)" /> compiles all tables in dependency order
-/// for relational-table resources, including key-unification write-plan inventory.
-/// </para>
+/// Compiles deterministic relational write plans across all dependency-ordered tables for relational-table resources.
 /// </summary>
 public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
 {
@@ -24,37 +18,6 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
     private readonly SimpleInsertSqlEmitter _insertSqlEmitter = new(dialect);
     private readonly SimpleUpdateSqlEmitter _updateSqlEmitter = new(dialect);
     private readonly SimpleDeleteSqlEmitter _deleteSqlEmitter = new(dialect);
-
-    /// <summary>
-    /// Returns <see langword="true"/> when a resource is supported by thin-slice root-only write compilation.
-    /// </summary>
-    public static bool IsSupported(RelationalResourceModel resourceModel)
-    {
-        ArgumentNullException.ThrowIfNull(resourceModel);
-
-        return ThinSliceWritePlanSupportEvaluator.Evaluate(resourceModel).IsSupported;
-    }
-
-    /// <summary>
-    /// Attempts to compile a root-only write plan, returning <see langword="false"/> when unsupported.
-    /// </summary>
-    public bool TryCompile(
-        RelationalResourceModel resourceModel,
-        [NotNullWhen(true)] out ResourceWritePlan? writePlan
-    )
-    {
-        ArgumentNullException.ThrowIfNull(resourceModel);
-        var supportResult = ThinSliceWritePlanSupportEvaluator.Evaluate(resourceModel);
-
-        if (!supportResult.IsSupported)
-        {
-            writePlan = null;
-            return false;
-        }
-
-        writePlan = Compile(resourceModel);
-        return true;
-    }
 
     /// <summary>
     /// Compiles a relational-table write plan across all tables in dependency order.

@@ -241,17 +241,15 @@ public class Given_RootOnlyWritePlanCompiler
     }
 
     [Test]
-    public void It_should_mark_resources_with_root_key_unification_classes_as_unsupported_for_write_compilation()
+    public void It_should_compile_resources_with_root_key_unification_classes()
     {
-        var keyUnificationModel = CreateRootOnlyModelWithKeyUnificationClass();
-        var compiler = new RootOnlyWritePlanCompiler(SqlDialect.Pgsql);
+        var keyUnificationModel = CreateRootOnlyModelWithCompiledKeyUnificationInventory();
+        var writePlan = new RootOnlyWritePlanCompiler(SqlDialect.Pgsql).Compile(keyUnificationModel);
+        var tablePlan = writePlan.TablePlansInDependencyOrder.Single();
 
-        RootOnlyWritePlanCompiler.IsSupported(keyUnificationModel).Should().BeFalse();
-
-        var wasCompiled = compiler.TryCompile(keyUnificationModel, out var writePlan);
-
-        wasCompiled.Should().BeFalse();
-        writePlan.Should().BeNull();
+        tablePlan
+            .KeyUnificationPlans.Should()
+            .HaveCount(keyUnificationModel.Root.KeyUnificationClasses.Count);
     }
 
     [Test]
@@ -265,31 +263,6 @@ public class Given_RootOnlyWritePlanCompiler
             .WithMessage(
                 "Cannot compile key-unification plan for 'edfi.Student': precomputed bindings 'CanonicalSchoolYear' require key-unification inventory.*"
             );
-    }
-
-    [Test]
-    public void It_should_allow_mapping_set_loop_to_omit_unsupported_write_plan_and_keep_read_plan_compilation()
-    {
-        var keyUnificationModel = CreateRootOnlyModelWithKeyUnificationClass();
-        var compiler = new RootOnlyWritePlanCompiler(SqlDialect.Pgsql);
-        var writePlansByResource = new Dictionary<QualifiedResourceName, ResourceWritePlan>();
-        var readPlansByResource = new Dictionary<QualifiedResourceName, ResourceReadPlan>();
-
-        var act = () =>
-        {
-            readPlansByResource[keyUnificationModel.Resource] = CreateRootOnlyReadPlanStub(
-                keyUnificationModel
-            );
-
-            if (compiler.TryCompile(keyUnificationModel, out var writePlan))
-            {
-                writePlansByResource[keyUnificationModel.Resource] = writePlan;
-            }
-        };
-
-        act.Should().NotThrow();
-        writePlansByResource.Should().BeEmpty();
-        readPlansByResource.Should().ContainKey(keyUnificationModel.Resource);
     }
 
     [Test]
@@ -559,17 +532,16 @@ public class Given_RootOnlyWritePlanCompiler
     }
 
     [Test]
-    public void It_should_keep_try_compile_limited_to_thin_slice_root_only_resources()
+    public void It_should_compile_multi_table_resources_without_thin_slice_gating()
     {
         var multiTableModel = CreateSupportedMultiTableModel();
-        var compiler = new RootOnlyWritePlanCompiler(SqlDialect.Pgsql);
+        multiTableModel.TablesInDependencyOrder.Count.Should().BeGreaterThan(1);
 
-        RootOnlyWritePlanCompiler.IsSupported(multiTableModel).Should().BeFalse();
+        var writePlan = new RootOnlyWritePlanCompiler(SqlDialect.Pgsql).Compile(multiTableModel);
 
-        var wasCompiled = compiler.TryCompile(multiTableModel, out var writePlan);
-
-        wasCompiled.Should().BeFalse();
-        writePlan.Should().BeNull();
+        writePlan
+            .TablePlansInDependencyOrder.Should()
+            .HaveCount(multiTableModel.TablesInDependencyOrder.Count);
     }
 
     [Test]
@@ -1715,20 +1687,6 @@ public class Given_RootOnlyWritePlanCompiler
                     )
                 )
             )
-        );
-    }
-
-    private static ResourceReadPlan CreateRootOnlyReadPlanStub(RelationalResourceModel resourceModel)
-    {
-        return new ResourceReadPlan(
-            Model: resourceModel,
-            KeysetTable: KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
-            TablePlansInDependencyOrder:
-            [
-                new TableReadPlan(TableModel: resourceModel.Root, SelectByKeysetSql: "SELECT 1;\n"),
-            ],
-            ReferenceIdentityProjectionPlansInDependencyOrder: [],
-            DescriptorProjectionPlansInOrder: []
         );
     }
 }
