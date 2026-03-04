@@ -57,3 +57,9 @@ Task completed: Write Plan Compiler - compute BulkInsertBatching for every compi
 Decisions: kept compiler batching source-of-truth at PlanWriteBatchingConventions(columnBindings.Count); added explicit per-table assertion for multi-table compilation that TableWritePlan.BulkInsertBatching equals convention-derived values for both pgsql and mssql.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RootOnlyWritePlanCompilerTests.cs; tasks.json; progress.txt.
 Blockers/notes: no blockers. Next iteration can implement SQL Emission UpdateSql task bookkeeping or move to Lookup Extensions/Manifest tasks.
+
+2026-03-03 - DMS-1045 / reference/design/backend-redesign/epics/15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md
+Task completed: Lookup Extensions - GetWritePlanOrThrow treats missing relational write plans as internal bug.
+Decisions: removed thin-slice write support-evaluator branches from write lookup; keep SharedDescriptorTable write lookup as NotSupported with descriptor-write story pointer; relational-table miss now throws InvalidOperationException including mapping set key + resource for deterministic bug diagnostics; left read lookup behavior/messages unchanged.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetLookupExtensions.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetLookupExtensionsTests.cs; tasks.json; progress.txt.
+Blockers/notes: no blockers. Next iteration can implement remaining SQL Emission UpdateSql task or manifest generalization tasks.

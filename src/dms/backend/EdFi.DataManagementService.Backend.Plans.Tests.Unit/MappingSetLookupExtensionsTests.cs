@@ -81,13 +81,15 @@ public class Given_MappingSetLookupExtensions
     }
 
     [Test]
-    public void It_should_throw_actionable_non_root_only_message_for_omitted_write_plan()
+    public void It_should_treat_missing_non_root_only_relational_write_plan_as_internal_bug()
     {
         var act = () => _mappingSet.GetWritePlanOrThrow(_nonRootOnlyResource);
 
         act.Should()
-            .Throw<NotSupportedException>()
-            .WithMessage("*TablesInDependencyOrder.Count == 1*actual 2*E15-S04*");
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*Ed-Fi.StudentAddress*mapping set*RelationalTables*internal compilation/selection bug*"
+            );
     }
 
     [Test]
@@ -113,11 +115,13 @@ public class Given_MappingSetLookupExtensions
     }
 
     [Test]
-    public void It_should_throw_actionable_key_unification_message_for_omitted_write_plan()
+    public void It_should_treat_missing_key_unification_relational_write_plan_as_internal_bug()
     {
         var act = () => _mappingSet.GetWritePlanOrThrow(_keyUnificationResource);
 
-        act.Should().Throw<NotSupportedException>().WithMessage("*key-unification class(es)*E15-S04*");
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*Ed-Fi.Program*mapping set*RelationalTables*internal compilation/selection bug*");
     }
 
     [Test]
