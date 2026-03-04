@@ -249,5 +249,77 @@
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
     "completed": true
+  },
+  {
+    "category": "Hardening",
+    "description": "Fail fast when a KeyUnificationClass member-path column kind is unsupported. Acceptance: WritePlanCompiler key-unification compilation must reject any member-path column whose DbColumnModel.Kind is not ColumnKind.Scalar or ColumnKind.DescriptorFk. The thrown InvalidOperationException must include the table name, member column name, and actual kind. Add a unit test that constructs a model with a KeyUnificationClass whose MemberPathColumns include a ColumnKind.DocumentFk (or ParentKeyPart) and assert deterministic failure.",
+    "steps-to-verify": [
+      "Add/adjust unit tests in WritePlanCompilerTests to cover unsupported member kinds for key unification",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Hardening",
+    "description": "Validate table key-column kind invariants and tighten DeleteByParentSql scoping to the parent-key prefix. Acceptance: WritePlanCompiler must (a) validate that DbTableModel.Key.Columns contain only ColumnKind.ParentKeyPart and ColumnKind.Ordinal, and (b) emit DeleteByParentSql predicates for non-root tables using exactly the ParentKeyPart key columns in key order (DocumentId + any parent ordinals), never including the table's own Ordinal or any other key kinds. Add a unit test that introduces an illegal key column kind (e.g., Scalar) and asserts deterministic failure. Ensure existing delete-by-parent SQL output remains byte-for-byte identical for current fixtures (child, nested child, and root-scope _ext tables).",
+    "steps-to-verify": [
+      "Add unit tests for: (a) invalid key kind causes deterministic InvalidOperationException, (b) existing DeleteByParentSql output remains unchanged for representative models",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Hardening",
+    "description": "Enforce StorageKind consistency between ConcreteResourceModel and RelationalResourceModel during mapping set compilation. Acceptance: MappingSetCompiler must validate concreteResourceModel.StorageKind equals concreteResourceModel.RelationalModel.StorageKind; on mismatch, throw InvalidOperationException with a deterministic message naming the resource and both values. MappingSetCompiler must use ConcreteResourceModel.StorageKind for write-plan dispatch (compile write plans for RelationalTables only; omit SharedDescriptorTable). Add a unit test that constructs a mismatched model and asserts deterministic failure.",
+    "steps-to-verify": [
+      "Add a MappingSetCompilerTests case that creates a ConcreteResourceModel with mismatched StorageKind values and asserts the error message",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactor / Perf",
+    "description": "Precompute descriptor-edge and document-reference binding lookups during write-plan compilation. Acceptance: WritePlanCompiler must avoid per-column O(N) scans over RelationalResourceModel.DocumentReferenceBindings and DescriptorEdgeSources by building deterministic lookup dictionaries keyed by (DbTableName, DbColumnName). Preserve identical behavior for duplicates and missing entries: still throw InvalidOperationException with the same semantics (and preferably the same messages). No change to emitted SQL or binding inventories in existing unit and golden tests.",
+    "steps-to-verify": [
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj",
+      "Run: set UPDATE_GOLDENS=0 and ensure golden fixture tests still pass without regenerating expected manifests"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Hardening",
+    "description": "Fail fast on duplicate column names when building internal maps in WritePlanCompiler. Acceptance: when constructing columnByName / bindingIndexByColumn / parameterNameByColumn maps, use TryAdd (or equivalent) and throw a deterministic InvalidOperationException if a duplicate DbColumnName is encountered. The exception must include the table name and the duplicate column name. Add a unit test that constructs a DbTableModel with duplicate column names and asserts deterministic failure.",
+    "steps-to-verify": [
+      "Add unit tests in WritePlanCompilerTests for duplicate column-name failure behavior",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Perf / Design",
+    "description": "Eliminate linear scans for resource-model lookup during plan lookup. Acceptance: MappingSetLookupExtensions.GetConcreteResourceModelOrThrow must become O(1) by using a precomputed dictionary keyed by QualifiedResourceName (either stored on MappingSet or built once per mapping set). Preserve identical exception behavior when a resource is missing from the mapping set. Add a unit test that exercises the dictionary path and asserts results are identical to the current scan-based behavior.",
+    "steps-to-verify": [
+      "Update MappingSetLookupExtensions (and MappingSet if needed) to store or compute a resource->ConcreteResourceModel index",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Tests / Refactor",
+    "description": "Deduplicate runtime-plan compilation golden fixture boilerplate. Acceptance: introduce a shared helper that encapsulates expected/actual path resolution, optional UPDATE_GOLDENS regeneration, writing the actual manifest, and producing the diff output. Migrate CollectionsNestedExtensionRuntimePlanCompilationGoldenFixtureTests and KeyUnificationPresenceGatingRuntimePlanCompilationGoldenFixtureTests to use the helper with no behavior change and no diffs in emitted manifests.",
+    "steps-to-verify": [
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj",
+      "Optionally run with UPDATE_GOLDENS=1 and confirm expected manifests regenerate identically"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Design / Model",
+    "description": "Introduce an explicit concept of writability for stored columns to decouple ColumnStorage.Stored from write eligibility. Acceptance: extend the derived relational model to distinguish stored-but-non-writable columns from writable stored columns (e.g., DbColumnModel.IsWritable or a write-behavior enum). Update WritePlanCompiler to compile ColumnBindings only for writable stored columns (plus required key columns and key-unification precomputed targets). Add unit tests proving that a stored non-writable column is excluded from ColumnBindings and does not appear in emitted InsertSql/UpdateSql column lists. Ensure existing fixtures continue to produce identical manifests.",
+    "steps-to-verify": [
+      "Update relational model builder passes to populate the new writability metadata deterministically",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
   }
 ]
