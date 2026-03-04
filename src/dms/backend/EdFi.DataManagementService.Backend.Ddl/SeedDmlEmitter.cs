@@ -14,6 +14,20 @@ namespace EdFi.DataManagementService.Backend.Ddl;
 /// <c>dms.ResourceKey</c>, <c>dms.EffectiveSchema</c>, and <c>dms.SchemaComponent</c>.
 /// </para>
 /// </summary>
+/// <remarks>
+/// The in-SQL validation emitted by <c>EmitResourceKeyValidation</c> and
+/// <c>EmitSchemaComponentValidation</c> is the defense-in-depth counterpart of
+/// the C# preflight validation in
+/// <see cref="EdFi.DataManagementService.SchemaTools.Provisioning.SeedValidator"/>.
+/// Both validate the same seed tables using the same columns:
+/// <list type="bullet">
+///   <item>ResourceKey: ResourceKeyId, ProjectName, ResourceName, ResourceVersion</item>
+///   <item>SchemaComponent: ProjectEndpointName, ProjectName, ProjectVersion, IsExtensionProject</item>
+/// </list>
+/// The in-SQL path runs inside the DDL transaction; SeedValidator runs before it as a fail-fast.
+/// <para><b>Important:</b> Changes to validation columns or comparison logic must be
+/// reflected in both locations to keep the dual-path strategy consistent.</para>
+/// </remarks>
 public sealed class SeedDmlEmitter(ISqlDialect dialect)
 {
     private readonly ISqlDialect _dialect = dialect ?? throw new ArgumentNullException(nameof(dialect));
