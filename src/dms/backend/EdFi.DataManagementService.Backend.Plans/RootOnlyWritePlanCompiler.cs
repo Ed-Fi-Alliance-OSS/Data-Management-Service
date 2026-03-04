@@ -213,14 +213,14 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
                 new WriteValueSource.DocumentReference(
                     FindDocumentReferenceBindingIndex(resourceModel, tableModel.Table, column.ColumnName)
                 ),
-            ColumnKind.DescriptorFk when column.SourceJsonPath is JsonPathExpression relativePath =>
+            ColumnKind.DescriptorFk when column.SourceJsonPath is JsonPathExpression sourcePath =>
                 CreateDescriptorReferenceSource(
                     resourceModel,
                     tableModel.Table,
                     column.ColumnName,
-                    relativePath
+                    WritePlanJsonPathConventions.DeriveScopeRelativePath(tableModel.JsonScope, sourcePath)
                 ),
-            _ => CreateScalarOrPrecomputedSource(column),
+            _ => CreateScalarOrPrecomputedSource(tableModel, column),
         };
     }
 
@@ -343,7 +343,10 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
     /// <summary>
     /// Creates a scalar write value source when JSON-bound; otherwise creates a precomputed value source placeholder.
     /// </summary>
-    private static WriteValueSource CreateScalarOrPrecomputedSource(DbColumnModel column)
+    private static WriteValueSource CreateScalarOrPrecomputedSource(
+        DbTableModel tableModel,
+        DbColumnModel column
+    )
     {
         if (column.SourceJsonPath is null)
         {
@@ -357,6 +360,12 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
             );
         }
 
-        return new WriteValueSource.Scalar(column.SourceJsonPath.Value, column.ScalarType);
+        return new WriteValueSource.Scalar(
+            WritePlanJsonPathConventions.DeriveScopeRelativePath(
+                tableModel.JsonScope,
+                column.SourceJsonPath.Value
+            ),
+            column.ScalarType
+        );
     }
 }

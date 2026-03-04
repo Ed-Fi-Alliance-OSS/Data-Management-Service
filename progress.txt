@@ -1,0 +1,5 @@
+2026-03-03 - DMS-1045 / reference/design/backend-redesign/epics/15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md
+Task completed: JSON Paths - scope-relative JsonPathExpression helper for plan compilation.
+Decisions: added WritePlanJsonPathConventions.DeriveScopeRelativePath(scope, source); strips scope prefix; exact match => "$"; fail fast when scope not prefix or stripped path contains [*]. Wired RootOnlyWritePlanCompiler scalar/descriptor sources through helper to align future multi-table behavior.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanJsonPathConventions.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/RootOnlyWritePlanCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/WritePlanJsonPathConventionsTests.cs; tasks.json; progress.txt.
+Blockers/notes: no blockers. Next iteration can implement deterministic stored/writable single-table binding inventory (Write Plan Compiler task).
