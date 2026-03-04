@@ -40,6 +40,27 @@ public class Given_MappingSetCompiler
     }
 
     [Test]
+    public void It_should_fail_when_concrete_resource_storage_kind_does_not_match_relational_model_storage_kind()
+    {
+        var fixture = CreateMixedResourceFixture(SqlDialect.Pgsql);
+        var concreteResources = fixture.ModelSet.ConcreteResourcesInNameOrder.ToArray();
+        concreteResources[2] = concreteResources[2] with
+        {
+            StorageKind = ResourceStorageKind.SharedDescriptorTable,
+        };
+
+        var mismatchedModelSet = fixture.ModelSet with { ConcreteResourcesInNameOrder = concreteResources };
+
+        var act = () => new MappingSetCompiler().Compile(mismatchedModelSet);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                $"Cannot compile mapping set: storage kind mismatch for resource '{fixture.SupportedResource.ProjectName}.{fixture.SupportedResource.ResourceName}' (concrete resource model: '{ResourceStorageKind.SharedDescriptorTable}', relational model: '{ResourceStorageKind.RelationalTables}')."
+            );
+    }
+
+    [Test]
     public void It_should_build_mapping_set_key_and_resource_key_dictionaries_from_effective_schema_info()
     {
         var fixture = CreateMixedResourceFixture(SqlDialect.Mssql);

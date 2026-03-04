@@ -181,3 +181,8 @@ Task completed: Hardening - key-column kind invariants + DeleteByParentSql paren
 Decisions: WritePlanCompiler now fails fast when any key column kind is not ParentKeyPart/Ordinal; DeleteByParentSql now uses only ParentKeyPart keys in key order (never table-local Ordinal). Updated existing invalid-key fixtures to keep their targeted diagnostics (UnifiedAlias/missing-key) and added explicit unsupported-kind regression coverage.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/WritePlanCompilerTests.cs; tasks.json; progress.txt.
 Blockers/notes: no blockers. Verification: dotnet csharpier format (2 files); dotnet test plans unit (229/229); dotnet build src/dms/EdFi.DataManagementService.sln.
+2026-03-04 - DMS-1045 / reference/design/backend-redesign/epics/15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md
+Task completed: Hardening - enforce StorageKind consistency between ConcreteResourceModel and RelationalResourceModel in MappingSetCompiler.
+Decisions: added fail-fast storage-kind mismatch guard before read/write plan compilation with deterministic resource+both-kind diagnostic; switched write-plan dispatch to ConcreteResourceModel.StorageKind as source of truth for compiler selection.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetCompilerTests.cs; tasks.json; progress.txt.
+Blockers/notes: no blockers. Verification: dotnet csharpier format (touched files); dotnet test plans unit (230/230); dotnet build src/dms/EdFi.DataManagementService.sln.

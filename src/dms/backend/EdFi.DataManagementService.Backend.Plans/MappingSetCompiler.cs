@@ -36,6 +36,14 @@ public sealed class MappingSetCompiler
         foreach (var concreteResourceModel in modelSet.ConcreteResourcesInNameOrder)
         {
             var resourceModel = concreteResourceModel.RelationalModel;
+            var resourceStorageKind = concreteResourceModel.StorageKind;
+
+            if (resourceStorageKind != resourceModel.StorageKind)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot compile mapping set: storage kind mismatch for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}' (concrete resource model: '{resourceStorageKind}', relational model: '{resourceModel.StorageKind}')."
+                );
+            }
 
             if (readPlanCompiler.TryCompile(resourceModel, out var readPlan))
             {
@@ -47,7 +55,7 @@ public sealed class MappingSetCompiler
                 }
             }
 
-            if (resourceModel.StorageKind is ResourceStorageKind.RelationalTables)
+            if (resourceStorageKind is ResourceStorageKind.RelationalTables)
             {
                 var writePlan = writePlanCompiler.Compile(resourceModel);
 
