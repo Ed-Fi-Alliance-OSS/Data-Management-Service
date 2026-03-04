@@ -59,8 +59,8 @@ public static class SystemAdministrator
 
             if (tokenResult.IsSuccessStatusCode)
             {
-                var body = await tokenResult.Content.ReadAsStringAsync();
-                var document = JsonDocument.Parse(body);
+                using var body = await tokenResult.Content.ReadAsStreamAsync();
+                var document = await JsonDocument.ParseAsync(body);
                 Token = document.RootElement.GetProperty("access_token").GetString() ?? "";
             }
             else

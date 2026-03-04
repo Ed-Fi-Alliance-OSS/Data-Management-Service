@@ -8,7 +8,7 @@
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     </PropertyGroup>
     <ItemGroup>
-        <PackageReference Include="Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic" />
+        <PackageReference Include="DeterministicGuids" />
         <PackageReference Include="FluentAssertions" />
         <PackageReference Include="coverlet.collector" />
         <PackageReference Include="Microsoft.Extensions.Configuration" />
