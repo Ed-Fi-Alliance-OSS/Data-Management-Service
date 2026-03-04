@@ -27,3 +27,9 @@ Task completed: Key Unification - compile KeyUnificationWritePlan inventory for 
 Decisions: removed compile-time key-unification table block in Compile(); keep TryCompile thin-slice gating for current MappingSetCompiler loop. Added deterministic per-table key-unification inventory compilation: canonical binding must exist and be WriteValueSource.Precomputed; members emitted in KeyUnificationClass.MemberPathColumns order with scope-relative paths; descriptor members use TargetResource; presence binding/index resolved when UnifiedAlias has PresenceColumn; PresenceIsSynthetic inferred from presence column SourceJsonPath is null.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/RootOnlyWritePlanCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RootOnlyWritePlanCompilerTests.cs; tasks.json; progress.txt.
 Blockers/notes: no blockers. Next iteration can implement synthetic presence validation hardening (nullable bool + NullOrTrue) and associated fail-fast tests.
+
+2026-03-03 - DMS-1045 / reference/design/backend-redesign/epics/15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md
+Task completed: Key Unification - synthetic presence validation hardening (nullable bool + NullOrTrue) + non-synthetic bypass.
+Decisions: validate synthetic presence exactly when presence SourceJsonPath is null; fail fast unless presence column is nullable boolean and table has matching TableConstraint.NullOrTrue; keep reference-site presence (SourceJsonPath not null) unconstrained by NullOrTrue.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/RootOnlyWritePlanCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RootOnlyWritePlanCompilerTests.cs; tasks.json; progress.txt.
+Blockers/notes: no blockers. Next iteration can enforce remaining key-unification invariants around Precomputed producer accounting.

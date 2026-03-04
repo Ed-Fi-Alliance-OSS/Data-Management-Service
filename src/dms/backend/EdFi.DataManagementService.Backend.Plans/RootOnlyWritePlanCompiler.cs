@@ -318,7 +318,42 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
         );
         var presenceIsSynthetic = presenceColumnModel.SourceJsonPath is null;
 
+        if (presenceIsSynthetic)
+        {
+            ValidateSyntheticPresenceColumn(tableModel, memberPathColumn.ColumnName, presenceColumnModel);
+        }
+
         return (presenceColumn, presenceBindingIndex, presenceIsSynthetic);
+    }
+
+    private static void ValidateSyntheticPresenceColumn(
+        DbTableModel tableModel,
+        DbColumnName memberPathColumn,
+        DbColumnModel presenceColumnModel
+    )
+    {
+        var isNullableBoolean =
+            presenceColumnModel.IsNullable
+            && presenceColumnModel.ScalarType is RelationalScalarType { Kind: ScalarKind.Boolean };
+
+        if (!isNullableBoolean)
+        {
+            throw new InvalidOperationException(
+                $"Cannot compile key-unification plan for '{tableModel.Table}': synthetic presence column '{presenceColumnModel.ColumnName.Value}' for member '{memberPathColumn.Value}' must be nullable boolean."
+            );
+        }
+
+        var hasNullOrTrueConstraint = tableModel.Constraints.Any(constraint =>
+            constraint is TableConstraint.NullOrTrue nullOrTrue
+            && nullOrTrue.Column.Equals(presenceColumnModel.ColumnName)
+        );
+
+        if (!hasNullOrTrueConstraint)
+        {
+            throw new InvalidOperationException(
+                $"Cannot compile key-unification plan for '{tableModel.Table}': synthetic presence column '{presenceColumnModel.ColumnName.Value}' for member '{memberPathColumn.Value}' must define a matching {nameof(TableConstraint.NullOrTrue)} constraint."
+            );
+        }
     }
 
     /// <summary>

@@ -545,6 +545,37 @@ public class Given_RootOnlyWritePlanCompiler
     }
 
     [Test]
+    public void It_should_fail_fast_when_synthetic_presence_column_is_missing_null_or_true_constraint()
+    {
+        var unsupportedModel = CreateRootOnlyModelWithMissingSyntheticPresenceConstraint();
+        var act = () => new RootOnlyWritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile key-unification plan for 'edfi.Student': synthetic presence column 'SchoolYearTypeDescriptorSecondary_Present' for member 'SchoolYearTypeDescriptorSecondary' must define a matching NullOrTrue constraint.*"
+            );
+    }
+
+    [Test]
+    public void It_should_treat_presence_columns_with_source_paths_as_non_synthetic_without_null_or_true_constraint()
+    {
+        var model = CreateRootOnlyModelWithReferenceSitePresence();
+        var tablePlan = new RootOnlyWritePlanCompiler(SqlDialect.Pgsql)
+            .Compile(model)
+            .TablePlansInDependencyOrder.Single();
+        var descriptorClassPlan = tablePlan.KeyUnificationPlans[1];
+        var secondaryMember = (KeyUnificationMemberWritePlan.DescriptorMember)
+            descriptorClassPlan.MembersInOrder[0];
+
+        secondaryMember
+            .PresenceColumn.Should()
+            .Be(new DbColumnName("SchoolYearTypeDescriptorSecondary_Present"));
+        secondaryMember.PresenceBindingIndex.Should().NotBeNull();
+        secondaryMember.PresenceIsSynthetic.Should().BeFalse();
+    }
+
+    [Test]
     public void It_should_fail_fast_when_key_unification_canonical_column_is_not_precomputed()
     {
         var unsupportedModel = CreateRootOnlyModelWithKeyUnificationClass();
@@ -685,7 +716,52 @@ public class Given_RootOnlyWritePlanCompiler
 
     private static RelationalResourceModel CreateRootOnlyModelWithCompiledKeyUnificationInventory()
     {
+        return CreateRootOnlyModelWithCompiledKeyUnificationInventoryCore(
+            useSyntheticPresenceColumn: true,
+            includeNullOrTrueConstraintForSyntheticPresence: true
+        );
+    }
+
+    private static RelationalResourceModel CreateRootOnlyModelWithMissingSyntheticPresenceConstraint()
+    {
+        return CreateRootOnlyModelWithCompiledKeyUnificationInventoryCore(
+            useSyntheticPresenceColumn: true,
+            includeNullOrTrueConstraintForSyntheticPresence: false
+        );
+    }
+
+    private static RelationalResourceModel CreateRootOnlyModelWithReferenceSitePresence()
+    {
+        return CreateRootOnlyModelWithCompiledKeyUnificationInventoryCore(
+            useSyntheticPresenceColumn: false,
+            includeNullOrTrueConstraintForSyntheticPresence: false
+        );
+    }
+
+    private static RelationalResourceModel CreateRootOnlyModelWithCompiledKeyUnificationInventoryCore(
+        bool useSyntheticPresenceColumn,
+        bool includeNullOrTrueConstraintForSyntheticPresence
+    )
+    {
         var descriptorResource = new QualifiedResourceName("Ed-Fi", "SchoolYearTypeDescriptor");
+        var syntheticPresenceColumn = new DbColumnName("SchoolYearTypeDescriptorSecondary_Present");
+        JsonPathExpression? syntheticPresencePath = useSyntheticPresenceColumn
+            ? null
+            : CreatePath(
+                "$.localSchoolYearTypeDescriptorPresent",
+                new JsonPathSegment.Property("localSchoolYearTypeDescriptorPresent")
+            );
+        var constraints =
+            useSyntheticPresenceColumn && includeNullOrTrueConstraintForSyntheticPresence
+                ? new TableConstraint[]
+                {
+                    new TableConstraint.NullOrTrue(
+                        Name: "CK_Student_SchoolYearTypeDescriptorSecondary_Present_NullOrTrue",
+                        Column: syntheticPresenceColumn
+                    ),
+                }
+                : [];
+
         var rootTable = new DbTableModel(
             Table: new DbTableName(new DbSchemaName("edfi"), "Student"),
             JsonScope: CreatePath("$"),
@@ -720,11 +796,11 @@ public class Given_RootOnlyWritePlanCompiler
                     TargetResource: descriptorResource
                 ),
                 new DbColumnModel(
-                    ColumnName: new DbColumnName("SchoolYearTypeDescriptorSecondary_Present"),
+                    ColumnName: syntheticPresenceColumn,
                     Kind: ColumnKind.Scalar,
                     ScalarType: new RelationalScalarType(ScalarKind.Boolean),
                     IsNullable: true,
-                    SourceJsonPath: null,
+                    SourceJsonPath: syntheticPresencePath,
                     TargetResource: null
                 ),
                 new DbColumnModel(
@@ -781,11 +857,11 @@ public class Given_RootOnlyWritePlanCompiler
                     TargetResource: descriptorResource,
                     Storage: new ColumnStorage.UnifiedAlias(
                         CanonicalColumn: new DbColumnName("SchoolYearTypeDescriptorIdCanonical"),
-                        PresenceColumn: new DbColumnName("SchoolYearTypeDescriptorSecondary_Present")
+                        PresenceColumn: syntheticPresenceColumn
                     )
                 ),
             ],
-            Constraints: []
+            Constraints: constraints
         )
         {
             KeyUnificationClasses =
