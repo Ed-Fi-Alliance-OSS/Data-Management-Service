@@ -39,3 +39,9 @@ Task completed: Key Unification - enforce Precomputed producer/accounting invari
 Decisions: treated Precomputed as key-unification-only; require key-unification inventory whenever any Precomputed binding exists; enforce canonical + synthetic presence producers are Precomputed and count producer ownership exactly once per Precomputed binding; fail fast for orphan and duplicate producers with column-level diagnostics.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/RootOnlyWritePlanCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RootOnlyWritePlanCompilerTests.cs; tasks.json; progress.txt.
 Blockers/notes: no blockers. Next iteration can move to MappingSetCompiler integration to compile write plans for all relational-table resources.
+
+2026-03-03 - DMS-1045 / reference/design/backend-redesign/epics/15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md
+Task completed: SQL Emission - DeleteByParentSql for replace semantics across non-root tables.
+Decisions: added SimpleDeleteSqlEmitter for canonical multi-line DELETE SQL; compile DeleteByParentSql for every non-root table using key columns in key order excluding table-local Ordinal; reuse existing ColumnBindings parameter names (no re-derivation); keep root table DeleteByParentSql null; root-scope _ext 1:1 table deletes by DocumentId naturally via non-ordinal key filtering.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/SimpleDeleteSqlEmitter.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/RootOnlyWritePlanCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RootOnlyWritePlanCompilerTests.cs; tasks.json; progress.txt.
+Blockers/notes: no blockers. Next iteration can address remaining SQL Emission/Write Plan Compiler tasks still marked incomplete.

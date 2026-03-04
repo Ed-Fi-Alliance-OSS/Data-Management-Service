@@ -380,18 +380,118 @@ public class Given_RootOnlyWritePlanCompiler
         var rootPlan = writePlan.TablePlansInDependencyOrder[0];
         var rootExtensionPlan = writePlan.TablePlansInDependencyOrder[1];
         var childPlan = writePlan.TablePlansInDependencyOrder[2];
+        var nestedChildPlan = writePlan.TablePlansInDependencyOrder[3];
 
         rootPlan.UpdateSql.Should().NotBeNull();
         rootExtensionPlan.UpdateSql.Should().NotBeNull();
         childPlan.UpdateSql.Should().BeNull();
+        nestedChildPlan.UpdateSql.Should().BeNull();
+
+        rootPlan.DeleteByParentSql.Should().BeNull();
+        rootExtensionPlan.DeleteByParentSql.Should().NotBeNull();
+        childPlan.DeleteByParentSql.Should().NotBeNull();
+        nestedChildPlan.DeleteByParentSql.Should().NotBeNull();
 
         foreach (var tablePlan in writePlan.TablePlansInDependencyOrder)
         {
             tablePlan.InsertSql.Should().NotBeNullOrWhiteSpace();
-            tablePlan.DeleteByParentSql.Should().BeNull();
             tablePlan.BulkInsertBatching.ParametersPerRow.Should().Be(tablePlan.ColumnBindings.Length);
             tablePlan.KeyUnificationPlans.Should().BeEmpty();
         }
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_emit_delete_by_parent_sql_for_direct_child_nested_child_and_root_scope_extension_tables(
+        SqlDialect dialect
+    )
+    {
+        var writePlan = new RootOnlyWritePlanCompiler(dialect).Compile(CreateSupportedMultiTableModel());
+
+        static TableWritePlan GetTablePlan(ResourceWritePlan plan, string tableName)
+        {
+            return plan.TablePlansInDependencyOrder.Single(tablePlan =>
+                string.Equals(tablePlan.TableModel.Table.Name, tableName, StringComparison.Ordinal)
+            );
+        }
+
+        var rootPlan = GetTablePlan(writePlan, "Student");
+        var rootExtensionPlan = GetTablePlan(writePlan, "StudentExtension");
+        var directChildPlan = GetTablePlan(writePlan, "StudentAddress");
+        var nestedChildPlan = GetTablePlan(writePlan, "StudentAddressPeriod");
+
+        rootPlan.DeleteByParentSql.Should().BeNull();
+
+        rootExtensionPlan
+            .DeleteByParentSql.Should()
+            .Be(
+                dialect switch
+                {
+                    SqlDialect.Pgsql => """
+                    DELETE FROM "sample"."StudentExtension"
+                    WHERE
+                        ("DocumentId" = @documentId)
+                    ;
+
+                    """,
+                    SqlDialect.Mssql => """
+                    DELETE FROM [sample].[StudentExtension]
+                    WHERE
+                        ([DocumentId] = @documentId)
+                    ;
+
+                    """,
+                    _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, null),
+                }
+            );
+
+        directChildPlan
+            .DeleteByParentSql.Should()
+            .Be(
+                dialect switch
+                {
+                    SqlDialect.Pgsql => """
+                    DELETE FROM "edfi"."StudentAddress"
+                    WHERE
+                        ("DocumentId" = @documentId)
+                    ;
+
+                    """,
+                    SqlDialect.Mssql => """
+                    DELETE FROM [edfi].[StudentAddress]
+                    WHERE
+                        ([DocumentId] = @documentId)
+                    ;
+
+                    """,
+                    _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, null),
+                }
+            );
+
+        nestedChildPlan
+            .DeleteByParentSql.Should()
+            .Be(
+                dialect switch
+                {
+                    SqlDialect.Pgsql => """
+                    DELETE FROM "edfi"."StudentAddressPeriod"
+                    WHERE
+                        ("DocumentId" = @documentId)
+                        AND ("ParentAddressOrdinal" = @parentAddressOrdinal)
+                    ;
+
+                    """,
+                    SqlDialect.Mssql => """
+                    DELETE FROM [edfi].[StudentAddressPeriod]
+                    WHERE
+                        ([DocumentId] = @documentId)
+                        AND ([ParentAddressOrdinal] = @parentAddressOrdinal)
+                    ;
+
+                    """,
+                    _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, null),
+                }
+            );
     }
 
     [Test]
@@ -1047,11 +1147,18 @@ public class Given_RootOnlyWritePlanCompiler
         var rootTable = model.Root;
         var rootScopeExtensionTable = CreateRootScopeExtensionTable();
         var childCollectionTable = CreateChildCollectionTable();
+        var nestedChildCollectionTable = CreateNestedChildCollectionTable();
 
         return model with
         {
             Root = rootTable,
-            TablesInDependencyOrder = [rootTable, rootScopeExtensionTable, childCollectionTable],
+            TablesInDependencyOrder =
+            [
+                rootTable,
+                rootScopeExtensionTable,
+                childCollectionTable,
+                nestedChildCollectionTable,
+            ],
         };
     }
 
@@ -1210,6 +1317,72 @@ public class Given_RootOnlyWritePlanCompiler
                         CanonicalColumn: new DbColumnName("City"),
                         PresenceColumn: null
                     )
+                ),
+            ],
+            Constraints: []
+        );
+    }
+
+    private static DbTableModel CreateNestedChildCollectionTable()
+    {
+        return new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "StudentAddressPeriod"),
+            JsonScope: CreatePath(
+                "$.addresses[*].periods[*]",
+                new JsonPathSegment.Property("addresses"),
+                new JsonPathSegment.AnyArrayElement(),
+                new JsonPathSegment.Property("periods"),
+                new JsonPathSegment.AnyArrayElement()
+            ),
+            Key: new TableKey(
+                ConstraintName: "PK_StudentAddressPeriod",
+                Columns:
+                [
+                    new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart),
+                    new DbKeyColumn(new DbColumnName("ParentAddressOrdinal"), ColumnKind.ParentKeyPart),
+                    new DbKeyColumn(new DbColumnName("Ordinal"), ColumnKind.Ordinal),
+                ]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("ParentAddressOrdinal"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("Ordinal"),
+                    Kind: ColumnKind.Ordinal,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("PeriodName"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.String),
+                    IsNullable: true,
+                    SourceJsonPath: CreatePath(
+                        "$.addresses[*].periods[*].periodName",
+                        new JsonPathSegment.Property("addresses"),
+                        new JsonPathSegment.AnyArrayElement(),
+                        new JsonPathSegment.Property("periods"),
+                        new JsonPathSegment.AnyArrayElement(),
+                        new JsonPathSegment.Property("periodName")
+                    ),
+                    TargetResource: null
                 ),
             ],
             Constraints: []

@@ -23,6 +23,7 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
     private readonly SqlDialect _dialect = dialect;
     private readonly SimpleInsertSqlEmitter _insertSqlEmitter = new(dialect);
     private readonly SimpleUpdateSqlEmitter _updateSqlEmitter = new(dialect);
+    private readonly SimpleDeleteSqlEmitter _deleteSqlEmitter = new(dialect);
 
     /// <summary>
     /// Returns <see langword="true"/> when a resource is supported by thin-slice root-only write compilation.
@@ -108,6 +109,7 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
             columnBindings.Select(static binding => binding.ParameterName).ToArray()
         );
         var updateSql = TryEmitUpdateSql(tableModel, columnBindings);
+        var deleteByParentSql = TryEmitDeleteByParentSql(resourceModel, tableModel, columnBindings);
         var bulkInsertBatching = PlanWriteBatchingConventions.DeriveBulkInsertBatchingInfo(
             _dialect,
             columnBindings
@@ -117,7 +119,7 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
             TableModel: tableModel,
             InsertSql: insertSql,
             UpdateSql: updateSql,
-            DeleteByParentSql: null,
+            DeleteByParentSql: deleteByParentSql,
             BulkInsertBatching: bulkInsertBatching,
             ColumnBindings: columnBindings,
             KeyUnificationPlans: keyUnificationPlans
@@ -631,6 +633,58 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
             keyColumnsInKeyOrder,
             keyParameterNamesInKeyOrder
         );
+    }
+
+    /// <summary>
+    /// Emits table <c>DELETE</c> SQL for replace semantics by parent key for all non-root tables.
+    /// </summary>
+    private string? TryEmitDeleteByParentSql(
+        RelationalResourceModel resourceModel,
+        DbTableModel tableModel,
+        IReadOnlyList<WriteColumnBinding> bindingsInColumnOrder
+    )
+    {
+        if (tableModel.Equals(resourceModel.Root))
+        {
+            return null;
+        }
+
+        var keyColumnsInOrder = tableModel
+            .Key.Columns.Where(static keyColumn => keyColumn.Kind is not ColumnKind.Ordinal)
+            .Select(static keyColumn => keyColumn.ColumnName)
+            .ToArray();
+
+        if (keyColumnsInOrder.Length == 0)
+        {
+            throw new InvalidOperationException(
+                $"Cannot emit delete-by-parent SQL for '{tableModel.Table}': no key columns remain after excluding ordinal key columns."
+            );
+        }
+
+        var parameterNameByColumn = new Dictionary<DbColumnName, string>(bindingsInColumnOrder.Count);
+
+        foreach (var binding in bindingsInColumnOrder)
+        {
+            parameterNameByColumn[binding.Column.ColumnName] = binding.ParameterName;
+        }
+
+        var keyParameterNamesInOrder = new string[keyColumnsInOrder.Length];
+
+        for (var index = 0; index < keyColumnsInOrder.Length; index++)
+        {
+            var keyColumn = keyColumnsInOrder[index];
+
+            if (!parameterNameByColumn.TryGetValue(keyColumn, out var keyParameterName))
+            {
+                throw new InvalidOperationException(
+                    $"Cannot emit delete-by-parent SQL for '{tableModel.Table}': key column '{keyColumn.Value}' does not have a write binding parameter."
+                );
+            }
+
+            keyParameterNamesInOrder[index] = keyParameterName;
+        }
+
+        return _deleteSqlEmitter.Emit(tableModel.Table, keyColumnsInOrder, keyParameterNamesInOrder);
     }
 
     /// <summary>
