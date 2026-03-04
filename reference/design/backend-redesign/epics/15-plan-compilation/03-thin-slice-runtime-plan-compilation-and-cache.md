@@ -32,7 +32,7 @@ Design references:
   - stable alias naming,
   - stable parameter naming derived from bindings.
 - The thin-slice compiler can produce, for a root-only resource:
-  - a root-table write plan (`InsertSql`, optional `UpdateSql`, ordered `ColumnBindings`),
+  - a single-table write plan (`InsertSql`, optional `UpdateSql`, ordered `ColumnBindings`),
   - a root-table hydration read plan (`SelectByKeysetSql`),
   - and the minimal request-scoped page keyset query compilation output needed to drive query reconstitution (`PageDocumentIdSql`, optional `TotalCountSql`).
 - Runtime compilation is cached and concurrency-safe:

@@ -58,7 +58,9 @@ public sealed record TableWritePlan
     /// </summary>
     /// <param name="TableModel">The table shape model.</param>
     /// <param name="InsertSql">Parameterized insert SQL.</param>
-    /// <param name="UpdateSql">Optional parameterized update SQL (root table only).</param>
+    /// <param name="UpdateSql">
+    /// Optional parameterized update SQL for 1:1 tables (table key contains no <c>Ordinal</c>).
+    /// </param>
     /// <param name="DeleteByParentSql">
     /// Optional delete SQL used for replace semantics by parent key (non-root tables).
     /// </param>
@@ -108,7 +110,7 @@ public sealed record TableWritePlan
     public string InsertSql { get; init; }
 
     /// <summary>
-    /// Optional canonical parameterized <c>UPDATE</c> SQL (root table only).
+    /// Optional canonical parameterized <c>UPDATE</c> SQL for 1:1 tables (table key contains no <c>Ordinal</c>).
     /// </summary>
     public string? UpdateSql { get; init; }
 

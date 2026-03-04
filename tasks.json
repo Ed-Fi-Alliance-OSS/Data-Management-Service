@@ -187,7 +187,7 @@
       "Run: rg -n \"UpdateSql\\b\" reference/design/backend-redesign | rg -n \"root\" (ensure no remaining \"root-only\" UpdateSql references)",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Naming / Comments",

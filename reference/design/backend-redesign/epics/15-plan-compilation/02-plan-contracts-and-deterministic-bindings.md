@@ -37,7 +37,8 @@ Design references:
  - Plan contract types exist for:
   - write plans:
     - `ResourceWritePlan` with per-table `TableWritePlan`,
-    - `TableWritePlan.InsertSql` / `UpdateSql` (root only) / `DeleteByParentSql` (non-root, replace semantics),
+    - `TableWritePlan.InsertSql` plus optional `UpdateSql` for any 1:1 table (no `Ordinal` key column),
+    - `TableWritePlan.DeleteByParentSql` for child/collection/extension replace semantics,
     - `TableWritePlan.BulkInsertBatching.MaxRowsPerBatch` for deterministic, dialect-aware bulk insert chunking,
     - `ColumnBindings: IReadOnlyList<WriteColumnBinding>` in authoritative parameter/value order,
     - `WriteColumnBinding.ParameterName` so runtime execution never depends on parsing SQL text to infer bindings,
