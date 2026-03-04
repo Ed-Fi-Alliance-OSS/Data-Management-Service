@@ -52,3 +52,7 @@ The DMS Configuration Management Service E2E tests have a similar setup and envi
 - Use NUnit with FluentAssertions, and FakeItEasy for mocks when necessary.
 - NUnit tests should follow the existing style, which is filenames named like the code area being tested,
   TestFixture classes named with prefix "Given_", a Setup method which does arrange and act, and Test methods with "It_" prefixes for each individual assert.
+
+## Development Artifacts
+
+`tasks.json` and `progress.txt` are committed files used for development tracking while development and QA are in progress.
