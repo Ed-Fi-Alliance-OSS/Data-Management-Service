@@ -147,6 +147,32 @@ public class Given_MappingSetLookupExtensions
     }
 
     [Test]
+    public void It_should_throw_deterministic_error_for_duplicate_concrete_resources()
+    {
+        var duplicateResource = _mappingSet.Model.ConcreteResourcesInNameOrder[2];
+        var mappingSetWithDuplicateResource = _mappingSet with
+        {
+            Model = _mappingSet.Model with
+            {
+                ConcreteResourcesInNameOrder =
+                [
+                    .. _mappingSet.Model.ConcreteResourcesInNameOrder,
+                    duplicateResource,
+                ],
+            },
+        };
+
+        var act = () => mappingSetWithDuplicateResource.GetWritePlanOrThrow(_descriptorResource);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                $"Mapping set '{FormatMappingSetKey(mappingSetWithDuplicateResource.Key)}' contains duplicate resource "
+                    + $"'{FormatResource(duplicateResource.RelationalModel.Resource)}' in ConcreteResourcesInNameOrder."
+            );
+    }
+
+    [Test]
     public void It_should_match_legacy_scan_behavior_for_omitted_write_plan_lookup()
     {
         var unknownResource = new QualifiedResourceName("Ed-Fi", "UnknownResource");

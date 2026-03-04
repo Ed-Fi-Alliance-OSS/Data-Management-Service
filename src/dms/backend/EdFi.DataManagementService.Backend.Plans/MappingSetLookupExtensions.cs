@@ -155,10 +155,15 @@ public static class MappingSetLookupExtensions
 
                 foreach (var concreteResourceModel in staticMappingSet.Model.ConcreteResourcesInNameOrder)
                 {
-                    _ = resourcesByName.TryAdd(
-                        concreteResourceModel.RelationalModel.Resource,
-                        concreteResourceModel
-                    );
+                    var resource = concreteResourceModel.RelationalModel.Resource;
+
+                    if (!resourcesByName.TryAdd(resource, concreteResourceModel))
+                    {
+                        throw new InvalidOperationException(
+                            $"Mapping set '{FormatMappingSetKey(staticMappingSet.Key)}' contains duplicate resource "
+                                + $"'{FormatResource(resource)}' in ConcreteResourcesInNameOrder."
+                        );
+                    }
                 }
 
                 return resourcesByName.ToFrozenDictionary();

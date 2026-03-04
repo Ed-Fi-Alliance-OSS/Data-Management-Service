@@ -356,7 +356,7 @@
       "Add a MappingSetLookupExtensionsTests case that builds a MappingSet with duplicated ConcreteResourcesInNameOrder resources and asserts deterministic InvalidOperationException message",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Refactor",

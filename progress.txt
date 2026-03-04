@@ -227,3 +227,9 @@ Task completed: Hardening - explicit/actionable Precomputed target validation fo
 Decisions: Precomputed emission now allowed only for explicit key-unification-required targets (canonical + synthetic presence). Null SourceJsonPath on non-allowed stored bindings now fails in WritePlanCompiler with actionable guidance (set IsWritable=false or add producer plan), instead of deferring to later key-unification orphan accounting.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/WritePlanCompilerTests.cs; tasks.json; progress.txt.
 Blockers/notes: no blockers. Verification: dotnet csharpier format (2 files); dotnet test --no-restore plans unit (243/243); dotnet build --no-restore src/dms/EdFi.DataManagementService.sln.
+2026-03-04 - DMS-1045 / reference/design/backend-redesign/epics/15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md
+Task completed: Hardening - duplicate concrete-resource detection in MappingSetLookupExtensions.
+Decisions: ConcreteResourcesInNameOrder cache build now throws on duplicate QualifiedResourceName (no first-seen silent keep); diagnostic includes mapping set key + duplicated resource. Added deterministic unit test by appending duplicate concrete resource and asserting write lookup fails with exact message.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetLookupExtensions.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetLookupExtensionsTests.cs; tasks.json; progress.txt.
+Blockers/notes: no blockers. Verification: dotnet csharpier format (2 files); dotnet test --no-restore plans unit (244/244). Next iteration can tackle remaining WriteSourceLookup duplicate-handling refactor task.
+
