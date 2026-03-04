@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -13,6 +14,7 @@ using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
+using EdFi.DataManagementService.Core.Validation;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -27,17 +29,8 @@ public class ProfileWriteValidationMiddlewareTests
 {
     private static ProfileWriteValidationMiddleware CreateMiddleware(
         IProfileResponseFilter? filter = null,
-        IProfileCreatabilityValidator? creatabilityValidator = null
-    )
-    {
-        return new ProfileWriteValidationMiddleware(
-            filter ?? new ProfileResponseFilter(),
-            creatabilityValidator ?? new ProfileCreatabilityValidator(),
-            NullLogger<ProfileWriteValidationMiddleware>.Instance
-        );
-    }
-
-    private static IServiceProvider BuildScopedServiceProvider(
+        IProfileCreatabilityValidator? creatabilityValidator = null,
+        ICompiledSchemaCache? schemaCache = null,
         IDocumentStoreRepository? documentStoreRepository = null
     )
     {
@@ -50,7 +43,15 @@ public class ProfileWriteValidationMiddlewareTests
         {
             services.AddSingleton<IDocumentStoreRepository>(new StubDocumentStoreRepository());
         }
-        return services.BuildServiceProvider();
+        var serviceProvider = services.BuildServiceProvider();
+
+        return new ProfileWriteValidationMiddleware(
+            filter ?? new ProfileResponseFilter(),
+            creatabilityValidator ?? new ProfileCreatabilityValidator(),
+            schemaCache ?? new CompiledSchemaCache(),
+            serviceProvider,
+            NullLogger<ProfileWriteValidationMiddleware>.Instance
+        );
     }
 
     /// <summary>
@@ -75,8 +76,7 @@ public class ProfileWriteValidationMiddlewareTests
     private static RequestInfo CreateRequestInfo(
         RequestMethod method = RequestMethod.POST,
         string resourceName = "Student",
-        string[]? requiredFields = null,
-        IServiceProvider? scopedServiceProvider = null
+        string[]? requiredFields = null
     )
     {
         var frontendRequest = new FrontendRequest(
@@ -111,9 +111,16 @@ public class ProfileWriteValidationMiddlewareTests
             }
         );
 
-        return new RequestInfo(frontendRequest, method, scopedServiceProvider ?? BuildScopedServiceProvider())
+        var projectSchema = new ProjectSchema(
+            new JsonObject { ["projectName"] = "Ed-Fi" },
+            NullLogger<ProjectSchema>.Instance
+        );
+
+        return new RequestInfo(frontendRequest, method)
         {
+            ProjectSchema = projectSchema,
             ResourceSchema = resourceSchema,
+            ApiSchemaReloadId = Guid.Empty,
         };
     }
 
@@ -803,6 +810,320 @@ public class ProfileWriteValidationMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_POST_With_NonCreatable_Child_Collection_Item : ProfileWriteValidationMiddlewareTests
+    {
+        private RequestInfo _requestInfo = null!;
+        private bool _nextCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo = CreateRequestInfo(method: RequestMethod.POST, resourceName: "School");
+
+            var collectionRule = new CollectionRule(
+                Name: "internationalAddresses",
+                MemberSelection: MemberSelection.ExcludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("addressLine1")],
+                NestedObjects: null,
+                NestedCollections: null,
+                Extensions: null,
+                ItemFilter: null
+            );
+
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                [],
+                [],
+                [collectionRule],
+                []
+            );
+
+            var resourceProfile = new ResourceProfile(
+                ResourceName: "School",
+                LogicalSchema: null,
+                ReadContentType: null,
+                WriteContentType: contentType
+            );
+
+            _requestInfo.ProfileContext = new ProfileContext(
+                ProfileName: "NonCreatableCollectionProfile",
+                ContentType: ProfileContentType.Write,
+                ResourceProfile: resourceProfile,
+                WasExplicitlySpecified: true
+            );
+
+            _requestInfo.ParsedBody = new JsonObject
+            {
+                ["schoolId"] = 99000101,
+                ["nameOfInstitution"] = "Non-creatable collection test",
+                ["internationalAddresses"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["addressTypeDescriptor"] = "uri://ed-fi.org/AddressTypeDescriptor#Mailing",
+                        ["countryDescriptor"] = "uri://ed-fi.org/CountryDescriptor#US",
+                        ["addressLine1"] = "Blocked Address Line",
+                    },
+                },
+            };
+
+            _nextCalled = false;
+            var middleware = CreateMiddleware();
+
+            await middleware.Execute(
+                _requestInfo,
+                () =>
+                {
+                    _nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_returns_400_and_blocks_the_request()
+        {
+            _nextCalled.Should().BeFalse();
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_POST_With_NonCreatable_Embedded_Object : ProfileWriteValidationMiddlewareTests
+    {
+        private RequestInfo _requestInfo = null!;
+        private bool _nextCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo = CreateRequestInfo(method: RequestMethod.POST, resourceName: "Assessment");
+
+            var objectRule = new ObjectRule(
+                Name: "contentStandard",
+                MemberSelection: MemberSelection.ExcludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("title")],
+                NestedObjects: null,
+                Collections: null,
+                Extensions: null
+            );
+
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                [],
+                [objectRule],
+                [],
+                []
+            );
+
+            var resourceProfile = new ResourceProfile(
+                ResourceName: "Assessment",
+                LogicalSchema: null,
+                ReadContentType: null,
+                WriteContentType: contentType
+            );
+
+            _requestInfo.ProfileContext = new ProfileContext(
+                ProfileName: "NonCreatableObjectProfile",
+                ContentType: ProfileContentType.Write,
+                ResourceProfile: resourceProfile,
+                WasExplicitlySpecified: true
+            );
+
+            _requestInfo.ParsedBody = new JsonObject
+            {
+                ["assessmentIdentifier"] = "ASSESSMENT-001",
+                ["namespace"] = "uri://ed-fi.org/Assessment/Assessment.xml",
+                ["assessmentCategoryDescriptor"] =
+                    "uri://ed-fi.org/AssessmentCategoryDescriptor#Benchmark test",
+                ["assessmentTitle"] = "Non-creatable object test",
+                ["contentStandard"] = new JsonObject { ["title"] = "Blocked title" },
+            };
+
+            _nextCalled = false;
+            var middleware = CreateMiddleware();
+
+            await middleware.Execute(
+                _requestInfo,
+                () =>
+                {
+                    _nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_returns_400_and_blocks_the_request()
+        {
+            _nextCalled.Should().BeFalse();
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_POST_With_NonCreatable_Child_Collection_Item_Using_Legacy_Casing
+        : ProfileWriteValidationMiddlewareTests
+    {
+        private RequestInfo _requestInfo = null!;
+        private bool _nextCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo = CreateRequestInfo(method: RequestMethod.POST, resourceName: "School");
+
+            var collectionRule = new CollectionRule(
+                Name: "InternationalAddresses",
+                MemberSelection: MemberSelection.ExcludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("AddressLine1")],
+                NestedObjects: null,
+                NestedCollections: null,
+                Extensions: null,
+                ItemFilter: null
+            );
+
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                [],
+                [],
+                [collectionRule],
+                []
+            );
+
+            var resourceProfile = new ResourceProfile(
+                ResourceName: "School",
+                LogicalSchema: null,
+                ReadContentType: null,
+                WriteContentType: contentType
+            );
+
+            _requestInfo.ProfileContext = new ProfileContext(
+                ProfileName: "NonCreatableCollectionLegacyCaseProfile",
+                ContentType: ProfileContentType.Write,
+                ResourceProfile: resourceProfile,
+                WasExplicitlySpecified: true
+            );
+
+            _requestInfo.ParsedBody = new JsonObject
+            {
+                ["schoolId"] = 99000102,
+                ["nameOfInstitution"] = "Legacy casing collection test",
+                ["internationalAddresses"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["addressTypeDescriptor"] = "uri://ed-fi.org/AddressTypeDescriptor#Mailing",
+                        ["countryDescriptor"] = "uri://ed-fi.org/CountryDescriptor#US",
+                        ["addressLine1"] = "Blocked Address Line",
+                    },
+                },
+            };
+
+            _nextCalled = false;
+            var middleware = CreateMiddleware();
+
+            await middleware.Execute(
+                _requestInfo,
+                () =>
+                {
+                    _nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_returns_400_and_blocks_the_request()
+        {
+            _nextCalled.Should().BeFalse();
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_POST_With_NonCreatable_Embedded_Object_Using_Legacy_Casing
+        : ProfileWriteValidationMiddlewareTests
+    {
+        private RequestInfo _requestInfo = null!;
+        private bool _nextCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo = CreateRequestInfo(method: RequestMethod.POST, resourceName: "Assessment");
+
+            var objectRule = new ObjectRule(
+                Name: "ContentStandard",
+                MemberSelection: MemberSelection.ExcludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("Title")],
+                NestedObjects: null,
+                Collections: null,
+                Extensions: null
+            );
+
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                [],
+                [objectRule],
+                [],
+                []
+            );
+
+            var resourceProfile = new ResourceProfile(
+                ResourceName: "Assessment",
+                LogicalSchema: null,
+                ReadContentType: null,
+                WriteContentType: contentType
+            );
+
+            _requestInfo.ProfileContext = new ProfileContext(
+                ProfileName: "NonCreatableObjectLegacyCaseProfile",
+                ContentType: ProfileContentType.Write,
+                ResourceProfile: resourceProfile,
+                WasExplicitlySpecified: true
+            );
+
+            _requestInfo.ParsedBody = new JsonObject
+            {
+                ["assessmentIdentifier"] = "ASSESSMENT-002",
+                ["namespace"] = "uri://ed-fi.org/Assessment/Assessment.xml",
+                ["assessmentCategoryDescriptor"] =
+                    "uri://ed-fi.org/AssessmentCategoryDescriptor#Benchmark test",
+                ["assessmentTitle"] = "Legacy casing object test",
+                ["contentStandard"] = new JsonObject { ["title"] = "Blocked title" },
+            };
+
+            _nextCalled = false;
+            var middleware = CreateMiddleware();
+
+            await middleware.Execute(
+                _requestInfo,
+                () =>
+                {
+                    _nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_returns_400_and_blocks_the_request()
+        {
+            _nextCalled.Should().BeFalse();
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_PUT_With_Nested_Object_Profile_Excluding_Property
         : ProfileWriteValidationMiddlewareTests
     {
@@ -895,8 +1216,7 @@ public class ProfileWriteValidationMiddlewareTests
             };
 
             _nextCalled = false;
-            _requestInfo.ScopedServiceProvider = BuildScopedServiceProvider(new AddressRepository());
-            var middleware = CreateMiddleware();
+            var middleware = CreateMiddleware(documentStoreRepository: new AddressRepository());
 
             await middleware.Execute(
                 _requestInfo,
@@ -1045,8 +1365,7 @@ public class ProfileWriteValidationMiddlewareTests
             };
 
             _nextCalled = false;
-            _requestInfo.ScopedServiceProvider = BuildScopedServiceProvider(new TelephoneRepository());
-            var middleware = CreateMiddleware();
+            var middleware = CreateMiddleware(documentStoreRepository: new TelephoneRepository());
 
             await middleware.Execute(
                 _requestInfo,
@@ -1213,8 +1532,7 @@ public class ProfileWriteValidationMiddlewareTests
             };
 
             _nextCalled = false;
-            _requestInfo.ScopedServiceProvider = BuildScopedServiceProvider(new GradeLevelRepository());
-            var middleware = CreateMiddleware();
+            var middleware = CreateMiddleware(documentStoreRepository: new GradeLevelRepository());
 
             await middleware.Execute(
                 _requestInfo,
@@ -1420,8 +1738,7 @@ public class ProfileWriteValidationMiddlewareTests
             };
 
             _nextCalled = false;
-            _requestInfo.ScopedServiceProvider = BuildScopedServiceProvider(new DeepNestedRepository());
-            var middleware = CreateMiddleware();
+            var middleware = CreateMiddleware(documentStoreRepository: new DeepNestedRepository());
 
             await middleware.Execute(
                 _requestInfo,

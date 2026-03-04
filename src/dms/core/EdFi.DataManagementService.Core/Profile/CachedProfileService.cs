@@ -332,6 +332,24 @@ internal class CachedProfileService(
 
         if (resourceProfile == null)
         {
+            if (cachedProfiles.AssignedProfileNames.Count() > 1)
+            {
+                string availableProfiles = BuildAvailableProfiles(cachedProfiles, resourceName, method);
+
+                return ProfileResolutionResult.Failure(
+                    new ProfileResolutionError(
+                        StatusCode: 403,
+                        ErrorType: "urn:ed-fi:api:security:data-policy:incorrect-usage",
+                        Title: "Data Policy Failure Due to Incorrect Usage",
+                        Detail: "A data policy failure was encountered. The request was not constructed correctly for the data policy that has been applied to this data for the caller.",
+                        Errors:
+                        [
+                            $"Based on profile assignments, one of the following profile-specific content types is required when requesting this resource: {availableProfiles}",
+                        ]
+                    )
+                );
+            }
+
             return ProfileResolutionResult.Failure(
                 new ProfileResolutionError(
                     StatusCode: 400,
@@ -398,35 +416,7 @@ internal class CachedProfileService(
             return ProfileResolutionResult.NoProfileApplies();
         }
 
-        if (applicableProfiles.Count == 1)
-        {
-            var match = applicableProfiles[0];
-
-            // Validate the resource has the appropriate content type
-            ProfileResolutionResult? contentTypeValidation = ValidateResourceContentType(
-                match.ResourceProfile!,
-                method,
-                match.Definition.ProfileName
-            );
-            if (contentTypeValidation != null)
-            {
-                return contentTypeValidation;
-            }
-
-            ProfileContentType contentType =
-                method == RequestMethod.GET ? ProfileContentType.Read : ProfileContentType.Write;
-
-            return ProfileResolutionResult.Success(
-                new ProfileContext(
-                    ProfileName: match.Definition.ProfileName,
-                    ContentType: contentType,
-                    ResourceProfile: match.ResourceProfile!,
-                    WasExplicitlySpecified: false
-                )
-            );
-        }
-
-        // Multiple profiles cover this resource - client must specify which one
+        // One or more profiles cover this resource - client must specify which one
         string availableProfiles = BuildAvailableProfiles(cachedProfiles, resourceName, method);
 
         return ProfileResolutionResult.Failure(
