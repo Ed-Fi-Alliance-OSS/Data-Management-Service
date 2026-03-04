@@ -179,5 +179,75 @@
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
     "completed": true
+  },
+  {
+    "category": "Design / Contracts",
+    "description": "Resolve UpdateSql scope drift: UpdateSql is supported for any 1:1 table (no Ordinal key column), not just the root table. Acceptance: update design docs and story docs to match this rule and remove all remaining \"root-only\" UpdateSql language. Minimum updates: reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md, reference/design/backend-redesign/epics/15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md, reference/design/backend-redesign/design-docs/flattening-reconstitution.md, reference/design/backend-redesign/design-docs/compiled-mapping-set.md, and src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/WritePlanContracts.cs XML docs. Ensure docs clarify how non-root 1:1 tables (including root-scope _ext) are executed: InsertSql for new rows, UpdateSql when the scoped row exists, and DeleteByParentSql when the scoped object is absent.",
+    "steps-to-verify": [
+      "Run: rg -n \"UpdateSql\\b\" reference/design/backend-redesign | rg -n \"root\" (ensure no remaining \"root-only\" UpdateSql references)",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Naming / Comments",
+    "description": "Rename RootOnlyWritePlanCompiler and tests to reflect full write-plan compilation (not root-only). Acceptance: class/file names, public APIs, and comments accurately describe behavior: Compile compiles all relational-table resources across TablesInDependencyOrder; UpdateSql is emitted for any 1:1 table; DeleteByParentSql is emitted for all non-root tables. Update all references (including MappingSetCompiler and unit/golden tests) and ensure no misleading \"root-only\" or stale \"thin-slice gated\" comments remain (including the header comment and MappingSetCompiler summary). Update filenames to match.",
+    "steps-to-verify": [
+      "Run: rg -n \"RootOnlyWritePlanCompiler\" src/dms/backend (should be 0 after rename except historical docs if any)",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Write Plan Compiler",
+    "description": "Update write thin-slice gating to match current compiler capability and intended runtime behavior. Acceptance: ThinSliceWritePlanSupportEvaluator (and any IsSupported/TryCompile wrappers) no longer claims key-unification or multi-table resources are unsupported if full compilation supports them. Either (a) repurpose the evaluator to express current execution/feature gating with correct reasons and messaging, or (b) remove the evaluator and the IsSupported/TryCompile surface entirely if unused, updating MappingSetCompiler/tests accordingly. Ensure any remaining gating is used by production code (not test-only) and is covered by unit tests.",
+    "steps-to-verify": [
+      "Run: rg -n \"ThinSliceWritePlanSupportEvaluator|IsSupported\\(\" src/dms/backend/EdFi.DataManagementService.Backend.Plans (confirm intended usage path)",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Docs / Comments",
+    "description": "Fix misleading root-only wording in code docstrings and comments after the UpdateSql scope decision. Acceptance: src/dms/backend/EdFi.DataManagementService.Backend.Plans/SimpleUpdateSqlEmitter.cs summary and any other in-repo docstrings/comments describe UpdateSql as \"1:1 tables (no Ordinal)\" rather than \"root-table\". Ensure comment text matches current MappingSetCompiler behavior and plan contracts.",
+    "steps-to-verify": [
+      "Run: rg -n \"root-table|root only|root-only\" src/dms/backend/EdFi.DataManagementService.Backend.Plans (review and update any misleading matches)",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Messaging",
+    "description": "Update write-plan lookup exception messaging to remove confusing \"thin-slice\" phrasing for write plans. Acceptance: MappingSetLookupExtensions write-plan failures describe the current compilation model (compiled relational-table write plans for RelationalTables resources; descriptors have a different write path) and provide actionable next-story pointers without referring to write plans as thin-slice.",
+    "steps-to-verify": [
+      "Run: rg -n \"thin-slice\" src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetLookupExtensions.cs (write-plan messaging should not use \"thin-slice\")",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactor",
+    "description": "Remove duplication in TryEmitUpdateSql and TryEmitDeleteByParentSql. Acceptance: extract a helper that builds a parameter-name lookup from bindings (e.g., Dictionary<DbColumnName,string>) and reuse it in both emitters. Remove redundant ColumnStorage.Stored checks where bindings are already stored-only, without changing emitted SQL or exceptions. Update/keep unit tests to lock identical SQL output and error messages.",
+    "steps-to-verify": [
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj",
+      "Run: rg -n \"new Dictionary<DbColumnName, string>\\(\" src/dms/backend/EdFi.DataManagementService.Backend.Plans/RootOnlyWritePlanCompiler.cs (ensure duplication is removed)"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactor",
+    "description": "Optimize ValidateWritableKeyColumns to avoid repeated linear scans. Acceptance: build a Dictionary<DbColumnName, DbColumnModel> once per table (or reuse an existing map) and use it to validate key columns. Preserve identical failure behavior and messages (key column missing, key column is UnifiedAlias).",
+    "steps-to-verify": [
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Hardening",
+    "description": "Harden key-unification compilation against model regressions by asserting member-path columns are UnifiedAlias. Acceptance: during CompileKeyUnificationPlans, validate each KeyUnificationClass.MemberPathColumns column has ColumnStorage.UnifiedAlias (fail fast with a deterministic message if not). Add a unit test that constructs a model with a non-UnifiedAlias member path column and asserts deterministic InvalidOperationException.",
+    "steps-to-verify": [
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
   }
 ]
