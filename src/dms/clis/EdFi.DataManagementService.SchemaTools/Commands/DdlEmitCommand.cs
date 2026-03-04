@@ -47,6 +47,12 @@ public static class DdlEmitCommand
         };
         dialectOption.AcceptOnlyFromAmong("pgsql", "mssql", "both");
 
+        var ddlManifestOption = new Option<bool>("--ddl-manifest")
+        {
+            Description = "Emit ddl.manifest.json (default: true)",
+            DefaultValueFactory = _ => true,
+        };
+
         var command = new Command(
             "emit",
             "Generate DDL SQL and manifests to an output directory without database connectivity"
@@ -54,13 +60,15 @@ public static class DdlEmitCommand
         command.Options.Add(schemaOption);
         command.Options.Add(outputOption);
         command.Options.Add(dialectOption);
+        command.Options.Add(ddlManifestOption);
 
         command.SetAction(parseResult =>
         {
             var schemas = parseResult.GetValue(schemaOption) ?? [];
             var output = parseResult.GetValue(outputOption)!;
             var dialect = parseResult.GetValue(dialectOption) ?? "both";
-            return Execute(logger, fileLoader, schemaSetBuilder, schemas, output, dialect);
+            var emitDdlManifest = parseResult.GetValue(ddlManifestOption);
+            return Execute(logger, fileLoader, schemaSetBuilder, schemas, output, dialect, emitDdlManifest);
         });
 
         return command;
@@ -72,7 +80,8 @@ public static class DdlEmitCommand
         EffectiveSchemaSetBuilder schemaSetBuilder,
         string[] schemaPaths,
         string outputDir,
-        string dialectName
+        string dialectName,
+        bool emitDdlManifest
     )
     {
         if (schemaPaths.Length == 0)
@@ -162,9 +171,13 @@ public static class DdlEmitCommand
 
                 // Emit DDL manifest (dialect-independent summary of emitted SQL per dialect).
                 // The manifest reflects only the dialect(s) selected via --dialect.
-                var ddlManifest = DdlManifestEmitter.Emit(effectiveSchemaInfo, ddlManifestEntries);
-                WriteFileWithUnixLineEndings(Path.Combine(outputDir, "ddl.manifest.json"), ddlManifest);
-                emittedFiles.Add("ddl.manifest.json");
+                // Controlled by --ddl-manifest (default true) per the spec's "when enabled" contract.
+                if (emitDdlManifest)
+                {
+                    var ddlManifest = DdlManifestEmitter.Emit(effectiveSchemaInfo, ddlManifestEntries);
+                    WriteFileWithUnixLineEndings(Path.Combine(outputDir, "ddl.manifest.json"), ddlManifest);
+                    emittedFiles.Add("ddl.manifest.json");
+                }
 
                 // Emit effective schema manifest (dialect-independent, emitted once)
                 var schemaManifest = EffectiveSchemaManifestEmitter.Emit(
