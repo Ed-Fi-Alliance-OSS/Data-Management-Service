@@ -33,7 +33,8 @@ internal enum ThinSliceWritePlanUnsupportedReason
     RootHasKeyUnificationClasses,
 
     /// <summary>
-    /// The root table has stored non-key columns without a source JSON path, indicating precomputed values are required.
+    /// The root table has stored non-key columns without a source JSON path.
+    /// Reserved for diagnostics compatibility; these columns now compile as <c>WriteValueSource.Precomputed</c>.
     /// </summary>
     RootHasStoredNonKeyColumnsWithoutSourceJsonPath,
 }
@@ -89,8 +90,6 @@ internal static class ThinSliceWritePlanSupportEvaluator
             { TablesInDependencyOrder.Count: not 1 } => ThinSliceWritePlanUnsupportedReason.NonRootOnly,
             _ when rootKeyUnificationClassCount > 0 =>
                 ThinSliceWritePlanUnsupportedReason.RootHasKeyUnificationClasses,
-            _ when rootStoredNonKeyColumnsWithoutSourceJsonPathCount > 0 =>
-                ThinSliceWritePlanUnsupportedReason.RootHasStoredNonKeyColumnsWithoutSourceJsonPath,
             _ => ThinSliceWritePlanUnsupportedReason.None,
         };
 
@@ -104,7 +103,8 @@ internal static class ThinSliceWritePlanSupportEvaluator
     }
 
     /// <summary>
-    /// Counts stored non-key columns that have no source JSON path, which require precomputed support (for example key unification).
+    /// Counts stored non-key columns that have no source JSON path.
+    /// These bind as <c>WriteValueSource.Precomputed</c> and are still tracked for diagnostics.
     /// </summary>
     private static int CountStoredNonKeyColumnsWithoutSourceJsonPath(DbTableModel rootTable)
     {

@@ -3,3 +3,9 @@ Task completed: JSON Paths - scope-relative JsonPathExpression helper for plan c
 Decisions: added WritePlanJsonPathConventions.DeriveScopeRelativePath(scope, source); strips scope prefix; exact match => "$"; fail fast when scope not prefix or stripped path contains [*]. Wired RootOnlyWritePlanCompiler scalar/descriptor sources through helper to align future multi-table behavior.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanJsonPathConventions.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/RootOnlyWritePlanCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/WritePlanJsonPathConventionsTests.cs; tasks.json; progress.txt.
 Blockers/notes: no blockers. Next iteration can implement deterministic stored/writable single-table binding inventory (Write Plan Compiler task).
+
+2026-03-03 - DMS-1045 / reference/design/backend-redesign/epics/15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md
+Task completed: Write Plan Compiler - deterministic single-table stored/writable bindings + WriteValueSource coverage.
+Decisions: allow stored non-key columns without SourceJsonPath in thin-slice support and bind as WriteValueSource.Precomputed placeholder; keep UnifiedAlias excluded from bindings; fail fast when a key column is UnifiedAlias (non-writable); added source-coverage test for DocumentId/ParentKeyPart/Ordinal/Scalar(scope-relative incl "$" )/DocumentReference/DescriptorReference/Precomputed.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/ThinSliceWritePlanSupportEvaluator.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/RootOnlyWritePlanCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/RootOnlyWritePlanCompilerTests.cs; tasks.json; progress.txt.
+Blockers/notes: no blockers. Next iteration can focus on SQL emission stabilization tasks (Insert/Update/DeleteByParent).

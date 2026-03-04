@@ -181,17 +181,23 @@ public class Given_RootOnlyWritePlanCompiler
     }
 
     [Test]
-    public void It_should_mark_resources_with_precomputed_stored_non_key_columns_as_unsupported_for_write_compilation()
+    public void It_should_allow_precomputed_stored_non_key_columns_for_write_compilation()
     {
         var precomputedColumnModel = CreateRootOnlyModelWithStoredPrecomputedNonKeyColumn();
         var compiler = new RootOnlyWritePlanCompiler(SqlDialect.Pgsql);
 
-        RootOnlyWritePlanCompiler.IsSupported(precomputedColumnModel).Should().BeFalse();
+        RootOnlyWritePlanCompiler.IsSupported(precomputedColumnModel).Should().BeTrue();
 
         var wasCompiled = compiler.TryCompile(precomputedColumnModel, out var writePlan);
 
-        wasCompiled.Should().BeFalse();
-        writePlan.Should().BeNull();
+        wasCompiled.Should().BeTrue();
+        writePlan.Should().NotBeNull();
+        writePlan!
+            .TablePlansInDependencyOrder.Single()
+            .ColumnBindings.Where(binding => binding.Column.ColumnName.Value == "CanonicalSchoolYear")
+            .Single()
+            .Source.Should()
+            .BeOfType<WriteValueSource.Precomputed>();
     }
 
     [Test]
@@ -217,6 +223,109 @@ public class Given_RootOnlyWritePlanCompiler
         act.Should().NotThrow();
         writePlansByResource.Should().BeEmpty();
         readPlansByResource.Should().ContainKey(keyUnificationModel.Resource);
+    }
+
+    [Test]
+    public void It_should_compile_each_supported_write_value_source_for_single_table_bindings()
+    {
+        var model = CreateSingleTableModelCoveringWriteValueSourceKinds();
+
+        var writePlan = new RootOnlyWritePlanCompiler(SqlDialect.Pgsql).Compile(model);
+        var tablePlan = writePlan.TablePlansInDependencyOrder.Single();
+
+        tablePlan
+            .ColumnBindings.Select(binding => binding.Column.ColumnName.Value)
+            .Should()
+            .Equal(
+                "DocumentId",
+                "ParentAddressOrdinal",
+                "Ordinal",
+                "AddressScopeValue",
+                "StreetNumber",
+                "School_DocumentId",
+                "ProgramTypeDescriptorId",
+                "CanonicalProgramTypeCode"
+            );
+
+        tablePlan
+            .ColumnBindings.Select(binding => binding.ParameterName)
+            .Should()
+            .Equal(
+                "documentId",
+                "parentAddressOrdinal",
+                "ordinal",
+                "addressScopeValue",
+                "streetNumber",
+                "school_DocumentId",
+                "programTypeDescriptorId",
+                "canonicalProgramTypeCode"
+            );
+
+        tablePlan.ColumnBindings[0].Source.Should().BeOfType<WriteValueSource.DocumentId>();
+        tablePlan
+            .ColumnBindings[1]
+            .Source.Should()
+            .BeEquivalentTo(new WriteValueSource.ParentKeyPart(Index: 1));
+        tablePlan.ColumnBindings[2].Source.Should().BeOfType<WriteValueSource.Ordinal>();
+        tablePlan
+            .ColumnBindings[3]
+            .Source.Should()
+            .BeEquivalentTo(
+                new WriteValueSource.Scalar(
+                    RelativePath: new JsonPathExpression("$", []),
+                    Type: new RelationalScalarType(ScalarKind.String)
+                )
+            );
+        tablePlan
+            .ColumnBindings[4]
+            .Source.Should()
+            .BeEquivalentTo(
+                new WriteValueSource.Scalar(
+                    RelativePath: new JsonPathExpression(
+                        "$.streetNumber",
+                        [new JsonPathSegment.Property("streetNumber")]
+                    ),
+                    Type: new RelationalScalarType(ScalarKind.String)
+                )
+            );
+        tablePlan
+            .ColumnBindings[5]
+            .Source.Should()
+            .BeEquivalentTo(new WriteValueSource.DocumentReference(BindingIndex: 0));
+        tablePlan
+            .ColumnBindings[6]
+            .Source.Should()
+            .BeEquivalentTo(
+                new WriteValueSource.DescriptorReference(
+                    DescriptorResource: new QualifiedResourceName("Ed-Fi", "ProgramTypeDescriptor"),
+                    RelativePath: new JsonPathExpression(
+                        "$.programTypeDescriptor",
+                        [new JsonPathSegment.Property("programTypeDescriptor")]
+                    ),
+                    DescriptorValuePath: new JsonPathExpression(
+                        "$.addresses[*].programTypeDescriptor",
+                        [
+                            new JsonPathSegment.Property("addresses"),
+                            new JsonPathSegment.AnyArrayElement(),
+                            new JsonPathSegment.Property("programTypeDescriptor"),
+                        ]
+                    )
+                )
+            );
+        tablePlan.ColumnBindings[7].Source.Should().BeOfType<WriteValueSource.Precomputed>();
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_key_column_is_unified_alias()
+    {
+        var unsupportedModel = CreateRootOnlyModelWithUnifiedAliasKeyColumn();
+        var act = () => new RootOnlyWritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile write plan for 'edfi.Student': key column 'SchoolYearAlias' is UnifiedAlias*"
+            );
     }
 
     [Test]
@@ -294,19 +403,6 @@ public class Given_RootOnlyWritePlanCompiler
             .Throw<NotSupportedException>()
             .WithMessage(
                 "Only root-only relational-table resources are supported.*RootKeyUnificationClassCount: 1*"
-            );
-    }
-
-    [Test]
-    public void It_should_fail_fast_when_root_table_has_precomputed_stored_non_key_columns()
-    {
-        var unsupportedModel = CreateRootOnlyModelWithStoredPrecomputedNonKeyColumn();
-        var act = () => new RootOnlyWritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
-
-        act.Should()
-            .Throw<NotSupportedException>()
-            .WithMessage(
-                "Only root-only relational-table resources are supported.*RootStoredNonKeyColumnsWithoutSourceJsonPath: 1*"
             );
     }
 
@@ -460,6 +556,197 @@ public class Given_RootOnlyWritePlanCompiler
             Root = rootTable,
             TablesInDependencyOrder = [rootTable],
         };
+    }
+
+    private static RelationalResourceModel CreateRootOnlyModelWithUnifiedAliasKeyColumn()
+    {
+        var model = CreateSupportedRootOnlyModel();
+        var rootTable = model.Root with
+        {
+            Key = new TableKey(
+                ConstraintName: "PK_Student",
+                Columns:
+                [
+                    new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart),
+                    new DbKeyColumn(new DbColumnName("SchoolYearAlias"), ColumnKind.Scalar),
+                ]
+            ),
+        };
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
+        };
+    }
+
+    private static RelationalResourceModel CreateSingleTableModelCoveringWriteValueSourceKinds()
+    {
+        var table = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "StudentAddress"),
+            JsonScope: CreatePath(
+                "$.addresses[*]",
+                new JsonPathSegment.Property("addresses"),
+                new JsonPathSegment.AnyArrayElement()
+            ),
+            Key: new TableKey(
+                ConstraintName: "PK_StudentAddress",
+                Columns:
+                [
+                    new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart),
+                    new DbKeyColumn(new DbColumnName("ParentAddressOrdinal"), ColumnKind.ParentKeyPart),
+                    new DbKeyColumn(new DbColumnName("Ordinal"), ColumnKind.Ordinal),
+                ]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("ParentAddressOrdinal"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("Ordinal"),
+                    Kind: ColumnKind.Ordinal,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("AddressScopeValue"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.String),
+                    IsNullable: true,
+                    SourceJsonPath: CreatePath(
+                        "$.addresses[*]",
+                        new JsonPathSegment.Property("addresses"),
+                        new JsonPathSegment.AnyArrayElement()
+                    ),
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("StreetNumber"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.String),
+                    IsNullable: true,
+                    SourceJsonPath: CreatePath(
+                        "$.addresses[*].streetNumber",
+                        new JsonPathSegment.Property("addresses"),
+                        new JsonPathSegment.AnyArrayElement(),
+                        new JsonPathSegment.Property("streetNumber")
+                    ),
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_DocumentId"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: CreatePath(
+                        "$.addresses[*].schoolReference",
+                        new JsonPathSegment.Property("addresses"),
+                        new JsonPathSegment.AnyArrayElement(),
+                        new JsonPathSegment.Property("schoolReference")
+                    ),
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "School")
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("ProgramTypeDescriptorId"),
+                    Kind: ColumnKind.DescriptorFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: CreatePath(
+                        "$.addresses[*].programTypeDescriptor",
+                        new JsonPathSegment.Property("addresses"),
+                        new JsonPathSegment.AnyArrayElement(),
+                        new JsonPathSegment.Property("programTypeDescriptor")
+                    ),
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "ProgramTypeDescriptor")
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("CanonicalProgramTypeCode"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.String),
+                    IsNullable: true,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("ProgramTypeDescriptorIdAlias"),
+                    Kind: ColumnKind.DescriptorFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: CreatePath(
+                        "$.addresses[*].programTypeDescriptor",
+                        new JsonPathSegment.Property("addresses"),
+                        new JsonPathSegment.AnyArrayElement(),
+                        new JsonPathSegment.Property("programTypeDescriptor")
+                    ),
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "ProgramTypeDescriptor"),
+                    Storage: new ColumnStorage.UnifiedAlias(
+                        CanonicalColumn: new DbColumnName("ProgramTypeDescriptorId"),
+                        PresenceColumn: null
+                    )
+                ),
+            ],
+            Constraints: []
+        );
+
+        return new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "StudentAddress"),
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: table,
+            TablesInDependencyOrder: [table],
+            DocumentReferenceBindings:
+            [
+                new DocumentReferenceBinding(
+                    IsIdentityComponent: false,
+                    ReferenceObjectPath: CreatePath(
+                        "$.addresses[*].schoolReference",
+                        new JsonPathSegment.Property("addresses"),
+                        new JsonPathSegment.AnyArrayElement(),
+                        new JsonPathSegment.Property("schoolReference")
+                    ),
+                    Table: table.Table,
+                    FkColumn: new DbColumnName("School_DocumentId"),
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "School"),
+                    IdentityBindings: []
+                ),
+            ],
+            DescriptorEdgeSources:
+            [
+                new DescriptorEdgeSource(
+                    IsIdentityComponent: false,
+                    DescriptorValuePath: CreatePath(
+                        "$.addresses[*].programTypeDescriptor",
+                        new JsonPathSegment.Property("addresses"),
+                        new JsonPathSegment.AnyArrayElement(),
+                        new JsonPathSegment.Property("programTypeDescriptor")
+                    ),
+                    Table: table.Table,
+                    FkColumn: new DbColumnName("ProgramTypeDescriptorId"),
+                    DescriptorResource: new QualifiedResourceName("Ed-Fi", "ProgramTypeDescriptor")
+                ),
+            ]
+        );
+    }
+
+    private static JsonPathExpression CreatePath(string canonical, params JsonPathSegment[] segments)
+    {
+        return new JsonPathExpression(canonical, segments);
     }
 
     private static ResourceReadPlan CreateRootOnlyReadPlanStub(RelationalResourceModel resourceModel)

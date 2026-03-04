@@ -83,6 +83,8 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
         }
 
         var rootTable = resourceModel.TablesInDependencyOrder[0];
+        ValidateWritableKeyColumns(rootTable);
+
         var storedColumnsInOrder = rootTable
             .Columns.Where(static column => column.Storage is ColumnStorage.Stored)
             .ToArray();
@@ -130,6 +132,40 @@ public sealed class RootOnlyWritePlanCompiler(SqlDialect dialect)
         );
 
         return new ResourceWritePlan(resourceModel, [tablePlan]);
+    }
+
+    /// <summary>
+    /// Validates that every key column maps to a writable stored column. Unified aliases are generated and non-writable.
+    /// </summary>
+    private static void ValidateWritableKeyColumns(DbTableModel tableModel)
+    {
+        foreach (var keyColumn in tableModel.Key.Columns)
+        {
+            var matchingColumn = tableModel.Columns.FirstOrDefault(column =>
+                column.ColumnName.Equals(keyColumn.ColumnName)
+            );
+
+            if (matchingColumn is null)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot compile write plan for '{tableModel.Table}': key column '{keyColumn.ColumnName.Value}' does not exist in table columns."
+                );
+            }
+
+            if (matchingColumn.Storage is ColumnStorage.UnifiedAlias unifiedAlias)
+            {
+                var presenceColumnDescription = unifiedAlias.PresenceColumn switch
+                {
+                    null => "<none>",
+                    { } presenceColumn => presenceColumn.Value,
+                };
+
+                throw new InvalidOperationException(
+                    $"Cannot compile write plan for '{tableModel.Table}': key column '{keyColumn.ColumnName.Value}' is UnifiedAlias "
+                        + $"(canonical '{unifiedAlias.CanonicalColumn.Value}', presence '{presenceColumnDescription}') and is not writable."
+                );
+            }
+        }
     }
 
     /// <summary>
