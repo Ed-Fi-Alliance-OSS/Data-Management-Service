@@ -375,5 +375,59 @@
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
     "completed": true
+  },
+  {
+    "category": "Hardening / Model Integrity",
+    "description": "Fail fast on duplicate write-source inventory keys during write-plan compilation. Acceptance: WritePlanCompiler must validate that RelationalResourceModel.DocumentReferenceBindings contains no duplicate (Table, FkColumn) keys and that RelationalResourceModel.DescriptorEdgeSources contains no duplicate (Table, FkColumn) keys. If duplicates are found, compilation must throw InvalidOperationException before compiling any TableWritePlan, with a deterministic message that names the resource and the duplicated key(s) (and counts, if available). This validation must trigger even when no compiled ColumnBindings reference the duplicated entries (i.e., do not rely on lazy lookup-time detection).",
+    "steps-to-verify": [
+      "Add unit tests that construct a RelationalResourceModel with duplicate DocumentReferenceBindings/DescriptorEdgeSources keys that are not referenced by any table columns and assert deterministic InvalidOperationException messages",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Hardening / Key Unification",
+    "description": "Decouple synthetic presence detection from SourceJsonPath null alone. Acceptance: KeyUnificationWritePlanCompiler must derive PresenceIsSynthetic using stable semantic signals (e.g., ColumnKind.Scalar + nullable boolean + SourceJsonPath == null), and must never classify reference-site presence columns (the reference group's DocumentFk column) as synthetic even if SourceJsonPath is null. Preserve existing behavior for true synthetic presence flags: require nullable boolean type, and require a matching TableConstraint.NullOrTrue. Add a regression unit test that mutates a reference-site presence column to SourceJsonPath == null and asserts it is not treated as synthetic (no nullable-boolean validation or NullOrTrue requirement is applied).",
+    "steps-to-verify": [
+      "Add unit tests that (a) confirm synthetic presence flags are still recognized and validated, and (b) confirm reference-site presence columns are never treated as synthetic even when SourceJsonPath is null",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Design / Extensibility",
+    "description": "Generalize Precomputed binding producer accounting beyond key-unification. Acceptance: evolve the write-plan contract and compiler so WriteValueSource.Precomputed bindings can be produced by multiple explicit precompute-plan kinds (key-unification remains one producer type). Compilation must still fail fast when any Precomputed binding has zero producers or more than one producer across all producer inventories, but it must not assume all Precomputed bindings are produced by key-unification. Update manifests/DTOS (NormalizedPlanContractDtos and ThinSliceMappingSetManifestJsonEmitter) to represent the new producer inventory deterministically. Add unit tests that (a) assert the current key-unification behavior remains unchanged, and (b) introduce a second (test-only) precompute producer kind to prove the accounting supports non-key-unification producers without weakening the 0/1 producer invariant.",
+    "steps-to-verify": [
+      "Add/adjust contract and codec tests to ensure the new precompute producer inventory is deterministic and round-trippable",
+      "Add unit tests that validate Precomputed producer accounting across multiple producer kinds",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactor / Simplification",
+    "description": "Reduce duplicated internal map/lookup construction helpers in WritePlanCompiler. Acceptance: introduce a small shared helper for building per-table maps (columnByName, bindingIndexByColumn, parameterNameByColumn) and write-source lookup maps with deterministic duplicate handling. Prefer immutable/frozen dictionaries for maps that are read-only after construction. No behavior changes: emitted SQL must remain byte-for-byte identical, ColumnBindings order must remain unchanged, and all existing exception messages (except any explicitly improved duplicate diagnostics) must remain stable. Update/keep unit and golden fixture tests to lock down output stability.",
+    "steps-to-verify": [
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj",
+      "Run: set UPDATE_GOLDENS=0 and ensure golden fixture tests pass with no manifest diffs"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Tests / Maintainability",
+    "description": "Split WritePlanCompilerTests into smaller focused fixtures. Acceptance: refactor WritePlanCompilerTests.cs into multiple test files/classes grouped by feature area (bindings/parameter naming, insert SQL, update SQL, delete-by-parent SQL, batching, key-unification). Preserve all existing coverage and assertions (including message matching and deterministic output comparisons). Test names and file names must follow existing NUnit conventions (Given_* fixtures and It_* tests).",
+    "steps-to-verify": [
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Naming / Cleanup",
+    "description": "Rename thin-slice test helpers that now emit/validate full mapping-set manifests. Acceptance: rename ThinSliceMappingSetManifestJsonEmitter and ThinSliceFixtureModelSetBuilder (and related test naming) to reflect their current role (mapping-set manifest emission and fixture model-set building beyond thin-slice). Update filenames, classes, and all references. Ensure no remaining misleading \"ThinSlice\" references for these helpers (excluding intentionally thin-slice read-plan support types).",
+    "steps-to-verify": [
+      "Run: rg -n \"ThinSliceMappingSetManifestJsonEmitter|ThinSliceFixtureModelSetBuilder\" src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit (ensure no references remain after rename)",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
   }
 ]
