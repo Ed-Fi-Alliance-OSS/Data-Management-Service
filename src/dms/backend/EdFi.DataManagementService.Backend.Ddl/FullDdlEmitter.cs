@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text;
 using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Ddl;
@@ -23,6 +24,25 @@ public static class FullDdlEmitter
         var coreDdl = new CoreDdlEmitter(dialect).Emit();
         var relationalDdl = new RelationalModelDdlEmitter(dialect).Emit(modelSet);
         var seedDml = new SeedDmlEmitter(dialect).Emit(modelSet.EffectiveSchema);
-        return coreDdl + relationalDdl + seedDml;
+        return JoinSegments(coreDdl, relationalDdl, seedDml);
+    }
+
+    /// <summary>
+    /// Concatenates SQL segments, ensuring a newline boundary between each non-empty
+    /// segment so that the last line of one segment never runs into the first line
+    /// of the next.
+    /// </summary>
+    internal static string JoinSegments(params string[] segments)
+    {
+        var sb = new StringBuilder();
+        foreach (var segment in segments)
+        {
+            if (segment.Length == 0)
+                continue;
+            if (sb.Length > 0 && sb[sb.Length - 1] != '\n')
+                sb.Append('\n');
+            sb.Append(segment);
+        }
+        return sb.ToString();
     }
 }
