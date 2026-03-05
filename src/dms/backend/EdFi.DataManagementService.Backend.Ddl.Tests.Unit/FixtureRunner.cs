@@ -133,12 +133,9 @@ public static class FixtureRunner
     private static List<SqlDialect> ParseDialects(string[] dialectNames) =>
         dialectNames
             .Select(name =>
-                name.ToLowerInvariant() switch
-                {
-                    "pgsql" => SqlDialect.Pgsql,
-                    "mssql" => SqlDialect.Mssql,
-                    _ => throw new InvalidOperationException($"Unknown dialect: {name}"),
-                }
+                Enum.TryParse<SqlDialect>(name, ignoreCase: true, out var d)
+                    ? d
+                    : throw new InvalidOperationException($"Unknown dialect: {name}")
             )
             .ToList();
 

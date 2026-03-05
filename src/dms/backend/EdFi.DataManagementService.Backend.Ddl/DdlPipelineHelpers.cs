@@ -21,24 +21,13 @@ public static class DdlPipelineHelpers
     /// </summary>
     public static (ISqlDialect Dialect, ISqlDialectRules Rules) CreateDialect(SqlDialect dialect)
     {
-        return dialect switch
+        ISqlDialectRules rules = dialect switch
         {
-            SqlDialect.Pgsql => CreatePgsql(),
-            SqlDialect.Mssql => CreateMssql(),
+            SqlDialect.Pgsql => new PgsqlDialectRules(),
+            SqlDialect.Mssql => new MssqlDialectRules(),
             _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported dialect"),
         };
-
-        static (ISqlDialect, ISqlDialectRules) CreatePgsql()
-        {
-            var rules = new PgsqlDialectRules();
-            return (new PgsqlDialect(rules), rules);
-        }
-
-        static (ISqlDialect, ISqlDialectRules) CreateMssql()
-        {
-            var rules = new MssqlDialectRules();
-            return (new MssqlDialect(rules), rules);
-        }
+        return (SqlDialectFactory.Create(rules), rules);
     }
 
     /// <summary>

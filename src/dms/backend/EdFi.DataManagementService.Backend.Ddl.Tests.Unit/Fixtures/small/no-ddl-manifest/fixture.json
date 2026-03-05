@@ -1,0 +1,5 @@
+{
+  "apiSchemaFiles": ["ApiSchema.json"],
+  "dialects": ["pgsql"],
+  "emitDdlManifest": false
+}
