@@ -246,6 +246,35 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
         // makes PreflightSeedValidation self-contained in case the call order changes.
         SchemaHashChecker.ValidateOrThrow(currentHash, expectedSchema.EffectiveSchemaHash, logger);
 
+        // --- Check that required seed tables exist ---
+        var missingTables = new List<string>();
+        using (var tableCheckCommand = connection.CreateCommand())
+        {
+            tableCheckCommand.CommandText =
+                "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dms' AND TABLE_NAME IN ('ResourceKey', 'SchemaComponent')";
+            var foundTables = new HashSet<string>();
+            using var tableReader = tableCheckCommand.ExecuteReader();
+            while (tableReader.Read())
+            {
+                foundTables.Add(tableReader.GetString(0));
+            }
+
+            if (!foundTables.Contains("ResourceKey"))
+                missingTables.Add("[dms].[ResourceKey]");
+            if (!foundTables.Contains("SchemaComponent"))
+                missingTables.Add("[dms].[SchemaComponent]");
+        }
+
+        if (missingTables.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"The dms.EffectiveSchema table exists but the following required seed table(s) are missing: "
+                    + $"{string.Join(", ", missingTables)}. "
+                    + "This indicates a partial or corrupt provisioning state. "
+                    + "Drop and recreate the database before re-provisioning."
+            );
+        }
+
         // --- Validate EffectiveSchema ResourceKeyCount and ResourceKeySeedHash ---
         using (var esCommand = connection.CreateCommand())
         {
