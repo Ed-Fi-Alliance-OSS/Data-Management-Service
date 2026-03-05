@@ -143,25 +143,32 @@ internal static class AuthEdOrgHierarchyFixture
     internal static AuthEdOrgHierarchy Build()
     {
         var schema = new DbSchemaName("edfi");
-        var identityColumn = new DbColumnName("EducationOrganizationId");
+
+        // Concrete EdOrg subtypes use entity-specific identity column names.
+        // The abstract identity table uses EducationOrganizationId; the union view
+        // aliases entity-specific columns (e.g., s.SchoolId AS EducationOrganizationId).
+        var leaIdentity = new DbColumnName("LocalEducationAgencyId");
+        var schoolIdentity = new DbColumnName("SchoolId");
+        var seaIdentity = new DbColumnName("StateEducationAgencyId");
+        var escIdentity = new DbColumnName("EducationServiceCenterId");
 
         var stateEducationAgency = new AuthEdOrgEntity(
             EntityName: "StateEducationAgency",
             Table: new DbTableName(schema, "StateEducationAgency"),
-            IdentityColumn: identityColumn,
+            IdentityColumn: seaIdentity,
             ParentEdOrgFks: []
         );
 
         var school = new AuthEdOrgEntity(
             EntityName: "School",
             Table: new DbTableName(schema, "School"),
-            IdentityColumn: identityColumn,
+            IdentityColumn: schoolIdentity,
             ParentEdOrgFks:
             [
                 new AuthParentEdOrgFk(
                     FkColumn: new DbColumnName("LocalEducationAgency_DocumentId"),
                     ParentTable: new DbTableName(schema, "LocalEducationAgency"),
-                    ParentIdentityColumn: identityColumn
+                    ParentIdentityColumn: leaIdentity
                 ),
             ]
         );
@@ -169,23 +176,23 @@ internal static class AuthEdOrgHierarchyFixture
         var localEducationAgency = new AuthEdOrgEntity(
             EntityName: "LocalEducationAgency",
             Table: new DbTableName(schema, "LocalEducationAgency"),
-            IdentityColumn: identityColumn,
+            IdentityColumn: leaIdentity,
             ParentEdOrgFks:
             [
                 new AuthParentEdOrgFk(
                     FkColumn: new DbColumnName("EducationServiceCenter_DocumentId"),
                     ParentTable: new DbTableName(schema, "EducationServiceCenter"),
-                    ParentIdentityColumn: identityColumn
+                    ParentIdentityColumn: escIdentity
                 ),
                 new AuthParentEdOrgFk(
                     FkColumn: new DbColumnName("ParentLocalEducationAgency_DocumentId"),
                     ParentTable: new DbTableName(schema, "LocalEducationAgency"),
-                    ParentIdentityColumn: identityColumn
+                    ParentIdentityColumn: leaIdentity
                 ),
                 new AuthParentEdOrgFk(
                     FkColumn: new DbColumnName("StateEducationAgency_DocumentId"),
                     ParentTable: new DbTableName(schema, "StateEducationAgency"),
-                    ParentIdentityColumn: identityColumn
+                    ParentIdentityColumn: seaIdentity
                 ),
             ]
         );
