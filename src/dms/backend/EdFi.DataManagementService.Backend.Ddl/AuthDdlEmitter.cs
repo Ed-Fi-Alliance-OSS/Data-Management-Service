@@ -133,10 +133,9 @@ public sealed class AuthDdlEmitter(ISqlDialect dialect, AuthEdOrgHierarchy hiera
 
         if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
-            var qualifiedIndex =
-                $"{_dialect.QuoteIdentifier(AuthTableNames.AuthSchema.Value)}.{_dialect.QuoteIdentifier(indexName)}";
+            var quotedIndex = _dialect.QuoteIdentifier(indexName);
             writer.AppendLine(
-                $"CREATE INDEX IF NOT EXISTS {qualifiedIndex} ON {qualifiedTable} ({quotedTarget}) INCLUDE ({quotedSource});"
+                $"CREATE INDEX IF NOT EXISTS {quotedIndex} ON {qualifiedTable} ({quotedTarget}) INCLUDE ({quotedSource});"
             );
         }
         else
