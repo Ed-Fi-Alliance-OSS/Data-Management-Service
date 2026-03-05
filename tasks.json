@@ -455,7 +455,7 @@
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj",
       "Run: set UPDATE_GOLDENS=0 and ensure plan-compilation golden fixture tests have no manifest diffs"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Refactor / Cleanup",

@@ -22,17 +22,9 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
 
     private readonly record struct WriteSourceLookupKey(DbTableName Table, DbColumnName Column);
 
-    private readonly record struct WriteSourceLookupEntry<TValue>(TValue Value, bool HasDuplicateMatch);
-
     private sealed record WriteSourceLookup(
-        IReadOnlyDictionary<
-            WriteSourceLookupKey,
-            WriteSourceLookupEntry<int>
-        > DocumentReferenceBindingIndexByKey,
-        IReadOnlyDictionary<
-            WriteSourceLookupKey,
-            WriteSourceLookupEntry<DescriptorEdgeSource>
-        > DescriptorEdgeSourceByKey
+        IReadOnlyDictionary<WriteSourceLookupKey, int> DocumentReferenceBindingIndexByKey,
+        IReadOnlyDictionary<WriteSourceLookupKey, DescriptorEdgeSource> DescriptorEdgeSourceByKey
     );
 
     /// <summary>
@@ -132,18 +124,13 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         );
     }
 
-    private static FrozenDictionary<
-        WriteSourceLookupKey,
-        WriteSourceLookupEntry<TValue>
-    > BuildWriteSourceLookupMap<TSource, TValue>(
+    private static FrozenDictionary<WriteSourceLookupKey, TValue> BuildWriteSourceLookupMap<TSource, TValue>(
         IReadOnlyList<TSource> sourceInventory,
         Func<TSource, WriteSourceLookupKey> keySelector,
         Func<TSource, int, TValue> valueSelector
     )
     {
-        var lookupByKey = new Dictionary<WriteSourceLookupKey, WriteSourceLookupEntry<TValue>>(
-            sourceInventory.Count
-        );
+        var lookupByKey = new Dictionary<WriteSourceLookupKey, TValue>(sourceInventory.Count);
 
         for (var index = 0; index < sourceInventory.Count; index++)
         {
@@ -151,18 +138,11 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
             var lookupKey = keySelector(source);
             var value = valueSelector(source, index);
 
-            if (!lookupByKey.TryGetValue(lookupKey, out var existingEntry))
+            if (!lookupByKey.TryAdd(lookupKey, value))
             {
-                lookupByKey.Add(
-                    lookupKey,
-                    new WriteSourceLookupEntry<TValue>(Value: value, HasDuplicateMatch: false)
+                throw new InvalidOperationException(
+                    $"Duplicate write-source lookup key '{lookupKey.Table}.{lookupKey.Column.Value}' was encountered while building compiler lookup maps."
                 );
-                continue;
-            }
-
-            if (!existingEntry.HasDuplicateMatch)
-            {
-                lookupByKey[lookupKey] = existingEntry with { HasDuplicateMatch = true };
             }
         }
 
@@ -721,12 +701,9 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         WriteSourceLookup writeSourceLookup
     )
     {
-        return GetUniqueLookupMatchOrThrow(
+        return GetLookupMatchOrThrow(
             writeSourceLookup.DocumentReferenceBindingIndexByKey,
             new WriteSourceLookupKey(table, fkColumn),
-            onDuplicate: static key => new InvalidOperationException(
-                $"Multiple document-reference bindings match '{key.Table}.{key.Column.Value}'."
-            ),
             onMissing: static key => new InvalidOperationException(
                 $"No document-reference binding matches '{key.Table}.{key.Column.Value}'."
             )
@@ -744,12 +721,9 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         WriteSourceLookup writeSourceLookup
     )
     {
-        var matchingEdgeSource = GetUniqueLookupMatchOrThrow(
+        var matchingEdgeSource = GetLookupMatchOrThrow(
             writeSourceLookup.DescriptorEdgeSourceByKey,
             new WriteSourceLookupKey(table, fkColumn),
-            onDuplicate: static key => new InvalidOperationException(
-                $"Multiple descriptor edge sources match '{key.Table}.{key.Column.Value}'."
-            ),
             onMissing: static key => new InvalidOperationException(
                 $"No descriptor edge source matches '{key.Table}.{key.Column.Value}'."
             )
@@ -772,24 +746,18 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         );
     }
 
-    private static TValue GetUniqueLookupMatchOrThrow<TValue>(
-        IReadOnlyDictionary<WriteSourceLookupKey, WriteSourceLookupEntry<TValue>> lookupByKey,
+    private static TValue GetLookupMatchOrThrow<TValue>(
+        IReadOnlyDictionary<WriteSourceLookupKey, TValue> lookupByKey,
         WriteSourceLookupKey lookupKey,
-        Func<WriteSourceLookupKey, InvalidOperationException> onDuplicate,
         Func<WriteSourceLookupKey, InvalidOperationException> onMissing
     )
     {
-        if (!lookupByKey.TryGetValue(lookupKey, out var entry))
+        if (!lookupByKey.TryGetValue(lookupKey, out var value))
         {
             throw onMissing(lookupKey);
         }
 
-        if (entry.HasDuplicateMatch)
-        {
-            throw onDuplicate(lookupKey);
-        }
-
-        return entry.Value;
+        return value;
     }
 
     /// <summary>
