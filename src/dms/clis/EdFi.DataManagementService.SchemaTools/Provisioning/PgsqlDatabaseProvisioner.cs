@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -13,9 +14,25 @@ namespace EdFi.DataManagementService.SchemaTools.Provisioning;
 /// PostgreSQL implementation of <see cref="IDatabaseProvisioner"/>.
 /// Uses Npgsql for all database connectivity.
 /// </summary>
-public class PgsqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisioner
+public class PgsqlDatabaseProvisioner(ILogger logger) : DatabaseProvisionerBase(logger)
 {
-    public string GetDatabaseName(string connectionString)
+    private static readonly DialectSql _dialect = new(
+        EffectiveSchemaTableExistsSql: "SELECT 1 FROM information_schema.tables WHERE table_schema = 'dms' AND table_name = 'EffectiveSchema'",
+        EffectiveSchemaHashSql: """SELECT "EffectiveSchemaHash" FROM dms."EffectiveSchema" WHERE "EffectiveSchemaSingletonId" = 1""",
+        SeedTableCheckSql: "SELECT table_name FROM information_schema.tables WHERE table_schema = 'dms' AND table_name IN ('ResourceKey', 'SchemaComponent')",
+        EffectiveSchemaCountAndHashSql: @"SELECT ""ResourceKeyCount"", ""ResourceKeySeedHash"" FROM dms.""EffectiveSchema"" WHERE ""EffectiveSchemaSingletonId"" = 1",
+        ResourceKeySelectSql: @"SELECT ""ResourceKeyId"", ""ProjectName"", ""ResourceName"", ""ResourceVersion"" FROM dms.""ResourceKey"" ORDER BY ""ResourceKeyId""",
+        SchemaComponentSelectSql: @"SELECT ""ProjectEndpointName"", ""ProjectName"", ""ProjectVersion"", ""IsExtensionProject"" FROM dms.""SchemaComponent"" WHERE ""EffectiveSchemaHash"" = @hash ORDER BY ""ProjectEndpointName""",
+        MissingTableResourceKey: "dms.\"ResourceKey\"",
+        MissingTableSchemaComponent: "dms.\"SchemaComponent\""
+    );
+
+    protected override DialectSql Dialect => _dialect;
+
+    protected override DbConnection CreateConnection(string connectionString) =>
+        new NpgsqlConnection(connectionString);
+
+    public override string GetDatabaseName(string connectionString)
     {
         var builder = new NpgsqlConnectionStringBuilder(connectionString);
         return string.IsNullOrWhiteSpace(builder.Database)
@@ -23,13 +40,13 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisioner
             : builder.Database;
     }
 
-    public bool CreateDatabaseIfNotExists(string connectionString)
+    public override bool CreateDatabaseIfNotExists(string connectionString)
     {
         var targetDatabase = GetDatabaseName(connectionString);
 
         var builder = new NpgsqlConnectionStringBuilder(connectionString);
 
-        logger.LogInformation(
+        Logger.LogInformation(
             "Checking if database exists: {DatabaseName}",
             LoggingSanitizer.SanitizeForLogging(targetDatabase)
         );
@@ -50,7 +67,7 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisioner
 
         if (exists)
         {
-            logger.LogInformation(
+            Logger.LogInformation(
                 "Database already exists: {DatabaseName}",
                 LoggingSanitizer.SanitizeForLogging(targetDatabase)
             );
@@ -60,7 +77,7 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisioner
         // CREATE DATABASE cannot run inside a transaction in PostgreSQL.
         // Without an explicit BeginTransaction(), Npgsql executes in autocommit mode.
         // Use a quoted identifier to safely handle the database name.
-        logger.LogInformation(
+        Logger.LogInformation(
             "Creating database: {DatabaseName}",
             LoggingSanitizer.SanitizeForLogging(targetDatabase)
         );
@@ -77,7 +94,7 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisioner
         {
             // 42P04 = "duplicate_database" — a concurrent process created it
             // between our check and our CREATE. Treat as "already existed".
-            logger.LogInformation(
+            Logger.LogInformation(
                 ex,
                 "Database was created concurrently by another process: {DatabaseName}",
                 LoggingSanitizer.SanitizeForLogging(targetDatabase)
@@ -85,7 +102,7 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisioner
             return false;
         }
 
-        logger.LogInformation(
+        Logger.LogInformation(
             "Database created successfully: {DatabaseName}",
             LoggingSanitizer.SanitizeForLogging(targetDatabase)
         );
@@ -93,11 +110,15 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisioner
         return true;
     }
 
-    public void ExecuteInTransaction(string connectionString, string sql, int commandTimeoutSeconds = 300)
+    public override void ExecuteInTransaction(
+        string connectionString,
+        string sql,
+        int commandTimeoutSeconds = 300
+    )
     {
         var targetDatabase = GetDatabaseName(connectionString);
 
-        logger.LogInformation(
+        Logger.LogInformation(
             "Executing DDL in transaction against database: {DatabaseName}",
             LoggingSanitizer.SanitizeForLogging(targetDatabase)
         );
@@ -118,7 +139,7 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisioner
 
             transaction.Commit();
 
-            logger.LogInformation(
+            Logger.LogInformation(
                 "DDL executed successfully against database: {DatabaseName}",
                 LoggingSanitizer.SanitizeForLogging(targetDatabase)
             );
@@ -131,7 +152,7 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisioner
             }
             catch (Exception rollbackEx)
             {
-                logger.LogError(
+                Logger.LogError(
                     rollbackEx,
                     "Failed to roll back transaction for database: {DatabaseName}",
                     LoggingSanitizer.SanitizeForLogging(targetDatabase)
@@ -142,33 +163,10 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisioner
         }
     }
 
-    public void PreflightSchemaHashCheck(string connectionString, string expectedHash)
-    {
-        using var connection = new NpgsqlConnection(connectionString);
-        connection.Open();
-
-        // Check if the dms.EffectiveSchema table exists
-        using var existsCommand = connection.CreateCommand();
-        existsCommand.CommandText =
-            "SELECT 1 FROM information_schema.tables WHERE table_schema = 'dms' AND table_name = 'EffectiveSchema'";
-        if (existsCommand.ExecuteScalar() is null)
-        {
-            return; // New database — no table yet, proceed with provisioning
-        }
-
-        // Table exists — check the stored hash
-        using var hashCommand = connection.CreateCommand();
-        hashCommand.CommandText =
-            """SELECT "EffectiveSchemaHash" FROM dms."EffectiveSchema" WHERE "EffectiveSchemaSingletonId" = 1""";
-        var storedHash = hashCommand.ExecuteScalar() as string;
-
-        SchemaHashChecker.ValidateOrThrow(storedHash, expectedHash, logger);
-    }
-
     /// <summary>
     /// No-op for PostgreSQL. MVCC is the default isolation behavior.
     /// </summary>
-    public void CheckOrConfigureMvcc(string connectionString, bool databaseWasCreated)
+    public override void CheckOrConfigureMvcc(string connectionString, bool databaseWasCreated)
     {
         // PostgreSQL uses MVCC natively — no configuration needed.
     }

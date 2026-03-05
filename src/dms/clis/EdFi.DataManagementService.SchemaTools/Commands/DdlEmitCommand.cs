@@ -171,7 +171,7 @@ public static class DdlEmitCommand
 
                 // Emit DDL manifest (dialect-independent summary of emitted SQL per dialect).
                 // The manifest reflects only the dialect(s) selected via --dialect.
-                // Controlled by --ddl-manifest (default true) per the spec's "when enabled" contract.
+                // Controlled by --ddl-manifest (default false).
                 if (emitDdlManifest)
                 {
                     var ddlManifest = DdlManifestEmitter.Emit(effectiveSchemaInfo, ddlManifestEntries);

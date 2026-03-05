@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.External;
+
 namespace EdFi.DataManagementService.SchemaTools.Provisioning;
 
 /// <summary>
@@ -40,12 +42,33 @@ public interface IDatabaseProvisioner
     void CheckOrConfigureMvcc(string connectionString, bool databaseWasCreated);
 
     /// <summary>
-    /// Performs a lightweight preflight check: if dms.EffectiveSchema exists and
-    /// its hash differs from <paramref name="expectedHash"/>, throws an
-    /// InvalidOperationException. If the table does not exist or the hash matches,
-    /// returns normally.
+    /// Performs a lightweight preflight check against the dms.EffectiveSchema table.
     /// </summary>
+    /// <remarks>
+    /// Outcomes:
+    /// <list type="bullet">
+    ///   <item>Table does not exist (new database) — returns normally.</item>
+    ///   <item>Table exists and stored hash matches <paramref name="expectedHash"/> — returns normally.</item>
+    ///   <item>Table exists but the singleton row is missing (partial/corrupt state) — throws <see cref="InvalidOperationException"/>.</item>
+    ///   <item>Table exists and stored hash differs from <paramref name="expectedHash"/> — throws <see cref="InvalidOperationException"/>.</item>
+    /// </list>
+    /// </remarks>
     void PreflightSchemaHashCheck(string connectionString, string expectedHash);
+
+    /// <summary>
+    /// Validates that the contents of dms.ResourceKey and dms.SchemaComponent match
+    /// the expected seed data from <paramref name="expectedSchema"/>. If dms.EffectiveSchema
+    /// does not exist (new database), returns immediately.
+    /// </summary>
+    /// <remarks>
+    /// Throws <see cref="InvalidOperationException"/> in any of these cases:
+    /// <list type="bullet">
+    ///   <item>The dms.EffectiveSchema table exists but the singleton row is missing (partial/corrupt state).</item>
+    ///   <item>Required seed tables (dms.ResourceKey or dms.SchemaComponent) are missing.</item>
+    ///   <item>Seed table contents do not match expected data (row-level diff report included in message).</item>
+    /// </list>
+    /// </remarks>
+    void PreflightSeedValidation(string connectionString, EffectiveSchemaInfo expectedSchema);
 
     /// <summary>
     /// Extracts the target database name from the connection string.

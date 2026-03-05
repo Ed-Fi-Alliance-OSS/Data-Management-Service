@@ -152,13 +152,13 @@ public static class DdlProvisionCommand
                 // master independently of the target DB connection.
                 provisioner.CheckOrConfigureMvcc(connectionString, databaseWasCreated);
 
-                // Fail-fast: if the database already has a different schema hash, abort
-                // before executing any DDL. The in-SQL preflight in SeedDmlEmitter remains
-                // as defense-in-depth inside the transaction.
-                provisioner.PreflightSchemaHashCheck(
-                    connectionString,
-                    effectiveSchemaInfo.EffectiveSchemaHash
-                );
+                // Fail-fast preflight: verify schema hash and seed data integrity before
+                // executing any DDL. PreflightSeedValidation validates the schema hash
+                // internally, so a separate PreflightSchemaHashCheck call is not needed.
+                //
+                // Defense-in-depth: the in-SQL validation in SeedDmlEmitter also checks
+                // the hash inside the DDL transaction as an ultimate safety net.
+                provisioner.PreflightSeedValidation(connectionString, effectiveSchemaInfo);
 
                 // Execute DDL in a transaction
                 provisioner.ExecuteInTransaction(connectionString, result.CombinedSql, commandTimeoutSeconds);

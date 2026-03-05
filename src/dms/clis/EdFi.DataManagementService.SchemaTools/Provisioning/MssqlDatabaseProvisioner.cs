@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Data.SqlClient;
@@ -14,9 +15,25 @@ namespace EdFi.DataManagementService.SchemaTools.Provisioning;
 /// SQL Server implementation of <see cref="IDatabaseProvisioner"/>.
 /// Uses Microsoft.Data.SqlClient for all database connectivity.
 /// </summary>
-public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisioner
+public partial class MssqlDatabaseProvisioner(ILogger logger) : DatabaseProvisionerBase(logger)
 {
-    public string GetDatabaseName(string connectionString)
+    private static readonly DialectSql _dialect = new(
+        EffectiveSchemaTableExistsSql: "SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dms' AND TABLE_NAME = 'EffectiveSchema'",
+        EffectiveSchemaHashSql: """SELECT [EffectiveSchemaHash] FROM [dms].[EffectiveSchema] WHERE [EffectiveSchemaSingletonId] = 1""",
+        SeedTableCheckSql: "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dms' AND TABLE_NAME IN ('ResourceKey', 'SchemaComponent')",
+        EffectiveSchemaCountAndHashSql: @"SELECT [ResourceKeyCount], [ResourceKeySeedHash] FROM [dms].[EffectiveSchema] WHERE [EffectiveSchemaSingletonId] = 1",
+        ResourceKeySelectSql: @"SELECT [ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion] FROM [dms].[ResourceKey] ORDER BY [ResourceKeyId]",
+        SchemaComponentSelectSql: @"SELECT [ProjectEndpointName], [ProjectName], [ProjectVersion], [IsExtensionProject] FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = @hash ORDER BY [ProjectEndpointName]",
+        MissingTableResourceKey: "[dms].[ResourceKey]",
+        MissingTableSchemaComponent: "[dms].[SchemaComponent]"
+    );
+
+    protected override DialectSql Dialect => _dialect;
+
+    protected override DbConnection CreateConnection(string connectionString) =>
+        new SqlConnection(connectionString);
+
+    public override string GetDatabaseName(string connectionString)
     {
         var builder = new SqlConnectionStringBuilder(connectionString);
         return string.IsNullOrWhiteSpace(builder.InitialCatalog)
@@ -26,13 +43,13 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
             : builder.InitialCatalog;
     }
 
-    public bool CreateDatabaseIfNotExists(string connectionString)
+    public override bool CreateDatabaseIfNotExists(string connectionString)
     {
         var targetDatabase = GetDatabaseName(connectionString);
 
         var builder = new SqlConnectionStringBuilder(connectionString);
 
-        logger.LogInformation(
+        Logger.LogInformation(
             "Checking if database exists: {DatabaseName}",
             LoggingSanitizer.SanitizeForLogging(targetDatabase)
         );
@@ -53,14 +70,14 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
 
         if (exists)
         {
-            logger.LogInformation(
+            Logger.LogInformation(
                 "Database already exists: {DatabaseName}",
                 LoggingSanitizer.SanitizeForLogging(targetDatabase)
             );
             return false;
         }
 
-        logger.LogInformation(
+        Logger.LogInformation(
             "Creating database: {DatabaseName}",
             LoggingSanitizer.SanitizeForLogging(targetDatabase)
         );
@@ -78,7 +95,7 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
         {
             // 1801 = "Database already exists" — a concurrent process created it
             // between our check and our CREATE. Treat as "already existed".
-            logger.LogInformation(
+            Logger.LogInformation(
                 ex,
                 "Database was created concurrently by another process: {DatabaseName}",
                 LoggingSanitizer.SanitizeForLogging(targetDatabase)
@@ -86,7 +103,7 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
             return false;
         }
 
-        logger.LogInformation(
+        Logger.LogInformation(
             "Database created successfully: {DatabaseName}",
             LoggingSanitizer.SanitizeForLogging(targetDatabase)
         );
@@ -94,11 +111,15 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
         return true;
     }
 
-    public void ExecuteInTransaction(string connectionString, string sql, int commandTimeoutSeconds = 300)
+    public override void ExecuteInTransaction(
+        string connectionString,
+        string sql,
+        int commandTimeoutSeconds = 300
+    )
     {
         var targetDatabase = GetDatabaseName(connectionString);
 
-        logger.LogInformation(
+        Logger.LogInformation(
             "Executing DDL in transaction against database: {DatabaseName}",
             LoggingSanitizer.SanitizeForLogging(targetDatabase)
         );
@@ -138,7 +159,7 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
             }
             catch (Exception rollbackEx)
             {
-                logger.LogError(
+                Logger.LogError(
                     rollbackEx,
                     "Failed to roll back transaction for database: {DatabaseName}",
                     LoggingSanitizer.SanitizeForLogging(targetDatabase)
@@ -156,7 +177,7 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
         // stale session state after DDL schema changes.
         SqlConnection.ClearPool(connection);
 
-        logger.LogInformation(
+        Logger.LogInformation(
             "DDL executed successfully against database: {DatabaseName}",
             LoggingSanitizer.SanitizeForLogging(targetDatabase)
         );
@@ -177,30 +198,7 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
     [GeneratedRegex(@"^\s*GO\s*$", RegexOptions.Multiline | RegexOptions.IgnoreCase)]
     private static partial Regex GoBatchSeparatorPattern();
 
-    public void PreflightSchemaHashCheck(string connectionString, string expectedHash)
-    {
-        using var connection = new SqlConnection(connectionString);
-        connection.Open();
-
-        // Check if the dms.EffectiveSchema table exists
-        using var existsCommand = connection.CreateCommand();
-        existsCommand.CommandText =
-            "SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dms' AND TABLE_NAME = 'EffectiveSchema'";
-        if (existsCommand.ExecuteScalar() is null)
-        {
-            return; // New database — no table yet, proceed with provisioning
-        }
-
-        // Table exists — check the stored hash
-        using var hashCommand = connection.CreateCommand();
-        hashCommand.CommandText =
-            """SELECT [EffectiveSchemaHash] FROM [dms].[EffectiveSchema] WHERE [EffectiveSchemaSingletonId] = 1""";
-        var storedHash = hashCommand.ExecuteScalar() as string;
-
-        SchemaHashChecker.ValidateOrThrow(storedHash, expectedHash, logger);
-    }
-
-    public void CheckOrConfigureMvcc(string connectionString, bool databaseWasCreated)
+    public override void CheckOrConfigureMvcc(string connectionString, bool databaseWasCreated)
     {
         var targetDatabase = GetDatabaseName(connectionString);
 
@@ -217,7 +215,7 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
             var quotedName = $"[{targetDatabase.Replace("]", "]]")}]";
 
             // Enable MVCC settings on the newly created database
-            logger.LogInformation(
+            Logger.LogInformation(
                 "Configuring MVCC isolation for new database: {DatabaseName}",
                 LoggingSanitizer.SanitizeForLogging(targetDatabase)
             );
@@ -230,7 +228,7 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
             snapshotCommand.CommandText = $"ALTER DATABASE {quotedName} SET ALLOW_SNAPSHOT_ISOLATION ON";
             snapshotCommand.ExecuteNonQuery();
 
-            logger.LogInformation(
+            Logger.LogInformation(
                 "MVCC isolation configured for database: {DatabaseName}",
                 LoggingSanitizer.SanitizeForLogging(targetDatabase)
             );
@@ -263,7 +261,7 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
                     + "DMS strongly recommends enabling MVCC reads for correct concurrency behavior. "
                     + "Run: ALTER DATABASE [dbname] SET READ_COMMITTED_SNAPSHOT ON";
 
-                logger.LogWarning(
+                Logger.LogWarning(
                     "READ_COMMITTED_SNAPSHOT is OFF for database: {DatabaseName}",
                     LoggingSanitizer.SanitizeForLogging(targetDatabase)
                 );

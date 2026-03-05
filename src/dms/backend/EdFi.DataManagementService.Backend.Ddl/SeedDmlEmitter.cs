@@ -14,13 +14,49 @@ namespace EdFi.DataManagementService.Backend.Ddl;
 /// <c>dms.ResourceKey</c>, <c>dms.EffectiveSchema</c>, and <c>dms.SchemaComponent</c>.
 /// </para>
 /// </summary>
+/// <remarks>
+/// The in-SQL validation emitted by <c>EmitResourceKeyValidation</c> and
+/// <c>EmitSchemaComponentValidation</c> is the defense-in-depth counterpart of
+/// the C# preflight validation in
+/// <see cref="EdFi.DataManagementService.SchemaTools.Provisioning.SeedValidator"/>.
+/// Both validate the same seed tables using the same columns:
+/// <list type="bullet">
+///   <item>ResourceKey: ResourceKeyId, ProjectName, ResourceName, ResourceVersion</item>
+///   <item>SchemaComponent: ProjectEndpointName, ProjectName, ProjectVersion, IsExtensionProject</item>
+/// </list>
+/// The in-SQL path runs inside the DDL transaction; SeedValidator runs before it as a fail-fast.
+/// <para>The in-SQL content mismatch messages include sampled key IDs/names and direct
+/// users to the <c>ddl provision</c> CLI command for detailed row-level diffs provided
+/// by <see cref="EdFi.DataManagementService.SchemaTools.Provisioning.SeedValidator"/>.</para>
+/// <para><b>Important:</b> Changes to validation columns or comparison logic must be
+/// reflected in both locations to keep the dual-path strategy consistent.</para>
+/// </remarks>
 public sealed class SeedDmlEmitter(ISqlDialect dialect)
 {
     private readonly ISqlDialect _dialect = dialect ?? throw new ArgumentNullException(nameof(dialect));
 
+    /// <summary>
+    /// SQL Server limits VALUES table constructors to 1000 rows.
+    /// Chunks are capped at 999 to stay safely under the limit.
+    /// </summary>
+    private const int MaxValuesRows = 999;
+
     private static readonly DbTableName _resourceKeyTable = DmsTableNames.ResourceKey;
     private static readonly DbTableName _effectiveSchemaTable = DmsTableNames.EffectiveSchema;
     private static readonly DbTableName _schemaComponentTable = DmsTableNames.SchemaComponent;
+
+    /// <summary>
+    /// Emits only the preflight hash-check SQL (Phase 0), without the Phase 7 seed DML.
+    /// Used by <see cref="FullDdlEmitter"/> to place the preflight before core DDL.
+    /// </summary>
+    public string EmitPreflightOnly(string effectiveSchemaHash)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(effectiveSchemaHash);
+
+        var writer = new SqlWriter(_dialect);
+        EmitEffectiveSchemaHashPreflight(writer, effectiveSchemaHash);
+        return writer.ToString();
+    }
 
     /// <summary>
     /// Generates the seed DML script (Phase 7) for the configured dialect.
@@ -44,7 +80,6 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
         writer.AppendLine("-- ==========================================================");
         writer.AppendLine();
 
-        EmitEffectiveSchemaHashPreflight(writer, effectiveSchema.EffectiveSchemaHash);
         EmitResourceKeySeeds(writer, effectiveSchema.ResourceKeysInIdOrder);
         EmitResourceKeyValidation(writer, effectiveSchema.ResourceKeysInIdOrder);
         EmitEffectiveSchemaInsert(writer, effectiveSchema);
@@ -75,6 +110,9 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
 
         if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
+            // Preflight runs before core DDL; on a fresh database, the EffectiveSchema table may not exist yet.
+            var regclassLiteral = _dialect.QualifyTable(_effectiveSchemaTable).Replace("'", "''");
+
             writer.AppendLine("DO $$");
             writer.AppendLine("DECLARE");
             using (writer.Indent())
@@ -84,14 +122,19 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             writer.AppendLine("BEGIN");
             using (writer.Indent())
             {
-                writer.AppendLine($"SELECT {Quote("EffectiveSchemaHash")} INTO _stored_hash FROM {table}");
-                writer.AppendLine($"WHERE {Quote("EffectiveSchemaSingletonId")} = 1;");
-                writer.AppendLine($"IF _stored_hash IS NOT NULL AND _stored_hash <> {hashLiteral} THEN");
+                writer.AppendLine($"IF to_regclass('{regclassLiteral}') IS NOT NULL THEN");
                 using (writer.Indent())
                 {
-                    writer.AppendLine(
-                        $"RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database has ''%'' but expected ''%''', _stored_hash, {hashLiteral};"
-                    );
+                    writer.AppendLine($"SELECT {Quote("EffectiveSchemaHash")} INTO _stored_hash FROM {table}");
+                    writer.AppendLine($"WHERE {Quote("EffectiveSchemaSingletonId")} = 1;");
+                    writer.AppendLine($"IF _stored_hash IS NOT NULL AND _stored_hash <> {hashLiteral} THEN");
+                    using (writer.Indent())
+                    {
+                        writer.AppendLine(
+                            $"RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database has ''%'' but expected ''%''', _stored_hash, {hashLiteral};"
+                        );
+                    }
+                    writer.AppendLine("END IF;");
                 }
                 writer.AppendLine("END IF;");
             }
@@ -101,18 +144,24 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
         {
             writer.AppendLine("DECLARE @preflight_stored_hash nvarchar(200);");
             writer.AppendLine();
-            writer.AppendLine($"SELECT @preflight_stored_hash = {Quote("EffectiveSchemaHash")} FROM {table}");
-            writer.AppendLine($"WHERE {Quote("EffectiveSchemaSingletonId")} = 1;");
-            writer.AppendLine(
-                $"IF @preflight_stored_hash IS NOT NULL AND @preflight_stored_hash <> {hashLiteral}"
-            );
+            writer.AppendLine("IF OBJECT_ID(N'dms.EffectiveSchema', N'U') IS NOT NULL");
             writer.AppendLine("BEGIN");
             using (writer.Indent())
             {
+                writer.AppendLine($"SELECT @preflight_stored_hash = {Quote("EffectiveSchemaHash")} FROM {table}");
+                writer.AppendLine($"WHERE {Quote("EffectiveSchemaSingletonId")} = 1;");
                 writer.AppendLine(
-                    $"DECLARE @preflight_msg nvarchar(500) = CONCAT(N'EffectiveSchemaHash mismatch: database has ''', @preflight_stored_hash, N''' but expected ''', {hashLiteral}, N'''');"
+                    $"IF @preflight_stored_hash IS NOT NULL AND @preflight_stored_hash <> {hashLiteral}"
                 );
-                writer.AppendLine("THROW 50000, @preflight_msg, 1;");
+                writer.AppendLine("BEGIN");
+                using (writer.Indent())
+                {
+                    writer.AppendLine(
+                        $"DECLARE @preflight_msg nvarchar(500) = CONCAT(N'EffectiveSchemaHash mismatch: database has ''', @preflight_stored_hash, N''' but expected ''', {hashLiteral}, N'''');"
+                    );
+                    writer.AppendLine("THROW 50000, @preflight_msg, 1;");
+                }
+                writer.AppendLine("END");
             }
             writer.AppendLine("END");
         }
@@ -192,6 +241,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             {
                 writer.AppendLine("_actual_count integer;");
                 writer.AppendLine("_mismatched_count integer;");
+                writer.AppendLine("_mismatched_ids text;");
             }
             writer.AppendLine("BEGIN");
             using (writer.Indent())
@@ -214,36 +264,35 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
                 writer.AppendLine("WHERE NOT EXISTS (");
                 using (writer.Indent())
                 {
-                    writer.AppendLine("SELECT 1 FROM (VALUES");
-                    using (writer.Indent())
-                    {
-                        for (var i = 0; i < resourceKeys.Count; i++)
-                        {
-                            var rk = resourceKeys[i];
-                            var comma = i < resourceKeys.Count - 1 ? "," : "";
-                            writer.AppendLine(
-                                $"({_dialect.RenderSmallintLiteral(rk.ResourceKeyId)}::smallint, {_dialect.RenderStringLiteral(rk.Resource.ProjectName)}, {_dialect.RenderStringLiteral(rk.Resource.ResourceName)}, {_dialect.RenderStringLiteral(rk.ResourceVersion)}){comma}"
-                            );
-                        }
-                    }
-                    writer.AppendLine(
-                        $") AS expected({Quote("ResourceKeyId")}, {Quote("ProjectName")}, {Quote("ResourceName")}, {Quote("ResourceVersion")})"
-                    );
-                    writer.AppendLine(
-                        $"WHERE expected.{Quote("ResourceKeyId")} = rk.{Quote("ResourceKeyId")}"
-                    );
-                    writer.AppendLine($"AND expected.{Quote("ProjectName")} = rk.{Quote("ProjectName")}");
-                    writer.AppendLine($"AND expected.{Quote("ResourceName")} = rk.{Quote("ResourceName")}");
-                    writer.AppendLine(
-                        $"AND expected.{Quote("ResourceVersion")} = rk.{Quote("ResourceVersion")}"
-                    );
+                    EmitResourceKeyExpectedValuesSubquery(writer, resourceKeys);
                 }
                 writer.AppendLine(");");
                 writer.AppendLine("IF _mismatched_count > 0 THEN");
                 using (writer.Indent())
                 {
+                    // Collect up to 10 mismatched ResourceKeyIds for diagnostics
                     writer.AppendLine(
-                        "RAISE EXCEPTION 'dms.ResourceKey contents mismatch: % unexpected or modified rows', _mismatched_count;"
+                        "SELECT string_agg(sub.id, ', ' ORDER BY sub.id_num) INTO _mismatched_ids"
+                    );
+                    writer.AppendLine("FROM (");
+                    using (writer.Indent())
+                    {
+                        writer.AppendLine(
+                            $"SELECT rk.{Quote("ResourceKeyId")}::text AS id, rk.{Quote("ResourceKeyId")} AS id_num"
+                        );
+                        writer.AppendLine($"FROM {table} rk");
+                        writer.AppendLine("WHERE NOT EXISTS (");
+                        using (writer.Indent())
+                        {
+                            EmitResourceKeyExpectedValuesSubquery(writer, resourceKeys);
+                        }
+                        writer.AppendLine(")");
+                        writer.AppendLine($"ORDER BY rk.{Quote("ResourceKeyId")}");
+                        writer.AppendLine("LIMIT 10");
+                    }
+                    writer.AppendLine(") sub;");
+                    writer.AppendLine(
+                        "RAISE EXCEPTION 'dms.ResourceKey contents mismatch: % unexpected or modified rows (ResourceKeyIds: %). Run ddl provision for detailed row-level diff.', _mismatched_count, _mismatched_ids;"
                     );
                 }
                 writer.AppendLine("END IF;");
@@ -254,6 +303,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
         {
             writer.AppendLine("DECLARE @actual_count integer;");
             writer.AppendLine("DECLARE @mismatched_count integer;");
+            writer.AppendLine("DECLARE @rk_mismatched_ids nvarchar(max);");
             writer.AppendLine();
 
             // Count check
@@ -276,33 +326,35 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             writer.AppendLine("WHERE NOT EXISTS (");
             using (writer.Indent())
             {
-                writer.AppendLine("SELECT 1 FROM (VALUES");
-                using (writer.Indent())
-                {
-                    for (var i = 0; i < resourceKeys.Count; i++)
-                    {
-                        var rk = resourceKeys[i];
-                        var comma = i < resourceKeys.Count - 1 ? "," : "";
-                        writer.AppendLine(
-                            $"({_dialect.RenderSmallintLiteral(rk.ResourceKeyId)}, {_dialect.RenderStringLiteral(rk.Resource.ProjectName)}, {_dialect.RenderStringLiteral(rk.Resource.ResourceName)}, {_dialect.RenderStringLiteral(rk.ResourceVersion)}){comma}"
-                        );
-                    }
-                }
-                writer.AppendLine(
-                    $") AS expected({Quote("ResourceKeyId")}, {Quote("ProjectName")}, {Quote("ResourceName")}, {Quote("ResourceVersion")})"
-                );
-                writer.AppendLine($"WHERE expected.{Quote("ResourceKeyId")} = rk.{Quote("ResourceKeyId")}");
-                writer.AppendLine($"AND expected.{Quote("ProjectName")} = rk.{Quote("ProjectName")}");
-                writer.AppendLine($"AND expected.{Quote("ResourceName")} = rk.{Quote("ResourceName")}");
-                writer.AppendLine($"AND expected.{Quote("ResourceVersion")} = rk.{Quote("ResourceVersion")}");
+                EmitResourceKeyExpectedValuesSubquery(writer, resourceKeys);
             }
             writer.AppendLine(");");
             writer.AppendLine("IF @mismatched_count > 0");
             writer.AppendLine("BEGIN");
             using (writer.Indent())
             {
+                // Collect up to 10 mismatched ResourceKeyIds for diagnostics
                 writer.AppendLine(
-                    "DECLARE @rk_content_msg nvarchar(200) = CONCAT(N'dms.ResourceKey contents mismatch: ', CAST(@mismatched_count AS nvarchar(10)), N' unexpected or modified rows');"
+                    $"SELECT @rk_mismatched_ids = STRING_AGG(sub.{Quote("ResourceKeyId")}, N', ') WITHIN GROUP (ORDER BY sub.{Quote("ResourceKeyIdNum")})"
+                );
+                writer.AppendLine("FROM (");
+                using (writer.Indent())
+                {
+                    writer.AppendLine(
+                        $"SELECT TOP 10 CAST(rk.{Quote("ResourceKeyId")} AS nvarchar(10)) AS {Quote("ResourceKeyId")}, rk.{Quote("ResourceKeyId")} AS {Quote("ResourceKeyIdNum")}"
+                    );
+                    writer.AppendLine($"FROM {table} rk");
+                    writer.AppendLine("WHERE NOT EXISTS (");
+                    using (writer.Indent())
+                    {
+                        EmitResourceKeyExpectedValuesSubquery(writer, resourceKeys);
+                    }
+                    writer.AppendLine(")");
+                    writer.AppendLine($"ORDER BY rk.{Quote("ResourceKeyId")}");
+                }
+                writer.AppendLine(") sub;");
+                writer.AppendLine(
+                    "DECLARE @rk_content_msg nvarchar(500) = CONCAT(N'dms.ResourceKey contents mismatch: ', CAST(@mismatched_count AS nvarchar(10)), N' unexpected or modified rows (ResourceKeyIds: ', @rk_mismatched_ids, N'). Run ddl provision for detailed row-level diff.');"
                 );
                 writer.AppendLine("THROW 50000, @rk_content_msg, 1;");
             }
@@ -531,6 +583,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             {
                 writer.AppendLine("_actual_count integer;");
                 writer.AppendLine("_mismatched_count integer;");
+                writer.AppendLine("_mismatched_names text;");
             }
             writer.AppendLine("BEGIN");
             using (writer.Indent())
@@ -556,38 +609,34 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
                 writer.AppendLine("AND NOT EXISTS (");
                 using (writer.Indent())
                 {
-                    writer.AppendLine("SELECT 1 FROM (VALUES");
-                    using (writer.Indent())
-                    {
-                        for (var i = 0; i < schemaComponents.Count; i++)
-                        {
-                            var sc = schemaComponents[i];
-                            var comma = i < schemaComponents.Count - 1 ? "," : "";
-                            writer.AppendLine(
-                                $"({_dialect.RenderStringLiteral(sc.ProjectEndpointName)}, {_dialect.RenderStringLiteral(sc.ProjectName)}, {_dialect.RenderStringLiteral(sc.ProjectVersion)}, {_dialect.RenderBooleanLiteral(sc.IsExtensionProject)}){comma}"
-                            );
-                        }
-                    }
-                    writer.AppendLine(
-                        $") AS expected({Quote("ProjectEndpointName")}, {Quote("ProjectName")}, {Quote("ProjectVersion")}, {Quote("IsExtensionProject")})"
-                    );
-                    writer.AppendLine(
-                        $"WHERE expected.{Quote("ProjectEndpointName")} = sc.{Quote("ProjectEndpointName")}"
-                    );
-                    writer.AppendLine($"AND expected.{Quote("ProjectName")} = sc.{Quote("ProjectName")}");
-                    writer.AppendLine(
-                        $"AND expected.{Quote("ProjectVersion")} = sc.{Quote("ProjectVersion")}"
-                    );
-                    writer.AppendLine(
-                        $"AND expected.{Quote("IsExtensionProject")} = sc.{Quote("IsExtensionProject")}"
-                    );
+                    EmitSchemaComponentExpectedValuesSubquery(writer, schemaComponents);
                 }
                 writer.AppendLine(");");
                 writer.AppendLine("IF _mismatched_count > 0 THEN");
                 using (writer.Indent())
                 {
+                    // Collect up to 10 mismatched ProjectEndpointNames for diagnostics
                     writer.AppendLine(
-                        "RAISE EXCEPTION 'dms.SchemaComponent contents mismatch: % unexpected or modified rows', _mismatched_count;"
+                        "SELECT string_agg(sub.name, ', ' ORDER BY sub.name) INTO _mismatched_names"
+                    );
+                    writer.AppendLine("FROM (");
+                    using (writer.Indent())
+                    {
+                        writer.AppendLine($"SELECT sc.{Quote("ProjectEndpointName")} AS name");
+                        writer.AppendLine($"FROM {table} sc");
+                        writer.AppendLine($"WHERE sc.{Quote("EffectiveSchemaHash")} = {hashLiteral}");
+                        writer.AppendLine("AND NOT EXISTS (");
+                        using (writer.Indent())
+                        {
+                            EmitSchemaComponentExpectedValuesSubquery(writer, schemaComponents);
+                        }
+                        writer.AppendLine(")");
+                        writer.AppendLine($"ORDER BY sc.{Quote("ProjectEndpointName")}");
+                        writer.AppendLine("LIMIT 10");
+                    }
+                    writer.AppendLine(") sub;");
+                    writer.AppendLine(
+                        "RAISE EXCEPTION 'dms.SchemaComponent contents mismatch: % unexpected or modified rows (ProjectEndpointNames: %). Run ddl provision for detailed row-level diff.', _mismatched_count, _mismatched_names;"
                     );
                 }
                 writer.AppendLine("END IF;");
@@ -598,6 +647,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
         {
             writer.AppendLine("DECLARE @sc_actual_count integer;");
             writer.AppendLine("DECLARE @sc_mismatched_count integer;");
+            writer.AppendLine("DECLARE @sc_mismatched_names nvarchar(max);");
             writer.AppendLine();
 
             // Count check
@@ -623,43 +673,210 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             writer.AppendLine("AND NOT EXISTS (");
             using (writer.Indent())
             {
-                writer.AppendLine("SELECT 1 FROM (VALUES");
-                using (writer.Indent())
-                {
-                    for (var i = 0; i < schemaComponents.Count; i++)
-                    {
-                        var sc = schemaComponents[i];
-                        var comma = i < schemaComponents.Count - 1 ? "," : "";
-                        writer.AppendLine(
-                            $"({_dialect.RenderStringLiteral(sc.ProjectEndpointName)}, {_dialect.RenderStringLiteral(sc.ProjectName)}, {_dialect.RenderStringLiteral(sc.ProjectVersion)}, {_dialect.RenderBooleanLiteral(sc.IsExtensionProject)}){comma}"
-                        );
-                    }
-                }
-                writer.AppendLine(
-                    $") AS expected({Quote("ProjectEndpointName")}, {Quote("ProjectName")}, {Quote("ProjectVersion")}, {Quote("IsExtensionProject")})"
-                );
-                writer.AppendLine(
-                    $"WHERE expected.{Quote("ProjectEndpointName")} = sc.{Quote("ProjectEndpointName")}"
-                );
-                writer.AppendLine($"AND expected.{Quote("ProjectName")} = sc.{Quote("ProjectName")}");
-                writer.AppendLine($"AND expected.{Quote("ProjectVersion")} = sc.{Quote("ProjectVersion")}");
-                writer.AppendLine(
-                    $"AND expected.{Quote("IsExtensionProject")} = sc.{Quote("IsExtensionProject")}"
-                );
+                EmitSchemaComponentExpectedValuesSubquery(writer, schemaComponents);
             }
             writer.AppendLine(");");
             writer.AppendLine("IF @sc_mismatched_count > 0");
             writer.AppendLine("BEGIN");
             using (writer.Indent())
             {
+                // Collect up to 10 mismatched ProjectEndpointNames for diagnostics
                 writer.AppendLine(
-                    "DECLARE @sc_content_msg nvarchar(200) = CONCAT(N'dms.SchemaComponent contents mismatch: ', CAST(@sc_mismatched_count AS nvarchar(10)), N' unexpected or modified rows');"
+                    $"SELECT @sc_mismatched_names = STRING_AGG(sub.{Quote("ProjectEndpointName")}, N', ') WITHIN GROUP (ORDER BY sub.{Quote("ProjectEndpointName")})"
+                );
+                writer.AppendLine("FROM (");
+                using (writer.Indent())
+                {
+                    writer.AppendLine($"SELECT TOP 10 sc.{Quote("ProjectEndpointName")}");
+                    writer.AppendLine($"FROM {table} sc");
+                    writer.AppendLine($"WHERE sc.{Quote("EffectiveSchemaHash")} = {hashLiteral}");
+                    writer.AppendLine("AND NOT EXISTS (");
+                    using (writer.Indent())
+                    {
+                        EmitSchemaComponentExpectedValuesSubquery(writer, schemaComponents);
+                    }
+                    writer.AppendLine(")");
+                    writer.AppendLine($"ORDER BY sc.{Quote("ProjectEndpointName")}");
+                }
+                writer.AppendLine(") sub;");
+                writer.AppendLine(
+                    "DECLARE @sc_content_msg nvarchar(500) = CONCAT(N'dms.SchemaComponent contents mismatch: ', CAST(@sc_mismatched_count AS nvarchar(10)), N' unexpected or modified rows (ProjectEndpointNames: ', @sc_mismatched_names, N'). Run ddl provision for detailed row-level diff.');"
                 );
                 writer.AppendLine("THROW 50000, @sc_content_msg, 1;");
             }
             writer.AppendLine("END");
         }
         writer.AppendLine();
+    }
+
+    /// <summary>
+    /// Emits the VALUES subquery body for ResourceKey NOT EXISTS checks.
+    /// Shared between the count query and the ID-collection query.
+    /// When the row count exceeds <see cref="MaxValuesRows"/>, the VALUES
+    /// clause is split into chunks joined with UNION ALL to stay within
+    /// the SQL Server 1000-row table constructor limit.
+    /// </summary>
+    private void EmitResourceKeyExpectedValuesSubquery(
+        SqlWriter writer,
+        IReadOnlyList<ResourceKeyEntry> resourceKeys
+    )
+    {
+        var columnList =
+            $"{Quote("ResourceKeyId")}, {Quote("ProjectName")}, {Quote("ResourceName")}, {Quote("ResourceVersion")}";
+
+        if (resourceKeys.Count > MaxValuesRows)
+        {
+            writer.AppendLine("SELECT 1 FROM (");
+            using (writer.Indent())
+            {
+                for (var chunkStart = 0; chunkStart < resourceKeys.Count; chunkStart += MaxValuesRows)
+                {
+                    if (chunkStart > 0)
+                    {
+                        writer.AppendLine("UNION ALL");
+                    }
+                    var chunkEnd = Math.Min(chunkStart + MaxValuesRows, resourceKeys.Count);
+                    EmitResourceKeyValuesBlock(writer, resourceKeys, chunkStart, chunkEnd, "chunk");
+                }
+            }
+            writer.AppendLine($") AS expected({columnList})");
+        }
+        else
+        {
+            writer.AppendLine("SELECT 1 FROM (VALUES");
+            using (writer.Indent())
+            {
+                EmitResourceKeyValueRows(writer, resourceKeys, 0, resourceKeys.Count);
+            }
+            writer.AppendLine($") AS expected({columnList})");
+        }
+
+        writer.AppendLine($"WHERE expected.{Quote("ResourceKeyId")} = rk.{Quote("ResourceKeyId")}");
+        writer.AppendLine($"AND expected.{Quote("ProjectName")} = rk.{Quote("ProjectName")}");
+        writer.AppendLine($"AND expected.{Quote("ResourceName")} = rk.{Quote("ResourceName")}");
+        writer.AppendLine($"AND expected.{Quote("ResourceVersion")} = rk.{Quote("ResourceVersion")}");
+    }
+
+    private void EmitResourceKeyValuesBlock(
+        SqlWriter writer,
+        IReadOnlyList<ResourceKeyEntry> resourceKeys,
+        int start,
+        int end,
+        string alias
+    )
+    {
+        writer.AppendLine("SELECT * FROM (VALUES");
+        using (writer.Indent())
+        {
+            EmitResourceKeyValueRows(writer, resourceKeys, start, end);
+        }
+        writer.AppendLine(
+            $") AS {alias}({Quote("ResourceKeyId")}, {Quote("ProjectName")}, {Quote("ResourceName")}, {Quote("ResourceVersion")})"
+        );
+    }
+
+    private void EmitResourceKeyValueRows(
+        SqlWriter writer,
+        IReadOnlyList<ResourceKeyEntry> resourceKeys,
+        int start,
+        int end
+    )
+    {
+        for (var i = start; i < end; i++)
+        {
+            var rk = resourceKeys[i];
+            var comma = i < end - 1 ? "," : "";
+            var idLiteral = _dialect.RenderSmallintLiteral(rk.ResourceKeyId);
+            var idValue = _dialect.Rules.Dialect == SqlDialect.Pgsql ? $"{idLiteral}::smallint" : idLiteral;
+            writer.AppendLine(
+                $"({idValue}, {_dialect.RenderStringLiteral(rk.Resource.ProjectName)}, {_dialect.RenderStringLiteral(rk.Resource.ResourceName)}, {_dialect.RenderStringLiteral(rk.ResourceVersion)}){comma}"
+            );
+        }
+    }
+
+    /// <summary>
+    /// Emits the VALUES subquery body for SchemaComponent NOT EXISTS checks.
+    /// Shared between the count query and the ID-collection query.
+    /// When the row count exceeds <see cref="MaxValuesRows"/>, the VALUES
+    /// clause is split into chunks joined with UNION ALL to stay within
+    /// the SQL Server 1000-row table constructor limit.
+    /// </summary>
+    private void EmitSchemaComponentExpectedValuesSubquery(
+        SqlWriter writer,
+        IReadOnlyList<SchemaComponentInfo> schemaComponents
+    )
+    {
+        var columnList =
+            $"{Quote("ProjectEndpointName")}, {Quote("ProjectName")}, {Quote("ProjectVersion")}, {Quote("IsExtensionProject")}";
+
+        if (schemaComponents.Count > MaxValuesRows)
+        {
+            writer.AppendLine("SELECT 1 FROM (");
+            using (writer.Indent())
+            {
+                for (var chunkStart = 0; chunkStart < schemaComponents.Count; chunkStart += MaxValuesRows)
+                {
+                    if (chunkStart > 0)
+                    {
+                        writer.AppendLine("UNION ALL");
+                    }
+                    var chunkEnd = Math.Min(chunkStart + MaxValuesRows, schemaComponents.Count);
+                    EmitSchemaComponentValuesBlock(writer, schemaComponents, chunkStart, chunkEnd, "chunk");
+                }
+            }
+            writer.AppendLine($") AS expected({columnList})");
+        }
+        else
+        {
+            writer.AppendLine("SELECT 1 FROM (VALUES");
+            using (writer.Indent())
+            {
+                EmitSchemaComponentValueRows(writer, schemaComponents, 0, schemaComponents.Count);
+            }
+            writer.AppendLine($") AS expected({columnList})");
+        }
+
+        writer.AppendLine(
+            $"WHERE expected.{Quote("ProjectEndpointName")} = sc.{Quote("ProjectEndpointName")}"
+        );
+        writer.AppendLine($"AND expected.{Quote("ProjectName")} = sc.{Quote("ProjectName")}");
+        writer.AppendLine($"AND expected.{Quote("ProjectVersion")} = sc.{Quote("ProjectVersion")}");
+        writer.AppendLine($"AND expected.{Quote("IsExtensionProject")} = sc.{Quote("IsExtensionProject")}");
+    }
+
+    private void EmitSchemaComponentValuesBlock(
+        SqlWriter writer,
+        IReadOnlyList<SchemaComponentInfo> schemaComponents,
+        int start,
+        int end,
+        string alias
+    )
+    {
+        writer.AppendLine("SELECT * FROM (VALUES");
+        using (writer.Indent())
+        {
+            EmitSchemaComponentValueRows(writer, schemaComponents, start, end);
+        }
+        writer.AppendLine(
+            $") AS {alias}({Quote("ProjectEndpointName")}, {Quote("ProjectName")}, {Quote("ProjectVersion")}, {Quote("IsExtensionProject")})"
+        );
+    }
+
+    private void EmitSchemaComponentValueRows(
+        SqlWriter writer,
+        IReadOnlyList<SchemaComponentInfo> schemaComponents,
+        int start,
+        int end
+    )
+    {
+        for (var i = start; i < end; i++)
+        {
+            var sc = schemaComponents[i];
+            var comma = i < end - 1 ? "," : "";
+            writer.AppendLine(
+                $"({_dialect.RenderStringLiteral(sc.ProjectEndpointName)}, {_dialect.RenderStringLiteral(sc.ProjectName)}, {_dialect.RenderStringLiteral(sc.ProjectVersion)}, {_dialect.RenderBooleanLiteral(sc.IsExtensionProject)}){comma}"
+            );
+        }
     }
 
     private string Quote(string identifier) => _dialect.QuoteIdentifier(identifier);
