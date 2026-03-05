@@ -584,11 +584,15 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
             );
         }
 
-        // Add the specific project schema with the direct extension content
-        if (!componentsSchemas.ContainsKey(schemaNames.ProjectExtensionSchemaName))
+        // Add the specific project schema with the direct extension content.
+        if (componentsSchemas.ContainsKey(schemaNames.ProjectExtensionSchemaName))
         {
-            componentsSchemas.Add(schemaNames.ProjectExtensionSchemaName, extObjectAsObject.DeepClone());
+            throw new InvalidOperationException(
+                $"Duplicate project extension schema '{schemaNames.ProjectExtensionSchemaName}'. "
+                    + "This indicates a schema authoring error — the same project registered duplicate extension content."
+            );
         }
+        componentsSchemas.Add(schemaNames.ProjectExtensionSchemaName, extObjectAsObject.DeepClone());
     }
 
     /// <summary>
@@ -1219,13 +1223,15 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
         {
             if (overrideEntry is null)
             {
-                continue;
+                throw new InvalidOperationException(
+                    $"Null override entry found in commonExtensionOverrides for resource '{resourceName}'"
+                );
             }
 
             if (overrideEntry is not JsonObject)
             {
                 throw new InvalidOperationException(
-                    $"Expected a JsonObject override entry, but encountered {overrideEntry.GetType().Name}."
+                    $"Expected a JsonObject override entry for resource '{resourceName}', but encountered {overrideEntry.GetType().Name}."
                 );
             }
 
@@ -1296,7 +1302,8 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
                 var targetSchemaName = ResolveComponentSchemaFromInsertionLocation(
                     componentsSchemas,
                     coreComponentSchemaName,
-                    jsonPath
+                    jsonPath,
+                    resourceName
                 );
 
                 if (targetSchemaName is null)
@@ -1343,7 +1350,11 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
     /// Finds the core component schema name (e.g., "EdFi_Contact") by matching {Project}_{ResourceName}
     /// in the existing component schemas.
     /// </summary>
-    private static string FindCoreSchemaName(JsonObject componentsSchemas, string resourceName)
+    private static string FindCoreSchemaName(
+        JsonObject componentsSchemas,
+        string resourceName,
+        string coreProjectName
+    )
     {
         var suffix = $"_{resourceName}";
 
@@ -1355,7 +1366,7 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
             )
             .ToList();
 
-        return matches.Count switch
+        var matched = matches.Count switch
         {
             0 => throw new InvalidOperationException(
                 $"Resource '{resourceName}' has commonExtensionOverrides but no matching core schema found."
@@ -1365,6 +1376,18 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
                 $"Resource '{resourceName}' has commonExtensionOverrides but matched multiple core schemas: [{string.Join(", ", matches)}]."
             ),
         };
+
+        var actualPrefix = matched[..matched.IndexOf('_')];
+        var expectedPrefix = coreProjectName.Replace("-", "");
+
+        if (!string.Equals(actualPrefix, expectedPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Resource '{resourceName}' matched schema '{matched}' but prefix '{actualPrefix}' does not match expected core project prefix '{expectedPrefix}'."
+            );
+        }
+
+        return matched;
     }
 
     /// <summary>
@@ -1374,7 +1397,8 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
     private static string? ResolveComponentSchemaFromInsertionLocation(
         JsonObject componentsSchemas,
         string startSchemaName,
-        string insertionLocation
+        string insertionLocation,
+        string resourceName
     )
     {
         var segments = insertionLocation.Split('.').Where(s => s != "$").ToArray();
@@ -1403,8 +1427,20 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
             return null;
         }
 
-        // Final $ref resolution at the target node
+        // Final $ref resolution at the target node.
+        // If the target has a $ref, follow it to get the referenced schema name.
+        // If it's an inline definition (no $ref), throw — we require a component $ref.
+        var schemaNameBeforeResolve = resolvedSchemaName;
         (_, resolvedSchemaName) = ResolveRef(current, componentsSchemas, resolvedSchemaName);
+
+        if (resolvedSchemaName == schemaNameBeforeResolve)
+        {
+            throw new InvalidOperationException(
+                $"Insertion location '{insertionLocation}' for resource '{resourceName}' "
+                    + $"resolved to an inline definition at schema '{resolvedSchemaName}' "
+                    + $"instead of a component $ref."
+            );
+        }
 
         return resolvedSchemaName;
     }
@@ -1730,6 +1766,19 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
         // Collect abstract resource fragments (only for resources document)
         CollectAbstractResourceFragments(apiSchemas, openApiDocumentType, openApiSpecification);
 
+        // Lazily resolve core project name — only needed when extensions have commonExtensionOverrides
+        string? resolvedCoreProjectName = null;
+        string GetCoreProjectName()
+        {
+            resolvedCoreProjectName ??= new ProjectSchema(
+                apiSchemas.CoreApiSchemaRootNode["projectSchema"]!,
+                _logger
+            )
+                .ProjectName
+                .Value;
+            return resolvedCoreProjectName;
+        }
+
         // Process each extension project
         foreach (JsonNode extensionApiSchemaRootNode in apiSchemas.ExtensionApiSchemaRootNodes)
         {
@@ -1811,7 +1860,8 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
 
                     var coreSchemaName = FindCoreSchemaName(
                         componentsSchemas,
-                        resourceSchema.ResourceName.Value
+                        resourceSchema.ResourceName.Value,
+                        GetCoreProjectName()
                     );
 
                     InsertCommonExtensionOverrides(
