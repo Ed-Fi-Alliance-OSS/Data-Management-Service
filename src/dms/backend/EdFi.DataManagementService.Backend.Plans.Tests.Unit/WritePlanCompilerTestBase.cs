@@ -6,1075 +6,21 @@
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
-using FluentAssertions;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
-[TestFixture]
-public class Given_WritePlanCompiler
+public abstract class WritePlanCompilerTestBase
 {
-    private RelationalResourceModel _supportedRootOnlyModel = null!;
+    protected RelationalResourceModel _supportedRootOnlyModel = null!;
 
     [SetUp]
-    public void Setup()
+    protected void Setup()
     {
         _supportedRootOnlyModel = CreateSupportedRootOnlyModel();
     }
 
-    [Test]
-    public void It_should_compile_stored_column_bindings_in_model_order_with_deterministic_parameter_names()
-    {
-        var writePlan = new WritePlanCompiler(SqlDialect.Pgsql).Compile(_supportedRootOnlyModel);
-        var tablePlan = writePlan.TablePlansInDependencyOrder.Single();
-
-        tablePlan
-            .ColumnBindings.Select(binding => binding.Column.ColumnName.Value)
-            .Should()
-            .Equal("DocumentId", "SchoolYear", "LocalEducationAgencyId");
-
-        tablePlan
-            .ColumnBindings.Select(binding => binding.ParameterName)
-            .Should()
-            .Equal("documentId", "schoolYear", "localEducationAgencyId");
-
-        tablePlan.ColumnBindings[0].Source.Should().BeOfType<WriteValueSource.DocumentId>();
-        tablePlan.ColumnBindings[1].Source.Should().BeOfType<WriteValueSource.Scalar>();
-        tablePlan.ColumnBindings[2].Source.Should().BeOfType<WriteValueSource.Scalar>();
-
-        tablePlan.UpdateSql.Should().NotBeNull();
-        tablePlan.DeleteByParentSql.Should().BeNull();
-        tablePlan.KeyUnificationPlans.Should().BeEmpty();
-
-        tablePlan.BulkInsertBatching.ParametersPerRow.Should().Be(3);
-        tablePlan.BulkInsertBatching.MaxRowsPerBatch.Should().Be(1000);
-        tablePlan.BulkInsertBatching.MaxParametersPerCommand.Should().Be(65535);
-    }
-
-    [Test]
-    public void It_should_exclude_non_writable_stored_non_key_columns_from_bindings_and_sql_column_lists()
-    {
-        var model = CreateSupportedRootOnlyModelWithNonWritableSchoolYear();
-        var tablePlan = new WritePlanCompiler(SqlDialect.Pgsql)
-            .Compile(model)
-            .TablePlansInDependencyOrder.Single();
-
-        tablePlan
-            .ColumnBindings.Select(static binding => binding.Column.ColumnName.Value)
-            .Should()
-            .Equal("DocumentId", "LocalEducationAgencyId");
-
-        tablePlan
-            .InsertSql.Should()
-            .Be(
-                """
-                INSERT INTO "edfi"."Student"
-                (
-                    "DocumentId",
-                    "LocalEducationAgencyId"
-                )
-                VALUES
-                (
-                    @documentId,
-                    @localEducationAgencyId
-                )
-                ;
-
-                """
-            );
-
-        tablePlan
-            .UpdateSql.Should()
-            .Be(
-                """
-                UPDATE "edfi"."Student"
-                SET
-                    "LocalEducationAgencyId" = @localEducationAgencyId
-                WHERE
-                    ("DocumentId" = @documentId)
-                ;
-
-                """
-            );
-    }
-
-    [Test]
-    public void It_should_keep_required_key_and_key_unification_precomputed_targets_when_marked_non_writable()
-    {
-        var model = CreateRootOnlyModelWithNonWritableStoredKeyAndPrecomputedTargets();
-        var tablePlan = new WritePlanCompiler(SqlDialect.Pgsql)
-            .Compile(model)
-            .TablePlansInDependencyOrder.Single();
-
-        tablePlan
-            .ColumnBindings.Select(static binding => binding.Column.ColumnName.Value)
-            .Should()
-            .Equal(
-                "DocumentId",
-                "SchoolYearCanonical",
-                "SchoolYearTypeDescriptorIdCanonical",
-                "SchoolYearTypeDescriptorSecondary_Present"
-            );
-
-        tablePlan.ColumnBindings[0].Source.Should().BeOfType<WriteValueSource.DocumentId>();
-        tablePlan.ColumnBindings[1].Source.Should().BeOfType<WriteValueSource.Precomputed>();
-        tablePlan.ColumnBindings[2].Source.Should().BeOfType<WriteValueSource.Precomputed>();
-        tablePlan.ColumnBindings[3].Source.Should().BeOfType<WriteValueSource.Precomputed>();
-    }
-
-    [Test]
-    public void It_should_emit_canonical_pgsql_insert_sql_using_binding_column_and_parameter_order()
-    {
-        var writePlan = new WritePlanCompiler(SqlDialect.Pgsql).Compile(_supportedRootOnlyModel);
-        var tablePlan = writePlan.TablePlansInDependencyOrder.Single();
-
-        tablePlan
-            .InsertSql.Should()
-            .Be(
-                """
-                INSERT INTO "edfi"."Student"
-                (
-                    "DocumentId",
-                    "SchoolYear",
-                    "LocalEducationAgencyId"
-                )
-                VALUES
-                (
-                    @documentId,
-                    @schoolYear,
-                    @localEducationAgencyId
-                )
-                ;
-
-                """
-            );
-    }
-
-    [Test]
-    public void It_should_emit_canonical_mssql_insert_sql_using_binding_column_and_parameter_order()
-    {
-        var writePlan = new WritePlanCompiler(SqlDialect.Mssql).Compile(_supportedRootOnlyModel);
-        var tablePlan = writePlan.TablePlansInDependencyOrder.Single();
-
-        tablePlan
-            .InsertSql.Should()
-            .Be(
-                """
-                INSERT INTO [edfi].[Student]
-                (
-                    [DocumentId],
-                    [SchoolYear],
-                    [LocalEducationAgencyId]
-                )
-                VALUES
-                (
-                    @documentId,
-                    @schoolYear,
-                    @localEducationAgencyId
-                )
-                ;
-
-                """
-            );
-
-        tablePlan.BulkInsertBatching.ParametersPerRow.Should().Be(3);
-        tablePlan.BulkInsertBatching.MaxRowsPerBatch.Should().Be(700);
-        tablePlan.BulkInsertBatching.MaxParametersPerCommand.Should().Be(2100);
-    }
-
-    [TestCase(SqlDialect.Pgsql)]
-    [TestCase(SqlDialect.Mssql)]
-    public void It_should_emit_insert_sql_from_column_bindings_in_order(SqlDialect dialect)
-    {
-        var tablePlan = new WritePlanCompiler(dialect)
-            .Compile(_supportedRootOnlyModel)
-            .TablePlansInDependencyOrder.Single();
-
-        var expectedInsertSql = new SimpleInsertSqlEmitter(dialect).Emit(
-            tablePlan.TableModel.Table,
-            tablePlan.ColumnBindings.Select(static binding => binding.Column.ColumnName).ToArray(),
-            tablePlan.ColumnBindings.Select(static binding => binding.ParameterName).ToArray()
-        );
-
-        tablePlan.InsertSql.Should().Be(expectedInsertSql);
-    }
-
-    [TestCase(SqlDialect.Pgsql)]
-    [TestCase(SqlDialect.Mssql)]
-    public void It_should_emit_identical_insert_sql_across_repeated_compilation_and_permuted_non_writable_column_order(
-        SqlDialect dialect
-    )
-    {
-        var compiler = new WritePlanCompiler(dialect);
-
-        var firstInsertSql = compiler
-            .Compile(_supportedRootOnlyModel)
-            .TablePlansInDependencyOrder.Single()
-            .InsertSql;
-
-        var secondInsertSql = compiler
-            .Compile(_supportedRootOnlyModel)
-            .TablePlansInDependencyOrder.Single()
-            .InsertSql;
-
-        var permutedInsertSql = compiler
-            .Compile(CreateSupportedRootOnlyModelWithUnifiedAliasColumnFirst())
-            .TablePlansInDependencyOrder.Single()
-            .InsertSql;
-
-        firstInsertSql.Should().Be(secondInsertSql);
-        permutedInsertSql.Should().Be(firstInsertSql);
-    }
-
-    [Test]
-    public void It_should_emit_canonical_pgsql_update_sql_using_non_key_set_columns_and_key_where_columns()
-    {
-        var writePlan = new WritePlanCompiler(SqlDialect.Pgsql).Compile(_supportedRootOnlyModel);
-        var tablePlan = writePlan.TablePlansInDependencyOrder.Single();
-
-        tablePlan
-            .UpdateSql.Should()
-            .Be(
-                """
-                UPDATE "edfi"."Student"
-                SET
-                    "SchoolYear" = @schoolYear,
-                    "LocalEducationAgencyId" = @localEducationAgencyId
-                WHERE
-                    ("DocumentId" = @documentId)
-                ;
-
-                """
-            );
-    }
-
-    [Test]
-    public void It_should_emit_canonical_mssql_update_sql_using_non_key_set_columns_and_key_where_columns()
-    {
-        var writePlan = new WritePlanCompiler(SqlDialect.Mssql).Compile(_supportedRootOnlyModel);
-        var tablePlan = writePlan.TablePlansInDependencyOrder.Single();
-
-        tablePlan
-            .UpdateSql.Should()
-            .Be(
-                """
-                UPDATE [edfi].[Student]
-                SET
-                    [SchoolYear] = @schoolYear,
-                    [LocalEducationAgencyId] = @localEducationAgencyId
-                WHERE
-                    ([DocumentId] = @documentId)
-                ;
-
-                """
-            );
-    }
-
-    [Test]
-    public void It_should_reuse_column_binding_parameter_names_for_update_where_predicates_in_key_order()
-    {
-        var writePlan = new WritePlanCompiler(SqlDialect.Pgsql).Compile(
-            CreateRootOnlyModelWithUpdateKeyParameterNameCollision()
-        );
-        var tablePlan = writePlan.TablePlansInDependencyOrder.Single();
-
-        tablePlan
-            .ColumnBindings.Select(static binding => binding.ParameterName)
-            .Should()
-            .Equal("documentId", "documentId_2", "schoolYear", "gradeLevel");
-
-        tablePlan
-            .UpdateSql.Should()
-            .Be(
-                """
-                UPDATE "edfi"."StudentCollision"
-                SET
-                    "DocumentId" = @documentId,
-                    "GradeLevel" = @gradeLevel
-                WHERE
-                    ("documentId" = @documentId_2)
-                    AND ("SchoolYear" = @schoolYear)
-                ;
-
-                """
-            );
-    }
-
-    [Test]
-    public void It_should_leave_update_sql_null_when_no_stored_writable_non_key_columns_exist()
-    {
-        var keyOnlyModel = CreateRootOnlyKeyOnlyModel();
-
-        var writePlan = new WritePlanCompiler(SqlDialect.Pgsql).Compile(keyOnlyModel);
-        var tablePlan = writePlan.TablePlansInDependencyOrder.Single();
-
-        tablePlan.UpdateSql.Should().BeNull();
-    }
-
-    [Test]
-    public void It_should_compile_resources_with_root_key_unification_classes()
-    {
-        var keyUnificationModel = CreateRootOnlyModelWithCompiledKeyUnificationInventory();
-        var writePlan = new WritePlanCompiler(SqlDialect.Pgsql).Compile(keyUnificationModel);
-        var tablePlan = writePlan.TablePlansInDependencyOrder.Single();
-
-        tablePlan
-            .KeyUnificationPlans.Should()
-            .HaveCount(keyUnificationModel.Root.KeyUnificationClasses.Count);
-    }
-
-    [Test]
-    public void It_should_fail_fast_when_writable_null_source_column_is_not_an_explicit_precomputed_target()
-    {
-        var precomputedColumnModel = CreateRootOnlyModelWithStoredPrecomputedNonKeyColumn();
-        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(precomputedColumnModel);
-
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "Cannot compile write plan for 'edfi.Student': column 'CanonicalSchoolYear' has null SourceJsonPath but is not an explicitly supported precomputed target. Mark the column IsWritable=false or add a producer plan (for example, key-unification canonical/synthetic presence)."
-            );
-    }
-
-    [Test]
-    public void It_should_compile_each_supported_write_value_source_for_single_table_bindings()
-    {
-        var model = CreateSingleTableModelCoveringWriteValueSourceKinds();
-
-        var writePlan = new WritePlanCompiler(SqlDialect.Pgsql).Compile(model);
-        var tablePlan = writePlan.TablePlansInDependencyOrder.Single(tablePlan =>
-            tablePlan.TableModel.Table.Equals(new DbTableName(new DbSchemaName("edfi"), "StudentAddress"))
-        );
-
-        tablePlan
-            .ColumnBindings.Select(binding => binding.Column.ColumnName.Value)
-            .Should()
-            .Equal(
-                "DocumentId",
-                "ParentAddressOrdinal",
-                "Ordinal",
-                "AddressScopeValue",
-                "StreetNumber",
-                "School_DocumentId",
-                "ProgramTypeDescriptorId",
-                "CanonicalProgramTypeCode"
-            );
-
-        tablePlan
-            .ColumnBindings.Select(binding => binding.ParameterName)
-            .Should()
-            .Equal(
-                "documentId",
-                "parentAddressOrdinal",
-                "ordinal",
-                "addressScopeValue",
-                "streetNumber",
-                "school_DocumentId",
-                "programTypeDescriptorId",
-                "canonicalProgramTypeCode"
-            );
-
-        tablePlan.ColumnBindings[0].Source.Should().BeOfType<WriteValueSource.DocumentId>();
-        tablePlan
-            .ColumnBindings[1]
-            .Source.Should()
-            .BeEquivalentTo(new WriteValueSource.ParentKeyPart(Index: 1));
-        tablePlan.ColumnBindings[2].Source.Should().BeOfType<WriteValueSource.Ordinal>();
-        tablePlan
-            .ColumnBindings[3]
-            .Source.Should()
-            .BeEquivalentTo(
-                new WriteValueSource.Scalar(
-                    RelativePath: new JsonPathExpression("$", []),
-                    Type: new RelationalScalarType(ScalarKind.String)
-                )
-            );
-        tablePlan
-            .ColumnBindings[4]
-            .Source.Should()
-            .BeEquivalentTo(
-                new WriteValueSource.Scalar(
-                    RelativePath: new JsonPathExpression(
-                        "$.streetNumber",
-                        [new JsonPathSegment.Property("streetNumber")]
-                    ),
-                    Type: new RelationalScalarType(ScalarKind.String)
-                )
-            );
-        tablePlan
-            .ColumnBindings[5]
-            .Source.Should()
-            .BeEquivalentTo(new WriteValueSource.DocumentReference(BindingIndex: 0));
-        tablePlan
-            .ColumnBindings[6]
-            .Source.Should()
-            .BeEquivalentTo(
-                new WriteValueSource.DescriptorReference(
-                    DescriptorResource: new QualifiedResourceName("Ed-Fi", "ProgramTypeDescriptor"),
-                    RelativePath: new JsonPathExpression(
-                        "$.programTypeDescriptor",
-                        [new JsonPathSegment.Property("programTypeDescriptor")]
-                    ),
-                    DescriptorValuePath: new JsonPathExpression(
-                        "$.addresses[*].programTypeDescriptor",
-                        [
-                            new JsonPathSegment.Property("addresses"),
-                            new JsonPathSegment.AnyArrayElement(),
-                            new JsonPathSegment.Property("programTypeDescriptor"),
-                        ]
-                    )
-                )
-            );
-        tablePlan.ColumnBindings[7].Source.Should().BeOfType<WriteValueSource.Precomputed>();
-    }
-
-    [Test]
-    public void It_should_fail_fast_when_document_reference_binding_is_missing_for_document_fk_column()
-    {
-        var model = CreateSingleTableModelWithMissingDocumentReferenceBinding();
-        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(model);
-
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage("No document-reference binding matches 'edfi.StudentAddress.School_DocumentId'.");
-    }
-
-    [Test]
-    public void It_should_bind_document_fk_as_document_reference_when_source_json_path_is_null()
-    {
-        var model = CreateSingleTableModelCoveringWriteValueSourceKinds(useNullDocumentFkSourcePath: true);
-        var tablePlan = new WritePlanCompiler(SqlDialect.Pgsql)
-            .Compile(model)
-            .TablePlansInDependencyOrder.Single(tablePlan =>
-                tablePlan.TableModel.Table.Equals(new DbTableName(new DbSchemaName("edfi"), "StudentAddress"))
-            );
-
-        tablePlan
-            .ColumnBindings.Single(binding =>
-                binding.Column.ColumnName.Equals(new DbColumnName("School_DocumentId"))
-            )
-            .Source.Should()
-            .BeEquivalentTo(new WriteValueSource.DocumentReference(BindingIndex: 0));
-    }
-
-    [Test]
-    public void It_should_fail_fast_when_document_reference_binding_is_missing_for_document_fk_column_with_null_source_json_path()
-    {
-        var model = CreateSingleTableModelWithMissingDocumentReferenceBinding(
-            useNullDocumentFkSourcePath: true
-        );
-        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(model);
-
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage("No document-reference binding matches 'edfi.StudentAddress.School_DocumentId'.");
-    }
-
-    [Test]
-    public void It_should_fail_fast_when_document_reference_binding_is_duplicated_for_document_fk_column()
-    {
-        var model = CreateSingleTableModelWithDuplicateDocumentReferenceBinding();
-        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(model);
-
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "Cannot compile write plan for resource 'Ed-Fi.StudentAddress': duplicate document-reference binding key(s) were found: edfi.StudentAddress.School_DocumentId (count: 2)."
-            );
-    }
-
-    [Test]
-    public void It_should_fail_fast_when_document_reference_binding_is_duplicated_for_document_fk_column_with_null_source_json_path()
-    {
-        var model = CreateSingleTableModelWithDuplicateDocumentReferenceBinding(
-            useNullDocumentFkSourcePath: true
-        );
-        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(model);
-
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "Cannot compile write plan for resource 'Ed-Fi.StudentAddress': duplicate document-reference binding key(s) were found: edfi.StudentAddress.School_DocumentId (count: 2)."
-            );
-    }
-
-    [Test]
-    public void It_should_fail_fast_when_descriptor_edge_source_is_missing_for_descriptor_fk_column()
-    {
-        var model = CreateSingleTableModelWithMissingDescriptorEdgeSource();
-        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(model);
-
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage("No descriptor edge source matches 'edfi.StudentAddress.ProgramTypeDescriptorId'.");
-    }
-
-    [Test]
-    public void It_should_fail_fast_when_descriptor_edge_source_is_duplicated_for_descriptor_fk_column()
-    {
-        var model = CreateSingleTableModelWithDuplicateDescriptorEdgeSource();
-        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(model);
-
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "Cannot compile write plan for resource 'Ed-Fi.StudentAddress': duplicate descriptor edge source key(s) were found: edfi.StudentAddress.ProgramTypeDescriptorId (count: 2)."
-            );
-    }
-
-    [Test]
-    public void It_should_fail_fast_when_document_reference_binding_inventory_contains_duplicate_keys_even_when_unreferenced()
-    {
-        var model = CreateRootOnlyModelWithDuplicateUnusedDocumentReferenceBindingKeys();
-        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(model);
-
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "Cannot compile write plan for resource 'Ed-Fi.Student': duplicate document-reference binding key(s) were found: edfi.Student.Unused_DocumentId (count: 2)."
-            );
-    }
-
-    [Test]
-    public void It_should_fail_fast_when_descriptor_edge_source_inventory_contains_duplicate_keys_even_when_unreferenced()
-    {
-        var model = CreateRootOnlyModelWithDuplicateUnusedDescriptorEdgeSourceKeys();
-        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(model);
-
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "Cannot compile write plan for resource 'Ed-Fi.Student': duplicate descriptor edge source key(s) were found: edfi.Student.UnusedDescriptorId (count: 2)."
-            );
-    }
-
-    [Test]
-    public void It_should_fail_fast_when_key_column_is_unified_alias()
-    {
-        var unsupportedModel = CreateRootOnlyModelWithUnifiedAliasKeyColumn();
-        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
-
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "Cannot compile write plan for 'edfi.Student': key column 'SchoolYearAlias' is UnifiedAlias*"
-            );
-    }
-
-    [Test]
-    public void It_should_fail_fast_when_key_column_does_not_exist_in_table_columns()
-    {
-        var unsupportedModel = CreateRootOnlyModelWithMissingKeyColumn();
-        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
-
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "Cannot compile write plan for 'edfi.Student': key column 'MissingSchoolYear' does not exist in table columns."
-            );
-    }
-
-    [Test]
-    public void It_should_fail_fast_when_key_column_kind_is_not_parent_key_part_or_ordinal()
-    {
-        var unsupportedModel = CreateRootOnlyModelWithUnsupportedKeyColumnKind();
-        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
-
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "Cannot compile write plan for 'edfi.Student': key column 'SchoolYear' has unsupported kind 'Scalar'. Supported key kinds are ParentKeyPart and Ordinal."
-            );
-    }
-
-    [Test]
-    public void It_should_fail_fast_when_table_contains_duplicate_column_names()
-    {
-        var unsupportedModel = CreateRootOnlyModelWithDuplicateColumnNames();
-        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
-
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "Cannot compile write plan for 'edfi.Student': duplicate column name 'SchoolYear' encountered while building 'columnByName' map."
-            );
-    }
-
-    [Test]
-    public void It_should_compile_table_plans_for_all_tables_in_dependency_order_for_multi_table_resources()
-    {
-        var model = CreateSupportedMultiTableModel();
-        var writePlan = new WritePlanCompiler(SqlDialect.Pgsql).Compile(model);
-
-        writePlan.TablePlansInDependencyOrder.Should().HaveCount(model.TablesInDependencyOrder.Count);
-        writePlan
-            .TablePlansInDependencyOrder.Select(static tablePlan => tablePlan.TableModel.Table)
-            .Should()
-            .Equal(model.TablesInDependencyOrder.Select(static table => table.Table));
-
-        var rootPlan = writePlan.TablePlansInDependencyOrder[0];
-        var rootExtensionPlan = writePlan.TablePlansInDependencyOrder[1];
-        var childPlan = writePlan.TablePlansInDependencyOrder[2];
-        var nestedChildPlan = writePlan.TablePlansInDependencyOrder[3];
-
-        rootPlan.UpdateSql.Should().NotBeNull();
-        rootExtensionPlan.UpdateSql.Should().NotBeNull();
-        childPlan.UpdateSql.Should().BeNull();
-        nestedChildPlan.UpdateSql.Should().BeNull();
-
-        rootPlan.DeleteByParentSql.Should().BeNull();
-        rootExtensionPlan.DeleteByParentSql.Should().NotBeNull();
-        childPlan.DeleteByParentSql.Should().NotBeNull();
-        nestedChildPlan.DeleteByParentSql.Should().NotBeNull();
-
-        foreach (var tablePlan in writePlan.TablePlansInDependencyOrder)
-        {
-            tablePlan.InsertSql.Should().NotBeNullOrWhiteSpace();
-            tablePlan.BulkInsertBatching.ParametersPerRow.Should().Be(tablePlan.ColumnBindings.Length);
-            tablePlan.KeyUnificationPlans.Should().BeEmpty();
-        }
-    }
-
-    [TestCase(SqlDialect.Pgsql)]
-    [TestCase(SqlDialect.Mssql)]
-    public void It_should_derive_bulk_insert_batching_for_each_compiled_table_plan(SqlDialect dialect)
-    {
-        var writePlan = new WritePlanCompiler(dialect).Compile(CreateSupportedMultiTableModel());
-
-        foreach (var tablePlan in writePlan.TablePlansInDependencyOrder)
-        {
-            var expectedBatching = PlanWriteBatchingConventions.DeriveBulkInsertBatchingInfo(
-                dialect,
-                tablePlan.ColumnBindings
-            );
-
-            tablePlan.BulkInsertBatching.Should().BeEquivalentTo(expectedBatching);
-        }
-    }
-
-    [TestCase(SqlDialect.Pgsql)]
-    [TestCase(SqlDialect.Mssql)]
-    public void It_should_emit_delete_by_parent_sql_for_direct_child_nested_child_and_root_scope_extension_tables(
-        SqlDialect dialect
-    )
-    {
-        var writePlan = new WritePlanCompiler(dialect).Compile(CreateSupportedMultiTableModel());
-
-        static TableWritePlan GetTablePlan(ResourceWritePlan plan, string tableName)
-        {
-            return plan.TablePlansInDependencyOrder.Single(tablePlan =>
-                string.Equals(tablePlan.TableModel.Table.Name, tableName, StringComparison.Ordinal)
-            );
-        }
-
-        var rootPlan = GetTablePlan(writePlan, "Student");
-        var rootExtensionPlan = GetTablePlan(writePlan, "StudentExtension");
-        var directChildPlan = GetTablePlan(writePlan, "StudentAddress");
-        var nestedChildPlan = GetTablePlan(writePlan, "StudentAddressPeriod");
-
-        rootPlan.DeleteByParentSql.Should().BeNull();
-
-        rootExtensionPlan
-            .DeleteByParentSql.Should()
-            .Be(
-                dialect switch
-                {
-                    SqlDialect.Pgsql => """
-                    DELETE FROM "sample"."StudentExtension"
-                    WHERE
-                        ("DocumentId" = @documentId)
-                    ;
-
-                    """,
-                    SqlDialect.Mssql => """
-                    DELETE FROM [sample].[StudentExtension]
-                    WHERE
-                        ([DocumentId] = @documentId)
-                    ;
-
-                    """,
-                    _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, null),
-                }
-            );
-
-        directChildPlan
-            .DeleteByParentSql.Should()
-            .Be(
-                dialect switch
-                {
-                    SqlDialect.Pgsql => """
-                    DELETE FROM "edfi"."StudentAddress"
-                    WHERE
-                        ("DocumentId" = @documentId)
-                    ;
-
-                    """,
-                    SqlDialect.Mssql => """
-                    DELETE FROM [edfi].[StudentAddress]
-                    WHERE
-                        ([DocumentId] = @documentId)
-                    ;
-
-                    """,
-                    _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, null),
-                }
-            );
-
-        nestedChildPlan
-            .DeleteByParentSql.Should()
-            .Be(
-                dialect switch
-                {
-                    SqlDialect.Pgsql => """
-                    DELETE FROM "edfi"."StudentAddressPeriod"
-                    WHERE
-                        ("DocumentId" = @documentId)
-                        AND ("ParentAddressOrdinal" = @parentAddressOrdinal)
-                    ;
-
-                    """,
-                    SqlDialect.Mssql => """
-                    DELETE FROM [edfi].[StudentAddressPeriod]
-                    WHERE
-                        ([DocumentId] = @documentId)
-                        AND ([ParentAddressOrdinal] = @parentAddressOrdinal)
-                    ;
-
-                    """,
-                    _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, null),
-                }
-            );
-    }
-
-    [Test]
-    public void It_should_treat_root_scope_table_as_root_for_delete_by_parent_when_root_table_instance_differs()
-    {
-        var model = CreateSupportedMultiTableModelWithClonedRootScopeTableInDependencyOrder();
-        model.TablesInDependencyOrder[0].Equals(model.Root).Should().BeFalse();
-
-        var writePlan = new WritePlanCompiler(SqlDialect.Pgsql).Compile(model);
-        var rootPlan = writePlan.TablePlansInDependencyOrder.Single(tablePlan =>
-            tablePlan.TableModel.Table.Equals(model.Root.Table)
-            && tablePlan.TableModel.JsonScope.Canonical == "$"
-        );
-
-        rootPlan.DeleteByParentSql.Should().BeNull();
-
-        writePlan
-            .TablePlansInDependencyOrder.Where(tablePlan => tablePlan.TableModel.JsonScope.Canonical != "$")
-            .Should()
-            .AllSatisfy(tablePlan => tablePlan.DeleteByParentSql.Should().NotBeNull());
-    }
-
-    [Test]
-    public void It_should_fail_fast_when_tables_in_dependency_order_has_no_root_scope_table()
-    {
-        var unsupportedModel = CreateSupportedMultiTableModelWithoutRootScopeTable();
-        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
-
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "Cannot compile write plan for resource 'Ed-Fi.Student': expected exactly one root-scope table (JsonScope '$') in TablesInDependencyOrder, but found 0."
-            );
-    }
-
-    [Test]
-    public void It_should_fail_fast_when_tables_in_dependency_order_has_multiple_root_scope_tables()
-    {
-        var unsupportedModel = CreateSupportedMultiTableModelWithMultipleRootScopeTables();
-        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
-
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "Cannot compile write plan for resource 'Ed-Fi.Student': expected exactly one root-scope table (JsonScope '$') in TablesInDependencyOrder, but found 2."
-            );
-    }
-
-    [Test]
-    public void It_should_fail_fast_when_root_scope_table_does_not_match_resource_model_root_table()
-    {
-        var unsupportedModel = CreateSupportedMultiTableModelWithMismatchedRootScopeTable();
-        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
-
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "Cannot compile write plan for resource 'Ed-Fi.Student': root-scope table 'edfi.StudentShadow' does not match resourceModel.Root table 'edfi.Student'."
-            );
-    }
-
-    [Test]
-    public void It_should_compile_deterministic_table_plans_for_multi_table_resources_under_unified_alias_column_permutations()
-    {
-        var compiler = new WritePlanCompiler(SqlDialect.Pgsql);
-
-        var first = compiler.Compile(CreateSupportedMultiTableModel());
-        var second = compiler.Compile(CreateSupportedMultiTableModel());
-        var permuted = compiler.Compile(CreateSupportedMultiTableModelWithUnifiedAliasColumnsFirst());
-
-        var firstFingerprint = CreateWritePlanFingerprint(first);
-        var secondFingerprint = CreateWritePlanFingerprint(second);
-        var permutedFingerprint = CreateWritePlanFingerprint(permuted);
-
-        secondFingerprint.Should().Be(firstFingerprint);
-        permutedFingerprint.Should().Be(firstFingerprint);
-    }
-
-    [Test]
-    public void It_should_compile_multi_table_resources_without_thin_slice_gating()
-    {
-        var multiTableModel = CreateSupportedMultiTableModel();
-        multiTableModel.TablesInDependencyOrder.Count.Should().BeGreaterThan(1);
-
-        var writePlan = new WritePlanCompiler(SqlDialect.Pgsql).Compile(multiTableModel);
-
-        writePlan
-            .TablePlansInDependencyOrder.Should()
-            .HaveCount(multiTableModel.TablesInDependencyOrder.Count);
-    }
-
-    [Test]
-    public void It_should_fail_fast_for_non_relational_storage_resources()
-    {
-        var unsupportedModel = _supportedRootOnlyModel with
-        {
-            StorageKind = ResourceStorageKind.SharedDescriptorTable,
-        };
-
-        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
-
-        act.Should()
-            .Throw<NotSupportedException>()
-            .WithMessage("Only relational-table resources are supported for write-plan compilation.*");
-    }
-
-    [Test]
-    public void It_should_compile_key_unification_plans_with_scalar_and_descriptor_members_in_member_order()
-    {
-        var model = CreateRootOnlyModelWithCompiledKeyUnificationInventory();
-        var tablePlan = new WritePlanCompiler(SqlDialect.Pgsql)
-            .Compile(model)
-            .TablePlansInDependencyOrder.Single();
-
-        static int GetBindingIndex(TableWritePlan plan, string columnName)
-        {
-            return plan
-                .ColumnBindings.Select((binding, index) => (binding, index))
-                .Single(tuple => tuple.binding.Column.ColumnName.Value == columnName)
-                .index;
-        }
-
-        tablePlan.KeyUnificationPlans.Should().HaveCount(2);
-
-        var scalarClassPlan = tablePlan.KeyUnificationPlans[0];
-        scalarClassPlan.CanonicalColumn.Should().Be(new DbColumnName("SchoolYearCanonical"));
-        scalarClassPlan.CanonicalBindingIndex.Should().Be(GetBindingIndex(tablePlan, "SchoolYearCanonical"));
-        scalarClassPlan.MembersInOrder.Should().HaveCount(2);
-        scalarClassPlan
-            .MembersInOrder[0]
-            .Should()
-            .BeEquivalentTo(
-                new KeyUnificationMemberWritePlan.ScalarMember(
-                    MemberPathColumn: new DbColumnName("SchoolYearSecondary"),
-                    RelativePath: CreatePath(
-                        "$.localSchoolYear",
-                        new JsonPathSegment.Property("localSchoolYear")
-                    ),
-                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
-                    PresenceColumn: null,
-                    PresenceBindingIndex: null,
-                    PresenceIsSynthetic: false
-                )
-            );
-        scalarClassPlan
-            .MembersInOrder[1]
-            .Should()
-            .BeEquivalentTo(
-                new KeyUnificationMemberWritePlan.ScalarMember(
-                    MemberPathColumn: new DbColumnName("SchoolYearPrimary"),
-                    RelativePath: CreatePath("$.schoolYear", new JsonPathSegment.Property("schoolYear")),
-                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
-                    PresenceColumn: null,
-                    PresenceBindingIndex: null,
-                    PresenceIsSynthetic: false
-                )
-            );
-
-        var descriptorClassPlan = tablePlan.KeyUnificationPlans[1];
-        descriptorClassPlan
-            .CanonicalColumn.Should()
-            .Be(new DbColumnName("SchoolYearTypeDescriptorIdCanonical"));
-        descriptorClassPlan
-            .CanonicalBindingIndex.Should()
-            .Be(GetBindingIndex(tablePlan, "SchoolYearTypeDescriptorIdCanonical"));
-        descriptorClassPlan.MembersInOrder.Should().HaveCount(2);
-        descriptorClassPlan
-            .MembersInOrder[0]
-            .Should()
-            .BeEquivalentTo(
-                new KeyUnificationMemberWritePlan.DescriptorMember(
-                    MemberPathColumn: new DbColumnName("SchoolYearTypeDescriptorSecondary"),
-                    RelativePath: CreatePath(
-                        "$.localSchoolYearTypeDescriptor",
-                        new JsonPathSegment.Property("localSchoolYearTypeDescriptor")
-                    ),
-                    DescriptorResource: new QualifiedResourceName("Ed-Fi", "SchoolYearTypeDescriptor"),
-                    PresenceColumn: new DbColumnName("SchoolYearTypeDescriptorSecondary_Present"),
-                    PresenceBindingIndex: GetBindingIndex(
-                        tablePlan,
-                        "SchoolYearTypeDescriptorSecondary_Present"
-                    ),
-                    PresenceIsSynthetic: true
-                )
-            );
-        descriptorClassPlan
-            .MembersInOrder[1]
-            .Should()
-            .BeEquivalentTo(
-                new KeyUnificationMemberWritePlan.DescriptorMember(
-                    MemberPathColumn: new DbColumnName("SchoolYearTypeDescriptorPrimary"),
-                    RelativePath: CreatePath(
-                        "$.schoolYearTypeDescriptor",
-                        new JsonPathSegment.Property("schoolYearTypeDescriptor")
-                    ),
-                    DescriptorResource: new QualifiedResourceName("Ed-Fi", "SchoolYearTypeDescriptor"),
-                    PresenceColumn: null,
-                    PresenceBindingIndex: null,
-                    PresenceIsSynthetic: false
-                )
-            );
-
-        var syntheticPresenceBindingIndex = (
-            (KeyUnificationMemberWritePlan.DescriptorMember)descriptorClassPlan.MembersInOrder[0]
-        ).PresenceBindingIndex;
-        syntheticPresenceBindingIndex.Should().NotBeNull();
-        tablePlan
-            .ColumnBindings[syntheticPresenceBindingIndex!.Value]
-            .Source.Should()
-            .BeOfType<WriteValueSource.Precomputed>();
-    }
-
-    [Test]
-    public void It_should_fail_fast_when_synthetic_presence_column_is_missing_null_or_true_constraint()
-    {
-        var unsupportedModel = CreateRootOnlyModelWithMissingSyntheticPresenceConstraint();
-        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
-
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "Cannot compile key-unification plan for 'edfi.Student': synthetic presence column 'SchoolYearTypeDescriptorSecondary_Present' for member 'SchoolYearTypeDescriptorSecondary' must define a matching NullOrTrue constraint.*"
-            );
-    }
-
-    [Test]
-    public void It_should_treat_presence_columns_with_source_paths_as_non_synthetic_without_null_or_true_constraint()
-    {
-        var model = CreateRootOnlyModelWithReferenceSitePresence();
-        var tablePlan = new WritePlanCompiler(SqlDialect.Pgsql)
-            .Compile(model)
-            .TablePlansInDependencyOrder.Single();
-        var descriptorClassPlan = tablePlan.KeyUnificationPlans[1];
-        var secondaryMember = (KeyUnificationMemberWritePlan.DescriptorMember)
-            descriptorClassPlan.MembersInOrder[0];
-
-        secondaryMember
-            .PresenceColumn.Should()
-            .Be(new DbColumnName("SchoolYearTypeDescriptorSecondary_Present"));
-        secondaryMember.PresenceBindingIndex.Should().NotBeNull();
-        secondaryMember.PresenceIsSynthetic.Should().BeFalse();
-    }
-
-    [Test]
-    public void It_should_not_treat_reference_group_document_fk_presence_with_null_source_path_as_synthetic()
-    {
-        var model = CreateRootOnlyModelWithReferenceGroupDocumentFkPresence(
-            useNullPresenceSourceJsonPath: true
-        );
-        var tablePlan = new WritePlanCompiler(SqlDialect.Pgsql)
-            .Compile(model)
-            .TablePlansInDependencyOrder.Single();
-        var descriptorClassPlan = tablePlan.KeyUnificationPlans[1];
-        var secondaryMember = (KeyUnificationMemberWritePlan.DescriptorMember)
-            descriptorClassPlan.MembersInOrder[0];
-
-        secondaryMember.PresenceColumn.Should().Be(new DbColumnName("School_DocumentId"));
-        secondaryMember.PresenceBindingIndex.Should().NotBeNull();
-        secondaryMember.PresenceIsSynthetic.Should().BeFalse();
-        tablePlan
-            .ColumnBindings[secondaryMember.PresenceBindingIndex!.Value]
-            .Source.Should()
-            .BeOfType<WriteValueSource.DocumentReference>();
-    }
-
-    [Test]
-    public void It_should_fail_fast_when_key_unification_canonical_column_is_not_precomputed()
-    {
-        var unsupportedModel = CreateRootOnlyModelWithKeyUnificationClass();
-        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
-
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "Cannot compile key-unification plan for 'edfi.Student': canonical column 'SchoolYear' must bind as Precomputed.*"
-            );
-    }
-
-    [Test]
-    public void It_should_fail_fast_when_key_unification_models_contain_extra_null_source_writable_columns_without_producer_plans()
-    {
-        var unsupportedModel = CreateRootOnlyModelWithOrphanPrecomputedBinding();
-        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
-
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "Cannot compile write plan for 'edfi.Student': column 'SchoolYearCanonicalOrphan' has null SourceJsonPath but is not an explicitly supported precomputed target. Mark the column IsWritable=false or add a producer plan (for example, key-unification canonical/synthetic presence)."
-            );
-    }
-
-    [Test]
-    public void It_should_fail_fast_when_precomputed_binding_has_multiple_key_unification_producers()
-    {
-        var unsupportedModel = CreateRootOnlyModelWithDuplicatePrecomputedProducer();
-        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
-
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "Cannot compile key-unification plan for 'edfi.Student': precomputed bindings produced multiple times by key-unification inventory: 'SchoolYearCanonical'.*"
-            );
-    }
-
-    [Test]
-    public void It_should_fail_fast_when_key_unification_member_path_column_is_not_unified_alias()
-    {
-        var unsupportedModel = CreateRootOnlyModelWithStoredKeyUnificationMemberPathColumn();
-        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
-
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "Cannot compile key-unification plan for 'edfi.Student': member path column 'SchoolYearSecondary' must use UnifiedAlias storage, but was Stored.*"
-            );
-    }
-
-    [Test]
-    public void It_should_fail_fast_when_key_unification_member_path_column_kind_is_not_supported()
-    {
-        var unsupportedModel = CreateRootOnlyModelWithUnsupportedKeyUnificationMemberPathColumnKind();
-        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
-
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "Cannot compile key-unification plan for 'edfi.Student': member path column 'SchoolYearSecondary' has unsupported kind 'ParentKeyPart'. Supported kinds are Scalar and DescriptorFk.*"
-            );
-    }
-
-    private static RelationalResourceModel CreateSupportedRootOnlyModel()
+    protected static RelationalResourceModel CreateSupportedRootOnlyModel()
     {
         var rootTable = new DbTableModel(
             Table: new DbTableName(new DbSchemaName("edfi"), "Student"),
@@ -1145,7 +91,7 @@ public class Given_WritePlanCompiler
         );
     }
 
-    private static RelationalResourceModel CreateSupportedRootOnlyModelWithNonWritableSchoolYear()
+    protected static RelationalResourceModel CreateSupportedRootOnlyModelWithNonWritableSchoolYear()
     {
         var model = CreateSupportedRootOnlyModel();
         var schoolYearColumnName = new DbColumnName("SchoolYear");
@@ -1170,7 +116,7 @@ public class Given_WritePlanCompiler
         };
     }
 
-    private static RelationalResourceModel CreateRootOnlyKeyOnlyModel()
+    protected static RelationalResourceModel CreateRootOnlyKeyOnlyModel()
     {
         var rootTable = new DbTableModel(
             Table: new DbTableName(new DbSchemaName("edfi"), "Student"),
@@ -1204,7 +150,7 @@ public class Given_WritePlanCompiler
         );
     }
 
-    private static RelationalResourceModel CreateRootOnlyModelWithUpdateKeyParameterNameCollision()
+    protected static RelationalResourceModel CreateRootOnlyModelWithUpdateKeyParameterNameCollision()
     {
         var rootTable = new DbTableModel(
             Table: new DbTableName(new DbSchemaName("edfi"), "StudentCollision"),
@@ -1269,7 +215,7 @@ public class Given_WritePlanCompiler
         );
     }
 
-    private static RelationalResourceModel CreateRootOnlyModelWithKeyUnificationClass()
+    protected static RelationalResourceModel CreateRootOnlyModelWithKeyUnificationClass()
     {
         var model = CreateSupportedRootOnlyModel();
         var rootTable = model.Root with
@@ -1290,7 +236,7 @@ public class Given_WritePlanCompiler
         };
     }
 
-    private static RelationalResourceModel CreateRootOnlyModelWithCompiledKeyUnificationInventory()
+    protected static RelationalResourceModel CreateRootOnlyModelWithCompiledKeyUnificationInventory()
     {
         return CreateRootOnlyModelWithCompiledKeyUnificationInventoryCore(
             useSyntheticPresenceColumn: true,
@@ -1298,7 +244,7 @@ public class Given_WritePlanCompiler
         );
     }
 
-    private static RelationalResourceModel CreateRootOnlyModelWithNonWritableStoredKeyAndPrecomputedTargets()
+    protected static RelationalResourceModel CreateRootOnlyModelWithNonWritableStoredKeyAndPrecomputedTargets()
     {
         var model = CreateRootOnlyModelWithCompiledKeyUnificationInventory();
         var rootTable = model.Root with
@@ -1317,7 +263,7 @@ public class Given_WritePlanCompiler
         };
     }
 
-    private static RelationalResourceModel CreateRootOnlyModelWithMissingSyntheticPresenceConstraint()
+    protected static RelationalResourceModel CreateRootOnlyModelWithMissingSyntheticPresenceConstraint()
     {
         return CreateRootOnlyModelWithCompiledKeyUnificationInventoryCore(
             useSyntheticPresenceColumn: true,
@@ -1325,7 +271,7 @@ public class Given_WritePlanCompiler
         );
     }
 
-    private static RelationalResourceModel CreateRootOnlyModelWithReferenceSitePresence()
+    protected static RelationalResourceModel CreateRootOnlyModelWithReferenceSitePresence()
     {
         return CreateRootOnlyModelWithCompiledKeyUnificationInventoryCore(
             useSyntheticPresenceColumn: false,
@@ -1333,7 +279,7 @@ public class Given_WritePlanCompiler
         );
     }
 
-    private static RelationalResourceModel CreateRootOnlyModelWithReferenceGroupDocumentFkPresence(
+    protected static RelationalResourceModel CreateRootOnlyModelWithReferenceGroupDocumentFkPresence(
         bool useNullPresenceSourceJsonPath
     )
     {
@@ -1397,7 +343,7 @@ public class Given_WritePlanCompiler
         };
     }
 
-    private static RelationalResourceModel CreateRootOnlyModelWithCompiledKeyUnificationInventoryCore(
+    protected static RelationalResourceModel CreateRootOnlyModelWithCompiledKeyUnificationInventoryCore(
         bool useSyntheticPresenceColumn,
         bool includeNullOrTrueConstraintForSyntheticPresence
     )
@@ -1555,7 +501,7 @@ public class Given_WritePlanCompiler
         );
     }
 
-    private static RelationalResourceModel CreateRootOnlyModelWithStoredPrecomputedNonKeyColumn()
+    protected static RelationalResourceModel CreateRootOnlyModelWithStoredPrecomputedNonKeyColumn()
     {
         var model = CreateSupportedRootOnlyModel();
         var rootTable = model.Root with
@@ -1581,7 +527,7 @@ public class Given_WritePlanCompiler
         };
     }
 
-    private static RelationalResourceModel CreateRootOnlyModelWithOrphanPrecomputedBinding()
+    protected static RelationalResourceModel CreateRootOnlyModelWithOrphanPrecomputedBinding()
     {
         var model = CreateRootOnlyModelWithCompiledKeyUnificationInventory();
         var rootTable = model.Root with
@@ -1607,7 +553,7 @@ public class Given_WritePlanCompiler
         };
     }
 
-    private static RelationalResourceModel CreateRootOnlyModelWithDuplicatePrecomputedProducer()
+    protected static RelationalResourceModel CreateRootOnlyModelWithDuplicatePrecomputedProducer()
     {
         var model = CreateRootOnlyModelWithCompiledKeyUnificationInventory();
         var rootTable = model.Root with
@@ -1629,7 +575,7 @@ public class Given_WritePlanCompiler
         };
     }
 
-    private static RelationalResourceModel CreateRootOnlyModelWithStoredKeyUnificationMemberPathColumn()
+    protected static RelationalResourceModel CreateRootOnlyModelWithStoredKeyUnificationMemberPathColumn()
     {
         var model = CreateRootOnlyModelWithCompiledKeyUnificationInventory();
         var storedMemberPathColumn = new DbColumnName("SchoolYearSecondary");
@@ -1655,7 +601,7 @@ public class Given_WritePlanCompiler
         };
     }
 
-    private static RelationalResourceModel CreateRootOnlyModelWithUnsupportedKeyUnificationMemberPathColumnKind()
+    protected static RelationalResourceModel CreateRootOnlyModelWithUnsupportedKeyUnificationMemberPathColumnKind()
     {
         var model = CreateRootOnlyModelWithCompiledKeyUnificationInventory();
         var unsupportedMemberPathColumn = new DbColumnName("SchoolYearSecondary");
@@ -1681,7 +627,7 @@ public class Given_WritePlanCompiler
         };
     }
 
-    private static RelationalResourceModel CreateRootOnlyModelWithUnifiedAliasKeyColumn()
+    protected static RelationalResourceModel CreateRootOnlyModelWithUnifiedAliasKeyColumn()
     {
         var model = CreateSupportedRootOnlyModel();
         var rootTable = model.Root with
@@ -1703,7 +649,7 @@ public class Given_WritePlanCompiler
         };
     }
 
-    private static RelationalResourceModel CreateRootOnlyModelWithMissingKeyColumn()
+    protected static RelationalResourceModel CreateRootOnlyModelWithMissingKeyColumn()
     {
         var model = CreateSupportedRootOnlyModel();
         var rootTable = model.Root with
@@ -1725,7 +671,7 @@ public class Given_WritePlanCompiler
         };
     }
 
-    private static RelationalResourceModel CreateRootOnlyModelWithUnsupportedKeyColumnKind()
+    protected static RelationalResourceModel CreateRootOnlyModelWithUnsupportedKeyColumnKind()
     {
         var model = CreateSupportedRootOnlyModel();
         var rootTable = model.Root with
@@ -1747,7 +693,7 @@ public class Given_WritePlanCompiler
         };
     }
 
-    private static RelationalResourceModel CreateRootOnlyModelWithDuplicateColumnNames()
+    protected static RelationalResourceModel CreateRootOnlyModelWithDuplicateColumnNames()
     {
         var model = CreateSupportedRootOnlyModel();
         var duplicateColumnName = new DbColumnName("SchoolYear");
@@ -1763,7 +709,7 @@ public class Given_WritePlanCompiler
         };
     }
 
-    private static RelationalResourceModel CreateRootOnlyModelWithDuplicateUnusedDocumentReferenceBindingKeys()
+    protected static RelationalResourceModel CreateRootOnlyModelWithDuplicateUnusedDocumentReferenceBindingKeys()
     {
         var model = CreateSupportedRootOnlyModel();
         var unusedBinding = new DocumentReferenceBinding(
@@ -1784,7 +730,7 @@ public class Given_WritePlanCompiler
         };
     }
 
-    private static RelationalResourceModel CreateRootOnlyModelWithDuplicateUnusedDescriptorEdgeSourceKeys()
+    protected static RelationalResourceModel CreateRootOnlyModelWithDuplicateUnusedDescriptorEdgeSourceKeys()
     {
         var model = CreateSupportedRootOnlyModel();
         var unusedEdgeSource = new DescriptorEdgeSource(
@@ -1804,7 +750,7 @@ public class Given_WritePlanCompiler
         };
     }
 
-    private static RelationalResourceModel CreateSupportedRootOnlyModelWithUnifiedAliasColumnFirst()
+    protected static RelationalResourceModel CreateSupportedRootOnlyModelWithUnifiedAliasColumnFirst()
     {
         var model = CreateSupportedRootOnlyModel();
 
@@ -1825,7 +771,7 @@ public class Given_WritePlanCompiler
         };
     }
 
-    private static RelationalResourceModel CreateSupportedMultiTableModel()
+    protected static RelationalResourceModel CreateSupportedMultiTableModel()
     {
         var model = CreateSupportedRootOnlyModel();
         var rootTable = model.Root;
@@ -1846,7 +792,7 @@ public class Given_WritePlanCompiler
         };
     }
 
-    private static RelationalResourceModel CreateSupportedMultiTableModelWithClonedRootScopeTableInDependencyOrder()
+    protected static RelationalResourceModel CreateSupportedMultiTableModelWithClonedRootScopeTableInDependencyOrder()
     {
         var model = CreateSupportedMultiTableModel();
         var clonedRootScopeTable = model.Root with { Columns = [.. model.Root.Columns] };
@@ -1857,7 +803,7 @@ public class Given_WritePlanCompiler
         };
     }
 
-    private static RelationalResourceModel CreateSupportedMultiTableModelWithoutRootScopeTable()
+    protected static RelationalResourceModel CreateSupportedMultiTableModelWithoutRootScopeTable()
     {
         var model = CreateSupportedMultiTableModel();
 
@@ -1867,7 +813,7 @@ public class Given_WritePlanCompiler
         };
     }
 
-    private static RelationalResourceModel CreateSupportedMultiTableModelWithMultipleRootScopeTables()
+    protected static RelationalResourceModel CreateSupportedMultiTableModelWithMultipleRootScopeTables()
     {
         var model = CreateSupportedMultiTableModel();
         var duplicateRootScopeTable = model.Root with
@@ -1882,7 +828,7 @@ public class Given_WritePlanCompiler
         };
     }
 
-    private static RelationalResourceModel CreateSupportedMultiTableModelWithMismatchedRootScopeTable()
+    protected static RelationalResourceModel CreateSupportedMultiTableModelWithMismatchedRootScopeTable()
     {
         var model = CreateSupportedMultiTableModel();
         var shadowRootScopeTable = model.Root with
@@ -1897,7 +843,7 @@ public class Given_WritePlanCompiler
         };
     }
 
-    private static RelationalResourceModel CreateSupportedMultiTableModelWithUnifiedAliasColumnsFirst()
+    protected static RelationalResourceModel CreateSupportedMultiTableModelWithUnifiedAliasColumnsFirst()
     {
         var model = CreateSupportedMultiTableModel();
         var permutedTables = model.TablesInDependencyOrder.Select(ReorderUnifiedAliasColumnsFirst).ToArray();
@@ -1909,7 +855,7 @@ public class Given_WritePlanCompiler
         };
     }
 
-    private static DbTableModel ReorderUnifiedAliasColumnsFirst(DbTableModel tableModel)
+    protected static DbTableModel ReorderUnifiedAliasColumnsFirst(DbTableModel tableModel)
     {
         var unifiedAliasColumns = tableModel
             .Columns.Where(static column => column.Storage is ColumnStorage.UnifiedAlias)
@@ -1930,7 +876,7 @@ public class Given_WritePlanCompiler
         };
     }
 
-    private static DbTableModel CreateRootScopeExtensionTable()
+    protected static DbTableModel CreateRootScopeExtensionTable()
     {
         return new DbTableModel(
             Table: new DbTableName(new DbSchemaName("sample"), "StudentExtension"),
@@ -1988,7 +934,7 @@ public class Given_WritePlanCompiler
         );
     }
 
-    private static DbTableModel CreateChildCollectionTable()
+    protected static DbTableModel CreateChildCollectionTable()
     {
         return new DbTableModel(
             Table: new DbTableName(new DbSchemaName("edfi"), "StudentAddress"),
@@ -2058,7 +1004,7 @@ public class Given_WritePlanCompiler
         );
     }
 
-    private static DbTableModel CreateNestedChildCollectionTable()
+    protected static DbTableModel CreateNestedChildCollectionTable()
     {
         return new DbTableModel(
             Table: new DbTableName(new DbSchemaName("edfi"), "StudentAddressPeriod"),
@@ -2124,7 +1070,7 @@ public class Given_WritePlanCompiler
         );
     }
 
-    private static RelationalResourceModel CreateSingleTableModelCoveringWriteValueSourceKinds(
+    protected static RelationalResourceModel CreateSingleTableModelCoveringWriteValueSourceKinds(
         bool useNullDocumentFkSourcePath = false
     )
     {
@@ -2339,7 +1285,7 @@ public class Given_WritePlanCompiler
         );
     }
 
-    private static RelationalResourceModel CreateSingleTableModelWithMissingDocumentReferenceBinding(
+    protected static RelationalResourceModel CreateSingleTableModelWithMissingDocumentReferenceBinding(
         bool useNullDocumentFkSourcePath = false
     )
     {
@@ -2351,7 +1297,7 @@ public class Given_WritePlanCompiler
         };
     }
 
-    private static RelationalResourceModel CreateSingleTableModelWithDuplicateDocumentReferenceBinding(
+    protected static RelationalResourceModel CreateSingleTableModelWithDuplicateDocumentReferenceBinding(
         bool useNullDocumentFkSourcePath = false
     )
     {
@@ -2364,7 +1310,7 @@ public class Given_WritePlanCompiler
         };
     }
 
-    private static RelationalResourceModel CreateSingleTableModelWithMissingDescriptorEdgeSource()
+    protected static RelationalResourceModel CreateSingleTableModelWithMissingDescriptorEdgeSource()
     {
         var model = CreateSingleTableModelCoveringWriteValueSourceKinds();
 
@@ -2374,7 +1320,7 @@ public class Given_WritePlanCompiler
         };
     }
 
-    private static RelationalResourceModel CreateSingleTableModelWithDuplicateDescriptorEdgeSource()
+    protected static RelationalResourceModel CreateSingleTableModelWithDuplicateDescriptorEdgeSource()
     {
         var model = CreateSingleTableModelCoveringWriteValueSourceKinds();
         var edgeSource = model.DescriptorEdgeSources.Single();
@@ -2385,12 +1331,12 @@ public class Given_WritePlanCompiler
         };
     }
 
-    private static JsonPathExpression CreatePath(string canonical, params JsonPathSegment[] segments)
+    protected static JsonPathExpression CreatePath(string canonical, params JsonPathSegment[] segments)
     {
         return new JsonPathExpression(canonical, segments);
     }
 
-    private static string CreateWritePlanFingerprint(ResourceWritePlan plan)
+    protected static string CreateWritePlanFingerprint(ResourceWritePlan plan)
     {
         return string.Join(
             "\n--TABLE--\n",
