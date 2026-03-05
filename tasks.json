@@ -437,5 +437,60 @@
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
     "completed": true
+  },
+  {
+    "category": "Relational Model / Hardening",
+    "description": "Fix DbColumnModel.IsWritable consistency when Storage is changed by derivation passes (especially KeyUnificationPass). Acceptance: any DbColumnModel produced by the relational-model pipeline with Storage = ColumnStorage.UnifiedAlias must have IsWritable = false; stored columns retain their existing IsWritable value (including explicit overrides) unless intentionally changed. KeyUnificationPass must set IsWritable=false when converting member path columns to UnifiedAlias so consumers never see writable unified-alias columns.",
+    "steps-to-verify": [
+      "Add a regression unit test that runs the relational-model pipeline (or KeyUnificationPass in isolation) and asserts every UnifiedAlias column has IsWritable=false",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Refactor / Simplification",
+    "description": "Simplify WritePlanCompiler write-source lookup construction now that duplicate inventory keys are already rejected. Acceptance: remove WriteSourceLookupEntry.HasDuplicateMatch and the duplicate-path GetUniqueLookupMatchOrThrow plumbing; BuildWriteSourceLookupMap builds a FrozenDictionary keyed by (Table,FkColumn) and assumes uniqueness after ValidateUniqueWriteSourceInventoryKeysOrThrow. Preserve current failure behavior and messages for (a) duplicate inventory keys (fail fast at compile start) and (b) missing lookups when compiling a DocumentFk/DescriptorFk binding. Compiled SQL text, binding order, and parameter names must remain byte-identical.",
+    "steps-to-verify": [
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj",
+      "Run: set UPDATE_GOLDENS=0 and ensure plan-compilation golden fixture tests have no manifest diffs"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactor / Cleanup",
+    "description": "Remove dead code in write-plan compilation context. Acceptance: delete WritePlanTableCompilationContext.RequiredKeyUnificationPrecomputedColumns (and any other unused members); eliminate unused allocations and ensure no behavior changes (SQL hashes, binding order, and exception messages stay stable).",
+    "steps-to-verify": [
+      "Run: dotnet build --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans/EdFi.DataManagementService.Backend.Plans.csproj",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Write Plan Compiler / Validation",
+    "description": "Tighten DocumentId binding and key invariants in WritePlanCompiler. Acceptance: treat only the canonical DocumentId key column (exact name \"DocumentId\") as WriteValueSource.DocumentId; all other ColumnKind.ParentKeyPart key columns bind as ParentKeyPart(i) by key position. Add a compile-time invariant that every table key includes exactly one ParentKeyPart column named \"DocumentId\" (fail fast with actionable message when missing/duplicated). Add unit tests covering: (a) a malformed key with no DocumentId, and (b) a key with a ParentKeyPart named \"School_DocumentId\" that must not be treated as DocumentId.",
+    "steps-to-verify": [
+      "Add unit tests in plans compiler tests for the new failure/behavior cases",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Write Plan Compiler / Validation",
+    "description": "Fail fast on inconsistent descriptor source metadata when compiling WriteValueSource.DescriptorReference. Acceptance: for any stored ColumnKind.DescriptorFk binding, resolve DescriptorEdgeSource by (Table,FkColumn) and derive the relative path from DescriptorEdgeSource.DescriptorValuePath; if DbColumnModel.SourceJsonPath is present and does not match DescriptorEdgeSource.DescriptorValuePath, throw a deterministic InvalidOperationException identifying the table/column and both paths. Add a unit test that constructs a mismatched model and asserts the failure message.",
+    "steps-to-verify": [
+      "Add unit test for mismatched descriptor path metadata (SourceJsonPath vs DescriptorEdgeSource.DescriptorValuePath)",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Tests / Maintainability",
+    "description": "Improve the update-parameter collision unit test to use realistic key semantics. Acceptance: update the collision fixture model so the key uses the canonical \"DocumentId\" ParentKeyPart (and any additional key parts as needed), and introduce a separate stored column whose derived parameter base name collides case-insensitively with the key’s parameter name. Preserve the test’s intent: UpdateSql WHERE predicates must reuse the existing binding parameter names in key order (no re-derivation) even under collisions.",
+    "steps-to-verify": [
+      "Update the collision test model + expected SQL in Given_WritePlanCompiler_UpdateSql",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
   }
 ]

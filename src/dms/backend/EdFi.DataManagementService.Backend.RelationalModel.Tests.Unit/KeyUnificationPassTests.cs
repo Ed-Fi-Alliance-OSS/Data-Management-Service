@@ -93,6 +93,20 @@ public class Given_Key_Unification_For_Reference_Sites
     }
 
     /// <summary>
+    /// It should mark unified member aliases as non-writable.
+    /// </summary>
+    [Test]
+    public void It_should_mark_unified_member_aliases_as_non_writable()
+    {
+        var unifiedAliasColumns = _rootTable
+            .Columns.Where(column => column.Storage is ColumnStorage.UnifiedAlias)
+            .ToArray();
+
+        unifiedAliasColumns.Should().NotBeEmpty();
+        unifiedAliasColumns.Should().OnlyContain(column => !column.IsWritable);
+    }
+
+    /// <summary>
     /// It should keep foreign keys on storage-safe columns for invariant validation.
     /// </summary>
     [Test]
