@@ -1,0 +1,133 @@
+[
+  {
+    "category": "Data Model",
+    "description": "Define a `DatabaseFingerprint` record in `EdFi.DataManagementService.Backend.External` with the four DB-sourced fields: `ApiSchemaFormatVersion` (string), `EffectiveSchemaHash` (string), `ResourceKeyCount` (int), `ResourceKeySeedHash` (byte[32]). This is a slim, immutable record representing exactly what the `dms.EffectiveSchema` singleton row stores. Acceptance: record compiles, is public and sealed, lives in `Backend.External` namespace alongside `EffectiveSchemaContracts.cs`.",
+    "steps-to-verify": [
+      "File exists at src/dms/backend/EdFi.DataManagementService.Backend.External/DatabaseFingerprint.cs",
+      "Record has exactly four properties matching dms.EffectiveSchema columns",
+      "Run: `dotnet build src/dms/backend/EdFi.DataManagementService.Backend.External`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Backend Interface",
+    "description": "Define an `IDatabaseFingerprintReader` interface in `EdFi.DataManagementService.Backend.External` with a single method: `Task<DatabaseFingerprint?> ReadFingerprintAsync(string connectionString)`. Returns null when the `dms.EffectiveSchema` table or singleton row is missing. This follows the existing backend abstraction pattern (interfaces in Backend.External, implementations per dialect). Acceptance: interface compiles, is public, returns nullable `DatabaseFingerprint`.",
+    "steps-to-verify": [
+      "File exists at src/dms/backend/EdFi.DataManagementService.Backend.External/IDatabaseFingerprintReader.cs",
+      "Method signature matches: Task<DatabaseFingerprint?> ReadFingerprintAsync(string connectionString)",
+      "Run: `dotnet build src/dms/backend/EdFi.DataManagementService.Backend.External`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Backend Implementation — PostgreSQL",
+    "description": "Implement `IDatabaseFingerprintReader` for PostgreSQL in the PostgreSQL backend project. Use Npgsql to execute `SELECT ApiSchemaFormatVersion, EffectiveSchemaHash, ResourceKeyCount, ResourceKeySeedHash FROM dms.EffectiveSchema WHERE EffectiveSchemaSingletonId = 1`. Return null if the table does not exist (catch the appropriate Npgsql exception for 'relation does not exist') or if the query returns no rows. Validate that exactly one row is returned (the singleton constraint). Acceptance: reads the singleton row, returns a populated `DatabaseFingerprint` on success, returns null on missing table/row, does not throw on missing table.",
+    "steps-to-verify": [
+      "Implementation class exists in the PostgreSQL backend project",
+      "SQL targets dms.EffectiveSchema with singleton WHERE clause",
+      "Missing-table scenario returns null (not an unhandled exception)",
+      "Run: `dotnet build` on the PostgreSQL backend project"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Backend Implementation — MSSQL",
+    "description": "Implement `IDatabaseFingerprintReader` for MSSQL in the MSSQL backend project. Use SqlClient to execute the equivalent SELECT against `dms.EffectiveSchema`. Handle missing table (catch SqlException for invalid object name) and missing row by returning null. Acceptance: mirrors PostgreSQL behavior, returns `DatabaseFingerprint` on success, null on missing table/row.",
+    "steps-to-verify": [
+      "Implementation class exists in the MSSQL backend project",
+      "SQL targets dms.EffectiveSchema with singleton WHERE clause",
+      "Missing-table scenario returns null (not an unhandled exception)",
+      "Run: `dotnet build` on the MSSQL backend project"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Feature Flag",
+    "description": "Add a `bool EnableDatabaseFingerprintValidation` property to `EdFi.DataManagementService.Core.Configuration.AppSettings` (default `false`). This flag controls whether `ValidateDatabaseFingerprintMiddleware` performs its DB read and validation, or simply calls `next()` as a no-op. The flag follows the existing pattern of boolean feature flags in Core AppSettings (e.g., `BypassStringTypeCoercion`, `EnableClaimsetReload`). Also add the corresponding entry to `appsettings.json` in the frontend project with default `false`. Acceptance: property exists on AppSettings, defaults to false, is bindable from configuration, appsettings.json has the key.",
+    "steps-to-verify": [
+      "AppSettings.cs in Core.Configuration has `EnableDatabaseFingerprintValidation` bool property",
+      "Default value is false (disabled — safe for old backend)",
+      "appsettings.json in frontend project includes `EnableDatabaseFingerprintValidation: false`",
+      "Run: `dotnet build src/dms/core/EdFi.DataManagementService.Core`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Caching Provider",
+    "description": "Implement a `DatabaseFingerprintProvider` in `EdFi.DataManagementService.Core` that wraps `IDatabaseFingerprintReader` with a thread-safe, process-lifetime cache keyed by connection string. Use `ConcurrentDictionary<string, Lazy<Task<DatabaseFingerprint?>>>` (or similar async-safe pattern) so that concurrent requests for the same connection string do not trigger multiple DB reads. The provider should be registered as a singleton. Public method: `Task<DatabaseFingerprint?> GetFingerprintAsync(string connectionString)`. Acceptance: first call for a connection string hits the DB, subsequent calls return cached value, concurrent first calls result in only one DB read.",
+    "steps-to-verify": [
+      "Class exists in src/dms/core/EdFi.DataManagementService.Core/",
+      "Uses ConcurrentDictionary or equivalent for thread-safe lazy caching",
+      "Registered as singleton in DI",
+      "Run: `dotnet build src/dms/core/EdFi.DataManagementService.Core`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Pipeline Middleware",
+    "description": "Implement a `ValidateDatabaseFingerprintMiddleware` as an `IPipelineStep` in `EdFi.DataManagementService.Core.Middleware`. The middleware first checks `AppSettings.EnableDatabaseFingerprintValidation`: if false, it calls `next()` immediately (no-op). When enabled, it resolves the selected DMS instance's connection string from `IDmsInstanceSelection`, calls `DatabaseFingerprintProvider.GetFingerprintAsync`, and: (a) on success, stores the fingerprint on `RequestInfo` (add a `DatabaseFingerprint?` property) and calls `next()`; (b) on null (unprovisioned DB), short-circuits with a 503 response using the same problem-details format as `ResolveDmsInstanceMiddleware`, with type `urn:ed-fi:api:database-not-provisioned` and an actionable message indicating the database must be provisioned via `ddl provision`. Acceptance: middleware is a no-op when flag is false, validates fingerprint when flag is true, blocks requests to unprovisioned databases, passes fingerprint to downstream steps.",
+    "steps-to-verify": [
+      "Middleware class exists at src/dms/core/EdFi.DataManagementService.Core/Middleware/ValidateDatabaseFingerprintMiddleware.cs",
+      "Checks EnableDatabaseFingerprintValidation flag first; if false, calls next() immediately",
+      "RequestInfo has a new DatabaseFingerprint property",
+      "503 response with problem+json content type on unprovisioned DB (when enabled)",
+      "Calls next() on success (when enabled)",
+      "Run: `dotnet build src/dms/core/EdFi.DataManagementService.Core`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Pipeline Integration",
+    "description": "Wire `ValidateDatabaseFingerprintMiddleware` into `ApiService.GetCommonInitialSteps()` immediately after `ResolveDmsInstanceMiddleware`. Register `DatabaseFingerprintProvider` as singleton and `IDatabaseFingerprintReader` with the appropriate dialect implementation in DI (following existing backend registration patterns). The middleware is always in the pipeline but is a no-op when `EnableDatabaseFingerprintValidation` is false. Acceptance: all six pipelines (upsert, getById, query, update, deleteById, getTokenInfo) include the fingerprint validation step after instance routing and before any schema-dependent middleware. Existing integration tests pass because the flag defaults to false.",
+    "steps-to-verify": [
+      "GetCommonInitialSteps() includes ValidateDatabaseFingerprintMiddleware after ResolveDmsInstanceMiddleware",
+      "DI registrations added for DatabaseFingerprintProvider (singleton) and IDatabaseFingerprintReader (per dialect)",
+      "Run: `dotnet build src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore`",
+      "Verify all six pipeline creation methods use GetCommonInitialSteps()",
+      "Existing tests still pass because flag defaults to false"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Unit Tests — Feature Flag",
+    "description": "Add unit tests for `ValidateDatabaseFingerprintMiddleware` verifying feature flag behavior: (1) when `EnableDatabaseFingerprintValidation` is false, middleware calls `next()` without touching `IDmsInstanceSelection` or `DatabaseFingerprintProvider`; (2) when flag is true and fingerprint is returned, middleware calls `next()` and sets `DatabaseFingerprint` on `RequestInfo`; (3) when flag is true and fingerprint is null, middleware short-circuits with 503. Acceptance: all three test cases pass.",
+    "steps-to-verify": [
+      "Test class exists in Core.Tests.Unit project",
+      "Tests cover: flag-off no-op, flag-on success, flag-on unprovisioned",
+      "Flag-off test verifies no interaction with DatabaseFingerprintProvider",
+      "Run: `dotnet test` on Core.Tests.Unit — all new tests pass"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Unit Tests — Cache Behavior",
+    "description": "Add unit tests for `DatabaseFingerprintProvider` verifying: (1) first call for a connection string invokes `IDatabaseFingerprintReader.ReadFingerprintAsync` exactly once; (2) second call for the same connection string returns cached result without a second DB read; (3) calls for different connection strings each trigger their own DB read; (4) concurrent first calls for the same connection string result in exactly one DB read. Use mocked `IDatabaseFingerprintReader`. Acceptance: all four test cases pass.",
+    "steps-to-verify": [
+      "Test class exists in Core.Tests.Unit project",
+      "Tests cover: cache hit, cache miss, different keys, concurrent access",
+      "Run: `dotnet test` on Core.Tests.Unit — all new tests pass"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Unit Tests — Missing Table/Row Behavior",
+    "description": "Add unit tests for `ValidateDatabaseFingerprintMiddleware` verifying (with flag enabled): (1) when fingerprint is returned (provisioned DB), middleware calls `next()` and sets `DatabaseFingerprint` on `RequestInfo`; (2) when fingerprint is null (unprovisioned DB), middleware short-circuits with 503 status, `application/problem+json` content type, and an error message mentioning `ddl provision`; (3) when `IDmsInstanceSelection` has no instance set, middleware handles gracefully. Acceptance: all test cases pass.",
+    "steps-to-verify": [
+      "Test class exists in Core.Tests.Unit project",
+      "Tests cover: success path, unprovisioned path, error response format",
+      "503 response body includes actionable provisioning guidance",
+      "Run: `dotnet test` on Core.Tests.Unit — all new tests pass"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Unit Tests — Pipeline Ordering",
+    "description": "Add a unit test verifying that `ValidateDatabaseFingerprintMiddleware` appears in the pipeline after `ResolveDmsInstanceMiddleware` and before any schema-dependent middleware (e.g., `ApiSchemaValidationMiddleware`, `ProvideApiSchemaMiddleware`). This can inspect the step list returned by pipeline construction or verify execution order via mocks. Acceptance: test fails if the fingerprint step is removed or reordered past schema-dependent steps.",
+    "steps-to-verify": [
+      "Test exists in Core.Tests.Unit project",
+      "Test asserts ordering: ResolveDmsInstanceMiddleware -> ValidateDatabaseFingerprintMiddleware -> ApiSchemaValidationMiddleware",
+      "Run: `dotnet test` on Core.Tests.Unit — ordering test passes"
+    ],
+    "completed": false
+  }
+]
