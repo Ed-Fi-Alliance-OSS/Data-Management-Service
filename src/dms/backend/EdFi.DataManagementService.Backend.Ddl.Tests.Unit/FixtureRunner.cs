@@ -6,7 +6,6 @@
 using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Backend.RelationalModel.Build;
 using EdFi.DataManagementService.Backend.RelationalModel.Manifest;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Startup;
@@ -56,7 +55,7 @@ public static class FixtureRunner
 
         foreach (var dialect in dialects)
         {
-            var (modelSet, combinedSql) = BuildDdlForDialect(effectiveSchemaSet, dialect);
+            var (modelSet, combinedSql) = DdlPipelineHelpers.BuildDdlForDialect(effectiveSchemaSet, dialect);
             ddlManifestEntries.Add(new DdlManifestEntry(dialect, combinedSql));
 
             var dialectLabel = DdlManifestEmitter.DialectLabel(dialect);
@@ -130,60 +129,6 @@ public static class FixtureRunner
             new EffectiveSchemaHashProvider(NullLogger<EffectiveSchemaHashProvider>.Instance),
             new ResourceKeySeedProvider(NullLogger<ResourceKeySeedProvider>.Instance)
         );
-
-    private static (DerivedRelationalModelSet ModelSet, string CombinedSql) BuildDdlForDialect(
-        EffectiveSchemaSet effectiveSchemaSet,
-        SqlDialect dialect
-    )
-    {
-        // Deep-clone the schema set to avoid mutating the original tree
-        // (DerivedRelationalModelSetBuilder assigns JsonNode.Parent)
-        var clonedSchemaSet = CloneEffectiveSchemaSet(effectiveSchemaSet);
-
-        var (sqlDialect, dialectRules) = CreateDialect(dialect);
-        var modelSetBuilder = new DerivedRelationalModelSetBuilder(RelationalModelSetPasses.CreateDefault());
-        var modelSet = modelSetBuilder.Build(clonedSchemaSet, dialect, dialectRules);
-        var combinedSql = FullDdlEmitter.Emit(sqlDialect, modelSet);
-
-        return (modelSet, combinedSql);
-    }
-
-    private static EffectiveSchemaSet CloneEffectiveSchemaSet(EffectiveSchemaSet original)
-    {
-        var clonedProjects = original
-            .ProjectsInEndpointOrder.Select(p => new EffectiveProjectSchema(
-                p.ProjectEndpointName,
-                p.ProjectName,
-                p.ProjectVersion,
-                p.IsExtensionProject,
-                (JsonObject)p.ProjectSchema.DeepClone()
-            ))
-            .ToList();
-
-        return new EffectiveSchemaSet(original.EffectiveSchema, clonedProjects);
-    }
-
-    private static (ISqlDialect Dialect, ISqlDialectRules Rules) CreateDialect(SqlDialect dialect)
-    {
-        return dialect switch
-        {
-            SqlDialect.Pgsql => CreatePgsql(),
-            SqlDialect.Mssql => CreateMssql(),
-            _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported dialect"),
-        };
-
-        static (ISqlDialect, ISqlDialectRules) CreatePgsql()
-        {
-            var rules = new PgsqlDialectRules();
-            return (new PgsqlDialect(rules), rules);
-        }
-
-        static (ISqlDialect, ISqlDialectRules) CreateMssql()
-        {
-            var rules = new MssqlDialectRules();
-            return (new MssqlDialect(rules), rules);
-        }
-    }
 
     private static List<SqlDialect> ParseDialects(string[] dialectNames) =>
         dialectNames
