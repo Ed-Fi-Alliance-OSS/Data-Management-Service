@@ -90,7 +90,7 @@ public static class SeedValidator
         var missingKeys = new List<string>();
         var modifiedDetails = new List<string>();
 
-        foreach (var (id, expected) in expectedByKey)
+        foreach (var (id, expected) in expectedByKey.OrderBy(kv => kv.Key))
         {
             if (!actualByKey.TryGetValue(id, out var actual))
             {
@@ -108,6 +108,7 @@ public static class SeedValidator
 
         var unexpectedKeys = actualByKey
             .Keys.Where(id => !expectedByKey.ContainsKey(id))
+            .OrderBy(id => id)
             .Select(id => id.ToString())
             .ToList();
 
@@ -155,7 +156,7 @@ public static class SeedValidator
         var missingKeys = new List<string>();
         var modifiedDetails = new List<string>();
 
-        foreach (var (name, expected) in expectedByKey)
+        foreach (var (name, expected) in expectedByKey.OrderBy(kv => kv.Key, StringComparer.Ordinal))
         {
             if (!actualByKey.TryGetValue(name, out var actual))
             {
@@ -173,6 +174,7 @@ public static class SeedValidator
 
         var unexpectedKeys = actualByKey
             .Keys.Where(name => !expectedByKey.ContainsKey(name))
+            .OrderBy(name => name, StringComparer.Ordinal)
             .Select(name => Sanitize(name))
             .ToList();
 

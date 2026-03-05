@@ -350,3 +350,119 @@ public class Given_ValidateEffectiveSchemaOrThrow_With_Both_Mismatched
         _exception!.Message.Should().Contain("ResourceKeyCount").And.Contain("ResourceKeySeedHash");
     }
 }
+
+[TestFixture]
+public class Given_ValidateResourceKeysOrThrow_With_Multiple_Mismatches_Reports_In_Sorted_Order
+{
+    private InvalidOperationException? _exception;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var logger = A.Fake<ILogger>();
+
+        List<ResourceKeyRow> actualRows =
+        [
+            new(99, "Ed-Fi", "Surprise", "5.1.0"),
+            new(10, "Ed-Fi", "WrongName10", "5.1.0"),
+            new(5, "Ed-Fi", "WrongName5", "5.1.0"),
+        ];
+
+        List<ResourceKeyEntry> expectedKeys =
+        [
+            new(10, new QualifiedResourceName("Ed-Fi", "School"), "5.1.0", false),
+            new(5, new QualifiedResourceName("Ed-Fi", "Student"), "5.1.0", false),
+            new(1, new QualifiedResourceName("Ed-Fi", "Section"), "5.1.0", false),
+        ];
+
+        _exception = Assert.Catch<InvalidOperationException>(() =>
+            SeedValidator.ValidateResourceKeysOrThrow(actualRows, expectedKeys, logger)
+        );
+    }
+
+    [Test]
+    public void It_throws_InvalidOperationException()
+    {
+        _exception.Should().NotBeNull();
+    }
+
+    [Test]
+    public void It_lists_missing_keys_in_ascending_order()
+    {
+        _exception!.Message.Should().Contain("Missing rows (expected but not in database): [1]");
+    }
+
+    [Test]
+    public void It_lists_unexpected_keys_in_ascending_order()
+    {
+        _exception!.Message.Should().Contain("Unexpected rows (in database but not expected): [99]");
+    }
+
+    [Test]
+    public void It_lists_modified_rows_in_ascending_key_order()
+    {
+        var message = _exception!.Message;
+        message
+            .IndexOf("ResourceKeyId=5", StringComparison.Ordinal)
+            .Should()
+            .BeLessThan(message.IndexOf("ResourceKeyId=10", StringComparison.Ordinal));
+    }
+}
+
+[TestFixture]
+public class Given_ValidateSchemaComponentsOrThrow_With_Multiple_Mismatches_Reports_In_Sorted_Order
+{
+    private InvalidOperationException? _exception;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var logger = A.Fake<ILogger>();
+
+        List<SchemaComponentRow> actualRows =
+        [
+            new("tpdm", "TPDM", "2.0.0", false),
+            new("ed-fi", "Ed-Fi", "6.0.0", false),
+            new("zzz-extra", "Extra", "1.0.0", false),
+        ];
+
+        List<SchemaComponentInfo> expectedComponents =
+        [
+            new("tpdm", "TPDM", "1.0.0", false, "hash1"),
+            new("ed-fi", "Ed-Fi", "5.1.0", false, "hash2"),
+            new("abc-missing", "ABC", "1.0.0", false, "hash3"),
+        ];
+
+        _exception = Assert.Catch<InvalidOperationException>(() =>
+            SeedValidator.ValidateSchemaComponentsOrThrow(actualRows, expectedComponents, logger)
+        );
+    }
+
+    [Test]
+    public void It_throws_InvalidOperationException()
+    {
+        _exception.Should().NotBeNull();
+    }
+
+    [Test]
+    public void It_lists_missing_keys_in_ordinal_order()
+    {
+        _exception!.Message.Should().Contain("Missing rows (expected but not in database): [abc-missing]");
+    }
+
+    [Test]
+    public void It_lists_unexpected_keys_in_ordinal_order()
+    {
+        _exception!.Message.Should().Contain("Unexpected rows (in database but not expected): [zzz-extra]");
+    }
+
+    [Test]
+    public void It_lists_modified_rows_in_ordinal_order()
+    {
+        var message = _exception!.Message;
+        message
+            .IndexOf("ProjectEndpointName=ed-fi", StringComparison.Ordinal)
+            .Should()
+            .BeLessThan(message.IndexOf("ProjectEndpointName=tpdm", StringComparison.Ordinal));
+    }
+}
