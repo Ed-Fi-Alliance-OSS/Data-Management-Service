@@ -143,8 +143,8 @@ public abstract class DatabaseProvisionerBase(ILogger logger) : IDatabaseProvisi
         }
 
         // Guard: ensure the stored hash matches the expected hash.
-        // PreflightSchemaHashCheck should have already caught mismatches, but this
-        // makes PreflightSeedValidation self-contained in case the call order changes.
+        // This is self-contained so PreflightSeedValidation works independently
+        // of any prior checks (e.g., standalone PreflightSchemaHashCheck).
         SchemaHashChecker.ValidateOrThrow(currentHash, expectedSchema.EffectiveSchemaHash, logger);
 
         // --- Check that required seed tables exist ---
