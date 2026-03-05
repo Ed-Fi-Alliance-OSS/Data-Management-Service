@@ -52,9 +52,16 @@ public interface IDatabaseProvisioner
     /// <summary>
     /// Validates that the contents of dms.ResourceKey and dms.SchemaComponent match
     /// the expected seed data from <paramref name="expectedSchema"/>. If dms.EffectiveSchema
-    /// does not exist (new database), returns immediately. On mismatch, throws
-    /// <see cref="InvalidOperationException"/> with a row-level diff report.
+    /// does not exist (new database), returns immediately.
     /// </summary>
+    /// <remarks>
+    /// Throws <see cref="InvalidOperationException"/> in any of these cases:
+    /// <list type="bullet">
+    ///   <item>The dms.EffectiveSchema table exists but the singleton row is missing (partial/corrupt state).</item>
+    ///   <item>Required seed tables (dms.ResourceKey or dms.SchemaComponent) are missing.</item>
+    ///   <item>Seed table contents do not match expected data (row-level diff report included in message).</item>
+    /// </list>
+    /// </remarks>
     void PreflightSeedValidation(string connectionString, EffectiveSchemaInfo expectedSchema);
 
     /// <summary>
