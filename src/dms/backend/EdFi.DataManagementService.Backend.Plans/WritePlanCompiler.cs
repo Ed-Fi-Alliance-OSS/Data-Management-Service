@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Frozen;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.RelationalModel.Naming;
@@ -117,35 +118,55 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     {
         ValidateUniqueWriteSourceInventoryKeysOrThrow(resourceModel);
 
-        var documentReferenceBindingIndexByKey = new Dictionary<
-            WriteSourceLookupKey,
-            WriteSourceLookupEntry<int>
-        >(resourceModel.DocumentReferenceBindings.Count);
-
-        for (var index = 0; index < resourceModel.DocumentReferenceBindings.Count; index++)
-        {
-            var binding = resourceModel.DocumentReferenceBindings[index];
-            var lookupKey = new WriteSourceLookupKey(binding.Table, binding.FkColumn);
-
-            AddWriteSourceLookupEntry(documentReferenceBindingIndexByKey, lookupKey, index);
-        }
-
-        var descriptorEdgeSourceByKey = new Dictionary<
-            WriteSourceLookupKey,
-            WriteSourceLookupEntry<DescriptorEdgeSource>
-        >(resourceModel.DescriptorEdgeSources.Count);
-
-        foreach (var edgeSource in resourceModel.DescriptorEdgeSources)
-        {
-            var lookupKey = new WriteSourceLookupKey(edgeSource.Table, edgeSource.FkColumn);
-
-            AddWriteSourceLookupEntry(descriptorEdgeSourceByKey, lookupKey, edgeSource);
-        }
-
         return new WriteSourceLookup(
-            DocumentReferenceBindingIndexByKey: documentReferenceBindingIndexByKey,
-            DescriptorEdgeSourceByKey: descriptorEdgeSourceByKey
+            DocumentReferenceBindingIndexByKey: BuildWriteSourceLookupMap(
+                resourceModel.DocumentReferenceBindings,
+                static binding => new WriteSourceLookupKey(binding.Table, binding.FkColumn),
+                static (_, index) => index
+            ),
+            DescriptorEdgeSourceByKey: BuildWriteSourceLookupMap(
+                resourceModel.DescriptorEdgeSources,
+                static edgeSource => new WriteSourceLookupKey(edgeSource.Table, edgeSource.FkColumn),
+                static (edgeSource, _) => edgeSource
+            )
         );
+    }
+
+    private static FrozenDictionary<
+        WriteSourceLookupKey,
+        WriteSourceLookupEntry<TValue>
+    > BuildWriteSourceLookupMap<TSource, TValue>(
+        IReadOnlyList<TSource> sourceInventory,
+        Func<TSource, WriteSourceLookupKey> keySelector,
+        Func<TSource, int, TValue> valueSelector
+    )
+    {
+        var lookupByKey = new Dictionary<WriteSourceLookupKey, WriteSourceLookupEntry<TValue>>(
+            sourceInventory.Count
+        );
+
+        for (var index = 0; index < sourceInventory.Count; index++)
+        {
+            var source = sourceInventory[index];
+            var lookupKey = keySelector(source);
+            var value = valueSelector(source, index);
+
+            if (!lookupByKey.TryGetValue(lookupKey, out var existingEntry))
+            {
+                lookupByKey.Add(
+                    lookupKey,
+                    new WriteSourceLookupEntry<TValue>(Value: value, HasDuplicateMatch: false)
+                );
+                continue;
+            }
+
+            if (!existingEntry.HasDuplicateMatch)
+            {
+                lookupByKey[lookupKey] = existingEntry with { HasDuplicateMatch = true };
+            }
+        }
+
+        return lookupByKey.ToFrozenDictionary();
     }
 
     private static void ValidateUniqueWriteSourceInventoryKeysOrThrow(RelationalResourceModel resourceModel)
@@ -203,27 +224,6 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         throw new InvalidOperationException(
             $"Cannot compile write plan for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}': duplicate {sourceInventoryName} key(s) were found: {string.Join(", ", duplicateKeySummaries)}."
         );
-    }
-
-    private static void AddWriteSourceLookupEntry<TValue>(
-        IDictionary<WriteSourceLookupKey, WriteSourceLookupEntry<TValue>> lookupByKey,
-        WriteSourceLookupKey lookupKey,
-        TValue value
-    )
-    {
-        if (!lookupByKey.TryGetValue(lookupKey, out var existingEntry))
-        {
-            lookupByKey.Add(
-                lookupKey,
-                new WriteSourceLookupEntry<TValue>(Value: value, HasDuplicateMatch: false)
-            );
-            return;
-        }
-
-        if (!existingEntry.HasDuplicateMatch)
-        {
-            lookupByKey[lookupKey] = existingEntry with { HasDuplicateMatch = true };
-        }
     }
 
     /// <summary>
@@ -512,67 +512,69 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         return _deleteSqlEmitter.Emit(tableModel.Table, keyColumnsInOrder, keyParameterNamesInOrder);
     }
 
-    private static Dictionary<DbColumnName, string> BuildParameterNameByColumnMapOrThrow(
+    private static FrozenDictionary<DbColumnName, string> BuildParameterNameByColumnMapOrThrow(
         DbTableModel tableModel,
         IReadOnlyList<WriteColumnBinding> bindingsInColumnOrder
     )
     {
-        var parameterNameByColumn = new Dictionary<DbColumnName, string>(bindingsInColumnOrder.Count);
-
-        foreach (var binding in bindingsInColumnOrder)
-        {
-            if (!parameterNameByColumn.TryAdd(binding.Column.ColumnName, binding.ParameterName))
-            {
-                throw CreateDuplicateColumnNameException(
-                    tableModel,
-                    binding.Column.ColumnName,
-                    "parameterNameByColumn"
-                );
-            }
-        }
-
-        return parameterNameByColumn;
+        return BuildColumnKeyedMapOrThrow(
+            tableModel,
+            bindingsInColumnOrder,
+            static binding => binding.Column.ColumnName,
+            static (binding, _) => binding.ParameterName,
+            "parameterNameByColumn"
+        );
     }
 
-    private static Dictionary<DbColumnName, DbColumnModel> BuildColumnByNameMapOrThrow(
+    private static FrozenDictionary<DbColumnName, DbColumnModel> BuildColumnByNameMapOrThrow(
         DbTableModel tableModel
     )
     {
-        var columnByName = new Dictionary<DbColumnName, DbColumnModel>(tableModel.Columns.Count);
-
-        foreach (var column in tableModel.Columns)
-        {
-            if (!columnByName.TryAdd(column.ColumnName, column))
-            {
-                throw CreateDuplicateColumnNameException(tableModel, column.ColumnName, "columnByName");
-            }
-        }
-
-        return columnByName;
+        return BuildColumnKeyedMapOrThrow(
+            tableModel,
+            tableModel.Columns,
+            static column => column.ColumnName,
+            static (column, _) => column,
+            "columnByName"
+        );
     }
 
-    private static Dictionary<DbColumnName, int> BuildBindingIndexByColumnMapOrThrow(
+    private static FrozenDictionary<DbColumnName, int> BuildBindingIndexByColumnMapOrThrow(
         DbTableModel tableModel,
         IReadOnlyList<WriteColumnBinding> bindingsInColumnOrder
     )
     {
-        var bindingIndexByColumn = new Dictionary<DbColumnName, int>(bindingsInColumnOrder.Count);
+        return BuildColumnKeyedMapOrThrow(
+            tableModel,
+            bindingsInColumnOrder,
+            static binding => binding.Column.ColumnName,
+            static (_, index) => index,
+            "bindingIndexByColumn"
+        );
+    }
 
-        for (var bindingIndex = 0; bindingIndex < bindingsInColumnOrder.Count; bindingIndex++)
+    private static FrozenDictionary<DbColumnName, TValue> BuildColumnKeyedMapOrThrow<TSource, TValue>(
+        DbTableModel tableModel,
+        IReadOnlyList<TSource> sourceItems,
+        Func<TSource, DbColumnName> columnNameSelector,
+        Func<TSource, int, TValue> valueSelector,
+        string mapName
+    )
+    {
+        var mapByColumn = new Dictionary<DbColumnName, TValue>(sourceItems.Count);
+
+        for (var index = 0; index < sourceItems.Count; index++)
         {
-            var binding = bindingsInColumnOrder[bindingIndex];
+            var sourceItem = sourceItems[index];
+            var columnName = columnNameSelector(sourceItem);
 
-            if (!bindingIndexByColumn.TryAdd(binding.Column.ColumnName, bindingIndex))
+            if (!mapByColumn.TryAdd(columnName, valueSelector(sourceItem, index)))
             {
-                throw CreateDuplicateColumnNameException(
-                    tableModel,
-                    binding.Column.ColumnName,
-                    "bindingIndexByColumn"
-                );
+                throw CreateDuplicateColumnNameException(tableModel, columnName, mapName);
             }
         }
 
-        return bindingIndexByColumn;
+        return mapByColumn.ToFrozenDictionary();
     }
 
     private static InvalidOperationException CreateDuplicateColumnNameException(
