@@ -348,7 +348,8 @@
                     "column_kind": "parent_key_part",
                     "parameter_name": "studentAddressCollection_DocumentId",
                     "write_value_source": {
-                      "kind": "document_id"
+                      "kind": "parent_key_part",
+                      "index": 0
                     }
                   },
                   {
@@ -736,7 +737,8 @@
                     "column_kind": "parent_key_part",
                     "parameter_name": "studentAddressCollection_DocumentId",
                     "write_value_source": {
-                      "kind": "document_id"
+                      "kind": "parent_key_part",
+                      "index": 0
                     }
                   },
                   {

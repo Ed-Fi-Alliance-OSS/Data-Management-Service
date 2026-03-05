@@ -220,6 +220,26 @@ public class Given_WritePlanCompiler_BindingsAndSources : WritePlanCompilerTestB
     }
 
     [Test]
+    public void It_should_treat_document_suffixed_parent_key_parts_as_parent_key_part_sources()
+    {
+        var model = CreateRootOnlyModelWithDocumentSuffixedParentKeyPart();
+        var tablePlan = new WritePlanCompiler(SqlDialect.Pgsql)
+            .Compile(model)
+            .TablePlansInDependencyOrder.Single();
+
+        tablePlan
+            .ColumnBindings.Single(binding =>
+                binding.Column.ColumnName.Equals(new DbColumnName("School_DocumentId"))
+            )
+            .Source.Should()
+            .BeEquivalentTo(new WriteValueSource.ParentKeyPart(Index: 0));
+        tablePlan
+            .ColumnBindings.Select(static binding => binding.Source)
+            .Should()
+            .NotContain(source => source is WriteValueSource.DocumentId);
+    }
+
+    [Test]
     public void It_should_fail_fast_when_document_reference_binding_is_missing_for_document_fk_column()
     {
         var model = CreateSingleTableModelWithMissingDocumentReferenceBinding();
@@ -362,6 +382,19 @@ public class Given_WritePlanCompiler_BindingsAndSources : WritePlanCompilerTestB
             .Throw<InvalidOperationException>()
             .WithMessage(
                 "Cannot compile write plan for 'edfi.Student': key column 'MissingSchoolYear' does not exist in table columns."
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_key_does_not_include_exactly_one_document_id_parent_key_part()
+    {
+        var unsupportedModel = CreateRootOnlyModelWithMissingDocumentIdKeyColumn();
+        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile write plan for 'edfi.Student': expected exactly one ParentKeyPart document-id key column ('DocumentId' or '*_DocumentId'), but found 0. Key columns: [SchoolYear:ParentKeyPart]."
             );
     }
 

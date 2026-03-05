@@ -159,14 +159,14 @@ public abstract class WritePlanCompilerTestBase
                 ConstraintName: "PK_StudentCollision",
                 Columns:
                 [
-                    new DbKeyColumn(new DbColumnName("documentId"), ColumnKind.ParentKeyPart),
+                    new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart),
                     new DbKeyColumn(new DbColumnName("SchoolYear"), ColumnKind.ParentKeyPart),
                 ]
             ),
             Columns:
             [
                 new DbColumnModel(
-                    ColumnName: new DbColumnName("DocumentId"),
+                    ColumnName: new DbColumnName("documentId"),
                     Kind: ColumnKind.Scalar,
                     ScalarType: new RelationalScalarType(ScalarKind.Int64),
                     IsNullable: false,
@@ -177,7 +177,7 @@ public abstract class WritePlanCompilerTestBase
                     TargetResource: null
                 ),
                 new DbColumnModel(
-                    ColumnName: new DbColumnName("documentId"),
+                    ColumnName: new DbColumnName("DocumentId"),
                     Kind: ColumnKind.ParentKeyPart,
                     ScalarType: new RelationalScalarType(ScalarKind.Int64),
                     IsNullable: false,
@@ -662,6 +662,56 @@ public abstract class WritePlanCompilerTestBase
                     new DbKeyColumn(new DbColumnName("MissingSchoolYear"), ColumnKind.ParentKeyPart),
                 ]
             ),
+        };
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
+        };
+    }
+
+    protected static RelationalResourceModel CreateRootOnlyModelWithMissingDocumentIdKeyColumn()
+    {
+        var model = CreateSupportedRootOnlyModel();
+        var rootTable = model.Root with
+        {
+            Key = new TableKey(
+                ConstraintName: "PK_Student",
+                Columns: [new DbKeyColumn(new DbColumnName("SchoolYear"), ColumnKind.ParentKeyPart)]
+            ),
+        };
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
+        };
+    }
+
+    protected static RelationalResourceModel CreateRootOnlyModelWithDocumentSuffixedParentKeyPart()
+    {
+        var model = CreateSupportedRootOnlyModel();
+        var rootTable = model.Root with
+        {
+            Key = new TableKey(
+                ConstraintName: "PK_Student",
+                Columns: [new DbKeyColumn(new DbColumnName("School_DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns =
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                .. model.Root.Columns.Where(column =>
+                    !column.ColumnName.Equals(new DbColumnName("DocumentId"))
+                ),
+            ],
         };
 
         return model with

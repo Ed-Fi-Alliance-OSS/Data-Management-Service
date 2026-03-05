@@ -399,6 +399,8 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         IReadOnlyDictionary<DbColumnName, DbColumnModel> columnByName
     )
     {
+        var documentIdParentKeyPartCount = 0;
+
         foreach (var keyColumn in tableModel.Key.Columns)
         {
             if (keyColumn.Kind is not ColumnKind.ParentKeyPart and not ColumnKind.Ordinal)
@@ -429,6 +431,30 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
                         + $"(canonical '{unifiedAlias.CanonicalColumn.Value}', presence '{presenceColumnDescription}') and is not writable."
                 );
             }
+
+            if (
+                keyColumn.Kind is ColumnKind.ParentKeyPart
+                && RelationalNameConventions.IsDocumentIdColumn(keyColumn.ColumnName)
+            )
+            {
+                documentIdParentKeyPartCount++;
+            }
+        }
+
+        if (documentIdParentKeyPartCount != 1)
+        {
+            var keyColumnSummary = string.Join(
+                ", ",
+                tableModel.Key.Columns.Select(static keyColumn =>
+                    $"{keyColumn.ColumnName.Value}:{keyColumn.Kind}"
+                )
+            );
+
+            throw new InvalidOperationException(
+                $"Cannot compile write plan for '{tableModel.Table}': expected exactly one ParentKeyPart document-id key column "
+                    + $"('{RelationalNameConventions.DocumentIdColumnName.Value}' or '*_{RelationalNameConventions.DocumentIdColumnName.Value}'), "
+                    + $"but found {documentIdParentKeyPartCount}. Key columns: [{keyColumnSummary}]."
+            );
         }
     }
 
@@ -624,7 +650,7 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         IReadOnlySet<DbColumnName> requiredKeyUnificationPrecomputedColumns
     )
     {
-        if (IsDocumentIdKeyColumn(tableModel, column))
+        if (IsCanonicalDocumentIdKeyColumn(tableModel, column))
         {
             return new WriteValueSource.DocumentId();
         }
@@ -654,15 +680,14 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     }
 
     /// <summary>
-    /// Returns <see langword="true" /> when the column is the table key's <c>DocumentId</c> component.
+    /// Returns <see langword="true" /> when the column is the canonical key <c>DocumentId</c> component.
     /// </summary>
-    private static bool IsDocumentIdKeyColumn(DbTableModel tableModel, DbColumnModel column)
+    private static bool IsCanonicalDocumentIdKeyColumn(DbTableModel tableModel, DbColumnModel column)
     {
         return column.Kind == ColumnKind.ParentKeyPart
+            && column.ColumnName.Equals(RelationalNameConventions.DocumentIdColumnName)
             && tableModel.Key.Columns.Any(keyColumn =>
-                keyColumn.Kind == ColumnKind.ParentKeyPart
-                && keyColumn.ColumnName.Equals(column.ColumnName)
-                && RelationalNameConventions.IsDocumentIdColumn(keyColumn.ColumnName)
+                keyColumn.Kind == ColumnKind.ParentKeyPart && keyColumn.ColumnName.Equals(column.ColumnName)
             );
     }
 

@@ -77,10 +77,10 @@ public class Given_WritePlanCompiler_UpdateSql : WritePlanCompilerTestBase
                 """
                 UPDATE "edfi"."StudentCollision"
                 SET
-                    "DocumentId" = @documentId,
+                    "documentId" = @documentId,
                     "GradeLevel" = @gradeLevel
                 WHERE
-                    ("documentId" = @documentId_2)
+                    ("DocumentId" = @documentId_2)
                     AND ("SchoolYear" = @schoolYear)
                 ;
 
