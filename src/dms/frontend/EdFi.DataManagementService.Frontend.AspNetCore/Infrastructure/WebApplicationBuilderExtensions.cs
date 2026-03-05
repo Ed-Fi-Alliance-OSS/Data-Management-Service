@@ -7,6 +7,7 @@ using System.Net;
 using System.Threading.RateLimiting;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Deploy;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.OAuth;
@@ -186,6 +187,10 @@ public static class WebApplicationBuilderExtensions
         {
             logger.Information("Injecting MSSQL as the primary backend datastore");
             webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Mssql.Deploy.DatabaseDeploy>();
+            webAppBuilder.Services.AddSingleton<
+                IDatabaseFingerprintReader,
+                Backend.Mssql.MssqlDatabaseFingerprintReader
+            >();
         }
     }
 
