@@ -195,12 +195,7 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisioner
         // Guard: ensure the stored hash matches the expected hash.
         // PreflightSchemaHashCheck should have already caught mismatches, but this
         // makes PreflightSeedValidation self-contained in case the call order changes.
-        if (!string.Equals(currentHash, expectedSchema.EffectiveSchemaHash, StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException(
-                "Schema hash mismatch in PreflightSeedValidation: stored hash does not match expected hash."
-            );
-        }
+        SchemaHashChecker.ValidateOrThrow(currentHash, expectedSchema.EffectiveSchemaHash, logger);
 
         // --- Validate EffectiveSchema ResourceKeyCount and ResourceKeySeedHash ---
         using (var esCommand = connection.CreateCommand())
