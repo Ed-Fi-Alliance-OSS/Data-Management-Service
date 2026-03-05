@@ -735,3 +735,101 @@ public class Given_SchemaComponent_Tampered_After_Provisioning_Mssql
         count.Should().Be(1, "preflight should stop before DDL execution, leaving tampered row intact");
     }
 }
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
+public class Given_Mssql_EffectiveSchema_Table_Exists_But_Singleton_Row_Missing
+{
+    private string _databaseName = null!;
+    private int _firstExitCode;
+    private string _firstOutput = null!;
+    private string _firstError = null!;
+    private int _secondExitCode;
+    private string _secondOutput = null!;
+    private string _secondError = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore(
+                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.Test.json"
+            );
+        }
+
+        _databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
+        var connectionString = MssqlTestDatabaseHelper.BuildConnectionString(_databaseName);
+
+        // First provisioning run — creates tables and seeds data
+        (_firstExitCode, _firstOutput, _firstError) = ProvisionTestHelper.RunProvision(
+            "mssql",
+            connectionString,
+            createDatabase: true
+        );
+
+        // Delete the singleton row to simulate partial/corrupt state
+        using (var connection = new SqlConnection(connectionString))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText =
+                "DELETE FROM [dms].[EffectiveSchema] WHERE [EffectiveSchemaSingletonId] = 1";
+            command.ExecuteNonQuery();
+        }
+
+        // Second provisioning run — should detect the missing row
+        (_secondExitCode, _secondOutput, _secondError) = ProvisionTestHelper.RunProvision(
+            "mssql",
+            connectionString
+        );
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        if (MssqlTestDatabaseHelper.IsConfigured())
+        {
+            MssqlTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+        }
+    }
+
+    [Test]
+    public void It_succeeds_on_first_provisioning()
+    {
+        _firstExitCode.Should().Be(0, $"stdout: {_firstOutput}\nstderr: {_firstError}");
+    }
+
+    [Test]
+    public void It_returns_nonzero_exit_code()
+    {
+        _secondExitCode.Should().NotBe(0, $"stdout: {_secondOutput}\nstderr: {_secondError}");
+    }
+
+    [Test]
+    public void It_reports_partial_provisioning_state_in_stderr()
+    {
+        _secondError.Should().Contain("partial or corrupt provisioning state");
+    }
+
+    [Test]
+    public void It_recommends_drop_and_recreate()
+    {
+        _secondError.Should().Contain("Drop and recreate");
+    }
+
+    [Test]
+    public void It_does_not_reinsert_the_singleton_row()
+    {
+        using var connection = new SqlConnection(
+            MssqlTestDatabaseHelper.BuildConnectionString(_databaseName)
+        );
+        connection.Open();
+
+        ProvisionTestHelper
+            .GetDmsTableCount(connection, "mssql", "EffectiveSchema")
+            .Should()
+            .Be(0, "preflight should stop before DDL execution, leaving the table empty");
+    }
+}

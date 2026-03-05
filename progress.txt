@@ -10,3 +10,22 @@ Files changed:
 - src/dms/clis/EdFi.DataManagementService.SchemaTools/Provisioning/MssqlDatabaseProvisioner.cs
 
 Build: clean. Unit tests: 62/62 passed.
+
+## Task 2 Complete — Handle missing EffectiveSchema singleton row
+Story: 02-preflight-and-idempotency.md
+
+If dms.EffectiveSchema table exists but singleton row (Id=1) is missing, both
+PreflightSchemaHashCheck and PreflightSeedValidation now throw InvalidOperationException
+with actionable message instead of silently skipping validation. This prevents stale
+seed data from a prior partial provisioning from going undetected.
+
+Decision: Fail fast rather than attempt recovery. The table+row are created atomically
+in the same DDL transaction, so a missing row indicates partial/corrupt state.
+
+Files changed:
+- src/dms/clis/EdFi.DataManagementService.SchemaTools/Provisioning/PgsqlDatabaseProvisioner.cs
+- src/dms/clis/EdFi.DataManagementService.SchemaTools/Provisioning/MssqlDatabaseProvisioner.cs
+- src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/DdlProvisionPgsqlTests.cs
+- src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/DdlProvisionMssqlTests.cs
+
+Build: clean. Unit tests: 62/62 passed. PG integration tests: 42/42 passed.

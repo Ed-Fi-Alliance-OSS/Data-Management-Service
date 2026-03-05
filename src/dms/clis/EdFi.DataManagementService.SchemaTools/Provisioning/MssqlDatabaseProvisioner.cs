@@ -198,6 +198,16 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
             """SELECT [EffectiveSchemaHash] FROM [dms].[EffectiveSchema] WHERE [EffectiveSchemaSingletonId] = 1""";
         var storedHash = hashCommand.ExecuteScalar() as string;
 
+        // Table exists but singleton row is missing — partial/corrupt state
+        if (storedHash is null)
+        {
+            throw new InvalidOperationException(
+                "The dms.EffectiveSchema table exists but contains no singleton row. "
+                    + "This indicates a partial or corrupt provisioning state. "
+                    + "Drop and recreate the database before re-provisioning."
+            );
+        }
+
         SchemaHashChecker.ValidateOrThrow(storedHash, expectedHash, logger);
     }
 
@@ -221,10 +231,14 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
             """SELECT [EffectiveSchemaHash] FROM [dms].[EffectiveSchema] WHERE [EffectiveSchemaSingletonId] = 1""";
         var currentHash = hashCommand.ExecuteScalar() as string;
 
-        // If no row exists in EffectiveSchema, treat as a fresh provisioning run
+        // Table exists but singleton row is missing — partial/corrupt state
         if (currentHash is null)
         {
-            return;
+            throw new InvalidOperationException(
+                "The dms.EffectiveSchema table exists but contains no singleton row. "
+                    + "This indicates a partial or corrupt provisioning state. "
+                    + "Drop and recreate the database before re-provisioning."
+            );
         }
 
         // Guard: ensure the stored hash matches the expected hash.
