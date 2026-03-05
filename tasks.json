@@ -395,16 +395,6 @@
     "completed": false
   },
   {
-    "category": "Design / Extensibility",
-    "description": "Generalize Precomputed binding producer accounting beyond key-unification. Acceptance: evolve the write-plan contract and compiler so WriteValueSource.Precomputed bindings can be produced by multiple explicit precompute-plan kinds (key-unification remains one producer type). Compilation must still fail fast when any Precomputed binding has zero producers or more than one producer across all producer inventories, but it must not assume all Precomputed bindings are produced by key-unification. Update manifests/DTOS (NormalizedPlanContractDtos and ThinSliceMappingSetManifestJsonEmitter) to represent the new producer inventory deterministically. Add unit tests that (a) assert the current key-unification behavior remains unchanged, and (b) introduce a second (test-only) precompute producer kind to prove the accounting supports non-key-unification producers without weakening the 0/1 producer invariant.",
-    "steps-to-verify": [
-      "Add/adjust contract and codec tests to ensure the new precompute producer inventory is deterministic and round-trippable",
-      "Add unit tests that validate Precomputed producer accounting across multiple producer kinds",
-      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
-    ],
-    "completed": false
-  },
-  {
     "category": "Refactor / Simplification",
     "description": "Reduce duplicated internal map/lookup construction helpers in WritePlanCompiler. Acceptance: introduce a small shared helper for building per-table maps (columnByName, bindingIndexByColumn, parameterNameByColumn) and write-source lookup maps with deterministic duplicate handling. Prefer immutable/frozen dictionaries for maps that are read-only after construction. No behavior changes: emitted SQL must remain byte-for-byte identical, ColumnBindings order must remain unchanged, and all existing exception messages (except any explicitly improved duplicate diagnostics) must remain stable. Update/keep unit and golden fixture tests to lock down output stability.",
     "steps-to-verify": [
@@ -426,6 +416,24 @@
     "description": "Rename thin-slice test helpers that now emit/validate full mapping-set manifests. Acceptance: rename ThinSliceMappingSetManifestJsonEmitter and ThinSliceFixtureModelSetBuilder (and related test naming) to reflect their current role (mapping-set manifest emission and fixture model-set building beyond thin-slice). Update filenames, classes, and all references. Ensure no remaining misleading \"ThinSlice\" references for these helpers (excluding intentionally thin-slice read-plan support types).",
     "steps-to-verify": [
       "Run: rg -n \"ThinSliceMappingSetManifestJsonEmitter|ThinSliceFixtureModelSetBuilder\" src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit (ensure no references remain after rename)",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Fixtures / Authoritative",
+    "description": "Add an authoritative ds-5.2 runtime plan compilation golden manifest test for this story’s write-plan coverage. Acceptance: compile mapping sets (pgsql + mssql) from src/dms/backend/Fixtures/authoritative/ds-5.2/inputs/ds-5.2-api-schema-authoritative.json (no duplicated copy under the test project), emit mappingset.manifest.json via the mapping-set manifest emitter, and compare expected vs actual under src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Fixtures/authoritative/ds-5.2/expected/mappingset.manifest.json. The manifest must reflect full write-plan compilation across child tables (DeleteByParentSql hashes for non-root tables) with deterministic ordering and normalized SQL hashes; descriptor resources must continue to have write_plan=null.",
+    "steps-to-verify": [
+      "Run (to refresh goldens when needed): UPDATE_GOLDENS=1 dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Fixtures / Authoritative",
+    "description": "Add an authoritative ds-5.2 + sample extension runtime plan compilation golden manifest test for this story’s _ext table coverage. Acceptance: compile mapping sets (pgsql + mssql) from both authoritative ApiSchema inputs: src/dms/backend/Fixtures/authoritative/ds-5.2/inputs/ds-5.2-api-schema-authoritative.json (core) plus src/dms/backend/Fixtures/authoritative/sample/inputs/sample-api-schema-authoritative.json (IsExtensionProject=true). Emit and golden-compare mappingset.manifest.json under src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Fixtures/authoritative/sample/expected/mappingset.manifest.json. The manifest must include write plans for extension tables (root + child scopes) with correct DeleteByParentSql hashes for non-root tables and deterministic normalized SQL hashes/binding metadata.",
+    "steps-to-verify": [
+      "Run (to refresh goldens when needed): UPDATE_GOLDENS=1 dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
     "completed": false
