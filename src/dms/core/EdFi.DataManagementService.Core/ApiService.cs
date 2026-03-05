@@ -145,6 +145,7 @@ internal class ApiService : IApiService
             new TenantValidationMiddleware(_appSettings.Value.MultiTenancy, _logger),
             _serviceProvider.GetRequiredService<JwtAuthenticationMiddleware>(),
             _serviceProvider.GetRequiredService<ResolveDmsInstanceMiddleware>(),
+            _serviceProvider.GetRequiredService<ValidateDatabaseFingerprintMiddleware>(),
         ];
     }
 
