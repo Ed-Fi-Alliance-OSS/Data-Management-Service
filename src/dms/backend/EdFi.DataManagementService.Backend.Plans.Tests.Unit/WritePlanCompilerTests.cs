@@ -988,6 +988,28 @@ public class Given_WritePlanCompiler
     }
 
     [Test]
+    public void It_should_not_treat_reference_group_document_fk_presence_with_null_source_path_as_synthetic()
+    {
+        var model = CreateRootOnlyModelWithReferenceGroupDocumentFkPresence(
+            useNullPresenceSourceJsonPath: true
+        );
+        var tablePlan = new WritePlanCompiler(SqlDialect.Pgsql)
+            .Compile(model)
+            .TablePlansInDependencyOrder.Single();
+        var descriptorClassPlan = tablePlan.KeyUnificationPlans[1];
+        var secondaryMember = (KeyUnificationMemberWritePlan.DescriptorMember)
+            descriptorClassPlan.MembersInOrder[0];
+
+        secondaryMember.PresenceColumn.Should().Be(new DbColumnName("School_DocumentId"));
+        secondaryMember.PresenceBindingIndex.Should().NotBeNull();
+        secondaryMember.PresenceIsSynthetic.Should().BeFalse();
+        tablePlan
+            .ColumnBindings[secondaryMember.PresenceBindingIndex!.Value]
+            .Source.Should()
+            .BeOfType<WriteValueSource.DocumentReference>();
+    }
+
+    [Test]
     public void It_should_fail_fast_when_key_unification_canonical_column_is_not_precomputed()
     {
         var unsupportedModel = CreateRootOnlyModelWithKeyUnificationClass();
@@ -1309,6 +1331,70 @@ public class Given_WritePlanCompiler
             useSyntheticPresenceColumn: false,
             includeNullOrTrueConstraintForSyntheticPresence: false
         );
+    }
+
+    private static RelationalResourceModel CreateRootOnlyModelWithReferenceGroupDocumentFkPresence(
+        bool useNullPresenceSourceJsonPath
+    )
+    {
+        var model = CreateRootOnlyModelWithReferenceSitePresence();
+        var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
+        var referencePresenceColumn = new DbColumnName("School_DocumentId");
+        var previousPresenceColumn = new DbColumnName("SchoolYearTypeDescriptorSecondary_Present");
+        var secondaryDescriptorColumn = new DbColumnName("SchoolYearTypeDescriptorSecondary");
+        JsonPathExpression? referenceSourcePath = useNullPresenceSourceJsonPath
+            ? null
+            : CreatePath("$.schoolReference", new JsonPathSegment.Property("schoolReference"));
+
+        DbColumnModel MapColumn(DbColumnModel column)
+        {
+            if (column.ColumnName.Equals(previousPresenceColumn))
+            {
+                return new DbColumnModel(
+                    ColumnName: referencePresenceColumn,
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: referenceSourcePath,
+                    TargetResource: schoolResource
+                );
+            }
+
+            if (column.ColumnName.Equals(secondaryDescriptorColumn))
+            {
+                return column with
+                {
+                    Storage = new ColumnStorage.UnifiedAlias(
+                        CanonicalColumn: new DbColumnName("SchoolYearTypeDescriptorIdCanonical"),
+                        PresenceColumn: referencePresenceColumn
+                    ),
+                };
+            }
+
+            return column;
+        }
+
+        var rootTable = model.Root with { Columns = [.. model.Root.Columns.Select(MapColumn)] };
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
+            DocumentReferenceBindings =
+            [
+                new DocumentReferenceBinding(
+                    IsIdentityComponent: false,
+                    ReferenceObjectPath: CreatePath(
+                        "$.schoolReference",
+                        new JsonPathSegment.Property("schoolReference")
+                    ),
+                    Table: rootTable.Table,
+                    FkColumn: referencePresenceColumn,
+                    TargetResource: schoolResource,
+                    IdentityBindings: []
+                ),
+            ],
+        };
     }
 
     private static RelationalResourceModel CreateRootOnlyModelWithCompiledKeyUnificationInventoryCore(

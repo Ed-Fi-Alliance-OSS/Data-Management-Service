@@ -378,7 +378,7 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
                     || memberPathColumn.Storage
                         is not ColumnStorage.UnifiedAlias { PresenceColumn: { } presenceColumn }
                     || !columnByName.TryGetValue(presenceColumn, out var presenceColumnModel)
-                    || presenceColumnModel.SourceJsonPath is not null
+                    || !KeyUnificationPresenceConventions.IsSyntheticPresenceColumn(presenceColumnModel)
                 )
                 {
                     continue;

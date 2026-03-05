@@ -302,7 +302,9 @@ internal static class KeyUnificationWritePlanCompiler
             $"presence column for member '{memberPathColumn.ColumnName.Value}'",
             tableCompilationContext.BindingIndexByColumn
         );
-        var presenceIsSynthetic = presenceColumnModel.SourceJsonPath is null;
+        var presenceIsSynthetic = KeyUnificationPresenceConventions.IsSyntheticPresenceColumn(
+            presenceColumnModel
+        );
 
         if (presenceIsSynthetic)
         {
