@@ -378,7 +378,15 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         IReadOnlyDictionary<DbColumnName, DbColumnModel> columnByName
     )
     {
+        if (tableModel.Key.Columns.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Cannot compile write plan for '{tableModel.Table}': table key contains no columns."
+            );
+        }
+
         var documentIdParentKeyPartCount = 0;
+        var ordinalKeyColumnCount = 0;
 
         foreach (var keyColumn in tableModel.Key.Columns)
         {
@@ -418,6 +426,11 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
             {
                 documentIdParentKeyPartCount++;
             }
+
+            if (keyColumn.Kind is ColumnKind.Ordinal)
+            {
+                ordinalKeyColumnCount++;
+            }
         }
 
         if (documentIdParentKeyPartCount != 1)
@@ -433,6 +446,53 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
                 $"Cannot compile write plan for '{tableModel.Table}': expected exactly one ParentKeyPart document-id key column "
                     + $"('{RelationalNameConventions.DocumentIdColumnName.Value}' or '*_{RelationalNameConventions.DocumentIdColumnName.Value}'), "
                     + $"but found {documentIdParentKeyPartCount}. Key columns: [{keyColumnSummary}]."
+            );
+        }
+
+        var firstKeyColumn = tableModel.Key.Columns[0];
+
+        if (
+            firstKeyColumn.Kind is not ColumnKind.ParentKeyPart
+            || !RelationalNameConventions.IsDocumentIdColumn(firstKeyColumn.ColumnName)
+        )
+        {
+            var keyColumnSummary = string.Join(
+                ", ",
+                tableModel.Key.Columns.Select(static keyColumn =>
+                    $"{keyColumn.ColumnName.Value}:{keyColumn.Kind}"
+                )
+            );
+
+            throw new InvalidOperationException(
+                $"Cannot compile write plan for '{tableModel.Table}': expected document-id ParentKeyPart key column ('{RelationalNameConventions.DocumentIdColumnName.Value}' or '*_{RelationalNameConventions.DocumentIdColumnName.Value}') to be first in key order, but found '{firstKeyColumn.ColumnName.Value}:{firstKeyColumn.Kind}'. Key columns: [{keyColumnSummary}]."
+            );
+        }
+
+        if (ordinalKeyColumnCount > 1)
+        {
+            var keyColumnSummary = string.Join(
+                ", ",
+                tableModel.Key.Columns.Select(static keyColumn =>
+                    $"{keyColumn.ColumnName.Value}:{keyColumn.Kind}"
+                )
+            );
+
+            throw new InvalidOperationException(
+                $"Cannot compile write plan for '{tableModel.Table}': expected at most one Ordinal key column, but found {ordinalKeyColumnCount}. Key columns: [{keyColumnSummary}]."
+            );
+        }
+
+        if (ordinalKeyColumnCount == 1 && tableModel.Key.Columns[^1].Kind is not ColumnKind.Ordinal)
+        {
+            var keyColumnSummary = string.Join(
+                ", ",
+                tableModel.Key.Columns.Select(static keyColumn =>
+                    $"{keyColumn.ColumnName.Value}:{keyColumn.Kind}"
+                )
+            );
+
+            throw new InvalidOperationException(
+                $"Cannot compile write plan for '{tableModel.Table}': expected Ordinal key column to be last in key order. Key columns: [{keyColumnSummary}]."
             );
         }
     }
@@ -672,22 +732,29 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     }
 
     /// <summary>
-    /// Gets the 0-based parent-key part index for the column in key order.
+    /// Gets the 0-based parent-key part index for the column in parent-key part order (DocumentId + ancestor ordinals).
     /// </summary>
     private static int GetParentKeyPartIndex(DbTableModel tableModel, DbColumnModel column)
     {
-        for (var index = 0; index < tableModel.Key.Columns.Count; index++)
+        var parentKeyPartIndex = 0;
+
+        foreach (var keyColumn in tableModel.Key.Columns)
         {
-            if (!tableModel.Key.Columns[index].ColumnName.Equals(column.ColumnName))
+            if (keyColumn.Kind is not ColumnKind.ParentKeyPart)
             {
                 continue;
             }
 
-            return index;
+            if (keyColumn.ColumnName.Equals(column.ColumnName))
+            {
+                return parentKeyPartIndex;
+            }
+
+            parentKeyPartIndex++;
         }
 
         throw new InvalidOperationException(
-            $"Column '{column.ColumnName.Value}' on table '{tableModel.Table}' is not in table key order."
+            $"Column '{column.ColumnName.Value}' on table '{tableModel.Table}' is not in parent key order."
         );
     }
 
