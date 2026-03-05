@@ -115,6 +115,8 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
 
     private static WriteSourceLookup BuildWriteSourceLookup(RelationalResourceModel resourceModel)
     {
+        ValidateUniqueWriteSourceInventoryKeysOrThrow(resourceModel);
+
         var documentReferenceBindingIndexByKey = new Dictionary<
             WriteSourceLookupKey,
             WriteSourceLookupEntry<int>
@@ -143,6 +145,63 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         return new WriteSourceLookup(
             DocumentReferenceBindingIndexByKey: documentReferenceBindingIndexByKey,
             DescriptorEdgeSourceByKey: descriptorEdgeSourceByKey
+        );
+    }
+
+    private static void ValidateUniqueWriteSourceInventoryKeysOrThrow(RelationalResourceModel resourceModel)
+    {
+        ValidateUniqueWriteSourceInventoryKeysOrThrow(
+            resourceModel,
+            resourceModel.DocumentReferenceBindings,
+            static binding => new WriteSourceLookupKey(binding.Table, binding.FkColumn),
+            "document-reference binding"
+        );
+        ValidateUniqueWriteSourceInventoryKeysOrThrow(
+            resourceModel,
+            resourceModel.DescriptorEdgeSources,
+            static edgeSource => new WriteSourceLookupKey(edgeSource.Table, edgeSource.FkColumn),
+            "descriptor edge source"
+        );
+    }
+
+    private static void ValidateUniqueWriteSourceInventoryKeysOrThrow<TSource>(
+        RelationalResourceModel resourceModel,
+        IReadOnlyList<TSource> sourceInventory,
+        Func<TSource, WriteSourceLookupKey> keySelector,
+        string sourceInventoryName
+    )
+    {
+        if (sourceInventory.Count <= 1)
+        {
+            return;
+        }
+
+        var keyCountByLookupKey = new Dictionary<WriteSourceLookupKey, int>(sourceInventory.Count);
+
+        foreach (var source in sourceInventory)
+        {
+            var lookupKey = keySelector(source);
+            var existingCount = keyCountByLookupKey.GetValueOrDefault(lookupKey);
+
+            keyCountByLookupKey[lookupKey] = existingCount + 1;
+        }
+
+        var duplicateKeySummaries = keyCountByLookupKey
+            .Where(static keyCountPair => keyCountPair.Value > 1)
+            .OrderBy(static keyCountPair => keyCountPair.Key.Table.ToString(), StringComparer.Ordinal)
+            .ThenBy(static keyCountPair => keyCountPair.Key.Column.Value, StringComparer.Ordinal)
+            .Select(static keyCountPair =>
+                $"{keyCountPair.Key.Table}.{keyCountPair.Key.Column.Value} (count: {keyCountPair.Value})"
+            )
+            .ToArray();
+
+        if (duplicateKeySummaries.Length == 0)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Cannot compile write plan for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}': duplicate {sourceInventoryName} key(s) were found: {string.Join(", ", duplicateKeySummaries)}."
         );
     }
 

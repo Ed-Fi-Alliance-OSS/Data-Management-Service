@@ -383,7 +383,7 @@
       "Add unit tests that construct a RelationalResourceModel with duplicate DocumentReferenceBindings/DescriptorEdgeSources keys that are not referenced by any table columns and assert deterministic InvalidOperationException messages",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Hardening / Key Unification",

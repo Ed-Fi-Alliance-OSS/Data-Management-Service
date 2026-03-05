@@ -238,3 +238,9 @@ Task completed: Refactor/Hardening - simplify WriteSourceLookup duplicate handli
 Decisions: replaced dual map+duplicate-set with single lookup-entry map (`HasDuplicateMatch`) for both document-reference bindings and descriptor edge sources; added shared `GetUniqueLookupMatchOrThrow` + `AddWriteSourceLookupEntry` helpers to remove duplicated missing/duplicate resolution code while preserving exact deterministic exception messages.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanCompiler.cs; tasks.json; progress.txt.
 Blockers/notes: no blockers. All remaining tasks now marked complete.
+
+2026-03-05 - DMS-1045 / reference/design/backend-redesign/epics/15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md
+Task completed: Hardening / Model Integrity - fail fast on duplicate write-source inventory keys.
+Decisions: added resource-level preflight validation for duplicate (Table, FkColumn) keys in DocumentReferenceBindings and DescriptorEdgeSources before compiling any table plan; diagnostics include resource + duplicate key counts in deterministic order. Retained existing missing lookup behavior; added coverage proving duplicate inventories fail even when duplicate entries are unreferenced by compiled bindings.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/WritePlanCompilerTests.cs; tasks.json; progress.txt.
+Blockers/notes: no blockers. Verification: dotnet csharpier format (2 files); dotnet test --no-restore plans unit (246/246); dotnet build --no-restore src/dms/EdFi.DataManagementService.sln. Next iteration can tackle Hardening / Key Unification synthetic-presence classification task.

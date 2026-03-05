@@ -479,7 +479,7 @@ public class Given_WritePlanCompiler
         act.Should()
             .Throw<InvalidOperationException>()
             .WithMessage(
-                "Multiple document-reference bindings match 'edfi.StudentAddress.School_DocumentId'."
+                "Cannot compile write plan for resource 'Ed-Fi.StudentAddress': duplicate document-reference binding key(s) were found: edfi.StudentAddress.School_DocumentId (count: 2)."
             );
     }
 
@@ -494,7 +494,7 @@ public class Given_WritePlanCompiler
         act.Should()
             .Throw<InvalidOperationException>()
             .WithMessage(
-                "Multiple document-reference bindings match 'edfi.StudentAddress.School_DocumentId'."
+                "Cannot compile write plan for resource 'Ed-Fi.StudentAddress': duplicate document-reference binding key(s) were found: edfi.StudentAddress.School_DocumentId (count: 2)."
             );
     }
 
@@ -518,7 +518,33 @@ public class Given_WritePlanCompiler
         act.Should()
             .Throw<InvalidOperationException>()
             .WithMessage(
-                "Multiple descriptor edge sources match 'edfi.StudentAddress.ProgramTypeDescriptorId'."
+                "Cannot compile write plan for resource 'Ed-Fi.StudentAddress': duplicate descriptor edge source key(s) were found: edfi.StudentAddress.ProgramTypeDescriptorId (count: 2)."
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_document_reference_binding_inventory_contains_duplicate_keys_even_when_unreferenced()
+    {
+        var model = CreateRootOnlyModelWithDuplicateUnusedDocumentReferenceBindingKeys();
+        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(model);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile write plan for resource 'Ed-Fi.Student': duplicate document-reference binding key(s) were found: edfi.Student.Unused_DocumentId (count: 2)."
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_descriptor_edge_source_inventory_contains_duplicate_keys_even_when_unreferenced()
+    {
+        var model = CreateRootOnlyModelWithDuplicateUnusedDescriptorEdgeSourceKeys();
+        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(model);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile write plan for resource 'Ed-Fi.Student': duplicate descriptor edge source key(s) were found: edfi.Student.UnusedDescriptorId (count: 2)."
             );
     }
 
@@ -1648,6 +1674,47 @@ public class Given_WritePlanCompiler
         {
             Root = rootTable,
             TablesInDependencyOrder = [rootTable],
+        };
+    }
+
+    private static RelationalResourceModel CreateRootOnlyModelWithDuplicateUnusedDocumentReferenceBindingKeys()
+    {
+        var model = CreateSupportedRootOnlyModel();
+        var unusedBinding = new DocumentReferenceBinding(
+            IsIdentityComponent: false,
+            ReferenceObjectPath: CreatePath(
+                "$.unusedReference",
+                new JsonPathSegment.Property("unusedReference")
+            ),
+            Table: model.Root.Table,
+            FkColumn: new DbColumnName("Unused_DocumentId"),
+            TargetResource: new QualifiedResourceName("Ed-Fi", "School"),
+            IdentityBindings: []
+        );
+
+        return model with
+        {
+            DocumentReferenceBindings = [unusedBinding, unusedBinding],
+        };
+    }
+
+    private static RelationalResourceModel CreateRootOnlyModelWithDuplicateUnusedDescriptorEdgeSourceKeys()
+    {
+        var model = CreateSupportedRootOnlyModel();
+        var unusedEdgeSource = new DescriptorEdgeSource(
+            IsIdentityComponent: false,
+            DescriptorValuePath: CreatePath(
+                "$.unusedDescriptor",
+                new JsonPathSegment.Property("unusedDescriptor")
+            ),
+            Table: model.Root.Table,
+            FkColumn: new DbColumnName("UnusedDescriptorId"),
+            DescriptorResource: new QualifiedResourceName("Ed-Fi", "ProgramTypeDescriptor")
+        );
+
+        return model with
+        {
+            DescriptorEdgeSources = [unusedEdgeSource, unusedEdgeSource],
         };
     }
 
