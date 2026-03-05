@@ -225,7 +225,8 @@ The emitted SQL must include deterministic DML that establishes the runtime cont
 1. `dms.ResourceKey` seed inserts with explicit `ResourceKeyId` values (deterministic ordering), using **insert-if-missing** semantics.
    - After inserts, validate that the table contents match the expected seed set exactly; fail on mismatch.
 2. Insert-if-missing of the singleton `dms.EffectiveSchema` row (`EffectiveSchemaSingletonId=1`) including:
-   - `ApiSchemaFormatVersion`, `EffectiveSchemaHash`, `ResourceKeyCount`, `ResourceKeySeedHash`, `AppliedAt`
+   - `ApiSchemaFormatVersion`, `EffectiveSchemaHash`, `ResourceKeyCount`, `ResourceKeySeedHash`
+   - (`AppliedAt` is omitted from the INSERT column list; it is populated automatically by the column DEFAULT constraint `DF_EffectiveSchema_AppliedAt`, which uses the dialect-appropriate current-timestamp expression.)
    - If the singleton row already exists with a **different** `EffectiveSchemaHash`, fail fast (this utility is not a migration tool).
 3. `dms.SchemaComponent` inserts for the current `EffectiveSchemaHash`, using insert-if-missing semantics.
    - Validate that the recorded components match the expected project list (exact match); fail on mismatch.
