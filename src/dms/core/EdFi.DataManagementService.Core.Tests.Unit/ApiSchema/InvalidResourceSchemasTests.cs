@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Frontend;
@@ -146,6 +147,16 @@ public class InvalidResourceSchemasTests
                 NullLogger<ProfileFilteringMiddleware>.Instance
             );
 
+            // Register ValidateDatabaseFingerprintMiddleware and its dependencies
+            var appSettingsOptions = Options.Create(new AppSettings { AllowIdentityUpdateOverrides = "" });
+            services.AddSingleton(appSettingsOptions);
+            services.AddSingleton<IDatabaseFingerprintReader, NullDatabaseFingerprintReader>();
+            services.AddSingleton<DatabaseFingerprintProvider>();
+            services.AddTransient<ValidateDatabaseFingerprintMiddleware>();
+            services.AddTransient<ILogger<ValidateDatabaseFingerprintMiddleware>>(_ =>
+                NullLogger<ValidateDatabaseFingerprintMiddleware>.Instance
+            );
+
             var serviceProvider = services.BuildServiceProvider();
 
             return new ApiService(
@@ -157,7 +168,7 @@ public class InvalidResourceSchemasTests
                 new EqualityConstraintValidator(),
                 new DecimalValidator(),
                 NullLogger<ApiService>.Instance,
-                Options.Create(new AppSettings { AllowIdentityUpdateOverrides = "" }),
+                appSettingsOptions,
                 new NamedAuthorizationServiceFactory(serviceProvider),
                 ResiliencePipeline.Empty,
                 new ResourceLoadOrderCalculator([], A.Fake<IResourceDependencyGraphFactory>()),

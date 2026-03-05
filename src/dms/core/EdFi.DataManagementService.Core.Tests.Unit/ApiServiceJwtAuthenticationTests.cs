@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Reflection;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Middleware;
@@ -109,6 +110,18 @@ public class ApiServiceJwtAuthenticationTests
             NullLogger<ProfileResolutionMiddleware>.Instance
         );
 
+        // Register ValidateDatabaseFingerprintMiddleware and its dependencies
+        var appSettingsOptions = Options.Create(
+            new AppSettings { AllowIdentityUpdateOverrides = "", MaskRequestBodyInLogs = false }
+        );
+        services.AddSingleton(appSettingsOptions);
+        services.AddSingleton<IDatabaseFingerprintReader, NullDatabaseFingerprintReader>();
+        services.AddSingleton<DatabaseFingerprintProvider>();
+        services.AddTransient<ValidateDatabaseFingerprintMiddleware>();
+        services.AddTransient<ILogger<ValidateDatabaseFingerprintMiddleware>>(_ =>
+            NullLogger<ValidateDatabaseFingerprintMiddleware>.Instance
+        );
+
         var serviceProvider = services.BuildServiceProvider();
 
         // Create an instance of ApiService to test GetCommonInitialSteps
@@ -121,9 +134,7 @@ public class ApiServiceJwtAuthenticationTests
             A.Fake<IEqualityConstraintValidator>(),
             A.Fake<IDecimalValidator>(),
             NullLogger<ApiService>.Instance,
-            Options.Create(
-                new AppSettings { AllowIdentityUpdateOverrides = "", MaskRequestBodyInLogs = false }
-            ),
+            appSettingsOptions,
             A.Fake<IAuthorizationServiceFactory>(),
             ResiliencePipeline.Empty,
             A.Fake<ResourceLoadOrderCalculator>(),
@@ -141,10 +152,11 @@ public class ApiServiceJwtAuthenticationTests
         var steps = (List<IPipelineStep>)getCommonInitialStepsMethod!.Invoke(apiService, null)!;
 
         // Assert
-        steps.Should().HaveCount(5); // RequestResponseLoggingMiddleware + CoreExceptionLoggingMiddleware + TenantValidationMiddleware + JwtAuthenticationMiddleware + ResolveDmsInstanceMiddleware
+        steps.Should().HaveCount(6); // RequestResponseLoggingMiddleware + CoreExceptionLoggingMiddleware + TenantValidationMiddleware + JwtAuthenticationMiddleware + ResolveDmsInstanceMiddleware + ValidateDatabaseFingerprintMiddleware
         steps[2].Should().BeOfType<TenantValidationMiddleware>();
         steps[3].Should().BeOfType<JwtAuthenticationMiddleware>();
         steps[4].Should().BeOfType<ResolveDmsInstanceMiddleware>();
+        steps[5].Should().BeOfType<ValidateDatabaseFingerprintMiddleware>();
     }
 
     [Test]
