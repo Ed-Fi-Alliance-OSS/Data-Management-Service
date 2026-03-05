@@ -63,4 +63,11 @@ public class AppSettings
     /// When enabled, tenants are identified via URL path segments.
     /// </summary>
     public bool MultiTenancy { get; set; }
+
+    /// <summary>
+    /// If true, enables database fingerprint validation middleware that verifies
+    /// each request targets a provisioned database with a valid dms.EffectiveSchema row.
+    /// When false (default), the middleware is a no-op.
+    /// </summary>
+    public bool EnableDatabaseFingerprintValidation { get; set; }
 }
