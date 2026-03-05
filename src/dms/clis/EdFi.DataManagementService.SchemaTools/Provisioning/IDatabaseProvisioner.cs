@@ -42,11 +42,17 @@ public interface IDatabaseProvisioner
     void CheckOrConfigureMvcc(string connectionString, bool databaseWasCreated);
 
     /// <summary>
-    /// Performs a lightweight preflight check: if dms.EffectiveSchema exists and
-    /// its hash differs from <paramref name="expectedHash"/>, throws an
-    /// InvalidOperationException. If the table does not exist or the hash matches,
-    /// returns normally.
+    /// Performs a lightweight preflight check against the dms.EffectiveSchema table.
     /// </summary>
+    /// <remarks>
+    /// Outcomes:
+    /// <list type="bullet">
+    ///   <item>Table does not exist (new database) — returns normally.</item>
+    ///   <item>Table exists and stored hash matches <paramref name="expectedHash"/> — returns normally.</item>
+    ///   <item>Table exists but the singleton row is missing (partial/corrupt state) — throws <see cref="InvalidOperationException"/>.</item>
+    ///   <item>Table exists and stored hash differs from <paramref name="expectedHash"/> — throws <see cref="InvalidOperationException"/>.</item>
+    /// </list>
+    /// </remarks>
     void PreflightSchemaHashCheck(string connectionString, string expectedHash);
 
     /// <summary>
