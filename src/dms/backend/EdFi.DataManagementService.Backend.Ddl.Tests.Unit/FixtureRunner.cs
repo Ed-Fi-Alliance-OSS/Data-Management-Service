@@ -82,8 +82,8 @@ public static class FixtureRunner
         );
         WriteFileNormalized(Path.Combine(actualDir, "effective-schema.manifest.json"), schemaManifest);
 
-        // Write ddl.manifest.json (when dialects are present)
-        if (ddlManifestEntries.Count > 0)
+        // Write ddl.manifest.json (when configured and dialects are present)
+        if (config.EmitDdlManifest && ddlManifestEntries.Count > 0)
         {
             var ddlManifest = DdlManifestEmitter.Emit(effectiveSchemaInfo, ddlManifestEntries);
             WriteFileNormalized(Path.Combine(actualDir, "ddl.manifest.json"), ddlManifest);

@@ -10,7 +10,12 @@ namespace EdFi.DataManagementService.Backend.Ddl.Tests.Unit;
 /// <summary>
 /// Deserialized representation of a fixture.json file.
 /// </summary>
-public record FixtureConfig(string[] ApiSchemaFiles, string[] Dialects, bool BuildMappingPack = false);
+public record FixtureConfig(
+    string[] ApiSchemaFiles,
+    string[] Dialects,
+    bool BuildMappingPack = false,
+    bool EmitDdlManifest = true
+);
 
 /// <summary>
 /// Reads and validates fixture.json files from fixture directories.
@@ -55,6 +60,16 @@ public static class FixtureConfigReader
 
     private static void Validate(FixtureConfig config, string fixtureDirectory)
     {
+        if (config.ApiSchemaFiles is null)
+        {
+            throw new InvalidOperationException("fixture.json is missing required field 'apiSchemaFiles'.");
+        }
+
+        if (config.Dialects is null)
+        {
+            throw new InvalidOperationException("fixture.json is missing required field 'dialects'.");
+        }
+
         if (config.ApiSchemaFiles.Length == 0)
         {
             throw new InvalidOperationException(
@@ -77,16 +92,38 @@ public static class FixtureConfigReader
             }
         }
 
+        if (config.BuildMappingPack)
+        {
+            throw new NotSupportedException(
+                "buildMappingPack=true is not yet supported. Pack emission will be implemented in a future ticket."
+            );
+        }
+
         var inputsDir = Path.Combine(fixtureDirectory, "inputs");
+        var resolvedInputsDir = Path.GetFullPath(inputsDir) + Path.DirectorySeparatorChar;
 
         foreach (var schemaFile in config.ApiSchemaFiles)
         {
-            var fullPath = Path.Combine(inputsDir, schemaFile);
+            if (Path.IsPathRooted(schemaFile))
+            {
+                throw new InvalidOperationException(
+                    $"apiSchemaFiles must be relative paths, but got rooted path: '{schemaFile}'"
+                );
+            }
 
-            if (!File.Exists(fullPath))
+            var resolvedPath = Path.GetFullPath(Path.Combine(inputsDir, schemaFile));
+
+            if (!resolvedPath.StartsWith(resolvedInputsDir, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"apiSchemaFiles path escapes the inputs/ directory: '{schemaFile}'"
+                );
+            }
+
+            if (!File.Exists(resolvedPath))
             {
                 throw new FileNotFoundException(
-                    $"ApiSchema file declared in fixture.json not found: {fullPath}"
+                    $"ApiSchema file declared in fixture.json not found: {resolvedPath}"
                 );
             }
         }

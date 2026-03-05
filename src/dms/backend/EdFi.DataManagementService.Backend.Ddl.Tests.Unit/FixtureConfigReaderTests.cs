@@ -107,6 +107,12 @@ public class Given_A_Fixture_Json_With_Defaults
     {
         _config.BuildMappingPack.Should().BeFalse();
     }
+
+    [Test]
+    public void It_should_default_emitDdlManifest_to_true()
+    {
+        _config.EmitDdlManifest.Should().BeTrue();
+    }
 }
 
 [TestFixture]
@@ -298,5 +304,207 @@ public class Given_A_Fixture_Json_With_Missing_Input_File
     {
         var act = () => FixtureConfigReader.Read(_tempDir);
         act.Should().Throw<FileNotFoundException>().WithMessage("*ApiSchema file*not found*");
+    }
+}
+
+[TestFixture]
+public class Given_A_Fixture_Json_Missing_ApiSchemaFiles
+{
+    private string _tempDir = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(_tempDir);
+
+        File.WriteAllText(
+            Path.Combine(_tempDir, "fixture.json"),
+            """
+            {
+              "dialects": ["pgsql"]
+            }
+            """
+        );
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        if (Directory.Exists(_tempDir))
+        {
+            Directory.Delete(_tempDir, recursive: true);
+        }
+    }
+
+    [Test]
+    public void It_should_throw_InvalidOperationException()
+    {
+        var act = () => FixtureConfigReader.Read(_tempDir);
+        act.Should().Throw<InvalidOperationException>().WithMessage("*missing*apiSchemaFiles*");
+    }
+}
+
+[TestFixture]
+public class Given_A_Fixture_Json_Missing_Dialects
+{
+    private string _tempDir = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(_tempDir);
+        Directory.CreateDirectory(Path.Combine(_tempDir, "inputs"));
+
+        File.WriteAllText(Path.Combine(_tempDir, "inputs", "ApiSchema.json"), "{}");
+
+        File.WriteAllText(
+            Path.Combine(_tempDir, "fixture.json"),
+            """
+            {
+              "apiSchemaFiles": ["ApiSchema.json"]
+            }
+            """
+        );
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        if (Directory.Exists(_tempDir))
+        {
+            Directory.Delete(_tempDir, recursive: true);
+        }
+    }
+
+    [Test]
+    public void It_should_throw_InvalidOperationException()
+    {
+        var act = () => FixtureConfigReader.Read(_tempDir);
+        act.Should().Throw<InvalidOperationException>().WithMessage("*missing*dialects*");
+    }
+}
+
+[TestFixture]
+public class Given_A_Fixture_Json_With_Path_Traversal
+{
+    private string _tempDir = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(_tempDir);
+        Directory.CreateDirectory(Path.Combine(_tempDir, "inputs"));
+
+        File.WriteAllText(
+            Path.Combine(_tempDir, "fixture.json"),
+            """
+            {
+              "apiSchemaFiles": ["../../etc/passwd"],
+              "dialects": ["pgsql"]
+            }
+            """
+        );
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        if (Directory.Exists(_tempDir))
+        {
+            Directory.Delete(_tempDir, recursive: true);
+        }
+    }
+
+    [Test]
+    public void It_should_throw_InvalidOperationException()
+    {
+        var act = () => FixtureConfigReader.Read(_tempDir);
+        act.Should().Throw<InvalidOperationException>().WithMessage("*escapes the inputs/ directory*");
+    }
+}
+
+[TestFixture]
+public class Given_A_Fixture_Json_With_Absolute_Path
+{
+    private string _tempDir = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(_tempDir);
+        Directory.CreateDirectory(Path.Combine(_tempDir, "inputs"));
+
+        File.WriteAllText(
+            Path.Combine(_tempDir, "fixture.json"),
+            """
+            {
+              "apiSchemaFiles": ["/tmp/ApiSchema.json"],
+              "dialects": ["pgsql"]
+            }
+            """
+        );
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        if (Directory.Exists(_tempDir))
+        {
+            Directory.Delete(_tempDir, recursive: true);
+        }
+    }
+
+    [Test]
+    public void It_should_throw_InvalidOperationException()
+    {
+        var act = () => FixtureConfigReader.Read(_tempDir);
+        act.Should().Throw<InvalidOperationException>().WithMessage("*rooted path*");
+    }
+}
+
+[TestFixture]
+public class Given_A_Fixture_Json_With_BuildMappingPack_True
+{
+    private string _tempDir = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(_tempDir);
+        Directory.CreateDirectory(Path.Combine(_tempDir, "inputs"));
+
+        File.WriteAllText(Path.Combine(_tempDir, "inputs", "ApiSchema.json"), "{}");
+
+        File.WriteAllText(
+            Path.Combine(_tempDir, "fixture.json"),
+            """
+            {
+              "apiSchemaFiles": ["ApiSchema.json"],
+              "dialects": ["pgsql"],
+              "buildMappingPack": true
+            }
+            """
+        );
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        if (Directory.Exists(_tempDir))
+        {
+            Directory.Delete(_tempDir, recursive: true);
+        }
+    }
+
+    [Test]
+    public void It_should_throw_NotSupportedException()
+    {
+        var act = () => FixtureConfigReader.Read(_tempDir);
+        act.Should().Throw<NotSupportedException>().WithMessage("*buildMappingPack*not yet supported*");
     }
 }
