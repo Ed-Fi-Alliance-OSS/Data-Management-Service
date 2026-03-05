@@ -290,7 +290,7 @@ public class Given_SeedDmlEmitter_With_PgsqlDialect_And_SeedData
     public void It_should_include_resource_key_ids_in_content_mismatch_error()
     {
         _ddl.Should().Contain("ResourceKeyIds: %");
-        _ddl.Should().Contain("string_agg(sub.id, ', ')");
+        _ddl.Should().Contain("string_agg(sub.id, ', ' ORDER BY sub.id)");
         _ddl.Should().Contain("LIMIT 10");
     }
 
@@ -328,7 +328,7 @@ public class Given_SeedDmlEmitter_With_PgsqlDialect_And_SeedData
     public void It_should_include_project_endpoint_names_in_schema_component_mismatch_error()
     {
         _ddl.Should().Contain("ProjectEndpointNames: %");
-        _ddl.Should().Contain("string_agg(sub.name, ', ')");
+        _ddl.Should().Contain("string_agg(sub.name, ', ' ORDER BY sub.name)");
     }
 
     [Test]
@@ -435,7 +435,8 @@ public class Given_SeedDmlEmitter_With_MssqlDialect_And_SeedData
     public void It_should_include_resource_key_ids_in_content_mismatch_error()
     {
         _ddl.Should().Contain("ResourceKeyIds: ");
-        _ddl.Should().Contain("STRING_AGG(sub.[ResourceKeyId], N', ')");
+        _ddl.Should()
+            .Contain("STRING_AGG(sub.[ResourceKeyId], N', ') WITHIN GROUP (ORDER BY sub.[ResourceKeyId])");
         _ddl.Should().Contain("TOP 10");
     }
 
@@ -483,7 +484,10 @@ public class Given_SeedDmlEmitter_With_MssqlDialect_And_SeedData
     public void It_should_include_project_endpoint_names_in_schema_component_mismatch_error()
     {
         _ddl.Should().Contain("ProjectEndpointNames: ");
-        _ddl.Should().Contain("STRING_AGG(sub.[ProjectEndpointName], N', ')");
+        _ddl.Should()
+            .Contain(
+                "STRING_AGG(sub.[ProjectEndpointName], N', ') WITHIN GROUP (ORDER BY sub.[ProjectEndpointName])"
+            );
     }
 
     [Test]

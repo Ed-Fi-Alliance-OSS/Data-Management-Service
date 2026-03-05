@@ -239,7 +239,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
                 using (writer.Indent())
                 {
                     // Collect up to 10 mismatched ResourceKeyIds for diagnostics
-                    writer.AppendLine("SELECT string_agg(sub.id, ', ') INTO _mismatched_ids");
+                    writer.AppendLine("SELECT string_agg(sub.id, ', ' ORDER BY sub.id) INTO _mismatched_ids");
                     writer.AppendLine("FROM (");
                     using (writer.Indent())
                     {
@@ -299,7 +299,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             {
                 // Collect up to 10 mismatched ResourceKeyIds for diagnostics
                 writer.AppendLine(
-                    $"SELECT @rk_mismatched_ids = STRING_AGG(sub.{Quote("ResourceKeyId")}, N', ')"
+                    $"SELECT @rk_mismatched_ids = STRING_AGG(sub.{Quote("ResourceKeyId")}, N', ') WITHIN GROUP (ORDER BY sub.{Quote("ResourceKeyId")})"
                 );
                 writer.AppendLine("FROM (");
                 using (writer.Indent())
@@ -580,7 +580,9 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
                 using (writer.Indent())
                 {
                     // Collect up to 10 mismatched ProjectEndpointNames for diagnostics
-                    writer.AppendLine("SELECT string_agg(sub.name, ', ') INTO _mismatched_names");
+                    writer.AppendLine(
+                        "SELECT string_agg(sub.name, ', ' ORDER BY sub.name) INTO _mismatched_names"
+                    );
                     writer.AppendLine("FROM (");
                     using (writer.Indent())
                     {
@@ -644,7 +646,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             {
                 // Collect up to 10 mismatched ProjectEndpointNames for diagnostics
                 writer.AppendLine(
-                    $"SELECT @sc_mismatched_names = STRING_AGG(sub.{Quote("ProjectEndpointName")}, N', ')"
+                    $"SELECT @sc_mismatched_names = STRING_AGG(sub.{Quote("ProjectEndpointName")}, N', ') WITHIN GROUP (ORDER BY sub.{Quote("ProjectEndpointName")})"
                 );
                 writer.AppendLine("FROM (");
                 using (writer.Indent())

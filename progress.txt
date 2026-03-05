@@ -29,3 +29,16 @@ Files changed:
 - src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/DdlProvisionMssqlTests.cs
 
 Build: clean. Unit tests: 62/62 passed. PG integration tests: 42/42 passed.
+
+## Task 3 Complete — Make string_agg/STRING_AGG deterministic with ORDER BY
+Story: 02-preflight-and-idempotency.md
+
+Added ORDER BY inside aggregate functions so mismatch diagnostic sample lists are deterministic:
+- PostgreSQL: string_agg(expr, delim ORDER BY expr) for both ResourceKey and SchemaComponent
+- MSSQL: STRING_AGG(...) WITHIN GROUP (ORDER BY ...) for both ResourceKey and SchemaComponent
+
+Files changed:
+- src/dms/backend/EdFi.DataManagementService.Backend.Ddl/SeedDmlEmitter.cs
+- src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/SeedDmlEmitterTests.cs
+
+Build: clean. Unit tests: 447/447 passed.
