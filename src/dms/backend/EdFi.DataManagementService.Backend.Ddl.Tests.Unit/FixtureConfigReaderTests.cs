@@ -178,6 +178,48 @@ public class Given_A_Fixture_Json_With_Empty_ApiSchemaFiles
 }
 
 [TestFixture]
+public class Given_A_Fixture_Json_With_Empty_Dialects
+{
+    private string _tempDir = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(_tempDir);
+        Directory.CreateDirectory(Path.Combine(_tempDir, "inputs"));
+
+        File.WriteAllText(Path.Combine(_tempDir, "inputs", "ApiSchema.json"), "{}");
+
+        File.WriteAllText(
+            Path.Combine(_tempDir, "fixture.json"),
+            """
+            {
+              "apiSchemaFiles": ["ApiSchema.json"],
+              "dialects": []
+            }
+            """
+        );
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        if (Directory.Exists(_tempDir))
+        {
+            Directory.Delete(_tempDir, recursive: true);
+        }
+    }
+
+    [Test]
+    public void It_should_throw_InvalidOperationException()
+    {
+        var act = () => FixtureConfigReader.Read(_tempDir);
+        act.Should().Throw<InvalidOperationException>().WithMessage("*at least one entry*dialects*");
+    }
+}
+
+[TestFixture]
 public class Given_A_Fixture_Json_With_Unknown_Dialect
 {
     private string _tempDir = default!;

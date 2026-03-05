@@ -62,6 +62,11 @@ public static class FixtureConfigReader
             );
         }
 
+        if (config.Dialects.Length == 0)
+        {
+            throw new InvalidOperationException("fixture.json must declare at least one entry in dialects.");
+        }
+
         foreach (var dialect in config.Dialects)
         {
             if (!_knownDialects.Contains(dialect, StringComparer.OrdinalIgnoreCase))

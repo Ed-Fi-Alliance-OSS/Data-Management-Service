@@ -109,7 +109,20 @@ public static class FixtureRunner
             })
             .ToArray();
 
-        return new ApiSchemaDocumentNodes(coreNode, extensionNodes);
+        var rawNodes = new ApiSchemaDocumentNodes(coreNode, extensionNodes);
+
+        // Normalize inputs to match CLI pipeline (ApiSchemaFileLoader.Load → Normalize)
+        var normalizer = new ApiSchemaInputNormalizer(NullLogger<ApiSchemaInputNormalizer>.Instance);
+        var normalizationResult = normalizer.Normalize(rawNodes);
+
+        if (normalizationResult is not ApiSchemaNormalizationResult.SuccessResult success)
+        {
+            throw new InvalidOperationException(
+                $"ApiSchema normalization failed for fixture inputs: {normalizationResult}"
+            );
+        }
+
+        return success.NormalizedNodes;
     }
 
     private static EffectiveSchemaSetBuilder CreateEffectiveSchemaSetBuilder() =>
