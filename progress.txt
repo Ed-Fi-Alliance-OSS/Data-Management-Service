@@ -294,3 +294,8 @@ Task completed: Refactor / Simplification - simplify WritePlanCompiler write-sou
 Decisions: removed duplicate-path lookup plumbing (WriteSourceLookupEntry.HasDuplicateMatch + GetUniqueLookupMatchOrThrow duplicate branch) and switched to direct FrozenDictionary lookups keyed by (Table,FkColumn). Kept duplicate-key failures at compile start via ValidateUniqueWriteSourceInventoryKeysOrThrow; missing document/descriptor lookups keep existing messages.
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanCompiler.cs; tasks.json; progress.txt.
 Blockers/notes: no blockers. Verification: dotnet csharpier format WritePlanCompiler.cs; dotnet test --no-restore plans unit (256/256).
+2026-03-05 - DMS-1045 / reference/design/backend-redesign/epics/15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md
+Task completed: Refactor / Cleanup - removed dead write-plan table compilation context member.
+Decisions: deleted `WritePlanTableCompilationContext.RequiredKeyUnificationPrecomputedColumns` because it was never read after binding/source derivation; kept required-precomputed computation local in `CreateTableCompilationContext` so binding order, SQL emission, and exception behavior stay unchanged.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanTableCompilationContext.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanCompiler.cs; tasks.json; progress.txt.
+Blockers/notes: no blockers. Verification: dotnet csharpier format (2 files); dotnet test --no-restore plans unit (256/256); dotnet build --no-restore src/dms/EdFi.DataManagementService.sln. Remaining open task: tasks.json index 54 (update-parameter collision test maintainability).

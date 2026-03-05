@@ -14,6 +14,5 @@ internal sealed record WritePlanTableCompilationContext(
     IReadOnlyDictionary<DbColumnName, int> BindingIndexByColumn,
     IReadOnlyDictionary<DbColumnName, string> ParameterNameByColumn,
     IReadOnlySet<DbColumnName> KeyColumnNames,
-    IReadOnlySet<DbColumnName> RequiredKeyUnificationPrecomputedColumns,
     IReadOnlyList<WriteColumnBinding> ColumnBindings
 );

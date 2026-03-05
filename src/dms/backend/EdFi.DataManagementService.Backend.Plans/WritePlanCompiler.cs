@@ -275,7 +275,6 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
             BindingIndexByColumn: bindingIndexByColumn,
             ParameterNameByColumn: parameterNameByColumn,
             KeyColumnNames: keyColumnNames,
-            RequiredKeyUnificationPrecomputedColumns: requiredKeyUnificationPrecomputedColumns,
             ColumnBindings: columnBindings
         );
     }
