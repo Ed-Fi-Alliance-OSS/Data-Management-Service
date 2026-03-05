@@ -51,6 +51,45 @@ internal static class ThinSliceFixtureModelSetBuilder
             reverseResourceSchemaOrder,
             reverseFixtureInputOrder
         );
+        return BuildDerivedModelSet(effectiveSchemaSet, dialect);
+    }
+
+    public static DerivedRelationalModelSet Build(
+        IReadOnlyList<(string FixtureRelativePath, bool IsExtensionProject)> fixtureInputs,
+        SqlDialect dialect
+    )
+    {
+        return Build(
+            fixtureInputs,
+            dialect,
+            reverseResourceSchemaOrder: false,
+            reverseFixtureInputOrder: false
+        );
+    }
+
+    public static DerivedRelationalModelSet Build(
+        IReadOnlyList<(string FixtureRelativePath, bool IsExtensionProject)> fixtureInputs,
+        SqlDialect dialect,
+        bool reverseResourceSchemaOrder,
+        bool reverseFixtureInputOrder
+    )
+    {
+        ArgumentNullException.ThrowIfNull(fixtureInputs);
+
+        var effectiveSchemaSet = LoadEffectiveSchemaSet(
+            fixtureInputs,
+            reverseResourceSchemaOrder,
+            reverseFixtureInputOrder
+        );
+
+        return BuildDerivedModelSet(effectiveSchemaSet, dialect);
+    }
+
+    private static DerivedRelationalModelSet BuildDerivedModelSet(
+        EffectiveSchemaSet effectiveSchemaSet,
+        SqlDialect dialect
+    )
+    {
         ISqlDialectRules dialectRules = dialect switch
         {
             SqlDialect.Pgsql => new PgsqlDialectRules(),
@@ -79,6 +118,48 @@ internal static class ThinSliceFixtureModelSetBuilder
             reverseResourceSchemaOrder,
             reverseFixtureInputOrder
         );
+        return BuildEffectiveSchemaSet(fixtureProjects);
+    }
+
+    private static EffectiveSchemaSet LoadEffectiveSchemaSet(
+        IReadOnlyList<(string FixtureRelativePath, bool IsExtensionProject)> fixtureInputs,
+        bool reverseResourceSchemaOrder,
+        bool reverseFixtureInputOrder
+    )
+    {
+        if (fixtureInputs.Count == 0)
+        {
+            throw new InvalidOperationException(
+                "Expected fixtureInputs to contain at least one ApiSchema input."
+            );
+        }
+
+        var orderedFixtureInputs = reverseFixtureInputOrder
+            ? fixtureInputs.Reverse().ToArray()
+            : fixtureInputs.ToArray();
+        List<FixtureProjectInput> fixtureProjects = new(orderedFixtureInputs.Length);
+
+        foreach (var fixtureInput in orderedFixtureInputs)
+        {
+            var fixtureInputPath = GetFixturePath(fixtureInput.FixtureRelativePath);
+            var fixtureInputRoot = ParseJsonObject(fixtureInputPath, "Fixture input");
+
+            fixtureProjects.Add(
+                LoadProjectInputFromApiSchemaRoot(
+                    fixtureInputRoot,
+                    reverseResourceSchemaOrder,
+                    fixtureInput.IsExtensionProject
+                )
+            );
+        }
+
+        return BuildEffectiveSchemaSet(fixtureProjects);
+    }
+
+    private static EffectiveSchemaSet BuildEffectiveSchemaSet(
+        IReadOnlyList<FixtureProjectInput> fixtureProjects
+    )
+    {
         var projectsInEndpointOrder = fixtureProjects
             .OrderBy(project => project.Project.ProjectEndpointName, StringComparer.Ordinal)
             .ToArray();
