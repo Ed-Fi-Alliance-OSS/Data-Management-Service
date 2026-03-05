@@ -652,6 +652,162 @@ public class Given_SchemaComponent_Tampered_After_Provisioning
 
 [TestFixture]
 [Category("DatabaseIntegration")]
+public class Given_ResourceKey_Table_Dropped_After_Provisioning
+{
+    private string _databaseName = null!;
+    private int _firstExitCode;
+    private string _firstOutput = null!;
+    private string _firstError = null!;
+    private int _secondExitCode;
+    private string _secondOutput = null!;
+    private string _secondError = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        _databaseName = PostgresTestDatabaseHelper.GenerateUniqueDatabaseName();
+        var connectionString = PostgresTestDatabaseHelper.BuildConnectionString(_databaseName);
+
+        // First provisioning run
+        (_firstExitCode, _firstOutput, _firstError) = ProvisionTestHelper.RunProvision(
+            "pgsql",
+            connectionString,
+            createDatabase: true
+        );
+
+        // Drop the ResourceKey table (CASCADE removes dependent FKs from Document, etc.)
+        using (var connection = new NpgsqlConnection(connectionString))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = """DROP TABLE dms."ResourceKey" CASCADE""";
+            command.ExecuteNonQuery();
+        }
+
+        // Second provisioning run — should detect the missing table
+        (_secondExitCode, _secondOutput, _secondError) = ProvisionTestHelper.RunProvision(
+            "pgsql",
+            connectionString
+        );
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        PostgresTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+    }
+
+    [Test]
+    public void It_succeeds_on_first_provisioning()
+    {
+        _firstExitCode.Should().Be(0, $"stdout: {_firstOutput}\nstderr: {_firstError}");
+    }
+
+    [Test]
+    public void It_returns_nonzero_exit_code()
+    {
+        _secondExitCode.Should().NotBe(0, $"stdout: {_secondOutput}\nstderr: {_secondError}");
+    }
+
+    [Test]
+    public void It_reports_missing_seed_table_in_stderr()
+    {
+        _secondError.Should().Contain("required seed table(s) are missing");
+    }
+
+    [Test]
+    public void It_names_the_missing_table_in_stderr()
+    {
+        _secondError.Should().Contain("ResourceKey");
+    }
+
+    [Test]
+    public void It_recommends_drop_and_recreate()
+    {
+        _secondError.Should().Contain("Drop and recreate");
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+public class Given_SchemaComponent_Table_Dropped_After_Provisioning
+{
+    private string _databaseName = null!;
+    private int _firstExitCode;
+    private string _firstOutput = null!;
+    private string _firstError = null!;
+    private int _secondExitCode;
+    private string _secondOutput = null!;
+    private string _secondError = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        _databaseName = PostgresTestDatabaseHelper.GenerateUniqueDatabaseName();
+        var connectionString = PostgresTestDatabaseHelper.BuildConnectionString(_databaseName);
+
+        // First provisioning run
+        (_firstExitCode, _firstOutput, _firstError) = ProvisionTestHelper.RunProvision(
+            "pgsql",
+            connectionString,
+            createDatabase: true
+        );
+
+        // Drop the SchemaComponent table (no inbound FKs, simple drop suffices)
+        using (var connection = new NpgsqlConnection(connectionString))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "DROP TABLE dms.\"SchemaComponent\"";
+            command.ExecuteNonQuery();
+        }
+
+        // Second provisioning run — should detect the missing table
+        (_secondExitCode, _secondOutput, _secondError) = ProvisionTestHelper.RunProvision(
+            "pgsql",
+            connectionString
+        );
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        PostgresTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+    }
+
+    [Test]
+    public void It_succeeds_on_first_provisioning()
+    {
+        _firstExitCode.Should().Be(0, $"stdout: {_firstOutput}\nstderr: {_firstError}");
+    }
+
+    [Test]
+    public void It_returns_nonzero_exit_code()
+    {
+        _secondExitCode.Should().NotBe(0, $"stdout: {_secondOutput}\nstderr: {_secondError}");
+    }
+
+    [Test]
+    public void It_reports_missing_seed_table_in_stderr()
+    {
+        _secondError.Should().Contain("required seed table(s) are missing");
+    }
+
+    [Test]
+    public void It_names_the_missing_table_in_stderr()
+    {
+        _secondError.Should().Contain("SchemaComponent");
+    }
+
+    [Test]
+    public void It_recommends_drop_and_recreate()
+    {
+        _secondError.Should().Contain("Drop and recreate");
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
 public class Given_EffectiveSchema_Table_Exists_But_Singleton_Row_Missing
 {
     private string _databaseName = null!;

@@ -739,6 +739,189 @@ public class Given_SchemaComponent_Tampered_After_Provisioning_Mssql
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+public class Given_Mssql_ResourceKey_Table_Dropped_After_Provisioning
+{
+    private string _databaseName = null!;
+    private int _firstExitCode;
+    private string _firstOutput = null!;
+    private string _firstError = null!;
+    private int _secondExitCode;
+    private string _secondOutput = null!;
+    private string _secondError = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore(
+                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.Test.json"
+            );
+        }
+
+        _databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
+        var connectionString = MssqlTestDatabaseHelper.BuildConnectionString(_databaseName);
+
+        // First provisioning run
+        (_firstExitCode, _firstOutput, _firstError) = ProvisionTestHelper.RunProvision(
+            "mssql",
+            connectionString,
+            createDatabase: true
+        );
+
+        // Drop FK constraints that reference ResourceKey, then drop the table
+        using (var connection = new SqlConnection(connectionString))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                ALTER TABLE [dms].[Document] DROP CONSTRAINT [FK_Document_ResourceKey];
+                ALTER TABLE [dms].[DocumentChangeEvent] DROP CONSTRAINT [FK_DocumentChangeEvent_ResourceKey];
+                ALTER TABLE [dms].[ReferentialIdentity] DROP CONSTRAINT [FK_ReferentialIdentity_ResourceKey];
+                DROP TABLE [dms].[ResourceKey];
+                """;
+            command.ExecuteNonQuery();
+        }
+
+        // Second provisioning run — should detect the missing table
+        (_secondExitCode, _secondOutput, _secondError) = ProvisionTestHelper.RunProvision(
+            "mssql",
+            connectionString
+        );
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        if (MssqlTestDatabaseHelper.IsConfigured())
+        {
+            MssqlTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+        }
+    }
+
+    [Test]
+    public void It_succeeds_on_first_provisioning()
+    {
+        _firstExitCode.Should().Be(0, $"stdout: {_firstOutput}\nstderr: {_firstError}");
+    }
+
+    [Test]
+    public void It_returns_nonzero_exit_code()
+    {
+        _secondExitCode.Should().NotBe(0, $"stdout: {_secondOutput}\nstderr: {_secondError}");
+    }
+
+    [Test]
+    public void It_reports_missing_seed_table_in_stderr()
+    {
+        _secondError.Should().Contain("required seed table(s) are missing");
+    }
+
+    [Test]
+    public void It_names_the_missing_table_in_stderr()
+    {
+        _secondError.Should().Contain("ResourceKey");
+    }
+
+    [Test]
+    public void It_recommends_drop_and_recreate()
+    {
+        _secondError.Should().Contain("Drop and recreate");
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
+public class Given_Mssql_SchemaComponent_Table_Dropped_After_Provisioning
+{
+    private string _databaseName = null!;
+    private int _firstExitCode;
+    private string _firstOutput = null!;
+    private string _firstError = null!;
+    private int _secondExitCode;
+    private string _secondOutput = null!;
+    private string _secondError = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore(
+                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.Test.json"
+            );
+        }
+
+        _databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
+        var connectionString = MssqlTestDatabaseHelper.BuildConnectionString(_databaseName);
+
+        // First provisioning run
+        (_firstExitCode, _firstOutput, _firstError) = ProvisionTestHelper.RunProvision(
+            "mssql",
+            connectionString,
+            createDatabase: true
+        );
+
+        // Drop the SchemaComponent table (no inbound FKs reference it)
+        using (var connection = new SqlConnection(connectionString))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "DROP TABLE [dms].[SchemaComponent];";
+            command.ExecuteNonQuery();
+        }
+
+        // Second provisioning run — should detect the missing table
+        (_secondExitCode, _secondOutput, _secondError) = ProvisionTestHelper.RunProvision(
+            "mssql",
+            connectionString
+        );
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        if (MssqlTestDatabaseHelper.IsConfigured())
+        {
+            MssqlTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+        }
+    }
+
+    [Test]
+    public void It_succeeds_on_first_provisioning()
+    {
+        _firstExitCode.Should().Be(0, $"stdout: {_firstOutput}\nstderr: {_firstError}");
+    }
+
+    [Test]
+    public void It_returns_nonzero_exit_code()
+    {
+        _secondExitCode.Should().NotBe(0, $"stdout: {_secondOutput}\nstderr: {_secondError}");
+    }
+
+    [Test]
+    public void It_reports_missing_seed_table_in_stderr()
+    {
+        _secondError.Should().Contain("required seed table(s) are missing");
+    }
+
+    [Test]
+    public void It_names_the_missing_table_in_stderr()
+    {
+        _secondError.Should().Contain("SchemaComponent");
+    }
+
+    [Test]
+    public void It_recommends_drop_and_recreate()
+    {
+        _secondError.Should().Contain("Drop and recreate");
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
 public class Given_Mssql_EffectiveSchema_Table_Exists_But_Singleton_Row_Missing
 {
     private string _databaseName = null!;
