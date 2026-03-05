@@ -13,12 +13,23 @@ internal static class RuntimePlanCompilationGoldenFixtureTestHelper
 {
     private const string ProjectFileName = "EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj";
     private const string ManifestFileName = "mappingset.manifest.json";
+    private const string RuntimePlanCompilationFixtureRoot = "runtime-plan-compilation";
 
     public static RuntimePlanCompilationGoldenFixtureResult BuildAndDiffManifest(
         string fixtureFolderName,
         Func<string> manifestBuilder
     )
     {
+        return BuildAndDiffManifest(RuntimePlanCompilationFixtureRoot, fixtureFolderName, manifestBuilder);
+    }
+
+    public static RuntimePlanCompilationGoldenFixtureResult BuildAndDiffManifest(
+        string fixtureRootFolderName,
+        string fixtureFolderName,
+        Func<string> manifestBuilder
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(fixtureRootFolderName);
         ArgumentException.ThrowIfNullOrWhiteSpace(fixtureFolderName);
         ArgumentNullException.ThrowIfNull(manifestBuilder);
 
@@ -30,14 +41,14 @@ internal static class RuntimePlanCompilationGoldenFixtureTestHelper
         var expectedPath = Path.Combine(
             projectRoot,
             "Fixtures",
-            "runtime-plan-compilation",
+            fixtureRootFolderName,
             fixtureFolderName,
             "expected",
             ManifestFileName
         );
         var actualPath = Path.Combine(
             TestContext.CurrentContext.WorkDirectory,
-            "runtime-plan-compilation",
+            fixtureRootFolderName,
             fixtureFolderName,
             "actual",
             ManifestFileName
