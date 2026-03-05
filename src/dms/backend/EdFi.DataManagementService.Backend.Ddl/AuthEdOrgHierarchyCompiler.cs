@@ -57,10 +57,10 @@ public static class AuthEdOrgHierarchyCompiler
                 $"No abstract identity table found for '{abstractEdOrgResource.ResourceName}'."
             );
 
-        // Step 4: Determine the identity column from the abstract identity table.
+        // Step 4: Determine the abstract identity column from the abstract identity table.
         // This is the scalar column that is NOT Discriminator (DocumentId columns are
         // implicitly excluded by their non-Scalar ColumnKind).
-        var identityColumn = (
+        var abstractIdentityColumn = (
             abstractIdentityTable.TableModel.Columns.FirstOrDefault(c =>
                 c.Kind == ColumnKind.Scalar && c.ColumnName.Value != "Discriminator"
             )
@@ -69,12 +69,30 @@ public static class AuthEdOrgHierarchyCompiler
             )
         ).ColumnName;
 
-        // Step 5: Build a lookup of concrete resource models by qualified name.
+        // Step 5: Build a mapping from concrete member resource to its entity-specific
+        // identity column using the union view arm projections. Concrete EdOrg tables use
+        // entity-specific column names (e.g., SchoolId, LocalEducationAgencyId) while the
+        // abstract identity table uses the abstract name (EducationOrganizationId).
+        var identityOutputIndex = edOrgUnionView
+            .OutputColumnsInSelectOrder.Select((col, idx) => (col, idx))
+            .First(x => x.col.ColumnName == abstractIdentityColumn)
+            .idx;
+
+        var concreteIdentityColumns = edOrgUnionView.UnionArmsInOrder.ToDictionary(
+            arm => arm.ConcreteMemberResourceKey.Resource,
+            arm =>
+                (
+                    (AbstractUnionViewProjectionExpression.SourceColumn)
+                        arm.ProjectionExpressionsInSelectOrder[identityOutputIndex]
+                ).ColumnName
+        );
+
+        // Step 6: Build a lookup of concrete resource models by qualified name.
         var concreteResourcesByName = modelSet
             .ConcreteResourcesInNameOrder.Where(cr => concreteMemberNames.Contains(cr.ResourceKey.Resource))
             .ToDictionary(cr => cr.ResourceKey.Resource);
 
-        // Step 6: Build an AuthEdOrgEntity for each concrete member.
+        // Step 7: Build an AuthEdOrgEntity for each concrete member.
         var entities = concreteMemberNames
             .Select(memberName =>
             {
@@ -86,6 +104,7 @@ public static class AuthEdOrgHierarchyCompiler
                     );
                 }
                 var rootTable = concrete.RelationalModel.Root;
+                var entityIdentityColumn = concreteIdentityColumns[memberName];
 
                 var parentFks = rootTable
                     .Columns.Where(col =>
@@ -106,7 +125,12 @@ public static class AuthEdOrgHierarchyCompiler
                             abstractIdentityTable,
                             concreteResourcesByName
                         ),
-                        identityColumn
+                        ResolveParentIdentityColumn(
+                            col.TargetResource!.Value,
+                            abstractEdOrgResource,
+                            abstractIdentityColumn,
+                            concreteIdentityColumns
+                        )
                     ))
                     .OrderBy(fk => fk.FkColumn.Value, StringComparer.Ordinal)
                     .ToList();
@@ -114,7 +138,7 @@ public static class AuthEdOrgHierarchyCompiler
                 return new AuthEdOrgEntity(
                     concrete.ResourceKey.Resource.ResourceName,
                     rootTable.Table,
-                    identityColumn,
+                    entityIdentityColumn,
                     parentFks
                 );
             })
@@ -135,6 +159,34 @@ public static class AuthEdOrgHierarchyCompiler
     )
     {
         return target == abstractEdOrgResource || concreteMemberNames.Contains(target);
+    }
+
+    /// <summary>
+    /// Resolves the parent identity column for a DocumentFk targeting an EdOrg family member.
+    /// Abstract references use the abstract identity column; concrete references use the
+    /// entity-specific identity column (e.g., SchoolId, LocalEducationAgencyId).
+    /// </summary>
+    private static DbColumnName ResolveParentIdentityColumn(
+        QualifiedResourceName targetResource,
+        QualifiedResourceName abstractEdOrgResource,
+        DbColumnName abstractIdentityColumn,
+        Dictionary<QualifiedResourceName, DbColumnName> concreteIdentityColumns
+    )
+    {
+        if (targetResource == abstractEdOrgResource)
+        {
+            return abstractIdentityColumn;
+        }
+
+        if (!concreteIdentityColumns.TryGetValue(targetResource, out var concreteColumn))
+        {
+            throw new InvalidOperationException(
+                $"Parent FK targets concrete EdOrg '{targetResource.ResourceName}' "
+                    + "which was not found in the union view arms."
+            );
+        }
+
+        return concreteColumn;
     }
 
     /// <summary>

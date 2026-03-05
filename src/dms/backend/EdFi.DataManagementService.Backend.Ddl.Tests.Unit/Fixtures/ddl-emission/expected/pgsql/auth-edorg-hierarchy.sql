@@ -35,7 +35,7 @@ BEGIN
             SELECT tuples."SourceEducationOrganizationId"
             FROM "edfi"."EducationServiceCenter" AS parent
                 INNER JOIN "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
-                    ON parent."EducationOrganizationId" = tuples."TargetEducationOrganizationId"
+                    ON parent."EducationServiceCenterId" = tuples."TargetEducationOrganizationId"
             WHERE parent."DocumentId" = OLD."EducationServiceCenter_DocumentId"
                 AND OLD."EducationServiceCenter_DocumentId" IS NOT NULL
 
@@ -44,7 +44,7 @@ BEGIN
             SELECT tuples."SourceEducationOrganizationId"
             FROM "edfi"."LocalEducationAgency" AS parent
                 INNER JOIN "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
-                    ON parent."EducationOrganizationId" = tuples."TargetEducationOrganizationId"
+                    ON parent."LocalEducationAgencyId" = tuples."TargetEducationOrganizationId"
             WHERE parent."DocumentId" = OLD."ParentLocalEducationAgency_DocumentId"
                 AND OLD."ParentLocalEducationAgency_DocumentId" IS NOT NULL
 
@@ -53,7 +53,7 @@ BEGIN
             SELECT tuples."SourceEducationOrganizationId"
             FROM "edfi"."StateEducationAgency" AS parent
                 INNER JOIN "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
-                    ON parent."EducationOrganizationId" = tuples."TargetEducationOrganizationId"
+                    ON parent."StateEducationAgencyId" = tuples."TargetEducationOrganizationId"
             WHERE parent."DocumentId" = OLD."StateEducationAgency_DocumentId"
                 AND OLD."StateEducationAgency_DocumentId" IS NOT NULL
         ) AS sources
@@ -61,12 +61,12 @@ BEGIN
         (
             SELECT tuples."TargetEducationOrganizationId"
             FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
-            WHERE tuples."SourceEducationOrganizationId" = OLD."EducationOrganizationId"
+            WHERE tuples."SourceEducationOrganizationId" = OLD."LocalEducationAgencyId"
         ) AS targets
     );
 
     DELETE FROM "auth"."EducationOrganizationIdToEducationOrganizationId"
-    WHERE "SourceEducationOrganizationId" = OLD."EducationOrganizationId" AND "TargetEducationOrganizationId" = OLD."EducationOrganizationId";
+    WHERE "SourceEducationOrganizationId" = OLD."LocalEducationAgencyId" AND "TargetEducationOrganizationId" = OLD."LocalEducationAgencyId";
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
@@ -81,7 +81,7 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_LocalEducationAgency_AuthHierarchy_Insert"
 RETURNS TRIGGER AS $$
 BEGIN
     INSERT INTO "auth"."EducationOrganizationIdToEducationOrganizationId" ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
-    VALUES (NEW."EducationOrganizationId", NEW."EducationOrganizationId");
+    VALUES (NEW."LocalEducationAgencyId", NEW."LocalEducationAgencyId");
 
     INSERT INTO "auth"."EducationOrganizationIdToEducationOrganizationId" ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
     SELECT sources."SourceEducationOrganizationId", targets."TargetEducationOrganizationId"
@@ -89,7 +89,7 @@ BEGIN
         SELECT tuples."SourceEducationOrganizationId"
         FROM "edfi"."EducationServiceCenter" AS parent
             INNER JOIN "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
-                ON parent."EducationOrganizationId" = tuples."TargetEducationOrganizationId"
+                ON parent."EducationServiceCenterId" = tuples."TargetEducationOrganizationId"
         WHERE parent."DocumentId" = NEW."EducationServiceCenter_DocumentId"
             AND NEW."EducationServiceCenter_DocumentId" IS NOT NULL
 
@@ -98,7 +98,7 @@ BEGIN
         SELECT tuples."SourceEducationOrganizationId"
         FROM "edfi"."LocalEducationAgency" AS parent
             INNER JOIN "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
-                ON parent."EducationOrganizationId" = tuples."TargetEducationOrganizationId"
+                ON parent."LocalEducationAgencyId" = tuples."TargetEducationOrganizationId"
         WHERE parent."DocumentId" = NEW."ParentLocalEducationAgency_DocumentId"
             AND NEW."ParentLocalEducationAgency_DocumentId" IS NOT NULL
 
@@ -107,7 +107,7 @@ BEGIN
         SELECT tuples."SourceEducationOrganizationId"
         FROM "edfi"."StateEducationAgency" AS parent
             INNER JOIN "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
-                ON parent."EducationOrganizationId" = tuples."TargetEducationOrganizationId"
+                ON parent."StateEducationAgencyId" = tuples."TargetEducationOrganizationId"
         WHERE parent."DocumentId" = NEW."StateEducationAgency_DocumentId"
             AND NEW."StateEducationAgency_DocumentId" IS NOT NULL
     ) AS sources
@@ -115,7 +115,7 @@ BEGIN
     (
         SELECT tuples."TargetEducationOrganizationId"
         FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
-        WHERE tuples."SourceEducationOrganizationId" = NEW."EducationOrganizationId"
+        WHERE tuples."SourceEducationOrganizationId" = NEW."LocalEducationAgencyId"
     ) AS targets;
     RETURN NULL;
 END;
@@ -137,7 +137,7 @@ BEGIN
             SELECT tuples."SourceEducationOrganizationId"
             FROM "edfi"."EducationServiceCenter" AS parent
                 INNER JOIN "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
-                    ON parent."EducationOrganizationId" = tuples."TargetEducationOrganizationId"
+                    ON parent."EducationServiceCenterId" = tuples."TargetEducationOrganizationId"
             WHERE parent."DocumentId" = OLD."EducationServiceCenter_DocumentId"
                 AND OLD."EducationServiceCenter_DocumentId" IS NOT NULL
                 AND (NEW."EducationServiceCenter_DocumentId" IS NULL OR OLD."EducationServiceCenter_DocumentId" <> NEW."EducationServiceCenter_DocumentId")
@@ -147,7 +147,7 @@ BEGIN
             SELECT tuples."SourceEducationOrganizationId"
             FROM "edfi"."LocalEducationAgency" AS parent
                 INNER JOIN "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
-                    ON parent."EducationOrganizationId" = tuples."TargetEducationOrganizationId"
+                    ON parent."LocalEducationAgencyId" = tuples."TargetEducationOrganizationId"
             WHERE parent."DocumentId" = OLD."ParentLocalEducationAgency_DocumentId"
                 AND OLD."ParentLocalEducationAgency_DocumentId" IS NOT NULL
                 AND (NEW."ParentLocalEducationAgency_DocumentId" IS NULL OR OLD."ParentLocalEducationAgency_DocumentId" <> NEW."ParentLocalEducationAgency_DocumentId")
@@ -157,7 +157,7 @@ BEGIN
             SELECT tuples."SourceEducationOrganizationId"
             FROM "edfi"."StateEducationAgency" AS parent
                 INNER JOIN "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
-                    ON parent."EducationOrganizationId" = tuples."TargetEducationOrganizationId"
+                    ON parent."StateEducationAgencyId" = tuples."TargetEducationOrganizationId"
             WHERE parent."DocumentId" = OLD."StateEducationAgency_DocumentId"
                 AND OLD."StateEducationAgency_DocumentId" IS NOT NULL
                 AND (NEW."StateEducationAgency_DocumentId" IS NULL OR OLD."StateEducationAgency_DocumentId" <> NEW."StateEducationAgency_DocumentId")
@@ -167,7 +167,7 @@ BEGIN
             SELECT tuples."SourceEducationOrganizationId"
             FROM "edfi"."EducationServiceCenter" AS parent
                 INNER JOIN "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
-                    ON parent."EducationOrganizationId" = tuples."TargetEducationOrganizationId"
+                    ON parent."EducationServiceCenterId" = tuples."TargetEducationOrganizationId"
             WHERE parent."DocumentId" = NEW."EducationServiceCenter_DocumentId"
 
             EXCEPT
@@ -175,7 +175,7 @@ BEGIN
             SELECT tuples."SourceEducationOrganizationId"
             FROM "edfi"."LocalEducationAgency" AS parent
                 INNER JOIN "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
-                    ON parent."EducationOrganizationId" = tuples."TargetEducationOrganizationId"
+                    ON parent."LocalEducationAgencyId" = tuples."TargetEducationOrganizationId"
             WHERE parent."DocumentId" = NEW."ParentLocalEducationAgency_DocumentId"
 
             EXCEPT
@@ -183,14 +183,14 @@ BEGIN
             SELECT tuples."SourceEducationOrganizationId"
             FROM "edfi"."StateEducationAgency" AS parent
                 INNER JOIN "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
-                    ON parent."EducationOrganizationId" = tuples."TargetEducationOrganizationId"
+                    ON parent."StateEducationAgencyId" = tuples."TargetEducationOrganizationId"
             WHERE parent."DocumentId" = NEW."StateEducationAgency_DocumentId"
         ) AS sources
         CROSS JOIN
         (
             SELECT tuples."TargetEducationOrganizationId"
             FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
-            WHERE tuples."SourceEducationOrganizationId" = NEW."EducationOrganizationId"
+            WHERE tuples."SourceEducationOrganizationId" = NEW."LocalEducationAgencyId"
         ) AS targets
     );
 
@@ -200,7 +200,7 @@ BEGIN
         SELECT tuples."SourceEducationOrganizationId"
         FROM "edfi"."EducationServiceCenter" AS parent
             INNER JOIN "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
-                ON parent."EducationOrganizationId" = tuples."TargetEducationOrganizationId"
+                ON parent."EducationServiceCenterId" = tuples."TargetEducationOrganizationId"
         WHERE parent."DocumentId" = NEW."EducationServiceCenter_DocumentId"
             AND ((OLD."EducationServiceCenter_DocumentId" IS NULL AND NEW."EducationServiceCenter_DocumentId" IS NOT NULL) OR OLD."EducationServiceCenter_DocumentId" <> NEW."EducationServiceCenter_DocumentId")
 
@@ -209,7 +209,7 @@ BEGIN
         SELECT tuples."SourceEducationOrganizationId"
         FROM "edfi"."LocalEducationAgency" AS parent
             INNER JOIN "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
-                ON parent."EducationOrganizationId" = tuples."TargetEducationOrganizationId"
+                ON parent."LocalEducationAgencyId" = tuples."TargetEducationOrganizationId"
         WHERE parent."DocumentId" = NEW."ParentLocalEducationAgency_DocumentId"
             AND ((OLD."ParentLocalEducationAgency_DocumentId" IS NULL AND NEW."ParentLocalEducationAgency_DocumentId" IS NOT NULL) OR OLD."ParentLocalEducationAgency_DocumentId" <> NEW."ParentLocalEducationAgency_DocumentId")
 
@@ -218,7 +218,7 @@ BEGIN
         SELECT tuples."SourceEducationOrganizationId"
         FROM "edfi"."StateEducationAgency" AS parent
             INNER JOIN "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
-                ON parent."EducationOrganizationId" = tuples."TargetEducationOrganizationId"
+                ON parent."StateEducationAgencyId" = tuples."TargetEducationOrganizationId"
         WHERE parent."DocumentId" = NEW."StateEducationAgency_DocumentId"
             AND ((OLD."StateEducationAgency_DocumentId" IS NULL AND NEW."StateEducationAgency_DocumentId" IS NOT NULL) OR OLD."StateEducationAgency_DocumentId" <> NEW."StateEducationAgency_DocumentId")
     ) AS sources
@@ -226,7 +226,7 @@ BEGIN
     (
         SELECT tuples."TargetEducationOrganizationId"
         FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
-        WHERE tuples."SourceEducationOrganizationId" = NEW."EducationOrganizationId"
+        WHERE tuples."SourceEducationOrganizationId" = NEW."LocalEducationAgencyId"
     ) AS targets
     ON CONFLICT ("SourceEducationOrganizationId", "TargetEducationOrganizationId") DO NOTHING;
     RETURN NULL;
@@ -249,7 +249,7 @@ BEGIN
             SELECT tuples."SourceEducationOrganizationId"
             FROM "edfi"."LocalEducationAgency" AS parent
                 INNER JOIN "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
-                    ON parent."EducationOrganizationId" = tuples."TargetEducationOrganizationId"
+                    ON parent."LocalEducationAgencyId" = tuples."TargetEducationOrganizationId"
             WHERE parent."DocumentId" = OLD."LocalEducationAgency_DocumentId"
                 AND OLD."LocalEducationAgency_DocumentId" IS NOT NULL
         ) AS sources
@@ -257,12 +257,12 @@ BEGIN
         (
             SELECT tuples."TargetEducationOrganizationId"
             FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
-            WHERE tuples."SourceEducationOrganizationId" = OLD."EducationOrganizationId"
+            WHERE tuples."SourceEducationOrganizationId" = OLD."SchoolId"
         ) AS targets
     );
 
     DELETE FROM "auth"."EducationOrganizationIdToEducationOrganizationId"
-    WHERE "SourceEducationOrganizationId" = OLD."EducationOrganizationId" AND "TargetEducationOrganizationId" = OLD."EducationOrganizationId";
+    WHERE "SourceEducationOrganizationId" = OLD."SchoolId" AND "TargetEducationOrganizationId" = OLD."SchoolId";
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
@@ -277,7 +277,7 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_School_AuthHierarchy_Insert"()
 RETURNS TRIGGER AS $$
 BEGIN
     INSERT INTO "auth"."EducationOrganizationIdToEducationOrganizationId" ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
-    VALUES (NEW."EducationOrganizationId", NEW."EducationOrganizationId");
+    VALUES (NEW."SchoolId", NEW."SchoolId");
 
     INSERT INTO "auth"."EducationOrganizationIdToEducationOrganizationId" ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
     SELECT sources."SourceEducationOrganizationId", targets."TargetEducationOrganizationId"
@@ -285,7 +285,7 @@ BEGIN
         SELECT tuples."SourceEducationOrganizationId"
         FROM "edfi"."LocalEducationAgency" AS parent
             INNER JOIN "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
-                ON parent."EducationOrganizationId" = tuples."TargetEducationOrganizationId"
+                ON parent."LocalEducationAgencyId" = tuples."TargetEducationOrganizationId"
         WHERE parent."DocumentId" = NEW."LocalEducationAgency_DocumentId"
             AND NEW."LocalEducationAgency_DocumentId" IS NOT NULL
     ) AS sources
@@ -293,7 +293,7 @@ BEGIN
     (
         SELECT tuples."TargetEducationOrganizationId"
         FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
-        WHERE tuples."SourceEducationOrganizationId" = NEW."EducationOrganizationId"
+        WHERE tuples."SourceEducationOrganizationId" = NEW."SchoolId"
     ) AS targets;
     RETURN NULL;
 END;
@@ -315,7 +315,7 @@ BEGIN
             SELECT tuples."SourceEducationOrganizationId"
             FROM "edfi"."LocalEducationAgency" AS parent
                 INNER JOIN "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
-                    ON parent."EducationOrganizationId" = tuples."TargetEducationOrganizationId"
+                    ON parent."LocalEducationAgencyId" = tuples."TargetEducationOrganizationId"
             WHERE parent."DocumentId" = OLD."LocalEducationAgency_DocumentId"
                 AND OLD."LocalEducationAgency_DocumentId" IS NOT NULL
                 AND (NEW."LocalEducationAgency_DocumentId" IS NULL OR OLD."LocalEducationAgency_DocumentId" <> NEW."LocalEducationAgency_DocumentId")
@@ -325,14 +325,14 @@ BEGIN
             SELECT tuples."SourceEducationOrganizationId"
             FROM "edfi"."LocalEducationAgency" AS parent
                 INNER JOIN "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
-                    ON parent."EducationOrganizationId" = tuples."TargetEducationOrganizationId"
+                    ON parent."LocalEducationAgencyId" = tuples."TargetEducationOrganizationId"
             WHERE parent."DocumentId" = NEW."LocalEducationAgency_DocumentId"
         ) AS sources
         CROSS JOIN
         (
             SELECT tuples."TargetEducationOrganizationId"
             FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
-            WHERE tuples."SourceEducationOrganizationId" = NEW."EducationOrganizationId"
+            WHERE tuples."SourceEducationOrganizationId" = NEW."SchoolId"
         ) AS targets
     );
 
@@ -342,7 +342,7 @@ BEGIN
         SELECT tuples."SourceEducationOrganizationId"
         FROM "edfi"."LocalEducationAgency" AS parent
             INNER JOIN "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
-                ON parent."EducationOrganizationId" = tuples."TargetEducationOrganizationId"
+                ON parent."LocalEducationAgencyId" = tuples."TargetEducationOrganizationId"
         WHERE parent."DocumentId" = NEW."LocalEducationAgency_DocumentId"
             AND ((OLD."LocalEducationAgency_DocumentId" IS NULL AND NEW."LocalEducationAgency_DocumentId" IS NOT NULL) OR OLD."LocalEducationAgency_DocumentId" <> NEW."LocalEducationAgency_DocumentId")
     ) AS sources
@@ -350,7 +350,7 @@ BEGIN
     (
         SELECT tuples."TargetEducationOrganizationId"
         FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
-        WHERE tuples."SourceEducationOrganizationId" = NEW."EducationOrganizationId"
+        WHERE tuples."SourceEducationOrganizationId" = NEW."SchoolId"
     ) AS targets
     ON CONFLICT ("SourceEducationOrganizationId", "TargetEducationOrganizationId") DO NOTHING;
     RETURN NULL;
@@ -367,7 +367,7 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_StateEducationAgency_AuthHierarchy_Delete"
 RETURNS TRIGGER AS $$
 BEGIN
     DELETE FROM "auth"."EducationOrganizationIdToEducationOrganizationId"
-    WHERE "SourceEducationOrganizationId" = OLD."EducationOrganizationId" AND "TargetEducationOrganizationId" = OLD."EducationOrganizationId";
+    WHERE "SourceEducationOrganizationId" = OLD."StateEducationAgencyId" AND "TargetEducationOrganizationId" = OLD."StateEducationAgencyId";
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
@@ -382,7 +382,7 @@ CREATE OR REPLACE FUNCTION "edfi"."TF_StateEducationAgency_AuthHierarchy_Insert"
 RETURNS TRIGGER AS $$
 BEGIN
     INSERT INTO "auth"."EducationOrganizationIdToEducationOrganizationId" ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
-    VALUES (NEW."EducationOrganizationId", NEW."EducationOrganizationId");
+    VALUES (NEW."StateEducationAgencyId", NEW."StateEducationAgencyId");
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
