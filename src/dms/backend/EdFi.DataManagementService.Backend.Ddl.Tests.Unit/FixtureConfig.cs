@@ -92,6 +92,17 @@ public static class FixtureConfigReader
             }
         }
 
+        var duplicateDialect = config
+            .Dialects.GroupBy(d => d, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault(g => g.Count() > 1);
+
+        if (duplicateDialect is not null)
+        {
+            throw new InvalidOperationException(
+                $"Duplicate dialect '{duplicateDialect.Key}' in fixture.json. Each dialect must appear only once."
+            );
+        }
+
         if (config.BuildMappingPack)
         {
             throw new NotSupportedException(
