@@ -72,7 +72,9 @@ public static class LoggingSanitizer
     }
 
     /// <summary>
-    /// Sanitizes input for console/stderr output by stripping control characters only.
+    /// Sanitizes input for console/stderr output by stripping control characters,
+    /// except newline (\n) and carriage return (\r) which are preserved for
+    /// multi-line output readability (e.g., diff reports from SeedValidator).
     /// Unlike <see cref="SanitizeForLogging"/> which uses a strict whitelist to prevent
     /// structured-log template injection, this method preserves all printable characters
     /// (quotes, parentheses, brackets, etc.) so that file paths and exception messages
@@ -91,7 +93,7 @@ public static class LoggingSanitizer
 
         foreach (char c in input)
         {
-            if (char.IsControl(c))
+            if (char.IsControl(c) && c != '\n' && c != '\r')
             {
                 hasControl = true;
             }
@@ -120,7 +122,7 @@ public static class LoggingSanitizer
                 int index = 0;
                 foreach (char c in source)
                 {
-                    if (!char.IsControl(c))
+                    if (!char.IsControl(c) || c == '\n' || c == '\r')
                     {
                         span[index++] = c;
                     }
