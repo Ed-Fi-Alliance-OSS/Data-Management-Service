@@ -718,6 +718,7 @@ public class Given_SeedDmlEmitter_EmitPreflightOnly_With_PgsqlDialect
     public void It_should_emit_hash_mismatch_check()
     {
         _sql.Should().Contain("EffectiveSchemaHash mismatch");
+        _sql.Should().Contain("to_regclass");
         _sql.Should().Contain("RAISE EXCEPTION");
         _sql.Should().Contain("_stored_hash");
         _sql.Should().Contain("but expected");
@@ -759,6 +760,7 @@ public class Given_SeedDmlEmitter_EmitPreflightOnly_With_MssqlDialect
     public void It_should_emit_hash_mismatch_check()
     {
         _sql.Should().Contain("EffectiveSchemaHash mismatch");
+        _sql.Should().Contain("OBJECT_ID");
         _sql.Should().Contain("THROW 50000");
         _sql.Should().Contain("@preflight_stored_hash");
         _sql.Should().Contain("but expected ''', N'abc123def456'");

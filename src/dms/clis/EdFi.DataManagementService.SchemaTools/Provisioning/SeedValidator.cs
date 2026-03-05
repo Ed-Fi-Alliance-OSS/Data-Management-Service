@@ -360,5 +360,7 @@ public static class SeedValidator
         return ToDictionaryOrThrow(source, keySelector, x => x, tableName, keyColumnName, comparer);
     }
 
-    private static string Sanitize(string? input) => LoggingSanitizer.SanitizeForConsole(input);
+    private static string Sanitize(string? input) =>
+        // Strip all control characters, including newlines, so diff values can't inject extra lines.
+        LoggingSanitizer.SanitizeForConsole(input).Replace("\r", string.Empty).Replace("\n", string.Empty);
 }

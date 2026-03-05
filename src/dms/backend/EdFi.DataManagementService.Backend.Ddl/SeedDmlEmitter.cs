@@ -110,6 +110,9 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
 
         if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
+            // Preflight runs before core DDL; on a fresh database, the EffectiveSchema table may not exist yet.
+            var regclassLiteral = _dialect.QualifyTable(_effectiveSchemaTable).Replace("'", "''");
+
             writer.AppendLine("DO $$");
             writer.AppendLine("DECLARE");
             using (writer.Indent())
@@ -119,14 +122,19 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             writer.AppendLine("BEGIN");
             using (writer.Indent())
             {
-                writer.AppendLine($"SELECT {Quote("EffectiveSchemaHash")} INTO _stored_hash FROM {table}");
-                writer.AppendLine($"WHERE {Quote("EffectiveSchemaSingletonId")} = 1;");
-                writer.AppendLine($"IF _stored_hash IS NOT NULL AND _stored_hash <> {hashLiteral} THEN");
+                writer.AppendLine($"IF to_regclass('{regclassLiteral}') IS NOT NULL THEN");
                 using (writer.Indent())
                 {
-                    writer.AppendLine(
-                        $"RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database has ''%'' but expected ''%''', _stored_hash, {hashLiteral};"
-                    );
+                    writer.AppendLine($"SELECT {Quote("EffectiveSchemaHash")} INTO _stored_hash FROM {table}");
+                    writer.AppendLine($"WHERE {Quote("EffectiveSchemaSingletonId")} = 1;");
+                    writer.AppendLine($"IF _stored_hash IS NOT NULL AND _stored_hash <> {hashLiteral} THEN");
+                    using (writer.Indent())
+                    {
+                        writer.AppendLine(
+                            $"RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database has ''%'' but expected ''%''', _stored_hash, {hashLiteral};"
+                        );
+                    }
+                    writer.AppendLine("END IF;");
                 }
                 writer.AppendLine("END IF;");
             }
@@ -136,18 +144,24 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
         {
             writer.AppendLine("DECLARE @preflight_stored_hash nvarchar(200);");
             writer.AppendLine();
-            writer.AppendLine($"SELECT @preflight_stored_hash = {Quote("EffectiveSchemaHash")} FROM {table}");
-            writer.AppendLine($"WHERE {Quote("EffectiveSchemaSingletonId")} = 1;");
-            writer.AppendLine(
-                $"IF @preflight_stored_hash IS NOT NULL AND @preflight_stored_hash <> {hashLiteral}"
-            );
+            writer.AppendLine("IF OBJECT_ID(N'dms.EffectiveSchema', N'U') IS NOT NULL");
             writer.AppendLine("BEGIN");
             using (writer.Indent())
             {
+                writer.AppendLine($"SELECT @preflight_stored_hash = {Quote("EffectiveSchemaHash")} FROM {table}");
+                writer.AppendLine($"WHERE {Quote("EffectiveSchemaSingletonId")} = 1;");
                 writer.AppendLine(
-                    $"DECLARE @preflight_msg nvarchar(500) = CONCAT(N'EffectiveSchemaHash mismatch: database has ''', @preflight_stored_hash, N''' but expected ''', {hashLiteral}, N'''');"
+                    $"IF @preflight_stored_hash IS NOT NULL AND @preflight_stored_hash <> {hashLiteral}"
                 );
-                writer.AppendLine("THROW 50000, @preflight_msg, 1;");
+                writer.AppendLine("BEGIN");
+                using (writer.Indent())
+                {
+                    writer.AppendLine(
+                        $"DECLARE @preflight_msg nvarchar(500) = CONCAT(N'EffectiveSchemaHash mismatch: database has ''', @preflight_stored_hash, N''' but expected ''', {hashLiteral}, N'''');"
+                    );
+                    writer.AppendLine("THROW 50000, @preflight_msg, 1;");
+                }
+                writer.AppendLine("END");
             }
             writer.AppendLine("END");
         }
