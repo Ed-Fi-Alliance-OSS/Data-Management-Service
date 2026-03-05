@@ -3,8 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
 using System.Text.RegularExpressions;
-using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
@@ -15,9 +15,25 @@ namespace EdFi.DataManagementService.SchemaTools.Provisioning;
 /// SQL Server implementation of <see cref="IDatabaseProvisioner"/>.
 /// Uses Microsoft.Data.SqlClient for all database connectivity.
 /// </summary>
-public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisioner
+public partial class MssqlDatabaseProvisioner(ILogger logger) : DatabaseProvisionerBase(logger)
 {
-    public string GetDatabaseName(string connectionString)
+    private static readonly DialectSql _dialect = new(
+        EffectiveSchemaTableExistsSql: "SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dms' AND TABLE_NAME = 'EffectiveSchema'",
+        EffectiveSchemaHashSql: """SELECT [EffectiveSchemaHash] FROM [dms].[EffectiveSchema] WHERE [EffectiveSchemaSingletonId] = 1""",
+        SeedTableCheckSql: "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dms' AND TABLE_NAME IN ('ResourceKey', 'SchemaComponent')",
+        EffectiveSchemaCountAndHashSql: @"SELECT [ResourceKeyCount], [ResourceKeySeedHash] FROM [dms].[EffectiveSchema] WHERE [EffectiveSchemaSingletonId] = 1",
+        ResourceKeySelectSql: @"SELECT [ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion] FROM [dms].[ResourceKey] ORDER BY [ResourceKeyId]",
+        SchemaComponentSelectSql: @"SELECT [ProjectEndpointName], [ProjectName], [ProjectVersion], [IsExtensionProject] FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = @hash ORDER BY [ProjectEndpointName]",
+        MissingTableResourceKey: "[dms].[ResourceKey]",
+        MissingTableSchemaComponent: "[dms].[SchemaComponent]"
+    );
+
+    protected override DialectSql Dialect => _dialect;
+
+    protected override DbConnection CreateConnection(string connectionString) =>
+        new SqlConnection(connectionString);
+
+    public override string GetDatabaseName(string connectionString)
     {
         var builder = new SqlConnectionStringBuilder(connectionString);
         return string.IsNullOrWhiteSpace(builder.InitialCatalog)
@@ -27,13 +43,13 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
             : builder.InitialCatalog;
     }
 
-    public bool CreateDatabaseIfNotExists(string connectionString)
+    public override bool CreateDatabaseIfNotExists(string connectionString)
     {
         var targetDatabase = GetDatabaseName(connectionString);
 
         var builder = new SqlConnectionStringBuilder(connectionString);
 
-        logger.LogInformation(
+        Logger.LogInformation(
             "Checking if database exists: {DatabaseName}",
             LoggingSanitizer.SanitizeForLogging(targetDatabase)
         );
@@ -54,14 +70,14 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
 
         if (exists)
         {
-            logger.LogInformation(
+            Logger.LogInformation(
                 "Database already exists: {DatabaseName}",
                 LoggingSanitizer.SanitizeForLogging(targetDatabase)
             );
             return false;
         }
 
-        logger.LogInformation(
+        Logger.LogInformation(
             "Creating database: {DatabaseName}",
             LoggingSanitizer.SanitizeForLogging(targetDatabase)
         );
@@ -79,7 +95,7 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
         {
             // 1801 = "Database already exists" — a concurrent process created it
             // between our check and our CREATE. Treat as "already existed".
-            logger.LogInformation(
+            Logger.LogInformation(
                 ex,
                 "Database was created concurrently by another process: {DatabaseName}",
                 LoggingSanitizer.SanitizeForLogging(targetDatabase)
@@ -87,7 +103,7 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
             return false;
         }
 
-        logger.LogInformation(
+        Logger.LogInformation(
             "Database created successfully: {DatabaseName}",
             LoggingSanitizer.SanitizeForLogging(targetDatabase)
         );
@@ -95,11 +111,15 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
         return true;
     }
 
-    public void ExecuteInTransaction(string connectionString, string sql, int commandTimeoutSeconds = 300)
+    public override void ExecuteInTransaction(
+        string connectionString,
+        string sql,
+        int commandTimeoutSeconds = 300
+    )
     {
         var targetDatabase = GetDatabaseName(connectionString);
 
-        logger.LogInformation(
+        Logger.LogInformation(
             "Executing DDL in transaction against database: {DatabaseName}",
             LoggingSanitizer.SanitizeForLogging(targetDatabase)
         );
@@ -139,7 +159,7 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
             }
             catch (Exception rollbackEx)
             {
-                logger.LogError(
+                Logger.LogError(
                     rollbackEx,
                     "Failed to roll back transaction for database: {DatabaseName}",
                     LoggingSanitizer.SanitizeForLogging(targetDatabase)
@@ -157,7 +177,7 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
         // stale session state after DDL schema changes.
         SqlConnection.ClearPool(connection);
 
-        logger.LogInformation(
+        Logger.LogInformation(
             "DDL executed successfully against database: {DatabaseName}",
             LoggingSanitizer.SanitizeForLogging(targetDatabase)
         );
@@ -178,183 +198,7 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
     [GeneratedRegex(@"^\s*GO\s*$", RegexOptions.Multiline | RegexOptions.IgnoreCase)]
     private static partial Regex GoBatchSeparatorPattern();
 
-    public void PreflightSchemaHashCheck(string connectionString, string expectedHash)
-    {
-        using var connection = new SqlConnection(connectionString);
-        connection.Open();
-
-        // Check if the dms.EffectiveSchema table exists
-        using var existsCommand = connection.CreateCommand();
-        existsCommand.CommandText =
-            "SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dms' AND TABLE_NAME = 'EffectiveSchema'";
-        if (existsCommand.ExecuteScalar() is null)
-        {
-            return; // New database — no table yet, proceed with provisioning
-        }
-
-        // Table exists — check the stored hash
-        using var hashCommand = connection.CreateCommand();
-        hashCommand.CommandText =
-            """SELECT [EffectiveSchemaHash] FROM [dms].[EffectiveSchema] WHERE [EffectiveSchemaSingletonId] = 1""";
-        var storedHash = hashCommand.ExecuteScalar() as string;
-
-        // Table exists but singleton row is missing — partial/corrupt state
-        if (storedHash is null)
-        {
-            throw new InvalidOperationException(
-                "The dms.EffectiveSchema table exists but contains no singleton row. "
-                    + "This indicates a partial or corrupt provisioning state. "
-                    + "Drop and recreate the database before re-provisioning."
-            );
-        }
-
-        SchemaHashChecker.ValidateOrThrow(storedHash, expectedHash, logger);
-    }
-
-    public void PreflightSeedValidation(string connectionString, EffectiveSchemaInfo expectedSchema)
-    {
-        using var connection = new SqlConnection(connectionString);
-        connection.Open();
-
-        // Check if the dms.EffectiveSchema table exists — if not, this is a fresh database
-        using var existsCommand = connection.CreateCommand();
-        existsCommand.CommandText =
-            "SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dms' AND TABLE_NAME = 'EffectiveSchema'";
-        if (existsCommand.ExecuteScalar() is null)
-        {
-            return;
-        }
-
-        // Read the current EffectiveSchemaHash to scope the SchemaComponent query
-        using var hashCommand = connection.CreateCommand();
-        hashCommand.CommandText =
-            """SELECT [EffectiveSchemaHash] FROM [dms].[EffectiveSchema] WHERE [EffectiveSchemaSingletonId] = 1""";
-        var currentHash = hashCommand.ExecuteScalar() as string;
-
-        // Table exists but singleton row is missing — partial/corrupt state
-        if (currentHash is null)
-        {
-            throw new InvalidOperationException(
-                "The dms.EffectiveSchema table exists but contains no singleton row. "
-                    + "This indicates a partial or corrupt provisioning state. "
-                    + "Drop and recreate the database before re-provisioning."
-            );
-        }
-
-        // Guard: ensure the stored hash matches the expected hash.
-        // PreflightSchemaHashCheck should have already caught mismatches, but this
-        // makes PreflightSeedValidation self-contained in case the call order changes.
-        SchemaHashChecker.ValidateOrThrow(currentHash, expectedSchema.EffectiveSchemaHash, logger);
-
-        // --- Check that required seed tables exist ---
-        var missingTables = new List<string>();
-        using (var tableCheckCommand = connection.CreateCommand())
-        {
-            tableCheckCommand.CommandText =
-                "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dms' AND TABLE_NAME IN ('ResourceKey', 'SchemaComponent')";
-            var foundTables = new HashSet<string>();
-            using var tableReader = tableCheckCommand.ExecuteReader();
-            while (tableReader.Read())
-            {
-                foundTables.Add(tableReader.GetString(0));
-            }
-
-            if (!foundTables.Contains("ResourceKey"))
-                missingTables.Add("[dms].[ResourceKey]");
-            if (!foundTables.Contains("SchemaComponent"))
-                missingTables.Add("[dms].[SchemaComponent]");
-        }
-
-        if (missingTables.Count > 0)
-        {
-            throw new InvalidOperationException(
-                $"The dms.EffectiveSchema table exists but the following required seed table(s) are missing: "
-                    + $"{string.Join(", ", missingTables)}. "
-                    + "This indicates a partial or corrupt provisioning state. "
-                    + "Drop and recreate the database before re-provisioning."
-            );
-        }
-
-        // --- Validate EffectiveSchema ResourceKeyCount and ResourceKeySeedHash ---
-        using (var esCommand = connection.CreateCommand())
-        {
-            esCommand.CommandText =
-                @"SELECT [ResourceKeyCount], [ResourceKeySeedHash] FROM [dms].[EffectiveSchema] WHERE [EffectiveSchemaSingletonId] = 1";
-            using var reader = esCommand.ExecuteReader();
-            if (reader.Read())
-            {
-                var storedCount = reader.GetInt16(0);
-                var storedHash = new byte[32];
-                reader.GetBytes(1, 0, storedHash, 0, 32);
-
-                SeedValidator.ValidateEffectiveSchemaOrThrow(
-                    storedCount,
-                    storedHash,
-                    expectedSchema.ResourceKeyCount,
-                    expectedSchema.ResourceKeySeedHash,
-                    logger
-                );
-            }
-        }
-
-        // --- Validate ResourceKey rows ---
-        var actualResourceKeys = new List<ResourceKeyRow>();
-        using (var rkCommand = connection.CreateCommand())
-        {
-            rkCommand.CommandText =
-                @"SELECT [ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion] FROM [dms].[ResourceKey] ORDER BY [ResourceKeyId]";
-            using var reader = rkCommand.ExecuteReader();
-            while (reader.Read())
-            {
-                actualResourceKeys.Add(
-                    new ResourceKeyRow(
-                        reader.GetInt16(0),
-                        reader.GetString(1),
-                        reader.GetString(2),
-                        reader.GetString(3)
-                    )
-                );
-            }
-        }
-
-        SeedValidator.ValidateResourceKeysOrThrow(
-            actualResourceKeys,
-            expectedSchema.ResourceKeysInIdOrder,
-            logger
-        );
-
-        // --- Validate SchemaComponent rows ---
-        var actualSchemaComponents = new List<SchemaComponentRow>();
-        using (var scCommand = connection.CreateCommand())
-        {
-            scCommand.CommandText =
-                @"SELECT [ProjectEndpointName], [ProjectName], [ProjectVersion], [IsExtensionProject] FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = @hash ORDER BY [ProjectEndpointName]";
-            var param = scCommand.CreateParameter();
-            param.ParameterName = "@hash";
-            param.Value = currentHash;
-            scCommand.Parameters.Add(param);
-            using var reader = scCommand.ExecuteReader();
-            while (reader.Read())
-            {
-                actualSchemaComponents.Add(
-                    new SchemaComponentRow(
-                        reader.GetString(0),
-                        reader.GetString(1),
-                        reader.GetString(2),
-                        reader.GetBoolean(3)
-                    )
-                );
-            }
-        }
-
-        SeedValidator.ValidateSchemaComponentsOrThrow(
-            actualSchemaComponents,
-            expectedSchema.SchemaComponentsInEndpointOrder,
-            logger
-        );
-    }
-
-    public void CheckOrConfigureMvcc(string connectionString, bool databaseWasCreated)
+    public override void CheckOrConfigureMvcc(string connectionString, bool databaseWasCreated)
     {
         var targetDatabase = GetDatabaseName(connectionString);
 
@@ -371,7 +215,7 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
             var quotedName = $"[{targetDatabase.Replace("]", "]]")}]";
 
             // Enable MVCC settings on the newly created database
-            logger.LogInformation(
+            Logger.LogInformation(
                 "Configuring MVCC isolation for new database: {DatabaseName}",
                 LoggingSanitizer.SanitizeForLogging(targetDatabase)
             );
@@ -384,7 +228,7 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
             snapshotCommand.CommandText = $"ALTER DATABASE {quotedName} SET ALLOW_SNAPSHOT_ISOLATION ON";
             snapshotCommand.ExecuteNonQuery();
 
-            logger.LogInformation(
+            Logger.LogInformation(
                 "MVCC isolation configured for database: {DatabaseName}",
                 LoggingSanitizer.SanitizeForLogging(targetDatabase)
             );
@@ -417,7 +261,7 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : IDatabaseProvisi
                     + "DMS strongly recommends enabling MVCC reads for correct concurrency behavior. "
                     + "Run: ALTER DATABASE [dbname] SET READ_COMMITTED_SNAPSHOT ON";
 
-                logger.LogWarning(
+                Logger.LogWarning(
                     "READ_COMMITTED_SNAPSHOT is OFF for database: {DatabaseName}",
                     LoggingSanitizer.SanitizeForLogging(targetDatabase)
                 );
