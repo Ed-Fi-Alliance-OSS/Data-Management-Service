@@ -1,0 +1,175 @@
+{
+  "dialect": "mssql",
+  "effective_schema_hash": "e68eb06e75b829edd10633e1077b04a29f02c23dba8cf704aaefbbb08706d4fe",
+  "relational_mapping_version": "v1",
+  "projects": [
+    {
+      "project_endpoint_name": "ed-fi",
+      "project_name": "Ed-Fi",
+      "project_version": "5.0.0",
+      "is_extension": false,
+      "physical_schema": "edfi"
+    }
+  ],
+  "resources": [
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "Person",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    }
+  ],
+  "abstract_identity_tables": [],
+  "abstract_union_views": [],
+  "indexes": [
+    {
+      "name": "PK_Person",
+      "table": {
+        "schema": "edfi",
+        "name": "Person"
+      },
+      "kind": "PrimaryKey",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_Person_NK",
+      "table": {
+        "schema": "edfi",
+        "name": "Person"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "PersonId"
+      ]
+    }
+  ],
+  "triggers": [
+    {
+      "name": "TR_Person_ReferentialIdentity",
+      "table": {
+        "schema": "edfi",
+        "name": "Person"
+      },
+      "kind": "ReferentialIdentityMaintenance",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "PersonId"
+      ],
+      "resource_key_id": 1,
+      "project_name": "Ed-Fi",
+      "resource_name": "Person",
+      "identity_elements": [
+        {
+          "column": "PersonId",
+          "identity_json_path": "$.personId"
+        }
+      ]
+    },
+    {
+      "name": "TR_Person_Stamp",
+      "table": {
+        "schema": "edfi",
+        "name": "Person"
+      },
+      "kind": "DocumentStamping",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "PersonId"
+      ]
+    }
+  ],
+  "resource_details": [
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "Person"
+      },
+      "physical_schema": "edfi",
+      "storage_kind": "RelationalTables",
+      "tables": [
+        {
+          "schema": "edfi",
+          "name": "Person",
+          "scope": "$",
+          "key_columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart"
+            }
+          ],
+          "columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "PersonId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": "$.personId",
+              "storage": {
+                "kind": "Stored"
+              }
+            }
+          ],
+          "key_unification_classes": [],
+          "descriptor_fk_deduplications": [],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_Person_NK",
+              "columns": [
+                "PersonId"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_Person_Document",
+              "columns": [
+                "DocumentId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Document"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            }
+          ]
+        }
+      ],
+      "key_unification_equality_constraints": {
+        "applied": [],
+        "redundant": [],
+        "ignored": [],
+        "ignored_by_reason": {},
+        "skipped": []
+      },
+      "document_reference_bindings": [],
+      "descriptor_edge_sources": [],
+      "extension_sites": []
+    }
+  ]
+}
