@@ -667,8 +667,9 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
             ColumnKind.DescriptorFk when column.SourceJsonPath is JsonPathExpression sourcePath =>
                 CreateDescriptorReferenceSource(
                     tableModel.Table,
+                    tableModel.JsonScope,
                     column.ColumnName,
-                    WritePlanJsonPathConventions.DeriveScopeRelativePath(tableModel.JsonScope, sourcePath),
+                    sourcePath,
                     writeSourceLookup
                 ),
             _ => CreateScalarOrPrecomputedSource(
@@ -737,8 +738,9 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     /// </summary>
     private static WriteValueSource CreateDescriptorReferenceSource(
         DbTableName table,
+        JsonPathExpression tableJsonScope,
         DbColumnName fkColumn,
-        JsonPathExpression relativePath,
+        JsonPathExpression sourcePath,
         WriteSourceLookup writeSourceLookup
     )
     {
@@ -753,9 +755,19 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
             )
         );
 
+        if (sourcePath.Canonical != matchingEdgeSource.DescriptorValuePath.Canonical)
+        {
+            throw new InvalidOperationException(
+                $"Cannot compile write plan for '{table}': descriptor source mismatch for column '{fkColumn.Value}'. DbColumnModel.SourceJsonPath '{sourcePath.Canonical}' does not match DescriptorEdgeSource.DescriptorValuePath '{matchingEdgeSource.DescriptorValuePath.Canonical}'."
+            );
+        }
+
         return new WriteValueSource.DescriptorReference(
             DescriptorResource: matchingEdgeSource.DescriptorResource,
-            RelativePath: relativePath,
+            RelativePath: WritePlanJsonPathConventions.DeriveScopeRelativePath(
+                tableJsonScope,
+                matchingEdgeSource.DescriptorValuePath
+            ),
             DescriptorValuePath: matchingEdgeSource.DescriptorValuePath
         );
     }

@@ -1370,6 +1370,44 @@ public abstract class WritePlanCompilerTestBase
         };
     }
 
+    protected static RelationalResourceModel CreateSingleTableModelWithMismatchedDescriptorSourcePath()
+    {
+        var model = CreateSingleTableModelCoveringWriteValueSourceKinds();
+        var childTableName = new DbTableName(new DbSchemaName("edfi"), "StudentAddress");
+        var descriptorColumnName = new DbColumnName("ProgramTypeDescriptorId");
+
+        var updatedTablesInDependencyOrder = model
+            .TablesInDependencyOrder.Select(table =>
+                table.Table.Equals(childTableName)
+                    ? table with
+                    {
+                        Columns =
+                        [
+                            .. table.Columns.Select(column =>
+                                column.ColumnName.Equals(descriptorColumnName)
+                                    ? column with
+                                    {
+                                        SourceJsonPath = CreatePath(
+                                            "$.addresses[*].programTypeCode",
+                                            new JsonPathSegment.Property("addresses"),
+                                            new JsonPathSegment.AnyArrayElement(),
+                                            new JsonPathSegment.Property("programTypeCode")
+                                        ),
+                                    }
+                                    : column
+                            ),
+                        ],
+                    }
+                    : table
+            )
+            .ToArray();
+
+        return model with
+        {
+            TablesInDependencyOrder = updatedTablesInDependencyOrder,
+        };
+    }
+
     protected static RelationalResourceModel CreateSingleTableModelWithDuplicateDescriptorEdgeSource()
     {
         var model = CreateSingleTableModelCoveringWriteValueSourceKinds();

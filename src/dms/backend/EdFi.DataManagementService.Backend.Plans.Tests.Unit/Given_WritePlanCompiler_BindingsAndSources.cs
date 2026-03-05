@@ -321,6 +321,19 @@ public class Given_WritePlanCompiler_BindingsAndSources : WritePlanCompilerTestB
     }
 
     [Test]
+    public void It_should_fail_fast_when_descriptor_source_path_mismatches_descriptor_edge_source_path()
+    {
+        var model = CreateSingleTableModelWithMismatchedDescriptorSourcePath();
+        var act = () => new WritePlanCompiler(SqlDialect.Pgsql).Compile(model);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile write plan for 'edfi.StudentAddress': descriptor source mismatch for column 'ProgramTypeDescriptorId'. DbColumnModel.SourceJsonPath '$.addresses[*].programTypeCode' does not match DescriptorEdgeSource.DescriptorValuePath '$.addresses[*].programTypeDescriptor'."
+            );
+    }
+
+    [Test]
     public void It_should_fail_fast_when_descriptor_edge_source_is_duplicated_for_descriptor_fk_column()
     {
         var model = CreateSingleTableModelWithDuplicateDescriptorEdgeSource();
