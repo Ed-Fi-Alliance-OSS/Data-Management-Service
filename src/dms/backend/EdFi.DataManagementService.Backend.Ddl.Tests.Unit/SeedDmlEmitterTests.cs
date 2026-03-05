@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
 using NUnit.Framework;
@@ -773,5 +774,201 @@ public class Given_SeedDmlEmitter_EmitPreflightOnly_With_MssqlDialect
     public void It_should_use_unix_line_endings()
     {
         _sql.Should().NotContain("\r\n");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// VALUES chunking tests (SQL Server 1000-row limit)
+// ═══════════════════════════════════════════════════════════════════
+
+internal static class ChunkingTestData
+{
+    internal static EffectiveSchemaInfo BuildLargeResourceKeySchema(int resourceKeyCount) =>
+        new(
+            ApiSchemaFormatVersion: "1.0.0",
+            RelationalMappingVersion: "1.0.0",
+            EffectiveSchemaHash: "abc123def456",
+            ResourceKeyCount: resourceKeyCount,
+            ResourceKeySeedHash:
+            [
+                0xAB,
+                0xCD,
+                0xEF,
+                0x01,
+                0x23,
+                0x45,
+                0x67,
+                0x89,
+                0xAB,
+                0xCD,
+                0xEF,
+                0x01,
+                0x23,
+                0x45,
+                0x67,
+                0x89,
+                0xAB,
+                0xCD,
+                0xEF,
+                0x01,
+                0x23,
+                0x45,
+                0x67,
+                0x89,
+                0xAB,
+                0xCD,
+                0xEF,
+                0x01,
+                0x23,
+                0x45,
+                0x67,
+                0x89,
+            ],
+            SchemaComponentsInEndpointOrder:
+            [
+                new SchemaComponentInfo("ed-fi", "Ed-Fi", "5.1.0", false, "hash1"),
+            ],
+            ResourceKeysInIdOrder: Enumerable
+                .Range(1, resourceKeyCount)
+                .Select(i => new ResourceKeyEntry(
+                    (short)i,
+                    new QualifiedResourceName("Ed-Fi", $"Resource{i}"),
+                    "5.1.0",
+                    false
+                ))
+                .ToList()
+        );
+}
+
+[TestFixture]
+public class Given_SeedDmlEmitter_With_MssqlDialect_And_Over_999_ResourceKeys
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var emitter = new SeedDmlEmitter(new MssqlDialect(new MssqlDialectRules()));
+        _ddl = emitter.Emit(ChunkingTestData.BuildLargeResourceKeySchema(1001));
+    }
+
+    [Test]
+    public void It_should_emit_union_all_between_chunks()
+    {
+        _ddl.Should().Contain("UNION ALL");
+    }
+
+    [Test]
+    public void It_should_have_multiple_values_blocks()
+    {
+        var valuesCount = Regex.Matches(_ddl, @"\bVALUES\b").Count;
+        // Each chunk emits a VALUES keyword; 1001 rows / 999 = 2 chunks per subquery invocation.
+        // The subquery is used twice (count check + diagnostic), so expect at least 4 VALUES keywords.
+        valuesCount.Should().BeGreaterThanOrEqualTo(4);
+    }
+
+    [Test]
+    public void It_should_use_chunk_alias_for_inner_blocks()
+    {
+        _ddl.Should().Contain(") AS chunk(");
+    }
+
+    [Test]
+    public void It_should_use_expected_alias_for_outer_wrapper()
+    {
+        _ddl.Should().Contain(") AS expected(");
+    }
+
+    [Test]
+    public void It_should_still_contain_where_clause_with_expected_alias()
+    {
+        _ddl.Should().Contain("WHERE expected.[ResourceKeyId] = rk.[ResourceKeyId]");
+    }
+}
+
+[TestFixture]
+public class Given_SeedDmlEmitter_With_PgsqlDialect_And_Over_999_ResourceKeys
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var emitter = new SeedDmlEmitter(new PgsqlDialect(new PgsqlDialectRules()));
+        _ddl = emitter.Emit(ChunkingTestData.BuildLargeResourceKeySchema(1001));
+    }
+
+    [Test]
+    public void It_should_emit_union_all_between_chunks()
+    {
+        _ddl.Should().Contain("UNION ALL");
+    }
+
+    [Test]
+    public void It_should_use_chunk_alias_for_inner_blocks()
+    {
+        _ddl.Should().Contain(") AS chunk(");
+    }
+
+    [Test]
+    public void It_should_use_expected_alias_for_outer_wrapper()
+    {
+        _ddl.Should().Contain(") AS expected(");
+    }
+
+    [Test]
+    public void It_should_still_use_pgsql_smallint_cast()
+    {
+        _ddl.Should().Contain("::smallint");
+    }
+}
+
+[TestFixture]
+public class Given_SeedDmlEmitter_With_MssqlDialect_And_Exactly_999_ResourceKeys
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var emitter = new SeedDmlEmitter(new MssqlDialect(new MssqlDialectRules()));
+        _ddl = emitter.Emit(ChunkingTestData.BuildLargeResourceKeySchema(999));
+    }
+
+    [Test]
+    public void It_should_not_emit_union_all()
+    {
+        _ddl.Should().NotContain("UNION ALL");
+    }
+
+    [Test]
+    public void It_should_not_use_chunk_alias()
+    {
+        _ddl.Should().NotContain(") AS chunk(");
+    }
+}
+
+[TestFixture]
+public class Given_SeedDmlEmitter_With_MssqlDialect_And_1000_ResourceKeys
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var emitter = new SeedDmlEmitter(new MssqlDialect(new MssqlDialectRules()));
+        _ddl = emitter.Emit(ChunkingTestData.BuildLargeResourceKeySchema(1000));
+    }
+
+    [Test]
+    public void It_should_emit_union_all_at_the_boundary()
+    {
+        _ddl.Should().Contain("UNION ALL");
+    }
+
+    [Test]
+    public void It_should_use_chunk_alias()
+    {
+        _ddl.Should().Contain(") AS chunk(");
     }
 }

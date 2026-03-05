@@ -35,6 +35,12 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
 {
     private readonly ISqlDialect _dialect = dialect ?? throw new ArgumentNullException(nameof(dialect));
 
+    /// <summary>
+    /// SQL Server limits VALUES table constructors to 1000 rows.
+    /// Chunks are capped at 999 to stay safely under the limit.
+    /// </summary>
+    private const int MaxValuesRows = 999;
+
     private static readonly DbTableName _resourceKeyTable = DmsTableNames.ResourceKey;
     private static readonly DbTableName _effectiveSchemaTable = DmsTableNames.EffectiveSchema;
     private static readonly DbTableName _schemaComponentTable = DmsTableNames.SchemaComponent;
@@ -688,66 +694,171 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
     /// <summary>
     /// Emits the VALUES subquery body for ResourceKey NOT EXISTS checks.
     /// Shared between the count query and the ID-collection query.
+    /// When the row count exceeds <see cref="MaxValuesRows"/>, the VALUES
+    /// clause is split into chunks joined with UNION ALL to stay within
+    /// the SQL Server 1000-row table constructor limit.
     /// </summary>
     private void EmitResourceKeyExpectedValuesSubquery(
         SqlWriter writer,
         IReadOnlyList<ResourceKeyEntry> resourceKeys
     )
     {
-        writer.AppendLine("SELECT 1 FROM (VALUES");
-        using (writer.Indent())
+        var columnList =
+            $"{Quote("ResourceKeyId")}, {Quote("ProjectName")}, {Quote("ResourceName")}, {Quote("ResourceVersion")}";
+
+        if (resourceKeys.Count > MaxValuesRows)
         {
-            for (var i = 0; i < resourceKeys.Count; i++)
+            writer.AppendLine("SELECT 1 FROM (");
+            using (writer.Indent())
             {
-                var rk = resourceKeys[i];
-                var comma = i < resourceKeys.Count - 1 ? "," : "";
-                var idLiteral = _dialect.RenderSmallintLiteral(rk.ResourceKeyId);
-                var idValue =
-                    _dialect.Rules.Dialect == SqlDialect.Pgsql ? $"{idLiteral}::smallint" : idLiteral;
-                writer.AppendLine(
-                    $"({idValue}, {_dialect.RenderStringLiteral(rk.Resource.ProjectName)}, {_dialect.RenderStringLiteral(rk.Resource.ResourceName)}, {_dialect.RenderStringLiteral(rk.ResourceVersion)}){comma}"
-                );
+                for (var chunkStart = 0; chunkStart < resourceKeys.Count; chunkStart += MaxValuesRows)
+                {
+                    if (chunkStart > 0)
+                    {
+                        writer.AppendLine("UNION ALL");
+                    }
+                    var chunkEnd = Math.Min(chunkStart + MaxValuesRows, resourceKeys.Count);
+                    EmitResourceKeyValuesBlock(writer, resourceKeys, chunkStart, chunkEnd, "chunk");
+                }
             }
+            writer.AppendLine($") AS expected({columnList})");
         }
-        writer.AppendLine(
-            $") AS expected({Quote("ResourceKeyId")}, {Quote("ProjectName")}, {Quote("ResourceName")}, {Quote("ResourceVersion")})"
-        );
+        else
+        {
+            writer.AppendLine("SELECT 1 FROM (VALUES");
+            using (writer.Indent())
+            {
+                EmitResourceKeyValueRows(writer, resourceKeys, 0, resourceKeys.Count);
+            }
+            writer.AppendLine($") AS expected({columnList})");
+        }
+
         writer.AppendLine($"WHERE expected.{Quote("ResourceKeyId")} = rk.{Quote("ResourceKeyId")}");
         writer.AppendLine($"AND expected.{Quote("ProjectName")} = rk.{Quote("ProjectName")}");
         writer.AppendLine($"AND expected.{Quote("ResourceName")} = rk.{Quote("ResourceName")}");
         writer.AppendLine($"AND expected.{Quote("ResourceVersion")} = rk.{Quote("ResourceVersion")}");
     }
 
+    private void EmitResourceKeyValuesBlock(
+        SqlWriter writer,
+        IReadOnlyList<ResourceKeyEntry> resourceKeys,
+        int start,
+        int end,
+        string alias
+    )
+    {
+        writer.AppendLine("SELECT * FROM (VALUES");
+        using (writer.Indent())
+        {
+            EmitResourceKeyValueRows(writer, resourceKeys, start, end);
+        }
+        writer.AppendLine(
+            $") AS {alias}({Quote("ResourceKeyId")}, {Quote("ProjectName")}, {Quote("ResourceName")}, {Quote("ResourceVersion")})"
+        );
+    }
+
+    private void EmitResourceKeyValueRows(
+        SqlWriter writer,
+        IReadOnlyList<ResourceKeyEntry> resourceKeys,
+        int start,
+        int end
+    )
+    {
+        for (var i = start; i < end; i++)
+        {
+            var rk = resourceKeys[i];
+            var comma = i < end - 1 ? "," : "";
+            var idLiteral = _dialect.RenderSmallintLiteral(rk.ResourceKeyId);
+            var idValue = _dialect.Rules.Dialect == SqlDialect.Pgsql ? $"{idLiteral}::smallint" : idLiteral;
+            writer.AppendLine(
+                $"({idValue}, {_dialect.RenderStringLiteral(rk.Resource.ProjectName)}, {_dialect.RenderStringLiteral(rk.Resource.ResourceName)}, {_dialect.RenderStringLiteral(rk.ResourceVersion)}){comma}"
+            );
+        }
+    }
+
     /// <summary>
     /// Emits the VALUES subquery body for SchemaComponent NOT EXISTS checks.
     /// Shared between the count query and the ID-collection query.
+    /// When the row count exceeds <see cref="MaxValuesRows"/>, the VALUES
+    /// clause is split into chunks joined with UNION ALL to stay within
+    /// the SQL Server 1000-row table constructor limit.
     /// </summary>
     private void EmitSchemaComponentExpectedValuesSubquery(
         SqlWriter writer,
         IReadOnlyList<SchemaComponentInfo> schemaComponents
     )
     {
-        writer.AppendLine("SELECT 1 FROM (VALUES");
-        using (writer.Indent())
+        var columnList =
+            $"{Quote("ProjectEndpointName")}, {Quote("ProjectName")}, {Quote("ProjectVersion")}, {Quote("IsExtensionProject")}";
+
+        if (schemaComponents.Count > MaxValuesRows)
         {
-            for (var i = 0; i < schemaComponents.Count; i++)
+            writer.AppendLine("SELECT 1 FROM (");
+            using (writer.Indent())
             {
-                var sc = schemaComponents[i];
-                var comma = i < schemaComponents.Count - 1 ? "," : "";
-                writer.AppendLine(
-                    $"({_dialect.RenderStringLiteral(sc.ProjectEndpointName)}, {_dialect.RenderStringLiteral(sc.ProjectName)}, {_dialect.RenderStringLiteral(sc.ProjectVersion)}, {_dialect.RenderBooleanLiteral(sc.IsExtensionProject)}){comma}"
-                );
+                for (var chunkStart = 0; chunkStart < schemaComponents.Count; chunkStart += MaxValuesRows)
+                {
+                    if (chunkStart > 0)
+                    {
+                        writer.AppendLine("UNION ALL");
+                    }
+                    var chunkEnd = Math.Min(chunkStart + MaxValuesRows, schemaComponents.Count);
+                    EmitSchemaComponentValuesBlock(writer, schemaComponents, chunkStart, chunkEnd, "chunk");
+                }
             }
+            writer.AppendLine($") AS expected({columnList})");
         }
-        writer.AppendLine(
-            $") AS expected({Quote("ProjectEndpointName")}, {Quote("ProjectName")}, {Quote("ProjectVersion")}, {Quote("IsExtensionProject")})"
-        );
+        else
+        {
+            writer.AppendLine("SELECT 1 FROM (VALUES");
+            using (writer.Indent())
+            {
+                EmitSchemaComponentValueRows(writer, schemaComponents, 0, schemaComponents.Count);
+            }
+            writer.AppendLine($") AS expected({columnList})");
+        }
+
         writer.AppendLine(
             $"WHERE expected.{Quote("ProjectEndpointName")} = sc.{Quote("ProjectEndpointName")}"
         );
         writer.AppendLine($"AND expected.{Quote("ProjectName")} = sc.{Quote("ProjectName")}");
         writer.AppendLine($"AND expected.{Quote("ProjectVersion")} = sc.{Quote("ProjectVersion")}");
         writer.AppendLine($"AND expected.{Quote("IsExtensionProject")} = sc.{Quote("IsExtensionProject")}");
+    }
+
+    private void EmitSchemaComponentValuesBlock(
+        SqlWriter writer,
+        IReadOnlyList<SchemaComponentInfo> schemaComponents,
+        int start,
+        int end,
+        string alias
+    )
+    {
+        writer.AppendLine("SELECT * FROM (VALUES");
+        using (writer.Indent())
+        {
+            EmitSchemaComponentValueRows(writer, schemaComponents, start, end);
+        }
+        writer.AppendLine(
+            $") AS {alias}({Quote("ProjectEndpointName")}, {Quote("ProjectName")}, {Quote("ProjectVersion")}, {Quote("IsExtensionProject")})"
+        );
+    }
+
+    private void EmitSchemaComponentValueRows(
+        SqlWriter writer,
+        IReadOnlyList<SchemaComponentInfo> schemaComponents,
+        int start,
+        int end
+    )
+    {
+        for (var i = start; i < end; i++)
+        {
+            var sc = schemaComponents[i];
+            var comma = i < end - 1 ? "," : "";
+            writer.AppendLine(
+                $"({_dialect.RenderStringLiteral(sc.ProjectEndpointName)}, {_dialect.RenderStringLiteral(sc.ProjectName)}, {_dialect.RenderStringLiteral(sc.ProjectVersion)}, {_dialect.RenderBooleanLiteral(sc.IsExtensionProject)}){comma}"
+            );
+        }
     }
 
     private string Quote(string identifier) => _dialect.QuoteIdentifier(identifier);
