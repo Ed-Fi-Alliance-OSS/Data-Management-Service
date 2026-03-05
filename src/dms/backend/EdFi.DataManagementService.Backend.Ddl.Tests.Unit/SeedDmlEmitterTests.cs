@@ -288,7 +288,7 @@ public class Given_SeedDmlEmitter_With_PgsqlDialect_And_SeedData
     public void It_should_include_resource_key_ids_in_content_mismatch_error()
     {
         _ddl.Should().Contain("ResourceKeyIds: %");
-        _ddl.Should().Contain("string_agg(sub.id, ', ' ORDER BY sub.id)");
+        _ddl.Should().Contain("string_agg(sub.id, ', ' ORDER BY sub.id_num)");
         _ddl.Should().Contain("LIMIT 10");
     }
 
@@ -432,7 +432,7 @@ public class Given_SeedDmlEmitter_With_MssqlDialect_And_SeedData
     {
         _ddl.Should().Contain("ResourceKeyIds: ");
         _ddl.Should()
-            .Contain("STRING_AGG(sub.[ResourceKeyId], N', ') WITHIN GROUP (ORDER BY sub.[ResourceKeyId])");
+            .Contain("STRING_AGG(sub.[ResourceKeyId], N', ') WITHIN GROUP (ORDER BY sub.[ResourceKeyIdNum])");
         _ddl.Should().Contain("TOP 10");
     }
 

@@ -257,11 +257,15 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
                 using (writer.Indent())
                 {
                     // Collect up to 10 mismatched ResourceKeyIds for diagnostics
-                    writer.AppendLine("SELECT string_agg(sub.id, ', ' ORDER BY sub.id) INTO _mismatched_ids");
+                    writer.AppendLine(
+                        "SELECT string_agg(sub.id, ', ' ORDER BY sub.id_num) INTO _mismatched_ids"
+                    );
                     writer.AppendLine("FROM (");
                     using (writer.Indent())
                     {
-                        writer.AppendLine($"SELECT rk.{Quote("ResourceKeyId")}::text AS id");
+                        writer.AppendLine(
+                            $"SELECT rk.{Quote("ResourceKeyId")}::text AS id, rk.{Quote("ResourceKeyId")} AS id_num"
+                        );
                         writer.AppendLine($"FROM {table} rk");
                         writer.AppendLine("WHERE NOT EXISTS (");
                         using (writer.Indent())
@@ -317,13 +321,13 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             {
                 // Collect up to 10 mismatched ResourceKeyIds for diagnostics
                 writer.AppendLine(
-                    $"SELECT @rk_mismatched_ids = STRING_AGG(sub.{Quote("ResourceKeyId")}, N', ') WITHIN GROUP (ORDER BY sub.{Quote("ResourceKeyId")})"
+                    $"SELECT @rk_mismatched_ids = STRING_AGG(sub.{Quote("ResourceKeyId")}, N', ') WITHIN GROUP (ORDER BY sub.{Quote("ResourceKeyIdNum")})"
                 );
                 writer.AppendLine("FROM (");
                 using (writer.Indent())
                 {
                     writer.AppendLine(
-                        $"SELECT TOP 10 CAST(rk.{Quote("ResourceKeyId")} AS nvarchar(10)) AS {Quote("ResourceKeyId")}"
+                        $"SELECT TOP 10 CAST(rk.{Quote("ResourceKeyId")} AS nvarchar(10)) AS {Quote("ResourceKeyId")}, rk.{Quote("ResourceKeyId")} AS {Quote("ResourceKeyIdNum")}"
                     );
                     writer.AppendLine($"FROM {table} rk");
                     writer.AppendLine("WHERE NOT EXISTS (");
