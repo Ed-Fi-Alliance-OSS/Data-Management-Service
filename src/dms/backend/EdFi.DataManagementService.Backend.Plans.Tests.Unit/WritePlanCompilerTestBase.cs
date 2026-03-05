@@ -157,11 +157,7 @@ public abstract class WritePlanCompilerTestBase
             JsonScope: new JsonPathExpression("$", []),
             Key: new TableKey(
                 ConstraintName: "PK_StudentCollision",
-                Columns:
-                [
-                    new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart),
-                    new DbKeyColumn(new DbColumnName("SchoolYear"), ColumnKind.ParentKeyPart),
-                ]
+                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
             ),
             Columns:
             [
@@ -181,12 +177,12 @@ public abstract class WritePlanCompilerTestBase
                     Kind: ColumnKind.ParentKeyPart,
                     ScalarType: new RelationalScalarType(ScalarKind.Int64),
                     IsNullable: false,
-                    SourceJsonPath: CreatePath("$.documentId", new JsonPathSegment.Property("documentId")),
+                    SourceJsonPath: null,
                     TargetResource: null
                 ),
                 new DbColumnModel(
                     ColumnName: new DbColumnName("SchoolYear"),
-                    Kind: ColumnKind.ParentKeyPart,
+                    Kind: ColumnKind.Scalar,
                     ScalarType: new RelationalScalarType(ScalarKind.Int32),
                     IsNullable: false,
                     SourceJsonPath: CreatePath("$.schoolYear", new JsonPathSegment.Property("schoolYear")),

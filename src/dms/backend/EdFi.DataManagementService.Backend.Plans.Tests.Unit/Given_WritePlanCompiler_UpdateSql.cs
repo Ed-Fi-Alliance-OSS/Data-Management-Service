@@ -78,10 +78,10 @@ public class Given_WritePlanCompiler_UpdateSql : WritePlanCompilerTestBase
                 UPDATE "edfi"."StudentCollision"
                 SET
                     "documentId" = @documentId,
+                    "SchoolYear" = @schoolYear,
                     "GradeLevel" = @gradeLevel
                 WHERE
                     ("DocumentId" = @documentId_2)
-                    AND ("SchoolYear" = @schoolYear)
                 ;
 
                 """
