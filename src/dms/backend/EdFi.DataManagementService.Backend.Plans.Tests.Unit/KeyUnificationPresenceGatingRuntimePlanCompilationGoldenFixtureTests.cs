@@ -107,11 +107,11 @@ public class Given_KeyUnificationPresenceGating_RuntimePlanCompilation_GoldenFix
         var compiler = new MappingSetCompiler();
         var mappingSets = new[]
         {
-            compiler.Compile(ThinSliceFixtureModelSetBuilder.Build(FixturePath, SqlDialect.Pgsql)),
-            compiler.Compile(ThinSliceFixtureModelSetBuilder.Build(FixturePath, SqlDialect.Mssql)),
+            compiler.Compile(RuntimePlanFixtureModelSetBuilder.Build(FixturePath, SqlDialect.Pgsql)),
+            compiler.Compile(RuntimePlanFixtureModelSetBuilder.Build(FixturePath, SqlDialect.Mssql)),
         };
 
-        return ThinSliceMappingSetManifestJsonEmitter.Emit(mappingSets);
+        return MappingSetManifestJsonEmitter.Emit(mappingSets);
     }
 
     private static IReadOnlyDictionary<string, IReadOnlyList<string>> ReadSqlHashesByMappingSetKey(
@@ -338,7 +338,7 @@ public class Given_KeyUnificationPresenceGating_RuntimePlanCompilation_Negative(
         bool reverseFixtureInputOrder
     )
     {
-        var modelSet = ThinSliceFixtureModelSetBuilder.Build(
+        var modelSet = RuntimePlanFixtureModelSetBuilder.Build(
             FixturePath,
             dialect,
             reverseResourceSchemaOrder,

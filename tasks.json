@@ -418,7 +418,7 @@
       "Run: rg -n \"ThinSliceMappingSetManifestJsonEmitter|ThinSliceFixtureModelSetBuilder\" src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit (ensure no references remain after rename)",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Fixtures / Authoritative",

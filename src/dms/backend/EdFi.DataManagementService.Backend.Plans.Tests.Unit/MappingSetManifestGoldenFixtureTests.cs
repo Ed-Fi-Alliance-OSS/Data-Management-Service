@@ -12,7 +12,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
 [TestFixture]
-public class Given_ThinSliceMappingSetManifest_GoldenFixture
+public class Given_MappingSetManifest_GoldenFixture
 {
     private const string FixturePath = "Fixtures/runtime-plan-compilation/ApiSchema.json";
     private string _diffOutput = null!;
@@ -73,10 +73,10 @@ public class Given_ThinSliceMappingSetManifest_GoldenFixture
         var compiler = new MappingSetCompiler();
         var mappingSets = new[]
         {
-            compiler.Compile(ThinSliceFixtureModelSetBuilder.Build(FixturePath, SqlDialect.Pgsql)),
-            compiler.Compile(ThinSliceFixtureModelSetBuilder.Build(FixturePath, SqlDialect.Mssql)),
+            compiler.Compile(RuntimePlanFixtureModelSetBuilder.Build(FixturePath, SqlDialect.Pgsql)),
+            compiler.Compile(RuntimePlanFixtureModelSetBuilder.Build(FixturePath, SqlDialect.Mssql)),
         };
 
-        return ThinSliceMappingSetManifestJsonEmitter.Emit(mappingSets);
+        return MappingSetManifestJsonEmitter.Emit(mappingSets);
     }
 }

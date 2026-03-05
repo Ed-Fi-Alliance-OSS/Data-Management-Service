@@ -12,7 +12,7 @@ using EdFi.DataManagementService.Backend.RelationalModel.Naming;
 
 namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
-internal static class ThinSliceMappingSetManifestJsonEmitter
+internal static class MappingSetManifestJsonEmitter
 {
     // Explicit \n keeps fixture output stable across platforms.
     private static readonly JsonWriterOptions _writerOptions = new() { Indented = true, NewLine = "\n" };

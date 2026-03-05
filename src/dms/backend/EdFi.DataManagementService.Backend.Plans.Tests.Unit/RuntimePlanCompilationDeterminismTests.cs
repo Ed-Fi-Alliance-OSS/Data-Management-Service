@@ -13,7 +13,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
 [TestFixture]
-public class Given_ThinSlice_RuntimePlanCompilation_Determinism
+public class Given_RuntimePlanCompilation_Determinism
 {
     private const string FixturePath = "Fixtures/runtime-plan-compilation/ApiSchema.json";
     private static readonly JsonSerializerOptions _compactJson = new() { WriteIndented = false };
@@ -62,14 +62,14 @@ public class Given_ThinSlice_RuntimePlanCompilation_Determinism
         var mappingSets = new[]
         {
             compiler.Compile(
-                ThinSliceFixtureModelSetBuilder.Build(
+                RuntimePlanFixtureModelSetBuilder.Build(
                     FixturePath,
                     SqlDialect.Pgsql,
                     reverseResourceSchemaOrder
                 )
             ),
             compiler.Compile(
-                ThinSliceFixtureModelSetBuilder.Build(
+                RuntimePlanFixtureModelSetBuilder.Build(
                     FixturePath,
                     SqlDialect.Mssql,
                     reverseResourceSchemaOrder
@@ -77,7 +77,7 @@ public class Given_ThinSlice_RuntimePlanCompilation_Determinism
             ),
         };
 
-        return ThinSliceMappingSetManifestJsonEmitter.Emit(mappingSets);
+        return MappingSetManifestJsonEmitter.Emit(mappingSets);
     }
 
     private static IReadOnlyDictionary<

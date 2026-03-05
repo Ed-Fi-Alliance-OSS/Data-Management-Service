@@ -11,7 +11,7 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
 [TestFixture(SqlDialect.Pgsql)]
 [TestFixture(SqlDialect.Mssql)]
-public class Given_ThinSliceFixtureModelSetBuilder_MultiProjectFixture(SqlDialect dialect)
+public class Given_RuntimePlanFixtureModelSetBuilder_MultiProjectFixture(SqlDialect dialect)
 {
     private const string FixturePath =
         "Fixtures/runtime-plan-compilation/multi-project-builder/fixture.manifest.json";
@@ -21,13 +21,13 @@ public class Given_ThinSliceFixtureModelSetBuilder_MultiProjectFixture(SqlDialec
     [SetUp]
     public void Setup()
     {
-        _modelSet = ThinSliceFixtureModelSetBuilder.Build(
+        _modelSet = RuntimePlanFixtureModelSetBuilder.Build(
             FixturePath,
             dialect,
             reverseResourceSchemaOrder: false,
             reverseFixtureInputOrder: false
         );
-        _modelSetWithReversedFixtureInputOrder = ThinSliceFixtureModelSetBuilder.Build(
+        _modelSetWithReversedFixtureInputOrder = RuntimePlanFixtureModelSetBuilder.Build(
             FixturePath,
             dialect,
             reverseResourceSchemaOrder: false,
@@ -107,7 +107,7 @@ public class Given_ThinSliceFixtureModelSetBuilder_MultiProjectFixture(SqlDialec
 
 [TestFixture(SqlDialect.Pgsql)]
 [TestFixture(SqlDialect.Mssql)]
-public class Given_ThinSliceFixtureModelSetBuilder_CollectionsNestedExtensionFixture(SqlDialect dialect)
+public class Given_RuntimePlanFixtureModelSetBuilder_CollectionsNestedExtensionFixture(SqlDialect dialect)
 {
     private const string FixturePath =
         "Fixtures/runtime-plan-compilation/collections-nested-extension/fixture.manifest.json";
@@ -117,7 +117,7 @@ public class Given_ThinSliceFixtureModelSetBuilder_CollectionsNestedExtensionFix
     [SetUp]
     public void Setup()
     {
-        var modelSet = ThinSliceFixtureModelSetBuilder.Build(
+        var modelSet = RuntimePlanFixtureModelSetBuilder.Build(
             FixturePath,
             dialect,
             reverseResourceSchemaOrder: false,
@@ -202,7 +202,7 @@ public class Given_ThinSliceFixtureModelSetBuilder_CollectionsNestedExtensionFix
 
 [TestFixture(SqlDialect.Pgsql)]
 [TestFixture(SqlDialect.Mssql)]
-public class Given_ThinSliceFixtureModelSetBuilder_KeyUnificationPresenceGatingFixture(SqlDialect dialect)
+public class Given_RuntimePlanFixtureModelSetBuilder_KeyUnificationPresenceGatingFixture(SqlDialect dialect)
 {
     private const string FixturePath =
         "Fixtures/runtime-plan-compilation/key-unification-presence-gating/fixture.manifest.json";
@@ -212,7 +212,7 @@ public class Given_ThinSliceFixtureModelSetBuilder_KeyUnificationPresenceGatingF
     [SetUp]
     public void Setup()
     {
-        var modelSet = ThinSliceFixtureModelSetBuilder.Build(
+        var modelSet = RuntimePlanFixtureModelSetBuilder.Build(
             FixturePath,
             dialect,
             reverseResourceSchemaOrder: false,

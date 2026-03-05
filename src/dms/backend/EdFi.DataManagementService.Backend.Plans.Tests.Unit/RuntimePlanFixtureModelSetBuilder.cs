@@ -13,7 +13,7 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
-internal static class ThinSliceFixtureModelSetBuilder
+internal static class RuntimePlanFixtureModelSetBuilder
 {
     private const string ProjectFileName = "EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj";
     private const string RelationalMappingVersion = "1.0.0";

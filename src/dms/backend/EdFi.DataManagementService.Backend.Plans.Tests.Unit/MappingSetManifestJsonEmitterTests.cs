@@ -13,7 +13,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
 [TestFixture]
-public class Given_ThinSliceMappingSetManifestJsonEmitter
+public class Given_MappingSetManifestJsonEmitter
 {
     private const string FixturePath = "Fixtures/runtime-plan-compilation/ApiSchema.json";
     private string _manifest = null!;
@@ -22,7 +22,7 @@ public class Given_ThinSliceMappingSetManifestJsonEmitter
     public void Setup()
     {
         var mappingSets = BuildPermutedMappingSets(reverseMappingSetOrder: true);
-        _manifest = ThinSliceMappingSetManifestJsonEmitter.Emit(mappingSets);
+        _manifest = MappingSetManifestJsonEmitter.Emit(mappingSets);
     }
 
     [Test]
@@ -43,8 +43,8 @@ public class Given_ThinSliceMappingSetManifestJsonEmitter
         var forwardInput = BuildPermutedMappingSets(reverseMappingSetOrder: false);
         var reverseInput = BuildPermutedMappingSets(reverseMappingSetOrder: true);
 
-        var manifestFromForwardInput = ThinSliceMappingSetManifestJsonEmitter.Emit(forwardInput);
-        var manifestFromReverseInput = ThinSliceMappingSetManifestJsonEmitter.Emit(reverseInput);
+        var manifestFromForwardInput = MappingSetManifestJsonEmitter.Emit(forwardInput);
+        var manifestFromReverseInput = MappingSetManifestJsonEmitter.Emit(reverseInput);
 
         manifestFromForwardInput.Should().Be(manifestFromReverseInput);
 
@@ -113,7 +113,7 @@ public class Given_ThinSliceMappingSetManifestJsonEmitter
     public void It_should_emit_order_by_key_columns_in_compiled_sql_order_for_non_document_id_first_keys()
     {
         var mappingSets = BuildMappingSetsWithNonDocumentIdFirstStudentReadModel();
-        var manifest = ThinSliceMappingSetManifestJsonEmitter.Emit(mappingSets);
+        var manifest = MappingSetManifestJsonEmitter.Emit(mappingSets);
         var orderByColumnsByDialect = ReadStudentOrderByColumnsByDialect(manifest);
 
         orderByColumnsByDialect.Keys.Should().BeEquivalentTo("mssql", "pgsql");
@@ -202,8 +202,8 @@ public class Given_ThinSliceMappingSetManifestJsonEmitter
     private static IReadOnlyList<MappingSet> BuildPermutedMappingSets(bool reverseMappingSetOrder)
     {
         var compiler = new MappingSetCompiler();
-        var pgsql = compiler.Compile(ThinSliceFixtureModelSetBuilder.Build(FixturePath, SqlDialect.Pgsql));
-        var mssql = compiler.Compile(ThinSliceFixtureModelSetBuilder.Build(FixturePath, SqlDialect.Mssql));
+        var pgsql = compiler.Compile(RuntimePlanFixtureModelSetBuilder.Build(FixturePath, SqlDialect.Pgsql));
+        var mssql = compiler.Compile(RuntimePlanFixtureModelSetBuilder.Build(FixturePath, SqlDialect.Mssql));
 
         var mappingSets = new[] { PermutePlanDictionaries(pgsql), PermutePlanDictionaries(mssql) };
 

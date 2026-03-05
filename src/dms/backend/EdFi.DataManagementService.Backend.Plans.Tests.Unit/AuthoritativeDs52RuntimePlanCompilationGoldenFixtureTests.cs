@@ -83,11 +83,11 @@ public class Given_AuthoritativeDs52_RuntimePlanCompilation_GoldenFixture
         var compiler = new MappingSetCompiler();
         var mappingSets = new[]
         {
-            compiler.Compile(ThinSliceFixtureModelSetBuilder.Build(FixturePath, SqlDialect.Pgsql)),
-            compiler.Compile(ThinSliceFixtureModelSetBuilder.Build(FixturePath, SqlDialect.Mssql)),
+            compiler.Compile(RuntimePlanFixtureModelSetBuilder.Build(FixturePath, SqlDialect.Pgsql)),
+            compiler.Compile(RuntimePlanFixtureModelSetBuilder.Build(FixturePath, SqlDialect.Mssql)),
         };
 
-        return ThinSliceMappingSetManifestJsonEmitter.Emit(mappingSets);
+        return MappingSetManifestJsonEmitter.Emit(mappingSets);
     }
 
     private static IReadOnlyList<JsonObject> ParseMappingSets(string manifest)

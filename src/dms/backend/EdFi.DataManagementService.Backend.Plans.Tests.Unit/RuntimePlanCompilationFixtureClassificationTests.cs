@@ -10,7 +10,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
 [TestFixture]
-public class Given_ThinSlice_RuntimePlanCompilation_ApiSchema_Fixture
+public class Given_RuntimePlanCompilation_ApiSchema_Fixture
 {
     private const string FixturePath = "Fixtures/runtime-plan-compilation/ApiSchema.json";
     private static readonly QualifiedResourceName _studentResource = new("Ed-Fi", "Student");
@@ -29,7 +29,7 @@ public class Given_ThinSlice_RuntimePlanCompilation_ApiSchema_Fixture
     [TestCase(SqlDialect.Mssql)]
     public void It_should_derive_expected_supported_vs_unsupported_classifications(SqlDialect dialect)
     {
-        var modelSet = ThinSliceFixtureModelSetBuilder.Build(FixturePath, dialect);
+        var modelSet = RuntimePlanFixtureModelSetBuilder.Build(FixturePath, dialect);
         var resourcesByName = modelSet.ConcreteResourcesInNameOrder.ToDictionary(resource =>
             resource.ResourceKey.Resource
         );
