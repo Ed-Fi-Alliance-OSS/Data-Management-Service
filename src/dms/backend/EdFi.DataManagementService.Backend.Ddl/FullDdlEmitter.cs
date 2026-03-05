@@ -16,15 +16,30 @@ namespace EdFi.DataManagementService.Backend.Ddl;
 public static class FullDdlEmitter
 {
     /// <summary>
-    /// Emits the complete DDL SQL by combining core schema DDL, relational model DDL,
-    /// and seed DML for the given dialect and derived model set.
+    /// Emits the complete DDL SQL by combining a Phase 0 preflight check, core schema DDL,
+    /// relational model DDL, and seed DML for the given dialect and derived model set.
     /// </summary>
     public static string Emit(ISqlDialect dialect, DerivedRelationalModelSet modelSet)
     {
+        var seedEmitter = new SeedDmlEmitter(dialect);
+        var preflightDdl = WrapPhase0(
+            seedEmitter.EmitPreflightOnly(modelSet.EffectiveSchema.EffectiveSchemaHash)
+        );
         var coreDdl = new CoreDdlEmitter(dialect).Emit();
         var relationalDdl = new RelationalModelDdlEmitter(dialect).Emit(modelSet);
-        var seedDml = new SeedDmlEmitter(dialect).Emit(modelSet.EffectiveSchema);
-        return JoinSegments(coreDdl, relationalDdl, seedDml);
+        var seedDml = seedEmitter.Emit(modelSet.EffectiveSchema);
+        return JoinSegments(preflightDdl, coreDdl, relationalDdl, seedDml);
+    }
+
+    private static string WrapPhase0(string preflightSql)
+    {
+        var sb = new StringBuilder();
+        sb.Append("-- ==========================================================\n");
+        sb.Append("-- Phase 0: Preflight (fail fast on schema hash mismatch)\n");
+        sb.Append("-- ==========================================================\n");
+        sb.Append('\n');
+        sb.Append(preflightSql);
+        return sb.ToString();
     }
 
     /// <summary>

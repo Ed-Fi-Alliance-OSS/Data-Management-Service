@@ -40,6 +40,19 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
     private static readonly DbTableName _schemaComponentTable = DmsTableNames.SchemaComponent;
 
     /// <summary>
+    /// Emits only the preflight hash-check SQL (Phase 0), without the Phase 7 seed DML.
+    /// Used by <see cref="FullDdlEmitter"/> to place the preflight before core DDL.
+    /// </summary>
+    public string EmitPreflightOnly(string effectiveSchemaHash)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(effectiveSchemaHash);
+
+        var writer = new SqlWriter(_dialect);
+        EmitEffectiveSchemaHashPreflight(writer, effectiveSchemaHash);
+        return writer.ToString();
+    }
+
+    /// <summary>
     /// Generates the seed DML script (Phase 7) for the configured dialect.
     /// </summary>
     /// <param name="effectiveSchema">
@@ -61,7 +74,6 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
         writer.AppendLine("-- ==========================================================");
         writer.AppendLine();
 
-        EmitEffectiveSchemaHashPreflight(writer, effectiveSchema.EffectiveSchemaHash);
         EmitResourceKeySeeds(writer, effectiveSchema.ResourceKeysInIdOrder);
         EmitResourceKeyValidation(writer, effectiveSchema.ResourceKeysInIdOrder);
         EmitEffectiveSchemaInsert(writer, effectiveSchema);

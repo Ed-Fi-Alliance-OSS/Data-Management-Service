@@ -252,13 +252,10 @@ public class Given_SeedDmlEmitter_With_PgsqlDialect_And_SeedData
     }
 
     [Test]
-    public void It_should_emit_effective_schema_hash_preflight_check()
+    public void It_should_not_emit_preflight_check()
     {
-        _ddl.Should().Contain("EffectiveSchemaHash mismatch");
-        _ddl.Should().Contain("RAISE EXCEPTION");
-        _ddl.Should().Contain("_stored_hash");
-        _ddl.Should().Contain("but expected");
-        _ddl.Should().Contain("'abc123def456'");
+        _ddl.Should().NotContain("Preflight: fail fast");
+        _ddl.Should().NotContain("EffectiveSchemaHash mismatch");
     }
 
     [Test]
@@ -398,12 +395,10 @@ public class Given_SeedDmlEmitter_With_MssqlDialect_And_SeedData
     }
 
     [Test]
-    public void It_should_emit_effective_schema_hash_preflight_check()
+    public void It_should_not_emit_preflight_check()
     {
-        _ddl.Should().Contain("EffectiveSchemaHash mismatch");
-        _ddl.Should().Contain("THROW 50000");
-        _ddl.Should().Contain("@preflight_stored_hash");
-        _ddl.Should().Contain("but expected ''', N'abc123def456'");
+        _ddl.Should().NotContain("Preflight: fail fast");
+        _ddl.Should().NotContain("EffectiveSchemaHash mismatch");
     }
 
     [Test]
@@ -693,5 +688,90 @@ public class Given_SeedDmlEmitter_With_Single_SchemaComponent
     public void It_should_validate_single_component_count_for_mssql()
     {
         _mssqlDdl.Should().Contain("@sc_actual_count <> 1");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// EmitPreflightOnly tests
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_SeedDmlEmitter_EmitPreflightOnly_With_PgsqlDialect
+{
+    private string _sql = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var emitter = new SeedDmlEmitter(new PgsqlDialect(new PgsqlDialectRules()));
+        _sql = emitter.EmitPreflightOnly("abc123def456");
+    }
+
+    [Test]
+    public void It_should_emit_preflight_comment()
+    {
+        _sql.Should().Contain("Preflight: fail fast");
+    }
+
+    [Test]
+    public void It_should_emit_hash_mismatch_check()
+    {
+        _sql.Should().Contain("EffectiveSchemaHash mismatch");
+        _sql.Should().Contain("RAISE EXCEPTION");
+        _sql.Should().Contain("_stored_hash");
+        _sql.Should().Contain("but expected");
+        _sql.Should().Contain("'abc123def456'");
+    }
+
+    [Test]
+    public void It_should_not_contain_phase_7_header()
+    {
+        _sql.Should().NotContain("Phase 7");
+    }
+
+    [Test]
+    public void It_should_use_unix_line_endings()
+    {
+        _sql.Should().NotContain("\r\n");
+    }
+}
+
+[TestFixture]
+public class Given_SeedDmlEmitter_EmitPreflightOnly_With_MssqlDialect
+{
+    private string _sql = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var emitter = new SeedDmlEmitter(new MssqlDialect(new MssqlDialectRules()));
+        _sql = emitter.EmitPreflightOnly("abc123def456");
+    }
+
+    [Test]
+    public void It_should_emit_preflight_comment()
+    {
+        _sql.Should().Contain("Preflight: fail fast");
+    }
+
+    [Test]
+    public void It_should_emit_hash_mismatch_check()
+    {
+        _sql.Should().Contain("EffectiveSchemaHash mismatch");
+        _sql.Should().Contain("THROW 50000");
+        _sql.Should().Contain("@preflight_stored_hash");
+        _sql.Should().Contain("but expected ''', N'abc123def456'");
+    }
+
+    [Test]
+    public void It_should_not_contain_phase_7_header()
+    {
+        _sql.Should().NotContain("Phase 7");
+    }
+
+    [Test]
+    public void It_should_use_unix_line_endings()
+    {
+        _sql.Should().NotContain("\r\n");
     }
 }
