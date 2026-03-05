@@ -46,6 +46,7 @@
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DataManagementService.Core.External\EdFi.DataManagementService.Core.External.csproj" />
+        <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.External\EdFi.DataManagementService.Backend.External.csproj" />
     </ItemGroup>
     <ItemGroup>
         <InternalsVisibleTo Include="EdFi.DataManagementService.Core.Tests.Unit" />
