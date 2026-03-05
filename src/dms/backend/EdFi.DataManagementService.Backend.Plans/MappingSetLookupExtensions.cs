@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Frozen;
+using System.Runtime.CompilerServices;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 
@@ -13,12 +15,14 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// </summary>
 public static class MappingSetLookupExtensions
 {
-    private const string WriteCollectionsAndKeyUnificationStoryRef =
-        "E15-S04 (04-write-plan-compiler-collections-and-extensions.md)";
     private const string ReadHydrationStoryRef = "E15-S05 (05-read-plan-compiler-hydration.md)";
     private const string ReadProjectionStoryRef = "E15-S06 (06-projection-plan-compilers.md)";
     private const string DescriptorWriteStoryRef = "E07-S06 (06-descriptor-writes.md)";
     private const string DescriptorReadStoryRef = "E08-S05 (05-descriptor-endpoints.md)";
+    private static readonly ConditionalWeakTable<
+        MappingSet,
+        IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel>
+    > ConcreteResourceModelsByResource = new();
 
     /// <summary>
     /// Gets the compiled write plan for <paramref name="resource" /> or throws a deterministic actionable exception.
@@ -36,59 +40,30 @@ public static class MappingSetLookupExtensions
         }
 
         var concreteResourceModel = GetConcreteResourceModelOrThrow(mappingSet, resource);
-        var resourceModel = concreteResourceModel.RelationalModel;
 
         if (concreteResourceModel.StorageKind == ResourceStorageKind.SharedDescriptorTable)
         {
             throw new NotSupportedException(
                 $"Write plan for resource '{FormatResource(resource)}' was intentionally omitted: "
-                    + $"storage kind '{ResourceStorageKind.SharedDescriptorTable}' does not use thin-slice relational-table write plans. "
+                    + $"storage kind '{ResourceStorageKind.SharedDescriptorTable}' uses the descriptor write path instead of compiled relational-table write plans. "
                     + $"Next story: {DescriptorWriteStoryRef}."
             );
         }
 
-        var supportResult = ThinSliceWritePlanSupportEvaluator.Evaluate(resourceModel);
-
-        switch (supportResult.UnsupportedReason)
+        if (concreteResourceModel.StorageKind == ResourceStorageKind.RelationalTables)
         {
-            case ThinSliceWritePlanUnsupportedReason.None:
-                break;
-            case ThinSliceWritePlanUnsupportedReason.NonRootOnly:
-                throw new NotSupportedException(
-                    $"Write plan for resource '{FormatResource(resource)}' was intentionally omitted: "
-                        + "thin-slice write compilation supports only root-only resources "
-                        + $"(TablesInDependencyOrder.Count == 1, actual {supportResult.TableCount}). "
-                        + $"Next story: {WriteCollectionsAndKeyUnificationStoryRef}."
-                );
-            case ThinSliceWritePlanUnsupportedReason.RootHasKeyUnificationClasses:
-                throw new NotSupportedException(
-                    $"Write plan for resource '{FormatResource(resource)}' was intentionally omitted: "
-                        + $"root table '{resourceModel.Root.Table}' has {supportResult.RootKeyUnificationClassCount} key-unification class(es). "
-                        + $"Next story: {WriteCollectionsAndKeyUnificationStoryRef}."
-                );
-            case ThinSliceWritePlanUnsupportedReason.RootHasStoredNonKeyColumnsWithoutSourceJsonPath:
-                throw new NotSupportedException(
-                    $"Write plan for resource '{FormatResource(resource)}' was intentionally omitted: "
-                        + $"root table '{resourceModel.Root.Table}' has {supportResult.RootStoredNonKeyColumnsWithoutSourceJsonPathCount} stored non-key column(s) without SourceJsonPath "
-                        + "(precomputed/key-unification candidates). "
-                        + $"Next story: {WriteCollectionsAndKeyUnificationStoryRef}."
-                );
-            case ThinSliceWritePlanUnsupportedReason.NonRelationalStorage:
-                throw new NotSupportedException(
-                    $"Write plan for resource '{FormatResource(resource)}' was intentionally omitted: "
-                        + $"storage kind '{supportResult.StorageKind}' is out of thin-slice write runtime compilation scope. "
-                        + $"Next story: {WriteCollectionsAndKeyUnificationStoryRef}."
-                );
-            default:
-                throw new InvalidOperationException(
-                    $"Write plan lookup failed for resource '{FormatResource(resource)}': "
-                        + $"unsupported reason '{supportResult.UnsupportedReason}' is not recognized."
-                );
+            throw new InvalidOperationException(
+                $"Write plan lookup failed for resource '{FormatResource(resource)}' in mapping set "
+                    + $"'{FormatMappingSetKey(mappingSet.Key)}': resource storage kind "
+                    + $"'{ResourceStorageKind.RelationalTables}' should always have a compiled relational-table write plan, but no entry "
+                    + "was found. This indicates an internal compilation/selection bug."
+            );
         }
 
         throw new InvalidOperationException(
-            $"Write plan lookup failed for resource '{FormatResource(resource)}': "
-                + "resource exists and appears thin-slice compatible, but no compiled write plan is present."
+            $"Write plan lookup failed for resource '{FormatResource(resource)}' in mapping set "
+                + $"'{FormatMappingSetKey(mappingSet.Key)}': storage kind '{concreteResourceModel.StorageKind}' "
+                + "is not recognized."
         );
     }
 
@@ -172,12 +147,32 @@ public static class MappingSetLookupExtensions
         QualifiedResourceName resource
     )
     {
-        foreach (var concreteResourceModel in mappingSet.Model.ConcreteResourcesInNameOrder)
-        {
-            if (concreteResourceModel.RelationalModel.Resource.Equals(resource))
+        var concreteResourcesByResource = ConcreteResourceModelsByResource.GetValue(
+            mappingSet,
+            static staticMappingSet =>
             {
-                return concreteResourceModel;
+                var resourcesByName = new Dictionary<QualifiedResourceName, ConcreteResourceModel>();
+
+                foreach (var concreteResourceModel in staticMappingSet.Model.ConcreteResourcesInNameOrder)
+                {
+                    var resource = concreteResourceModel.RelationalModel.Resource;
+
+                    if (!resourcesByName.TryAdd(resource, concreteResourceModel))
+                    {
+                        throw new InvalidOperationException(
+                            $"Mapping set '{FormatMappingSetKey(staticMappingSet.Key)}' contains duplicate resource "
+                                + $"'{FormatResource(resource)}' in ConcreteResourcesInNameOrder."
+                        );
+                    }
+                }
+
+                return resourcesByName.ToFrozenDictionary();
             }
+        );
+
+        if (concreteResourcesByResource.TryGetValue(resource, out var concreteResourceModel))
+        {
+            return concreteResourceModel;
         }
 
         throw new KeyNotFoundException(

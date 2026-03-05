@@ -10,7 +10,7 @@ using EdFi.DataManagementService.Backend.External.Plans;
 namespace EdFi.DataManagementService.Backend.Plans;
 
 /// <summary>
-/// Compiles a thin-slice mapping set from a derived relational model set.
+/// Compiles a mapping set from a derived relational model set.
 /// </summary>
 public sealed class MappingSetCompiler
 {
@@ -28,7 +28,7 @@ public sealed class MappingSetCompiler
         );
 
         var readPlanCompiler = new RootOnlyReadPlanCompiler(modelSet.Dialect);
-        var writePlanCompiler = new RootOnlyWritePlanCompiler(modelSet.Dialect);
+        var writePlanCompiler = new WritePlanCompiler(modelSet.Dialect);
 
         var writePlansByResource = new Dictionary<QualifiedResourceName, ResourceWritePlan>();
         var readPlansByResource = new Dictionary<QualifiedResourceName, ResourceReadPlan>();
@@ -36,6 +36,14 @@ public sealed class MappingSetCompiler
         foreach (var concreteResourceModel in modelSet.ConcreteResourcesInNameOrder)
         {
             var resourceModel = concreteResourceModel.RelationalModel;
+            var resourceStorageKind = concreteResourceModel.StorageKind;
+
+            if (resourceStorageKind != resourceModel.StorageKind)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot compile mapping set: storage kind mismatch for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}' (concrete resource model: '{resourceStorageKind}', relational model: '{resourceModel.StorageKind}')."
+                );
+            }
 
             if (readPlanCompiler.TryCompile(resourceModel, out var readPlan))
             {
@@ -47,8 +55,10 @@ public sealed class MappingSetCompiler
                 }
             }
 
-            if (writePlanCompiler.TryCompile(resourceModel, out var writePlan))
+            if (resourceStorageKind is ResourceStorageKind.RelationalTables)
             {
+                var writePlan = writePlanCompiler.Compile(resourceModel);
+
                 if (!writePlansByResource.TryAdd(resourceModel.Resource, writePlan))
                 {
                     throw new InvalidOperationException(

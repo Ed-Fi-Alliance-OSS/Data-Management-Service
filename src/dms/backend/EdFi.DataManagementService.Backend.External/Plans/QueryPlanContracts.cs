@@ -27,7 +27,8 @@ public sealed record PageDocumentIdSqlPlan
     /// </param>
     /// <param name="TotalCountParametersInOrder">
     /// Optional deterministic inventory of total-count query parameters in canonical order (filters only).
-    /// Must be null when <paramref name="TotalCountSql" /> is null.
+    /// Must be null when <paramref name="TotalCountSql" /> is null, and is required when
+    /// <paramref name="TotalCountSql" /> is provided (may be empty when no filter parameters exist).
     /// </param>
     public PageDocumentIdSqlPlan(
         string PageDocumentIdSql,
@@ -71,6 +72,14 @@ public sealed record PageDocumentIdSqlPlan
     /// <summary>
     /// Optional deterministic inventory of total-count query parameters in canonical order (filters only).
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Null means the total-count query is absent (<see cref="TotalCountSql" /> is null).
+    /// When <see cref="TotalCountSql" /> is provided, this inventory is guaranteed to be materialized and non-default
+    /// (but may be empty). Callers should check <c>TotalCountParametersInOrder is null</c> (or <c>.HasValue</c>)
+    /// before accessing <c>.Value</c>.
+    /// </para>
+    /// </remarks>
     public ImmutableArray<QuerySqlParameter>? TotalCountParametersInOrder { get; init; }
 }
 

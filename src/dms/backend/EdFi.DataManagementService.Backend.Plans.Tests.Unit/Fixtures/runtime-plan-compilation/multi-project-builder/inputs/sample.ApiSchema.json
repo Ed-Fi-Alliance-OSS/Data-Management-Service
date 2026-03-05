@@ -1,0 +1,41 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Sample",
+    "projectEndpointName": "sample",
+    "projectVersion": "1.0.0",
+    "resourceSchemas": {
+      "sections": {
+        "resourceName": "Section",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "identityJsonPaths": [
+          "$.sectionId"
+        ],
+        "documentPathsMapping": {
+          "SectionId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.sectionId"
+          }
+        },
+        "equalityConstraints": [],
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "sectionId": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "sectionId"
+          ]
+        }
+      }
+    }
+  }
+}

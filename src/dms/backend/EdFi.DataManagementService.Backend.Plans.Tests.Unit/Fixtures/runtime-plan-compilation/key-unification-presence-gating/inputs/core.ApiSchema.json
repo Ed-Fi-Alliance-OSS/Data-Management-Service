@@ -1,0 +1,100 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Ed-Fi",
+    "projectEndpointName": "ed-fi",
+    "projectVersion": "5.0.0",
+    "resourceSchemas": {
+      "presenceGateExamples": {
+        "resourceName": "PresenceGateExample",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "identityJsonPaths": [
+          "$.presenceGateExampleId"
+        ],
+        "documentPathsMapping": {
+          "PresenceGateExampleId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.presenceGateExampleId"
+          },
+          "PrimarySchoolTypeDescriptor": {
+            "isReference": true,
+            "isDescriptor": true,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "projectName": "Ed-Fi",
+            "resourceName": "SchoolTypeDescriptor",
+            "path": "$.primarySchoolTypeDescriptor"
+          },
+          "SecondarySchoolTypeDescriptor": {
+            "isReference": true,
+            "isDescriptor": true,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "projectName": "Ed-Fi",
+            "resourceName": "SchoolTypeDescriptor",
+            "path": "$.secondarySchoolTypeDescriptor"
+          }
+        },
+        "equalityConstraints": [
+          {
+            "sourceJsonPath": "$.primarySchoolTypeDescriptor",
+            "targetJsonPath": "$.secondarySchoolTypeDescriptor"
+          }
+        ],
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "presenceGateExampleId": {
+              "type": "integer"
+            },
+            "primarySchoolTypeDescriptor": {
+              "type": "string",
+              "maxLength": 50
+            },
+            "secondarySchoolTypeDescriptor": {
+              "type": "string",
+              "maxLength": 50
+            }
+          },
+          "required": [
+            "presenceGateExampleId"
+          ]
+        }
+      },
+      "schoolTypeDescriptors": {
+        "resourceName": "SchoolTypeDescriptor",
+        "isDescriptor": true,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "identityJsonPaths": [],
+        "documentPathsMapping": {},
+        "equalityConstraints": [],
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "namespace": {
+              "type": "string",
+              "maxLength": 255
+            },
+            "codeValue": {
+              "type": "string",
+              "maxLength": 30
+            }
+          },
+          "required": [
+            "namespace",
+            "codeValue"
+          ]
+        }
+      }
+    }
+  }
+}

@@ -65,6 +65,18 @@ public class Given_DbColumnModel_Storage_Constructor_Contract
     {
         _implicitStoredColumn.Should().Be(_explicitStoredColumn);
         _implicitStoredColumn.Storage.Should().BeOfType<ColumnStorage.Stored>();
+        _implicitStoredColumn.IsWritable.Should().BeTrue();
+        _explicitStoredColumn.IsWritable.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// It should derive default writability from storage metadata.
+    /// </summary>
+    [Test]
+    public void It_should_derive_default_writability_from_storage_metadata()
+    {
+        _aliasColumn.IsWritable.Should().BeFalse();
+        _explicitStoredColumn.IsWritable.Should().BeTrue();
     }
 
     /// <summary>

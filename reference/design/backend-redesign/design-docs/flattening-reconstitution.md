@@ -1161,7 +1161,7 @@ public sealed record ResourceWritePlan(
 /// </summary>
 /// <param name="TableModel">The shape model for the table.</param>
 /// <param name="InsertSql">Parameterized insert SQL (multi-row insert is handled by IBulkInserter).</param>
-/// <param name="UpdateSql">Optional update SQL (for root tables).</param>
+/// <param name="UpdateSql">Optional update SQL (for 1:1 tables; key contains no Ordinal).</param>
 /// <param name="DeleteByParentSql">Delete SQL that removes all child rows for a parent key (replace semantics).</param>
 /// <param name="BulkInsertBatching">
 /// Deterministic bulk-insert batching metadata for this table plan.
@@ -1786,6 +1786,8 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
 Notes:
 - `_referenceResolver.ResolveAsync(...)` resolves document and descriptor references to `DocumentId` via `dms.ReferentialIdentity` (`ReferentialId → DocumentId`) for all identities (self-contained, reference-bearing, and polymorphic/abstract via alias rows), and may validate descriptor existence/type via `dms.Descriptor`.
 - `_writer.ExecuteAsync(...)` uses `TableWritePlan.DeleteByParentSql` + `IBulkInserter` to avoid N+1 inserts.
+- For 1:1 extension scopes (including document-scope `_ext` tables), execution uses `InsertSql` when the scoped row is newly present and `UpdateSql` when it already exists.
+- When a scoped object is absent in the payload, execution uses `DeleteByParentSql` for scope replacement.
 
 Flattening inner loop sketch (how `TableWritePlan.ColumnBindings` and `TableWritePlan.KeyUnificationPlans` get used):
 

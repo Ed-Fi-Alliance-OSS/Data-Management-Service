@@ -812,6 +812,7 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
                         canonicalColumnName,
                         presenceResolution.PresenceColumn
                     ),
+                    IsWritable = false,
                 };
 
                 updatedColumns[memberColumnIndex] = updatedMemberColumn;
