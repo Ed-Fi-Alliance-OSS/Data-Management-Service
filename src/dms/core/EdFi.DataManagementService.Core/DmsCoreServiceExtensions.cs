@@ -99,6 +99,7 @@ public static class DmsCoreServiceExtensions
             .AddScoped<IDmsInstanceSelection, DmsInstanceSelection>()
             .AddScoped<IApplicationContextProvider, CachedApplicationContextProvider>()
             .AddSingleton<IConfigurationServiceApplicationProvider, ConfigurationServiceApplicationProvider>()
+            .AddSingleton<DatabaseFingerprintProvider>()
             .AddScoped<ResolveDmsInstanceMiddleware>()
             .AddSingleton<IProfileCmsProvider, ConfigurationServiceProfileProvider>()
             .AddSingleton<IProfileService, CachedProfileService>()
