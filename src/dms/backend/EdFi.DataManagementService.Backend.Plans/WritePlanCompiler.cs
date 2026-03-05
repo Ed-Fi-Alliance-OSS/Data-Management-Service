@@ -840,7 +840,7 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
             if (!requiredKeyUnificationPrecomputedColumns.Contains(column.ColumnName))
             {
                 throw new InvalidOperationException(
-                    $"Cannot compile write plan for '{tableModel.Table}': column '{column.ColumnName.Value}' has null SourceJsonPath but is not an explicitly supported precomputed target. "
+                    $"Cannot compile write plan for '{tableModel.Table}': column '{column.ColumnName.Value}' (kind '{column.Kind}') has null SourceJsonPath but is not an explicitly supported precomputed target. "
                         + "Mark the column IsWritable=false or add a producer plan (for example, key-unification canonical/synthetic presence)."
                 );
             }

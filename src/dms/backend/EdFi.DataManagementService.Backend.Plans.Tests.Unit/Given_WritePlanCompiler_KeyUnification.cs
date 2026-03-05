@@ -207,7 +207,7 @@ public class Given_WritePlanCompiler_KeyUnification : WritePlanCompilerTestBase
         act.Should()
             .Throw<InvalidOperationException>()
             .WithMessage(
-                "Cannot compile write plan for 'edfi.Student': column 'SchoolYearCanonicalOrphan' has null SourceJsonPath but is not an explicitly supported precomputed target. Mark the column IsWritable=false or add a producer plan (for example, key-unification canonical/synthetic presence)."
+                "Cannot compile write plan for 'edfi.Student': column 'SchoolYearCanonicalOrphan' (kind 'Scalar') has null SourceJsonPath but is not an explicitly supported precomputed target. Mark the column IsWritable=false or add a producer plan (for example, key-unification canonical/synthetic presence)."
             );
     }
 
