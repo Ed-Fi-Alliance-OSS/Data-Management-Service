@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.CommandLine;
+using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.RelationalModel.Manifest;
 using EdFi.DataManagementService.Core.Startup;
@@ -46,6 +47,12 @@ public static class DdlEmitCommand
         };
         dialectOption.AcceptOnlyFromAmong("pgsql", "mssql", "both");
 
+        var ddlManifestOption = new Option<bool>("--ddl-manifest")
+        {
+            Description = "Emit ddl.manifest.json (default: false)",
+            DefaultValueFactory = _ => false,
+        };
+
         var command = new Command(
             "emit",
             "Generate DDL SQL and manifests to an output directory without database connectivity"
@@ -53,13 +60,15 @@ public static class DdlEmitCommand
         command.Options.Add(schemaOption);
         command.Options.Add(outputOption);
         command.Options.Add(dialectOption);
+        command.Options.Add(ddlManifestOption);
 
         command.SetAction(parseResult =>
         {
             var schemas = parseResult.GetValue(schemaOption) ?? [];
             var output = parseResult.GetValue(outputOption)!;
             var dialect = parseResult.GetValue(dialectOption) ?? "both";
-            return Execute(logger, fileLoader, schemaSetBuilder, schemas, output, dialect);
+            var emitDdlManifest = parseResult.GetValue(ddlManifestOption);
+            return Execute(logger, fileLoader, schemaSetBuilder, schemas, output, dialect, emitDdlManifest);
         });
 
         return command;
@@ -71,7 +80,8 @@ public static class DdlEmitCommand
         EffectiveSchemaSetBuilder schemaSetBuilder,
         string[] schemaPaths,
         string outputDir,
-        string dialectName
+        string dialectName,
+        bool emitDdlManifest
     )
     {
         if (schemaPaths.Length == 0)
@@ -124,6 +134,7 @@ public static class DdlEmitCommand
                 }
 
                 var emittedFiles = new List<string>();
+                var ddlManifestEntries = new List<DdlManifestEntry>();
 
                 // Build the dialect-independent EffectiveSchemaSet once
                 var effectiveSchemaSet = DdlCommandHelpers.BuildEffectiveSchemaSet(
@@ -137,9 +148,10 @@ public static class DdlEmitCommand
                 foreach (var dialect in dialects)
                 {
                     var result = DdlCommandHelpers.BuildDdlFromSchemaSet(logger, effectiveSchemaSet, dialect);
+                    ddlManifestEntries.Add(new DdlManifestEntry(dialect, result.CombinedSql));
 
                     // Write SQL file (always dialect-prefixed, matching {dialect}.sql convention)
-                    var dialectLabel = DialectLabel(dialect);
+                    var dialectLabel = DdlManifestEmitter.DialectLabel(dialect);
                     var sqlFileName = $"{dialectLabel}.sql";
                     WriteFileWithUnixLineEndings(Path.Combine(outputDir, sqlFileName), result.CombinedSql);
                     emittedFiles.Add(sqlFileName);
@@ -155,6 +167,16 @@ public static class DdlEmitCommand
                     var manifestFileName = $"relational-model.{dialectLabel}.manifest.json";
                     WriteFileWithUnixLineEndings(Path.Combine(outputDir, manifestFileName), modelManifest);
                     emittedFiles.Add(manifestFileName);
+                }
+
+                // Emit DDL manifest (dialect-independent summary of emitted SQL per dialect).
+                // The manifest reflects only the dialect(s) selected via --dialect.
+                // Controlled by --ddl-manifest (default true) per the spec's "when enabled" contract.
+                if (emitDdlManifest)
+                {
+                    var ddlManifest = DdlManifestEmitter.Emit(effectiveSchemaInfo, ddlManifestEntries);
+                    WriteFileWithUnixLineEndings(Path.Combine(outputDir, "ddl.manifest.json"), ddlManifest);
+                    emittedFiles.Add("ddl.manifest.json");
                 }
 
                 // Emit effective schema manifest (dialect-independent, emitted once)
@@ -184,14 +206,6 @@ public static class DdlEmitCommand
             }
         );
     }
-
-    private static string DialectLabel(SqlDialect dialect) =>
-        dialect switch
-        {
-            SqlDialect.Pgsql => "pgsql",
-            SqlDialect.Mssql => "mssql",
-            _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported dialect"),
-        };
 
     private static List<SqlDialect> ParseDialect(string dialectName)
     {

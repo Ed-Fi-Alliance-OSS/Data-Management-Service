@@ -395,6 +395,109 @@ public class SchemaToolsTests
     }
 
     [TestFixture]
+    public class Given_Ddl_Emit_Without_Ddl_Manifest_Flag : SchemaToolsTests
+    {
+        private int _exitCode;
+        private string _outputDir = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            _outputDir = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
+            var fixturePath = CliTestHelper.GetMinimalFixturePath();
+            (_exitCode, _, _) = CliTestHelper.RunCli(
+                "ddl",
+                "emit",
+                "--schema",
+                fixturePath,
+                "--output",
+                _outputDir,
+                "--dialect",
+                "pgsql"
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            if (Directory.Exists(_outputDir))
+            {
+                Directory.Delete(_outputDir, recursive: true);
+            }
+        }
+
+        [Test]
+        public void It_returns_exit_code_0()
+        {
+            _exitCode.Should().Be(0);
+        }
+
+        [Test]
+        public void It_does_not_create_ddl_manifest()
+        {
+            File.Exists(Path.Combine(_outputDir, "ddl.manifest.json")).Should().BeFalse();
+        }
+
+        [Test]
+        public void It_still_creates_effective_schema_manifest()
+        {
+            File.Exists(Path.Combine(_outputDir, "effective-schema.manifest.json")).Should().BeTrue();
+        }
+    }
+
+    [TestFixture]
+    public class Given_Ddl_Emit_With_Ddl_Manifest_Flag : SchemaToolsTests
+    {
+        private int _exitCode;
+        private string _outputDir = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            _outputDir = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
+            var fixturePath = CliTestHelper.GetMinimalFixturePath();
+            (_exitCode, _, _) = CliTestHelper.RunCli(
+                "ddl",
+                "emit",
+                "--schema",
+                fixturePath,
+                "--output",
+                _outputDir,
+                "--dialect",
+                "pgsql",
+                "--ddl-manifest"
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            if (Directory.Exists(_outputDir))
+            {
+                Directory.Delete(_outputDir, recursive: true);
+            }
+        }
+
+        [Test]
+        public void It_returns_exit_code_0()
+        {
+            _exitCode.Should().Be(0);
+        }
+
+        [Test]
+        public void It_creates_ddl_manifest()
+        {
+            File.Exists(Path.Combine(_outputDir, "ddl.manifest.json")).Should().BeTrue();
+        }
+
+        [Test]
+        public void It_creates_effective_schema_manifest()
+        {
+            File.Exists(Path.Combine(_outputDir, "effective-schema.manifest.json")).Should().BeTrue();
+        }
+    }
+
+    [TestFixture]
     [Category("Authoritative")]
     public class Given_Ddl_Emit_With_Invalid_Dialect : SchemaToolsTests
     {
