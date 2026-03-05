@@ -5,6 +5,7 @@
 
 using System;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -143,4 +144,11 @@ internal class RequestInfo(FrontendRequest _frontendRequest, RequestMethod _meth
     /// Null if no profile applies (no profile assigned, or not a profiled endpoint).
     /// </summary>
     public ProfileContext? ProfileContext { get; set; }
+
+    /// <summary>
+    /// The cached database fingerprint from the dms.EffectiveSchema singleton row.
+    /// Set by ValidateDatabaseFingerprintMiddleware when EnableDatabaseFingerprintValidation is true.
+    /// Null when fingerprint validation is disabled.
+    /// </summary>
+    public DatabaseFingerprint? DatabaseFingerprint { get; set; }
 }
