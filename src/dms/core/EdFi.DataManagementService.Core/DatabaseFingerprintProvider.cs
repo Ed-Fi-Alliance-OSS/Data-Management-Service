@@ -4,7 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Concurrent;
-using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Core.External.Backend;
 
 namespace EdFi.DataManagementService.Core;
 
