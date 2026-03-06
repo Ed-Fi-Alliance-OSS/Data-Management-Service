@@ -101,7 +101,7 @@ public class Given_MappingSetManifestJsonEmitter
             planPresenceByDialect[dialect]
                 ["Ed-Fi.Student"]
                 .Should()
-                .Be(new PlanPresence(WritePlanIsNull: false, ReadPlanIsNull: true));
+                .Be(new PlanPresence(WritePlanIsNull: false, ReadPlanIsNull: false));
             planPresenceByDialect[dialect]
                 ["Ed-Fi.StudentAddressCollection"]
                 .Should()

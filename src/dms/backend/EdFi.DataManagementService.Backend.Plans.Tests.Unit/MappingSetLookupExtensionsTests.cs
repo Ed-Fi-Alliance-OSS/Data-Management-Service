@@ -75,7 +75,7 @@ public class Given_MappingSetLookupExtensions
             .Throw<NotSupportedException>()
             .WithMessage(
                 "Read plan for resource 'Ed-Fi.AcademicSubjectDescriptor' was intentionally omitted: "
-                    + "storage kind 'SharedDescriptorTable' does not use thin-slice relational-table hydration plans. "
+                    + "storage kind 'SharedDescriptorTable' uses the descriptor read path instead of compiled relational-table hydration plans. "
                     + "Next story: E08-S05 (05-descriptor-endpoints.md)."
             );
     }
@@ -93,24 +93,26 @@ public class Given_MappingSetLookupExtensions
     }
 
     [Test]
-    public void It_should_throw_actionable_non_root_only_message_for_omitted_read_plan()
+    public void It_should_treat_missing_non_root_only_relational_read_plan_as_internal_bug()
     {
         var act = () => _mappingSet.GetReadPlanOrThrow(_nonRootOnlyResource);
 
         act.Should()
-            .Throw<NotSupportedException>()
-            .WithMessage("*TablesInDependencyOrder.Count == 1*actual 2*E15-S05*");
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*Ed-Fi.StudentAddress*mapping set*RelationalTables*compiled relational-table read plan*internal compilation/selection bug*"
+            );
     }
 
     [Test]
-    public void It_should_throw_actionable_projection_metadata_message_for_omitted_read_plan()
+    public void It_should_treat_missing_projection_metadata_relational_read_plan_as_internal_bug()
     {
         var act = () => _mappingSet.GetReadPlanOrThrow(_projectionMetadataResource);
 
         act.Should()
-            .Throw<NotSupportedException>()
+            .Throw<InvalidOperationException>()
             .WithMessage(
-                "*requires reference-identity projection metadata*DocumentReferenceBindings count: 1*E15-S06*"
+                "*Ed-Fi.StudentProjection*mapping set*RelationalTables*compiled relational-table read plan*internal compilation/selection bug*"
             );
     }
 

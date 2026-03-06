@@ -27,7 +27,7 @@ public sealed class MappingSetCompiler
             RelationalMappingVersion: modelSet.EffectiveSchema.RelationalMappingVersion
         );
 
-        var readPlanCompiler = new RootOnlyReadPlanCompiler(modelSet.Dialect);
+        var readPlanCompiler = new ReadPlanCompiler(modelSet.Dialect);
         var writePlanCompiler = new WritePlanCompiler(modelSet.Dialect);
 
         var writePlansByResource = new Dictionary<QualifiedResourceName, ResourceWritePlan>();

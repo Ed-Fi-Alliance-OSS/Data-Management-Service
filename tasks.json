@@ -33,7 +33,7 @@
       "Update mapping-set unit tests so mixed-resource fixtures expect read plans for all relational-table resources and only omit shared descriptor storage resources.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~MappingSetCompiler`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Read Plan Manifest Emitter",

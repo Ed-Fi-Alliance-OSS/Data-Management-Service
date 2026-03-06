@@ -15,8 +15,6 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// </summary>
 public static class MappingSetLookupExtensions
 {
-    private const string ReadHydrationStoryRef = "E15-S05 (05-read-plan-compiler-hydration.md)";
-    private const string ReadProjectionStoryRef = "E15-S06 (06-projection-plan-compilers.md)";
     private const string DescriptorWriteStoryRef = "E07-S06 (06-descriptor-writes.md)";
     private const string DescriptorReadStoryRef = "E08-S05 (05-descriptor-endpoints.md)";
     private static readonly ConditionalWeakTable<
@@ -88,54 +86,25 @@ public static class MappingSetLookupExtensions
         {
             throw new NotSupportedException(
                 $"Read plan for resource '{FormatResource(resource)}' was intentionally omitted: "
-                    + $"storage kind '{ResourceStorageKind.SharedDescriptorTable}' does not use thin-slice relational-table hydration plans. "
+                    + $"storage kind '{ResourceStorageKind.SharedDescriptorTable}' uses the descriptor read path instead of compiled relational-table hydration plans. "
                     + $"Next story: {DescriptorReadStoryRef}."
             );
         }
 
-        var supportResult = ThinSliceReadPlanSupportEvaluator.Evaluate(concreteResourceModel.RelationalModel);
-
-        switch (supportResult.UnsupportedReason)
+        if (concreteResourceModel.StorageKind == ResourceStorageKind.RelationalTables)
         {
-            case ThinSliceReadPlanUnsupportedReason.None:
-                break;
-            case ThinSliceReadPlanUnsupportedReason.NonRootOnly:
-                throw new NotSupportedException(
-                    $"Read plan for resource '{FormatResource(resource)}' was intentionally omitted: "
-                        + "thin-slice read compilation supports only root-only resources "
-                        + $"(TablesInDependencyOrder.Count == 1, actual {supportResult.TableCount}). "
-                        + $"Next story: {ReadHydrationStoryRef}."
-                );
-            case ThinSliceReadPlanUnsupportedReason.RequiresReferenceIdentityProjectionMetadata:
-                throw new NotSupportedException(
-                    $"Read plan for resource '{FormatResource(resource)}' was intentionally omitted: "
-                        + $"resource requires reference-identity projection metadata "
-                        + $"(DocumentReferenceBindings count: {supportResult.DocumentReferenceBindingCount}). "
-                        + $"Next story: {ReadProjectionStoryRef}."
-                );
-            case ThinSliceReadPlanUnsupportedReason.RequiresDescriptorProjectionMetadata:
-                throw new NotSupportedException(
-                    $"Read plan for resource '{FormatResource(resource)}' was intentionally omitted: "
-                        + $"resource requires descriptor projection metadata "
-                        + $"(DescriptorEdgeSources count: {supportResult.DescriptorEdgeSourceCount}). "
-                        + $"Next story: {ReadProjectionStoryRef}."
-                );
-            case ThinSliceReadPlanUnsupportedReason.NonRelationalStorage:
-                throw new NotSupportedException(
-                    $"Read plan for resource '{FormatResource(resource)}' was intentionally omitted: "
-                        + $"storage kind '{supportResult.StorageKind}' is out of thin-slice read runtime compilation scope. "
-                        + $"Next story: {ReadHydrationStoryRef}."
-                );
-            default:
-                throw new InvalidOperationException(
-                    $"Read plan lookup failed for resource '{FormatResource(resource)}': "
-                        + $"unsupported reason '{supportResult.UnsupportedReason}' is not recognized."
-                );
+            throw new InvalidOperationException(
+                $"Read plan lookup failed for resource '{FormatResource(resource)}' in mapping set "
+                    + $"'{FormatMappingSetKey(mappingSet.Key)}': resource storage kind "
+                    + $"'{ResourceStorageKind.RelationalTables}' should always have a compiled relational-table read plan, but no entry "
+                    + "was found. This indicates an internal compilation/selection bug."
+            );
         }
 
         throw new InvalidOperationException(
-            $"Read plan lookup failed for resource '{FormatResource(resource)}': "
-                + "resource exists and appears thin-slice compatible, but no compiled read plan is present."
+            $"Read plan lookup failed for resource '{FormatResource(resource)}' in mapping set "
+                + $"'{FormatMappingSetKey(mappingSet.Key)}': storage kind '{concreteResourceModel.StorageKind}' "
+                + "is not recognized."
         );
     }
 
