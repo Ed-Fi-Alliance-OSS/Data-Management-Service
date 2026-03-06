@@ -4,17 +4,30 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Concurrent;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
+using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Core;
 
 /// <summary>
 /// Provides cached access to database fingerprints, keyed by connection string.
 /// Thread-safe and process-lifetime scoped (singleton).
+///
+/// Positive results (fingerprint found) are cached permanently.
+/// Negative results (database not provisioned) are cached for a configurable TTL
+/// to avoid hammering the database under load.
+/// Faulted tasks are evicted immediately so transient errors retry on next request.
 /// </summary>
-internal sealed class DatabaseFingerprintProvider(IDatabaseFingerprintReader fingerprintReader)
+internal sealed class DatabaseFingerprintProvider(
+    IDatabaseFingerprintReader fingerprintReader,
+    IOptions<AppSettings> appSettings,
+    TimeProvider timeProvider
+)
 {
-    private readonly ConcurrentDictionary<string, Lazy<Task<DatabaseFingerprint?>>> _cache = new();
+    private sealed record CacheEntry(DatabaseFingerprint? Fingerprint, DateTimeOffset? ExpiresAt);
+
+    private readonly ConcurrentDictionary<string, Lazy<Task<CacheEntry>>> _cache = new();
 
     /// <summary>
     /// Returns the cached fingerprint for the given connection string, or reads it
@@ -23,32 +36,52 @@ internal sealed class DatabaseFingerprintProvider(IDatabaseFingerprintReader fin
     /// </summary>
     public async Task<DatabaseFingerprint?> GetFingerprintAsync(string connectionString)
     {
+        var ttl = TimeSpan.FromSeconds(appSettings.Value.DatabaseFingerprintNegativeCacheTtlSeconds);
+
+        if (_cache.TryGetValue(connectionString, out var existing))
+        {
+            var entry = await existing.Value;
+            if (entry.Fingerprint != null)
+            {
+                return entry.Fingerprint;
+            }
+
+            if (entry.ExpiresAt.HasValue && timeProvider.GetUtcNow() < entry.ExpiresAt.Value)
+            {
+                return null;
+            }
+
+            // Negative entry expired — evict and fall through to re-read
+            _cache.TryRemove(connectionString, out _);
+        }
+
         var lazy = _cache.GetOrAdd(
             connectionString,
-            static (key, reader) =>
-                new Lazy<Task<DatabaseFingerprint?>>(() => reader.ReadFingerprintAsync(key)),
-            fingerprintReader
+            static (key, state) =>
+                new Lazy<Task<CacheEntry>>(async () =>
+                {
+                    var result = await state.reader.ReadFingerprintAsync(key);
+                    if (result != null)
+                    {
+                        return new CacheEntry(result, null);
+                    }
+                    return new CacheEntry(null, state.timeProvider.GetUtcNow() + state.ttl);
+                }),
+            (reader: fingerprintReader, timeProvider, ttl)
         );
 
-        DatabaseFingerprint? result;
+        CacheEntry cacheEntry;
         try
         {
-            result = await lazy.Value;
+            cacheEntry = await lazy.Value;
         }
         catch
         {
-            // Evict faulted task so next request retries the DB read
+            // Evict faulted task so next request retries
             _cache.TryRemove(connectionString, out _);
             throw;
         }
 
-        if (result == null)
-        {
-            // Evict null so next request retries
-            // (e.g., after a DBA provisions the database)
-            _cache.TryRemove(connectionString, out _);
-        }
-
-        return result;
+        return cacheEntry.Fingerprint;
     }
 }

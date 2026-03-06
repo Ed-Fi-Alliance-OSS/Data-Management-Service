@@ -151,6 +151,7 @@ public class InvalidResourceSchemasTests
             var appSettingsOptions = Options.Create(new AppSettings { AllowIdentityUpdateOverrides = "" });
             services.AddSingleton(appSettingsOptions);
             services.AddSingleton<IDatabaseFingerprintReader, NullDatabaseFingerprintReader>();
+            services.AddSingleton(TimeProvider.System);
             services.AddSingleton<DatabaseFingerprintProvider>();
             services.AddTransient<ValidateDatabaseFingerprintMiddleware>();
             services.AddTransient<ILogger<ValidateDatabaseFingerprintMiddleware>>(_ =>
