@@ -37,7 +37,7 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
             new AppSettings
             {
                 AllowIdentityUpdateOverrides = "",
-                EnableDatabaseFingerprintValidation = enableFingerprintValidation,
+                UseRelationalBackend = enableFingerprintValidation,
             }
         );
 

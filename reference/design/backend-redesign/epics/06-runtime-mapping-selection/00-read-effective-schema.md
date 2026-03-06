@@ -28,7 +28,7 @@ This follows `reference/design/backend-redesign/design-docs/transactions-and-con
 
 ## Configuration
 
-- Fingerprint validation is gated by `AppSettings.EnableDatabaseFingerprintValidation` (default: `false`).
+- Fingerprint validation is gated by `AppSettings.UseRelationalBackend` (default: `false`).
 - When `false`, the middleware is a no-op and requests proceed without schema validation.
 - The default is `false` during incremental implementation; story DMS-978 will finalize configuration defaults when the full mapping selection pipeline is complete.
 

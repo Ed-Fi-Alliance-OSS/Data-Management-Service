@@ -147,7 +147,7 @@ internal class RequestInfo(FrontendRequest _frontendRequest, RequestMethod _meth
 
     /// <summary>
     /// The cached database fingerprint from the dms.EffectiveSchema singleton row.
-    /// Set by ValidateDatabaseFingerprintMiddleware when EnableDatabaseFingerprintValidation is true.
+    /// Set by ValidateDatabaseFingerprintMiddleware when UseRelationalBackend is true.
     /// Null when fingerprint validation is disabled.
     /// </summary>
     public DatabaseFingerprint? DatabaseFingerprint { get; set; }

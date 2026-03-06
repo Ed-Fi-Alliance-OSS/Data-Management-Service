@@ -65,9 +65,9 @@ public class AppSettings
     public bool MultiTenancy { get; set; }
 
     /// <summary>
-    /// If true, enables database fingerprint validation middleware that verifies
-    /// each request targets a provisioned database with a valid dms.EffectiveSchema row.
-    /// When false (default), the middleware is a no-op.
+    /// If true, activates the redesigned relational backend pipeline including
+    /// database fingerprint validation, effective-schema caching, and runtime
+    /// mapping selection. When false (default), the legacy backend path is used.
     /// </summary>
-    public bool EnableDatabaseFingerprintValidation { get; set; }
+    public bool UseRelationalBackend { get; set; }
 }
