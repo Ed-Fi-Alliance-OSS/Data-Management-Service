@@ -14,6 +14,13 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 [TestFixture]
 public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
 {
+    private const string RuntimePlanCompilationFixturePath =
+        "Fixtures/runtime-plan-compilation/ApiSchema.json";
+    private static readonly QualifiedResourceName _rootOnlyFixtureResource = new("Ed-Fi", "School");
+    private static readonly QualifiedResourceName _multiTableFixtureResource = new(
+        "Ed-Fi",
+        "StudentAddressCollection"
+    );
     private RelationalResourceModel _resourceModel = null!;
     private ResourceReadPlan _pgsqlReadPlan = null!;
     private ResourceReadPlan _mssqlReadPlan = null!;
@@ -44,6 +51,66 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             .Be(KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql));
         _pgsqlReadPlan.ReferenceIdentityProjectionPlansInDependencyOrder.Should().BeEmpty();
         _pgsqlReadPlan.DescriptorProjectionPlansInOrder.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_should_compile_identical_root_only_read_plans_across_repeated_compilation_and_fixture_resource_order_permutations()
+    {
+        var compiler = new ReadPlanCompiler(SqlDialect.Pgsql);
+
+        var first = compiler.Compile(
+            BuildFixtureResourceModel(_rootOnlyFixtureResource, SqlDialect.Pgsql, false)
+        );
+        var second = compiler.Compile(
+            BuildFixtureResourceModel(_rootOnlyFixtureResource, SqlDialect.Pgsql, false)
+        );
+        var permuted = compiler.Compile(
+            BuildFixtureResourceModel(_rootOnlyFixtureResource, SqlDialect.Pgsql, true)
+        );
+
+        var firstFingerprint = CreateReadPlanFingerprint(first);
+        var secondFingerprint = CreateReadPlanFingerprint(second);
+        var permutedFingerprint = CreateReadPlanFingerprint(permuted);
+
+        secondFingerprint.Should().BeEquivalentTo(firstFingerprint);
+        permutedFingerprint.Should().BeEquivalentTo(firstFingerprint);
+    }
+
+    [Test]
+    public void It_should_compile_identical_multi_table_read_plans_across_repeated_compilation_and_fixture_resource_order_permutations()
+    {
+        var compiler = new ReadPlanCompiler(SqlDialect.Pgsql);
+
+        var first = compiler.Compile(
+            BuildFixtureResourceModel(_multiTableFixtureResource, SqlDialect.Pgsql, false)
+        );
+        var second = compiler.Compile(
+            BuildFixtureResourceModel(_multiTableFixtureResource, SqlDialect.Pgsql, false)
+        );
+        var permuted = compiler.Compile(
+            BuildFixtureResourceModel(_multiTableFixtureResource, SqlDialect.Pgsql, true)
+        );
+
+        var firstFingerprint = CreateReadPlanFingerprint(first);
+        var secondFingerprint = CreateReadPlanFingerprint(second);
+        var permutedFingerprint = CreateReadPlanFingerprint(permuted);
+
+        secondFingerprint.Should().BeEquivalentTo(firstFingerprint);
+        permutedFingerprint.Should().BeEquivalentTo(firstFingerprint);
+    }
+
+    [Test]
+    public void It_should_emit_select_list_and_order_by_columns_in_model_order_for_every_table_plan()
+    {
+        AssertSqlProjectionAndOrderingMatchesModel(_pgsqlReadPlan);
+        AssertSqlProjectionAndOrderingMatchesModel(_mssqlReadPlan);
+    }
+
+    [Test]
+    public void It_should_use_stable_root_table_non_root_table_and_keyset_aliases_across_dialects()
+    {
+        AssertStableAliases(_pgsqlReadPlan);
+        AssertStableAliases(_mssqlReadPlan);
     }
 
     [Test]
@@ -330,6 +397,178 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             .SelectByKeysetSql.Should()
             .Be(expectedSql);
     }
+
+    private static void AssertSqlProjectionAndOrderingMatchesModel(ResourceReadPlan readPlan)
+    {
+        foreach (var tablePlan in readPlan.TablePlansInDependencyOrder)
+        {
+            var expectedSelectList = tablePlan
+                .TableModel.Columns.Select(static column => column.ColumnName.Value)
+                .ToArray();
+            var expectedOrderBy = tablePlan
+                .TableModel.Key.Columns.Select(static column => column.ColumnName.Value)
+                .ToArray();
+
+            ExtractSelectedColumnNames(tablePlan.SelectByKeysetSql).Should().Equal(expectedSelectList);
+            ExtractOrderByColumnNames(tablePlan.SelectByKeysetSql).Should().Equal(expectedOrderBy);
+        }
+    }
+
+    private static void AssertStableAliases(ResourceReadPlan readPlan)
+    {
+        for (var index = 0; index < readPlan.TablePlansInDependencyOrder.Length; index++)
+        {
+            var tablePlan = readPlan.TablePlansInDependencyOrder[index];
+            var expectedTableAlias =
+                index == 0
+                    ? PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Root)
+                    : PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Table);
+
+            ExtractFromAlias(tablePlan.SelectByKeysetSql).Should().Be(expectedTableAlias);
+            ExtractJoinAlias(tablePlan.SelectByKeysetSql)
+                .Should()
+                .Be(PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Keyset));
+        }
+    }
+
+    private static RelationalResourceModel BuildFixtureResourceModel(
+        QualifiedResourceName resourceName,
+        SqlDialect dialect,
+        bool reverseResourceSchemaOrder
+    )
+    {
+        var modelSet = RuntimePlanFixtureModelSetBuilder.Build(
+            RuntimePlanCompilationFixturePath,
+            dialect,
+            reverseResourceSchemaOrder
+        );
+
+        return modelSet
+            .ConcreteResourcesInNameOrder.Single(resource => resource.ResourceKey.Resource == resourceName)
+            .RelationalModel;
+    }
+
+    private static ResourceReadPlanFingerprint CreateReadPlanFingerprint(ResourceReadPlan readPlan)
+    {
+        return new ResourceReadPlanFingerprint(
+            KeysetTempTableName: readPlan.KeysetTable.Table.Name,
+            KeysetDocumentIdColumnName: readPlan.KeysetTable.DocumentIdColumnName.Value,
+            TablePlansInDependencyOrder:
+            [
+                .. readPlan.TablePlansInDependencyOrder.Select(tablePlan => new TableReadPlanFingerprint(
+                    Table: tablePlan.TableModel.Table.ToString(),
+                    SelectByKeysetSql: tablePlan.SelectByKeysetSql,
+                    SelectListColumnsInOrder:
+                    [
+                        .. tablePlan.TableModel.Columns.Select(static column => column.ColumnName.Value),
+                    ],
+                    OrderByKeyColumnsInOrder:
+                    [
+                        .. tablePlan.TableModel.Key.Columns.Select(static column => column.ColumnName.Value),
+                    ]
+                )),
+            ]
+        );
+    }
+
+    private static string[] ExtractSelectedColumnNames(string sql)
+    {
+        return ExtractSqlSectionLines(sql, "SELECT", "FROM").Select(ExtractQualifiedColumnName).ToArray();
+    }
+
+    private static string[] ExtractOrderByColumnNames(string sql)
+    {
+        return ExtractSqlSectionLines(sql, "ORDER BY", ";").Select(ExtractQualifiedColumnName).ToArray();
+    }
+
+    private static IReadOnlyList<string> ExtractSqlSectionLines(
+        string sql,
+        string sectionStart,
+        string sectionEnd
+    )
+    {
+        List<string> lines = [];
+        var inSection = false;
+
+        foreach (var rawLine in sql.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var line = rawLine.Trim();
+
+            if (line == sectionStart)
+            {
+                inSection = true;
+                continue;
+            }
+
+            if (!inSection)
+            {
+                continue;
+            }
+
+            if (line.StartsWith(sectionEnd, StringComparison.Ordinal))
+            {
+                break;
+            }
+
+            lines.Add(line);
+        }
+
+        return lines;
+    }
+
+    private static string ExtractQualifiedColumnName(string line)
+    {
+        var lineWithoutSuffix = line.Replace(" ASC", string.Empty, StringComparison.Ordinal).TrimEnd(',');
+        var qualifierSeparatorIndex = lineWithoutSuffix.IndexOf('.', StringComparison.Ordinal);
+
+        qualifierSeparatorIndex.Should().BeGreaterThanOrEqualTo(0);
+
+        return lineWithoutSuffix[(qualifierSeparatorIndex + 1)..].Trim('"', '[', ']');
+    }
+
+    private static string ExtractFromAlias(string sql)
+    {
+        return ExtractTrailingAlias(sql, "FROM ");
+    }
+
+    private static string ExtractJoinAlias(string sql)
+    {
+        var joinLine = sql.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(static segment => segment.Trim())
+            .Single(segment => segment.StartsWith("INNER JOIN ", StringComparison.Ordinal));
+        var relationWithAlias = joinLine["INNER JOIN ".Length..];
+        var onClauseIndex = relationWithAlias.IndexOf(" ON ", StringComparison.Ordinal);
+
+        onClauseIndex.Should().BeGreaterThan(0);
+
+        var relationTokens = relationWithAlias[..onClauseIndex]
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+        return relationTokens[^1];
+    }
+
+    private static string ExtractTrailingAlias(string sql, string linePrefix)
+    {
+        var line = sql.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(static segment => segment.Trim())
+            .Single(segment => segment.StartsWith(linePrefix, StringComparison.Ordinal));
+        var tokens = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+        return tokens[^1];
+    }
+
+    private sealed record ResourceReadPlanFingerprint(
+        string KeysetTempTableName,
+        string KeysetDocumentIdColumnName,
+        IReadOnlyList<TableReadPlanFingerprint> TablePlansInDependencyOrder
+    );
+
+    private sealed record TableReadPlanFingerprint(
+        string Table,
+        string SelectByKeysetSql,
+        IReadOnlyList<string> SelectListColumnsInOrder,
+        IReadOnlyList<string> OrderByKeyColumnsInOrder
+    );
 
     private static RelationalResourceModel CreateMultiTableResourceModel()
     {
