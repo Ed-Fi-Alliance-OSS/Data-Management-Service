@@ -154,7 +154,7 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
         writer.AppendLine();
 
         writer.AppendLine("ORDER BY");
-        var orderByKeyColumns = GetOrderByKeyColumns(tableModel, rootDocumentIdKeyColumn);
+        var orderByKeyColumns = GetOrderByKeyColumns(tableModel);
 
         using (writer.Indent())
         {
@@ -206,23 +206,15 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
     }
 
     /// <summary>
-    /// Produces a deterministic <c>ORDER BY</c> key column list with the root document-id key first.
+    /// Produces a deterministic <c>ORDER BY</c> key column list that preserves modeled key order exactly.
     /// </summary>
-    private static List<DbColumnName> GetOrderByKeyColumns(
-        DbTableModel tableModel,
-        DbColumnName rootDocumentIdKeyColumn
-    )
+    private static IReadOnlyList<DbColumnName> GetOrderByKeyColumns(DbTableModel tableModel)
     {
-        List<DbColumnName> orderByKeyColumns = [rootDocumentIdKeyColumn];
+        var orderByKeyColumns = new DbColumnName[tableModel.Key.Columns.Count];
 
-        foreach (var keyColumn in tableModel.Key.Columns)
+        for (var index = 0; index < tableModel.Key.Columns.Count; index++)
         {
-            if (keyColumn.ColumnName == rootDocumentIdKeyColumn)
-            {
-                continue;
-            }
-
-            orderByKeyColumns.Add(keyColumn.ColumnName);
+            orderByKeyColumns[index] = tableModel.Key.Columns[index].ColumnName;
         }
 
         return orderByKeyColumns;

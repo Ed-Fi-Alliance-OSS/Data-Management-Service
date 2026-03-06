@@ -15,7 +15,7 @@
       "Add exact-SQL assertions for root, child, and nested child tables in both dialects.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter Name~SelectByKeysetSql`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Model Validation",
