@@ -16,7 +16,9 @@ COPY core/EdFi.DataManagementService.Core/*.csproj ./core/EdFi.DataManagementSer
 COPY core/EdFi.DataManagementService.Core.External/*.csproj ./core/EdFi.DataManagementService.Core.External/
 COPY backend/EdFi.DataManagementService.Backend.Installer/*.csproj ./backend/EdFi.DataManagementService.Backend.Installer/
 COPY backend/EdFi.DataManagementService.Backend/*.csproj ./backend/EdFi.DataManagementService.Backend/
+COPY backend/EdFi.DataManagementService.Backend.External/*.csproj ./backend/EdFi.DataManagementService.Backend.External/
 COPY backend/EdFi.DataManagementService.Backend.Mssql/*.csproj ./backend/EdFi.DataManagementService.Backend.Mssql/
+COPY backend/EdFi.DataManagementService.Backend.Postgresql/*.csproj ./backend/EdFi.DataManagementService.Backend.Postgresql/
 COPY backend/EdFi.DataManagementService.Old.Postgresql/*.csproj ./backend/EdFi.DataManagementService.Old.Postgresql/
 COPY clis/EdFi.DataManagementService.ApiSchemaDownloader/*.csproj ./clis/EdFi.DataManagementService.ApiSchemaDownloader/
 
@@ -29,7 +31,9 @@ COPY core/EdFi.DataManagementService.Core/ ./core/EdFi.DataManagementService.Cor
 COPY core/EdFi.DataManagementService.Core.External/ ./core/EdFi.DataManagementService.Core.External/
 COPY backend/EdFi.DataManagementService.Backend.Installer/ ./backend/EdFi.DataManagementService.Backend.Installer/
 COPY backend/EdFi.DataManagementService.Backend/ ./backend/EdFi.DataManagementService.Backend/
+COPY backend/EdFi.DataManagementService.Backend.External/ ./backend/EdFi.DataManagementService.Backend.External/
 COPY backend/EdFi.DataManagementService.Backend.Mssql/ ./backend/EdFi.DataManagementService.Backend.Mssql/
+COPY backend/EdFi.DataManagementService.Backend.Postgresql/ ./backend/EdFi.DataManagementService.Backend.Postgresql/
 COPY backend/EdFi.DataManagementService.Old.Postgresql/ ./backend/EdFi.DataManagementService.Old.Postgresql/
 COPY clis/EdFi.DataManagementService.ApiSchemaDownloader/ ./clis/EdFi.DataManagementService.ApiSchemaDownloader/
 
