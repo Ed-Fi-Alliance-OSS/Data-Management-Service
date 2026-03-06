@@ -3,10 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.DependencyInjection;
@@ -42,7 +40,7 @@ internal class ValidateDatabaseFingerprintMiddleware(
                 "DMS instance not set before fingerprint validation - TraceId: {TraceId}",
                 requestInfo.FrontendRequest.TraceId.Value
             );
-            requestInfo.FrontendResponse = CreateErrorResponse(
+            requestInfo.FrontendResponse = ProblemDetailsResponse.Create(
                 503,
                 "Service Configuration Error",
                 "Database instance has not been resolved for this request",
@@ -60,7 +58,7 @@ internal class ValidateDatabaseFingerprintMiddleware(
                 LoggingSanitizer.SanitizeForLogging(selectedInstance.InstanceName),
                 requestInfo.FrontendRequest.TraceId.Value
             );
-            requestInfo.FrontendResponse = CreateErrorResponse(
+            requestInfo.FrontendResponse = ProblemDetailsResponse.Create(
                 503,
                 "Service Configuration Error",
                 "DMS instance has no connection string configured",
@@ -79,7 +77,7 @@ internal class ValidateDatabaseFingerprintMiddleware(
                 LoggingSanitizer.SanitizeForLogging(selectedInstance.InstanceName),
                 requestInfo.FrontendRequest.TraceId.Value
             );
-            requestInfo.FrontendResponse = CreateErrorResponse(
+            requestInfo.FrontendResponse = ProblemDetailsResponse.Create(
                 503,
                 "Database Not Provisioned",
                 "The target database has not been provisioned. Run 'ddl provision' to initialize the database schema.",
@@ -90,31 +88,5 @@ internal class ValidateDatabaseFingerprintMiddleware(
 
         requestInfo.DatabaseFingerprint = fingerprint;
         await next();
-    }
-
-    private static FrontendResponse CreateErrorResponse(
-        int statusCode,
-        string title,
-        string errorDetail,
-        TraceId traceId
-    )
-    {
-        var problemDetails = new
-        {
-            detail = errorDetail,
-            type = $"urn:ed-fi:api:{title.ToLower().Replace(" ", "-")}",
-            title,
-            status = statusCode,
-            correlationId = traceId.Value,
-            errors = new[] { errorDetail },
-        };
-
-        return new FrontendResponse(
-            StatusCode: statusCode,
-            Body: JsonSerializer.SerializeToNode(problemDetails),
-            Headers: [],
-            LocationHeaderPath: null,
-            ContentType: "application/problem+json"
-        );
     }
 }
