@@ -20,6 +20,7 @@ public class ResourceAuthorizationHandler(
     AuthorizationStrategyEvaluator[] authorizationStrategyEvaluators,
     AuthorizationSecurableInfo[] authorizationSecurableInfos,
     IAuthorizationServiceFactory authorizationServiceFactory,
+    IServiceProvider scopedServiceProvider,
     ILogger logger
 ) : IResourceAuthorizationHandler
 {
@@ -60,7 +61,8 @@ public class ResourceAuthorizationHandler(
         {
             var validator =
                 authorizationServiceFactory.GetByName<IAuthorizationValidator>(
-                    evaluator.AuthorizationStrategyName
+                    evaluator.AuthorizationStrategyName,
+                    scopedServiceProvider
                 )
                 ?? throw new AuthorizationException(
                     $"Could not find authorization strategy implementation for the following strategy: '{evaluator.AuthorizationStrategyName}'."

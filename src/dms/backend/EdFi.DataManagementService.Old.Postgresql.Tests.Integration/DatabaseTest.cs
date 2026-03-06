@@ -568,6 +568,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                     [],
                     [],
                     new NoAuthorizationServiceFactory(),
+                    null!,
                     NullLogger.Instance
                 ),
             }
@@ -645,6 +646,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                     [],
                     [],
                     new NoAuthorizationServiceFactory(),
+                    null!,
                     NullLogger.Instance
                 ),
             }
@@ -672,6 +674,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                     [],
                     [],
                     new NoAuthorizationServiceFactory(),
+                    null!,
                     NullLogger.Instance
                 ),
             }
@@ -723,6 +726,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                     [],
                     [],
                     new NoAuthorizationServiceFactory(),
+                    null!,
                     NullLogger.Instance
                 ),
                 DeleteInEdOrgHierarchy = deleteInEdOrgHierarchy,

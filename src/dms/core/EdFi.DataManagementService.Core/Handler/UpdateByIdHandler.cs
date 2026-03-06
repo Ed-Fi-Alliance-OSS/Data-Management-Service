@@ -63,6 +63,7 @@ internal class UpdateByIdHandler(
                             requestInfo.AuthorizationStrategyEvaluators,
                             requestInfo.AuthorizationSecurableInfo,
                             authorizationServiceFactory,
+                            requestInfo.ScopedServiceProvider!,
                             _logger
                         ),
                         ResourceAuthorizationPathways: requestInfo.AuthorizationPathways

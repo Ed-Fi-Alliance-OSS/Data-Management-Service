@@ -50,6 +50,7 @@ internal class GetByIdHandler(
                             requestInfo.AuthorizationStrategyEvaluators,
                             requestInfo.AuthorizationSecurableInfo,
                             authorizationServiceFactory,
+                            requestInfo.ScopedServiceProvider!,
                             _logger
                         ),
                         TraceId: requestInfo.FrontendRequest.TraceId

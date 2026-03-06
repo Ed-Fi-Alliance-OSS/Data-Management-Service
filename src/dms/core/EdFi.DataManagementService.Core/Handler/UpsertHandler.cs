@@ -66,6 +66,7 @@ internal class UpsertHandler(
                             requestInfo.AuthorizationStrategyEvaluators,
                             requestInfo.AuthorizationSecurableInfo,
                             authorizationServiceFactory,
+                            requestInfo.ScopedServiceProvider!,
                             _logger
                         ),
                         ResourceAuthorizationPathways: requestInfo.AuthorizationPathways
