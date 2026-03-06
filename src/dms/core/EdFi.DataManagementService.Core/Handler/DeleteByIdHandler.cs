@@ -51,6 +51,7 @@ internal class DeleteByIdHandler(
                             requestInfo.AuthorizationStrategyEvaluators,
                             requestInfo.AuthorizationSecurableInfo,
                             authorizationServiceFactory,
+                            requestInfo.ScopedServiceProvider!,
                             _logger
                         ),
                         ResourceAuthorizationPathways: requestInfo.AuthorizationPathways,
