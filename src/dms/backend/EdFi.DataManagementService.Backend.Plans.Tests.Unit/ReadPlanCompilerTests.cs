@@ -17,24 +17,31 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     private const string RuntimePlanCompilationFixturePath =
         "Fixtures/runtime-plan-compilation/ApiSchema.json";
     private static readonly QualifiedResourceName _rootOnlyFixtureResource = new("Ed-Fi", "School");
+    private static readonly QualifiedResourceName _projectionFixtureResource = new("Ed-Fi", "Student");
     private static readonly QualifiedResourceName _multiTableFixtureResource = new(
         "Ed-Fi",
         "StudentAddressCollection"
     );
+    private RelationalResourceModel _projectionResourceModel = null!;
     private RelationalResourceModel _rootOnlyResourceModel = null!;
     private RelationalResourceModel _resourceModel = null!;
+    private ResourceReadPlan _pgsqlProjectionReadPlan = null!;
     private ResourceReadPlan _pgsqlRootOnlyReadPlan = null!;
     private ResourceReadPlan _pgsqlReadPlan = null!;
+    private ResourceReadPlan _mssqlProjectionReadPlan = null!;
     private ResourceReadPlan _mssqlRootOnlyReadPlan = null!;
     private ResourceReadPlan _mssqlReadPlan = null!;
 
     [SetUp]
     public void SetUpReadPlanCompiler()
     {
+        _projectionResourceModel = CreateProjectionMetadataResourceModel();
         _rootOnlyResourceModel = CreateRootOnlyResourceModel();
         _resourceModel = CreateMultiTableResourceModel();
+        _pgsqlProjectionReadPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(_projectionResourceModel);
         _pgsqlRootOnlyReadPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(_rootOnlyResourceModel);
         _pgsqlReadPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(_resourceModel);
+        _mssqlProjectionReadPlan = new ReadPlanCompiler(SqlDialect.Mssql).Compile(_projectionResourceModel);
         _mssqlRootOnlyReadPlan = new ReadPlanCompiler(SqlDialect.Mssql).Compile(_rootOnlyResourceModel);
         _mssqlReadPlan = new ReadPlanCompiler(SqlDialect.Mssql).Compile(_resourceModel);
     }
@@ -49,7 +56,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
-    public void It_should_preserve_the_keyset_contract_and_empty_projection_arrays_for_story_05()
+    public void It_should_preserve_the_keyset_contract_and_emit_no_projection_plans_when_model_has_no_projection_metadata()
     {
         _pgsqlReadPlan.Model.Should().Be(_resourceModel);
         _pgsqlReadPlan
@@ -57,6 +64,63 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             .Be(KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql));
         _pgsqlReadPlan.ReferenceIdentityProjectionPlansInDependencyOrder.Should().BeEmpty();
         _pgsqlReadPlan.DescriptorProjectionPlansInOrder.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_should_compile_reference_identity_projection_metadata_from_document_reference_bindings()
+    {
+        AssertReferenceIdentityProjectionPlan(_pgsqlProjectionReadPlan);
+        AssertReferenceIdentityProjectionPlan(_mssqlProjectionReadPlan);
+    }
+
+    [Test]
+    public void It_should_emit_exact_pgsql_descriptor_projection_sql_for_projection_metadata_resources()
+    {
+        AssertDescriptorProjectionPlan(
+            _pgsqlProjectionReadPlan,
+            """
+            SELECT
+                p."DescriptorId",
+                d."Uri"
+            FROM
+                (
+                    SELECT t0."AcademicSubjectDescriptorId" AS "DescriptorId"
+                    FROM "edfi"."StudentProjection" t0
+                    INNER JOIN "page" k ON t0."DocumentId" = k."DocumentId"
+                    WHERE t0."AcademicSubjectDescriptorId" IS NOT NULL
+                ) p
+            INNER JOIN "dms"."Descriptor" d ON d."DocumentId" = p."DescriptorId"
+            ORDER BY
+                p."DescriptorId" ASC
+            ;
+
+            """
+        );
+    }
+
+    [Test]
+    public void It_should_emit_exact_mssql_descriptor_projection_sql_for_projection_metadata_resources()
+    {
+        AssertDescriptorProjectionPlan(
+            _mssqlProjectionReadPlan,
+            """
+            SELECT
+                p.[DescriptorId],
+                d.[Uri]
+            FROM
+                (
+                    SELECT t0.[AcademicSubjectDescriptorId] AS [DescriptorId]
+                    FROM [edfi].[StudentProjection] t0
+                    INNER JOIN [#page] k ON t0.[DocumentId] = k.[DocumentId]
+                    WHERE t0.[AcademicSubjectDescriptorId] IS NOT NULL
+                ) p
+            INNER JOIN [dms].[Descriptor] d ON d.[DocumentId] = p.[DescriptorId]
+            ORDER BY
+                p.[DescriptorId] ASC
+            ;
+
+            """
+        );
     }
 
     [Test]
@@ -90,8 +154,31 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         var secondFingerprint = CreateReadPlanFingerprint(second);
         var permutedFingerprint = CreateReadPlanFingerprint(permuted);
 
-        secondFingerprint.Should().BeEquivalentTo(firstFingerprint);
-        permutedFingerprint.Should().BeEquivalentTo(firstFingerprint);
+        secondFingerprint.Should().Be(firstFingerprint);
+        permutedFingerprint.Should().Be(firstFingerprint);
+    }
+
+    [Test]
+    public void It_should_compile_identical_projection_read_plans_across_repeated_compilation_and_fixture_resource_order_permutations()
+    {
+        var compiler = new ReadPlanCompiler(SqlDialect.Pgsql);
+
+        var first = compiler.Compile(
+            BuildFixtureResourceModel(_projectionFixtureResource, SqlDialect.Pgsql, false)
+        );
+        var second = compiler.Compile(
+            BuildFixtureResourceModel(_projectionFixtureResource, SqlDialect.Pgsql, false)
+        );
+        var permuted = compiler.Compile(
+            BuildFixtureResourceModel(_projectionFixtureResource, SqlDialect.Pgsql, true)
+        );
+
+        var firstFingerprint = CreateReadPlanFingerprint(first);
+        var secondFingerprint = CreateReadPlanFingerprint(second);
+        var permutedFingerprint = CreateReadPlanFingerprint(permuted);
+
+        secondFingerprint.Should().Be(firstFingerprint);
+        permutedFingerprint.Should().Be(firstFingerprint);
     }
 
     [Test]
@@ -113,8 +200,8 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         var secondFingerprint = CreateReadPlanFingerprint(second);
         var permutedFingerprint = CreateReadPlanFingerprint(permuted);
 
-        secondFingerprint.Should().BeEquivalentTo(firstFingerprint);
-        permutedFingerprint.Should().BeEquivalentTo(firstFingerprint);
+        secondFingerprint.Should().Be(firstFingerprint);
+        permutedFingerprint.Should().Be(firstFingerprint);
     }
 
     [Test]
@@ -546,41 +633,48 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             .RelationalModel;
     }
 
-    private static ResourceReadPlanFingerprint CreateReadPlanFingerprint(ResourceReadPlan readPlan)
+    private void AssertReferenceIdentityProjectionPlan(ResourceReadPlan readPlan)
     {
-        return new ResourceReadPlanFingerprint(
-            KeysetTempTableName: readPlan.KeysetTable.Table.Name,
-            KeysetDocumentIdColumnName: readPlan.KeysetTable.DocumentIdColumnName.Value,
-            TablePlansInDependencyOrder:
-            [
-                .. readPlan.TablePlansInDependencyOrder.Select(tablePlan => new TableReadPlanFingerprint(
-                    Table: tablePlan.TableModel.Table.ToString(),
-                    SelectByKeysetSql: tablePlan.SelectByKeysetSql,
-                    SelectListColumnsInOrder:
-                    [
-                        .. ReadPlanSqlShape.ExtractSelectedColumnNames(tablePlan.SelectByKeysetSql),
-                    ],
-                    OrderByKeyColumnsInOrder:
-                    [
-                        .. ReadPlanSqlShape.ExtractOrderByColumnNames(tablePlan.SelectByKeysetSql),
-                    ]
-                )),
-            ]
-        );
+        readPlan.ReferenceIdentityProjectionPlansInDependencyOrder.Should().ContainSingle();
+
+        var tablePlan = readPlan.ReferenceIdentityProjectionPlansInDependencyOrder.Single();
+        tablePlan.Table.Should().Be(_projectionResourceModel.Root.Table);
+        tablePlan.BindingsInOrder.Should().ContainSingle();
+
+        var binding = tablePlan.BindingsInOrder.Single();
+        binding.IsIdentityComponent.Should().BeTrue();
+        binding.ReferenceObjectPath.Canonical.Should().Be("$.schoolReference");
+        binding.TargetResource.Should().Be(new QualifiedResourceName("Ed-Fi", "School"));
+        binding.FkColumnOrdinal.Should().Be(2);
+        binding
+            .IdentityFieldOrdinalsInOrder.Select(static field => field.ReferenceJsonPath.Canonical)
+            .Should()
+            .Equal("$.schoolReference.schoolId", "$.schoolReference.schoolYear");
+        binding.IdentityFieldOrdinalsInOrder.Select(static field => field.ColumnOrdinal).Should().Equal(3, 4);
     }
 
-    private sealed record ResourceReadPlanFingerprint(
-        string KeysetTempTableName,
-        string KeysetDocumentIdColumnName,
-        IReadOnlyList<TableReadPlanFingerprint> TablePlansInDependencyOrder
-    );
+    private void AssertDescriptorProjectionPlan(ResourceReadPlan readPlan, string expectedSql)
+    {
+        readPlan.DescriptorProjectionPlansInOrder.Should().ContainSingle();
 
-    private sealed record TableReadPlanFingerprint(
-        string Table,
-        string SelectByKeysetSql,
-        IReadOnlyList<string> SelectListColumnsInOrder,
-        IReadOnlyList<string> OrderByKeyColumnsInOrder
-    );
+        var descriptorPlan = readPlan.DescriptorProjectionPlansInOrder.Single();
+        descriptorPlan.SelectByKeysetSql.Should().Be(expectedSql);
+        descriptorPlan.ResultShape.Should().Be(new DescriptorProjectionResultShape(0, 1));
+        descriptorPlan.SourcesInOrder.Should().ContainSingle();
+
+        var source = descriptorPlan.SourcesInOrder.Single();
+        source.DescriptorValuePath.Canonical.Should().Be("$.academicSubjectDescriptor");
+        source.Table.Should().Be(_projectionResourceModel.Root.Table);
+        source
+            .DescriptorResource.Should()
+            .Be(new QualifiedResourceName("Ed-Fi", "AcademicSubjectDescriptor"));
+        source.DescriptorIdColumnOrdinal.Should().Be(5);
+    }
+
+    private static string CreateReadPlanFingerprint(ResourceReadPlan readPlan)
+    {
+        return NormalizedPlanDtoJson.EmitCanonicalJson(NormalizedPlanContractCodec.Encode(readPlan));
+    }
 
     private static RelationalResourceModel CreateRootOnlyResourceModel()
     {
@@ -650,6 +744,148 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             TablesInDependencyOrder: [rootTable],
             DocumentReferenceBindings: [],
             DescriptorEdgeSources: []
+        );
+    }
+
+    private static RelationalResourceModel CreateProjectionMetadataResourceModel()
+    {
+        var rootTable = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "StudentProjection"),
+            JsonScope: new JsonPathExpression("$", []),
+            Key: new TableKey(
+                ConstraintName: "PK_StudentProjection",
+                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("StudentUniqueId"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.String),
+                    IsNullable: false,
+                    SourceJsonPath: new JsonPathExpression(
+                        "$.studentUniqueId",
+                        [new JsonPathSegment.Property("studentUniqueId")]
+                    ),
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_DocumentId"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: new JsonPathExpression(
+                        "$.schoolReference",
+                        [new JsonPathSegment.Property("schoolReference")]
+                    ),
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "School")
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_RefSchoolId"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: true,
+                    SourceJsonPath: new JsonPathExpression(
+                        "$.schoolReference.schoolId",
+                        [
+                            new JsonPathSegment.Property("schoolReference"),
+                            new JsonPathSegment.Property("schoolId"),
+                        ]
+                    ),
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_RefSchoolYear"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: true,
+                    SourceJsonPath: new JsonPathExpression(
+                        "$.schoolReference.schoolYear",
+                        [
+                            new JsonPathSegment.Property("schoolReference"),
+                            new JsonPathSegment.Property("schoolYear"),
+                        ]
+                    ),
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("AcademicSubjectDescriptorId"),
+                    Kind: ColumnKind.DescriptorFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: new JsonPathExpression(
+                        "$.academicSubjectDescriptor",
+                        [new JsonPathSegment.Property("academicSubjectDescriptor")]
+                    ),
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "AcademicSubjectDescriptor")
+                ),
+            ],
+            Constraints: []
+        );
+
+        return new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "StudentProjection"),
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTable,
+            TablesInDependencyOrder: [rootTable],
+            DocumentReferenceBindings:
+            [
+                new DocumentReferenceBinding(
+                    IsIdentityComponent: true,
+                    ReferenceObjectPath: new JsonPathExpression(
+                        "$.schoolReference",
+                        [new JsonPathSegment.Property("schoolReference")]
+                    ),
+                    Table: rootTable.Table,
+                    FkColumn: new DbColumnName("School_DocumentId"),
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "School"),
+                    IdentityBindings:
+                    [
+                        new ReferenceIdentityBinding(
+                            ReferenceJsonPath: new JsonPathExpression(
+                                "$.schoolReference.schoolId",
+                                [
+                                    new JsonPathSegment.Property("schoolReference"),
+                                    new JsonPathSegment.Property("schoolId"),
+                                ]
+                            ),
+                            Column: new DbColumnName("School_RefSchoolId")
+                        ),
+                        new ReferenceIdentityBinding(
+                            ReferenceJsonPath: new JsonPathExpression(
+                                "$.schoolReference.schoolYear",
+                                [
+                                    new JsonPathSegment.Property("schoolReference"),
+                                    new JsonPathSegment.Property("schoolYear"),
+                                ]
+                            ),
+                            Column: new DbColumnName("School_RefSchoolYear")
+                        ),
+                    ]
+                ),
+            ],
+            DescriptorEdgeSources:
+            [
+                new DescriptorEdgeSource(
+                    IsIdentityComponent: false,
+                    DescriptorValuePath: new JsonPathExpression(
+                        "$.academicSubjectDescriptor",
+                        [new JsonPathSegment.Property("academicSubjectDescriptor")]
+                    ),
+                    Table: rootTable.Table,
+                    FkColumn: new DbColumnName("AcademicSubjectDescriptorId"),
+                    DescriptorResource: new QualifiedResourceName("Ed-Fi", "AcademicSubjectDescriptor")
+                ),
+            ]
         );
     }
 
