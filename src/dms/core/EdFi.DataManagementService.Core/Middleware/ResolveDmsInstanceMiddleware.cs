@@ -43,6 +43,7 @@ internal class ResolveDmsInstanceMiddleware(
 
             requestInfo.FrontendResponse = ProblemDetailsResponse.Create(
                 403,
+                ProblemDetailsResponse.AuthorizationDenied,
                 "Authorization Denied",
                 "No database instances are authorized for this client",
                 requestInfo.FrontendRequest.TraceId
@@ -139,6 +140,7 @@ internal class ResolveDmsInstanceMiddleware(
 
             requestInfo.FrontendResponse = ProblemDetailsResponse.Create(
                 404,
+                ProblemDetailsResponse.RouteResolutionError,
                 "Route Resolution Error",
                 "No database instance found matching the request route qualifiers",
                 requestInfo.FrontendRequest.TraceId
@@ -158,6 +160,7 @@ internal class ResolveDmsInstanceMiddleware(
 
             requestInfo.FrontendResponse = ProblemDetailsResponse.Create(
                 503,
+                ProblemDetailsResponse.ServiceConfigurationError,
                 "Service Configuration Error",
                 "Database connection not configured for the matched instance",
                 requestInfo.FrontendRequest.TraceId
@@ -230,6 +233,7 @@ internal class ResolveDmsInstanceMiddleware(
 
                     requestInfo.FrontendResponse = ProblemDetailsResponse.Create(
                         400,
+                        ProblemDetailsResponse.AmbiguousRouteResolution,
                         "Route Resolution Error",
                         "Multiple database instances match the request route qualifiers - ambiguous routing not supported",
                         requestInfo.FrontendRequest.TraceId

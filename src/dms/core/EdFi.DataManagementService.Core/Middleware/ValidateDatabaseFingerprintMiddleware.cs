@@ -42,6 +42,7 @@ internal class ValidateDatabaseFingerprintMiddleware(
             );
             requestInfo.FrontendResponse = ProblemDetailsResponse.Create(
                 503,
+                ProblemDetailsResponse.ServiceConfigurationError,
                 "Service Configuration Error",
                 "Database instance has not been resolved for this request",
                 requestInfo.FrontendRequest.TraceId
@@ -60,6 +61,7 @@ internal class ValidateDatabaseFingerprintMiddleware(
             );
             requestInfo.FrontendResponse = ProblemDetailsResponse.Create(
                 503,
+                ProblemDetailsResponse.ServiceConfigurationError,
                 "Service Configuration Error",
                 "DMS instance has no connection string configured",
                 requestInfo.FrontendRequest.TraceId
@@ -79,6 +81,7 @@ internal class ValidateDatabaseFingerprintMiddleware(
             );
             requestInfo.FrontendResponse = ProblemDetailsResponse.Create(
                 503,
+                ProblemDetailsResponse.DatabaseNotProvisioned,
                 "Database Not Provisioned",
                 "The target database has not been provisioned. Run 'ddl provision' to initialize the database schema.",
                 requestInfo.FrontendRequest.TraceId
