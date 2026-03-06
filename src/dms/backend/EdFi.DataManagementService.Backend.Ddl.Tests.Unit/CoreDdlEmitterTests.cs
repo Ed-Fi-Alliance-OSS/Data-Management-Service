@@ -89,11 +89,13 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     public void It_should_emit_phases_in_correct_order()
     {
         var phase1 = _ddl.IndexOf("Phase 1: Schemas", StringComparison.Ordinal);
-        var phase2 = _ddl.IndexOf("Phase 2: Sequences", StringComparison.Ordinal);
-        var phase3 = _ddl.IndexOf("Phase 3: Tables", StringComparison.Ordinal);
-        var phase4 = _ddl.IndexOf("Phase 4: Foreign Keys", StringComparison.Ordinal);
-        var phase5 = _ddl.IndexOf("Phase 5: Indexes", StringComparison.Ordinal);
-        var phase6 = _ddl.IndexOf("Phase 6: Triggers", StringComparison.Ordinal);
+        var phase2 = _ddl.IndexOf("Phase 2: Extensions", StringComparison.Ordinal);
+        var phase3 = _ddl.IndexOf("Phase 3: Sequences", StringComparison.Ordinal);
+        var phase4 = _ddl.IndexOf("Phase 4: Functions", StringComparison.Ordinal);
+        var phase5 = _ddl.IndexOf("Phase 5: Tables", StringComparison.Ordinal);
+        var phase6 = _ddl.IndexOf("Phase 6: Foreign Keys", StringComparison.Ordinal);
+        var phase7 = _ddl.IndexOf("Phase 7: Indexes", StringComparison.Ordinal);
+        var phase8 = _ddl.IndexOf("Phase 8: Triggers", StringComparison.Ordinal);
 
         phase1.Should().BeGreaterOrEqualTo(0);
         phase2.Should().BeGreaterThan(phase1);
@@ -101,6 +103,8 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         phase4.Should().BeGreaterThan(phase3);
         phase5.Should().BeGreaterThan(phase4);
         phase6.Should().BeGreaterThan(phase5);
+        phase7.Should().BeGreaterThan(phase6);
+        phase8.Should().BeGreaterThan(phase7);
     }
 
     // ── Schema and sequence ─────────────────────────────────────────
@@ -112,9 +116,33 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
+    public void It_should_create_pgcrypto_extension()
+    {
+        _ddl.Should().Contain("CREATE EXTENSION IF NOT EXISTS \"pgcrypto\"");
+    }
+
+    [Test]
     public void It_should_create_change_version_sequence()
     {
         _ddl.Should().Contain("CREATE SEQUENCE IF NOT EXISTS \"dms\".\"ChangeVersionSequence\"");
+    }
+
+    // ── Functions ───────────────────────────────────────────────────
+
+    [Test]
+    public void It_should_create_uuidv5_function()
+    {
+        _ddl.Should()
+            .Contain("CREATE OR REPLACE FUNCTION \"dms\".\"uuidv5\"(namespace_uuid uuid, name_text text)");
+    }
+
+    [Test]
+    public void It_should_emit_uuidv5_before_triggers()
+    {
+        var funcPos = _ddl.IndexOf("\"dms\".\"uuidv5\"", StringComparison.Ordinal);
+        var triggerPos = _ddl.IndexOf("Phase 8: Triggers", StringComparison.Ordinal);
+        funcPos.Should().BeGreaterThan(0);
+        funcPos.Should().BeLessThan(triggerPos);
     }
 
     // ── Tables ──────────────────────────────────────────────────────
@@ -551,18 +579,27 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     public void It_should_emit_phases_in_correct_order()
     {
         var phase1 = _ddl.IndexOf("Phase 1: Schemas", StringComparison.Ordinal);
-        var phase2 = _ddl.IndexOf("Phase 2: Sequences", StringComparison.Ordinal);
-        var phase3 = _ddl.IndexOf("Phase 3: Tables", StringComparison.Ordinal);
-        var phase4 = _ddl.IndexOf("Phase 4: Foreign Keys", StringComparison.Ordinal);
-        var phase5 = _ddl.IndexOf("Phase 5: Indexes", StringComparison.Ordinal);
-        var phase6 = _ddl.IndexOf("Phase 6: Triggers", StringComparison.Ordinal);
+        var phase3 = _ddl.IndexOf("Phase 3: Sequences", StringComparison.Ordinal);
+        var phase4 = _ddl.IndexOf("Phase 4: Functions", StringComparison.Ordinal);
+        var phase5 = _ddl.IndexOf("Phase 5: Tables", StringComparison.Ordinal);
+        var phase6 = _ddl.IndexOf("Phase 6: Foreign Keys", StringComparison.Ordinal);
+        var phase7 = _ddl.IndexOf("Phase 7: Indexes", StringComparison.Ordinal);
+        var phase8 = _ddl.IndexOf("Phase 8: Triggers", StringComparison.Ordinal);
 
         phase1.Should().BeGreaterOrEqualTo(0);
-        phase2.Should().BeGreaterThan(phase1);
-        phase3.Should().BeGreaterThan(phase2);
+        phase3.Should().BeGreaterThan(phase1);
         phase4.Should().BeGreaterThan(phase3);
         phase5.Should().BeGreaterThan(phase4);
         phase6.Should().BeGreaterThan(phase5);
+        phase7.Should().BeGreaterThan(phase6);
+        phase8.Should().BeGreaterThan(phase7);
+    }
+
+    [Test]
+    public void It_should_not_emit_extensions_phase()
+    {
+        _ddl.Should().NotContain("Phase 2: Extensions");
+        _ddl.Should().NotContain("CREATE EXTENSION");
     }
 
     // ── Schema and sequence ─────────────────────────────────────────
@@ -578,6 +615,23 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     {
         _ddl.Should().Contain("sys.sequences");
         _ddl.Should().Contain("[dms].[ChangeVersionSequence]");
+    }
+
+    // ── Functions ───────────────────────────────────────────────────
+
+    [Test]
+    public void It_should_create_uuidv5_function()
+    {
+        _ddl.Should().Contain("CREATE OR ALTER FUNCTION [dms].[uuidv5]");
+    }
+
+    [Test]
+    public void It_should_emit_uuidv5_before_triggers()
+    {
+        var funcPos = _ddl.IndexOf("[dms].[uuidv5]", StringComparison.Ordinal);
+        var triggerPos = _ddl.IndexOf("Phase 8: Triggers", StringComparison.Ordinal);
+        funcPos.Should().BeGreaterThan(0);
+        funcPos.Should().BeLessThan(triggerPos);
     }
 
     // ── Tables ──────────────────────────────────────────────────────
