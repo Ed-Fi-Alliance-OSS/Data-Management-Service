@@ -120,7 +120,9 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     {
         var pgcrypto = _dialect.CreateExtensionIfNotExists("pgcrypto");
         if (pgcrypto.Length == 0)
+        {
             return;
+        }
 
         writer.AppendLine("-- ==========================================================");
         writer.AppendLine("-- Phase 2: Extensions");
@@ -138,7 +140,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private void EmitSequences(SqlWriter writer)
     {
-        writer.WritePhaseHeader(2, "Sequences");
+        writer.WritePhaseHeader(3, "Sequences");
 
         EmitChangeVersionSequence(writer);
     }
@@ -178,7 +180,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private void EmitTables(SqlWriter writer)
     {
-        writer.WritePhaseHeader(3, "Tables (PK/UNIQUE/CHECK only, no cross-table FKs)");
+        writer.WritePhaseHeader(5, "Tables (PK/UNIQUE/CHECK only, no cross-table FKs)");
 
         // Alphabetical order by table name within the dms schema.
         EmitDescriptorTable(writer);
@@ -577,7 +579,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private void EmitForeignKeys(SqlWriter writer)
     {
-        writer.WritePhaseHeader(4, "Foreign Keys");
+        writer.WritePhaseHeader(6, "Foreign Keys");
 
         // Ordered by (table name, constraint name).
 
@@ -682,7 +684,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private void EmitIndexes(SqlWriter writer)
     {
-        writer.WritePhaseHeader(5, "Indexes");
+        writer.WritePhaseHeader(7, "Indexes");
 
         // Ordered by (table name, index name).
 
@@ -748,7 +750,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private void EmitTriggers(SqlWriter writer)
     {
-        writer.WritePhaseHeader(6, "Triggers");
+        writer.WritePhaseHeader(8, "Triggers");
 
         if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
