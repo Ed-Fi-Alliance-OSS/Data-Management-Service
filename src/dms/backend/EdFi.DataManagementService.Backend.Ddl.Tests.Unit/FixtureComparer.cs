@@ -27,7 +27,7 @@ public static class FixtureComparer
     /// </summary>
     /// <param name="fixtureDirectory">Absolute path to the fixture directory.</param>
     /// <returns>A result indicating pass/fail with diff details on failure.</returns>
-    public static FixtureCompareResult Compare(string fixtureDirectory)
+    public static FixtureCompareResult Compare(string fixtureDirectory, bool? updateGoldens = null)
     {
         var expectedDir = Path.Combine(fixtureDirectory, "expected");
         var actualDir = Path.Combine(fixtureDirectory, "actual");
@@ -40,7 +40,7 @@ public static class FixtureComparer
             );
         }
 
-        if (ShouldUpdateGoldens())
+        if (updateGoldens ?? ShouldUpdateGoldens())
         {
             UpdateGoldens(expectedDir, actualDir);
             return new FixtureCompareResult(true, "Golden files updated from actual/.");

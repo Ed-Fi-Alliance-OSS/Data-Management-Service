@@ -111,7 +111,7 @@ public static class FixtureConfigReader
         }
 
         var inputsDir = Path.Combine(fixtureDirectory, "inputs");
-        var resolvedInputsDir = Path.GetFullPath(inputsDir) + Path.DirectorySeparatorChar;
+        var resolvedInputsDir = Path.GetFullPath(inputsDir);
 
         foreach (var schemaFile in config.ApiSchemaFiles)
         {
@@ -123,8 +123,9 @@ public static class FixtureConfigReader
             }
 
             var resolvedPath = Path.GetFullPath(Path.Combine(inputsDir, schemaFile));
+            var relativePath = Path.GetRelativePath(resolvedInputsDir, resolvedPath);
 
-            if (!resolvedPath.StartsWith(resolvedInputsDir, StringComparison.OrdinalIgnoreCase))
+            if (relativePath.StartsWith("..", StringComparison.Ordinal))
             {
                 throw new InvalidOperationException(
                     $"apiSchemaFiles path escapes the inputs/ directory: '{schemaFile}'"
