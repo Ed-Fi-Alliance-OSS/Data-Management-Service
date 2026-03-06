@@ -7,7 +7,6 @@ using System.Diagnostics.CodeAnalysis;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
-using EdFi.DataManagementService.Backend.RelationalModel.Naming;
 
 namespace EdFi.DataManagementService.Backend.Plans;
 
@@ -289,7 +288,7 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
         }
 
         var keysetAlias = PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Keyset);
-        var rootDocumentIdKeyColumn = ResolveRootDocumentIdKeyColumn(tableModel);
+        var rootDocumentIdKeyColumn = tableModel.Key.Columns[0].ColumnName;
         var writer = new SqlWriter(_sqlDialect);
 
         writer.AppendLine("SELECT");
@@ -343,32 +342,6 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
         writer.AppendLine(";");
 
         return writer.ToString();
-    }
-
-    /// <summary>
-    /// Resolves the single root document-id key column used to join the table to the page keyset.
-    /// </summary>
-    private static DbColumnName ResolveRootDocumentIdKeyColumn(DbTableModel tableModel)
-    {
-        var rootDocumentIdKeyColumns = tableModel
-            .Key.Columns.Where(column => RelationalNameConventions.IsDocumentIdColumn(column.ColumnName))
-            .Select(static column => column.ColumnName)
-            .ToArray();
-
-        if (rootDocumentIdKeyColumns.Length == 1)
-        {
-            return rootDocumentIdKeyColumns[0];
-        }
-
-        var keyColumnList = string.Join(
-            ", ",
-            tableModel.Key.Columns.Select(column => column.ColumnName.Value)
-        );
-
-        throw new InvalidOperationException(
-            $"Cannot compile read plan for '{tableModel.Table}': expected exactly one root document-id key column but found {rootDocumentIdKeyColumns.Length}. "
-                + $"Key columns: [{keyColumnList}]."
-        );
     }
 
     /// <summary>

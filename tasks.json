@@ -164,5 +164,25 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter 'FullyQualifiedName~ReadPlanCompiler|FullyQualifiedName~Given_WritePlanCompiler_BindingsAndSources'`"
     ],
     "completed": true
+  },
+  {
+    "category": "Read Plan Root Key Resolution Simplification",
+    "description": "Simplify `ReadPlanCompiler.ResolveRootDocumentIdKeyColumn` so hydration keyset joins use the deterministic key-shape guarantee already enforced by `RelationalResourceModelCompileValidator`. Acceptance: after `ValidateHydrationKeyColumns` succeeds, the compiler must resolve the keyset join column directly from `tableModel.Key.Columns[0]` instead of re-filtering key columns by `IsDocumentIdColumn`. The emitted SQL for root, child, nested child, and `_ext` tables must remain unchanged across pgsql and mssql, and malformed key-shape failures must continue to come from the shared validator rather than a second read-compiler-specific resolution path.",
+    "steps-to-verify": [
+      "Update `src/dms/backend/EdFi.DataManagementService.Backend.Plans/ReadPlanCompiler.cs` so the keyset join uses the validated first key column and does not maintain duplicate document-id resolution logic.",
+      "Keep or add unit coverage in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReadPlanCompilerTests.cs` proving exact `SelectByKeysetSql` output is unchanged for representative root, child, nested collection, and extension tables.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~ReadPlanCompiler`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Shared Invalid Key Shape Test Fixtures",
+    "description": "Remove the duplicated malformed-key-shape test scaffolding currently split between `ReadPlanCompilerTests` and `Given_WritePlanCompiler_BindingsAndSources`. Acceptance: the shared invalid key-shape model factories and, if practical, the shared `TestCaseData` provider live in a common test helper such as `WritePlanCompilerTestBase` or a focused companion fixture helper. Both compiler suites must continue asserting the same deterministic exception messages for: missing root `DocumentId`, root `DocumentId` not first, multiple `Ordinal` columns, and `Ordinal` not last, without maintaining separate copies of the same malformed model builders.",
+    "steps-to-verify": [
+      "Extract the duplicated malformed-key model builders from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReadPlanCompilerTests.cs` and `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Given_WritePlanCompiler_BindingsAndSources.cs` into shared test infrastructure.",
+      "Update both test fixtures to consume the shared model builders and preserve their current compiler-specific expected messages.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter 'FullyQualifiedName~ReadPlanCompiler|FullyQualifiedName~Given_WritePlanCompiler_BindingsAndSources'`"
+    ],
+    "completed": false
   }
 ]
