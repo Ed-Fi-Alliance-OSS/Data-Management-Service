@@ -10,6 +10,8 @@ using Npgsql;
 
 namespace EdFi.DataManagementService.Backend.Postgresql;
 
+// TODO(DMS-939): Add an integration test that reads from an actual provisioned PostgreSQL database
+// to verify the reader's column names match the DDL-emitted schema.
 public class PostgresqlDatabaseFingerprintReader(ILogger<PostgresqlDatabaseFingerprintReader> logger)
     : IDatabaseFingerprintReader
 {
@@ -18,37 +20,39 @@ public class PostgresqlDatabaseFingerprintReader(ILogger<PostgresqlDatabaseFinge
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
 
-        // Check if the dms.EffectiveSchema table exists
+        // Check if the dms.effectiveschema table exists
+        // Note: PostgreSQL folds unquoted DDL identifiers to lowercase,
+        // so information_schema stores the table name as 'effectiveschema'.
         await using var existsCommand = connection.CreateCommand();
         existsCommand.CommandText =
-            "SELECT 1 FROM information_schema.tables WHERE table_schema = 'dms' AND table_name = 'EffectiveSchema'";
+            "SELECT 1 FROM information_schema.tables WHERE table_schema = 'dms' AND table_name = 'effectiveschema'";
 
         if (await existsCommand.ExecuteScalarAsync() is null)
         {
-            logger.LogDebug("dms.EffectiveSchema table does not exist");
+            logger.LogDebug("dms.effectiveschema table does not exist");
             return null;
         }
 
         // Read the singleton row
         await using var readCommand = connection.CreateCommand();
         readCommand.CommandText = """
-            SELECT "ApiSchemaFormatVersion", "EffectiveSchemaHash", "ResourceKeyCount", "ResourceKeySeedHash"
-            FROM dms."EffectiveSchema"
-            WHERE "EffectiveSchemaSingletonId" = 1
+            SELECT apischemaformatversion, effectiveschemahash, resourcekeycount, resourcekeyseedhash
+            FROM dms.effectiveschema
+            WHERE effectiveschemasingletonid = 1
             """;
 
         await using var reader = await readCommand.ExecuteReaderAsync();
         if (!await reader.ReadAsync())
         {
-            logger.LogDebug("dms.EffectiveSchema table exists but has no singleton row");
+            logger.LogDebug("dms.effectiveschema table exists but has no singleton row");
             return null;
         }
 
         return new DatabaseFingerprint(
-            ApiSchemaFormatVersion: reader.GetString(reader.GetOrdinal("ApiSchemaFormatVersion")),
-            EffectiveSchemaHash: reader.GetString(reader.GetOrdinal("EffectiveSchemaHash")),
-            ResourceKeyCount: reader.GetInt16(reader.GetOrdinal("ResourceKeyCount")),
-            ResourceKeySeedHash: ((byte[])reader[reader.GetOrdinal("ResourceKeySeedHash")]).ToImmutableArray()
+            ApiSchemaFormatVersion: reader.GetString(reader.GetOrdinal("apischemaformatversion")),
+            EffectiveSchemaHash: reader.GetString(reader.GetOrdinal("effectiveschemahash")),
+            ResourceKeyCount: reader.GetInt16(reader.GetOrdinal("resourcekeycount")),
+            ResourceKeySeedHash: ((byte[])reader[reader.GetOrdinal("resourcekeyseedhash")]).ToImmutableArray()
         );
     }
 }
