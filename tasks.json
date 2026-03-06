@@ -51,7 +51,7 @@
       "Update manifest fingerprint readers and assertions so multi-table read plans participate in deterministic comparisons without collapsing back to a single read-plan hash.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~RuntimePlanCompilation_Determinism`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Normalized Read Plan Contracts",
