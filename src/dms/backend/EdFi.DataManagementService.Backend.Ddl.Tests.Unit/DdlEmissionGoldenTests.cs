@@ -102,6 +102,47 @@ public abstract class DdlEmissionGoldenTestBase
     }
 
     /// <summary>
+    /// Emits auth DDL and writes the actual output file. Call this in SetUp (arrange + act).
+    /// </summary>
+    protected static GoldenTestPaths EmitAuthDdl(
+        string fixtureName,
+        SqlDialect dialect,
+        AuthEdOrgHierarchy hierarchy
+    )
+    {
+        var projectRoot = FindProjectRoot(TestContext.CurrentContext.TestDirectory);
+        var fixtureRoot = Path.Combine(projectRoot, "Fixtures", "ddl-emission");
+        var dialectName = dialect switch
+        {
+            SqlDialect.Pgsql => "pgsql",
+            SqlDialect.Mssql => "mssql",
+            _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported dialect."),
+        };
+        var expectedPath = Path.Combine(fixtureRoot, "expected", dialectName, $"{fixtureName}.sql");
+        var actualPath = Path.Combine(
+            TestContext.CurrentContext.WorkDirectory,
+            "ddl-emission",
+            dialectName,
+            $"{fixtureName}.sql"
+        );
+
+        var dialectInstance = SqlDialectFactory.Create(dialect);
+        var emitter = new AuthDdlEmitter(dialectInstance, hierarchy);
+        var ddl = emitter.Emit();
+
+        Directory.CreateDirectory(Path.GetDirectoryName(actualPath)!);
+        File.WriteAllText(actualPath, ddl);
+
+        if (ShouldUpdateGoldens())
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(expectedPath)!);
+            File.WriteAllText(expectedPath, ddl);
+        }
+
+        return new GoldenTestPaths(expectedPath, actualPath);
+    }
+
+    /// <summary>
     /// Emits DDL and writes the actual output file. Call this in SetUp (arrange + act).
     /// </summary>
     protected static GoldenTestPaths EmitDdl(
