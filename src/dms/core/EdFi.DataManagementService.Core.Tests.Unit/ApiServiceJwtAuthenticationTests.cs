@@ -139,6 +139,7 @@ public class ApiServiceJwtAuthenticationTests
             ResiliencePipeline.Empty,
             A.Fake<ResourceLoadOrderCalculator>(),
             serviceProvider,
+            A.Fake<IServiceScopeFactory>(),
             A.Fake<CachedClaimSetProvider>(),
             A.Fake<IResourceDependencyGraphMLFactory>(),
             A.Fake<IProfileService>()
@@ -189,6 +190,7 @@ public class ApiServiceJwtAuthenticationTests
             ResiliencePipeline.Empty,
             A.Fake<ResourceLoadOrderCalculator>(),
             serviceProvider,
+            A.Fake<IServiceScopeFactory>(),
             A.Fake<CachedClaimSetProvider>(),
             A.Fake<IResourceDependencyGraphMLFactory>(),
             A.Fake<IProfileService>()

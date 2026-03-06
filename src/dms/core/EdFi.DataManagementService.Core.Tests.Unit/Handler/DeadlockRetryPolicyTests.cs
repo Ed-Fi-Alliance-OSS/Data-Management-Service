@@ -369,7 +369,7 @@ public class DeadlockRetryPolicyTests
         return builder.Build();
     }
 
-    private static IPipelineStep CreateGetByIdHandler(
+    private static (IPipelineStep handler, IServiceProvider serviceProvider) CreateGetByIdHandler(
         IDocumentStoreRepository repository,
         ILogger logger,
         int maxRetryAttempts = 3
@@ -378,12 +378,13 @@ public class DeadlockRetryPolicyTests
         var serviceProvider = A.Fake<IServiceProvider>();
         A.CallTo(() => serviceProvider.GetService(typeof(IDocumentStoreRepository))).Returns(repository);
 
-        return new GetByIdHandler(
-            serviceProvider,
+        var handler = new GetByIdHandler(
             logger,
             BuildHandlerPipeline(maxRetryAttempts),
             new NoAuthorizationServiceFactory()
         );
+
+        return (handler, serviceProvider);
     }
 
     [TestFixture]
@@ -406,7 +407,8 @@ public class DeadlockRetryPolicyTests
         {
             _logger = new CapturingLogger();
             _requestInfo = No.RequestInfo("test-trace-id");
-            var handler = CreateGetByIdHandler(new AlwaysRetryableRepository(), _logger);
+            var (handler, serviceProvider) = CreateGetByIdHandler(new AlwaysRetryableRepository(), _logger);
+            _requestInfo.ScopedServiceProvider = serviceProvider;
             await handler.Execute(_requestInfo, NullNext);
         }
 
@@ -471,7 +473,8 @@ public class DeadlockRetryPolicyTests
         {
             _logger = new CapturingLogger();
             _requestInfo = No.RequestInfo("test-trace-id");
-            var handler = CreateGetByIdHandler(new RetryThenSuccessRepository(), _logger);
+            var (handler, serviceProvider) = CreateGetByIdHandler(new RetryThenSuccessRepository(), _logger);
+            _requestInfo.ScopedServiceProvider = serviceProvider;
             await handler.Execute(_requestInfo, NullNext);
         }
 

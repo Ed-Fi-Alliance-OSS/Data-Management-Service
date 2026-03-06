@@ -173,6 +173,7 @@ public class InvalidResourceSchemasTests
                 ResiliencePipeline.Empty,
                 new ResourceLoadOrderCalculator([], A.Fake<IResourceDependencyGraphFactory>()),
                 serviceProvider,
+                A.Fake<IServiceScopeFactory>(),
                 A.Fake<CachedClaimSetProvider>(),
                 A.Fake<IResourceDependencyGraphMLFactory>(),
                 A.Fake<IProfileService>()

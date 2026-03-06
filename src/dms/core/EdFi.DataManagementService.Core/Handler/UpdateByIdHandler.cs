@@ -24,7 +24,6 @@ namespace EdFi.DataManagementService.Core.Handler;
 /// Handles an update request that has made it through the middleware pipeline steps.
 /// </summary>
 internal class UpdateByIdHandler(
-    IServiceProvider _serviceProvider,
     ILogger _logger,
     ResiliencePipeline _resiliencePipeline,
     IApiSchemaProvider _apiSchemaProvider,
@@ -36,8 +35,9 @@ internal class UpdateByIdHandler(
         _logger.LogDebug("Entering UpdateByIdHandler - {TraceId}", requestInfo.FrontendRequest.TraceId.Value);
         Trace.Assert(requestInfo.ParsedBody != null, "Unexpected null Body on Frontend Request from PUT", "");
 
-        // Resolve repository from service provider within request scope
-        var documentStoreRepository = _serviceProvider.GetRequiredService<IDocumentStoreRepository>();
+        // Resolve repository from the per-request scoped service provider
+        var documentStoreRepository =
+            requestInfo.ScopedServiceProvider!.GetRequiredService<IDocumentStoreRepository>();
 
         var updateCascadeHandler = new UpdateCascadeHandler(_apiSchemaProvider, _logger);
 

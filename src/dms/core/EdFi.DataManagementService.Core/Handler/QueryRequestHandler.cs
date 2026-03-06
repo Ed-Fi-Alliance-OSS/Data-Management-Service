@@ -16,11 +16,7 @@ using static EdFi.DataManagementService.Core.Handler.Utility;
 
 namespace EdFi.DataManagementService.Core.Handler;
 
-internal class QueryRequestHandler(
-    IServiceProvider _serviceProvider,
-    ILogger _logger,
-    ResiliencePipeline _resiliencePipeline
-) : IPipelineStep
+internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resiliencePipeline) : IPipelineStep
 {
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
@@ -29,8 +25,8 @@ internal class QueryRequestHandler(
             requestInfo.FrontendRequest.TraceId.Value
         );
 
-        // Resolve query handler from service provider within request scope
-        var queryHandler = _serviceProvider.GetRequiredService<IQueryHandler>();
+        // Resolve query handler from the per-request scoped service provider
+        var queryHandler = requestInfo.ScopedServiceProvider!.GetRequiredService<IQueryHandler>();
 
         var queryResult = await ExecuteWithRetryLogging(
             _resiliencePipeline,

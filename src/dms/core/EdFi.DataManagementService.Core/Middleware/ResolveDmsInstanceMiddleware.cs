@@ -21,7 +21,6 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// </summary>
 internal class ResolveDmsInstanceMiddleware(
     IDmsInstanceProvider dmsInstanceProvider,
-    IServiceProvider serviceProvider,
     ILogger<ResolveDmsInstanceMiddleware> logger
 ) : IPipelineStep
 {
@@ -30,8 +29,9 @@ internal class ResolveDmsInstanceMiddleware(
     /// </summary>
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
-        // Resolve scoped service for this request
-        var dmsInstanceSelection = serviceProvider.GetRequiredService<IDmsInstanceSelection>();
+        // Resolve scoped service from the per-request scope
+        var dmsInstanceSelection =
+            requestInfo.ScopedServiceProvider!.GetRequiredService<IDmsInstanceSelection>();
 
         // Validate ClientAuthorizations.DmsInstanceIds not empty
         if (requestInfo.ClientAuthorizations.DmsInstanceIds.Count == 0)
