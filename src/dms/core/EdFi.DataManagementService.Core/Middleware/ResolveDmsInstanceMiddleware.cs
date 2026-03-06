@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -42,7 +41,7 @@ internal class ResolveDmsInstanceMiddleware(
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
-            requestInfo.FrontendResponse = CreateErrorResponse(
+            requestInfo.FrontendResponse = ProblemDetailsResponse.Create(
                 403,
                 "Authorization Denied",
                 "No database instances are authorized for this client",
@@ -138,7 +137,7 @@ internal class ResolveDmsInstanceMiddleware(
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
-            requestInfo.FrontendResponse = CreateErrorResponse(
+            requestInfo.FrontendResponse = ProblemDetailsResponse.Create(
                 404,
                 "Route Resolution Error",
                 "No database instance found matching the request route qualifiers",
@@ -157,7 +156,7 @@ internal class ResolveDmsInstanceMiddleware(
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
-            requestInfo.FrontendResponse = CreateErrorResponse(
+            requestInfo.FrontendResponse = ProblemDetailsResponse.Create(
                 503,
                 "Service Configuration Error",
                 "Database connection not configured for the matched instance",
@@ -229,7 +228,7 @@ internal class ResolveDmsInstanceMiddleware(
                         requestInfo.FrontendRequest.TraceId.Value
                     );
 
-                    requestInfo.FrontendResponse = CreateErrorResponse(
+                    requestInfo.FrontendResponse = ProblemDetailsResponse.Create(
                         400,
                         "Route Resolution Error",
                         "Multiple database instances match the request route qualifiers - ambiguous routing not supported",
@@ -284,34 +283,5 @@ internal class ResolveDmsInstanceMiddleware(
         }
 
         return true;
-    }
-
-    /// <summary>
-    /// Creates a standardized error response with problem details format.
-    /// </summary>
-    private static FrontendResponse CreateErrorResponse(
-        int statusCode,
-        string title,
-        string errorDetail,
-        TraceId traceId
-    )
-    {
-        var problemDetails = new
-        {
-            detail = errorDetail,
-            type = $"urn:ed-fi:api:{title.ToLower().Replace(" ", "-")}",
-            title,
-            status = statusCode,
-            correlationId = traceId.Value,
-            errors = new[] { errorDetail },
-        };
-
-        return new FrontendResponse(
-            StatusCode: statusCode,
-            Body: JsonSerializer.SerializeToNode(problemDetails),
-            Headers: [],
-            LocationHeaderPath: null,
-            ContentType: "application/problem+json"
-        );
     }
 }
