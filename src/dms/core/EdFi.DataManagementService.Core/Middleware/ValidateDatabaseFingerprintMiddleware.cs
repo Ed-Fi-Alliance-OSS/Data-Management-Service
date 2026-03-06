@@ -52,7 +52,24 @@ internal class ValidateDatabaseFingerprintMiddleware(
         }
 
         var selectedInstance = dmsInstanceSelection.GetSelectedDmsInstance();
-        var connectionString = selectedInstance.ConnectionString!;
+
+        if (string.IsNullOrEmpty(selectedInstance.ConnectionString))
+        {
+            logger.LogError(
+                "DMS instance {InstanceName} has no connection string configured - TraceId: {TraceId}",
+                LoggingSanitizer.SanitizeForLogging(selectedInstance.InstanceName),
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+            requestInfo.FrontendResponse = CreateErrorResponse(
+                503,
+                "Service Configuration Error",
+                "DMS instance has no connection string configured",
+                requestInfo.FrontendRequest.TraceId
+            );
+            return;
+        }
+
+        var connectionString = selectedInstance.ConnectionString;
         var fingerprint = await fingerprintProvider.GetFingerprintAsync(connectionString);
 
         if (fingerprint == null)
