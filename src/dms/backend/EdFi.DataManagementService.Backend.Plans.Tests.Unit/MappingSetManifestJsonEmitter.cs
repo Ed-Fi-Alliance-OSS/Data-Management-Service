@@ -302,12 +302,12 @@ internal static class MappingSetManifestJsonEmitter
 
     private static IReadOnlyList<string> GetDiagnosticSelectListColumnsInOrder(TableReadPlan tablePlan)
     {
-        return tablePlan.TableModel.Columns.Select(static column => column.ColumnName.Value).ToArray();
+        return ReadPlanSqlShape.ExtractSelectedColumnNames(tablePlan.SelectByKeysetSql).ToArray();
     }
 
     private static IReadOnlyList<string> GetDiagnosticOrderByKeyColumnsInOrder(TableReadPlan tablePlan)
     {
-        return tablePlan.TableModel.Key.Columns.Select(static column => column.ColumnName.Value).ToArray();
+        return ReadPlanSqlShape.ExtractOrderByColumnNames(tablePlan.SelectByKeysetSql).ToArray();
     }
 
     private static void WriteStory05ProjectionPlaceholderArray(Utf8JsonWriter writer, string propertyName)

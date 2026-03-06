@@ -538,8 +538,14 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 .TableModel.Key.Columns.Select(static column => column.ColumnName.Value)
                 .ToArray();
 
-            ExtractSelectedColumnNames(tablePlan.SelectByKeysetSql).Should().Equal(expectedSelectList);
-            ExtractOrderByColumnNames(tablePlan.SelectByKeysetSql).Should().Equal(expectedOrderBy);
+            ReadPlanSqlShape
+                .ExtractSelectedColumnNames(tablePlan.SelectByKeysetSql)
+                .Should()
+                .Equal(expectedSelectList);
+            ReadPlanSqlShape
+                .ExtractOrderByColumnNames(tablePlan.SelectByKeysetSql)
+                .Should()
+                .Equal(expectedOrderBy);
         }
     }
 
@@ -553,8 +559,9 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                     ? PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Root)
                     : PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Table);
 
-            ExtractFromAlias(tablePlan.SelectByKeysetSql).Should().Be(expectedTableAlias);
-            ExtractJoinAlias(tablePlan.SelectByKeysetSql)
+            ReadPlanSqlShape.ExtractFromAlias(tablePlan.SelectByKeysetSql).Should().Be(expectedTableAlias);
+            ReadPlanSqlShape
+                .ExtractJoinAlias(tablePlan.SelectByKeysetSql)
                 .Should()
                 .Be(PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Keyset));
         }
@@ -589,101 +596,15 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                     SelectByKeysetSql: tablePlan.SelectByKeysetSql,
                     SelectListColumnsInOrder:
                     [
-                        .. tablePlan.TableModel.Columns.Select(static column => column.ColumnName.Value),
+                        .. ReadPlanSqlShape.ExtractSelectedColumnNames(tablePlan.SelectByKeysetSql),
                     ],
                     OrderByKeyColumnsInOrder:
                     [
-                        .. tablePlan.TableModel.Key.Columns.Select(static column => column.ColumnName.Value),
+                        .. ReadPlanSqlShape.ExtractOrderByColumnNames(tablePlan.SelectByKeysetSql),
                     ]
                 )),
             ]
         );
-    }
-
-    private static string[] ExtractSelectedColumnNames(string sql)
-    {
-        return ExtractSqlSectionLines(sql, "SELECT", "FROM").Select(ExtractQualifiedColumnName).ToArray();
-    }
-
-    private static string[] ExtractOrderByColumnNames(string sql)
-    {
-        return ExtractSqlSectionLines(sql, "ORDER BY", ";").Select(ExtractQualifiedColumnName).ToArray();
-    }
-
-    private static IReadOnlyList<string> ExtractSqlSectionLines(
-        string sql,
-        string sectionStart,
-        string sectionEnd
-    )
-    {
-        List<string> lines = [];
-        var inSection = false;
-
-        foreach (var rawLine in sql.Split('\n', StringSplitOptions.RemoveEmptyEntries))
-        {
-            var line = rawLine.Trim();
-
-            if (line == sectionStart)
-            {
-                inSection = true;
-                continue;
-            }
-
-            if (!inSection)
-            {
-                continue;
-            }
-
-            if (line.StartsWith(sectionEnd, StringComparison.Ordinal))
-            {
-                break;
-            }
-
-            lines.Add(line);
-        }
-
-        return lines;
-    }
-
-    private static string ExtractQualifiedColumnName(string line)
-    {
-        var lineWithoutSuffix = line.Replace(" ASC", string.Empty, StringComparison.Ordinal).TrimEnd(',');
-        var qualifierSeparatorIndex = lineWithoutSuffix.IndexOf('.', StringComparison.Ordinal);
-
-        qualifierSeparatorIndex.Should().BeGreaterThanOrEqualTo(0);
-
-        return lineWithoutSuffix[(qualifierSeparatorIndex + 1)..].Trim('"', '[', ']');
-    }
-
-    private static string ExtractFromAlias(string sql)
-    {
-        return ExtractTrailingAlias(sql, "FROM ");
-    }
-
-    private static string ExtractJoinAlias(string sql)
-    {
-        var joinLine = sql.Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .Select(static segment => segment.Trim())
-            .Single(segment => segment.StartsWith("INNER JOIN ", StringComparison.Ordinal));
-        var relationWithAlias = joinLine["INNER JOIN ".Length..];
-        var onClauseIndex = relationWithAlias.IndexOf(" ON ", StringComparison.Ordinal);
-
-        onClauseIndex.Should().BeGreaterThan(0);
-
-        var relationTokens = relationWithAlias[..onClauseIndex]
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries);
-
-        return relationTokens[^1];
-    }
-
-    private static string ExtractTrailingAlias(string sql, string linePrefix)
-    {
-        var line = sql.Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .Select(static segment => segment.Trim())
-            .Single(segment => segment.StartsWith(linePrefix, StringComparison.Ordinal));
-        var tokens = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-
-        return tokens[^1];
     }
 
     private sealed record ResourceReadPlanFingerprint(

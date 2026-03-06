@@ -153,6 +153,6 @@
       "Add or update unit tests in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetManifestJsonEmitterTests.cs` to compare emitted manifest ordering arrays against the parsed `SelectByKeysetSql` shape for representative single-table and multi-table resources, and to fail if those arrays would differ from the SQL text.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter 'FullyQualifiedName~MappingSetManifestJsonEmitter|FullyQualifiedName~ReadPlanCompiler'`"
     ],
-    "completed": false
+    "completed": true
   }
 ]

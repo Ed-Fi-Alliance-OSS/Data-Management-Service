@@ -174,6 +174,109 @@ public class Given_MappingSetManifestJsonEmitter
     }
 
     [Test]
+    public void It_should_derive_single_table_manifest_ordering_arrays_from_compiled_sql_text()
+    {
+        var programResource = new QualifiedResourceName("Ed-Fi", "Program");
+        var mappingSets = BuildPermutedMappingSets(FixturePath, reverseMappingSetOrder: false);
+        var targetTableName = mappingSets
+            .SelectMany(mappingSet =>
+                mappingSet.ReadPlansByResource[programResource].TablePlansInDependencyOrder
+            )
+            .Select(tablePlan => tablePlan.TableModel.Table.Name)
+            .Distinct(StringComparer.Ordinal)
+            .Single();
+        var mutatedMappingSets = MutateReadPlanTableSql(
+            mappingSets,
+            programResource,
+            targetTableName,
+            CreateSqlWithDiagnosticOrderingDrift
+        );
+        var manifest = MappingSetManifestJsonEmitter.Emit(mutatedMappingSets);
+        var summariesByDialect = ReadManifestReadPlanDiagnosticSummariesByDialect(
+            manifest,
+            "Ed-Fi",
+            "Program"
+        );
+
+        foreach (var mappingSet in mutatedMappingSets)
+        {
+            var dialect = PlanManifestConventions.ToManifestDialect(mappingSet.Key.Dialect);
+            var tablePlan = mappingSet
+                .ReadPlansByResource[programResource]
+                .TablePlansInDependencyOrder.Single();
+            var manifestTableSummary = summariesByDialect[dialect].TablePlans.Single();
+
+            manifestTableSummary
+                .SelectListColumnsInOrder.Should()
+                .Equal(ReadPlanSqlShape.ExtractSelectedColumnNames(tablePlan.SelectByKeysetSql));
+            manifestTableSummary
+                .OrderByKeyColumnsInOrder.Should()
+                .Equal(ReadPlanSqlShape.ExtractOrderByColumnNames(tablePlan.SelectByKeysetSql));
+            manifestTableSummary
+                .SelectListColumnsInOrder.Should()
+                .NotEqual(tablePlan.TableModel.Columns.Select(column => column.ColumnName.Value).ToArray());
+            manifestTableSummary
+                .OrderByKeyColumnsInOrder.Should()
+                .NotEqual(
+                    tablePlan.TableModel.Key.Columns.Select(column => column.ColumnName.Value).ToArray()
+                );
+        }
+    }
+
+    [Test]
+    public void It_should_derive_multi_table_manifest_ordering_arrays_from_compiled_sql_text()
+    {
+        var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
+        var mappingSets = BuildPermutedMappingSets(
+            CollectionsNestedExtensionFixturePath,
+            reverseMappingSetOrder: false
+        );
+        var targetTableName = mappingSets[0]
+            .ReadPlansByResource[schoolResource]
+            .TablePlansInDependencyOrder[^1]
+            .TableModel
+            .Table
+            .Name;
+        var mutatedMappingSets = MutateReadPlanTableSql(
+            mappingSets,
+            schoolResource,
+            targetTableName,
+            CreateSqlWithDiagnosticOrderingDrift
+        );
+        var manifest = MappingSetManifestJsonEmitter.Emit(mutatedMappingSets);
+        var summariesByDialect = ReadManifestReadPlanDiagnosticSummariesByDialect(
+            manifest,
+            "Ed-Fi",
+            "School"
+        );
+
+        foreach (var mappingSet in mutatedMappingSets)
+        {
+            var dialect = PlanManifestConventions.ToManifestDialect(mappingSet.Key.Dialect);
+            var tablePlan = mappingSet
+                .ReadPlansByResource[schoolResource]
+                .TablePlansInDependencyOrder.Single(plan => plan.TableModel.Table.Name == targetTableName);
+            var manifestTableSummary = summariesByDialect[dialect]
+                .TablePlans.Single(summary => summary.TableName == targetTableName);
+
+            manifestTableSummary
+                .SelectListColumnsInOrder.Should()
+                .Equal(ReadPlanSqlShape.ExtractSelectedColumnNames(tablePlan.SelectByKeysetSql));
+            manifestTableSummary
+                .OrderByKeyColumnsInOrder.Should()
+                .Equal(ReadPlanSqlShape.ExtractOrderByColumnNames(tablePlan.SelectByKeysetSql));
+            manifestTableSummary
+                .SelectListColumnsInOrder.Should()
+                .NotEqual(tablePlan.TableModel.Columns.Select(column => column.ColumnName.Value).ToArray());
+            manifestTableSummary
+                .OrderByKeyColumnsInOrder.Should()
+                .NotEqual(
+                    tablePlan.TableModel.Key.Columns.Select(column => column.ColumnName.Value).ToArray()
+                );
+        }
+    }
+
+    [Test]
     public void It_should_emit_write_plan_table_inventory_in_dependency_order_with_required_metadata()
     {
         var summariesByDialect = ReadWriteTablePlanSummariesByDialect(
@@ -708,13 +811,129 @@ public class Given_MappingSetManifestJsonEmitter
             SelectByKeysetSqlSha256: PlanManifestConventions.ComputeNormalizedSha256(
                 tablePlan.SelectByKeysetSql
             ),
-            SelectListColumnsInOrder: tablePlan
-                .TableModel.Columns.Select(column => column.ColumnName.Value)
+            SelectListColumnsInOrder: ReadPlanSqlShape
+                .ExtractSelectedColumnNames(tablePlan.SelectByKeysetSql)
                 .ToArray(),
-            OrderByKeyColumnsInOrder: tablePlan
-                .TableModel.Key.Columns.Select(column => column.ColumnName.Value)
+            OrderByKeyColumnsInOrder: ReadPlanSqlShape
+                .ExtractOrderByColumnNames(tablePlan.SelectByKeysetSql)
                 .ToArray()
         );
+    }
+
+    private static IReadOnlyList<MappingSet> MutateReadPlanTableSql(
+        IReadOnlyList<MappingSet> mappingSets,
+        QualifiedResourceName resource,
+        string tableName,
+        Func<TableReadPlan, string> mutateSql
+    )
+    {
+        return
+        [
+            .. mappingSets.Select(mappingSet =>
+            {
+                var readPlan = mappingSet.ReadPlansByResource[resource];
+                var mutatedReadPlan = readPlan with
+                {
+                    TablePlansInDependencyOrder =
+                    [
+                        .. readPlan.TablePlansInDependencyOrder.Select(tablePlan =>
+                            tablePlan.TableModel.Table.Name == tableName
+                                ? tablePlan with
+                                {
+                                    SelectByKeysetSql = mutateSql(tablePlan),
+                                }
+                                : tablePlan
+                        ),
+                    ],
+                };
+                var mutatedReadPlans = mappingSet.ReadPlansByResource.ToDictionary(
+                    entry => entry.Key,
+                    entry => entry.Key == resource ? mutatedReadPlan : entry.Value
+                );
+
+                return mappingSet with
+                {
+                    ReadPlansByResource = mutatedReadPlans,
+                };
+            }),
+        ];
+    }
+
+    private static string CreateSqlWithDiagnosticOrderingDrift(TableReadPlan tablePlan)
+    {
+        var selectExpressions = ReadPlanSqlShape
+            .ExtractSelectedColumnExpressions(tablePlan.SelectByKeysetSql)
+            .Reverse()
+            .ToArray();
+        var orderByExpressions = selectExpressions.Take(Math.Min(2, selectExpressions.Length)).ToArray();
+
+        return ReplaceSqlSectionExpressions(
+            ReplaceSqlSectionExpressions(
+                tablePlan.SelectByKeysetSql,
+                "SELECT",
+                "FROM",
+                selectExpressions,
+                expression => expression
+            ),
+            "ORDER BY",
+            ";",
+            orderByExpressions,
+            expression => $"{expression} ASC"
+        );
+    }
+
+    private static string ReplaceSqlSectionExpressions(
+        string sql,
+        string sectionStart,
+        string sectionEnd,
+        IReadOnlyList<string> expressions,
+        Func<string, string> formatExpression
+    )
+    {
+        if (expressions.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Replacement SQL section '{sectionStart}' requires at least one expression."
+            );
+        }
+
+        var lines = sql.Split('\n').ToList();
+        var startIndex = FindLineIndex(lines, sectionStart);
+        var endIndex = FindLineIndex(lines, sectionEnd, startIndex + 1, startsWith: true);
+
+        lines.RemoveRange(startIndex + 1, endIndex - startIndex - 1);
+        lines.InsertRange(
+            startIndex + 1,
+            expressions.Select(
+                (expression, index) =>
+                    $"    {formatExpression(expression)}{(index + 1 < expressions.Count ? "," : string.Empty)}"
+            )
+        );
+
+        return string.Join('\n', lines);
+    }
+
+    private static int FindLineIndex(
+        IReadOnlyList<string> lines,
+        string match,
+        int startIndex = 0,
+        bool startsWith = false
+    )
+    {
+        for (var index = startIndex; index < lines.Count; index++)
+        {
+            var trimmedLine = lines[index].Trim();
+
+            if (
+                (!startsWith && trimmedLine == match)
+                || (startsWith && trimmedLine.StartsWith(match, StringComparison.Ordinal))
+            )
+            {
+                return index;
+            }
+        }
+
+        throw new InvalidOperationException($"Could not find SQL line matching '{match}'.");
     }
 
     private static string ReadResourceName(JsonNode? resourceNode)
