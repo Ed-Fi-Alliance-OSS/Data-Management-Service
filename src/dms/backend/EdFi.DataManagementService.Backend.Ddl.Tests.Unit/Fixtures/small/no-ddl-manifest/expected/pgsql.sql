@@ -23,13 +23,42 @@ END $$;
 CREATE SCHEMA IF NOT EXISTS "dms";
 
 -- ==========================================================
--- Phase 2: Sequences
+-- Phase 2: Extensions
+-- ==========================================================
+
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- ==========================================================
+-- Phase 3: Sequences
 -- ==========================================================
 
 CREATE SEQUENCE IF NOT EXISTS "dms"."ChangeVersionSequence" START WITH 1;
 
 -- ==========================================================
--- Phase 3: Tables (PK/UNIQUE/CHECK only, no cross-table FKs)
+-- Phase 4: Functions
+-- ==========================================================
+
+CREATE OR REPLACE FUNCTION "dms"."uuidv5"(namespace_uuid uuid, name_text text)
+RETURNS uuid
+LANGUAGE plpgsql
+IMMUTABLE STRICT PARALLEL SAFE
+AS $uuidv5$
+DECLARE
+    hash bytea;
+BEGIN
+    hash := digest(
+        decode(replace(namespace_uuid::text, '-', ''), 'hex')
+        || convert_to(name_text, 'UTF8'),
+        'sha1'
+    );
+    hash := set_byte(hash, 6, (get_byte(hash, 6) & x'0f'::int) | x'50'::int);
+    hash := set_byte(hash, 8, (get_byte(hash, 8) & x'3f'::int) | x'80'::int);
+    RETURN encode(substring(hash from 1 for 16), 'hex')::uuid;
+END
+$uuidv5$;
+
+-- ==========================================================
+-- Phase 5: Tables (PK/UNIQUE/CHECK only, no cross-table FKs)
 -- ==========================================================
 
 CREATE TABLE IF NOT EXISTS "dms"."Descriptor"
@@ -225,7 +254,7 @@ CREATE TABLE IF NOT EXISTS "dms"."SchemaComponent"
 );
 
 -- ==========================================================
--- Phase 4: Foreign Keys
+-- Phase 6: Foreign Keys
 -- ==========================================================
 
 DO $$
@@ -365,7 +394,7 @@ BEGIN
 END $$;
 
 -- ==========================================================
--- Phase 5: Indexes
+-- Phase 7: Indexes
 -- ==========================================================
 
 CREATE INDEX IF NOT EXISTS "IX_Descriptor_Uri_Discriminator" ON "dms"."Descriptor" ("Uri", "Discriminator");
@@ -381,7 +410,7 @@ CREATE INDEX IF NOT EXISTS "IX_DocumentChangeEvent_ResourceKeyId_ChangeVersion" 
 CREATE INDEX IF NOT EXISTS "IX_ReferentialIdentity_DocumentId" ON "dms"."ReferentialIdentity" ("DocumentId");
 
 -- ==========================================================
--- Phase 6: Triggers
+-- Phase 8: Triggers
 -- ==========================================================
 
 CREATE OR REPLACE FUNCTION "dms"."TF_Document_Journal"()
