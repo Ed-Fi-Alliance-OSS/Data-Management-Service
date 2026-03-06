@@ -319,16 +319,15 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
         writer.AppendLine();
 
         writer.AppendLine("ORDER BY");
-        var orderByKeyColumns = GetOrderByKeyColumns(tableModel);
 
         using (writer.Indent())
         {
-            for (var index = 0; index < orderByKeyColumns.Count; index++)
+            for (var index = 0; index < tableModel.Key.Columns.Count; index++)
             {
-                AppendQualifiedColumn(writer, tableAlias, orderByKeyColumns[index]);
+                AppendQualifiedColumn(writer, tableAlias, tableModel.Key.Columns[index].ColumnName);
                 writer.Append(" ASC");
 
-                if (index + 1 < orderByKeyColumns.Count)
+                if (index + 1 < tableModel.Key.Columns.Count)
                 {
                     writer.AppendLine(",");
                 }
@@ -342,21 +341,6 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
         writer.AppendLine(";");
 
         return writer.ToString();
-    }
-
-    /// <summary>
-    /// Produces a deterministic <c>ORDER BY</c> key column list that preserves modeled key order exactly.
-    /// </summary>
-    private static IReadOnlyList<DbColumnName> GetOrderByKeyColumns(DbTableModel tableModel)
-    {
-        var orderByKeyColumns = new DbColumnName[tableModel.Key.Columns.Count];
-
-        for (var index = 0; index < tableModel.Key.Columns.Count; index++)
-        {
-            orderByKeyColumns[index] = tableModel.Key.Columns[index].ColumnName;
-        }
-
-        return orderByKeyColumns;
     }
 
     /// <summary>
