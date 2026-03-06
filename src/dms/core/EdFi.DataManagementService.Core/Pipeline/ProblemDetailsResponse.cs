@@ -41,14 +41,27 @@ internal static class ProblemDetailsResponse
         TraceId traceId
     )
     {
+        return Create(statusCode, type, title, errorDetail, [errorDetail], traceId);
+    }
+
+    public static FrontendResponse Create(
+        int statusCode,
+        string type,
+        string title,
+        string detail,
+        string[] errors,
+        TraceId traceId
+    )
+    {
         var problemDetails = new
         {
-            detail = errorDetail,
+            detail,
             type,
             title,
             status = statusCode,
             correlationId = traceId.Value,
-            errors = new[] { errorDetail },
+            validationErrors = new Dictionary<string, string[]>(),
+            errors,
         };
 
         return new FrontendResponse(
