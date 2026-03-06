@@ -168,86 +168,19 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
         IReadOnlyDictionary<DbColumnName, int> columnOrdinalByName
     )
     {
-        if (tableModel.Key.Columns.Count == 0)
-        {
-            throw new InvalidOperationException(
-                $"Cannot compile read plan for '{tableModel.Table}': table key contains no columns."
-            );
-        }
-
-        var documentIdParentKeyPartCount = 0;
-        var ordinalKeyColumnCount = 0;
-
-        foreach (var keyColumn in tableModel.Key.Columns)
-        {
-            if (keyColumn.Kind is not ColumnKind.ParentKeyPart and not ColumnKind.Ordinal)
+        RelationalResourceModelCompileValidator.ValidateDeterministicTableKeyShapeOrThrow(
+            tableModel,
+            "read plan",
+            keyColumn =>
             {
-                throw new InvalidOperationException(
-                    $"Cannot compile read plan for '{tableModel.Table}': key column '{keyColumn.ColumnName.Value}' has unsupported kind '{keyColumn.Kind}'. "
-                        + $"Supported key kinds are {nameof(ColumnKind.ParentKeyPart)} and {nameof(ColumnKind.Ordinal)}."
-                );
+                if (!columnOrdinalByName.ContainsKey(keyColumn.ColumnName))
+                {
+                    throw new InvalidOperationException(
+                        $"Cannot compile read plan for '{tableModel.Table}': key column '{keyColumn.ColumnName.Value}' does not exist in table columns."
+                    );
+                }
             }
-
-            if (!columnOrdinalByName.ContainsKey(keyColumn.ColumnName))
-            {
-                throw new InvalidOperationException(
-                    $"Cannot compile read plan for '{tableModel.Table}': key column '{keyColumn.ColumnName.Value}' does not exist in table columns."
-                );
-            }
-
-            if (
-                keyColumn.Kind is ColumnKind.ParentKeyPart
-                && RelationalNameConventions.IsDocumentIdColumn(keyColumn.ColumnName)
-            )
-            {
-                documentIdParentKeyPartCount++;
-            }
-
-            if (keyColumn.Kind is ColumnKind.Ordinal)
-            {
-                ordinalKeyColumnCount++;
-            }
-        }
-
-        if (documentIdParentKeyPartCount != 1)
-        {
-            throw new InvalidOperationException(
-                $"Cannot compile read plan for '{tableModel.Table}': expected exactly one ParentKeyPart document-id key column "
-                    + $"('{RelationalNameConventions.DocumentIdColumnName.Value}' or '*_{RelationalNameConventions.DocumentIdColumnName.Value}'), "
-                    + $"but found {documentIdParentKeyPartCount}. Key columns: [{FormatKeyColumnSummary(tableModel)}]."
-            );
-        }
-
-        var firstKeyColumn = tableModel.Key.Columns[0];
-
-        if (
-            firstKeyColumn.Kind is not ColumnKind.ParentKeyPart
-            || !RelationalNameConventions.IsDocumentIdColumn(firstKeyColumn.ColumnName)
-        )
-        {
-            throw new InvalidOperationException(
-                $"Cannot compile read plan for '{tableModel.Table}': expected document-id ParentKeyPart key column "
-                    + $"('{RelationalNameConventions.DocumentIdColumnName.Value}' or '*_{RelationalNameConventions.DocumentIdColumnName.Value}') "
-                    + $"to be first in key order, but found '{firstKeyColumn.ColumnName.Value}:{firstKeyColumn.Kind}'. "
-                    + $"Key columns: [{FormatKeyColumnSummary(tableModel)}]."
-            );
-        }
-
-        if (ordinalKeyColumnCount > 1)
-        {
-            throw new InvalidOperationException(
-                $"Cannot compile read plan for '{tableModel.Table}': expected at most one Ordinal key column, but found {ordinalKeyColumnCount}. "
-                    + $"Key columns: [{FormatKeyColumnSummary(tableModel)}]."
-            );
-        }
-
-        if (ordinalKeyColumnCount == 1 && tableModel.Key.Columns[^1].Kind is not ColumnKind.Ordinal)
-        {
-            throw new InvalidOperationException(
-                $"Cannot compile read plan for '{tableModel.Table}': expected Ordinal key column to be last in key order. "
-                    + $"Key columns: [{FormatKeyColumnSummary(tableModel)}]."
-            );
-        }
+        );
     }
 
     /// <summary>
@@ -330,19 +263,6 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
                 $"Cannot compile read plan for '{table}': {dependencyDescription} '{column.Value}' does not exist in hydration select-list columns."
             );
         }
-    }
-
-    /// <summary>
-    /// Formats deterministic key-column summaries for validation messages.
-    /// </summary>
-    private static string FormatKeyColumnSummary(DbTableModel tableModel)
-    {
-        return string.Join(
-            ", ",
-            tableModel.Key.Columns.Select(static keyColumn =>
-                $"{keyColumn.ColumnName.Value}:{keyColumn.Kind}"
-            )
-        );
     }
 
     /// <summary>

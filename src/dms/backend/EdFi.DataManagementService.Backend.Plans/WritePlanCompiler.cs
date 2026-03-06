@@ -337,35 +337,23 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         IReadOnlyDictionary<DbColumnName, DbColumnModel> columnByName
     )
     {
-        if (tableModel.Key.Columns.Count == 0)
-        {
-            throw new InvalidOperationException(
-                $"Cannot compile write plan for '{tableModel.Table}': table key contains no columns."
-            );
-        }
-
-        var documentIdParentKeyPartCount = 0;
-        var ordinalKeyColumnCount = 0;
-
-        foreach (var keyColumn in tableModel.Key.Columns)
-        {
-            if (keyColumn.Kind is not ColumnKind.ParentKeyPart and not ColumnKind.Ordinal)
+        RelationalResourceModelCompileValidator.ValidateDeterministicTableKeyShapeOrThrow(
+            tableModel,
+            "write plan",
+            keyColumn =>
             {
-                throw new InvalidOperationException(
-                    $"Cannot compile write plan for '{tableModel.Table}': key column '{keyColumn.ColumnName.Value}' has unsupported kind '{keyColumn.Kind}'. "
-                        + $"Supported key kinds are {nameof(ColumnKind.ParentKeyPart)} and {nameof(ColumnKind.Ordinal)}."
-                );
-            }
+                if (!columnByName.TryGetValue(keyColumn.ColumnName, out var matchingColumn))
+                {
+                    throw new InvalidOperationException(
+                        $"Cannot compile write plan for '{tableModel.Table}': key column '{keyColumn.ColumnName.Value}' does not exist in table columns."
+                    );
+                }
 
-            if (!columnByName.TryGetValue(keyColumn.ColumnName, out var matchingColumn))
-            {
-                throw new InvalidOperationException(
-                    $"Cannot compile write plan for '{tableModel.Table}': key column '{keyColumn.ColumnName.Value}' does not exist in table columns."
-                );
-            }
+                if (matchingColumn.Storage is not ColumnStorage.UnifiedAlias unifiedAlias)
+                {
+                    return;
+                }
 
-            if (matchingColumn.Storage is ColumnStorage.UnifiedAlias unifiedAlias)
-            {
                 var presenceColumnDescription = unifiedAlias.PresenceColumn switch
                 {
                     null => "<none>",
@@ -377,83 +365,7 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
                         + $"(canonical '{unifiedAlias.CanonicalColumn.Value}', presence '{presenceColumnDescription}') and is not writable."
                 );
             }
-
-            if (
-                keyColumn.Kind is ColumnKind.ParentKeyPart
-                && RelationalNameConventions.IsDocumentIdColumn(keyColumn.ColumnName)
-            )
-            {
-                documentIdParentKeyPartCount++;
-            }
-
-            if (keyColumn.Kind is ColumnKind.Ordinal)
-            {
-                ordinalKeyColumnCount++;
-            }
-        }
-
-        if (documentIdParentKeyPartCount != 1)
-        {
-            var keyColumnSummary = string.Join(
-                ", ",
-                tableModel.Key.Columns.Select(static keyColumn =>
-                    $"{keyColumn.ColumnName.Value}:{keyColumn.Kind}"
-                )
-            );
-
-            throw new InvalidOperationException(
-                $"Cannot compile write plan for '{tableModel.Table}': expected exactly one ParentKeyPart document-id key column "
-                    + $"('{RelationalNameConventions.DocumentIdColumnName.Value}' or '*_{RelationalNameConventions.DocumentIdColumnName.Value}'), "
-                    + $"but found {documentIdParentKeyPartCount}. Key columns: [{keyColumnSummary}]."
-            );
-        }
-
-        var firstKeyColumn = tableModel.Key.Columns[0];
-
-        if (
-            firstKeyColumn.Kind is not ColumnKind.ParentKeyPart
-            || !RelationalNameConventions.IsDocumentIdColumn(firstKeyColumn.ColumnName)
-        )
-        {
-            var keyColumnSummary = string.Join(
-                ", ",
-                tableModel.Key.Columns.Select(static keyColumn =>
-                    $"{keyColumn.ColumnName.Value}:{keyColumn.Kind}"
-                )
-            );
-
-            throw new InvalidOperationException(
-                $"Cannot compile write plan for '{tableModel.Table}': expected document-id ParentKeyPart key column ('{RelationalNameConventions.DocumentIdColumnName.Value}' or '*_{RelationalNameConventions.DocumentIdColumnName.Value}') to be first in key order, but found '{firstKeyColumn.ColumnName.Value}:{firstKeyColumn.Kind}'. Key columns: [{keyColumnSummary}]."
-            );
-        }
-
-        if (ordinalKeyColumnCount > 1)
-        {
-            var keyColumnSummary = string.Join(
-                ", ",
-                tableModel.Key.Columns.Select(static keyColumn =>
-                    $"{keyColumn.ColumnName.Value}:{keyColumn.Kind}"
-                )
-            );
-
-            throw new InvalidOperationException(
-                $"Cannot compile write plan for '{tableModel.Table}': expected at most one Ordinal key column, but found {ordinalKeyColumnCount}. Key columns: [{keyColumnSummary}]."
-            );
-        }
-
-        if (ordinalKeyColumnCount == 1 && tableModel.Key.Columns[^1].Kind is not ColumnKind.Ordinal)
-        {
-            var keyColumnSummary = string.Join(
-                ", ",
-                tableModel.Key.Columns.Select(static keyColumn =>
-                    $"{keyColumn.ColumnName.Value}:{keyColumn.Kind}"
-                )
-            );
-
-            throw new InvalidOperationException(
-                $"Cannot compile write plan for '{tableModel.Table}': expected Ordinal key column to be last in key order. Key columns: [{keyColumnSummary}]."
-            );
-        }
+        );
     }
 
     /// <summary>

@@ -154,5 +154,15 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter 'FullyQualifiedName~MappingSetManifestJsonEmitter|FullyQualifiedName~ReadPlanCompiler'`"
     ],
     "completed": true
+  },
+  {
+    "category": "Shared Key Shape Validation",
+    "description": "Extract the duplicated deterministic table-key validation rules from `ReadPlanCompiler` and `WritePlanCompiler` into a shared validator in `src/dms/backend/EdFi.DataManagementService.Backend.Plans`. Acceptance: the common structural rules for plan compilation live in one authoritative helper, cover the same invariants in both read and write compilation, and preserve current behavior and exception messages for invalid key shapes. Specifically, the shared validation must enforce: at least one key column exists, only `ParentKeyPart` and `Ordinal` key kinds are allowed for relational table plan compilation, exactly one root `DocumentId` parent key part exists, that `DocumentId` key part is first in key order, at most one `Ordinal` key column exists, and `Ordinal` is last when present. Write-specific checks that a key column exists in `DbTableModel.Columns` and is writable or not a `UnifiedAlias` must remain layered on top of the shared helper rather than being lost or duplicated again.",
+    "steps-to-verify": [
+      "Refactor `src/dms/backend/EdFi.DataManagementService.Backend.Plans/ReadPlanCompiler.cs`, `src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanCompiler.cs`, and `src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalResourceModelCompileValidator.cs` so both compilers call the same shared key-shape validation path before their read-specific or write-specific checks.",
+      "Add or update unit tests in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReadPlanCompilerTests.cs` and `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Given_WritePlanCompiler_BindingsAndSources.cs` proving the two compilers still reject the same malformed key shapes with the same deterministic messages for: missing root `DocumentId`, root `DocumentId` not first, multiple `Ordinal` columns, and `Ordinal` not last.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter 'FullyQualifiedName~ReadPlanCompiler|FullyQualifiedName~Given_WritePlanCompiler_BindingsAndSources'`"
+    ],
+    "completed": true
   }
 ]
