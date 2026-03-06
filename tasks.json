@@ -33,7 +33,7 @@
       "Add negative unit tests for missing reference columns, missing descriptor columns, invalid plan/table references, and unexpected empty projection arrays after compilation.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~NormalizedPlanContractCodecTests|FullyQualifiedName~Given_ReadPlanCompiler`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Manifest And DTOs",

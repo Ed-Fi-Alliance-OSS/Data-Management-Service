@@ -234,6 +234,31 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_fail_fast_when_decoding_read_plan_with_unknown_reference_projection_table()
+    {
+        var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
+        var projectionTablePlan = encoded.ReferenceIdentityProjectionPlansInDependencyOrder[0];
+        var mutated = encoded with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder =
+            [
+                projectionTablePlan with
+                {
+                    Table = new DbTableNameDto("edfi", "MissingReferenceProjectionTable"),
+                },
+            ],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception
+            .ParamName.Should()
+            .Contain(nameof(ResourceReadPlanDto.ReferenceIdentityProjectionPlansInDependencyOrder));
+        exception.Message.Should().Contain("Unknown table 'edfi.MissingReferenceProjectionTable'");
+    }
+
+    [Test]
     public void It_should_roundtrip_query_plan_through_normalized_dto_without_losing_parameter_inventory_order()
     {
         var encoded = NormalizedPlanContractCodec.Encode(_queryPlan);
@@ -500,6 +525,33 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
         var exception = act.Should().Throw<ArgumentOutOfRangeException>().Which;
         exception.ParamName.Should().Contain(nameof(DescriptorProjectionSourceDto.DescriptorIdColumnOrdinal));
         exception.Message.Should().Contain("out of range");
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_descriptor_projection_result_shape_is_not_descriptor_id_then_uri()
+    {
+        var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
+        var descriptorPlan = encoded.DescriptorProjectionPlansInOrder[0];
+        var mutated = encoded with
+        {
+            DescriptorProjectionPlansInOrder =
+            [
+                descriptorPlan with
+                {
+                    ResultShape = descriptorPlan.ResultShape with { DescriptorIdOrdinal = 1, UriOrdinal = 0 },
+                },
+            ],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Contain(nameof(DescriptorProjectionPlanDto.ResultShape));
+        exception
+            .Message.Should()
+            .Contain(
+                "Descriptor projection result shape must expose DescriptorId at ordinal 0 and Uri at ordinal 1"
+            );
     }
 
     [Test]

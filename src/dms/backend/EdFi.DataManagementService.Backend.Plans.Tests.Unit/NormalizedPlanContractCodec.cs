@@ -565,6 +565,11 @@ internal static class NormalizedPlanContractCodec
                 )
             );
 
+            ValidateDescriptorProjectionResultShape(
+                resultShape,
+                $"{planArgument}.{nameof(DescriptorProjectionPlanDto.ResultShape)}"
+            );
+
             var sources = new ExternalPlans.DescriptorProjectionSource[planDto.SourcesInOrder.Length];
 
             for (var sourceIndex = 0; sourceIndex < planDto.SourcesInOrder.Length; sourceIndex++)
@@ -646,6 +651,22 @@ internal static class NormalizedPlanContractCodec
         }
 
         return decoded;
+    }
+
+    private static void ValidateDescriptorProjectionResultShape(
+        ExternalPlans.DescriptorProjectionResultShape resultShape,
+        string argumentName
+    )
+    {
+        if (resultShape is { DescriptorIdOrdinal: 0, UriOrdinal: 1 })
+        {
+            return;
+        }
+
+        throw new ArgumentException(
+            "Descriptor projection result shape must expose DescriptorId at ordinal 0 and Uri at ordinal 1.",
+            argumentName
+        );
     }
 
     private static IReadOnlyList<ExternalPlans.KeyUnificationWritePlan> DecodeKeyUnificationPlans(

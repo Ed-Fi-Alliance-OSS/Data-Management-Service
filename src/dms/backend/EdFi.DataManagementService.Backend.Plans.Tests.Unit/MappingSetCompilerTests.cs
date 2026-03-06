@@ -448,19 +448,40 @@ public class Given_MappingSetCompiler
     )
     {
         var model = CreateRootOnlyModel(resource, tableName);
+        var descriptorResource = new QualifiedResourceName("Ed-Fi", "AcademicSubjectDescriptor");
+        var rootTable = model.Root with
+        {
+            Columns =
+            [
+                .. model.Root.Columns,
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("AcademicSubjectDescriptorId"),
+                    Kind: ColumnKind.DescriptorFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: new JsonPathExpression(
+                        "$.academicSubjectDescriptor",
+                        [new JsonPathSegment.Property("academicSubjectDescriptor")]
+                    ),
+                    TargetResource: descriptorResource
+                ),
+            ],
+        };
         var descriptorEdgeSource = new DescriptorEdgeSource(
             IsIdentityComponent: false,
             DescriptorValuePath: new JsonPathExpression(
                 "$.academicSubjectDescriptor",
                 [new JsonPathSegment.Property("academicSubjectDescriptor")]
             ),
-            Table: model.Root.Table,
-            FkColumn: new DbColumnName("SchoolYear"),
-            DescriptorResource: new QualifiedResourceName("Ed-Fi", "AcademicSubjectDescriptor")
+            Table: rootTable.Table,
+            FkColumn: new DbColumnName("AcademicSubjectDescriptorId"),
+            DescriptorResource: descriptorResource
         );
 
         return model with
         {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
             DescriptorEdgeSources = [descriptorEdgeSource],
         };
     }

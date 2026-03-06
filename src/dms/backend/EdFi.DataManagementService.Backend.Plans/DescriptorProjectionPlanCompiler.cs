@@ -211,6 +211,8 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
             edgeSource.FkColumn
         );
 
+        ValidateDescriptorFkColumnKindOrThrow(bindingColumn, contextDescription, edgeSource.FkColumn);
+
         return bindingColumn.Storage switch
         {
             ColumnStorage.Stored => bindingColumn.ColumnName,
@@ -232,6 +234,23 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
         };
     }
 
+    private static void ValidateDescriptorFkColumnKindOrThrow(
+        DbColumnModel columnModel,
+        string contextDescription,
+        DbColumnName resolvedColumnName
+    )
+    {
+        if (columnModel.Kind is ColumnKind.DescriptorFk)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"{contextDescription} '{resolvedColumnName.Value}' has kind '{columnModel.Kind}'. "
+                + $"Expected '{ColumnKind.DescriptorFk}'."
+        );
+    }
+
     private static DbColumnName ValidateStoredStorageColumnOrThrow(
         DbTableModel tableModel,
         DbColumnModel columnModel,
@@ -239,6 +258,8 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
         DbColumnName resolvedColumnName
     )
     {
+        ValidateDescriptorFkColumnKindOrThrow(columnModel, contextDescription, resolvedColumnName);
+
         if (columnModel.Storage is not ColumnStorage.Stored)
         {
             throw new InvalidOperationException(
