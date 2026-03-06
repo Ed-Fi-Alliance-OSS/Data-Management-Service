@@ -1,4 +1,22 @@
 -- ==========================================================
+-- Phase 0: Preflight (fail fast on schema hash mismatch)
+-- ==========================================================
+
+-- Preflight: fail fast if database is provisioned for a different schema hash
+DECLARE @preflight_stored_hash nvarchar(200);
+
+IF OBJECT_ID(N'dms.EffectiveSchema', N'U') IS NOT NULL
+BEGIN
+    SELECT @preflight_stored_hash = [EffectiveSchemaHash] FROM [dms].[EffectiveSchema]
+    WHERE [EffectiveSchemaSingletonId] = 1;
+    IF @preflight_stored_hash IS NOT NULL AND @preflight_stored_hash <> N'e68eb06e75b829edd10633e1077b04a29f02c23dba8cf704aaefbbb08706d4fe'
+    BEGIN
+        DECLARE @preflight_msg nvarchar(500) = CONCAT(N'EffectiveSchemaHash mismatch: database has ''', @preflight_stored_hash, N''' but expected ''', N'e68eb06e75b829edd10633e1077b04a29f02c23dba8cf704aaefbbb08706d4fe', N'''');
+        THROW 50000, @preflight_msg, 1;
+    END
+END
+
+-- ==========================================================
 -- Phase 1: Schemas
 -- ==========================================================
 
@@ -411,17 +429,6 @@ GO
 -- Phase 7: Seed Data (insert-if-missing + validation)
 -- ==========================================================
 
--- Preflight: fail fast if database is provisioned for a different schema hash
-DECLARE @preflight_stored_hash nvarchar(200);
-
-SELECT @preflight_stored_hash = [EffectiveSchemaHash] FROM [dms].[EffectiveSchema]
-WHERE [EffectiveSchemaSingletonId] = 1;
-IF @preflight_stored_hash IS NOT NULL AND @preflight_stored_hash <> N'e68eb06e75b829edd10633e1077b04a29f02c23dba8cf704aaefbbb08706d4fe'
-BEGIN
-    DECLARE @preflight_msg nvarchar(500) = CONCAT(N'EffectiveSchemaHash mismatch: database has ''', @preflight_stored_hash, N''' but expected ''', N'e68eb06e75b829edd10633e1077b04a29f02c23dba8cf704aaefbbb08706d4fe', N'''');
-    THROW 50000, @preflight_msg, 1;
-END
-
 -- ResourceKey seed inserts (insert-if-missing)
 IF NOT EXISTS (SELECT 1 FROM [dms].[ResourceKey] WHERE [ResourceKeyId] = 1)
     INSERT INTO [dms].[ResourceKey] ([ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion])
@@ -430,6 +437,7 @@ IF NOT EXISTS (SELECT 1 FROM [dms].[ResourceKey] WHERE [ResourceKeyId] = 1)
 -- ResourceKey full-table validation (count + content)
 DECLARE @actual_count integer;
 DECLARE @mismatched_count integer;
+DECLARE @rk_mismatched_ids nvarchar(max);
 
 SELECT @actual_count = COUNT(*) FROM [dms].[ResourceKey];
 IF @actual_count <> 1
@@ -451,7 +459,22 @@ WHERE NOT EXISTS (
 );
 IF @mismatched_count > 0
 BEGIN
-    DECLARE @rk_content_msg nvarchar(200) = CONCAT(N'dms.ResourceKey contents mismatch: ', CAST(@mismatched_count AS nvarchar(10)), N' unexpected or modified rows');
+    SELECT @rk_mismatched_ids = STRING_AGG(sub.[ResourceKeyId], N', ') WITHIN GROUP (ORDER BY sub.[ResourceKeyIdNum])
+    FROM (
+        SELECT TOP 10 CAST(rk.[ResourceKeyId] AS nvarchar(10)) AS [ResourceKeyId], rk.[ResourceKeyId] AS [ResourceKeyIdNum]
+        FROM [dms].[ResourceKey] rk
+        WHERE NOT EXISTS (
+            SELECT 1 FROM (VALUES
+                (1, N'Ed-Fi', N'Person', N'5.0.0')
+            ) AS expected([ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion])
+            WHERE expected.[ResourceKeyId] = rk.[ResourceKeyId]
+            AND expected.[ProjectName] = rk.[ProjectName]
+            AND expected.[ResourceName] = rk.[ResourceName]
+            AND expected.[ResourceVersion] = rk.[ResourceVersion]
+        )
+        ORDER BY rk.[ResourceKeyId]
+    ) sub;
+    DECLARE @rk_content_msg nvarchar(500) = CONCAT(N'dms.ResourceKey contents mismatch: ', CAST(@mismatched_count AS nvarchar(10)), N' unexpected or modified rows (ResourceKeyIds: ', @rk_mismatched_ids, N'). Run ddl provision for detailed row-level diff.');
     THROW 50000, @rk_content_msg, 1;
 END
 
@@ -489,6 +512,7 @@ IF NOT EXISTS (SELECT 1 FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash]
 -- SchemaComponent exact-match validation (count + content)
 DECLARE @sc_actual_count integer;
 DECLARE @sc_mismatched_count integer;
+DECLARE @sc_mismatched_names nvarchar(max);
 
 SELECT @sc_actual_count = COUNT(*) FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'e68eb06e75b829edd10633e1077b04a29f02c23dba8cf704aaefbbb08706d4fe';
 IF @sc_actual_count <> 1
@@ -511,7 +535,23 @@ AND NOT EXISTS (
 );
 IF @sc_mismatched_count > 0
 BEGIN
-    DECLARE @sc_content_msg nvarchar(200) = CONCAT(N'dms.SchemaComponent contents mismatch: ', CAST(@sc_mismatched_count AS nvarchar(10)), N' unexpected or modified rows');
+    SELECT @sc_mismatched_names = STRING_AGG(sub.[ProjectEndpointName], N', ') WITHIN GROUP (ORDER BY sub.[ProjectEndpointName])
+    FROM (
+        SELECT TOP 10 sc.[ProjectEndpointName]
+        FROM [dms].[SchemaComponent] sc
+        WHERE sc.[EffectiveSchemaHash] = N'e68eb06e75b829edd10633e1077b04a29f02c23dba8cf704aaefbbb08706d4fe'
+        AND NOT EXISTS (
+            SELECT 1 FROM (VALUES
+                (N'ed-fi', N'Ed-Fi', N'5.0.0', 0)
+            ) AS expected([ProjectEndpointName], [ProjectName], [ProjectVersion], [IsExtensionProject])
+            WHERE expected.[ProjectEndpointName] = sc.[ProjectEndpointName]
+            AND expected.[ProjectName] = sc.[ProjectName]
+            AND expected.[ProjectVersion] = sc.[ProjectVersion]
+            AND expected.[IsExtensionProject] = sc.[IsExtensionProject]
+        )
+        ORDER BY sc.[ProjectEndpointName]
+    ) sub;
+    DECLARE @sc_content_msg nvarchar(500) = CONCAT(N'dms.SchemaComponent contents mismatch: ', CAST(@sc_mismatched_count AS nvarchar(10)), N' unexpected or modified rows (ProjectEndpointNames: ', @sc_mismatched_names, N'). Run ddl provision for detailed row-level diff.');
     THROW 50000, @sc_content_msg, 1;
 END
 

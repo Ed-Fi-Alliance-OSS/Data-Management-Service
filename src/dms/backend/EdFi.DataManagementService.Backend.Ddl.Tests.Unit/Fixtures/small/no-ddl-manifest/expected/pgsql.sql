@@ -1,4 +1,22 @@
 -- ==========================================================
+-- Phase 0: Preflight (fail fast on schema hash mismatch)
+-- ==========================================================
+
+-- Preflight: fail fast if database is provisioned for a different schema hash
+DO $$
+DECLARE
+    _stored_hash text;
+BEGIN
+    IF to_regclass('"dms"."EffectiveSchema"') IS NOT NULL THEN
+        SELECT "EffectiveSchemaHash" INTO _stored_hash FROM "dms"."EffectiveSchema"
+        WHERE "EffectiveSchemaSingletonId" = 1;
+        IF _stored_hash IS NOT NULL AND _stored_hash <> 'e68eb06e75b829edd10633e1077b04a29f02c23dba8cf704aaefbbb08706d4fe' THEN
+            RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database has ''%'' but expected ''%''', _stored_hash, 'e68eb06e75b829edd10633e1077b04a29f02c23dba8cf704aaefbbb08706d4fe';
+        END IF;
+    END IF;
+END $$;
+
+-- ==========================================================
 -- Phase 1: Schemas
 -- ==========================================================
 
@@ -458,18 +476,6 @@ EXECUTE FUNCTION "edfi"."TF_TR_Person_Stamp"();
 -- Phase 7: Seed Data (insert-if-missing + validation)
 -- ==========================================================
 
--- Preflight: fail fast if database is provisioned for a different schema hash
-DO $$
-DECLARE
-    _stored_hash text;
-BEGIN
-    SELECT "EffectiveSchemaHash" INTO _stored_hash FROM "dms"."EffectiveSchema"
-    WHERE "EffectiveSchemaSingletonId" = 1;
-    IF _stored_hash IS NOT NULL AND _stored_hash <> 'e68eb06e75b829edd10633e1077b04a29f02c23dba8cf704aaefbbb08706d4fe' THEN
-        RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database has ''%'' but expected ''%''', _stored_hash, 'e68eb06e75b829edd10633e1077b04a29f02c23dba8cf704aaefbbb08706d4fe';
-    END IF;
-END $$;
-
 -- ResourceKey seed inserts (insert-if-missing)
 INSERT INTO "dms"."ResourceKey" ("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
 VALUES (1, 'Ed-Fi', 'Person', '5.0.0')
@@ -480,6 +486,7 @@ DO $$
 DECLARE
     _actual_count integer;
     _mismatched_count integer;
+    _mismatched_ids text;
 BEGIN
     SELECT COUNT(*) INTO _actual_count FROM "dms"."ResourceKey";
     IF _actual_count <> 1 THEN
@@ -498,7 +505,23 @@ BEGIN
         AND expected."ResourceVersion" = rk."ResourceVersion"
     );
     IF _mismatched_count > 0 THEN
-        RAISE EXCEPTION 'dms.ResourceKey contents mismatch: % unexpected or modified rows', _mismatched_count;
+        SELECT string_agg(sub.id, ', ' ORDER BY sub.id_num) INTO _mismatched_ids
+        FROM (
+            SELECT rk."ResourceKeyId"::text AS id, rk."ResourceKeyId" AS id_num
+            FROM "dms"."ResourceKey" rk
+            WHERE NOT EXISTS (
+                SELECT 1 FROM (VALUES
+                    (1::smallint, 'Ed-Fi', 'Person', '5.0.0')
+                ) AS expected("ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion")
+                WHERE expected."ResourceKeyId" = rk."ResourceKeyId"
+                AND expected."ProjectName" = rk."ProjectName"
+                AND expected."ResourceName" = rk."ResourceName"
+                AND expected."ResourceVersion" = rk."ResourceVersion"
+            )
+            ORDER BY rk."ResourceKeyId"
+            LIMIT 10
+        ) sub;
+        RAISE EXCEPTION 'dms.ResourceKey contents mismatch: % unexpected or modified rows (ResourceKeyIds: %). Run ddl provision for detailed row-level diff.', _mismatched_count, _mismatched_ids;
     END IF;
 END $$;
 
@@ -536,6 +559,7 @@ DO $$
 DECLARE
     _actual_count integer;
     _mismatched_count integer;
+    _mismatched_names text;
 BEGIN
     SELECT COUNT(*) INTO _actual_count FROM "dms"."SchemaComponent" WHERE "EffectiveSchemaHash" = 'e68eb06e75b829edd10633e1077b04a29f02c23dba8cf704aaefbbb08706d4fe';
     IF _actual_count <> 1 THEN
@@ -555,7 +579,24 @@ BEGIN
         AND expected."IsExtensionProject" = sc."IsExtensionProject"
     );
     IF _mismatched_count > 0 THEN
-        RAISE EXCEPTION 'dms.SchemaComponent contents mismatch: % unexpected or modified rows', _mismatched_count;
+        SELECT string_agg(sub.name, ', ' ORDER BY sub.name) INTO _mismatched_names
+        FROM (
+            SELECT sc."ProjectEndpointName" AS name
+            FROM "dms"."SchemaComponent" sc
+            WHERE sc."EffectiveSchemaHash" = 'e68eb06e75b829edd10633e1077b04a29f02c23dba8cf704aaefbbb08706d4fe'
+            AND NOT EXISTS (
+                SELECT 1 FROM (VALUES
+                    ('ed-fi', 'Ed-Fi', '5.0.0', false)
+                ) AS expected("ProjectEndpointName", "ProjectName", "ProjectVersion", "IsExtensionProject")
+                WHERE expected."ProjectEndpointName" = sc."ProjectEndpointName"
+                AND expected."ProjectName" = sc."ProjectName"
+                AND expected."ProjectVersion" = sc."ProjectVersion"
+                AND expected."IsExtensionProject" = sc."IsExtensionProject"
+            )
+            ORDER BY sc."ProjectEndpointName"
+            LIMIT 10
+        ) sub;
+        RAISE EXCEPTION 'dms.SchemaComponent contents mismatch: % unexpected or modified rows (ProjectEndpointNames: %). Run ddl provision for detailed row-level diff.', _mismatched_count, _mismatched_names;
     END IF;
 END $$;
 
