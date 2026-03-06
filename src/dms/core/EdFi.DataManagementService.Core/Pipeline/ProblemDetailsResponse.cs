@@ -15,12 +15,36 @@ namespace EdFi.DataManagementService.Core.Pipeline;
 /// </summary>
 internal static class ProblemDetailsResponse
 {
-    public static FrontendResponse Create(int statusCode, string title, string errorDetail, TraceId traceId)
+    private static readonly string _typePrefix = "urn:ed-fi:api";
+
+    /// <summary>503 - database instance not routed or connection string missing</summary>
+    public static readonly string ServiceConfigurationError = $"{_typePrefix}:service-configuration-error";
+
+    /// <summary>503 - dms.EffectiveSchema not found; database must be provisioned</summary>
+    public static readonly string DatabaseNotProvisioned = $"{_typePrefix}:database-not-provisioned";
+
+    /// <summary>403 - client has no authorized database instances</summary>
+    public static readonly string AuthorizationDenied = $"{_typePrefix}:security:authorization-denied";
+
+    /// <summary>404 - route qualifiers do not match any DMS instance</summary>
+    public static readonly string RouteResolutionError = $"{_typePrefix}:route-resolution-error";
+
+    /// <summary>400 - ambiguous routing (multiple instances match)</summary>
+    public static readonly string AmbiguousRouteResolution =
+        $"{_typePrefix}:route-resolution-error:ambiguous";
+
+    public static FrontendResponse Create(
+        int statusCode,
+        string type,
+        string title,
+        string errorDetail,
+        TraceId traceId
+    )
     {
         var problemDetails = new
         {
             detail = errorDetail,
-            type = $"urn:ed-fi:api:{title.ToLower().Replace(" ", "-")}",
+            type,
             title,
             status = statusCode,
             correlationId = traceId.Value,
