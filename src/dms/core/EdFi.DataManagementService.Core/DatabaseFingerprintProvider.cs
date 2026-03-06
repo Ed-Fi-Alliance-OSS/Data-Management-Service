@@ -21,7 +21,7 @@ internal sealed class DatabaseFingerprintProvider(IDatabaseFingerprintReader fin
     /// from the database on first access. Concurrent first calls for the same
     /// connection string result in exactly one database read.
     /// </summary>
-    public Task<DatabaseFingerprint?> GetFingerprintAsync(string connectionString)
+    public async Task<DatabaseFingerprint?> GetFingerprintAsync(string connectionString)
     {
         var lazy = _cache.GetOrAdd(
             connectionString,
@@ -29,6 +29,26 @@ internal sealed class DatabaseFingerprintProvider(IDatabaseFingerprintReader fin
                 new Lazy<Task<DatabaseFingerprint?>>(() => reader.ReadFingerprintAsync(key)),
             fingerprintReader
         );
-        return lazy.Value;
+
+        DatabaseFingerprint? result;
+        try
+        {
+            result = await lazy.Value;
+        }
+        catch
+        {
+            // Evict faulted task so next request retries the DB read
+            _cache.TryRemove(connectionString, out _);
+            throw;
+        }
+
+        if (result == null)
+        {
+            // Evict null so next request retries
+            // (e.g., after a DBA provisions the database)
+            _cache.TryRemove(connectionString, out _);
+        }
+
+        return result;
     }
 }
