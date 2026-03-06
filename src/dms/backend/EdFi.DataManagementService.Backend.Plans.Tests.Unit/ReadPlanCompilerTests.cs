@@ -21,15 +21,21 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         "Ed-Fi",
         "StudentAddressCollection"
     );
+    private RelationalResourceModel _rootOnlyResourceModel = null!;
     private RelationalResourceModel _resourceModel = null!;
+    private ResourceReadPlan _pgsqlRootOnlyReadPlan = null!;
     private ResourceReadPlan _pgsqlReadPlan = null!;
+    private ResourceReadPlan _mssqlRootOnlyReadPlan = null!;
     private ResourceReadPlan _mssqlReadPlan = null!;
 
     [SetUp]
     public void SetUpReadPlanCompiler()
     {
+        _rootOnlyResourceModel = CreateRootOnlyResourceModel();
         _resourceModel = CreateMultiTableResourceModel();
+        _pgsqlRootOnlyReadPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(_rootOnlyResourceModel);
         _pgsqlReadPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(_resourceModel);
+        _mssqlRootOnlyReadPlan = new ReadPlanCompiler(SqlDialect.Mssql).Compile(_rootOnlyResourceModel);
         _mssqlReadPlan = new ReadPlanCompiler(SqlDialect.Mssql).Compile(_resourceModel);
     }
 
@@ -51,6 +57,18 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             .Be(KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql));
         _pgsqlReadPlan.ReferenceIdentityProjectionPlansInDependencyOrder.Should().BeEmpty();
         _pgsqlReadPlan.DescriptorProjectionPlansInOrder.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_should_compile_a_single_root_only_table_plan_with_expected_keyset_contract()
+    {
+        _pgsqlRootOnlyReadPlan.Model.Should().Be(_rootOnlyResourceModel);
+        _pgsqlRootOnlyReadPlan
+            .KeysetTable.Should()
+            .Be(KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql));
+        _pgsqlRootOnlyReadPlan.TablePlansInDependencyOrder.Should().ContainSingle();
+        _pgsqlRootOnlyReadPlan.ReferenceIdentityProjectionPlansInDependencyOrder.Should().BeEmpty();
+        _pgsqlRootOnlyReadPlan.DescriptorProjectionPlansInOrder.Should().BeEmpty();
     }
 
     [Test]
@@ -109,8 +127,54 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     [Test]
     public void It_should_use_stable_root_table_non_root_table_and_keyset_aliases_across_dialects()
     {
+        AssertStableAliases(_pgsqlRootOnlyReadPlan);
+        AssertStableAliases(_mssqlRootOnlyReadPlan);
         AssertStableAliases(_pgsqlReadPlan);
         AssertStableAliases(_mssqlReadPlan);
+    }
+
+    [Test]
+    public void It_should_emit_exact_pgsql_SelectByKeysetSql_for_root_only_tables()
+    {
+        AssertSelectByKeysetSql(
+            _pgsqlRootOnlyReadPlan,
+            "Student",
+            """
+            SELECT
+                r."DocumentId",
+                r."SchoolYear",
+                r."LocalEducationAgencyId",
+                r."SchoolYearAlias"
+            FROM "edfi"."Student" r
+            INNER JOIN "page" k ON r."DocumentId" = k."DocumentId"
+            ORDER BY
+                r."DocumentId" ASC
+            ;
+
+            """
+        );
+    }
+
+    [Test]
+    public void It_should_emit_exact_mssql_SelectByKeysetSql_for_root_only_tables()
+    {
+        AssertSelectByKeysetSql(
+            _mssqlRootOnlyReadPlan,
+            "Student",
+            """
+            SELECT
+                r.[DocumentId],
+                r.[SchoolYear],
+                r.[LocalEducationAgencyId],
+                r.[SchoolYearAlias]
+            FROM [edfi].[Student] r
+            INNER JOIN [#page] k ON r.[DocumentId] = k.[DocumentId]
+            ORDER BY
+                r.[DocumentId] ASC
+            ;
+
+            """
+        );
     }
 
     [Test]
@@ -634,6 +698,77 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         IReadOnlyList<string> SelectListColumnsInOrder,
         IReadOnlyList<string> OrderByKeyColumnsInOrder
     );
+
+    private static RelationalResourceModel CreateRootOnlyResourceModel()
+    {
+        var rootTable = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "Student"),
+            JsonScope: new JsonPathExpression("$", []),
+            Key: new TableKey(
+                ConstraintName: "PK_Student",
+                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("SchoolYear"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: new JsonPathExpression(
+                        "$.schoolYear",
+                        [new JsonPathSegment.Property("schoolYear")]
+                    ),
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("LocalEducationAgencyId"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: new JsonPathExpression(
+                        "$.localEducationAgencyId",
+                        [new JsonPathSegment.Property("localEducationAgencyId")]
+                    ),
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("SchoolYearAlias"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: new JsonPathExpression(
+                        "$.schoolYear",
+                        [new JsonPathSegment.Property("schoolYear")]
+                    ),
+                    TargetResource: null,
+                    Storage: new ColumnStorage.UnifiedAlias(
+                        CanonicalColumn: new DbColumnName("SchoolYear"),
+                        PresenceColumn: null
+                    )
+                ),
+            ],
+            Constraints: []
+        );
+
+        return new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "Student"),
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTable,
+            TablesInDependencyOrder: [rootTable],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+    }
 
     private static RelationalResourceModel CreateMultiTableResourceModel()
     {

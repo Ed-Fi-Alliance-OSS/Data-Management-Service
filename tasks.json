@@ -134,6 +134,6 @@
       "Delete `src/dms/backend/EdFi.DataManagementService.Backend.Plans/RootOnlyReadPlanCompiler.cs` and `src/dms/backend/EdFi.DataManagementService.Backend.Plans/ThinSliceReadPlanSupportEvaluator.cs`, then move any desired root-only assertions into `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReadPlanCompilerTests.cs` and remove manifest tests that currently inject `RootOnlyReadPlanCompiler` output.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter 'FullyQualifiedName~RootOnlyReadPlanCompiler|FullyQualifiedName~MappingSetManifestJsonEmitter|FullyQualifiedName~ReadPlanCompiler'`"
     ],
-    "completed": false
+    "completed": true
   }
 ]
