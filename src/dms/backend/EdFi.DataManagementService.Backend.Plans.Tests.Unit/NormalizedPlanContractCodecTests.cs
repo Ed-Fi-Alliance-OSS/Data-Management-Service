@@ -111,11 +111,17 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
         var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
         var decoded = NormalizedPlanContractCodec.Decode(encoded, _model);
         var reEncoded = NormalizedPlanContractCodec.Encode(decoded);
+        var canonicalJson = NormalizedPlanDtoJson.EmitCanonicalJson(encoded);
 
         NormalizedPlanDtoJson
             .ComputeCanonicalSha256(reEncoded)
             .Should()
             .Be(NormalizedPlanDtoJson.ComputeCanonicalSha256(encoded));
+
+        canonicalJson.Should().Contain("\"reference_identity_projection_plans_in_dependency_order\"");
+        canonicalJson.Should().Contain("\"reference_object_path\": \"$.schoolReference\"");
+        canonicalJson.Should().Contain("\"descriptor_projection_plans_in_order\"");
+        canonicalJson.Should().Contain("\"descriptor_value_path\": \"$.gradeLevelDescriptor\"");
 
         var sourceTablePlan = _readPlan.TablePlansInDependencyOrder[0];
         var decodedTablePlan = decoded.TablePlansInDependencyOrder[0];

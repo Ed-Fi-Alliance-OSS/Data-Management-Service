@@ -272,7 +272,7 @@ public class Given_RuntimePlanCompilation_Determinism
             readPlan["reference_identity_projection_plans_in_dependency_order"],
             "reference_identity_projection_plans_in_dependency_order"
         );
-        ValidateProjectionPlanArray(
+        ValidateReferenceIdentityProjectionPlanArray(
             referenceIdentityProjectionPlans,
             "reference_identity_projection_plans_in_dependency_order"
         );
@@ -281,7 +281,10 @@ public class Given_RuntimePlanCompilation_Determinism
             readPlan["descriptor_projection_plans_in_order"],
             "descriptor_projection_plans_in_order"
         );
-        ValidateProjectionPlanArray(descriptorProjectionPlans, "descriptor_projection_plans_in_order");
+        ValidateDescriptorProjectionPlanArray(
+            descriptorProjectionPlans,
+            "descriptor_projection_plans_in_order"
+        );
 
         return new ReadPlanFingerprint(
             KeysetTableJson: keysetTable.ToJsonString(_compactJson),
@@ -323,11 +326,70 @@ public class Given_RuntimePlanCompilation_Determinism
         }
     }
 
-    private static void ValidateProjectionPlanArray(JsonArray projectionPlans, string propertyName)
+    private static void ValidateReferenceIdentityProjectionPlanArray(
+        JsonArray projectionPlans,
+        string propertyName
+    )
     {
         foreach (var planNode in projectionPlans)
         {
-            _ = RequireObject(planNode, $"{propertyName} entry");
+            var projectionPlan = RequireObject(planNode, $"{propertyName} entry");
+            var table = RequireObject(projectionPlan["table"], "table");
+            _ = RequireString(table, "schema");
+            _ = RequireString(table, "name");
+
+            var bindingsInOrder = RequireArray(projectionPlan["bindings_in_order"], "bindings_in_order");
+
+            foreach (var bindingNode in bindingsInOrder)
+            {
+                var binding = RequireObject(bindingNode, "bindings_in_order entry");
+                _ = RequireBool(binding, "is_identity_component");
+                _ = RequireString(binding, "reference_object_path");
+                var targetResource = RequireObject(binding["target_resource"], "target_resource");
+                _ = RequireString(targetResource, "project_name");
+                _ = RequireString(targetResource, "resource_name");
+                _ = RequireInt(binding, "fk_column_ordinal");
+
+                var identityFieldOrdinalsInOrder = RequireArray(
+                    binding["identity_field_ordinals_in_order"],
+                    "identity_field_ordinals_in_order"
+                );
+
+                foreach (var fieldNode in identityFieldOrdinalsInOrder)
+                {
+                    var fieldOrdinal = RequireObject(fieldNode, "identity_field_ordinals_in_order entry");
+                    _ = RequireString(fieldOrdinal, "reference_json_path");
+                    _ = RequireInt(fieldOrdinal, "column_ordinal");
+                }
+            }
+        }
+    }
+
+    private static void ValidateDescriptorProjectionPlanArray(JsonArray projectionPlans, string propertyName)
+    {
+        foreach (var planNode in projectionPlans)
+        {
+            var projectionPlan = RequireObject(planNode, $"{propertyName} entry");
+            _ = RequireString(projectionPlan, "select_by_keyset_sql_sha256");
+
+            var resultShape = RequireObject(projectionPlan["result_shape"], "result_shape");
+            _ = RequireInt(resultShape, "descriptor_id_ordinal");
+            _ = RequireInt(resultShape, "uri_ordinal");
+
+            var sourcesInOrder = RequireArray(projectionPlan["sources_in_order"], "sources_in_order");
+
+            foreach (var sourceNode in sourcesInOrder)
+            {
+                var source = RequireObject(sourceNode, "sources_in_order entry");
+                _ = RequireString(source, "descriptor_value_path");
+                var table = RequireObject(source["table"], "table");
+                _ = RequireString(table, "schema");
+                _ = RequireString(table, "name");
+                var descriptorResource = RequireObject(source["descriptor_resource"], "descriptor_resource");
+                _ = RequireString(descriptorResource, "project_name");
+                _ = RequireString(descriptorResource, "resource_name");
+                _ = RequireInt(source, "descriptor_id_column_ordinal");
+            }
         }
     }
 
