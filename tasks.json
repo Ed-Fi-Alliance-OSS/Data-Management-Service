@@ -125,7 +125,7 @@
       "Update `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetManifestJsonEmitter.cs` and its tests so manifest assertions compare against the compiled `ResourceReadPlan` inventory, treat the projection arrays as intentional story-05 placeholders, and describe `select_list_columns_in_order` / `order_by_key_columns_in_order` as derived diagnostics rather than serialized plan state.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter 'FullyQualifiedName~MappingSetManifestJsonEmitter|FullyQualifiedName~RuntimePlanCompilation_Determinism|FullyQualifiedName~CollectionsNestedExtension_RuntimePlanCompilation_GoldenFixture|FullyQualifiedName~KeyUnificationPresenceGating_RuntimePlanCompilation_GoldenFixture'`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Thin-Slice Read Compiler Cleanup",

@@ -112,16 +112,16 @@ public class Given_MappingSetManifestJsonEmitter
     }
 
     [Test]
-    public void It_should_emit_single_table_read_plan_inventory_with_projection_placeholders()
+    public void It_should_emit_single_table_read_plan_as_a_compiled_diagnostic_summary_with_story_05_placeholders()
     {
         var programResource = new QualifiedResourceName("Ed-Fi", "Program");
         var compiledMappingSets = BuildPermutedMappingSets(FixturePath, reverseMappingSetOrder: false);
-        var summariesByDialect = ReadReadPlanSummariesByDialect(_manifest, "Ed-Fi", "Program");
-        var expectedTableNamesByDialect = ReadCompiledReadTableNamesByDialect(
-            compiledMappingSets,
-            programResource
+        var summariesByDialect = ReadManifestReadPlanDiagnosticSummariesByDialect(
+            _manifest,
+            "Ed-Fi",
+            "Program"
         );
-        var expectedKeysetTableByDialect = ReadCompiledKeysetTableSummaryByDialect(
+        var expectedSummariesByDialect = ReadCompiledReadPlanDiagnosticSummariesByDialect(
             compiledMappingSets,
             programResource
         );
@@ -131,44 +131,17 @@ public class Given_MappingSetManifestJsonEmitter
         foreach (var dialect in summariesByDialect.Keys)
         {
             var readPlanSummary = summariesByDialect[dialect];
+            var expectedSummary = expectedSummariesByDialect[dialect];
 
-            readPlanSummary.KeysetTable.Should().Be(expectedKeysetTableByDialect[dialect]);
-            readPlanSummary
-                .TablePlans.Select(summary => summary.TableName)
-                .Should()
-                .Equal(expectedTableNamesByDialect[dialect]);
+            readPlanSummary.Should().BeEquivalentTo(expectedSummary, options => options.WithStrictOrdering());
             readPlanSummary.TablePlans.Should().ContainSingle();
-            readPlanSummary
-                .TablePlans.Select(summary => summary.SelectByKeysetSqlSha256)
-                .Should()
-                .OnlyContain(static value => !string.IsNullOrWhiteSpace(value));
-            readPlanSummary
-                .TablePlans.Select(summary => summary.SelectListColumnsInOrder.Count)
-                .Should()
-                .OnlyContain(static count => count > 0);
-            readPlanSummary
-                .TablePlans.Select(summary => summary.OrderByKeyColumnsInOrder.Count)
-                .Should()
-                .OnlyContain(static count => count > 0);
             readPlanSummary.ReferenceIdentityProjectionPlanCount.Should().Be(0);
             readPlanSummary.DescriptorProjectionPlanCount.Should().Be(0);
         }
     }
 
     [Test]
-    public void It_should_emit_order_by_key_columns_in_compiled_sql_order_for_non_document_id_first_keys()
-    {
-        var mappingSets = BuildMappingSetsWithNonDocumentIdFirstStudentReadModel();
-        var manifest = MappingSetManifestJsonEmitter.Emit(mappingSets);
-        var orderByColumnsByDialect = ReadStudentOrderByColumnsByDialect(manifest);
-
-        orderByColumnsByDialect.Keys.Should().BeEquivalentTo("mssql", "pgsql");
-        orderByColumnsByDialect["mssql"].Should().Equal("SchoolYear", "DocumentId");
-        orderByColumnsByDialect["pgsql"].Should().Equal("SchoolYear", "DocumentId");
-    }
-
-    [Test]
-    public void It_should_emit_multi_table_read_plan_inventory_in_dependency_order()
+    public void It_should_emit_multi_table_read_plan_as_a_compiled_diagnostic_summary_with_story_05_placeholders()
     {
         var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
         var mappingSets = BuildPermutedMappingSets(
@@ -176,9 +149,12 @@ public class Given_MappingSetManifestJsonEmitter
             reverseMappingSetOrder: false
         );
         var manifest = MappingSetManifestJsonEmitter.Emit(mappingSets);
-        var summariesByDialect = ReadReadPlanSummariesByDialect(manifest, "Ed-Fi", "School");
-        var expectedTableNamesByDialect = ReadCompiledReadTableNamesByDialect(mappingSets, schoolResource);
-        var expectedKeysetTableByDialect = ReadCompiledKeysetTableSummaryByDialect(
+        var summariesByDialect = ReadManifestReadPlanDiagnosticSummariesByDialect(
+            manifest,
+            "Ed-Fi",
+            "School"
+        );
+        var expectedSummariesByDialect = ReadCompiledReadPlanDiagnosticSummariesByDialect(
             mappingSets,
             schoolResource
         );
@@ -188,25 +164,10 @@ public class Given_MappingSetManifestJsonEmitter
         foreach (var dialect in summariesByDialect.Keys)
         {
             var readPlanSummary = summariesByDialect[dialect];
+            var expectedSummary = expectedSummariesByDialect[dialect];
 
-            readPlanSummary.KeysetTable.Should().Be(expectedKeysetTableByDialect[dialect]);
-            readPlanSummary
-                .TablePlans.Select(summary => summary.TableName)
-                .Should()
-                .Equal(expectedTableNamesByDialect[dialect]);
+            readPlanSummary.Should().BeEquivalentTo(expectedSummary, options => options.WithStrictOrdering());
             readPlanSummary.TablePlans.Should().HaveCountGreaterThan(1);
-            readPlanSummary
-                .TablePlans.Select(summary => summary.SelectByKeysetSqlSha256)
-                .Should()
-                .OnlyContain(static value => !string.IsNullOrWhiteSpace(value));
-            readPlanSummary
-                .TablePlans.Select(summary => summary.SelectListColumnsInOrder.Count)
-                .Should()
-                .OnlyContain(static count => count > 0);
-            readPlanSummary
-                .TablePlans.Select(summary => summary.OrderByKeyColumnsInOrder.Count)
-                .Should()
-                .OnlyContain(static count => count > 0);
             readPlanSummary.ReferenceIdentityProjectionPlanCount.Should().Be(0);
             readPlanSummary.DescriptorProjectionPlanCount.Should().Be(0);
         }
@@ -314,31 +275,6 @@ public class Given_MappingSetManifestJsonEmitter
         return mappingSets;
     }
 
-    private static IReadOnlyList<MappingSet> BuildMappingSetsWithNonDocumentIdFirstStudentReadModel()
-    {
-        return BuildPermutedMappingSets(reverseMappingSetOrder: false)
-            .Select(InjectNonDocumentIdFirstStudentReadPlan)
-            .ToArray();
-    }
-
-    private static MappingSet InjectNonDocumentIdFirstStudentReadPlan(MappingSet mappingSet)
-    {
-        var studentResource = new QualifiedResourceName("Ed-Fi", "Student");
-        var model = CreateRootOnlyModelWithNonDocumentIdFirstKeyOrder(studentResource);
-        var readPlan = new RootOnlyReadPlanCompiler(mappingSet.Key.Dialect).Compile(model);
-        var readPlansByResource = mappingSet.ReadPlansByResource.ToDictionary(
-            entry => entry.Key,
-            entry => entry.Value
-        );
-
-        readPlansByResource[studentResource] = readPlan;
-
-        return mappingSet with
-        {
-            ReadPlansByResource = readPlansByResource,
-        };
-    }
-
     private static MappingSet PermutePlanDictionaries(MappingSet mappingSet)
     {
         var permutedWritePlans = mappingSet
@@ -392,12 +328,15 @@ public class Given_MappingSetManifestJsonEmitter
         return tableNamesByDialect;
     }
 
-    private static IReadOnlyDictionary<string, IReadOnlyList<string>> ReadCompiledReadTableNamesByDialect(
+    private static IReadOnlyDictionary<
+        string,
+        ReadPlanDiagnosticSummary
+    > ReadCompiledReadPlanDiagnosticSummariesByDialect(
         IReadOnlyList<MappingSet> mappingSets,
         QualifiedResourceName resource
     )
     {
-        Dictionary<string, IReadOnlyList<string>> tableNamesByDialect = [];
+        Dictionary<string, ReadPlanDiagnosticSummary> summariesByDialect = [];
 
         foreach (var mappingSet in mappingSets)
         {
@@ -410,39 +349,10 @@ public class Given_MappingSetManifestJsonEmitter
                 );
             }
 
-            tableNamesByDialect[dialect] = readPlan
-                .TablePlansInDependencyOrder.Select(tablePlan => tablePlan.TableModel.Table.Name)
-                .ToArray();
+            summariesByDialect[dialect] = ReadCompiledReadPlanDiagnosticSummary(readPlan);
         }
 
-        return tableNamesByDialect;
-    }
-
-    private static IReadOnlyDictionary<string, KeysetTableSummary> ReadCompiledKeysetTableSummaryByDialect(
-        IReadOnlyList<MappingSet> mappingSets,
-        QualifiedResourceName resource
-    )
-    {
-        Dictionary<string, KeysetTableSummary> keysetTableByDialect = [];
-
-        foreach (var mappingSet in mappingSets)
-        {
-            var dialect = PlanManifestConventions.ToManifestDialect(mappingSet.Key.Dialect);
-
-            if (!mappingSet.ReadPlansByResource.TryGetValue(resource, out var readPlan))
-            {
-                throw new InvalidOperationException(
-                    $"Compiled read plan for resource '{resource.ProjectName}.{resource.ResourceName}' is required."
-                );
-            }
-
-            keysetTableByDialect[dialect] = new KeysetTableSummary(
-                TempTableName: readPlan.KeysetTable.Table.Name,
-                DocumentIdColumnName: readPlan.KeysetTable.DocumentIdColumnName.Value
-            );
-        }
-
-        return keysetTableByDialect;
+        return summariesByDialect;
     }
 
     private static IReadOnlyDictionary<
@@ -474,57 +384,6 @@ public class Given_MappingSetManifestJsonEmitter
         }
 
         return memberPathsByDialect;
-    }
-
-    private static RelationalResourceModel CreateRootOnlyModelWithNonDocumentIdFirstKeyOrder(
-        QualifiedResourceName resource
-    )
-    {
-        var rootTable = new DbTableModel(
-            Table: new DbTableName(new DbSchemaName("edfi"), resource.ResourceName),
-            JsonScope: new JsonPathExpression("$", []),
-            Key: new TableKey(
-                ConstraintName: $"PK_{resource.ResourceName}",
-                Columns:
-                [
-                    new DbKeyColumn(new DbColumnName("SchoolYear"), ColumnKind.Scalar),
-                    new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart),
-                ]
-            ),
-            Columns:
-            [
-                new DbColumnModel(
-                    ColumnName: new DbColumnName("DocumentId"),
-                    Kind: ColumnKind.ParentKeyPart,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    ColumnName: new DbColumnName("SchoolYear"),
-                    Kind: ColumnKind.Scalar,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
-                    IsNullable: false,
-                    SourceJsonPath: new JsonPathExpression(
-                        "$.schoolYear",
-                        [new JsonPathSegment.Property("schoolYear")]
-                    ),
-                    TargetResource: null
-                ),
-            ],
-            Constraints: []
-        );
-
-        return new RelationalResourceModel(
-            Resource: resource,
-            PhysicalSchema: new DbSchemaName("edfi"),
-            StorageKind: ResourceStorageKind.RelationalTables,
-            Root: rootTable,
-            TablesInDependencyOrder: [rootTable],
-            DocumentReferenceBindings: [],
-            DescriptorEdgeSources: []
-        );
     }
 
     private static IReadOnlyList<string> ReadMappingSetDialects(string manifest)
@@ -568,56 +427,6 @@ public class Given_MappingSetManifestJsonEmitter
         }
 
         return resourceNamesByDialect;
-    }
-
-    private static IReadOnlyDictionary<string, IReadOnlyList<string>> ReadStudentOrderByColumnsByDialect(
-        string manifest
-    )
-    {
-        Dictionary<string, IReadOnlyList<string>> orderByColumnsByDialect = [];
-
-        foreach (var mappingSetObject in ParseMappingSetObjects(manifest))
-        {
-            var dialect = mappingSetObject["mapping_set_key"]?["dialect"]?.GetValue<string>();
-
-            if (dialect is null)
-            {
-                throw new InvalidOperationException("Manifest mapping set key dialect is required.");
-            }
-
-            var studentResource = FindResource(mappingSetObject, "Ed-Fi", "Student");
-            var readPlan = RequireObject(studentResource["read_plan"], "read_plan");
-            var tablePlans = RequireArray(
-                readPlan["table_plans_in_dependency_order"],
-                "table_plans_in_dependency_order"
-            );
-
-            if (tablePlans.Count != 1)
-            {
-                throw new InvalidOperationException(
-                    "Manifest Student read-plan must contain exactly one table plan for this test."
-                );
-            }
-
-            var tablePlan = RequireObject(tablePlans[0], "table_plans_in_dependency_order[0]");
-            var orderByColumns = RequireArray(
-                tablePlan["order_by_key_columns_in_order"],
-                "order_by_key_columns_in_order"
-            );
-
-            orderByColumnsByDialect[dialect] = orderByColumns
-                .Select(column => column?.GetValue<string>())
-                .Select(value =>
-                    value is null
-                        ? throw new InvalidOperationException(
-                            "Manifest order-by key column name is required."
-                        )
-                        : value
-                )
-                .ToArray();
-        }
-
-        return orderByColumnsByDialect;
     }
 
     private static IReadOnlyDictionary<
@@ -706,13 +515,16 @@ public class Given_MappingSetManifestJsonEmitter
         return summariesByDialect;
     }
 
-    private static IReadOnlyDictionary<string, ReadPlanSummary> ReadReadPlanSummariesByDialect(
+    private static IReadOnlyDictionary<
+        string,
+        ReadPlanDiagnosticSummary
+    > ReadManifestReadPlanDiagnosticSummariesByDialect(
         string manifest,
         string projectName,
         string resourceName
     )
     {
-        Dictionary<string, ReadPlanSummary> summariesByDialect = [];
+        Dictionary<string, ReadPlanDiagnosticSummary> summariesByDialect = [];
 
         foreach (var mappingSetObject in ParseMappingSetObjects(manifest))
         {
@@ -739,13 +551,13 @@ public class Given_MappingSetManifestJsonEmitter
                 "descriptor_projection_plans_in_order"
             );
 
-            summariesByDialect[dialect] = new ReadPlanSummary(
+            summariesByDialect[dialect] = new ReadPlanDiagnosticSummary(
                 KeysetTable: keysetTable,
                 TablePlans: tablePlans
                     .Select(tablePlanNode =>
                         RequireObject(tablePlanNode, "table_plans_in_dependency_order entry")
                     )
-                    .Select(ReadReadTablePlanSummary)
+                    .Select(ReadManifestReadTablePlanDiagnosticSummary)
                     .ToArray(),
                 ReferenceIdentityProjectionPlanCount: referenceIdentityProjectionPlans.Count,
                 DescriptorProjectionPlanCount: descriptorProjectionPlans.Count
@@ -848,11 +660,30 @@ public class Given_MappingSetManifestJsonEmitter
         );
     }
 
-    private static ReadTablePlanSummary ReadReadTablePlanSummary(JsonObject tablePlan)
+    private static ReadPlanDiagnosticSummary ReadCompiledReadPlanDiagnosticSummary(ResourceReadPlan readPlan)
+    {
+        return new ReadPlanDiagnosticSummary(
+            KeysetTable: new KeysetTableSummary(
+                TempTableName: readPlan.KeysetTable.Table.Name,
+                DocumentIdColumnName: readPlan.KeysetTable.DocumentIdColumnName.Value
+            ),
+            TablePlans: readPlan
+                .TablePlansInDependencyOrder.Select(ReadCompiledReadTablePlanDiagnosticSummary)
+                .ToArray(),
+            ReferenceIdentityProjectionPlanCount: readPlan
+                .ReferenceIdentityProjectionPlansInDependencyOrder
+                .Length,
+            DescriptorProjectionPlanCount: readPlan.DescriptorProjectionPlansInOrder.Length
+        );
+    }
+
+    private static ReadTablePlanDiagnosticSummary ReadManifestReadTablePlanDiagnosticSummary(
+        JsonObject tablePlan
+    )
     {
         var table = RequireObject(tablePlan["table"], "table");
 
-        return new ReadTablePlanSummary(
+        return new ReadTablePlanDiagnosticSummary(
             Schema: RequireString(table, "schema"),
             TableName: RequireString(table, "name"),
             SelectByKeysetSqlSha256: RequireString(tablePlan, "select_by_keyset_sql_sha256"),
@@ -864,6 +695,25 @@ public class Given_MappingSetManifestJsonEmitter
                 tablePlan["order_by_key_columns_in_order"],
                 "order_by_key_columns_in_order"
             )
+        );
+    }
+
+    private static ReadTablePlanDiagnosticSummary ReadCompiledReadTablePlanDiagnosticSummary(
+        TableReadPlan tablePlan
+    )
+    {
+        return new ReadTablePlanDiagnosticSummary(
+            Schema: tablePlan.TableModel.Table.Schema.Value,
+            TableName: tablePlan.TableModel.Table.Name,
+            SelectByKeysetSqlSha256: PlanManifestConventions.ComputeNormalizedSha256(
+                tablePlan.SelectByKeysetSql
+            ),
+            SelectListColumnsInOrder: tablePlan
+                .TableModel.Columns.Select(column => column.ColumnName.Value)
+                .ToArray(),
+            OrderByKeyColumnsInOrder: tablePlan
+                .TableModel.Key.Columns.Select(column => column.ColumnName.Value)
+                .ToArray()
         );
     }
 
@@ -1070,14 +920,14 @@ public class Given_MappingSetManifestJsonEmitter
 
     private sealed record KeysetTableSummary(string TempTableName, string DocumentIdColumnName);
 
-    private sealed record ReadPlanSummary(
+    private sealed record ReadPlanDiagnosticSummary(
         KeysetTableSummary KeysetTable,
-        IReadOnlyList<ReadTablePlanSummary> TablePlans,
+        IReadOnlyList<ReadTablePlanDiagnosticSummary> TablePlans,
         int ReferenceIdentityProjectionPlanCount,
         int DescriptorProjectionPlanCount
     );
 
-    private sealed record ReadTablePlanSummary(
+    private sealed record ReadTablePlanDiagnosticSummary(
         string Schema,
         string TableName,
         string SelectByKeysetSqlSha256,

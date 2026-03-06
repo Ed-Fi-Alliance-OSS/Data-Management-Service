@@ -220,13 +220,14 @@ internal static class MappingSetManifestJsonEmitter
             return;
         }
 
-        WriteReadPlan(writer, readPlan);
+        WriteReadPlanDiagnosticSummary(writer, readPlan);
     }
 
-    private static void WriteReadPlan(Utf8JsonWriter writer, ResourceReadPlan readPlan)
+    private static void WriteReadPlanDiagnosticSummary(Utf8JsonWriter writer, ResourceReadPlan readPlan)
     {
         writer.WriteStartObject();
 
+        // The manifest is diagnostic-only; the normalized plan codec remains authoritative.
         writer.WritePropertyName("keyset_table");
         writer.WriteStartObject();
         writer.WriteString("temp_table_name", readPlan.KeysetTable.Table.Name);
@@ -238,23 +239,20 @@ internal static class MappingSetManifestJsonEmitter
 
         foreach (var tablePlan in readPlan.TablePlansInDependencyOrder)
         {
-            WriteReadTablePlan(writer, tablePlan);
+            WriteReadTablePlanDiagnosticSummary(writer, tablePlan);
         }
 
         writer.WriteEndArray();
-
-        writer.WritePropertyName("reference_identity_projection_plans_in_dependency_order");
-        writer.WriteStartArray();
-        writer.WriteEndArray();
-
-        writer.WritePropertyName("descriptor_projection_plans_in_order");
-        writer.WriteStartArray();
-        writer.WriteEndArray();
+        WriteStory05ProjectionPlaceholderArray(
+            writer,
+            "reference_identity_projection_plans_in_dependency_order"
+        );
+        WriteStory05ProjectionPlaceholderArray(writer, "descriptor_projection_plans_in_order");
 
         writer.WriteEndObject();
     }
 
-    private static void WriteReadTablePlan(Utf8JsonWriter writer, TableReadPlan tablePlan)
+    private static void WriteReadTablePlanDiagnosticSummary(Utf8JsonWriter writer, TableReadPlan tablePlan)
     {
         writer.WriteStartObject();
         writer.WritePropertyName("table");
@@ -267,9 +265,9 @@ internal static class MappingSetManifestJsonEmitter
         writer.WritePropertyName("select_list_columns_in_order");
         writer.WriteStartArray();
 
-        foreach (var column in tablePlan.TableModel.Columns)
+        foreach (var columnName in GetDiagnosticSelectListColumnsInOrder(tablePlan))
         {
-            writer.WriteStringValue(column.ColumnName.Value);
+            writer.WriteStringValue(columnName);
         }
 
         writer.WriteEndArray();
@@ -277,9 +275,9 @@ internal static class MappingSetManifestJsonEmitter
         writer.WritePropertyName("order_by_key_columns_in_order");
         writer.WriteStartArray();
 
-        foreach (var orderByKeyColumn in GetOrderByKeyColumnsInOrder(tablePlan.TableModel))
+        foreach (var orderByKeyColumn in GetDiagnosticOrderByKeyColumnsInOrder(tablePlan))
         {
-            writer.WriteStringValue(orderByKeyColumn.Value);
+            writer.WriteStringValue(orderByKeyColumn);
         }
 
         writer.WriteEndArray();
@@ -302,9 +300,22 @@ internal static class MappingSetManifestJsonEmitter
         writer.WriteEndObject();
     }
 
-    private static IReadOnlyList<DbColumnName> GetOrderByKeyColumnsInOrder(DbTableModel tableModel)
+    private static IReadOnlyList<string> GetDiagnosticSelectListColumnsInOrder(TableReadPlan tablePlan)
     {
-        return tableModel.Key.Columns.Select(static column => column.ColumnName).ToArray();
+        return tablePlan.TableModel.Columns.Select(static column => column.ColumnName.Value).ToArray();
+    }
+
+    private static IReadOnlyList<string> GetDiagnosticOrderByKeyColumnsInOrder(TableReadPlan tablePlan)
+    {
+        return tablePlan.TableModel.Key.Columns.Select(static column => column.ColumnName.Value).ToArray();
+    }
+
+    private static void WriteStory05ProjectionPlaceholderArray(Utf8JsonWriter writer, string propertyName)
+    {
+        // Story 05 keeps these projection contracts as explicit empty placeholders.
+        writer.WritePropertyName(propertyName);
+        writer.WriteStartArray();
+        writer.WriteEndArray();
     }
 
     private static void WriteWriteValueSource(Utf8JsonWriter writer, WriteValueSource valueSource)
