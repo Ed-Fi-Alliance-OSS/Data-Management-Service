@@ -51,7 +51,7 @@
       "Add a golden fixture test that builds the focused projection fixture for pgsql and mssql and fails with a readable diff when `mappingset.manifest.json` changes.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~ProjectionRuntimePlanCompilationGoldenFixture`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Authoritative Fixture Updates",
