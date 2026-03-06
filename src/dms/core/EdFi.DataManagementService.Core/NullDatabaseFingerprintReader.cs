@@ -9,8 +9,8 @@ namespace EdFi.DataManagementService.Core;
 
 /// <summary>
 /// Default no-op implementation of IDatabaseFingerprintReader that always returns null.
-/// Used as a DI fallback when no dialect-specific reader has been registered (e.g. MSSQL
-/// before its reader is implemented). Backend-specific registrations override this default.
+/// Used as a DI fallback when no dialect-specific reader has been registered.
+/// Backend-specific registrations override this default.
 /// </summary>
 internal sealed class NullDatabaseFingerprintReader : IDatabaseFingerprintReader
 {
