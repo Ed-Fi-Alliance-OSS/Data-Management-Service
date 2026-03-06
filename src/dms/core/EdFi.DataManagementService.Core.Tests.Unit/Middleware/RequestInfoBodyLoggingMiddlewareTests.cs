@@ -71,7 +71,7 @@ public class RequestInfoBodyLoggingMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
                 ParsedBody = System.Text.Json.Nodes.JsonNode.Parse(frontEndRequest.Body!)!,
             };
@@ -135,7 +135,7 @@ public class RequestInfoBodyLoggingMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
                 ParsedBody = System.Text.Json.Nodes.JsonNode.Parse(frontEndRequest.Body!)!,
             };
@@ -201,7 +201,7 @@ public class RequestInfoBodyLoggingMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
                 ParsedBody = System.Text.Json.Nodes.JsonNode.Parse(frontEndRequest.Body!)!,
             };
@@ -265,7 +265,7 @@ public class RequestInfoBodyLoggingMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
                 ParsedBody = JsonNode.Parse(frontEndRequest.Body!)!,
             };

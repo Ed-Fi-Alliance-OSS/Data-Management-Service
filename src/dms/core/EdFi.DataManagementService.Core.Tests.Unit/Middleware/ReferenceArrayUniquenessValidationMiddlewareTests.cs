@@ -59,7 +59,7 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
             RouteQualifiers: []
         );
 
-        RequestInfo requestInfo = new(frontEndRequest, method)
+        RequestInfo requestInfo = new(frontEndRequest, method, No.ServiceProvider)
         {
             ApiSchemaDocuments = apiSchema,
             PathComponents = new(

@@ -65,9 +65,12 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
             RouteQualifiers: []
         );
 
-        return new RequestInfo(frontendRequest, RequestMethod.GET)
+        return new RequestInfo(
+            frontendRequest,
+            RequestMethod.GET,
+            scopedServiceProvider ?? No.ServiceProvider
+        )
         {
-            ScopedServiceProvider = scopedServiceProvider,
             ClientAuthorizations = new ClientAuthorizations(
                 TokenId: "token123",
                 ClientId: "client123",

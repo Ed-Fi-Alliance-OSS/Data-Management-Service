@@ -30,7 +30,7 @@ internal class ResolveDmsInstanceMiddleware(
     {
         // Resolve scoped service from the per-request scope
         var dmsInstanceSelection =
-            requestInfo.ScopedServiceProvider!.GetRequiredService<IDmsInstanceSelection>();
+            requestInfo.ScopedServiceProvider.GetRequiredService<IDmsInstanceSelection>();
 
         // Validate ClientAuthorizations.DmsInstanceIds not empty
         if (requestInfo.ClientAuthorizations.DmsInstanceIds.Count == 0)

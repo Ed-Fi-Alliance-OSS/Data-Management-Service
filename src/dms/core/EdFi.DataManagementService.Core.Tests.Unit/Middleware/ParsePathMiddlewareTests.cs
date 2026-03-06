@@ -44,7 +44,7 @@ public class ParsePathMiddlewareTests
                 TraceId: new TraceId(""),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontendRequest, RequestMethod.POST);
+            _requestInfo = new(frontendRequest, RequestMethod.POST, No.ServiceProvider);
             await Middleware().Execute(_requestInfo, NullNext);
         }
 
@@ -79,7 +79,7 @@ public class ParsePathMiddlewareTests
                 TraceId: new TraceId(""),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontendRequest, RequestMethod.POST);
+            _requestInfo = new(frontendRequest, RequestMethod.POST, No.ServiceProvider);
             await Middleware().Execute(_requestInfo, NullNext);
         }
 
@@ -114,7 +114,7 @@ public class ParsePathMiddlewareTests
                 TraceId: new TraceId(""),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontendRequest, RequestMethod.POST);
+            _requestInfo = new(frontendRequest, RequestMethod.POST, No.ServiceProvider);
             await Middleware().Execute(_requestInfo, NullNext);
         }
 
@@ -153,7 +153,7 @@ public class ParsePathMiddlewareTests
                 TraceId: new TraceId(""),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontendRequest, RequestMethod.PUT);
+            _requestInfo = new(frontendRequest, RequestMethod.PUT, No.ServiceProvider);
             await Middleware().Execute(_requestInfo, NullNext);
         }
 
@@ -192,7 +192,7 @@ public class ParsePathMiddlewareTests
                 TraceId: new TraceId(""),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontendRequest, RequestMethod.POST);
+            _requestInfo = new(frontendRequest, RequestMethod.POST, No.ServiceProvider);
             await Middleware().Execute(_requestInfo, NullNext);
         }
 
@@ -237,7 +237,7 @@ public class ParsePathMiddlewareTests
                 TraceId: new TraceId(""),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontendRequest, RequestMethod.POST);
+            _requestInfo = new(frontendRequest, RequestMethod.POST, No.ServiceProvider);
             await Middleware().Execute(_requestInfo, NullNext);
         }
 
@@ -280,7 +280,7 @@ public class ParsePathMiddlewareTests
                 TraceId: new TraceId(""),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontendRequest, RequestMethod.PUT);
+            _requestInfo = new(frontendRequest, RequestMethod.PUT, No.ServiceProvider);
             await Middleware().Execute(_requestInfo, NullNext);
         }
 
@@ -323,7 +323,7 @@ public class ParsePathMiddlewareTests
                 TraceId: new TraceId(""),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontendRequest, RequestMethod.DELETE);
+            _requestInfo = new(frontendRequest, RequestMethod.DELETE, No.ServiceProvider);
             await Middleware().Execute(_requestInfo, NullNext);
         }
 

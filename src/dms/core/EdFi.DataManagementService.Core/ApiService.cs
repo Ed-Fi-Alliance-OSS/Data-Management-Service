@@ -382,10 +382,7 @@ internal class ApiService : IApiService
     public async Task<IFrontendResponse> Upsert(FrontendRequest frontendRequest)
     {
         await using var scope = _serviceScopeFactory.CreateAsyncScope();
-        RequestInfo requestInfo = new(frontendRequest, RequestMethod.POST)
-        {
-            ScopedServiceProvider = scope.ServiceProvider,
-        };
+        RequestInfo requestInfo = new(frontendRequest, RequestMethod.POST, scope.ServiceProvider);
         await _upsertSteps.Value.Run(requestInfo);
         return requestInfo.FrontendResponse;
     }
@@ -396,10 +393,7 @@ internal class ApiService : IApiService
     public async Task<IFrontendResponse> Get(FrontendRequest frontendRequest)
     {
         await using var scope = _serviceScopeFactory.CreateAsyncScope();
-        RequestInfo requestInfo = new(frontendRequest, RequestMethod.GET)
-        {
-            ScopedServiceProvider = scope.ServiceProvider,
-        };
+        RequestInfo requestInfo = new(frontendRequest, RequestMethod.GET, scope.ServiceProvider);
 
         Match match = UtilityService.PathExpressionRegex().Match(frontendRequest.Path);
 
@@ -427,10 +421,7 @@ internal class ApiService : IApiService
     public async Task<IFrontendResponse> UpdateById(FrontendRequest frontendRequest)
     {
         await using var scope = _serviceScopeFactory.CreateAsyncScope();
-        RequestInfo requestInfo = new(frontendRequest, RequestMethod.PUT)
-        {
-            ScopedServiceProvider = scope.ServiceProvider,
-        };
+        RequestInfo requestInfo = new(frontendRequest, RequestMethod.PUT, scope.ServiceProvider);
         await _updateSteps.Value.Run(requestInfo);
         return requestInfo.FrontendResponse;
     }
@@ -441,10 +432,7 @@ internal class ApiService : IApiService
     public async Task<IFrontendResponse> DeleteById(FrontendRequest frontendRequest)
     {
         await using var scope = _serviceScopeFactory.CreateAsyncScope();
-        RequestInfo requestInfo = new(frontendRequest, RequestMethod.DELETE)
-        {
-            ScopedServiceProvider = scope.ServiceProvider,
-        };
+        RequestInfo requestInfo = new(frontendRequest, RequestMethod.DELETE, scope.ServiceProvider);
         await _deleteByIdSteps.Value.Run(requestInfo);
         return requestInfo.FrontendResponse;
     }
@@ -455,10 +443,7 @@ internal class ApiService : IApiService
     public async Task<IFrontendResponse> GetTokenInfo(FrontendRequest frontendRequest)
     {
         await using var scope = _serviceScopeFactory.CreateAsyncScope();
-        RequestInfo requestInfo = new(frontendRequest, RequestMethod.POST)
-        {
-            ScopedServiceProvider = scope.ServiceProvider,
-        };
+        RequestInfo requestInfo = new(frontendRequest, RequestMethod.POST, scope.ServiceProvider);
         await _getTokenInfoSteps.Value.Run(requestInfo);
         return requestInfo.FrontendResponse;
     }

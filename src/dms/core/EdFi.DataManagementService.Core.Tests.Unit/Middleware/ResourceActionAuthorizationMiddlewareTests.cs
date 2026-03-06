@@ -98,7 +98,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []),
                 PathComponents = new PathComponents(
@@ -141,7 +141,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations("", "", "NO-MATCH", [], [], []),
                 PathComponents = new PathComponents(
@@ -189,7 +189,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []),
                 PathComponents = new PathComponents(
@@ -237,7 +237,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []),
                 PathComponents = new PathComponents(
@@ -279,7 +279,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.PUT)
+            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.PUT, No.ServiceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []),
                 PathComponents = new PathComponents(
@@ -351,7 +351,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.PUT)
+            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.PUT, No.ServiceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []),
                 PathComponents = new PathComponents(
@@ -400,7 +400,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []),
                 PathComponents = new PathComponents(
@@ -443,7 +443,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []),
                 PathComponents = new PathComponents(

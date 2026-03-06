@@ -17,7 +17,11 @@ namespace EdFi.DataManagementService.Core.Pipeline;
 /// <summary>
 /// Data container for API request processing, enriched by pipeline steps and handlers
 /// </summary>
-internal class RequestInfo(FrontendRequest _frontendRequest, RequestMethod _method)
+internal class RequestInfo(
+    FrontendRequest _frontendRequest,
+    RequestMethod _method,
+    IServiceProvider _scopedServiceProvider
+)
 {
     /// <summary>
     /// An API request sent from the frontend to be processed
@@ -156,5 +160,9 @@ internal class RequestInfo(FrontendRequest _frontendRequest, RequestMethod _meth
     /// The service provider for the current request scope.
     /// Used by middlewares and handlers to resolve scoped services.
     /// </summary>
-    public IServiceProvider? ScopedServiceProvider { get; set; }
+    public IServiceProvider ScopedServiceProvider
+    {
+        get => _scopedServiceProvider;
+        set => _scopedServiceProvider = value;
+    }
 }

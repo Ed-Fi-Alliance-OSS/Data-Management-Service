@@ -36,7 +36,7 @@ internal class UpsertHandler(
 
         // Resolve repository from the per-request scoped service provider
         var documentStoreRepository =
-            requestInfo.ScopedServiceProvider!.GetRequiredService<IDocumentStoreRepository>();
+            requestInfo.ScopedServiceProvider.GetRequiredService<IDocumentStoreRepository>();
 
         var updateCascadeHandler = new UpdateCascadeHandler(_apiSchemaProvider, _logger);
 
@@ -66,7 +66,7 @@ internal class UpsertHandler(
                             requestInfo.AuthorizationStrategyEvaluators,
                             requestInfo.AuthorizationSecurableInfo,
                             authorizationServiceFactory,
-                            requestInfo.ScopedServiceProvider!,
+                            requestInfo.ScopedServiceProvider,
                             _logger
                         ),
                         ResourceAuthorizationPathways: requestInfo.AuthorizationPathways
