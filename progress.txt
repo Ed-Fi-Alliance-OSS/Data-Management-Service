@@ -48,3 +48,8 @@
 - Decisions: rebaselined authoritative expected manifests through the golden-fixture harness instead of hand-editing; kept authoritative input fixtures untouched; accepted expanded multi-table read-plan inventories plus empty projection arrays for both ds-5.2 and sample authoritative fixtures
 - Files: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Fixtures/authoritative/ds-5.2/expected/mappingset.manifest.json; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Fixtures/authoritative/sample/expected/mappingset.manifest.json; tasks.json; progress.txt
 - Notes: `UPDATE_GOLDENS=1 dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter 'FullyQualifiedName~Given_AuthoritativeDs52_RuntimePlanCompilation_GoldenFixture|FullyQualifiedName~Given_AuthoritativeDs52SampleExtension_RuntimePlanCompilation_GoldenFixture'` green; rerun without `UPDATE_GOLDENS` green; full plans-unit project green; next likely task Final Formatting And Verification or closeout if no further story-05 changes remain
+2026-03-06
+- Completed: Authoritative Goldens task ledger sync. Story: E15-S05 / reference/design/backend-redesign/epics/15-plan-compilation/05-read-plan-compiler-hydration.md
+- Decisions: treated `tasks.json` as source of truth for remaining task state; re-ran authoritative goldens with and without `UPDATE_GOLDENS=1` before marking complete; no fixture diffs produced
+- Files: tasks.json; progress.txt
+- Notes: authoritative golden loop passed 6/6 in both modes; next remaining task in `tasks.json` is Final Formatting And Verification
