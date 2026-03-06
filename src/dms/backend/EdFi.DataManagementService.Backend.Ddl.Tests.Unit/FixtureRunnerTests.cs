@@ -8,10 +8,9 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Ddl.Tests.Unit;
 
-[TestFixture]
-public class Given_FixtureRunner_With_Minimal_Fixture
+internal static class FixtureTestHelper
 {
-    private static string FindProjectRoot()
+    public static string FindProjectRoot()
     {
         var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
 
@@ -36,14 +35,18 @@ public class Given_FixtureRunner_With_Minimal_Fixture
             "Unable to locate EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj in parent directories."
         );
     }
+}
 
+[TestFixture]
+public class Given_FixtureRunner_With_Minimal_Fixture
+{
     private string _fixtureDirectory = default!;
     private FixtureCompareResult _result = default!;
 
     [OneTimeSetUp]
     public void Setup()
     {
-        var projectRoot = FindProjectRoot();
+        var projectRoot = FixtureTestHelper.FindProjectRoot();
         _fixtureDirectory = Path.Combine(projectRoot, "Fixtures", "small", "minimal");
 
         FixtureRunner.Run(_fixtureDirectory);
@@ -114,38 +117,12 @@ public class Given_FixtureRunner_With_Minimal_Fixture
 [TestFixture]
 public class Given_FixtureRunner_With_EmitDdlManifest_False
 {
-    private static string FindProjectRoot()
-    {
-        var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
-
-        while (directory is not null)
-        {
-            if (
-                File.Exists(
-                    Path.Combine(
-                        directory.FullName,
-                        "EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj"
-                    )
-                )
-            )
-            {
-                return directory.FullName;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            "Unable to locate EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj in parent directories."
-        );
-    }
-
     private string _fixtureDirectory = default!;
 
     [OneTimeSetUp]
     public void Setup()
     {
-        var projectRoot = FindProjectRoot();
+        var projectRoot = FixtureTestHelper.FindProjectRoot();
         _fixtureDirectory = Path.Combine(projectRoot, "Fixtures", "small", "no-ddl-manifest");
 
         FixtureRunner.Run(_fixtureDirectory);
@@ -175,61 +152,37 @@ public class Given_FixtureRunner_With_EmitDdlManifest_False
 [TestFixture]
 public class Given_FixtureComparer_When_UpdateGoldens_Is_Set
 {
-    private static string FindProjectRoot()
-    {
-        var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
-
-        while (directory is not null)
-        {
-            if (
-                File.Exists(
-                    Path.Combine(
-                        directory.FullName,
-                        "EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj"
-                    )
-                )
-            )
-            {
-                return directory.FullName;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            "Unable to locate EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj in parent directories."
-        );
-    }
-
-    private string _fixtureDirectory = default!;
+    private string _tempFixtureDirectory = default!;
     private FixtureCompareResult _result = default!;
-    private string? _previousValue;
 
     [OneTimeSetUp]
     public void Setup()
     {
-        var projectRoot = FindProjectRoot();
-        _fixtureDirectory = Path.Combine(projectRoot, "Fixtures", "small", "no-ddl-manifest");
+        var projectRoot = FixtureTestHelper.FindProjectRoot();
+        var sourceFixtureDirectory = Path.Combine(projectRoot, "Fixtures", "small", "no-ddl-manifest");
 
-        FixtureRunner.Run(_fixtureDirectory);
+        // Work on a temp copy so we never mutate the checked-in expected/ directory
+        _tempFixtureDirectory = Path.Combine(Path.GetTempPath(), $"ddl-fixture-{Guid.NewGuid():N}");
+        CopyDirectory(sourceFixtureDirectory, _tempFixtureDirectory);
+
+        FixtureRunner.Run(_tempFixtureDirectory);
 
         // Remove expected/ so UpdateGoldens has to create it
-        var expectedDir = Path.Combine(_fixtureDirectory, "expected");
+        var expectedDir = Path.Combine(_tempFixtureDirectory, "expected");
         if (Directory.Exists(expectedDir))
         {
             Directory.Delete(expectedDir, recursive: true);
         }
 
-        _previousValue = Environment.GetEnvironmentVariable("UPDATE_GOLDENS");
-        Environment.SetEnvironmentVariable("UPDATE_GOLDENS", "1");
+        _result = FixtureComparer.Compare(_tempFixtureDirectory, updateGoldens: true);
+    }
 
-        try
+    [OneTimeTearDown]
+    public void TearDown()
+    {
+        if (Directory.Exists(_tempFixtureDirectory))
         {
-            _result = FixtureComparer.Compare(_fixtureDirectory);
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable("UPDATE_GOLDENS", _previousValue);
+            Directory.Delete(_tempFixtureDirectory, recursive: true);
         }
     }
 
@@ -242,7 +195,7 @@ public class Given_FixtureComparer_When_UpdateGoldens_Is_Set
     [Test]
     public void It_should_populate_expected_directory()
     {
-        var expectedDir = Path.Combine(_fixtureDirectory, "expected");
+        var expectedDir = Path.Combine(_tempFixtureDirectory, "expected");
         Directory.Exists(expectedDir).Should().BeTrue();
         Directory.GetFiles(expectedDir).Should().NotBeEmpty();
     }
@@ -250,8 +203,8 @@ public class Given_FixtureComparer_When_UpdateGoldens_Is_Set
     [Test]
     public void It_should_copy_all_actual_files_to_expected()
     {
-        var actualDir = Path.Combine(_fixtureDirectory, "actual");
-        var expectedDir = Path.Combine(_fixtureDirectory, "expected");
+        var actualDir = Path.Combine(_tempFixtureDirectory, "actual");
+        var expectedDir = Path.Combine(_tempFixtureDirectory, "expected");
 
         var actualFiles = Directory
             .GetFiles(actualDir, "*", SearchOption.AllDirectories)
@@ -266,5 +219,20 @@ public class Given_FixtureComparer_When_UpdateGoldens_Is_Set
             .ToList();
 
         expectedFiles.Should().BeEquivalentTo(actualFiles);
+    }
+
+    private static void CopyDirectory(string sourceDir, string targetDir)
+    {
+        Directory.CreateDirectory(targetDir);
+
+        foreach (var file in Directory.GetFiles(sourceDir))
+        {
+            File.Copy(file, Path.Combine(targetDir, Path.GetFileName(file)));
+        }
+
+        foreach (var dir in Directory.GetDirectories(sourceDir))
+        {
+            CopyDirectory(dir, Path.Combine(targetDir, Path.GetFileName(dir)));
+        }
     }
 }
