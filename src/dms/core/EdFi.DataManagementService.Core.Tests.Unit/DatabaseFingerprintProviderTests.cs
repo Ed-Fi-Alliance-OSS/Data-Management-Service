@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Immutable;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using FakeItEasy;
@@ -18,7 +19,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit;
 public class DatabaseFingerprintProviderTests
 {
     private static DatabaseFingerprint CreateFingerprint(string hash = "abc123") =>
-        new("1.0", hash, 42, new byte[32]);
+        new("1.0", hash, 42, new byte[32].ToImmutableArray());
 
     private static IOptions<AppSettings> DefaultAppSettings(int negativeCacheTtlSeconds = 30) =>
         Options.Create(

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Immutable;
 using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -47,7 +48,7 @@ public class PostgresqlDatabaseFingerprintReader(ILogger<PostgresqlDatabaseFinge
             ApiSchemaFormatVersion: reader.GetString(reader.GetOrdinal("ApiSchemaFormatVersion")),
             EffectiveSchemaHash: reader.GetString(reader.GetOrdinal("EffectiveSchemaHash")),
             ResourceKeyCount: reader.GetInt16(reader.GetOrdinal("ResourceKeyCount")),
-            ResourceKeySeedHash: (byte[])reader[reader.GetOrdinal("ResourceKeySeedHash")]
+            ResourceKeySeedHash: ((byte[])reader[reader.GetOrdinal("ResourceKeySeedHash")]).ToImmutableArray()
         );
     }
 }
