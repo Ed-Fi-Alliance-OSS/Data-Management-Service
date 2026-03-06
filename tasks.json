@@ -6,7 +6,7 @@
       "Add or update unit tests in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` proving root, child, nested collection, and `_ext` tables all appear in `TablePlansInDependencyOrder`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~ReadPlanCompiler`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Hydration SQL Emission",

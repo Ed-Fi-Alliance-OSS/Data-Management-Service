@@ -1,0 +1,5 @@
+2026-03-05
+- Completed: Read Plan Coverage. Story: E15-S05 / reference/design/backend-redesign/epics/15-plan-compilation/05-read-plan-compiler-hydration.md
+- Decisions: added standalone ReadPlanCompiler for all relational-table resources; preserved TablesInDependencyOrder exactly in TablePlansInDependencyOrder; kept projection plan arrays empty; left RootOnlyReadPlanCompiler + mapping-set integration untouched to keep this iteration scoped to coverage only
+- Files: src/dms/backend/EdFi.DataManagementService.Backend.Plans/ReadPlanCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReadPlanCompilerTests.cs; tasks.json; progress.txt
+- Notes: targeted ReadPlanCompiler test loop green after csharpier; next likely task is mapping-set integration or hydration SQL emission refinement
