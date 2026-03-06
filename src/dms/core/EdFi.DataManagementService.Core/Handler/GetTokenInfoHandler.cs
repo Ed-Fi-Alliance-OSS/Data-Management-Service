@@ -18,6 +18,7 @@ using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Security.Model;
 using EdFi.DataManagementService.Core.Utilities;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Handler;
@@ -31,8 +32,6 @@ internal partial class GetTokenInfoHandler(
     ILogger<GetTokenInfoHandler> logger,
     IJwtValidationService jwtValidationService,
     IClaimSetProvider claimSetProvider,
-    IAuthorizationRepository authorizationRepository,
-    IApplicationContextProvider applicationContextProvider,
     IProfileService profileService
 ) : IPipelineStep
 {
@@ -47,6 +46,12 @@ internal partial class GetTokenInfoHandler(
             $"Entering {nameof(GetTokenInfoHandler)} - {{TraceId}}",
             requestInfo.FrontendRequest.TraceId.Value
         );
+
+        // Resolve scoped dependencies from per-request scope
+        var authorizationRepository =
+            requestInfo.ScopedServiceProvider!.GetRequiredService<IAuthorizationRepository>();
+        var applicationContextProvider =
+            requestInfo.ScopedServiceProvider!.GetRequiredService<IApplicationContextProvider>();
 
         string? tokenFromBody = null;
 
@@ -166,6 +171,7 @@ internal partial class GetTokenInfoHandler(
                 namespacePrefix.Value
             ),
             EducationOrganizations = await GetAuthorizedEducationOrganizations(
+                authorizationRepository,
                 requestInfo.ClientAuthorizations.EducationOrganizationIds
             ),
             AssignedProfiles = await GetAssignedProfiles(
@@ -188,6 +194,7 @@ internal partial class GetTokenInfoHandler(
     }
 
     private async Task<IEnumerable<OrderedDictionary<string, object>>> GetAuthorizedEducationOrganizations(
+        IAuthorizationRepository authorizationRepository,
         IReadOnlyCollection<EducationOrganizationId> clientEducationOrganizationIds
     )
     {

@@ -27,7 +27,17 @@ public class ProfileWriteValidationMiddlewareTests
 {
     private static ProfileWriteValidationMiddleware CreateMiddleware(
         IProfileResponseFilter? filter = null,
-        IProfileCreatabilityValidator? creatabilityValidator = null,
+        IProfileCreatabilityValidator? creatabilityValidator = null
+    )
+    {
+        return new ProfileWriteValidationMiddleware(
+            filter ?? new ProfileResponseFilter(),
+            creatabilityValidator ?? new ProfileCreatabilityValidator(),
+            NullLogger<ProfileWriteValidationMiddleware>.Instance
+        );
+    }
+
+    private static IServiceProvider BuildScopedServiceProvider(
         IDocumentStoreRepository? documentStoreRepository = null
     )
     {
@@ -40,14 +50,7 @@ public class ProfileWriteValidationMiddlewareTests
         {
             services.AddSingleton<IDocumentStoreRepository>(new StubDocumentStoreRepository());
         }
-        var serviceProvider = services.BuildServiceProvider();
-
-        return new ProfileWriteValidationMiddleware(
-            filter ?? new ProfileResponseFilter(),
-            creatabilityValidator ?? new ProfileCreatabilityValidator(),
-            serviceProvider,
-            NullLogger<ProfileWriteValidationMiddleware>.Instance
-        );
+        return services.BuildServiceProvider();
     }
 
     /// <summary>
@@ -72,7 +75,8 @@ public class ProfileWriteValidationMiddlewareTests
     private static RequestInfo CreateRequestInfo(
         RequestMethod method = RequestMethod.POST,
         string resourceName = "Student",
-        string[]? requiredFields = null
+        string[]? requiredFields = null,
+        IServiceProvider? scopedServiceProvider = null
     )
     {
         var frontendRequest = new FrontendRequest(
@@ -107,7 +111,11 @@ public class ProfileWriteValidationMiddlewareTests
             }
         );
 
-        return new RequestInfo(frontendRequest, method) { ResourceSchema = resourceSchema };
+        return new RequestInfo(frontendRequest, method)
+        {
+            ResourceSchema = resourceSchema,
+            ScopedServiceProvider = scopedServiceProvider ?? BuildScopedServiceProvider(),
+        };
     }
 
     private static ProfileContext CreateWriteProfileContext(
@@ -888,7 +896,8 @@ public class ProfileWriteValidationMiddlewareTests
             };
 
             _nextCalled = false;
-            var middleware = CreateMiddleware(documentStoreRepository: new AddressRepository());
+            _requestInfo.ScopedServiceProvider = BuildScopedServiceProvider(new AddressRepository());
+            var middleware = CreateMiddleware();
 
             await middleware.Execute(
                 _requestInfo,
@@ -1037,7 +1046,8 @@ public class ProfileWriteValidationMiddlewareTests
             };
 
             _nextCalled = false;
-            var middleware = CreateMiddleware(documentStoreRepository: new TelephoneRepository());
+            _requestInfo.ScopedServiceProvider = BuildScopedServiceProvider(new TelephoneRepository());
+            var middleware = CreateMiddleware();
 
             await middleware.Execute(
                 _requestInfo,
@@ -1204,7 +1214,8 @@ public class ProfileWriteValidationMiddlewareTests
             };
 
             _nextCalled = false;
-            var middleware = CreateMiddleware(documentStoreRepository: new GradeLevelRepository());
+            _requestInfo.ScopedServiceProvider = BuildScopedServiceProvider(new GradeLevelRepository());
+            var middleware = CreateMiddleware();
 
             await middleware.Execute(
                 _requestInfo,
@@ -1410,7 +1421,8 @@ public class ProfileWriteValidationMiddlewareTests
             };
 
             _nextCalled = false;
-            var middleware = CreateMiddleware(documentStoreRepository: new DeepNestedRepository());
+            _requestInfo.ScopedServiceProvider = BuildScopedServiceProvider(new DeepNestedRepository());
+            var middleware = CreateMiddleware();
 
             await middleware.Execute(
                 _requestInfo,

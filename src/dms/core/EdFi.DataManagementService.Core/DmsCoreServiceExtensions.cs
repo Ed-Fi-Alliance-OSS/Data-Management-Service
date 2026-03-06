@@ -111,7 +111,7 @@ public static class DmsCoreServiceExtensions
             .AddTransient<ProfileResolutionMiddleware>()
             .AddTransient<ProfileFilteringMiddleware>()
             .AddTransient<ProfileWriteValidationMiddleware>()
-            .AddScoped<GetTokenInfoHandler>();
+            .AddSingleton<GetTokenInfoHandler>();
 
         return services;
 
