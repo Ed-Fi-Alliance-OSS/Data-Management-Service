@@ -243,11 +243,25 @@ internal static class MappingSetManifestJsonEmitter
         }
 
         writer.WriteEndArray();
-        WriteStory05ProjectionPlaceholderArray(
-            writer,
-            "reference_identity_projection_plans_in_dependency_order"
-        );
-        WriteStory05ProjectionPlaceholderArray(writer, "descriptor_projection_plans_in_order");
+        writer.WritePropertyName("reference_identity_projection_plans_in_dependency_order");
+        writer.WriteStartArray();
+
+        foreach (var projectionTablePlan in readPlan.ReferenceIdentityProjectionPlansInDependencyOrder)
+        {
+            WriteReferenceIdentityProjectionTablePlanDiagnosticSummary(writer, projectionTablePlan);
+        }
+
+        writer.WriteEndArray();
+
+        writer.WritePropertyName("descriptor_projection_plans_in_order");
+        writer.WriteStartArray();
+
+        foreach (var descriptorProjectionPlan in readPlan.DescriptorProjectionPlansInOrder)
+        {
+            WriteDescriptorProjectionPlanDiagnosticSummary(writer, descriptorProjectionPlan);
+        }
+
+        writer.WriteEndArray();
 
         writer.WriteEndObject();
     }
@@ -310,12 +324,80 @@ internal static class MappingSetManifestJsonEmitter
         return ReadPlanSqlShape.ExtractOrderByColumnNames(tablePlan.SelectByKeysetSql).ToArray();
     }
 
-    private static void WriteStory05ProjectionPlaceholderArray(Utf8JsonWriter writer, string propertyName)
+    private static void WriteReferenceIdentityProjectionTablePlanDiagnosticSummary(
+        Utf8JsonWriter writer,
+        ReferenceIdentityProjectionTablePlan projectionTablePlan
+    )
     {
-        // Story 05 keeps these projection contracts as explicit empty placeholders.
-        writer.WritePropertyName(propertyName);
+        writer.WriteStartObject();
+        writer.WritePropertyName("table");
+        WriteTableName(writer, projectionTablePlan.Table);
+
+        writer.WritePropertyName("bindings_in_order");
         writer.WriteStartArray();
+
+        foreach (var binding in projectionTablePlan.BindingsInOrder)
+        {
+            writer.WriteStartObject();
+            writer.WriteBoolean("is_identity_component", binding.IsIdentityComponent);
+            writer.WriteString("reference_object_path", binding.ReferenceObjectPath.Canonical);
+            writer.WritePropertyName("target_resource");
+            WriteQualifiedResourceName(writer, binding.TargetResource);
+            writer.WriteNumber("fk_column_ordinal", binding.FkColumnOrdinal);
+
+            writer.WritePropertyName("identity_field_ordinals_in_order");
+            writer.WriteStartArray();
+
+            foreach (var fieldOrdinal in binding.IdentityFieldOrdinalsInOrder)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("reference_json_path", fieldOrdinal.ReferenceJsonPath.Canonical);
+                writer.WriteNumber("column_ordinal", fieldOrdinal.ColumnOrdinal);
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+
         writer.WriteEndArray();
+        writer.WriteEndObject();
+    }
+
+    private static void WriteDescriptorProjectionPlanDiagnosticSummary(
+        Utf8JsonWriter writer,
+        DescriptorProjectionPlan descriptorProjectionPlan
+    )
+    {
+        writer.WriteStartObject();
+        writer.WriteString(
+            "select_by_keyset_sql_sha256",
+            PlanManifestConventions.ComputeNormalizedSha256(descriptorProjectionPlan.SelectByKeysetSql)
+        );
+
+        writer.WritePropertyName("result_shape");
+        writer.WriteStartObject();
+        writer.WriteNumber("descriptor_id_ordinal", descriptorProjectionPlan.ResultShape.DescriptorIdOrdinal);
+        writer.WriteNumber("uri_ordinal", descriptorProjectionPlan.ResultShape.UriOrdinal);
+        writer.WriteEndObject();
+
+        writer.WritePropertyName("sources_in_order");
+        writer.WriteStartArray();
+
+        foreach (var source in descriptorProjectionPlan.SourcesInOrder)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("descriptor_value_path", source.DescriptorValuePath.Canonical);
+            writer.WritePropertyName("table");
+            WriteTableName(writer, source.Table);
+            writer.WritePropertyName("descriptor_resource");
+            WriteQualifiedResourceName(writer, source.DescriptorResource);
+            writer.WriteNumber("descriptor_id_column_ordinal", source.DescriptorIdColumnOrdinal);
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
+        writer.WriteEndObject();
     }
 
     private static void WriteWriteValueSource(Utf8JsonWriter writer, WriteValueSource valueSource)

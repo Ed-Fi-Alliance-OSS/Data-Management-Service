@@ -112,7 +112,7 @@ public class Given_MappingSetManifestJsonEmitter
     }
 
     [Test]
-    public void It_should_emit_single_table_read_plan_as_a_compiled_diagnostic_summary_with_story_05_placeholders()
+    public void It_should_emit_single_table_read_plan_as_a_compiled_diagnostic_summary()
     {
         var programResource = new QualifiedResourceName("Ed-Fi", "Program");
         var compiledMappingSets = BuildPermutedMappingSets(FixturePath, reverseMappingSetOrder: false);
@@ -141,7 +141,7 @@ public class Given_MappingSetManifestJsonEmitter
     }
 
     [Test]
-    public void It_should_emit_multi_table_read_plan_as_a_compiled_diagnostic_summary_with_story_05_placeholders()
+    public void It_should_emit_multi_table_read_plan_as_a_compiled_diagnostic_summary()
     {
         var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
         var mappingSets = BuildPermutedMappingSets(
@@ -170,6 +170,39 @@ public class Given_MappingSetManifestJsonEmitter
             readPlanSummary.TablePlans.Should().HaveCountGreaterThan(1);
             readPlanSummary.ReferenceIdentityProjectionPlanCount.Should().Be(0);
             readPlanSummary.DescriptorProjectionPlanCount.Should().Be(0);
+        }
+    }
+
+    [Test]
+    public void It_should_emit_projection_diagnostic_summaries_for_resources_with_compiled_projections()
+    {
+        var studentResource = new QualifiedResourceName("Ed-Fi", "Student");
+        var compiledMappingSets = BuildPermutedMappingSets(FixturePath, reverseMappingSetOrder: false);
+        var summariesByDialect = ReadManifestProjectionDiagnosticSummariesByDialect(
+            _manifest,
+            "Ed-Fi",
+            "Student"
+        );
+        var expectedSummariesByDialect = ReadCompiledProjectionDiagnosticSummariesByDialect(
+            compiledMappingSets,
+            studentResource
+        );
+
+        summariesByDialect.Keys.Should().BeEquivalentTo("mssql", "pgsql");
+        _manifest.Should().Contain("\"select_by_keyset_sql_sha256\"");
+        _manifest.Should().NotContain("\"select_by_keyset_sql\":");
+
+        foreach (var dialect in summariesByDialect.Keys)
+        {
+            var projectionSummary = summariesByDialect[dialect];
+            var expectedSummary = expectedSummariesByDialect[dialect];
+
+            projectionSummary
+                .Should()
+                .BeEquivalentTo(expectedSummary, options => options.WithStrictOrdering());
+            projectionSummary.ReferenceIdentityProjectionPlans.Should().ContainSingle();
+            projectionSummary.DescriptorProjectionPlans.Should().ContainSingle();
+            projectionSummary.DescriptorProjectionPlans[0].SelectByKeysetSqlSha256.Should().HaveLength(64);
         }
     }
 
@@ -460,6 +493,42 @@ public class Given_MappingSetManifestJsonEmitter
 
     private static IReadOnlyDictionary<
         string,
+        ProjectionDiagnosticSummary
+    > ReadCompiledProjectionDiagnosticSummariesByDialect(
+        IReadOnlyList<MappingSet> mappingSets,
+        QualifiedResourceName resource
+    )
+    {
+        Dictionary<string, ProjectionDiagnosticSummary> summariesByDialect = [];
+
+        foreach (var mappingSet in mappingSets)
+        {
+            var dialect = PlanManifestConventions.ToManifestDialect(mappingSet.Key.Dialect);
+
+            if (!mappingSet.ReadPlansByResource.TryGetValue(resource, out var readPlan))
+            {
+                throw new InvalidOperationException(
+                    $"Compiled read plan for resource '{resource.ProjectName}.{resource.ResourceName}' is required."
+                );
+            }
+
+            summariesByDialect[dialect] = new ProjectionDiagnosticSummary(
+                ReferenceIdentityProjectionPlans: readPlan
+                    .ReferenceIdentityProjectionPlansInDependencyOrder.Select(
+                        ReadCompiledReferenceIdentityProjectionTablePlanSummary
+                    )
+                    .ToArray(),
+                DescriptorProjectionPlans: readPlan
+                    .DescriptorProjectionPlansInOrder.Select(ReadCompiledDescriptorProjectionPlanSummary)
+                    .ToArray()
+            );
+        }
+
+        return summariesByDialect;
+    }
+
+    private static IReadOnlyDictionary<
+        string,
         IReadOnlyList<string>
     > ReadCompiledKeyUnificationMemberPathsByDialect(
         IReadOnlyList<MappingSet> mappingSets,
@@ -672,6 +741,61 @@ public class Given_MappingSetManifestJsonEmitter
 
     private static IReadOnlyDictionary<
         string,
+        ProjectionDiagnosticSummary
+    > ReadManifestProjectionDiagnosticSummariesByDialect(
+        string manifest,
+        string projectName,
+        string resourceName
+    )
+    {
+        Dictionary<string, ProjectionDiagnosticSummary> summariesByDialect = [];
+
+        foreach (var mappingSetObject in ParseMappingSetObjects(manifest))
+        {
+            var dialect = mappingSetObject["mapping_set_key"]?["dialect"]?.GetValue<string>();
+
+            if (dialect is null)
+            {
+                throw new InvalidOperationException("Manifest mapping set key dialect is required.");
+            }
+
+            var resource = FindResource(mappingSetObject, projectName, resourceName);
+            var readPlan = RequireObject(resource["read_plan"], "read_plan");
+            var referenceIdentityProjectionPlans = RequireArray(
+                readPlan["reference_identity_projection_plans_in_dependency_order"],
+                "reference_identity_projection_plans_in_dependency_order"
+            );
+            var descriptorProjectionPlans = RequireArray(
+                readPlan["descriptor_projection_plans_in_order"],
+                "descriptor_projection_plans_in_order"
+            );
+
+            summariesByDialect[dialect] = new ProjectionDiagnosticSummary(
+                ReferenceIdentityProjectionPlans: referenceIdentityProjectionPlans
+                    .Select(planNode =>
+                        ReadManifestReferenceIdentityProjectionTablePlanSummary(
+                            RequireObject(
+                                planNode,
+                                "reference_identity_projection_plans_in_dependency_order entry"
+                            )
+                        )
+                    )
+                    .ToArray(),
+                DescriptorProjectionPlans: descriptorProjectionPlans
+                    .Select(planNode =>
+                        ReadManifestDescriptorProjectionPlanSummary(
+                            RequireObject(planNode, "descriptor_projection_plans_in_order entry")
+                        )
+                    )
+                    .ToArray()
+            );
+        }
+
+        return summariesByDialect;
+    }
+
+    private static IReadOnlyDictionary<
+        string,
         IReadOnlyList<string>
     > ReadManifestKeyUnificationMemberPathsByDialect(string manifest, string projectName, string resourceName)
     {
@@ -780,6 +904,60 @@ public class Given_MappingSetManifestJsonEmitter
         );
     }
 
+    private static ReferenceIdentityProjectionTablePlanSummary ReadCompiledReferenceIdentityProjectionTablePlanSummary(
+        ReferenceIdentityProjectionTablePlan tablePlan
+    )
+    {
+        return new ReferenceIdentityProjectionTablePlanSummary(
+            Table: new TableNameSummary(Schema: tablePlan.Table.Schema.Value, Name: tablePlan.Table.Name),
+            BindingsInOrder: tablePlan
+                .BindingsInOrder.Select(binding => new ReferenceIdentityProjectionBindingSummary(
+                    IsIdentityComponent: binding.IsIdentityComponent,
+                    ReferenceObjectPath: binding.ReferenceObjectPath.Canonical,
+                    TargetResource: new QualifiedResourceNameSummary(
+                        ProjectName: binding.TargetResource.ProjectName,
+                        ResourceName: binding.TargetResource.ResourceName
+                    ),
+                    FkColumnOrdinal: binding.FkColumnOrdinal,
+                    IdentityFieldOrdinalsInOrder: binding
+                        .IdentityFieldOrdinalsInOrder.Select(
+                            fieldOrdinal => new ReferenceIdentityProjectionFieldOrdinalSummary(
+                                ReferenceJsonPath: fieldOrdinal.ReferenceJsonPath.Canonical,
+                                ColumnOrdinal: fieldOrdinal.ColumnOrdinal
+                            )
+                        )
+                        .ToArray()
+                ))
+                .ToArray()
+        );
+    }
+
+    private static DescriptorProjectionPlanSummary ReadCompiledDescriptorProjectionPlanSummary(
+        DescriptorProjectionPlan descriptorProjectionPlan
+    )
+    {
+        return new DescriptorProjectionPlanSummary(
+            SelectByKeysetSqlSha256: PlanManifestConventions.ComputeNormalizedSha256(
+                descriptorProjectionPlan.SelectByKeysetSql
+            ),
+            ResultShape: new DescriptorProjectionResultShapeSummary(
+                DescriptorIdOrdinal: descriptorProjectionPlan.ResultShape.DescriptorIdOrdinal,
+                UriOrdinal: descriptorProjectionPlan.ResultShape.UriOrdinal
+            ),
+            SourcesInOrder: descriptorProjectionPlan
+                .SourcesInOrder.Select(source => new DescriptorProjectionSourceSummary(
+                    DescriptorValuePath: source.DescriptorValuePath.Canonical,
+                    Table: new TableNameSummary(Schema: source.Table.Schema.Value, Name: source.Table.Name),
+                    DescriptorResource: new QualifiedResourceNameSummary(
+                        ProjectName: source.DescriptorResource.ProjectName,
+                        ResourceName: source.DescriptorResource.ResourceName
+                    ),
+                    DescriptorIdColumnOrdinal: source.DescriptorIdColumnOrdinal
+                ))
+                .ToArray()
+        );
+    }
+
     private static ReadTablePlanDiagnosticSummary ReadManifestReadTablePlanDiagnosticSummary(
         JsonObject tablePlan
     )
@@ -817,6 +995,110 @@ public class Given_MappingSetManifestJsonEmitter
             OrderByKeyColumnsInOrder: ReadPlanSqlShape
                 .ExtractOrderByColumnNames(tablePlan.SelectByKeysetSql)
                 .ToArray()
+        );
+    }
+
+    private static ReferenceIdentityProjectionTablePlanSummary ReadManifestReferenceIdentityProjectionTablePlanSummary(
+        JsonObject tablePlan
+    )
+    {
+        var table = RequireObject(tablePlan["table"], "table");
+        var bindingsInOrder = RequireArray(tablePlan["bindings_in_order"], "bindings_in_order");
+
+        return new ReferenceIdentityProjectionTablePlanSummary(
+            Table: new TableNameSummary(
+                Schema: RequireString(table, "schema"),
+                Name: RequireString(table, "name")
+            ),
+            BindingsInOrder: bindingsInOrder
+                .Select(bindingNode =>
+                    ReadManifestReferenceIdentityProjectionBindingSummary(
+                        RequireObject(bindingNode, "bindings_in_order entry")
+                    )
+                )
+                .ToArray()
+        );
+    }
+
+    private static ReferenceIdentityProjectionBindingSummary ReadManifestReferenceIdentityProjectionBindingSummary(
+        JsonObject binding
+    )
+    {
+        var targetResource = RequireObject(binding["target_resource"], "target_resource");
+        var identityFieldOrdinalsInOrder = RequireArray(
+            binding["identity_field_ordinals_in_order"],
+            "identity_field_ordinals_in_order"
+        );
+
+        return new ReferenceIdentityProjectionBindingSummary(
+            IsIdentityComponent: RequireBool(binding, "is_identity_component"),
+            ReferenceObjectPath: RequireString(binding, "reference_object_path"),
+            TargetResource: new QualifiedResourceNameSummary(
+                ProjectName: RequireString(targetResource, "project_name"),
+                ResourceName: RequireString(targetResource, "resource_name")
+            ),
+            FkColumnOrdinal: RequireInt(binding, "fk_column_ordinal"),
+            IdentityFieldOrdinalsInOrder: identityFieldOrdinalsInOrder
+                .Select(fieldNode =>
+                    ReadManifestReferenceIdentityProjectionFieldOrdinalSummary(
+                        RequireObject(fieldNode, "identity_field_ordinals_in_order entry")
+                    )
+                )
+                .ToArray()
+        );
+    }
+
+    private static ReferenceIdentityProjectionFieldOrdinalSummary ReadManifestReferenceIdentityProjectionFieldOrdinalSummary(
+        JsonObject fieldOrdinal
+    )
+    {
+        return new ReferenceIdentityProjectionFieldOrdinalSummary(
+            ReferenceJsonPath: RequireString(fieldOrdinal, "reference_json_path"),
+            ColumnOrdinal: RequireInt(fieldOrdinal, "column_ordinal")
+        );
+    }
+
+    private static DescriptorProjectionPlanSummary ReadManifestDescriptorProjectionPlanSummary(
+        JsonObject descriptorProjectionPlan
+    )
+    {
+        var resultShape = RequireObject(descriptorProjectionPlan["result_shape"], "result_shape");
+        var sourcesInOrder = RequireArray(descriptorProjectionPlan["sources_in_order"], "sources_in_order");
+
+        return new DescriptorProjectionPlanSummary(
+            SelectByKeysetSqlSha256: RequireString(descriptorProjectionPlan, "select_by_keyset_sql_sha256"),
+            ResultShape: new DescriptorProjectionResultShapeSummary(
+                DescriptorIdOrdinal: RequireInt(resultShape, "descriptor_id_ordinal"),
+                UriOrdinal: RequireInt(resultShape, "uri_ordinal")
+            ),
+            SourcesInOrder: sourcesInOrder
+                .Select(sourceNode =>
+                    ReadManifestDescriptorProjectionSourceSummary(
+                        RequireObject(sourceNode, "sources_in_order entry")
+                    )
+                )
+                .ToArray()
+        );
+    }
+
+    private static DescriptorProjectionSourceSummary ReadManifestDescriptorProjectionSourceSummary(
+        JsonObject source
+    )
+    {
+        var table = RequireObject(source["table"], "table");
+        var descriptorResource = RequireObject(source["descriptor_resource"], "descriptor_resource");
+
+        return new DescriptorProjectionSourceSummary(
+            DescriptorValuePath: RequireString(source, "descriptor_value_path"),
+            Table: new TableNameSummary(
+                Schema: RequireString(table, "schema"),
+                Name: RequireString(table, "name")
+            ),
+            DescriptorResource: new QualifiedResourceNameSummary(
+                ProjectName: RequireString(descriptorResource, "project_name"),
+                ResourceName: RequireString(descriptorResource, "resource_name")
+            ),
+            DescriptorIdColumnOrdinal: RequireInt(source, "descriptor_id_column_ordinal")
         );
     }
 
@@ -1152,5 +1434,47 @@ public class Given_MappingSetManifestJsonEmitter
         string SelectByKeysetSqlSha256,
         IReadOnlyList<string> SelectListColumnsInOrder,
         IReadOnlyList<string> OrderByKeyColumnsInOrder
+    );
+
+    private sealed record ProjectionDiagnosticSummary(
+        IReadOnlyList<ReferenceIdentityProjectionTablePlanSummary> ReferenceIdentityProjectionPlans,
+        IReadOnlyList<DescriptorProjectionPlanSummary> DescriptorProjectionPlans
+    );
+
+    private sealed record QualifiedResourceNameSummary(string ProjectName, string ResourceName);
+
+    private sealed record TableNameSummary(string Schema, string Name);
+
+    private sealed record ReferenceIdentityProjectionTablePlanSummary(
+        TableNameSummary Table,
+        IReadOnlyList<ReferenceIdentityProjectionBindingSummary> BindingsInOrder
+    );
+
+    private sealed record ReferenceIdentityProjectionBindingSummary(
+        bool IsIdentityComponent,
+        string ReferenceObjectPath,
+        QualifiedResourceNameSummary TargetResource,
+        int FkColumnOrdinal,
+        IReadOnlyList<ReferenceIdentityProjectionFieldOrdinalSummary> IdentityFieldOrdinalsInOrder
+    );
+
+    private sealed record ReferenceIdentityProjectionFieldOrdinalSummary(
+        string ReferenceJsonPath,
+        int ColumnOrdinal
+    );
+
+    private sealed record DescriptorProjectionPlanSummary(
+        string SelectByKeysetSqlSha256,
+        DescriptorProjectionResultShapeSummary ResultShape,
+        IReadOnlyList<DescriptorProjectionSourceSummary> SourcesInOrder
+    );
+
+    private sealed record DescriptorProjectionResultShapeSummary(int DescriptorIdOrdinal, int UriOrdinal);
+
+    private sealed record DescriptorProjectionSourceSummary(
+        string DescriptorValuePath,
+        TableNameSummary Table,
+        QualifiedResourceNameSummary DescriptorResource,
+        int DescriptorIdColumnOrdinal
     );
 }

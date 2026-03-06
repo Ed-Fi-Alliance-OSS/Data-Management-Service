@@ -42,7 +42,7 @@
       "Add or update emitter, DTO, determinism, and codec tests to assert populated projection metadata instead of empty placeholder arrays and to compare stable normalized SQL hashes for descriptor projection plans.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~MappingSetManifestJsonEmitterTests|FullyQualifiedName~NormalizedPlanContractCodecTests|FullyQualifiedName~RuntimePlanCompilationDeterminismTests`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Focused Projection Fixture",

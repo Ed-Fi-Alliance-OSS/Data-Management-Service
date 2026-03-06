@@ -133,7 +133,41 @@
               }
             ],
             "reference_identity_projection_plans_in_dependency_order": [],
-            "descriptor_projection_plans_in_order": []
+            "descriptor_projection_plans_in_order": [
+              {
+                "select_by_keyset_sql_sha256": "78133ae030cbe488ba4ab54b06f01b11abdab5ef8d8028f5acc8618eb33414d7",
+                "result_shape": {
+                  "descriptor_id_ordinal": 0,
+                  "uri_ordinal": 1
+                },
+                "sources_in_order": [
+                  {
+                    "descriptor_value_path": "$.primarySchoolTypeDescriptor",
+                    "table": {
+                      "schema": "edfi",
+                      "name": "PresenceGateExample"
+                    },
+                    "descriptor_resource": {
+                      "project_name": "Ed-Fi",
+                      "resource_name": "SchoolTypeDescriptor"
+                    },
+                    "descriptor_id_column_ordinal": 4
+                  },
+                  {
+                    "descriptor_value_path": "$.secondarySchoolTypeDescriptor",
+                    "table": {
+                      "schema": "edfi",
+                      "name": "PresenceGateExample"
+                    },
+                    "descriptor_resource": {
+                      "project_name": "Ed-Fi",
+                      "resource_name": "SchoolTypeDescriptor"
+                    },
+                    "descriptor_id_column_ordinal": 5
+                  }
+                ]
+              }
+            ]
           }
         },
         {
@@ -279,7 +313,41 @@
               }
             ],
             "reference_identity_projection_plans_in_dependency_order": [],
-            "descriptor_projection_plans_in_order": []
+            "descriptor_projection_plans_in_order": [
+              {
+                "select_by_keyset_sql_sha256": "0ed4417db537f61ce69e762e303116d5d86ad379c46967d0a8adb90ce7c7b336",
+                "result_shape": {
+                  "descriptor_id_ordinal": 0,
+                  "uri_ordinal": 1
+                },
+                "sources_in_order": [
+                  {
+                    "descriptor_value_path": "$.primarySchoolTypeDescriptor",
+                    "table": {
+                      "schema": "edfi",
+                      "name": "PresenceGateExample"
+                    },
+                    "descriptor_resource": {
+                      "project_name": "Ed-Fi",
+                      "resource_name": "SchoolTypeDescriptor"
+                    },
+                    "descriptor_id_column_ordinal": 4
+                  },
+                  {
+                    "descriptor_value_path": "$.secondarySchoolTypeDescriptor",
+                    "table": {
+                      "schema": "edfi",
+                      "name": "PresenceGateExample"
+                    },
+                    "descriptor_resource": {
+                      "project_name": "Ed-Fi",
+                      "resource_name": "SchoolTypeDescriptor"
+                    },
+                    "descriptor_id_column_ordinal": 5
+                  }
+                ]
+              }
+            ]
           }
         },
         {
