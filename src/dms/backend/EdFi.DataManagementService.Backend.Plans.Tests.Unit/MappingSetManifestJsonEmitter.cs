@@ -8,7 +8,6 @@ using System.Text;
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
-using EdFi.DataManagementService.Backend.RelationalModel.Naming;
 
 namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
@@ -215,7 +214,7 @@ internal static class MappingSetManifestJsonEmitter
 
     private static void WriteReadPlanOrNull(Utf8JsonWriter writer, ResourceReadPlan? readPlan)
     {
-        if (readPlan is null || readPlan.TablePlansInDependencyOrder.Length != 1)
+        if (readPlan is null)
         {
             writer.WriteNullValue();
             return;
@@ -226,9 +225,40 @@ internal static class MappingSetManifestJsonEmitter
 
     private static void WriteReadPlan(Utf8JsonWriter writer, ResourceReadPlan readPlan)
     {
-        var tablePlan = readPlan.TablePlansInDependencyOrder[0];
-
         writer.WriteStartObject();
+
+        writer.WritePropertyName("keyset_table");
+        writer.WriteStartObject();
+        writer.WriteString("temp_table_name", readPlan.KeysetTable.Table.Name);
+        writer.WriteString("document_id_column_name", readPlan.KeysetTable.DocumentIdColumnName.Value);
+        writer.WriteEndObject();
+
+        writer.WritePropertyName("table_plans_in_dependency_order");
+        writer.WriteStartArray();
+
+        foreach (var tablePlan in readPlan.TablePlansInDependencyOrder)
+        {
+            WriteReadTablePlan(writer, tablePlan);
+        }
+
+        writer.WriteEndArray();
+
+        writer.WritePropertyName("reference_identity_projection_plans_in_dependency_order");
+        writer.WriteStartArray();
+        writer.WriteEndArray();
+
+        writer.WritePropertyName("descriptor_projection_plans_in_order");
+        writer.WriteStartArray();
+        writer.WriteEndArray();
+
+        writer.WriteEndObject();
+    }
+
+    private static void WriteReadTablePlan(Utf8JsonWriter writer, TableReadPlan tablePlan)
+    {
+        writer.WriteStartObject();
+        writer.WritePropertyName("table");
+        WriteTableName(writer, tablePlan.TableModel.Table);
         writer.WriteString(
             "select_by_keyset_sql_sha256",
             PlanManifestConventions.ComputeNormalizedSha256(tablePlan.SelectByKeysetSql)
@@ -247,19 +277,12 @@ internal static class MappingSetManifestJsonEmitter
         writer.WritePropertyName("order_by_key_columns_in_order");
         writer.WriteStartArray();
 
-        foreach (var orderByKeyColumn in GetOrderByKeyColumnsInCompilerOrder(tablePlan.TableModel))
+        foreach (var orderByKeyColumn in GetOrderByKeyColumnsInOrder(tablePlan.TableModel))
         {
             writer.WriteStringValue(orderByKeyColumn.Value);
         }
 
         writer.WriteEndArray();
-
-        writer.WritePropertyName("keyset_table");
-        writer.WriteStartObject();
-        writer.WriteString("temp_table_name", readPlan.KeysetTable.Table.Name);
-        writer.WriteString("document_id_column_name", readPlan.KeysetTable.DocumentIdColumnName.Value);
-        writer.WriteEndObject();
-
         writer.WriteEndObject();
     }
 
@@ -279,41 +302,9 @@ internal static class MappingSetManifestJsonEmitter
         writer.WriteEndObject();
     }
 
-    private static IReadOnlyList<DbColumnName> GetOrderByKeyColumnsInCompilerOrder(DbTableModel rootTable)
+    private static IReadOnlyList<DbColumnName> GetOrderByKeyColumnsInOrder(DbTableModel tableModel)
     {
-        var rootDocumentIdKeyColumns = rootTable
-            .Key.Columns.Where(column => RelationalNameConventions.IsDocumentIdColumn(column.ColumnName))
-            .Select(static column => column.ColumnName)
-            .ToArray();
-
-        if (rootDocumentIdKeyColumns.Length != 1)
-        {
-            var keyColumnList = string.Join(
-                ", ",
-                rootTable.Key.Columns.Select(column => column.ColumnName.Value)
-            );
-
-            throw new InvalidOperationException(
-                $"Thin-slice manifest expects exactly one root document-id key column for '{rootTable.Table}'. "
-                    + $"Found {rootDocumentIdKeyColumns.Length}. Key columns: [{keyColumnList}]."
-            );
-        }
-
-        var rootDocumentIdKeyColumn = rootDocumentIdKeyColumns[0];
-
-        List<DbColumnName> orderByKeyColumns = [rootDocumentIdKeyColumn];
-
-        foreach (var keyColumn in rootTable.Key.Columns)
-        {
-            if (keyColumn.ColumnName == rootDocumentIdKeyColumn)
-            {
-                continue;
-            }
-
-            orderByKeyColumns.Add(keyColumn.ColumnName);
-        }
-
-        return orderByKeyColumns;
+        return tableModel.Key.Columns.Select(static column => column.ColumnName).ToArray();
     }
 
     private static void WriteWriteValueSource(Utf8JsonWriter writer, WriteValueSource valueSource)

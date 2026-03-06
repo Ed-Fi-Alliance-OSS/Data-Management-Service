@@ -42,7 +42,7 @@
       "Update manifest emitter tests to assert the new per-table read-plan shape for both single-table and multi-table resources.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~MappingSetManifestJsonEmitter`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Read Plan Manifest Determinism",
