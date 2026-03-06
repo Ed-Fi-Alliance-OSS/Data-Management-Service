@@ -21,7 +21,6 @@ namespace EdFi.DataManagementService.Core.Handler;
 /// Handles a delete request that has made it through the middleware pipeline steps.
 /// </summary>
 internal class DeleteByIdHandler(
-    IServiceProvider _serviceProvider,
     ILogger _logger,
     ResiliencePipeline _resiliencePipeline,
     IAuthorizationServiceFactory authorizationServiceFactory
@@ -31,8 +30,9 @@ internal class DeleteByIdHandler(
     {
         _logger.LogDebug("Entering DeleteByIdHandler - {TraceId}", requestInfo.FrontendRequest.TraceId.Value);
 
-        // Resolve repository from service provider within request scope
-        var documentStoreRepository = _serviceProvider.GetRequiredService<IDocumentStoreRepository>();
+        // Resolve repository from the per-request scoped service provider
+        var documentStoreRepository =
+            requestInfo.ScopedServiceProvider!.GetRequiredService<IDocumentStoreRepository>();
 
         var deleteResult = await ExecuteWithRetryLogging(
             _resiliencePipeline,

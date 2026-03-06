@@ -25,7 +25,8 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
     internal static (
         ValidateDatabaseFingerprintMiddleware middleware,
         IDatabaseFingerprintReader fingerprintReader,
-        IDmsInstanceSelection dmsInstanceSelection
+        IDmsInstanceSelection dmsInstanceSelection,
+        IServiceProvider serviceProvider
     ) CreateMiddleware(bool enableFingerprintValidation)
     {
         var fingerprintReader = A.Fake<IDatabaseFingerprintReader>();
@@ -45,17 +46,14 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
             .Returns(dmsInstanceSelection);
 
         var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
-        var middleware = new ValidateDatabaseFingerprintMiddleware(
-            appSettings,
-            fingerprintProvider,
-            serviceProvider,
-            logger
-        );
+        var middleware = new ValidateDatabaseFingerprintMiddleware(appSettings, fingerprintProvider, logger);
 
-        return (middleware, fingerprintReader, dmsInstanceSelection);
+        return (middleware, fingerprintReader, dmsInstanceSelection, serviceProvider);
     }
 
-    private static RequestInfo CreateRequestInfoWithAuthorizations()
+    private static RequestInfo CreateRequestInfoWithAuthorizations(
+        IServiceProvider? scopedServiceProvider = null
+    )
     {
         var frontendRequest = new FrontendRequest(
             Path: "/ed-fi/students",
@@ -69,6 +67,7 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
 
         return new RequestInfo(frontendRequest, RequestMethod.GET)
         {
+            ScopedServiceProvider = scopedServiceProvider,
             ClientAuthorizations = new ClientAuthorizations(
                 TokenId: "token123",
                 ClientId: "client123",
@@ -92,13 +91,12 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
         [SetUp]
         public async Task Setup()
         {
-            _requestInfo = CreateRequestInfoWithAuthorizations();
-
-            var (middleware, fingerprintReader, dmsInstanceSelection) = CreateMiddleware(
+            var (middleware, fingerprintReader, dmsInstanceSelection, serviceProvider) = CreateMiddleware(
                 enableFingerprintValidation: false
             );
             _fingerprintReader = fingerprintReader;
             _dmsInstanceSelection = dmsInstanceSelection;
+            _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
 
             await middleware.Execute(
                 _requestInfo,
@@ -152,11 +150,10 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
         [SetUp]
         public async Task Setup()
         {
-            _requestInfo = CreateRequestInfoWithAuthorizations();
-
-            var (middleware, fingerprintReader, dmsInstanceSelection) = CreateMiddleware(
+            var (middleware, fingerprintReader, dmsInstanceSelection, serviceProvider) = CreateMiddleware(
                 enableFingerprintValidation: true
             );
+            _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
 
             A.CallTo(() => dmsInstanceSelection.IsSet).Returns(true);
             A.CallTo(() => dmsInstanceSelection.GetSelectedDmsInstance())
@@ -214,11 +211,10 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
         [SetUp]
         public async Task Setup()
         {
-            _requestInfo = CreateRequestInfoWithAuthorizations();
-
-            var (middleware, fingerprintReader, dmsInstanceSelection) = CreateMiddleware(
+            var (middleware, fingerprintReader, dmsInstanceSelection, serviceProvider) = CreateMiddleware(
                 enableFingerprintValidation: true
             );
+            _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
 
             A.CallTo(() => dmsInstanceSelection.IsSet).Returns(true);
             A.CallTo(() => dmsInstanceSelection.GetSelectedDmsInstance())

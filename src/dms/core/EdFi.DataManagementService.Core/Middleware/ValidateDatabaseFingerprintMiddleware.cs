@@ -23,7 +23,6 @@ namespace EdFi.DataManagementService.Core.Middleware;
 internal class ValidateDatabaseFingerprintMiddleware(
     IOptions<AppSettings> appSettings,
     DatabaseFingerprintProvider fingerprintProvider,
-    IServiceProvider serviceProvider,
     ILogger<ValidateDatabaseFingerprintMiddleware> logger
 ) : IPipelineStep
 {
@@ -35,7 +34,8 @@ internal class ValidateDatabaseFingerprintMiddleware(
             return;
         }
 
-        var dmsInstanceSelection = serviceProvider.GetRequiredService<IDmsInstanceSelection>();
+        var dmsInstanceSelection =
+            requestInfo.ScopedServiceProvider!.GetRequiredService<IDmsInstanceSelection>();
         if (!dmsInstanceSelection.IsSet)
         {
             logger.LogError(

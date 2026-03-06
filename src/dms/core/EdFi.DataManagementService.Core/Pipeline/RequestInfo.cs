@@ -151,4 +151,10 @@ internal class RequestInfo(FrontendRequest _frontendRequest, RequestMethod _meth
     /// Null when fingerprint validation is disabled.
     /// </summary>
     public DatabaseFingerprint? DatabaseFingerprint { get; set; }
+
+    /// <summary>
+    /// The service provider for the current request scope.
+    /// Used by middlewares and handlers to resolve scoped services.
+    /// </summary>
+    public IServiceProvider? ScopedServiceProvider { get; set; }
 }

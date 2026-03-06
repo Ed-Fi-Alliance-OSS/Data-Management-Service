@@ -21,7 +21,9 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 [Parallelizable]
 public class ValidateDatabaseFingerprintMiddlewareMissingTableTests
 {
-    private static RequestInfo CreateRequestInfoWithAuthorizations()
+    private static RequestInfo CreateRequestInfoWithAuthorizations(
+        IServiceProvider? scopedServiceProvider = null
+    )
     {
         var frontendRequest = new FrontendRequest(
             Path: "/ed-fi/students",
@@ -35,6 +37,7 @@ public class ValidateDatabaseFingerprintMiddlewareMissingTableTests
 
         return new RequestInfo(frontendRequest, RequestMethod.GET)
         {
+            ScopedServiceProvider = scopedServiceProvider,
             ClientAuthorizations = new ClientAuthorizations(
                 TokenId: "token123",
                 ClientId: "client123",
@@ -56,11 +59,10 @@ public class ValidateDatabaseFingerprintMiddlewareMissingTableTests
         [SetUp]
         public async Task Setup()
         {
-            _requestInfo = CreateRequestInfoWithAuthorizations();
-
-            var (middleware, fingerprintReader, dmsInstanceSelection) = CreateMiddleware(
+            var (middleware, fingerprintReader, dmsInstanceSelection, serviceProvider) = CreateMiddleware(
                 enableFingerprintValidation: true
             );
+            _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
 
             A.CallTo(() => dmsInstanceSelection.IsSet).Returns(true);
             A.CallTo(() => dmsInstanceSelection.GetSelectedDmsInstance())
@@ -116,11 +118,10 @@ public class ValidateDatabaseFingerprintMiddlewareMissingTableTests
         [SetUp]
         public async Task Setup()
         {
-            _requestInfo = CreateRequestInfoWithAuthorizations();
-
-            var (middleware, fingerprintReader, dmsInstanceSelection) = CreateMiddleware(
+            var (middleware, fingerprintReader, dmsInstanceSelection, serviceProvider) = CreateMiddleware(
                 enableFingerprintValidation: true
             );
+            _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
 
             A.CallTo(() => dmsInstanceSelection.IsSet).Returns(true);
             A.CallTo(() => dmsInstanceSelection.GetSelectedDmsInstance())
@@ -212,13 +213,12 @@ public class ValidateDatabaseFingerprintMiddlewareMissingTableTests
         [SetUp]
         public async Task Setup()
         {
-            _requestInfo = CreateRequestInfoWithAuthorizations();
-
-            var (middleware, fingerprintReader, dmsInstanceSelection) = CreateMiddleware(
+            var (middleware, fingerprintReader, dmsInstanceSelection, serviceProvider) = CreateMiddleware(
                 enableFingerprintValidation: true
             );
             _fingerprintReader = fingerprintReader;
             _dmsInstanceSelection = dmsInstanceSelection;
+            _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
 
             A.CallTo(() => dmsInstanceSelection.IsSet).Returns(false);
 

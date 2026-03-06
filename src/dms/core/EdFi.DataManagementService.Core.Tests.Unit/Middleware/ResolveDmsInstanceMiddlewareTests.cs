@@ -23,7 +23,8 @@ public class ResolveDmsInstanceMiddlewareTests
     internal static (
         ResolveDmsInstanceMiddleware middleware,
         IDmsInstanceProvider dmsInstanceProvider,
-        IDmsInstanceSelection dmsInstanceSelection
+        IDmsInstanceSelection dmsInstanceSelection,
+        IServiceProvider serviceProvider
     ) CreateMiddleware()
     {
         var dmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
@@ -35,9 +36,9 @@ public class ResolveDmsInstanceMiddlewareTests
         A.CallTo(() => serviceProvider.GetService(typeof(IDmsInstanceSelection)))
             .Returns(dmsInstanceSelection);
 
-        var middleware = new ResolveDmsInstanceMiddleware(dmsInstanceProvider, serviceProvider, logger);
+        var middleware = new ResolveDmsInstanceMiddleware(dmsInstanceProvider, logger);
 
-        return (middleware, dmsInstanceProvider, dmsInstanceSelection);
+        return (middleware, dmsInstanceProvider, dmsInstanceSelection, serviceProvider);
     }
 
     [TestFixture]
@@ -72,7 +73,8 @@ public class ResolveDmsInstanceMiddlewareTests
                 ),
             };
 
-            var (middleware, _, _) = CreateMiddleware();
+            var (middleware, _, _, serviceProvider) = CreateMiddleware();
+            _requestInfo.ScopedServiceProvider = serviceProvider;
 
             await middleware.Execute(
                 _requestInfo,
@@ -137,8 +139,9 @@ public class ResolveDmsInstanceMiddlewareTests
                 ),
             };
 
-            var (middleware, dmsInstanceProvider, dmsInstanceSelection) = CreateMiddleware();
+            var (middleware, dmsInstanceProvider, dmsInstanceSelection, serviceProvider) = CreateMiddleware();
             _dmsInstanceSelection = dmsInstanceSelection;
+            _requestInfo.ScopedServiceProvider = serviceProvider;
 
             // Setup instance with no route context
             _expectedInstance = new DmsInstance(
@@ -215,8 +218,9 @@ public class ResolveDmsInstanceMiddlewareTests
                 ),
             };
 
-            var (middleware, dmsInstanceProvider, _) = CreateMiddleware();
+            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
             _dmsInstanceProvider = dmsInstanceProvider;
+            _requestInfo.ScopedServiceProvider = serviceProvider;
 
             A.CallTo(() => dmsInstanceProvider.RefreshInstancesIfExpiredAsync(A<string?>.Ignored))
                 .Returns(Task.CompletedTask);
@@ -283,8 +287,9 @@ public class ResolveDmsInstanceMiddlewareTests
                 ),
             };
 
-            var (middleware, dmsInstanceProvider, _) = CreateMiddleware();
+            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
             _dmsInstanceProvider = dmsInstanceProvider;
+            _requestInfo.ScopedServiceProvider = serviceProvider;
 
             A.CallTo(() => dmsInstanceProvider.RefreshInstancesIfExpiredAsync(A<string?>.Ignored))
                 .Throws<InvalidOperationException>();
@@ -358,7 +363,8 @@ public class ResolveDmsInstanceMiddlewareTests
                 ),
             };
 
-            var (middleware, dmsInstanceProvider, _) = CreateMiddleware();
+            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
+            _requestInfo.ScopedServiceProvider = serviceProvider;
 
             // First instance doesn't match
             A.CallTo(() => dmsInstanceProvider.GetById(1, A<string?>.Ignored))
@@ -446,7 +452,8 @@ public class ResolveDmsInstanceMiddlewareTests
                 ),
             };
 
-            var (middleware, dmsInstanceProvider, _) = CreateMiddleware();
+            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
+            _requestInfo.ScopedServiceProvider = serviceProvider;
 
             // Both instances match - ambiguous!
             A.CallTo(() => dmsInstanceProvider.GetById(1, A<string?>.Ignored))
@@ -543,7 +550,8 @@ public class ResolveDmsInstanceMiddlewareTests
                 ),
             };
 
-            var (middleware, dmsInstanceProvider, _) = CreateMiddleware();
+            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
+            _requestInfo.ScopedServiceProvider = serviceProvider;
 
             // Instance has different route qualifiers
             A.CallTo(() => dmsInstanceProvider.GetById(1, A<string?>.Ignored))
@@ -624,7 +632,8 @@ public class ResolveDmsInstanceMiddlewareTests
                 ),
             };
 
-            var (middleware, dmsInstanceProvider, _) = CreateMiddleware();
+            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
+            _requestInfo.ScopedServiceProvider = serviceProvider;
 
             // Instance matches but has no connection string
             A.CallTo(() => dmsInstanceProvider.GetById(1, A<string?>.Ignored))
@@ -699,7 +708,8 @@ public class ResolveDmsInstanceMiddlewareTests
                 ),
             };
 
-            var (middleware, dmsInstanceProvider, _) = CreateMiddleware();
+            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
+            _requestInfo.ScopedServiceProvider = serviceProvider;
 
             // Instance not found in provider
             A.CallTo(() => dmsInstanceProvider.GetById(999, A<string?>.Ignored)).Returns(null);
@@ -764,7 +774,8 @@ public class ResolveDmsInstanceMiddlewareTests
                 ),
             };
 
-            var (middleware, dmsInstanceProvider, _) = CreateMiddleware();
+            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
+            _requestInfo.ScopedServiceProvider = serviceProvider;
 
             // Instance has lowercase value
             A.CallTo(() => dmsInstanceProvider.GetById(1, A<string?>.Ignored))
@@ -835,7 +846,8 @@ public class ResolveDmsInstanceMiddlewareTests
                 ),
             };
 
-            var (middleware, dmsInstanceProvider, _) = CreateMiddleware();
+            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
+            _requestInfo.ScopedServiceProvider = serviceProvider;
 
             // Instance has more qualifiers than request
             A.CallTo(() => dmsInstanceProvider.GetById(1, A<string?>.Ignored))

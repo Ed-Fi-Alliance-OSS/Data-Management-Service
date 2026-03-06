@@ -81,6 +81,7 @@ public class PipelineOrderingTests
                 ResiliencePipeline.Empty,
                 A.Fake<ResourceLoadOrderCalculator>(),
                 serviceProvider,
+                A.Fake<IServiceScopeFactory>(),
                 A.Fake<CachedClaimSetProvider>(),
                 A.Fake<IResourceDependencyGraphMLFactory>(),
                 A.Fake<IProfileService>()
