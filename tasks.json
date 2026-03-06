@@ -78,7 +78,7 @@
       "Audit and update read-plan, lookup, and mapping-set tests in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` for story-05 semantics.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter 'FullyQualifiedName~ReadPlanCompiler|FullyQualifiedName~MappingSetLookupExtensions|FullyQualifiedName~MappingSetCompiler|FullyQualifiedName~MappingSetManifestJsonEmitter'`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Runtime Plan Goldens",
