@@ -88,7 +88,7 @@
       "Run: `UPDATE_GOLDENS=1 dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter 'FullyQualifiedName~Given_MappingSetManifest_GoldenFixture|FullyQualifiedName~Given_CollectionsNestedExtension_RuntimePlanCompilation_GoldenFixture|FullyQualifiedName~Given_KeyUnificationPresenceGating_RuntimePlanCompilation_GoldenFixture'`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter 'FullyQualifiedName~Given_MappingSetManifest_GoldenFixture|FullyQualifiedName~Given_CollectionsNestedExtension_RuntimePlanCompilation_GoldenFixture|FullyQualifiedName~Given_KeyUnificationPresenceGating_RuntimePlanCompilation_GoldenFixture'`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Authoritative Goldens",

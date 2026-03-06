@@ -106,7 +106,35 @@
               }
             ]
           },
-          "read_plan": null
+          "read_plan": {
+            "keyset_table": {
+              "temp_table_name": "#page",
+              "document_id_column_name": "DocumentId"
+            },
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "PresenceGateExample"
+                },
+                "select_by_keyset_sql_sha256": "5568aea267d644c571e9c03aad741c3af091ab5f0a31d13657f698189a024ab0",
+                "select_list_columns_in_order": [
+                  "DocumentId",
+                  "PrimarySchoolTypeDescriptor_DescriptorId_Present",
+                  "PrimarySchoolTypeDescriptor_Unified_DescriptorId",
+                  "SecondarySchoolTypeDescriptor_DescriptorId_Present",
+                  "PrimarySchoolTypeDescriptor_DescriptorId",
+                  "SecondarySchoolTypeDescriptor_DescriptorId",
+                  "PresenceGateExampleId"
+                ],
+                "order_by_key_columns_in_order": [
+                  "DocumentId"
+                ]
+              }
+            ],
+            "reference_identity_projection_plans_in_dependency_order": [],
+            "descriptor_projection_plans_in_order": []
+          }
         },
         {
           "resource": {
@@ -224,7 +252,35 @@
               }
             ]
           },
-          "read_plan": null
+          "read_plan": {
+            "keyset_table": {
+              "temp_table_name": "page",
+              "document_id_column_name": "DocumentId"
+            },
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "PresenceGateExample"
+                },
+                "select_by_keyset_sql_sha256": "49eb0398d73417022717e648a7905cf2eb0444ba1c7d1adff6a044b0251b11a2",
+                "select_list_columns_in_order": [
+                  "DocumentId",
+                  "PrimarySchoolTypeDescriptor_DescriptorId_Present",
+                  "PrimarySchoolTypeDescriptor_Unified_DescriptorId",
+                  "SecondarySchoolTypeDescriptor_DescriptorId_Present",
+                  "PrimarySchoolTypeDescriptor_DescriptorId",
+                  "SecondarySchoolTypeDescriptor_DescriptorId",
+                  "PresenceGateExampleId"
+                ],
+                "order_by_key_columns_in_order": [
+                  "DocumentId"
+                ]
+              }
+            ],
+            "reference_identity_projection_plans_in_dependency_order": [],
+            "descriptor_projection_plans_in_order": []
+          }
         },
         {
           "resource": {

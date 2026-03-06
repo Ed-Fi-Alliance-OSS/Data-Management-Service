@@ -43,7 +43,7 @@ public class Given_CollectionsNestedExtension_RuntimePlanCompilation_GoldenFixtu
     }
 
     [Test]
-    public void It_should_emit_write_plan_inventory_and_explicit_null_read_plan_for_school()
+    public void It_should_emit_write_and_read_plan_inventory_for_school()
     {
         var root = JsonNode.Parse(_manifest) as JsonObject;
 
@@ -82,7 +82,6 @@ public class Given_CollectionsNestedExtension_RuntimePlanCompilation_GoldenFixtu
                 });
 
             schoolResource["write_plan"].Should().NotBeNull();
-            schoolResource["read_plan"].Should().BeNull();
 
             var writePlan = schoolResource["write_plan"] as JsonObject;
             writePlan.Should().NotBeNull();
@@ -111,6 +110,46 @@ public class Given_CollectionsNestedExtension_RuntimePlanCompilation_GoldenFixtu
                 batching["parameters_per_row"]!.GetValue<int>().Should().BeGreaterThan(0);
                 batching["max_parameters_per_command"]!.GetValue<int>().Should().BeGreaterThan(0);
             }
+
+            var readPlan = schoolResource["read_plan"] as JsonObject;
+            readPlan.Should().NotBeNull();
+
+            var readTablePlans = readPlan!["table_plans_in_dependency_order"] as JsonArray;
+            readTablePlans.Should().NotBeNull();
+            readTablePlans!.Count.Should().Be(tablePlans.Count);
+            readTablePlans
+                .Select(static tablePlanNode =>
+                {
+                    var tablePlan = tablePlanNode as JsonObject;
+                    tablePlan.Should().NotBeNull();
+
+                    var table = tablePlan!["table"] as JsonObject;
+                    table.Should().NotBeNull();
+
+                    return $"{table!["schema"]!.GetValue<string>()}.{table["name"]!.GetValue<string>()}";
+                })
+                .Should()
+                .Equal(
+                    tablePlans.Select(tablePlanNode =>
+                    {
+                        var tablePlan = tablePlanNode as JsonObject;
+                        tablePlan.Should().NotBeNull();
+
+                        var table = tablePlan!["table"] as JsonObject;
+                        table.Should().NotBeNull();
+
+                        return $"{table!["schema"]!.GetValue<string>()}.{table["name"]!.GetValue<string>()}";
+                    })
+                );
+
+            var referenceIdentityProjectionPlans =
+                readPlan["reference_identity_projection_plans_in_dependency_order"] as JsonArray;
+            referenceIdentityProjectionPlans.Should().NotBeNull();
+            referenceIdentityProjectionPlans.Should().BeEmpty();
+
+            var descriptorProjectionPlans = readPlan["descriptor_projection_plans_in_order"] as JsonArray;
+            descriptorProjectionPlans.Should().NotBeNull();
+            descriptorProjectionPlans.Should().BeEmpty();
         }
     }
 

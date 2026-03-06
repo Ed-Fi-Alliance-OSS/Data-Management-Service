@@ -89,6 +89,33 @@ public class Given_KeyUnificationPresenceGating_RuntimePlanCompilation_GoldenFix
     }
 
     [Test]
+    public void It_should_emit_read_plan_inventory_with_empty_projection_arrays_for_presence_gate_resource()
+    {
+        foreach (var mappingSet in ParseMappingSetObjects(_manifest))
+        {
+            var readPlan = RequirePresenceGateReadPlan(mappingSet);
+            var tablePlans = RequireArray(
+                readPlan["table_plans_in_dependency_order"],
+                "table_plans_in_dependency_order"
+            );
+
+            tablePlans.Should().ContainSingle();
+            RequireArray(
+                    readPlan["reference_identity_projection_plans_in_dependency_order"],
+                    "reference_identity_projection_plans_in_dependency_order"
+                )
+                .Should()
+                .BeEmpty();
+            RequireArray(
+                    readPlan["descriptor_projection_plans_in_order"],
+                    "descriptor_projection_plans_in_order"
+                )
+                .Should()
+                .BeEmpty();
+        }
+    }
+
+    [Test]
     public void It_should_emit_stable_sql_hashes_across_repeated_compilation_runs()
     {
         var firstHashes = ReadSqlHashesByMappingSetKey(_manifest);
@@ -158,9 +185,30 @@ public class Given_KeyUnificationPresenceGating_RuntimePlanCompilation_GoldenFix
 
     private static JsonObject RequirePresenceGateWritePlan(JsonObject mappingSet)
     {
+        var presenceGateResource = RequirePresenceGateResource(mappingSet);
+
+        RequirePresenceGateReadPlanFromResource(presenceGateResource);
+
+        return RequireObject(presenceGateResource["write_plan"], "write_plan");
+    }
+
+    private static JsonObject RequirePresenceGateReadPlan(JsonObject mappingSet)
+    {
+        var presenceGateResource = RequirePresenceGateResource(mappingSet);
+
+        return RequirePresenceGateReadPlanFromResource(presenceGateResource);
+    }
+
+    private static JsonObject RequirePresenceGateReadPlanFromResource(JsonObject presenceGateResource)
+    {
+        return RequireObject(presenceGateResource["read_plan"], "read_plan");
+    }
+
+    private static JsonObject RequirePresenceGateResource(JsonObject mappingSet)
+    {
         var resources = RequireArray(mappingSet["resources"], "resources");
 
-        var presenceGateResource = resources
+        return resources
             .Select(resourceNode => RequireObject(resourceNode, "resources entry"))
             .Single(resourceEntry =>
             {
@@ -171,10 +219,6 @@ public class Given_KeyUnificationPresenceGating_RuntimePlanCompilation_GoldenFix
                 return projectName == _presenceGateResource.ProjectName
                     && resourceName == _presenceGateResource.ResourceName;
             });
-
-        presenceGateResource["read_plan"].Should().BeNull();
-
-        return RequireObject(presenceGateResource["write_plan"], "write_plan");
     }
 
     private static string ReadWriteSourceKind(JsonArray columnBindings, int bindingIndex)
