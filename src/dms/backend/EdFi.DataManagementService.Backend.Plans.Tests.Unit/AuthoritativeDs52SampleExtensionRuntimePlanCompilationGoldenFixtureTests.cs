@@ -87,6 +87,89 @@ public class Given_AuthoritativeDs52SampleExtension_RuntimePlanCompilation_Golde
         BuildManifest().Should().Be(_manifest);
     }
 
+    [Test]
+    public void It_should_emit_populated_projection_inventory_for_authoritative_and_extension_resources()
+    {
+        foreach (var mappingSet in ParseMappingSets(_manifest))
+        {
+            var readPlans = ReadResources(mappingSet)
+                .Select(ReadOptionalReadPlan)
+                .Where(readPlan => readPlan is not null)
+                .Select(readPlan => readPlan!)
+                .ToArray();
+
+            readPlans
+                .Count(readPlan => ReadReferenceIdentityProjectionPlans(readPlan).Count > 0)
+                .Should()
+                .Be(125);
+
+            readPlans.Count(readPlan => ReadDescriptorProjectionPlans(readPlan).Count > 0).Should().Be(117);
+
+            var descriptorPlans = readPlans.SelectMany(ReadDescriptorProjectionPlans).ToArray();
+            descriptorPlans.Should().NotBeEmpty();
+
+            foreach (var descriptorPlan in descriptorPlans)
+            {
+                ReadRequiredString(descriptorPlan, "select_by_keyset_sql_sha256");
+
+                var resultShape = ReadRequiredObject(descriptorPlan["result_shape"], "result_shape");
+                ReadRequiredInt(resultShape, "descriptor_id_ordinal").Should().Be(0);
+                ReadRequiredInt(resultShape, "uri_ordinal").Should().Be(1);
+            }
+        }
+    }
+
+    [Test]
+    public void It_should_emit_projection_metadata_for_sample_bus_route()
+    {
+        foreach (var mappingSet in ParseMappingSets(_manifest))
+        {
+            var busRouteResource = FindResource(mappingSet, "Sample", "BusRoute");
+            var readPlan = ReadRequiredReadPlan(busRouteResource);
+
+            var referencePlans = ReadReferenceIdentityProjectionPlans(readPlan);
+            referencePlans
+                .Select(ReadProjectionTableIdentity)
+                .Should()
+                .Equal("sample.BusRoute", "sample.BusRouteProgram");
+
+            var busRouteBindings = ReadBindingsInOrder(referencePlans[0]);
+            busRouteBindings
+                .Select(binding => ReadRequiredString(binding, "reference_object_path"))
+                .Should()
+                .Equal("$.busReference", "$.staffEducationOrganizationAssignmentAssociationReference");
+            ReadRequiredInt(busRouteBindings[0], "fk_column_ordinal").Should().Be(1);
+            ReadRequiredInt(busRouteBindings[1], "fk_column_ordinal").Should().Be(3);
+
+            ReadIdentityFieldOrdinalsInOrder(busRouteBindings[1])
+                .Select(identityField => ReadRequiredString(identityField, "reference_json_path"))
+                .Should()
+                .Equal(
+                    "$.staffEducationOrganizationAssignmentAssociationReference.beginDate",
+                    "$.staffEducationOrganizationAssignmentAssociationReference.educationOrganizationId",
+                    "$.staffEducationOrganizationAssignmentAssociationReference.staffClassificationDescriptor",
+                    "$.staffEducationOrganizationAssignmentAssociationReference.staffUniqueId"
+                );
+
+            var descriptorPlans = ReadDescriptorProjectionPlans(readPlan);
+            descriptorPlans.Should().HaveCount(1);
+
+            var descriptorPlan = descriptorPlans[0];
+            ReadRequiredString(descriptorPlan, "select_by_keyset_sql_sha256");
+
+            var descriptorSources = ReadDescriptorSourcesInOrder(descriptorPlan);
+            descriptorSources
+                .Select(source => ReadRequiredString(source, "descriptor_value_path"))
+                .Should()
+                .Equal(
+                    "$.disabilityDescriptor",
+                    "$.staffEducationOrganizationAssignmentAssociationReference.staffClassificationDescriptor",
+                    "$.programs[*].programReference.programTypeDescriptor",
+                    "$.telephones[*].telephoneNumberTypeDescriptor"
+                );
+        }
+    }
+
     private static string BuildManifest()
     {
         var authoritativeInputs = new (string FixtureRelativePath, bool IsExtensionProject)[]
@@ -141,6 +224,36 @@ public class Given_AuthoritativeDs52SampleExtension_RuntimePlanCompilation_Golde
         };
     }
 
+    private static JsonObject? ReadOptionalReadPlan(JsonObject resourceEntry)
+    {
+        return resourceEntry["read_plan"] switch
+        {
+            JsonObject readPlan => readPlan,
+            null => null,
+            _ => throw new InvalidOperationException(
+                "Manifest property 'read_plan' must be an object or null."
+            ),
+        };
+    }
+
+    private static JsonObject ReadRequiredReadPlan(JsonObject resourceEntry)
+    {
+        return ReadOptionalReadPlan(resourceEntry)
+            ?? throw new InvalidOperationException("Manifest property 'read_plan' is required.");
+    }
+
+    private static JsonObject FindResource(JsonObject mappingSet, string projectName, string resourceName)
+    {
+        return ReadResources(mappingSet)
+            .Single(resource =>
+            {
+                var identity = ReadRequiredObject(resource["resource"], "resource");
+
+                return ReadRequiredString(identity, "project_name") == projectName
+                    && ReadRequiredString(identity, "resource_name") == resourceName;
+            });
+    }
+
     private static IReadOnlyList<JsonObject> ReadTablePlans(JsonObject writePlan)
     {
         var tablePlans = ReadRequiredArray(
@@ -162,6 +275,76 @@ public class Given_AuthoritativeDs52SampleExtension_RuntimePlanCompilation_Golde
         var tableName = ReadRequiredString(tableIdentity, "name");
 
         return tableSchema == "sample" && tableName.Contains("Extension", StringComparison.Ordinal);
+    }
+
+    private static IReadOnlyList<JsonObject> ReadReferenceIdentityProjectionPlans(JsonObject readPlan)
+    {
+        var referencePlans = ReadRequiredArray(
+            readPlan["reference_identity_projection_plans_in_dependency_order"],
+            "reference_identity_projection_plans_in_dependency_order"
+        );
+
+        return referencePlans
+            .Select(referencePlanNode =>
+                ReadRequiredObject(
+                    referencePlanNode,
+                    "reference_identity_projection_plans_in_dependency_order entry"
+                )
+            )
+            .ToArray();
+    }
+
+    private static IReadOnlyList<JsonObject> ReadBindingsInOrder(JsonObject referencePlan)
+    {
+        var bindings = ReadRequiredArray(referencePlan["bindings_in_order"], "bindings_in_order");
+
+        return bindings
+            .Select(bindingNode => ReadRequiredObject(bindingNode, "bindings_in_order entry"))
+            .ToArray();
+    }
+
+    private static IReadOnlyList<JsonObject> ReadIdentityFieldOrdinalsInOrder(JsonObject binding)
+    {
+        var identityFields = ReadRequiredArray(
+            binding["identity_field_ordinals_in_order"],
+            "identity_field_ordinals_in_order"
+        );
+
+        return identityFields
+            .Select(identityFieldNode =>
+                ReadRequiredObject(identityFieldNode, "identity_field_ordinals_in_order entry")
+            )
+            .ToArray();
+    }
+
+    private static IReadOnlyList<JsonObject> ReadDescriptorProjectionPlans(JsonObject readPlan)
+    {
+        var descriptorPlans = ReadRequiredArray(
+            readPlan["descriptor_projection_plans_in_order"],
+            "descriptor_projection_plans_in_order"
+        );
+
+        return descriptorPlans
+            .Select(descriptorPlanNode =>
+                ReadRequiredObject(descriptorPlanNode, "descriptor_projection_plans_in_order entry")
+            )
+            .ToArray();
+    }
+
+    private static IReadOnlyList<JsonObject> ReadDescriptorSourcesInOrder(JsonObject descriptorPlan)
+    {
+        var descriptorSources = ReadRequiredArray(descriptorPlan["sources_in_order"], "sources_in_order");
+
+        return descriptorSources
+            .Select(sourceNode => ReadRequiredObject(sourceNode, "sources_in_order entry"))
+            .ToArray();
+    }
+
+    private static string ReadProjectionTableIdentity(JsonObject projectionPlan)
+    {
+        var table = ReadRequiredObject(projectionPlan["table"], "table");
+
+        return $"{ReadRequiredString(table, "schema")}.{ReadRequiredString(table, "name")}";
     }
 
     private static JsonObject ReadRequiredObject(JsonNode? node, string propertyName)
@@ -203,6 +386,18 @@ public class Given_AuthoritativeDs52SampleExtension_RuntimePlanCompilation_Golde
         }
 
         return value;
+    }
+
+    private static int ReadRequiredInt(JsonObject node, string propertyName)
+    {
+        return node[propertyName] switch
+        {
+            JsonValue jsonValue => jsonValue.GetValue<int>(),
+            null => throw new InvalidOperationException($"Manifest property '{propertyName}' is required."),
+            _ => throw new InvalidOperationException(
+                $"Manifest property '{propertyName}' must be an integer."
+            ),
+        };
     }
 
     private static string? ReadOptionalString(JsonObject node, string propertyName)

@@ -60,6 +60,6 @@
       "Refresh the affected expected `mappingset.manifest.json` outputs and update fixture tests that currently assert projection arrays are empty.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~RuntimePlanCompilationGoldenFixture`"
     ],
-    "completed": false
+    "completed": true
   }
 ]
