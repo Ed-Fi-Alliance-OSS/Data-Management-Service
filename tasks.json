@@ -183,6 +183,6 @@
       "Update both test fixtures to consume the shared model builders and preserve their current compiler-specific expected messages.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter 'FullyQualifiedName~ReadPlanCompiler|FullyQualifiedName~Given_WritePlanCompiler_BindingsAndSources'`"
     ],
-    "completed": false
+    "completed": true
   }
 ]

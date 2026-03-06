@@ -398,7 +398,10 @@ public class Given_WritePlanCompiler_BindingsAndSources : WritePlanCompilerTestB
             );
     }
 
-    [TestCaseSource(nameof(SharedInvalidKeyShapeCases))]
+    [TestCaseSource(
+        typeof(SharedInvalidKeyShapeTestCases),
+        nameof(SharedInvalidKeyShapeTestCases.ForWritePlanCompiler)
+    )]
     public void It_should_preserve_shared_key_shape_validation_messages_for_malformed_table_keys(
         Func<RelationalResourceModel> createModel,
         string expectedMessage
@@ -448,104 +451,5 @@ public class Given_WritePlanCompiler_BindingsAndSources : WritePlanCompilerTestB
         act.Should()
             .Throw<NotSupportedException>()
             .WithMessage("Only relational-table resources are supported for write-plan compilation.*");
-    }
-
-    private static IEnumerable<TestCaseData> SharedInvalidKeyShapeCases()
-    {
-        yield return new TestCaseData(
-            (Func<RelationalResourceModel>)CreateRootOnlyModelWithMissingDocumentIdKeyColumn,
-            "Cannot compile write plan for 'edfi.Student': expected exactly one ParentKeyPart document-id key column ('DocumentId' or '*_DocumentId'), but found 0. Key columns: [SchoolYear:ParentKeyPart]."
-        ).SetName("It_should_fail_fast_when_key_does_not_include_exactly_one_document_id_parent_key_part");
-        yield return new TestCaseData(
-            (Func<RelationalResourceModel>)CreateModelWithDocumentIdNotFirstInKeyOrder,
-            "Cannot compile write plan for 'edfi.StudentAddress': expected document-id ParentKeyPart key column ('DocumentId' or '*_DocumentId') to be first in key order, but found 'ParentAddressOrdinal:ParentKeyPart'. Key columns: [ParentAddressOrdinal:ParentKeyPart, DocumentId:ParentKeyPart, Ordinal:Ordinal]."
-        ).SetName("It_should_fail_fast_when_document_id_parent_key_part_is_not_first_in_key_order");
-        yield return new TestCaseData(
-            (Func<RelationalResourceModel>)CreateModelWithMultipleOrdinalKeyColumns,
-            "Cannot compile write plan for 'edfi.StudentAddress': expected at most one Ordinal key column, but found 2. Key columns: [DocumentId:ParentKeyPart, ParentAddressOrdinal:ParentKeyPart, Ordinal:Ordinal, Ordinal:Ordinal]."
-        ).SetName("It_should_fail_fast_when_key_contains_multiple_ordinal_columns");
-        yield return new TestCaseData(
-            (Func<RelationalResourceModel>)CreateModelWithOrdinalNotLastInKeyOrder,
-            "Cannot compile write plan for 'edfi.StudentAddress': expected Ordinal key column to be last in key order. Key columns: [DocumentId:ParentKeyPart, Ordinal:Ordinal, ParentAddressOrdinal:ParentKeyPart]."
-        ).SetName("It_should_fail_fast_when_ordinal_key_column_is_not_last_in_key_order");
-    }
-
-    private static RelationalResourceModel CreateModelWithDocumentIdNotFirstInKeyOrder()
-    {
-        var model = CreateSingleTableModelCoveringWriteValueSourceKinds();
-        var childTable = model.TablesInDependencyOrder.Single(table =>
-            table.Table.Equals(new DbTableName(new DbSchemaName("edfi"), "StudentAddress"))
-        );
-
-        var updatedChildTable = childTable with
-        {
-            Key = new TableKey(
-                ConstraintName: childTable.Key.ConstraintName,
-                Columns:
-                [
-                    new DbKeyColumn(new DbColumnName("ParentAddressOrdinal"), ColumnKind.ParentKeyPart),
-                    new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart),
-                    new DbKeyColumn(new DbColumnName("Ordinal"), ColumnKind.Ordinal),
-                ]
-            ),
-        };
-
-        return model with
-        {
-            TablesInDependencyOrder = [model.Root, updatedChildTable],
-        };
-    }
-
-    private static RelationalResourceModel CreateModelWithOrdinalNotLastInKeyOrder()
-    {
-        var model = CreateSingleTableModelCoveringWriteValueSourceKinds();
-        var childTable = model.TablesInDependencyOrder.Single(table =>
-            table.Table.Equals(new DbTableName(new DbSchemaName("edfi"), "StudentAddress"))
-        );
-
-        var updatedChildTable = childTable with
-        {
-            Key = new TableKey(
-                ConstraintName: childTable.Key.ConstraintName,
-                Columns:
-                [
-                    new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart),
-                    new DbKeyColumn(new DbColumnName("Ordinal"), ColumnKind.Ordinal),
-                    new DbKeyColumn(new DbColumnName("ParentAddressOrdinal"), ColumnKind.ParentKeyPart),
-                ]
-            ),
-        };
-
-        return model with
-        {
-            TablesInDependencyOrder = [model.Root, updatedChildTable],
-        };
-    }
-
-    private static RelationalResourceModel CreateModelWithMultipleOrdinalKeyColumns()
-    {
-        var model = CreateSingleTableModelCoveringWriteValueSourceKinds();
-        var childTable = model.TablesInDependencyOrder.Single(table =>
-            table.Table.Equals(new DbTableName(new DbSchemaName("edfi"), "StudentAddress"))
-        );
-
-        var updatedChildTable = childTable with
-        {
-            Key = new TableKey(
-                ConstraintName: childTable.Key.ConstraintName,
-                Columns:
-                [
-                    new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart),
-                    new DbKeyColumn(new DbColumnName("ParentAddressOrdinal"), ColumnKind.ParentKeyPart),
-                    new DbKeyColumn(new DbColumnName("Ordinal"), ColumnKind.Ordinal),
-                    new DbKeyColumn(new DbColumnName("Ordinal"), ColumnKind.Ordinal),
-                ]
-            ),
-        };
-
-        return model with
-        {
-            TablesInDependencyOrder = [model.Root, updatedChildTable],
-        };
     }
 }

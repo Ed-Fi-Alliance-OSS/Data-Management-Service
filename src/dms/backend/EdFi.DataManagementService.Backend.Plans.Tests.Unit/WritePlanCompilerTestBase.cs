@@ -685,6 +685,11 @@ public abstract class WritePlanCompilerTestBase
         };
     }
 
+    protected static RelationalResourceModel CreateRootOnlyModelWithMissingDocumentIdParentKeyPart()
+    {
+        return CreateRootOnlyModelWithMissingDocumentIdKeyColumn();
+    }
+
     protected static RelationalResourceModel CreateRootOnlyModelWithDocumentSuffixedParentKeyPart()
     {
         var model = CreateSupportedRootOnlyModel();
@@ -1413,6 +1418,85 @@ public abstract class WritePlanCompilerTestBase
         {
             DescriptorEdgeSources = [.. model.DescriptorEdgeSources, edgeSource],
         };
+    }
+
+    protected static RelationalResourceModel CreateSingleTableModelWithDocumentIdNotFirstInKeyOrder()
+    {
+        var model = CreateSingleTableModelCoveringWriteValueSourceKinds();
+        var childTable = GetStudentAddressTable(model);
+
+        var updatedChildTable = childTable with
+        {
+            Key = new TableKey(
+                ConstraintName: childTable.Key.ConstraintName,
+                Columns:
+                [
+                    new DbKeyColumn(new DbColumnName("ParentAddressOrdinal"), ColumnKind.ParentKeyPart),
+                    new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart),
+                    new DbKeyColumn(new DbColumnName("Ordinal"), ColumnKind.Ordinal),
+                ]
+            ),
+        };
+
+        return ReplaceStudentAddressTable(model, updatedChildTable);
+    }
+
+    protected static RelationalResourceModel CreateSingleTableModelWithOrdinalNotLastInKeyOrder()
+    {
+        var model = CreateSingleTableModelCoveringWriteValueSourceKinds();
+        var childTable = GetStudentAddressTable(model);
+
+        var updatedChildTable = childTable with
+        {
+            Key = new TableKey(
+                ConstraintName: childTable.Key.ConstraintName,
+                Columns:
+                [
+                    new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart),
+                    new DbKeyColumn(new DbColumnName("Ordinal"), ColumnKind.Ordinal),
+                    new DbKeyColumn(new DbColumnName("ParentAddressOrdinal"), ColumnKind.ParentKeyPart),
+                ]
+            ),
+        };
+
+        return ReplaceStudentAddressTable(model, updatedChildTable);
+    }
+
+    protected static RelationalResourceModel CreateSingleTableModelWithMultipleOrdinalKeyColumns()
+    {
+        var model = CreateSingleTableModelCoveringWriteValueSourceKinds();
+        var childTable = GetStudentAddressTable(model);
+
+        var updatedChildTable = childTable with
+        {
+            Key = new TableKey(
+                ConstraintName: childTable.Key.ConstraintName,
+                Columns:
+                [
+                    new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart),
+                    new DbKeyColumn(new DbColumnName("ParentAddressOrdinal"), ColumnKind.ParentKeyPart),
+                    new DbKeyColumn(new DbColumnName("Ordinal"), ColumnKind.Ordinal),
+                    new DbKeyColumn(new DbColumnName("Ordinal"), ColumnKind.Ordinal),
+                ]
+            ),
+        };
+
+        return ReplaceStudentAddressTable(model, updatedChildTable);
+    }
+
+    private static DbTableModel GetStudentAddressTable(RelationalResourceModel model)
+    {
+        return model.TablesInDependencyOrder.Single(table =>
+            table.Table.Equals(new DbTableName(new DbSchemaName("edfi"), "StudentAddress"))
+        );
+    }
+
+    private static RelationalResourceModel ReplaceStudentAddressTable(
+        RelationalResourceModel model,
+        DbTableModel updatedChildTable
+    )
+    {
+        return model with { TablesInDependencyOrder = [model.Root, updatedChildTable] };
     }
 
     protected static JsonPathExpression CreatePath(string canonical, params JsonPathSegment[] segments)
