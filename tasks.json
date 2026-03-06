@@ -15,7 +15,7 @@
       "Add focused unit tests for root-table, child-table, and key-unified alias scenarios to prove the compiled table subset, binding order, and ordinals are stable across repeated compilation and input-order permutations.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~Given_ReadPlanCompiler`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Descriptor Projection",
