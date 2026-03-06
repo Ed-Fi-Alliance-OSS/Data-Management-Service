@@ -45,7 +45,11 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
         A.CallTo(() => serviceProvider.GetService(typeof(IDmsInstanceSelection)))
             .Returns(dmsInstanceSelection);
 
-        var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
+        var fingerprintProvider = new DatabaseFingerprintProvider(
+            fingerprintReader,
+            appSettings,
+            TimeProvider.System
+        );
         var middleware = new ValidateDatabaseFingerprintMiddleware(appSettings, fingerprintProvider, logger);
 
         return (middleware, fingerprintReader, dmsInstanceSelection, serviceProvider);

@@ -100,6 +100,7 @@ public static class DmsCoreServiceExtensions
             .AddScoped<IApplicationContextProvider, CachedApplicationContextProvider>()
             .AddSingleton<IConfigurationServiceApplicationProvider, ConfigurationServiceApplicationProvider>()
             .AddSingleton<IDatabaseFingerprintReader, NullDatabaseFingerprintReader>()
+            .AddSingleton(TimeProvider.System)
             .AddSingleton<DatabaseFingerprintProvider>()
             .AddSingleton<ResolveDmsInstanceMiddleware>()
             .AddSingleton<ValidateDatabaseFingerprintMiddleware>()
