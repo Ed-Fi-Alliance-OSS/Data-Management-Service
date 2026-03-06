@@ -26,7 +26,7 @@ internal class QueryRequestHandler(ILogger _logger, ResiliencePipeline _resilien
         );
 
         // Resolve query handler from the per-request scoped service provider
-        var queryHandler = requestInfo.ScopedServiceProvider!.GetRequiredService<IQueryHandler>();
+        var queryHandler = requestInfo.ScopedServiceProvider.GetRequiredService<IQueryHandler>();
 
         var queryResult = await ExecuteWithRetryLogging(
             _resiliencePipeline,

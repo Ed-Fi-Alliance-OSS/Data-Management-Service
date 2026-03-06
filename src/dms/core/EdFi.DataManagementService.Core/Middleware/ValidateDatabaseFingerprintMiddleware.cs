@@ -33,7 +33,7 @@ internal class ValidateDatabaseFingerprintMiddleware(
         }
 
         var dmsInstanceSelection =
-            requestInfo.ScopedServiceProvider!.GetRequiredService<IDmsInstanceSelection>();
+            requestInfo.ScopedServiceProvider.GetRequiredService<IDmsInstanceSelection>();
         if (!dmsInstanceSelection.IsSet)
         {
             logger.LogError(

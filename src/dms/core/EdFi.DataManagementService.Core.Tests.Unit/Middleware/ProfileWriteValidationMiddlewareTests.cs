@@ -111,10 +111,9 @@ public class ProfileWriteValidationMiddlewareTests
             }
         );
 
-        return new RequestInfo(frontendRequest, method)
+        return new RequestInfo(frontendRequest, method, scopedServiceProvider ?? BuildScopedServiceProvider())
         {
             ResourceSchema = resourceSchema,
-            ScopedServiceProvider = scopedServiceProvider ?? BuildScopedServiceProvider(),
         };
     }
 

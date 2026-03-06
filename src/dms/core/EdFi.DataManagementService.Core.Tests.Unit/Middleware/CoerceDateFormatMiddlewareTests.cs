@@ -107,7 +107,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     RouteQualifiers: []
                 );
 
-                _requestInfo = new(frontEndRequest, RequestMethod.POST)
+                _requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
                 {
                     ApiSchemaDocuments = SchemaDocuments(),
                     ParsedBody = JsonNode.Parse(requestBody)!,
@@ -207,7 +207,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     RouteQualifiers: []
                 );
 
-                _requestInfo = new(frontEndRequest, RequestMethod.POST)
+                _requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
                 {
                     ApiSchemaDocuments = SchemaDocuments(),
                     ParsedBody = JsonNode.Parse(requestBody)!,
@@ -286,7 +286,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     RouteQualifiers: []
                 );
 
-                _requestInfo = new(frontEndRequest, RequestMethod.POST)
+                _requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
                 {
                     ApiSchemaDocuments = SchemaDocuments(),
                     ParsedBody = JsonNode.Parse(requestBody)!,
@@ -365,7 +365,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     RouteQualifiers: []
                 );
 
-                _requestInfo = new(frontEndRequest, RequestMethod.POST)
+                _requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
                 {
                     ApiSchemaDocuments = SchemaDocuments(),
                     ParsedBody = JsonNode.Parse(requestBody)!,
@@ -445,7 +445,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     RouteQualifiers: []
                 );
 
-                _requestInfo = new(frontEndRequest, RequestMethod.POST)
+                _requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
                 {
                     ApiSchemaDocuments = SchemaDocuments(),
                     ParsedBody = JsonNode.Parse(requestBody)!,
@@ -533,7 +533,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     RouteQualifiers: []
                 );
 
-                _requestInfo = new(frontEndRequest, RequestMethod.POST)
+                _requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
                 {
                     ApiSchemaDocuments = SchemaDocuments(),
                     ParsedBody = JsonNode.Parse(requestBody)!,

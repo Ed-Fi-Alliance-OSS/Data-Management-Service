@@ -58,7 +58,7 @@ internal class ProvideAuthorizationFiltersMiddleware(
                 var authFiltersProvider =
                     _authorizationServiceFactory.GetByName<IAuthorizationFiltersProvider>(
                         authorizationStrategy,
-                        requestInfo.ScopedServiceProvider!
+                        requestInfo.ScopedServiceProvider
                     );
                 if (authFiltersProvider == null)
                 {

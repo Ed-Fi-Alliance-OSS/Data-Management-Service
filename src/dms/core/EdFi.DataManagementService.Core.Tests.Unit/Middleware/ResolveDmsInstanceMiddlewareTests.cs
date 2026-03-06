@@ -61,7 +61,9 @@ public class ResolveDmsInstanceMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET)
+            var (middleware, _, _, serviceProvider) = CreateMiddleware();
+
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, serviceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations(
                     TokenId: "token123",
@@ -72,9 +74,6 @@ public class ResolveDmsInstanceMiddlewareTests
                     DmsInstanceIds: [] // No authorized instances
                 ),
             };
-
-            var (middleware, _, _, serviceProvider) = CreateMiddleware();
-            _requestInfo.ScopedServiceProvider = serviceProvider;
 
             await middleware.Execute(
                 _requestInfo,
@@ -127,7 +126,10 @@ public class ResolveDmsInstanceMiddlewareTests
                 RouteQualifiers: [] // No route qualifiers in request
             );
 
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET)
+            var (middleware, dmsInstanceProvider, dmsInstanceSelection, serviceProvider) = CreateMiddleware();
+            _dmsInstanceSelection = dmsInstanceSelection;
+
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, serviceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations(
                     TokenId: "token123",
@@ -138,10 +140,6 @@ public class ResolveDmsInstanceMiddlewareTests
                     DmsInstanceIds: [new DmsInstanceId(1)]
                 ),
             };
-
-            var (middleware, dmsInstanceProvider, dmsInstanceSelection, serviceProvider) = CreateMiddleware();
-            _dmsInstanceSelection = dmsInstanceSelection;
-            _requestInfo.ScopedServiceProvider = serviceProvider;
 
             // Setup instance with no route context
             _expectedInstance = new DmsInstance(
@@ -206,7 +204,10 @@ public class ResolveDmsInstanceMiddlewareTests
                 Tenant: "TenantA"
             );
 
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET)
+            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
+            _dmsInstanceProvider = dmsInstanceProvider;
+
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, serviceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations(
                     TokenId: "token123",
@@ -217,10 +218,6 @@ public class ResolveDmsInstanceMiddlewareTests
                     DmsInstanceIds: [new DmsInstanceId(1)]
                 ),
             };
-
-            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
-            _dmsInstanceProvider = dmsInstanceProvider;
-            _requestInfo.ScopedServiceProvider = serviceProvider;
 
             A.CallTo(() => dmsInstanceProvider.RefreshInstancesIfExpiredAsync(A<string?>.Ignored))
                 .Returns(Task.CompletedTask);
@@ -275,7 +272,10 @@ public class ResolveDmsInstanceMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET)
+            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
+            _dmsInstanceProvider = dmsInstanceProvider;
+
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, serviceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations(
                     TokenId: "token123",
@@ -286,10 +286,6 @@ public class ResolveDmsInstanceMiddlewareTests
                     DmsInstanceIds: [new DmsInstanceId(1)]
                 ),
             };
-
-            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
-            _dmsInstanceProvider = dmsInstanceProvider;
-            _requestInfo.ScopedServiceProvider = serviceProvider;
 
             A.CallTo(() => dmsInstanceProvider.RefreshInstancesIfExpiredAsync(A<string?>.Ignored))
                 .Throws<InvalidOperationException>();
@@ -351,7 +347,9 @@ public class ResolveDmsInstanceMiddlewareTests
                 RouteQualifiers: routeQualifiers
             );
 
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET)
+            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
+
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, serviceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations(
                     TokenId: "token123",
@@ -362,9 +360,6 @@ public class ResolveDmsInstanceMiddlewareTests
                     DmsInstanceIds: [new DmsInstanceId(1), new DmsInstanceId(2)]
                 ),
             };
-
-            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
-            _requestInfo.ScopedServiceProvider = serviceProvider;
 
             // First instance doesn't match
             A.CallTo(() => dmsInstanceProvider.GetById(1, A<string?>.Ignored))
@@ -440,7 +435,9 @@ public class ResolveDmsInstanceMiddlewareTests
                 RouteQualifiers: routeQualifiers
             );
 
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET)
+            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
+
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, serviceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations(
                     TokenId: "token123",
@@ -451,9 +448,6 @@ public class ResolveDmsInstanceMiddlewareTests
                     DmsInstanceIds: [new DmsInstanceId(1), new DmsInstanceId(2)]
                 ),
             };
-
-            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
-            _requestInfo.ScopedServiceProvider = serviceProvider;
 
             // Both instances match - ambiguous!
             A.CallTo(() => dmsInstanceProvider.GetById(1, A<string?>.Ignored))
@@ -538,7 +532,9 @@ public class ResolveDmsInstanceMiddlewareTests
                 RouteQualifiers: routeQualifiers
             );
 
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET)
+            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
+
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, serviceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations(
                     TokenId: "token123",
@@ -549,9 +545,6 @@ public class ResolveDmsInstanceMiddlewareTests
                     DmsInstanceIds: [new DmsInstanceId(1)]
                 ),
             };
-
-            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
-            _requestInfo.ScopedServiceProvider = serviceProvider;
 
             // Instance has different route qualifiers
             A.CallTo(() => dmsInstanceProvider.GetById(1, A<string?>.Ignored))
@@ -620,7 +613,9 @@ public class ResolveDmsInstanceMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET)
+            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
+
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, serviceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations(
                     TokenId: "token123",
@@ -631,9 +626,6 @@ public class ResolveDmsInstanceMiddlewareTests
                     DmsInstanceIds: [new DmsInstanceId(1)]
                 ),
             };
-
-            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
-            _requestInfo.ScopedServiceProvider = serviceProvider;
 
             // Instance matches but has no connection string
             A.CallTo(() => dmsInstanceProvider.GetById(1, A<string?>.Ignored))
@@ -696,7 +688,9 @@ public class ResolveDmsInstanceMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET)
+            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
+
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, serviceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations(
                     TokenId: "token123",
@@ -707,9 +701,6 @@ public class ResolveDmsInstanceMiddlewareTests
                     DmsInstanceIds: [new DmsInstanceId(999)]
                 ),
             };
-
-            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
-            _requestInfo.ScopedServiceProvider = serviceProvider;
 
             // Instance not found in provider
             A.CallTo(() => dmsInstanceProvider.GetById(999, A<string?>.Ignored)).Returns(null);
@@ -762,7 +753,9 @@ public class ResolveDmsInstanceMiddlewareTests
                 RouteQualifiers: routeQualifiers
             );
 
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET)
+            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
+
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, serviceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations(
                     TokenId: "token123",
@@ -773,9 +766,6 @@ public class ResolveDmsInstanceMiddlewareTests
                     DmsInstanceIds: [new DmsInstanceId(1)]
                 ),
             };
-
-            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
-            _requestInfo.ScopedServiceProvider = serviceProvider;
 
             // Instance has lowercase value
             A.CallTo(() => dmsInstanceProvider.GetById(1, A<string?>.Ignored))
@@ -834,7 +824,9 @@ public class ResolveDmsInstanceMiddlewareTests
                 RouteQualifiers: routeQualifiers
             );
 
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET)
+            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
+
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, serviceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations(
                     TokenId: "token123",
@@ -845,9 +837,6 @@ public class ResolveDmsInstanceMiddlewareTests
                     DmsInstanceIds: [new DmsInstanceId(1)]
                 ),
             };
-
-            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
-            _requestInfo.ScopedServiceProvider = serviceProvider;
 
             // Instance has more qualifiers than request
             A.CallTo(() => dmsInstanceProvider.GetById(1, A<string?>.Ignored))

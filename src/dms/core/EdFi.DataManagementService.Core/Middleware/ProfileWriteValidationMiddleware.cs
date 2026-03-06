@@ -172,7 +172,7 @@ internal class ProfileWriteValidationMiddleware(
     {
         // Get repository from per-request scoped service provider
         var documentStoreRepository =
-            requestInfo.ScopedServiceProvider!.GetRequiredService<IDocumentStoreRepository>();
+            requestInfo.ScopedServiceProvider.GetRequiredService<IDocumentStoreRepository>();
 
         // Create a bypass authorization handler for internal document fetch
         // The actual authorization will be performed by the UpdateByIdHandler later

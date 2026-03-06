@@ -52,7 +52,10 @@ public class ProfileFilteringMiddlewareTests
             }
         );
 
-        return new RequestInfo(frontendRequest, method) { ResourceSchema = resourceSchema };
+        return new RequestInfo(frontendRequest, method, No.ServiceProvider)
+        {
+            ResourceSchema = resourceSchema,
+        };
     }
 
     private static ProfileContext CreateProfileContext(

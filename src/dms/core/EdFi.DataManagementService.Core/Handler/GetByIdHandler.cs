@@ -32,7 +32,7 @@ internal class GetByIdHandler(
 
         // Resolve repository from the per-request scoped service provider
         var documentStoreRepository =
-            requestInfo.ScopedServiceProvider!.GetRequiredService<IDocumentStoreRepository>();
+            requestInfo.ScopedServiceProvider.GetRequiredService<IDocumentStoreRepository>();
 
         var getResult = await ExecuteWithRetryLogging(
             _resiliencePipeline,
@@ -50,7 +50,7 @@ internal class GetByIdHandler(
                             requestInfo.AuthorizationStrategyEvaluators,
                             requestInfo.AuthorizationSecurableInfo,
                             authorizationServiceFactory,
-                            requestInfo.ScopedServiceProvider!,
+                            requestInfo.ScopedServiceProvider,
                             _logger
                         ),
                         TraceId: requestInfo.FrontendRequest.TraceId

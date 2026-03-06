@@ -49,9 +49,9 @@ internal partial class GetTokenInfoHandler(
 
         // Resolve scoped dependencies from per-request scope
         var authorizationRepository =
-            requestInfo.ScopedServiceProvider!.GetRequiredService<IAuthorizationRepository>();
+            requestInfo.ScopedServiceProvider.GetRequiredService<IAuthorizationRepository>();
         var applicationContextProvider =
-            requestInfo.ScopedServiceProvider!.GetRequiredService<IApplicationContextProvider>();
+            requestInfo.ScopedServiceProvider.GetRequiredService<IApplicationContextProvider>();
 
         string? tokenFromBody = null;
 

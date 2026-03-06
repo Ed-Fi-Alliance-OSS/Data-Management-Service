@@ -58,7 +58,7 @@ public class ProfileResolutionMiddlewareTests
             RouteQualifiers: []
         );
 
-        var requestInfo = new RequestInfo(frontendRequest, method)
+        var requestInfo = new RequestInfo(frontendRequest, method, No.ServiceProvider)
         {
             ResourceSchema = new Core.ApiSchema.ResourceSchema(
                 new JsonObject { ["resourceName"] = resourceName }

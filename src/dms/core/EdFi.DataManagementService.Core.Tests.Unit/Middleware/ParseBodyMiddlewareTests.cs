@@ -42,7 +42,7 @@ public class ParseBodyMiddlewareTests
                 TraceId: new TraceId("traceId"),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontEndRequest, RequestMethod.POST);
+            _requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider);
             await Middleware().Execute(_requestInfo, NullNext);
         }
 
@@ -86,7 +86,7 @@ public class ParseBodyMiddlewareTests
                 TraceId: new TraceId("traceId"),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontEndRequest, RequestMethod.POST);
+            _requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider);
             await Middleware().Execute(_requestInfo, NullNext);
         }
 
@@ -130,7 +130,7 @@ public class ParseBodyMiddlewareTests
                 TraceId: new TraceId("traceId"),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontEndRequest, RequestMethod.POST);
+            _requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider);
             await Middleware().Execute(_requestInfo, NullNext);
         }
 
