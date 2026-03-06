@@ -8,3 +8,8 @@
 - Decisions: preserved TableKey.Columns order exactly in hydration ORDER BY; kept keyset join on resolved root DocumentId key column; renamed exact-SQL tests so Name~SelectByKeysetSql verification loop exercises them
 - Files: src/dms/backend/EdFi.DataManagementService.Backend.Plans/ReadPlanCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReadPlanCompilerTests.cs; tasks.json; progress.txt
 - Notes: csharpier run clean; Name~SelectByKeysetSql and FullyQualifiedName~ReadPlanCompiler loops green; next highest-priority task likely Model Validation
+2026-03-06
+- Completed: Model Validation. Story: E15-S05 / reference/design/backend-redesign/epics/15-plan-compilation/05-read-plan-compiler-hydration.md
+- Decisions: aligned read-plan key-shape validation with deterministic hydration ordering rules; required DocumentId ParentKeyPart first and only once; validated document-reference FK, reference-identity, and descriptor FK columns against owning table select-list ordinals without emitting projection contracts yet
+- Files: src/dms/backend/EdFi.DataManagementService.Backend.Plans/ReadPlanCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReadPlanCompilerTests.cs; tasks.json; progress.txt
+- Notes: `dotnet csharpier format` clean; `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~ReadPlanCompiler` green; next likely task Mapping Set Integration

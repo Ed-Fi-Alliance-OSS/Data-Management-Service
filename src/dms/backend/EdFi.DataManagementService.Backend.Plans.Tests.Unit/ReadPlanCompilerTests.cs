@@ -12,14 +12,14 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
 [TestFixture]
-public class Given_ReadPlanCompiler
+public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
 {
     private RelationalResourceModel _resourceModel = null!;
     private ResourceReadPlan _pgsqlReadPlan = null!;
     private ResourceReadPlan _mssqlReadPlan = null!;
 
     [SetUp]
-    public void Setup()
+    public void SetUpReadPlanCompiler()
     {
         _resourceModel = CreateMultiTableResourceModel();
         _pgsqlReadPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(_resourceModel);
@@ -195,28 +195,108 @@ public class Given_ReadPlanCompiler
     }
 
     [Test]
-    public void It_should_order_by_table_key_columns_exactly_as_modeled_without_special_casing_document_id()
+    public void It_should_fail_fast_when_document_id_parent_key_part_is_not_first_in_key_order()
     {
-        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
-            CreateRootOnlyModelWithNonDocumentIdFirstKeyOrder()
-        );
+        var act = () =>
+            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(CreateModelWithDocumentIdNotFirstInKeyOrder());
 
-        readPlan
-            .TablePlansInDependencyOrder.Single()
-            .SelectByKeysetSql.Should()
-            .Be(
-                """
-                SELECT
-                    r."DocumentId",
-                    r."SchoolYear"
-                FROM "edfi"."Student" r
-                INNER JOIN "page" k ON r."DocumentId" = k."DocumentId"
-                ORDER BY
-                    r."SchoolYear" ASC,
-                    r."DocumentId" ASC
-                ;
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile read plan for 'edfi.StudentAddress': expected document-id ParentKeyPart key column ('DocumentId' or '*_DocumentId') to be first in key order, but found 'ParentAddressOrdinal:ParentKeyPart'. Key columns: [ParentAddressOrdinal:ParentKeyPart, DocumentId:ParentKeyPart, Ordinal:Ordinal]."
+            );
+    }
 
-                """
+    [Test]
+    public void It_should_fail_fast_when_key_does_not_include_exactly_one_document_id_parent_key_part()
+    {
+        var act = () =>
+            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(CreateModelWithMissingDocumentIdParentKeyPart());
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile read plan for 'edfi.Student': expected exactly one ParentKeyPart document-id key column ('DocumentId' or '*_DocumentId'), but found 0. Key columns: [SchoolYear:ParentKeyPart]."
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_key_column_kind_is_not_parent_key_part_or_ordinal()
+    {
+        var act = () =>
+            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(CreateModelWithUnsupportedKeyColumnKind());
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile read plan for 'edfi.Student': key column 'SchoolYear' has unsupported kind 'Scalar'. Supported key kinds are ParentKeyPart and Ordinal."
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_ordinal_key_column_is_not_last_in_key_order()
+    {
+        var act = () =>
+            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(CreateModelWithOrdinalNotLastInKeyOrder());
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile read plan for 'edfi.StudentAddress': expected Ordinal key column to be last in key order. Key columns: [DocumentId:ParentKeyPart, Ordinal:Ordinal, ParentAddressOrdinal:ParentKeyPart]."
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_key_contains_multiple_ordinal_columns()
+    {
+        var act = () =>
+            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(CreateModelWithMultipleOrdinalKeyColumns());
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile read plan for 'edfi.StudentAddress': expected at most one Ordinal key column, but found 2. Key columns: [DocumentId:ParentKeyPart, ParentAddressOrdinal:ParentKeyPart, Ordinal:Ordinal, Ordinal:Ordinal]."
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_document_reference_fk_column_does_not_resolve_to_a_hydration_select_list_ordinal()
+    {
+        var act = () =>
+            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(CreateModelWithMissingDocumentReferenceFkColumn());
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile read plan for 'edfi.StudentAddress': document-reference binding '$.addresses[*].schoolReference' FK column 'MissingSchool_DocumentId' does not exist in hydration select-list columns."
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_reference_identity_binding_column_does_not_resolve_to_a_hydration_select_list_ordinal()
+    {
+        var act = () =>
+            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+                CreateModelWithMissingReferenceIdentityBindingColumn()
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile read plan for 'edfi.StudentAddress': reference-identity binding '$.addresses[*].schoolReference.schoolId' for reference '$.addresses[*].schoolReference' column 'MissingSchoolId' does not exist in hydration select-list columns."
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_descriptor_edge_source_fk_column_does_not_resolve_to_a_hydration_select_list_ordinal()
+    {
+        var act = () =>
+            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(CreateModelWithMissingDescriptorEdgeFkColumn());
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile read plan for 'edfi.StudentAddress': descriptor edge source '$.addresses[*].programTypeDescriptor' FK column 'MissingProgramTypeDescriptorId' does not exist in hydration select-list columns."
             );
     }
 
@@ -453,52 +533,172 @@ public class Given_ReadPlanCompiler
         );
     }
 
-    private static RelationalResourceModel CreateRootOnlyModelWithNonDocumentIdFirstKeyOrder()
+    private static RelationalResourceModel CreateModelWithMissingDocumentIdParentKeyPart()
     {
-        var rootTable = new DbTableModel(
-            Table: new DbTableName(new DbSchemaName("edfi"), "Student"),
-            JsonScope: new JsonPathExpression("$", []),
-            Key: new TableKey(
-                ConstraintName: "PK_Student",
+        var model = CreateSupportedRootOnlyModel();
+        var rootTable = model.Root with
+        {
+            Key = new TableKey(
+                ConstraintName: model.Root.Key.ConstraintName,
+                Columns: [new DbKeyColumn(new DbColumnName("SchoolYear"), ColumnKind.ParentKeyPart)]
+            ),
+        };
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
+        };
+    }
+
+    private static RelationalResourceModel CreateModelWithUnsupportedKeyColumnKind()
+    {
+        var model = CreateSupportedRootOnlyModel();
+        var rootTable = model.Root with
+        {
+            Key = new TableKey(
+                ConstraintName: model.Root.Key.ConstraintName,
+                Columns: [new DbKeyColumn(new DbColumnName("SchoolYear"), ColumnKind.Scalar)]
+            ),
+        };
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
+        };
+    }
+
+    private static RelationalResourceModel CreateModelWithDocumentIdNotFirstInKeyOrder()
+    {
+        var model = CreateSingleTableModelCoveringWriteValueSourceKinds();
+        var childTable = GetStudentAddressTable(model);
+
+        var updatedChildTable = childTable with
+        {
+            Key = new TableKey(
+                ConstraintName: childTable.Key.ConstraintName,
                 Columns:
                 [
-                    new DbKeyColumn(new DbColumnName("SchoolYear"), ColumnKind.Scalar),
+                    new DbKeyColumn(new DbColumnName("ParentAddressOrdinal"), ColumnKind.ParentKeyPart),
                     new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart),
+                    new DbKeyColumn(new DbColumnName("Ordinal"), ColumnKind.Ordinal),
                 ]
             ),
-            Columns:
+        };
+
+        return ReplaceStudentAddressTable(model, updatedChildTable);
+    }
+
+    private static RelationalResourceModel CreateModelWithOrdinalNotLastInKeyOrder()
+    {
+        var model = CreateSingleTableModelCoveringWriteValueSourceKinds();
+        var childTable = GetStudentAddressTable(model);
+
+        var updatedChildTable = childTable with
+        {
+            Key = new TableKey(
+                ConstraintName: childTable.Key.ConstraintName,
+                Columns:
+                [
+                    new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart),
+                    new DbKeyColumn(new DbColumnName("Ordinal"), ColumnKind.Ordinal),
+                    new DbKeyColumn(new DbColumnName("ParentAddressOrdinal"), ColumnKind.ParentKeyPart),
+                ]
+            ),
+        };
+
+        return ReplaceStudentAddressTable(model, updatedChildTable);
+    }
+
+    private static RelationalResourceModel CreateModelWithMultipleOrdinalKeyColumns()
+    {
+        var model = CreateSingleTableModelCoveringWriteValueSourceKinds();
+        var childTable = GetStudentAddressTable(model);
+
+        var updatedChildTable = childTable with
+        {
+            Key = new TableKey(
+                ConstraintName: childTable.Key.ConstraintName,
+                Columns:
+                [
+                    new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart),
+                    new DbKeyColumn(new DbColumnName("ParentAddressOrdinal"), ColumnKind.ParentKeyPart),
+                    new DbKeyColumn(new DbColumnName("Ordinal"), ColumnKind.Ordinal),
+                    new DbKeyColumn(new DbColumnName("Ordinal"), ColumnKind.Ordinal),
+                ]
+            ),
+        };
+
+        return ReplaceStudentAddressTable(model, updatedChildTable);
+    }
+
+    private static RelationalResourceModel CreateModelWithMissingDocumentReferenceFkColumn()
+    {
+        var model = CreateSingleTableModelCoveringWriteValueSourceKinds();
+        var binding = model.DocumentReferenceBindings.Single() with
+        {
+            FkColumn = new DbColumnName("MissingSchool_DocumentId"),
+        };
+
+        return model with
+        {
+            DocumentReferenceBindings = [binding],
+        };
+    }
+
+    private static RelationalResourceModel CreateModelWithMissingReferenceIdentityBindingColumn()
+    {
+        var model = CreateSingleTableModelCoveringWriteValueSourceKinds();
+        var binding = model.DocumentReferenceBindings.Single() with
+        {
+            IdentityBindings =
             [
-                new DbColumnModel(
-                    ColumnName: new DbColumnName("DocumentId"),
-                    Kind: ColumnKind.ParentKeyPart,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    ColumnName: new DbColumnName("SchoolYear"),
-                    Kind: ColumnKind.Scalar,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
-                    IsNullable: false,
-                    SourceJsonPath: new JsonPathExpression(
-                        "$.schoolYear",
-                        [new JsonPathSegment.Property("schoolYear")]
+                new ReferenceIdentityBinding(
+                    ReferenceJsonPath: CreatePath(
+                        "$.addresses[*].schoolReference.schoolId",
+                        new JsonPathSegment.Property("addresses"),
+                        new JsonPathSegment.AnyArrayElement(),
+                        new JsonPathSegment.Property("schoolReference"),
+                        new JsonPathSegment.Property("schoolId")
                     ),
-                    TargetResource: null
+                    Column: new DbColumnName("MissingSchoolId")
                 ),
             ],
-            Constraints: []
-        );
+        };
 
-        return new RelationalResourceModel(
-            Resource: new QualifiedResourceName("Ed-Fi", "Student"),
-            PhysicalSchema: new DbSchemaName("edfi"),
-            StorageKind: ResourceStorageKind.RelationalTables,
-            Root: rootTable,
-            TablesInDependencyOrder: [rootTable],
-            DocumentReferenceBindings: [],
-            DescriptorEdgeSources: []
+        return model with
+        {
+            DocumentReferenceBindings = [binding],
+        };
+    }
+
+    private static RelationalResourceModel CreateModelWithMissingDescriptorEdgeFkColumn()
+    {
+        var model = CreateSingleTableModelCoveringWriteValueSourceKinds();
+        var edgeSource = model.DescriptorEdgeSources.Single() with
+        {
+            FkColumn = new DbColumnName("MissingProgramTypeDescriptorId"),
+        };
+
+        return model with
+        {
+            DescriptorEdgeSources = [edgeSource],
+        };
+    }
+
+    private static DbTableModel GetStudentAddressTable(RelationalResourceModel model)
+    {
+        return model.TablesInDependencyOrder.Single(table =>
+            table.Table.Equals(new DbTableName(new DbSchemaName("edfi"), "StudentAddress"))
         );
+    }
+
+    private static RelationalResourceModel ReplaceStudentAddressTable(
+        RelationalResourceModel model,
+        DbTableModel updatedChildTable
+    )
+    {
+        return model with { TablesInDependencyOrder = [model.Root, updatedChildTable] };
     }
 }
