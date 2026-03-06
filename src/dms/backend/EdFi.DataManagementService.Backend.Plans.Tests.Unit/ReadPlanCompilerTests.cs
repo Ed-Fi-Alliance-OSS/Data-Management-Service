@@ -74,6 +74,142 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_compile_root_table_reference_identity_projection_bindings_in_model_order()
+    {
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateRootMultiBindingReferenceProjectionResourceModel()
+        );
+
+        readPlan.ReferenceIdentityProjectionPlansInDependencyOrder.Should().ContainSingle();
+
+        var tablePlan = readPlan.ReferenceIdentityProjectionPlansInDependencyOrder.Single();
+        tablePlan.Table.Should().Be(readPlan.Model.Root.Table);
+        tablePlan.BindingsInOrder.Should().HaveCount(2);
+
+        AssertReferenceIdentityProjectionBinding(
+            tablePlan.BindingsInOrder[0],
+            isIdentityComponent: true,
+            referenceObjectPath: "$.schoolReference",
+            targetResource: new QualifiedResourceName("Ed-Fi", "School"),
+            fkColumnOrdinal: 1,
+            ("$.schoolReference.schoolId", 2),
+            ("$.schoolReference.schoolYear", 3)
+        );
+        AssertReferenceIdentityProjectionBinding(
+            tablePlan.BindingsInOrder[1],
+            isIdentityComponent: false,
+            referenceObjectPath: "$.calendarReference",
+            targetResource: new QualifiedResourceName("Ed-Fi", "Calendar"),
+            fkColumnOrdinal: 4,
+            ("$.calendarReference.calendarCode", 5)
+        );
+    }
+
+    [Test]
+    public void It_should_group_reference_identity_projection_bindings_by_dependency_order_subset_when_bindings_are_interleaved()
+    {
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateInterleavedReferenceProjectionResourceModel(rootBindingFirst: false)
+        );
+
+        readPlan
+            .ReferenceIdentityProjectionPlansInDependencyOrder.Select(static plan => plan.Table)
+            .Should()
+            .Equal(
+                readPlan.Model.TablesInDependencyOrder[0].Table,
+                readPlan.Model.TablesInDependencyOrder[1].Table
+            );
+
+        var rootTablePlan = readPlan.ReferenceIdentityProjectionPlansInDependencyOrder[0];
+        rootTablePlan.BindingsInOrder.Should().ContainSingle();
+
+        AssertReferenceIdentityProjectionBinding(
+            rootTablePlan.BindingsInOrder[0],
+            isIdentityComponent: true,
+            referenceObjectPath: "$.schoolReference",
+            targetResource: new QualifiedResourceName("Ed-Fi", "School"),
+            fkColumnOrdinal: 1,
+            ("$.schoolReference.schoolId", 2)
+        );
+
+        var childTablePlan = readPlan.ReferenceIdentityProjectionPlansInDependencyOrder[1];
+        childTablePlan.BindingsInOrder.Should().HaveCount(2);
+
+        AssertReferenceIdentityProjectionBinding(
+            childTablePlan.BindingsInOrder[0],
+            isIdentityComponent: false,
+            referenceObjectPath: "$.addresses[*].calendarReference",
+            targetResource: new QualifiedResourceName("Ed-Fi", "Calendar"),
+            fkColumnOrdinal: 2,
+            ("$.addresses[*].calendarReference.calendarCode", 3)
+        );
+        AssertReferenceIdentityProjectionBinding(
+            childTablePlan.BindingsInOrder[1],
+            isIdentityComponent: false,
+            referenceObjectPath: "$.addresses[*].sessionReference",
+            targetResource: new QualifiedResourceName("Ed-Fi", "Session"),
+            fkColumnOrdinal: 4,
+            ("$.addresses[*].sessionReference.sessionName", 5)
+        );
+    }
+
+    [Test]
+    public void It_should_compile_identical_multi_table_reference_projection_plans_across_repeated_compilation_and_cross_table_binding_interleavings()
+    {
+        var compiler = new ReadPlanCompiler(SqlDialect.Pgsql);
+
+        var first = compiler.Compile(CreateInterleavedReferenceProjectionResourceModel(false));
+        var second = compiler.Compile(CreateInterleavedReferenceProjectionResourceModel(false));
+        var permuted = compiler.Compile(CreateInterleavedReferenceProjectionResourceModel(true));
+
+        var firstFingerprint = CreateReadPlanFingerprint(first);
+        var secondFingerprint = CreateReadPlanFingerprint(second);
+        var permutedFingerprint = CreateReadPlanFingerprint(permuted);
+
+        secondFingerprint.Should().Be(firstFingerprint);
+        permutedFingerprint.Should().Be(firstFingerprint);
+    }
+
+    [Test]
+    public void It_should_compile_key_unified_reference_identity_projection_bindings_against_unified_alias_column_ordinals()
+    {
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateKeyUnifiedReferenceProjectionResourceModel()
+        );
+
+        readPlan.ReferenceIdentityProjectionPlansInDependencyOrder.Should().ContainSingle();
+
+        var tablePlan = readPlan.ReferenceIdentityProjectionPlansInDependencyOrder.Single();
+        tablePlan.BindingsInOrder.Should().ContainSingle();
+
+        var binding = tablePlan.BindingsInOrder.Single();
+
+        AssertReferenceIdentityProjectionBinding(
+            binding,
+            isIdentityComponent: true,
+            referenceObjectPath: "$.schoolReference",
+            targetResource: new QualifiedResourceName("Ed-Fi", "School"),
+            fkColumnOrdinal: 3,
+            ("$.schoolReference.localSchoolYear", 5),
+            ("$.schoolReference.schoolYear", 4)
+        );
+
+        var tableColumns = readPlan.TablePlansInDependencyOrder.Single().TableModel.Columns;
+        tableColumns[binding.IdentityFieldOrdinalsInOrder[0].ColumnOrdinal]
+            .ColumnName.Should()
+            .Be(new DbColumnName("SchoolYearSecondary"));
+        tableColumns[binding.IdentityFieldOrdinalsInOrder[0].ColumnOrdinal]
+            .Storage.Should()
+            .BeOfType<ColumnStorage.UnifiedAlias>();
+        tableColumns[binding.IdentityFieldOrdinalsInOrder[1].ColumnOrdinal]
+            .ColumnName.Should()
+            .Be(new DbColumnName("SchoolYearPrimary"));
+        tableColumns[binding.IdentityFieldOrdinalsInOrder[1].ColumnOrdinal]
+            .Storage.Should()
+            .BeOfType<ColumnStorage.UnifiedAlias>();
+    }
+
+    [Test]
     public void It_should_emit_exact_pgsql_DescriptorProjection_sql_for_projection_metadata_resources()
     {
         AssertDescriptorProjectionPlan(
@@ -711,6 +847,29 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         binding.IdentityFieldOrdinalsInOrder.Select(static field => field.ColumnOrdinal).Should().Equal(3, 4);
     }
 
+    private static void AssertReferenceIdentityProjectionBinding(
+        ReferenceIdentityProjectionBinding binding,
+        bool isIdentityComponent,
+        string referenceObjectPath,
+        QualifiedResourceName targetResource,
+        int fkColumnOrdinal,
+        params (string ReferenceJsonPath, int ColumnOrdinal)[] identityFieldOrdinals
+    )
+    {
+        binding.IsIdentityComponent.Should().Be(isIdentityComponent);
+        binding.ReferenceObjectPath.Canonical.Should().Be(referenceObjectPath);
+        binding.TargetResource.Should().Be(targetResource);
+        binding.FkColumnOrdinal.Should().Be(fkColumnOrdinal);
+        binding
+            .IdentityFieldOrdinalsInOrder.Select(static field => field.ReferenceJsonPath.Canonical)
+            .Should()
+            .Equal(identityFieldOrdinals.Select(static field => field.ReferenceJsonPath));
+        binding
+            .IdentityFieldOrdinalsInOrder.Select(static field => field.ColumnOrdinal)
+            .Should()
+            .Equal(identityFieldOrdinals.Select(static field => field.ColumnOrdinal));
+    }
+
     private void AssertDescriptorProjectionPlan(ResourceReadPlan readPlan, string expectedSql)
     {
         readPlan.DescriptorProjectionPlansInOrder.Should().ContainSingle();
@@ -1007,6 +1166,456 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                     Table: model.Root.Table,
                     FkColumn: new DbColumnName("SchoolYearTypeDescriptorPrimary"),
                     DescriptorResource: new QualifiedResourceName("Ed-Fi", "SchoolYearTypeDescriptor")
+                ),
+            ],
+        };
+    }
+
+    private static RelationalResourceModel CreateRootMultiBindingReferenceProjectionResourceModel()
+    {
+        var rootTable = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "StudentReferenceProjection"),
+            JsonScope: CreatePath("$"),
+            Key: new TableKey(
+                ConstraintName: "PK_StudentReferenceProjection",
+                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_DocumentId"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: CreatePath(
+                        "$.schoolReference",
+                        new JsonPathSegment.Property("schoolReference")
+                    ),
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "School")
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_RefSchoolId"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: true,
+                    SourceJsonPath: CreatePath(
+                        "$.schoolReference.schoolId",
+                        new JsonPathSegment.Property("schoolReference"),
+                        new JsonPathSegment.Property("schoolId")
+                    ),
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_RefSchoolYear"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: true,
+                    SourceJsonPath: CreatePath(
+                        "$.schoolReference.schoolYear",
+                        new JsonPathSegment.Property("schoolReference"),
+                        new JsonPathSegment.Property("schoolYear")
+                    ),
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("Calendar_DocumentId"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: CreatePath(
+                        "$.calendarReference",
+                        new JsonPathSegment.Property("calendarReference")
+                    ),
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "Calendar")
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("Calendar_RefCalendarCode"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 50),
+                    IsNullable: true,
+                    SourceJsonPath: CreatePath(
+                        "$.calendarReference.calendarCode",
+                        new JsonPathSegment.Property("calendarReference"),
+                        new JsonPathSegment.Property("calendarCode")
+                    ),
+                    TargetResource: null
+                ),
+            ],
+            Constraints: []
+        );
+
+        return new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "StudentReferenceProjection"),
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTable,
+            TablesInDependencyOrder: [rootTable],
+            DocumentReferenceBindings:
+            [
+                new DocumentReferenceBinding(
+                    IsIdentityComponent: true,
+                    ReferenceObjectPath: CreatePath(
+                        "$.schoolReference",
+                        new JsonPathSegment.Property("schoolReference")
+                    ),
+                    Table: rootTable.Table,
+                    FkColumn: new DbColumnName("School_DocumentId"),
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "School"),
+                    IdentityBindings:
+                    [
+                        new ReferenceIdentityBinding(
+                            ReferenceJsonPath: CreatePath(
+                                "$.schoolReference.schoolId",
+                                new JsonPathSegment.Property("schoolReference"),
+                                new JsonPathSegment.Property("schoolId")
+                            ),
+                            Column: new DbColumnName("School_RefSchoolId")
+                        ),
+                        new ReferenceIdentityBinding(
+                            ReferenceJsonPath: CreatePath(
+                                "$.schoolReference.schoolYear",
+                                new JsonPathSegment.Property("schoolReference"),
+                                new JsonPathSegment.Property("schoolYear")
+                            ),
+                            Column: new DbColumnName("School_RefSchoolYear")
+                        ),
+                    ]
+                ),
+                new DocumentReferenceBinding(
+                    IsIdentityComponent: false,
+                    ReferenceObjectPath: CreatePath(
+                        "$.calendarReference",
+                        new JsonPathSegment.Property("calendarReference")
+                    ),
+                    Table: rootTable.Table,
+                    FkColumn: new DbColumnName("Calendar_DocumentId"),
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "Calendar"),
+                    IdentityBindings:
+                    [
+                        new ReferenceIdentityBinding(
+                            ReferenceJsonPath: CreatePath(
+                                "$.calendarReference.calendarCode",
+                                new JsonPathSegment.Property("calendarReference"),
+                                new JsonPathSegment.Property("calendarCode")
+                            ),
+                            Column: new DbColumnName("Calendar_RefCalendarCode")
+                        ),
+                    ]
+                ),
+            ],
+            DescriptorEdgeSources: []
+        );
+    }
+
+    private static RelationalResourceModel CreateInterleavedReferenceProjectionResourceModel(
+        bool rootBindingFirst
+    )
+    {
+        var rootTable = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "StudentReferenceGrouping"),
+            JsonScope: CreatePath("$"),
+            Key: new TableKey(
+                ConstraintName: "PK_StudentReferenceGrouping",
+                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_DocumentId"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: CreatePath(
+                        "$.schoolReference",
+                        new JsonPathSegment.Property("schoolReference")
+                    ),
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "School")
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_RefSchoolId"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: true,
+                    SourceJsonPath: CreatePath(
+                        "$.schoolReference.schoolId",
+                        new JsonPathSegment.Property("schoolReference"),
+                        new JsonPathSegment.Property("schoolId")
+                    ),
+                    TargetResource: null
+                ),
+            ],
+            Constraints: []
+        );
+
+        var childTable = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "StudentAddressReferenceGrouping"),
+            JsonScope: CreatePath(
+                "$.addresses[*]",
+                new JsonPathSegment.Property("addresses"),
+                new JsonPathSegment.AnyArrayElement()
+            ),
+            Key: new TableKey(
+                ConstraintName: "PK_StudentAddressReferenceGrouping",
+                Columns:
+                [
+                    new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart),
+                    new DbKeyColumn(new DbColumnName("Ordinal"), ColumnKind.Ordinal),
+                ]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("Ordinal"),
+                    Kind: ColumnKind.Ordinal,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("Calendar_DocumentId"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: CreatePath(
+                        "$.addresses[*].calendarReference",
+                        new JsonPathSegment.Property("addresses"),
+                        new JsonPathSegment.AnyArrayElement(),
+                        new JsonPathSegment.Property("calendarReference")
+                    ),
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "Calendar")
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("Calendar_RefCalendarCode"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 50),
+                    IsNullable: true,
+                    SourceJsonPath: CreatePath(
+                        "$.addresses[*].calendarReference.calendarCode",
+                        new JsonPathSegment.Property("addresses"),
+                        new JsonPathSegment.AnyArrayElement(),
+                        new JsonPathSegment.Property("calendarReference"),
+                        new JsonPathSegment.Property("calendarCode")
+                    ),
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("Session_DocumentId"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: CreatePath(
+                        "$.addresses[*].sessionReference",
+                        new JsonPathSegment.Property("addresses"),
+                        new JsonPathSegment.AnyArrayElement(),
+                        new JsonPathSegment.Property("sessionReference")
+                    ),
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "Session")
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("Session_RefSessionName"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 128),
+                    IsNullable: true,
+                    SourceJsonPath: CreatePath(
+                        "$.addresses[*].sessionReference.sessionName",
+                        new JsonPathSegment.Property("addresses"),
+                        new JsonPathSegment.AnyArrayElement(),
+                        new JsonPathSegment.Property("sessionReference"),
+                        new JsonPathSegment.Property("sessionName")
+                    ),
+                    TargetResource: null
+                ),
+            ],
+            Constraints: []
+        );
+
+        var extensionTable = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("sample"), "StudentReferenceGroupingExtension"),
+            JsonScope: CreatePath(
+                "$._ext.sample",
+                new JsonPathSegment.Property("_ext"),
+                new JsonPathSegment.Property("sample")
+            ),
+            Key: new TableKey(
+                ConstraintName: "PK_StudentReferenceGroupingExtension",
+                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("FavoriteColor"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 32),
+                    IsNullable: true,
+                    SourceJsonPath: CreatePath(
+                        "$._ext.sample.favoriteColor",
+                        new JsonPathSegment.Property("_ext"),
+                        new JsonPathSegment.Property("sample"),
+                        new JsonPathSegment.Property("favoriteColor")
+                    ),
+                    TargetResource: null
+                ),
+            ],
+            Constraints: []
+        );
+
+        var rootBinding = new DocumentReferenceBinding(
+            IsIdentityComponent: true,
+            ReferenceObjectPath: CreatePath(
+                "$.schoolReference",
+                new JsonPathSegment.Property("schoolReference")
+            ),
+            Table: rootTable.Table,
+            FkColumn: new DbColumnName("School_DocumentId"),
+            TargetResource: new QualifiedResourceName("Ed-Fi", "School"),
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    ReferenceJsonPath: CreatePath(
+                        "$.schoolReference.schoolId",
+                        new JsonPathSegment.Property("schoolReference"),
+                        new JsonPathSegment.Property("schoolId")
+                    ),
+                    Column: new DbColumnName("School_RefSchoolId")
+                ),
+            ]
+        );
+        var calendarBinding = new DocumentReferenceBinding(
+            IsIdentityComponent: false,
+            ReferenceObjectPath: CreatePath(
+                "$.addresses[*].calendarReference",
+                new JsonPathSegment.Property("addresses"),
+                new JsonPathSegment.AnyArrayElement(),
+                new JsonPathSegment.Property("calendarReference")
+            ),
+            Table: childTable.Table,
+            FkColumn: new DbColumnName("Calendar_DocumentId"),
+            TargetResource: new QualifiedResourceName("Ed-Fi", "Calendar"),
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    ReferenceJsonPath: CreatePath(
+                        "$.addresses[*].calendarReference.calendarCode",
+                        new JsonPathSegment.Property("addresses"),
+                        new JsonPathSegment.AnyArrayElement(),
+                        new JsonPathSegment.Property("calendarReference"),
+                        new JsonPathSegment.Property("calendarCode")
+                    ),
+                    Column: new DbColumnName("Calendar_RefCalendarCode")
+                ),
+            ]
+        );
+        var sessionBinding = new DocumentReferenceBinding(
+            IsIdentityComponent: false,
+            ReferenceObjectPath: CreatePath(
+                "$.addresses[*].sessionReference",
+                new JsonPathSegment.Property("addresses"),
+                new JsonPathSegment.AnyArrayElement(),
+                new JsonPathSegment.Property("sessionReference")
+            ),
+            Table: childTable.Table,
+            FkColumn: new DbColumnName("Session_DocumentId"),
+            TargetResource: new QualifiedResourceName("Ed-Fi", "Session"),
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    ReferenceJsonPath: CreatePath(
+                        "$.addresses[*].sessionReference.sessionName",
+                        new JsonPathSegment.Property("addresses"),
+                        new JsonPathSegment.AnyArrayElement(),
+                        new JsonPathSegment.Property("sessionReference"),
+                        new JsonPathSegment.Property("sessionName")
+                    ),
+                    Column: new DbColumnName("Session_RefSessionName")
+                ),
+            ]
+        );
+
+        var documentReferenceBindings = rootBindingFirst
+            ? new[] { rootBinding, calendarBinding, sessionBinding }
+            : new[] { calendarBinding, rootBinding, sessionBinding };
+
+        return new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "StudentReferenceGrouping"),
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTable,
+            TablesInDependencyOrder: [rootTable, childTable, extensionTable],
+            DocumentReferenceBindings: documentReferenceBindings,
+            DescriptorEdgeSources: []
+        );
+    }
+
+    private static RelationalResourceModel CreateKeyUnifiedReferenceProjectionResourceModel()
+    {
+        var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
+        var model = CreateRootOnlyModelWithReferenceGroupDocumentFkPresence(false);
+
+        return model with
+        {
+            DocumentReferenceBindings =
+            [
+                new DocumentReferenceBinding(
+                    IsIdentityComponent: true,
+                    ReferenceObjectPath: CreatePath(
+                        "$.schoolReference",
+                        new JsonPathSegment.Property("schoolReference")
+                    ),
+                    Table: model.Root.Table,
+                    FkColumn: new DbColumnName("School_DocumentId"),
+                    TargetResource: schoolResource,
+                    IdentityBindings:
+                    [
+                        new ReferenceIdentityBinding(
+                            ReferenceJsonPath: CreatePath(
+                                "$.schoolReference.localSchoolYear",
+                                new JsonPathSegment.Property("schoolReference"),
+                                new JsonPathSegment.Property("localSchoolYear")
+                            ),
+                            Column: new DbColumnName("SchoolYearSecondary")
+                        ),
+                        new ReferenceIdentityBinding(
+                            ReferenceJsonPath: CreatePath(
+                                "$.schoolReference.schoolYear",
+                                new JsonPathSegment.Property("schoolReference"),
+                                new JsonPathSegment.Property("schoolYear")
+                            ),
+                            Column: new DbColumnName("SchoolYearPrimary")
+                        ),
+                    ]
                 ),
             ],
         };
