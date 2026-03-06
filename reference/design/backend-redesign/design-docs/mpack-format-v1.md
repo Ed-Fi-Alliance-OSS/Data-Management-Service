@@ -10,7 +10,7 @@ This document defines the on-disk bytes for a **Mapping Pack** (“`.mpack`”) 
 - Effective schema fingerprinting: `reference/design/backend-redesign/design-docs/data-model.md` (`EffectiveSchemaHash`)
 - DDL generator workflow and `dms.ResourceKey` seeding: `reference/design/backend-redesign/design-docs/ddl-generation.md`
 
-Authorization is intentionally out of scope.
+Authorization is addressed in [auth-redesign.md](auth-redesign.md). Mapping packs focus on schema-derived relational mapping artifacts and do not embed token-dependent authorization SQL (which depends on caller context and configured strategy sets). The runtime applies authorization using `auth.*` companion objects and token-derived context alongside the plans/materialization described by this format.
 
 ---
 

@@ -30,7 +30,9 @@ Draft. This is an initial design proposal for replacing the current three-table 
 - **ETag/LastModified are representation metadata (required)**: DMS must change API `_etag` and `_lastModifiedDate` when the returned representation changes due to identity cascades (descriptor rows are treated as immutable in this redesign).
   - This redesign stores representation metadata on `dms.Document` and updates it in-transaction. Indirect representation changes are realized as FK-cascade updates to canonical stored identity columns that back the local reference-identity bindings (which may be generated/persisted aliases under key unification), which then trigger normal stamping. See [update-tracking.md](update-tracking.md).
 - **Schema updates are validated, not applied**: DMS does not perform in-place schema changes. On first use of a given database connection string (after instance routing), DMS reads the database’s recorded effective schema fingerprint (the singleton `dms.EffectiveSchema` row + `dms.SchemaComponent` rows keyed by `EffectiveSchemaHash`), caches it per connection string, and selects a matching compiled mapping set. Requests fail fast if no matching mapping is available. In-process schema reload/hot-reload is out of scope for this design.
-- **Authorization is out of scope**: authorization storage and query filtering is intentionally deferred and not part of this redesign phase.
+- **Authentication & authorization**: request authentication (token validation) and authorization (data access decisions) are addressed in [auth-redesign.md](auth-redesign.md). This redesign assumes:
+  - requests are authenticated before any schema-dependent work (mapping selection, queries, writes), and
+  - authorization is applied in the backend at the SQL layer (page selection + CRUD checks) using `auth.*` companion objects and token-derived authorization context.
 - **No code generation**: No generated per-resource C# or “checked-in generated SQL per resource” is required to compile/run DMS.
 - **Polymorphic references use abstract identity tables and abstract union views**: For abstract reference targets (e.g., `EducationOrganization`), provision an `{AbstractResource}Identity` table (`DocumentId` + abstract identity fields + `Discriminator` (NOT NULL)) and reference it with composite FKs (including identity columns). PostgreSQL uses `ON UPDATE CASCADE`; SQL Server uses `ON UPDATE NO ACTION` and `DbTriggerKind.IdentityPropagationFallback` trigger fan-out for eligible propagation. Also provision `{AbstractResource}_View` union views for query/diagnostics; they are no longer required for reference identity projection. See [data-model.md](data-model.md).
 
@@ -94,6 +96,7 @@ This preserves the Core/Backend boundary and avoids leaking relational concerns 
 This redesign is split into focused docs in this directory:
 
 - Data model (tables, constraints, naming, SQL Server parity notes): [data-model.md](data-model.md)
+- Authentication & authorization (token-derived context, DB companion objects, query filtering/batching): [auth-redesign.md](auth-redesign.md)
 - Key unification (canonical columns + generated aliases; presence-gated when optional): [key-unification.md](key-unification.md)
 - Flattening & reconstitution (derived mapping, compiled plans, C# shapes): [flattening-reconstitution.md](flattening-reconstitution.md)
 - Unified mapping models (shared in-memory shape for DDL/runtime/packs): [compiled-mapping-set.md](compiled-mapping-set.md)

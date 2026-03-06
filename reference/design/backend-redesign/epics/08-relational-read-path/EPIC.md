@@ -20,7 +20,7 @@ per:
 - `reference/design/backend-redesign/design-docs/extensions.md` (read-time `_ext` overlay)
 - `reference/design/backend-redesign/design-docs/update-tracking.md` (stored stamps for `_etag/_lastModifiedDate/ChangeVersion`)
 
-Authorization filtering remains out of scope.
+Authorization filtering remains out of scope; however, the hydration and query execution structures built in this epic should accommodate future authorization checks being batched into the same DB roundtrips (for GET-by-id) and authorization filtering being embedded in page selection queries (for GET-many). See `reference/design/backend-redesign/design-docs/auth-redesign.md` §"Performance improvements over ODS" for the expected roundtrip layout per operation.
 
 ## Stories
 

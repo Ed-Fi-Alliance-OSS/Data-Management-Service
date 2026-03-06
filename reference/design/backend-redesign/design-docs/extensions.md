@@ -36,7 +36,9 @@ Defines how Ed-Fi-style extensions (`_ext`) are represented in the relational pr
 - extension fields under `_ext` inside common types, including within collections and nested collections
 - multiple extension projects (e.g., Sample + TPDM) simultaneously
 
-Authorization is intentionally out of scope for this redesign phase.
+Authorization is addressed separately in [auth-redesign.md](auth-redesign.md). Extension-specific notes:
+- Extension-defined resources (e.g., `tpdm.Candidate`) participate in authorization the same way as core resources; MetaEd already identifies them and emits `securableElements` in their ApiSchema.
+- Fields added to core resources via extensions do not become new `securableElements` and therefore cannot participate in authorization decisions (authorization remains based on the resource’s defined securable elements and configured strategies).
 
 ## Goals & Constraints
 
