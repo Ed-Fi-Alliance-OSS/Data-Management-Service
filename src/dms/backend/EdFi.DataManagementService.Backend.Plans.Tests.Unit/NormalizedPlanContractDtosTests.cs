@@ -265,6 +265,40 @@ public class Given_NormalizedPlanContractDtos
     }
 
     [Test]
+    public void It_should_emit_multi_table_read_plan_json_with_explicit_empty_projection_arrays()
+    {
+        var multiTableReadPlan = new ResourceReadPlanDto(
+            Resource: new QualifiedResourceNameDto("Ed-Fi", "Student"),
+            KeysetTable: new KeysetTableContractDto("page", "DocumentId"),
+            TablePlansInDependencyOrder:
+            [
+                new TableReadPlanDto(
+                    Table: new DbTableNameDto("edfi", "Student"),
+                    SelectByKeysetSql: "SELECT r.[DocumentId]\r\nFROM [edfi].[Student] r;"
+                ),
+                new TableReadPlanDto(
+                    Table: new DbTableNameDto("sample", "StudentExtension"),
+                    SelectByKeysetSql: "SELECT e.[DocumentId]\r\nFROM [sample].[StudentExtension] e;"
+                ),
+            ],
+            ReferenceIdentityProjectionPlansInDependencyOrder: [],
+            DescriptorProjectionPlansInOrder: []
+        );
+
+        var json = NormalizedPlanDtoJson.EmitCanonicalJson(multiTableReadPlan);
+
+        json.Should().Contain("\"reference_identity_projection_plans_in_dependency_order\": []");
+        json.Should().Contain("\"descriptor_projection_plans_in_order\": []");
+        json.Should().Contain("\"schema\": \"edfi\"");
+        json.Should().Contain("\"name\": \"Student\"");
+        json.Should().Contain("\"schema\": \"sample\"");
+        json.Should().Contain("\"name\": \"StudentExtension\"");
+        json.IndexOf("\"name\": \"Student\"", StringComparison.Ordinal)
+            .Should()
+            .BeLessThan(json.IndexOf("\"name\": \"StudentExtension\"", StringComparison.Ordinal));
+    }
+
+    [Test]
     public void It_should_change_query_hash_when_authoritative_parameter_order_changes()
     {
         var reorderedQueryPlan = _queryPlan with

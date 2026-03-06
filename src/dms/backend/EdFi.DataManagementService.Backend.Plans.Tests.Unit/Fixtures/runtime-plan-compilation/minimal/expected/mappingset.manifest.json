@@ -109,23 +109,33 @@
             ]
           },
           "read_plan": {
-            "select_by_keyset_sql_sha256": "456538fa4ceb51306fd6311920643a6f5d13764dab29e3fd25c649bda403fd27",
-            "select_list_columns_in_order": [
-              "DocumentId",
-              "EducationOrganizationCategoryDescriptor_Present",
-              "EducationOrganizationCategoryDescriptor_Unified",
-              "ProgramTypeDescriptor_Present",
-              "EducationOrganizationCategoryDescriptor",
-              "ProgramName",
-              "ProgramTypeDescriptor"
-            ],
-            "order_by_key_columns_in_order": [
-              "DocumentId"
-            ],
             "keyset_table": {
               "temp_table_name": "#page",
               "document_id_column_name": "DocumentId"
-            }
+            },
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "Program"
+                },
+                "select_by_keyset_sql_sha256": "456538fa4ceb51306fd6311920643a6f5d13764dab29e3fd25c649bda403fd27",
+                "select_list_columns_in_order": [
+                  "DocumentId",
+                  "EducationOrganizationCategoryDescriptor_Present",
+                  "EducationOrganizationCategoryDescriptor_Unified",
+                  "ProgramTypeDescriptor_Present",
+                  "EducationOrganizationCategoryDescriptor",
+                  "ProgramName",
+                  "ProgramTypeDescriptor"
+                ],
+                "order_by_key_columns_in_order": [
+                  "DocumentId"
+                ]
+              }
+            ],
+            "reference_identity_projection_plans_in_dependency_order": [],
+            "descriptor_projection_plans_in_order": []
           }
         },
         {
@@ -183,19 +193,29 @@
             ]
           },
           "read_plan": {
-            "select_by_keyset_sql_sha256": "d7a3421806ad3a17ebb6a5aad975b928f5a9defb4f9dd342dfbaf1eca35690af",
-            "select_list_columns_in_order": [
-              "DocumentId",
-              "NameOfInstitution",
-              "SchoolId"
-            ],
-            "order_by_key_columns_in_order": [
-              "DocumentId"
-            ],
             "keyset_table": {
               "temp_table_name": "#page",
               "document_id_column_name": "DocumentId"
-            }
+            },
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "School"
+                },
+                "select_by_keyset_sql_sha256": "d7a3421806ad3a17ebb6a5aad975b928f5a9defb4f9dd342dfbaf1eca35690af",
+                "select_list_columns_in_order": [
+                  "DocumentId",
+                  "NameOfInstitution",
+                  "SchoolId"
+                ],
+                "order_by_key_columns_in_order": [
+                  "DocumentId"
+                ]
+              }
+            ],
+            "reference_identity_projection_plans_in_dependency_order": [],
+            "descriptor_projection_plans_in_order": []
           }
         },
         {
@@ -285,7 +305,34 @@
               }
             ]
           },
-          "read_plan": null
+          "read_plan": {
+            "keyset_table": {
+              "temp_table_name": "#page",
+              "document_id_column_name": "DocumentId"
+            },
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "Student"
+                },
+                "select_by_keyset_sql_sha256": "f778589c66d2d4b0738878af20aaabd698b845178e51373a6b835f3f91db232c",
+                "select_list_columns_in_order": [
+                  "DocumentId",
+                  "School_DocumentId",
+                  "School_SchoolId",
+                  "AcademicSubjectDescriptor_DescriptorId",
+                  "FirstName",
+                  "StudentUniqueId"
+                ],
+                "order_by_key_columns_in_order": [
+                  "DocumentId"
+                ]
+              }
+            ],
+            "reference_identity_projection_plans_in_dependency_order": [],
+            "descriptor_projection_plans_in_order": []
+          }
         },
         {
           "resource": {
@@ -385,7 +432,47 @@
               }
             ]
           },
-          "read_plan": null
+          "read_plan": {
+            "keyset_table": {
+              "temp_table_name": "#page",
+              "document_id_column_name": "DocumentId"
+            },
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "StudentAddressCollection"
+                },
+                "select_by_keyset_sql_sha256": "955e9343b278ac033b96b17bb3023bb59b0c55d3c97e07783a83c23d587319b3",
+                "select_list_columns_in_order": [
+                  "DocumentId",
+                  "StudentUniqueId"
+                ],
+                "order_by_key_columns_in_order": [
+                  "DocumentId"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "StudentAddressCollectionAddress"
+                },
+                "select_by_keyset_sql_sha256": "65a3123ebc58dbd1a49c3693d94c9bec600629266a2d13b19127721ec9733e5c",
+                "select_list_columns_in_order": [
+                  "StudentAddressCollection_DocumentId",
+                  "Ordinal",
+                  "AddressType",
+                  "City"
+                ],
+                "order_by_key_columns_in_order": [
+                  "StudentAddressCollection_DocumentId",
+                  "Ordinal"
+                ]
+              }
+            ],
+            "reference_identity_projection_plans_in_dependency_order": [],
+            "descriptor_projection_plans_in_order": []
+          }
         }
       ]
     },
@@ -498,23 +585,33 @@
             ]
           },
           "read_plan": {
-            "select_by_keyset_sql_sha256": "b1328a8f36bed7b07828671bad6cb563e72b7cb9cac689ec869576d7028505e1",
-            "select_list_columns_in_order": [
-              "DocumentId",
-              "EducationOrganizationCategoryDescriptor_Present",
-              "EducationOrganizationCategoryDescriptor_Unified",
-              "ProgramTypeDescriptor_Present",
-              "EducationOrganizationCategoryDescriptor",
-              "ProgramName",
-              "ProgramTypeDescriptor"
-            ],
-            "order_by_key_columns_in_order": [
-              "DocumentId"
-            ],
             "keyset_table": {
               "temp_table_name": "page",
               "document_id_column_name": "DocumentId"
-            }
+            },
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "Program"
+                },
+                "select_by_keyset_sql_sha256": "b1328a8f36bed7b07828671bad6cb563e72b7cb9cac689ec869576d7028505e1",
+                "select_list_columns_in_order": [
+                  "DocumentId",
+                  "EducationOrganizationCategoryDescriptor_Present",
+                  "EducationOrganizationCategoryDescriptor_Unified",
+                  "ProgramTypeDescriptor_Present",
+                  "EducationOrganizationCategoryDescriptor",
+                  "ProgramName",
+                  "ProgramTypeDescriptor"
+                ],
+                "order_by_key_columns_in_order": [
+                  "DocumentId"
+                ]
+              }
+            ],
+            "reference_identity_projection_plans_in_dependency_order": [],
+            "descriptor_projection_plans_in_order": []
           }
         },
         {
@@ -572,19 +669,29 @@
             ]
           },
           "read_plan": {
-            "select_by_keyset_sql_sha256": "36223892da5c8525807c546734af1747dd20caf8a6491d358b6cdb5cc8a6b989",
-            "select_list_columns_in_order": [
-              "DocumentId",
-              "NameOfInstitution",
-              "SchoolId"
-            ],
-            "order_by_key_columns_in_order": [
-              "DocumentId"
-            ],
             "keyset_table": {
               "temp_table_name": "page",
               "document_id_column_name": "DocumentId"
-            }
+            },
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "School"
+                },
+                "select_by_keyset_sql_sha256": "36223892da5c8525807c546734af1747dd20caf8a6491d358b6cdb5cc8a6b989",
+                "select_list_columns_in_order": [
+                  "DocumentId",
+                  "NameOfInstitution",
+                  "SchoolId"
+                ],
+                "order_by_key_columns_in_order": [
+                  "DocumentId"
+                ]
+              }
+            ],
+            "reference_identity_projection_plans_in_dependency_order": [],
+            "descriptor_projection_plans_in_order": []
           }
         },
         {
@@ -674,7 +781,34 @@
               }
             ]
           },
-          "read_plan": null
+          "read_plan": {
+            "keyset_table": {
+              "temp_table_name": "page",
+              "document_id_column_name": "DocumentId"
+            },
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "Student"
+                },
+                "select_by_keyset_sql_sha256": "07d451d741b8560344dd52a89bef0826ea6849406222b7fe47a3006ac1185cc3",
+                "select_list_columns_in_order": [
+                  "DocumentId",
+                  "School_DocumentId",
+                  "School_SchoolId",
+                  "AcademicSubjectDescriptor_DescriptorId",
+                  "FirstName",
+                  "StudentUniqueId"
+                ],
+                "order_by_key_columns_in_order": [
+                  "DocumentId"
+                ]
+              }
+            ],
+            "reference_identity_projection_plans_in_dependency_order": [],
+            "descriptor_projection_plans_in_order": []
+          }
         },
         {
           "resource": {
@@ -774,7 +908,47 @@
               }
             ]
           },
-          "read_plan": null
+          "read_plan": {
+            "keyset_table": {
+              "temp_table_name": "page",
+              "document_id_column_name": "DocumentId"
+            },
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "StudentAddressCollection"
+                },
+                "select_by_keyset_sql_sha256": "4906ea98791e308825c5802a9765d6ee1559f828f781ba27fa57695ee3621577",
+                "select_list_columns_in_order": [
+                  "DocumentId",
+                  "StudentUniqueId"
+                ],
+                "order_by_key_columns_in_order": [
+                  "DocumentId"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "StudentAddressCollectionAddress"
+                },
+                "select_by_keyset_sql_sha256": "956c0b28dadcbedfabee68ffacd952c2dcf22cc7667966cb1a19a780b0273fad",
+                "select_list_columns_in_order": [
+                  "StudentAddressCollection_DocumentId",
+                  "Ordinal",
+                  "AddressType",
+                  "City"
+                ],
+                "order_by_key_columns_in_order": [
+                  "StudentAddressCollection_DocumentId",
+                  "Ordinal"
+                ]
+              }
+            ],
+            "reference_identity_projection_plans_in_dependency_order": [],
+            "descriptor_projection_plans_in_order": []
+          }
         }
       ]
     }

@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.RelationalModel.Schema;
 using FluentAssertions;
 using NUnit.Framework;
@@ -12,7 +13,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
 [TestFixture]
-public class Given_NormalizedPlanContractCodec
+public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
 {
     private RelationalResourceModel _model = null!;
     private ResourceWritePlan _writePlan = null!;
@@ -20,7 +21,7 @@ public class Given_NormalizedPlanContractCodec
     private PageDocumentIdSqlPlan _queryPlan = null!;
 
     [SetUp]
-    public void Setup()
+    public void SetUpSubject()
     {
         _model = CreateModel();
         _writePlan = CreateWritePlan(_model);
@@ -175,6 +176,40 @@ public class Given_NormalizedPlanContractCodec
         var decodedDescriptorPath = decodedDescriptorPlan.SourcesInOrder[0].DescriptorValuePath;
         decodedDescriptorPath.Canonical.Should().Be(sourceDescriptorPath.Canonical);
         decodedDescriptorPath.Should().NotBeSameAs(sourceDescriptorPath);
+    }
+
+    [Test]
+    public void It_should_roundtrip_multi_table_resource_read_plan_through_normalized_dto_without_collapsing_story_05_shape()
+    {
+        var multiTableModel = CreateSupportedMultiTableModel();
+        var multiTableReadPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(multiTableModel);
+        var encoded = NormalizedPlanContractCodec.Encode(multiTableReadPlan);
+        var decoded = NormalizedPlanContractCodec.Decode(encoded, multiTableModel);
+        var reEncoded = NormalizedPlanContractCodec.Encode(decoded);
+
+        NormalizedPlanDtoJson
+            .ComputeCanonicalSha256(reEncoded)
+            .Should()
+            .Be(NormalizedPlanDtoJson.ComputeCanonicalSha256(encoded));
+
+        encoded
+            .TablePlansInDependencyOrder.Select(static plan => $"{plan.Table.Schema}.{plan.Table.Name}")
+            .Should()
+            .Equal(
+                multiTableModel.TablesInDependencyOrder.Select(static table =>
+                    $"{table.Table.Schema.Value}.{table.Table.Name}"
+                )
+            );
+
+        decoded
+            .TablePlansInDependencyOrder.Select(static plan => plan.TableModel.Table)
+            .Should()
+            .Equal(multiTableModel.TablesInDependencyOrder.Select(static table => table.Table));
+
+        encoded.ReferenceIdentityProjectionPlansInDependencyOrder.Should().BeEmpty();
+        encoded.DescriptorProjectionPlansInOrder.Should().BeEmpty();
+        decoded.ReferenceIdentityProjectionPlansInDependencyOrder.Should().BeEmpty();
+        decoded.DescriptorProjectionPlansInOrder.Should().BeEmpty();
     }
 
     [Test]

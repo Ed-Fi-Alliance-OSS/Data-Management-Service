@@ -17,6 +17,7 @@ public class Given_MappingSetLookupExtensions
     private MappingSet _mappingSet = null!;
     private QualifiedResourceName _supportedResource;
     private QualifiedResourceName _descriptorResource;
+    private QualifiedResourceName _descriptorEdgeResource;
     private QualifiedResourceName _nonRootOnlyResource;
     private QualifiedResourceName _keyUnificationResource;
     private QualifiedResourceName _projectionMetadataResource;
@@ -29,6 +30,7 @@ public class Given_MappingSetLookupExtensions
         _mappingSet = fixture.MappingSet;
         _supportedResource = fixture.SupportedResource;
         _descriptorResource = fixture.DescriptorResource;
+        _descriptorEdgeResource = fixture.DescriptorEdgeResource;
         _nonRootOnlyResource = fixture.NonRootOnlyResource;
         _keyUnificationResource = fixture.KeyUnificationResource;
         _projectionMetadataResource = fixture.ProjectionMetadataResource;
@@ -75,7 +77,7 @@ public class Given_MappingSetLookupExtensions
             .Throw<NotSupportedException>()
             .WithMessage(
                 "Read plan for resource 'Ed-Fi.AcademicSubjectDescriptor' was intentionally omitted: "
-                    + "storage kind 'SharedDescriptorTable' does not use thin-slice relational-table hydration plans. "
+                    + "storage kind 'SharedDescriptorTable' uses the descriptor read path instead of compiled relational-table hydration plans. "
                     + "Next story: E08-S05 (05-descriptor-endpoints.md)."
             );
     }
@@ -93,24 +95,38 @@ public class Given_MappingSetLookupExtensions
     }
 
     [Test]
-    public void It_should_throw_actionable_non_root_only_message_for_omitted_read_plan()
+    public void It_should_treat_missing_non_root_only_relational_read_plan_as_internal_bug()
     {
         var act = () => _mappingSet.GetReadPlanOrThrow(_nonRootOnlyResource);
 
         act.Should()
-            .Throw<NotSupportedException>()
-            .WithMessage("*TablesInDependencyOrder.Count == 1*actual 2*E15-S05*");
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*Ed-Fi.StudentAddress*mapping set*RelationalTables*compiled relational-table read plan*internal compilation/selection bug*"
+            );
     }
 
     [Test]
-    public void It_should_throw_actionable_projection_metadata_message_for_omitted_read_plan()
+    public void It_should_throw_actionable_story_06_message_when_document_reference_projection_metadata_is_missing()
     {
         var act = () => _mappingSet.GetReadPlanOrThrow(_projectionMetadataResource);
 
         act.Should()
             .Throw<NotSupportedException>()
             .WithMessage(
-                "*requires reference-identity projection metadata*DocumentReferenceBindings count: 1*E15-S06*"
+                "*Ed-Fi.StudentProjection*mapping set*hydration SQL was compiled*DocumentReferenceBindings are present while ReferenceIdentityProjectionPlansInDependencyOrder is empty*Story 05 only compiles hydration SQL; story 06 must compile the remaining projection metadata*E15-S06 (06-projection-plan-compilers.md)*"
+            );
+    }
+
+    [Test]
+    public void It_should_throw_actionable_story_06_message_when_descriptor_projection_metadata_is_missing()
+    {
+        var act = () => _mappingSet.GetReadPlanOrThrow(_descriptorEdgeResource);
+
+        act.Should()
+            .Throw<NotSupportedException>()
+            .WithMessage(
+                "*Ed-Fi.StudentDescriptorEdge*mapping set*hydration SQL was compiled*DescriptorEdgeSources are present while DescriptorProjectionPlansInOrder is empty*Story 05 only compiles hydration SQL; story 06 must compile the remaining projection metadata*E15-S06 (06-projection-plan-compilers.md)*"
             );
     }
 
@@ -203,6 +219,7 @@ public class Given_MappingSetLookupExtensions
         var keyUnificationResource = new QualifiedResourceName("Ed-Fi", "Program");
         var supportedResource = new QualifiedResourceName("Ed-Fi", "Student");
         var projectionMetadataResource = new QualifiedResourceName("Ed-Fi", "StudentProjection");
+        var descriptorEdgeResource = new QualifiedResourceName("Ed-Fi", "StudentDescriptorEdge");
         var nonRootOnlyResource = new QualifiedResourceName("Ed-Fi", "StudentAddress");
 
         var descriptorModel = CreateDescriptorModel(descriptorResource);
@@ -212,6 +229,10 @@ public class Given_MappingSetLookupExtensions
             projectionMetadataResource,
             "StudentProjection"
         );
+        var descriptorEdgeModel = CreateRootOnlyModelWithDescriptorEdgeSources(
+            descriptorEdgeResource,
+            "StudentDescriptorEdge"
+        );
         var nonRootOnlyModel = CreateNonRootOnlyModel(nonRootOnlyResource, "StudentAddress");
 
         var resourceKeysInIdOrder = new ResourceKeyEntry[]
@@ -220,7 +241,8 @@ public class Given_MappingSetLookupExtensions
             new(101, keyUnificationResource, "5.2.0", false),
             new(102, supportedResource, "5.2.0", false),
             new(103, projectionMetadataResource, "5.2.0", false),
-            new(104, nonRootOnlyResource, "5.2.0", false),
+            new(104, descriptorEdgeResource, "5.2.0", false),
+            new(105, nonRootOnlyResource, "5.2.0", false),
         };
 
         var effectiveSchemaInfo = new EffectiveSchemaInfo(
@@ -280,6 +302,11 @@ public class Given_MappingSetLookupExtensions
                 new ConcreteResourceModel(
                     resourceKeysInIdOrder[4],
                     ResourceStorageKind.RelationalTables,
+                    descriptorEdgeModel
+                ),
+                new ConcreteResourceModel(
+                    resourceKeysInIdOrder[5],
+                    ResourceStorageKind.RelationalTables,
                     nonRootOnlyModel
                 ),
             ],
@@ -293,6 +320,8 @@ public class Given_MappingSetLookupExtensions
         var projectionMetadataWritePlan = CreateWritePlan(projectionMetadataModel);
         var supportedReadPlan = CreateReadPlan(supportedModel);
         var keyUnificationReadPlan = CreateReadPlan(keyUnificationModel);
+        var projectionMetadataReadPlan = CreateReadPlan(projectionMetadataModel);
+        var descriptorEdgeReadPlan = CreateReadPlan(descriptorEdgeModel);
 
         var resourceKeyIdByResource = resourceKeysInIdOrder.ToDictionary(
             static keyEntry => keyEntry.Resource,
@@ -320,12 +349,15 @@ public class Given_MappingSetLookupExtensions
                 {
                     [supportedResource] = supportedReadPlan,
                     [keyUnificationResource] = keyUnificationReadPlan,
+                    [projectionMetadataResource] = projectionMetadataReadPlan,
+                    [descriptorEdgeResource] = descriptorEdgeReadPlan,
                 },
                 ResourceKeyIdByResource: resourceKeyIdByResource,
                 ResourceKeyById: resourceKeyById
             ),
             SupportedResource: supportedResource,
             DescriptorResource: descriptorResource,
+            DescriptorEdgeResource: descriptorEdgeResource,
             NonRootOnlyResource: nonRootOnlyResource,
             KeyUnificationResource: keyUnificationResource,
             ProjectionMetadataResource: projectionMetadataResource
@@ -478,6 +510,29 @@ public class Given_MappingSetLookupExtensions
             DocumentReferenceBindings: [],
             DescriptorEdgeSources: []
         );
+    }
+
+    private static RelationalResourceModel CreateRootOnlyModelWithDescriptorEdgeSources(
+        QualifiedResourceName resource,
+        string tableName
+    )
+    {
+        var model = CreateRootOnlyModel(resource, tableName);
+        var descriptorEdgeSource = new DescriptorEdgeSource(
+            IsIdentityComponent: false,
+            DescriptorValuePath: new JsonPathExpression(
+                "$.academicSubjectDescriptor",
+                [new JsonPathSegment.Property("academicSubjectDescriptor")]
+            ),
+            Table: model.Root.Table,
+            FkColumn: new DbColumnName("SchoolYear"),
+            DescriptorResource: new QualifiedResourceName("Ed-Fi", "AcademicSubjectDescriptor")
+        );
+
+        return model with
+        {
+            DescriptorEdgeSources = [descriptorEdgeSource],
+        };
     }
 
     private static RelationalResourceModel CreateDescriptorModel(QualifiedResourceName resource)
@@ -685,6 +740,7 @@ public class Given_MappingSetLookupExtensions
         MappingSet MappingSet,
         QualifiedResourceName SupportedResource,
         QualifiedResourceName DescriptorResource,
+        QualifiedResourceName DescriptorEdgeResource,
         QualifiedResourceName NonRootOnlyResource,
         QualifiedResourceName KeyUnificationResource,
         QualifiedResourceName ProjectionMetadataResource

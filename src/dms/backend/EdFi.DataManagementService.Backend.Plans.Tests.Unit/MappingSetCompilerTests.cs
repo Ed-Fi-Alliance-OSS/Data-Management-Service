@@ -16,7 +16,7 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 public class Given_MappingSetCompiler
 {
     [Test]
-    public void It_should_compile_write_plans_for_all_relational_resources_while_read_plans_remain_thin_slice_gated()
+    public void It_should_compile_read_and_write_plans_for_all_relational_resources_and_omit_shared_descriptor_resources()
     {
         var fixture = CreateMixedResourceFixture(SqlDialect.Pgsql);
         var compiler = new MappingSetCompiler();
@@ -26,17 +26,32 @@ public class Given_MappingSetCompiler
 
         act.Should().NotThrow();
 
-        mappingSet.ReadPlansByResource.Should().ContainKey(fixture.SupportedResource);
-        mappingSet.ReadPlansByResource.Should().ContainKey(fixture.KeyUnificationResource);
-        mappingSet.ReadPlansByResource.Should().NotContainKey(fixture.ProjectionMetadataResource);
-        mappingSet.ReadPlansByResource.Should().NotContainKey(fixture.NonRootOnlyResource);
-        mappingSet.ReadPlansByResource.Should().NotContainKey(fixture.DescriptorResource);
+        var relationalResources = fixture
+            .RelationalResourceModels.Select(static model => model.Resource)
+            .ToArray();
+        var readPlanCompiler = new ReadPlanCompiler(fixture.ModelSet.Dialect);
 
-        mappingSet.WritePlansByResource.Should().ContainKey(fixture.SupportedResource);
-        mappingSet.WritePlansByResource.Should().ContainKey(fixture.ProjectionMetadataResource);
-        mappingSet.WritePlansByResource.Should().ContainKey(fixture.KeyUnificationResource);
-        mappingSet.WritePlansByResource.Should().ContainKey(fixture.NonRootOnlyResource);
+        mappingSet.ReadPlansByResource.Keys.Should().BeEquivalentTo(relationalResources);
+        mappingSet.WritePlansByResource.Keys.Should().BeEquivalentTo(relationalResources);
+        mappingSet.ReadPlansByResource.Should().NotContainKey(fixture.DescriptorResource);
         mappingSet.WritePlansByResource.Should().NotContainKey(fixture.DescriptorResource);
+
+        foreach (var resourceModel in fixture.RelationalResourceModels)
+        {
+            mappingSet
+                .ReadPlansByResource[resourceModel.Resource]
+                .Should()
+                .BeEquivalentTo(readPlanCompiler.Compile(resourceModel));
+        }
+
+        mappingSet
+            .ReadPlansByResource[fixture.NonRootOnlyResource]
+            .TablePlansInDependencyOrder.Should()
+            .HaveCount(2);
+        mappingSet
+            .ReadPlansByResource[fixture.ExtensionTableResource]
+            .TablePlansInDependencyOrder.Should()
+            .HaveCount(2);
     }
 
     [Test]
@@ -44,7 +59,15 @@ public class Given_MappingSetCompiler
     {
         var fixture = CreateMixedResourceFixture(SqlDialect.Pgsql);
         var concreteResources = fixture.ModelSet.ConcreteResourcesInNameOrder.ToArray();
-        concreteResources[2] = concreteResources[2] with
+        var supportedResourceIndex = Array.FindIndex(
+            concreteResources,
+            concreteResourceModel =>
+                concreteResourceModel.RelationalModel.Resource == fixture.SupportedResource
+        );
+
+        supportedResourceIndex.Should().NotBe(-1);
+
+        concreteResources[supportedResourceIndex] = concreteResources[supportedResourceIndex] with
         {
             StorageKind = ResourceStorageKind.SharedDescriptorTable,
         };
@@ -149,6 +172,8 @@ public class Given_MappingSetCompiler
         var supportedResource = new QualifiedResourceName("Ed-Fi", "Student");
         var projectionMetadataResource = new QualifiedResourceName("Ed-Fi", "StudentProjection");
         var nonRootOnlyResource = new QualifiedResourceName("Ed-Fi", "StudentAddress");
+        var extensionTableResource = new QualifiedResourceName("Ed-Fi", "StudentExtensionCarrier");
+        var descriptorEdgeResource = new QualifiedResourceName("Ed-Fi", "StudentDescriptorEdge");
         var abstractResource = new QualifiedResourceName("Ed-Fi", "EducationOrganization");
 
         var descriptorModel = CreateDescriptorModel(descriptorResource);
@@ -159,6 +184,23 @@ public class Given_MappingSetCompiler
             "StudentProjection"
         );
         var nonRootOnlyModel = CreateNonRootOnlyModel(nonRootOnlyResource, "StudentAddress");
+        var extensionTableModel = CreateModelWithExtensionTable(
+            extensionTableResource,
+            "StudentExtensionCarrier"
+        );
+        var descriptorEdgeModel = CreateRootOnlyModelWithDescriptorEdgeSources(
+            descriptorEdgeResource,
+            "StudentDescriptorEdge"
+        );
+        RelationalResourceModel[] relationalResourceModels =
+        [
+            keyUnificationModel,
+            supportedModel,
+            projectionMetadataModel,
+            nonRootOnlyModel,
+            extensionTableModel,
+            descriptorEdgeModel,
+        ];
 
         var resourceKeysInIdOrder = new ResourceKeyEntry[]
         {
@@ -167,7 +209,9 @@ public class Given_MappingSetCompiler
             new(102, supportedResource, "5.2.0", false),
             new(103, projectionMetadataResource, "5.2.0", false),
             new(104, nonRootOnlyResource, "5.2.0", false),
-            new(105, abstractResource, "5.2.0", true),
+            new(105, extensionTableResource, "5.2.0", false),
+            new(106, descriptorEdgeResource, "5.2.0", false),
+            new(107, abstractResource, "5.2.0", true),
         };
 
         var effectiveSchemaInfo = new EffectiveSchemaInfo(
@@ -229,6 +273,16 @@ public class Given_MappingSetCompiler
                     ResourceStorageKind.RelationalTables,
                     nonRootOnlyModel
                 ),
+                new ConcreteResourceModel(
+                    resourceKeysInIdOrder[5],
+                    ResourceStorageKind.RelationalTables,
+                    extensionTableModel
+                ),
+                new ConcreteResourceModel(
+                    resourceKeysInIdOrder[6],
+                    ResourceStorageKind.RelationalTables,
+                    descriptorEdgeModel
+                ),
             ],
             AbstractIdentityTablesInNameOrder: [],
             AbstractUnionViewsInNameOrder: [],
@@ -242,8 +296,11 @@ public class Given_MappingSetCompiler
             KeyUnificationResource: keyUnificationResource,
             ProjectionMetadataResource: projectionMetadataResource,
             NonRootOnlyResource: nonRootOnlyResource,
+            ExtensionTableResource: extensionTableResource,
+            DescriptorEdgeResource: descriptorEdgeResource,
             DescriptorResource: descriptorResource,
-            ResourceKeysInIdOrder: resourceKeysInIdOrder
+            ResourceKeysInIdOrder: resourceKeysInIdOrder,
+            RelationalResourceModels: relationalResourceModels
         );
     }
 
@@ -376,6 +433,29 @@ public class Given_MappingSetCompiler
         };
     }
 
+    private static RelationalResourceModel CreateRootOnlyModelWithDescriptorEdgeSources(
+        QualifiedResourceName resource,
+        string tableName
+    )
+    {
+        var model = CreateRootOnlyModel(resource, tableName);
+        var descriptorEdgeSource = new DescriptorEdgeSource(
+            IsIdentityComponent: false,
+            DescriptorValuePath: new JsonPathExpression(
+                "$.academicSubjectDescriptor",
+                [new JsonPathSegment.Property("academicSubjectDescriptor")]
+            ),
+            Table: model.Root.Table,
+            FkColumn: new DbColumnName("SchoolYear"),
+            DescriptorResource: new QualifiedResourceName("Ed-Fi", "AcademicSubjectDescriptor")
+        );
+
+        return model with
+        {
+            DescriptorEdgeSources = [descriptorEdgeSource],
+        };
+    }
+
     private static RelationalResourceModel CreateNonRootOnlyModel(
         QualifiedResourceName resource,
         string rootTableName
@@ -396,6 +476,31 @@ public class Given_MappingSetCompiler
             StorageKind: ResourceStorageKind.RelationalTables,
             Root: rootTable,
             TablesInDependencyOrder: [rootTable, childTable],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+    }
+
+    private static RelationalResourceModel CreateModelWithExtensionTable(
+        QualifiedResourceName resource,
+        string rootTableName
+    )
+    {
+        var rootTable = CreateRootTable(
+            schemaName: new DbSchemaName("edfi"),
+            rootTableName,
+            scalarColumnName: new DbColumnName("SchoolYear"),
+            scalarSourcePathPropertyName: "schoolYear",
+            scalarKind: ScalarKind.Int32
+        );
+        var extensionTable = CreateRootScopeExtensionTable($"{rootTableName}Extension");
+
+        return new RelationalResourceModel(
+            Resource: resource,
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTable,
+            TablesInDependencyOrder: [rootTable, extensionTable],
             DocumentReferenceBindings: [],
             DescriptorEdgeSources: []
         );
@@ -509,6 +614,48 @@ public class Given_MappingSetCompiler
         );
     }
 
+    private static DbTableModel CreateRootScopeExtensionTable(string tableName)
+    {
+        return new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("sample"), tableName),
+            JsonScope: new JsonPathExpression(
+                "$._ext.sample",
+                [new JsonPathSegment.Property("_ext"), new JsonPathSegment.Property("sample")]
+            ),
+            Key: new TableKey(
+                ConstraintName: $"PK_{tableName}",
+                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("FavoriteColor"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.String),
+                    IsNullable: true,
+                    SourceJsonPath: new JsonPathExpression(
+                        "$._ext.sample.favoriteColor",
+                        [
+                            new JsonPathSegment.Property("_ext"),
+                            new JsonPathSegment.Property("sample"),
+                            new JsonPathSegment.Property("favoriteColor"),
+                        ]
+                    ),
+                    TargetResource: null
+                ),
+            ],
+            Constraints: []
+        );
+    }
+
     private static byte[] CreateResourceKeySeedHash()
     {
         var resourceKeySeedHash = new byte[32];
@@ -527,7 +674,10 @@ public class Given_MappingSetCompiler
         QualifiedResourceName KeyUnificationResource,
         QualifiedResourceName ProjectionMetadataResource,
         QualifiedResourceName NonRootOnlyResource,
+        QualifiedResourceName ExtensionTableResource,
+        QualifiedResourceName DescriptorEdgeResource,
         QualifiedResourceName DescriptorResource,
-        IReadOnlyList<ResourceKeyEntry> ResourceKeysInIdOrder
+        IReadOnlyList<ResourceKeyEntry> ResourceKeysInIdOrder,
+        IReadOnlyList<RelationalResourceModel> RelationalResourceModels
     );
 }

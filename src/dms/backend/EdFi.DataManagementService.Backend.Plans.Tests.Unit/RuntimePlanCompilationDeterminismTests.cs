@@ -122,7 +122,7 @@ public class Given_RuntimePlanCompilation_Determinism
                 var writePlanIsNull = writePlanNode is null;
                 var readPlanIsNull = readPlanNode is null;
 
-                string? tablePlansInDependencyOrderJson = null;
+                string? writeTablePlansInDependencyOrderJson = null;
 
                 if (!writePlanIsNull)
                 {
@@ -132,22 +132,21 @@ public class Given_RuntimePlanCompilation_Determinism
                         "table_plans_in_dependency_order"
                     );
                     ValidateWritePlanTableInventory(tablePlans);
-                    tablePlansInDependencyOrderJson = tablePlans.ToJsonString(_compactJson);
+                    writeTablePlansInDependencyOrderJson = tablePlans.ToJsonString(_compactJson);
                 }
 
-                string? selectByKeysetSqlSha256 = null;
+                ReadPlanFingerprint? readPlanFingerprint = null;
 
                 if (!readPlanIsNull)
                 {
-                    var readPlan = RequireObject(readPlanNode, "read_plan");
-                    selectByKeysetSqlSha256 = RequireString(readPlan, "select_by_keyset_sql_sha256");
+                    readPlanFingerprint = ReadReadPlanFingerprint(readPlanNode);
                 }
 
                 resourceFingerprints[resourceIdentity] = new ResourcePlanFingerprint(
                     WritePlanIsNull: writePlanIsNull,
                     ReadPlanIsNull: readPlanIsNull,
-                    SelectByKeysetSqlSha256: selectByKeysetSqlSha256,
-                    TablePlansInDependencyOrderJson: tablePlansInDependencyOrderJson
+                    WriteTablePlansInDependencyOrderJson: writeTablePlansInDependencyOrderJson,
+                    ReadPlan: readPlanFingerprint
                 );
             }
 
@@ -256,6 +255,82 @@ public class Given_RuntimePlanCompilation_Determinism
         }
     }
 
+    private static ReadPlanFingerprint ReadReadPlanFingerprint(JsonNode? readPlanNode)
+    {
+        var readPlan = RequireObject(readPlanNode, "read_plan");
+        var keysetTable = RequireObject(readPlan["keyset_table"], "keyset_table");
+        _ = RequireString(keysetTable, "temp_table_name");
+        _ = RequireString(keysetTable, "document_id_column_name");
+
+        var tablePlans = RequireArray(
+            readPlan["table_plans_in_dependency_order"],
+            "table_plans_in_dependency_order"
+        );
+        ValidateReadPlanTableInventory(tablePlans);
+
+        var referenceIdentityProjectionPlans = RequireArray(
+            readPlan["reference_identity_projection_plans_in_dependency_order"],
+            "reference_identity_projection_plans_in_dependency_order"
+        );
+        ValidateProjectionPlanArray(
+            referenceIdentityProjectionPlans,
+            "reference_identity_projection_plans_in_dependency_order"
+        );
+
+        var descriptorProjectionPlans = RequireArray(
+            readPlan["descriptor_projection_plans_in_order"],
+            "descriptor_projection_plans_in_order"
+        );
+        ValidateProjectionPlanArray(descriptorProjectionPlans, "descriptor_projection_plans_in_order");
+
+        return new ReadPlanFingerprint(
+            KeysetTableJson: keysetTable.ToJsonString(_compactJson),
+            TablePlansInDependencyOrderJson: tablePlans.ToJsonString(_compactJson),
+            ReferenceIdentityProjectionPlansInDependencyOrderJson: referenceIdentityProjectionPlans.ToJsonString(
+                _compactJson
+            ),
+            DescriptorProjectionPlansInOrderJson: descriptorProjectionPlans.ToJsonString(_compactJson)
+        );
+    }
+
+    private static void ValidateReadPlanTableInventory(JsonArray tablePlans)
+    {
+        foreach (var tablePlanNode in tablePlans)
+        {
+            var tablePlan = RequireObject(tablePlanNode, "table_plans_in_dependency_order entry");
+            _ = RequireObject(tablePlan["table"], "table");
+            _ = RequireString(tablePlan, "select_by_keyset_sql_sha256");
+
+            var selectListColumns = RequireArray(
+                tablePlan["select_list_columns_in_order"],
+                "select_list_columns_in_order"
+            );
+
+            foreach (var columnNode in selectListColumns)
+            {
+                _ = RequireStringValue(columnNode, "select_list_columns_in_order entry");
+            }
+
+            var orderByKeyColumns = RequireArray(
+                tablePlan["order_by_key_columns_in_order"],
+                "order_by_key_columns_in_order"
+            );
+
+            foreach (var columnNode in orderByKeyColumns)
+            {
+                _ = RequireStringValue(columnNode, "order_by_key_columns_in_order entry");
+            }
+        }
+    }
+
+    private static void ValidateProjectionPlanArray(JsonArray projectionPlans, string propertyName)
+    {
+        foreach (var planNode in projectionPlans)
+        {
+            _ = RequireObject(planNode, $"{propertyName} entry");
+        }
+    }
+
     private static JsonArray RequireArray(JsonNode? node, string propertyName)
     {
         return node switch
@@ -283,6 +358,23 @@ public class Given_RuntimePlanCompilation_Determinism
     private static string RequireString(JsonObject node, string propertyName)
     {
         var value = node[propertyName] switch
+        {
+            JsonValue jsonValue => jsonValue.GetValue<string>(),
+            null => throw new InvalidOperationException($"Manifest property '{propertyName}' is required."),
+            _ => throw new InvalidOperationException($"Manifest property '{propertyName}' must be a string."),
+        };
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidOperationException($"Manifest property '{propertyName}' must be non-empty.");
+        }
+
+        return value;
+    }
+
+    private static string RequireStringValue(JsonNode? node, string propertyName)
+    {
+        var value = node switch
         {
             JsonValue jsonValue => jsonValue.GetValue<string>(),
             null => throw new InvalidOperationException($"Manifest property '{propertyName}' is required."),
@@ -348,7 +440,14 @@ public class Given_RuntimePlanCompilation_Determinism
     private sealed record ResourcePlanFingerprint(
         bool WritePlanIsNull,
         bool ReadPlanIsNull,
-        string? SelectByKeysetSqlSha256,
-        string? TablePlansInDependencyOrderJson
+        string? WriteTablePlansInDependencyOrderJson,
+        ReadPlanFingerprint? ReadPlan
+    );
+
+    private sealed record ReadPlanFingerprint(
+        string KeysetTableJson,
+        string TablePlansInDependencyOrderJson,
+        string ReferenceIdentityProjectionPlansInDependencyOrderJson,
+        string DescriptorProjectionPlansInOrderJson
     );
 }

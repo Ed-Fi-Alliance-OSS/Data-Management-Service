@@ -290,7 +290,113 @@
               }
             ]
           },
-          "read_plan": null
+          "read_plan": {
+            "keyset_table": {
+              "temp_table_name": "#page",
+              "document_id_column_name": "DocumentId"
+            },
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "School"
+                },
+                "select_by_keyset_sql_sha256": "d7a3421806ad3a17ebb6a5aad975b928f5a9defb4f9dd342dfbaf1eca35690af",
+                "select_list_columns_in_order": [
+                  "DocumentId",
+                  "NameOfInstitution",
+                  "SchoolId"
+                ],
+                "order_by_key_columns_in_order": [
+                  "DocumentId"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtension"
+                },
+                "select_by_keyset_sql_sha256": "2f050e2892d49fc3695519951ec8bd5d632029a09f09e8c7f5c37d4158ac8dd2",
+                "select_list_columns_in_order": [
+                  "DocumentId",
+                  "CampusCode"
+                ],
+                "order_by_key_columns_in_order": [
+                  "DocumentId"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtensionAddress"
+                },
+                "select_by_keyset_sql_sha256": "cfa6bc718cdae2fc3cd9d6863e5ad3427d234202a7affb4d2a1e3b15967fa3db",
+                "select_list_columns_in_order": [
+                  "School_DocumentId",
+                  "Ordinal",
+                  "Zone"
+                ],
+                "order_by_key_columns_in_order": [
+                  "School_DocumentId",
+                  "Ordinal"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "SchoolAddress"
+                },
+                "select_by_keyset_sql_sha256": "f7a36ed15aca8a7eefa53508eb872a21663a0b21674e4bf78162407dd648fdca",
+                "select_list_columns_in_order": [
+                  "School_DocumentId",
+                  "Ordinal",
+                  "City"
+                ],
+                "order_by_key_columns_in_order": [
+                  "School_DocumentId",
+                  "Ordinal"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtensionAddressPeriod"
+                },
+                "select_by_keyset_sql_sha256": "aa803f67cedfbfecc574944672a6fc6e60adbf2e22c568f641a6384f28dd938b",
+                "select_list_columns_in_order": [
+                  "School_DocumentId",
+                  "AddressOrdinal",
+                  "Ordinal",
+                  "Track"
+                ],
+                "order_by_key_columns_in_order": [
+                  "School_DocumentId",
+                  "AddressOrdinal",
+                  "Ordinal"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "SchoolAddressPeriod"
+                },
+                "select_by_keyset_sql_sha256": "a4fde100f439ad420d306b74000c497a087d3d54da14a25b379d0430f0304296",
+                "select_list_columns_in_order": [
+                  "School_DocumentId",
+                  "AddressOrdinal",
+                  "Ordinal",
+                  "PeriodName"
+                ],
+                "order_by_key_columns_in_order": [
+                  "School_DocumentId",
+                  "AddressOrdinal",
+                  "Ordinal"
+                ]
+              }
+            ],
+            "reference_identity_projection_plans_in_dependency_order": [],
+            "descriptor_projection_plans_in_order": []
+          }
         }
       ]
     },
@@ -584,7 +690,113 @@
               }
             ]
           },
-          "read_plan": null
+          "read_plan": {
+            "keyset_table": {
+              "temp_table_name": "page",
+              "document_id_column_name": "DocumentId"
+            },
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "School"
+                },
+                "select_by_keyset_sql_sha256": "36223892da5c8525807c546734af1747dd20caf8a6491d358b6cdb5cc8a6b989",
+                "select_list_columns_in_order": [
+                  "DocumentId",
+                  "NameOfInstitution",
+                  "SchoolId"
+                ],
+                "order_by_key_columns_in_order": [
+                  "DocumentId"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtension"
+                },
+                "select_by_keyset_sql_sha256": "052bc8ea6ce4a1bc660f28b46728dab281da03b5876e1fa738fad180eca973aa",
+                "select_list_columns_in_order": [
+                  "DocumentId",
+                  "CampusCode"
+                ],
+                "order_by_key_columns_in_order": [
+                  "DocumentId"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtensionAddress"
+                },
+                "select_by_keyset_sql_sha256": "fea1faedb5af4e085aeb910f2295fba097fee791d17d5d9c201e1721ecd2c1c5",
+                "select_list_columns_in_order": [
+                  "School_DocumentId",
+                  "Ordinal",
+                  "Zone"
+                ],
+                "order_by_key_columns_in_order": [
+                  "School_DocumentId",
+                  "Ordinal"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "SchoolAddress"
+                },
+                "select_by_keyset_sql_sha256": "314746d66eb4c0d9e0b77ee72503ebdb3db36d821623755414b036bd43aa3dc6",
+                "select_list_columns_in_order": [
+                  "School_DocumentId",
+                  "Ordinal",
+                  "City"
+                ],
+                "order_by_key_columns_in_order": [
+                  "School_DocumentId",
+                  "Ordinal"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtensionAddressPeriod"
+                },
+                "select_by_keyset_sql_sha256": "c7e895bde1eb04ca7c2b1f641beee69e9fac4ce013dae8a879175f754eee03f0",
+                "select_list_columns_in_order": [
+                  "School_DocumentId",
+                  "AddressOrdinal",
+                  "Ordinal",
+                  "Track"
+                ],
+                "order_by_key_columns_in_order": [
+                  "School_DocumentId",
+                  "AddressOrdinal",
+                  "Ordinal"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "SchoolAddressPeriod"
+                },
+                "select_by_keyset_sql_sha256": "b4b48a5a683592522c3b67087a0d01afffef6fdda0f4568a15b01735b683ee17",
+                "select_list_columns_in_order": [
+                  "School_DocumentId",
+                  "AddressOrdinal",
+                  "Ordinal",
+                  "PeriodName"
+                ],
+                "order_by_key_columns_in_order": [
+                  "School_DocumentId",
+                  "AddressOrdinal",
+                  "Ordinal"
+                ]
+              }
+            ],
+            "reference_identity_projection_plans_in_dependency_order": [],
+            "descriptor_projection_plans_in_order": []
+          }
         }
       ]
     }

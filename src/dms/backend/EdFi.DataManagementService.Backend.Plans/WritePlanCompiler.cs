@@ -20,8 +20,22 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     private readonly SimpleUpdateSqlEmitter _updateSqlEmitter = new(dialect);
     private readonly SimpleDeleteSqlEmitter _deleteSqlEmitter = new(dialect);
 
+    /// <summary>
+    /// Composite lookup key for matching a write source inventory entry to a specific table FK column.
+    /// </summary>
+    /// <param name="Table">The owning table.</param>
+    /// <param name="Column">The physical FK column on that table.</param>
     private readonly record struct WriteSourceLookupKey(DbTableName Table, DbColumnName Column);
 
+    /// <summary>
+    /// Table/FK keyed lookup maps used to resolve document-reference and descriptor sources during binding compilation.
+    /// </summary>
+    /// <param name="DocumentReferenceBindingIndexByKey">
+    /// Maps a document FK column to the corresponding document-reference binding inventory index.
+    /// </param>
+    /// <param name="DescriptorEdgeSourceByKey">
+    /// Maps a descriptor FK column to the corresponding descriptor edge source metadata.
+    /// </param>
     private sealed record WriteSourceLookup(
         IReadOnlyDictionary<WriteSourceLookupKey, int> DocumentReferenceBindingIndexByKey,
         IReadOnlyDictionary<WriteSourceLookupKey, DescriptorEdgeSource> DescriptorEdgeSourceByKey
@@ -35,7 +49,10 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     {
         ArgumentNullException.ThrowIfNull(resourceModel);
         ValidateCompileEligibility(resourceModel);
-        var rootScopeTableModel = ResolveRootScopeTableModelOrThrow(resourceModel);
+        var rootScopeTableModel = RelationalResourceModelCompileValidator.ResolveRootScopeTableModelOrThrow(
+            resourceModel,
+            "write plan"
+        );
         var writeSourceLookup = BuildWriteSourceLookup(resourceModel);
 
         var tablePlans = resourceModel
@@ -60,52 +77,11 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
                     + $"StorageKind: {resourceModel.StorageKind}."
             );
         }
-
-        if (resourceModel.TablesInDependencyOrder.Count == 0)
-        {
-            throw new InvalidOperationException(
-                $"Cannot compile write plan for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}': no tables were found in dependency order."
-            );
-        }
     }
 
-    private static DbTableModel ResolveRootScopeTableModelOrThrow(RelationalResourceModel resourceModel)
-    {
-        if (!IsRootJsonScope(resourceModel.Root.JsonScope))
-        {
-            throw new InvalidOperationException(
-                $"Cannot compile write plan for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}': resourceModel.Root must have JsonScope '$', but was '{resourceModel.Root.JsonScope.Canonical}'."
-            );
-        }
-
-        var rootScopeTables = resourceModel
-            .TablesInDependencyOrder.Where(static tableModel => IsRootJsonScope(tableModel.JsonScope))
-            .ToArray();
-
-        if (rootScopeTables.Length != 1)
-        {
-            throw new InvalidOperationException(
-                $"Cannot compile write plan for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}': expected exactly one root-scope table (JsonScope '$') in TablesInDependencyOrder, but found {rootScopeTables.Length}."
-            );
-        }
-
-        var rootScopeTable = rootScopeTables[0];
-
-        if (!rootScopeTable.Table.Equals(resourceModel.Root.Table))
-        {
-            throw new InvalidOperationException(
-                $"Cannot compile write plan for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}': root-scope table '{rootScopeTable.Table}' does not match resourceModel.Root table '{resourceModel.Root.Table}'."
-            );
-        }
-
-        return rootScopeTable;
-    }
-
-    private static bool IsRootJsonScope(JsonPathExpression jsonScope)
-    {
-        return jsonScope.Canonical == "$" && jsonScope.Segments.Count == 0;
-    }
-
+    /// <summary>
+    /// Builds table/FK keyed source lookups from the resource's reference and descriptor inventories.
+    /// </summary>
     private static WriteSourceLookup BuildWriteSourceLookup(RelationalResourceModel resourceModel)
     {
         ValidateUniqueWriteSourceInventoryKeysOrThrow(resourceModel);
@@ -124,6 +100,9 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         );
     }
 
+    /// <summary>
+    /// Projects a source inventory into an immutable table/FK keyed lookup and rejects duplicate physical keys.
+    /// </summary>
     private static FrozenDictionary<WriteSourceLookupKey, TValue> BuildWriteSourceLookupMap<TSource, TValue>(
         IReadOnlyList<TSource> sourceInventory,
         Func<TSource, WriteSourceLookupKey> keySelector,
@@ -149,6 +128,9 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         return lookupByKey.ToFrozenDictionary();
     }
 
+    /// <summary>
+    /// Validates that document-reference and descriptor inventories are uniquely keyed by owning table and FK column.
+    /// </summary>
     private static void ValidateUniqueWriteSourceInventoryKeysOrThrow(RelationalResourceModel resourceModel)
     {
         ValidateUniqueWriteSourceInventoryKeysOrThrow(
@@ -165,6 +147,9 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         );
     }
 
+    /// <summary>
+    /// Validates that one write-source inventory contains at most one entry per owning table and FK column.
+    /// </summary>
     private static void ValidateUniqueWriteSourceInventoryKeysOrThrow<TSource>(
         RelationalResourceModel resourceModel,
         IReadOnlyList<TSource> sourceInventory,
@@ -243,6 +228,9 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         );
     }
 
+    /// <summary>
+    /// Builds the per-table binding and lookup context consumed by SQL emission and key-unification compilation.
+    /// </summary>
     private static WritePlanTableCompilationContext CreateTableCompilationContext(
         DbTableModel tableModel,
         WriteSourceLookup writeSourceLookup
@@ -334,6 +322,9 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         return columnBindings;
     }
 
+    /// <summary>
+    /// Determines which canonical and synthetic presence columns must be emitted as precomputed bindings.
+    /// </summary>
     private static IReadOnlySet<DbColumnName> DeriveRequiredKeyUnificationPrecomputedColumns(
         DbTableModel tableModel,
         IReadOnlyDictionary<DbColumnName, DbColumnModel> columnByName
@@ -378,35 +369,23 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         IReadOnlyDictionary<DbColumnName, DbColumnModel> columnByName
     )
     {
-        if (tableModel.Key.Columns.Count == 0)
-        {
-            throw new InvalidOperationException(
-                $"Cannot compile write plan for '{tableModel.Table}': table key contains no columns."
-            );
-        }
-
-        var documentIdParentKeyPartCount = 0;
-        var ordinalKeyColumnCount = 0;
-
-        foreach (var keyColumn in tableModel.Key.Columns)
-        {
-            if (keyColumn.Kind is not ColumnKind.ParentKeyPart and not ColumnKind.Ordinal)
+        RelationalResourceModelCompileValidator.ValidateDeterministicTableKeyShapeOrThrow(
+            tableModel,
+            "write plan",
+            keyColumn =>
             {
-                throw new InvalidOperationException(
-                    $"Cannot compile write plan for '{tableModel.Table}': key column '{keyColumn.ColumnName.Value}' has unsupported kind '{keyColumn.Kind}'. "
-                        + $"Supported key kinds are {nameof(ColumnKind.ParentKeyPart)} and {nameof(ColumnKind.Ordinal)}."
-                );
-            }
+                if (!columnByName.TryGetValue(keyColumn.ColumnName, out var matchingColumn))
+                {
+                    throw new InvalidOperationException(
+                        $"Cannot compile write plan for '{tableModel.Table}': key column '{keyColumn.ColumnName.Value}' does not exist in table columns."
+                    );
+                }
 
-            if (!columnByName.TryGetValue(keyColumn.ColumnName, out var matchingColumn))
-            {
-                throw new InvalidOperationException(
-                    $"Cannot compile write plan for '{tableModel.Table}': key column '{keyColumn.ColumnName.Value}' does not exist in table columns."
-                );
-            }
+                if (matchingColumn.Storage is not ColumnStorage.UnifiedAlias unifiedAlias)
+                {
+                    return;
+                }
 
-            if (matchingColumn.Storage is ColumnStorage.UnifiedAlias unifiedAlias)
-            {
                 var presenceColumnDescription = unifiedAlias.PresenceColumn switch
                 {
                     null => "<none>",
@@ -418,83 +397,7 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
                         + $"(canonical '{unifiedAlias.CanonicalColumn.Value}', presence '{presenceColumnDescription}') and is not writable."
                 );
             }
-
-            if (
-                keyColumn.Kind is ColumnKind.ParentKeyPart
-                && RelationalNameConventions.IsDocumentIdColumn(keyColumn.ColumnName)
-            )
-            {
-                documentIdParentKeyPartCount++;
-            }
-
-            if (keyColumn.Kind is ColumnKind.Ordinal)
-            {
-                ordinalKeyColumnCount++;
-            }
-        }
-
-        if (documentIdParentKeyPartCount != 1)
-        {
-            var keyColumnSummary = string.Join(
-                ", ",
-                tableModel.Key.Columns.Select(static keyColumn =>
-                    $"{keyColumn.ColumnName.Value}:{keyColumn.Kind}"
-                )
-            );
-
-            throw new InvalidOperationException(
-                $"Cannot compile write plan for '{tableModel.Table}': expected exactly one ParentKeyPart document-id key column "
-                    + $"('{RelationalNameConventions.DocumentIdColumnName.Value}' or '*_{RelationalNameConventions.DocumentIdColumnName.Value}'), "
-                    + $"but found {documentIdParentKeyPartCount}. Key columns: [{keyColumnSummary}]."
-            );
-        }
-
-        var firstKeyColumn = tableModel.Key.Columns[0];
-
-        if (
-            firstKeyColumn.Kind is not ColumnKind.ParentKeyPart
-            || !RelationalNameConventions.IsDocumentIdColumn(firstKeyColumn.ColumnName)
-        )
-        {
-            var keyColumnSummary = string.Join(
-                ", ",
-                tableModel.Key.Columns.Select(static keyColumn =>
-                    $"{keyColumn.ColumnName.Value}:{keyColumn.Kind}"
-                )
-            );
-
-            throw new InvalidOperationException(
-                $"Cannot compile write plan for '{tableModel.Table}': expected document-id ParentKeyPart key column ('{RelationalNameConventions.DocumentIdColumnName.Value}' or '*_{RelationalNameConventions.DocumentIdColumnName.Value}') to be first in key order, but found '{firstKeyColumn.ColumnName.Value}:{firstKeyColumn.Kind}'. Key columns: [{keyColumnSummary}]."
-            );
-        }
-
-        if (ordinalKeyColumnCount > 1)
-        {
-            var keyColumnSummary = string.Join(
-                ", ",
-                tableModel.Key.Columns.Select(static keyColumn =>
-                    $"{keyColumn.ColumnName.Value}:{keyColumn.Kind}"
-                )
-            );
-
-            throw new InvalidOperationException(
-                $"Cannot compile write plan for '{tableModel.Table}': expected at most one Ordinal key column, but found {ordinalKeyColumnCount}. Key columns: [{keyColumnSummary}]."
-            );
-        }
-
-        if (ordinalKeyColumnCount == 1 && tableModel.Key.Columns[^1].Kind is not ColumnKind.Ordinal)
-        {
-            var keyColumnSummary = string.Join(
-                ", ",
-                tableModel.Key.Columns.Select(static keyColumn =>
-                    $"{keyColumn.ColumnName.Value}:{keyColumn.Kind}"
-                )
-            );
-
-            throw new InvalidOperationException(
-                $"Cannot compile write plan for '{tableModel.Table}': expected Ordinal key column to be last in key order. Key columns: [{keyColumnSummary}]."
-            );
-        }
+        );
     }
 
     /// <summary>
@@ -550,7 +453,7 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     {
         var tableModel = tableCompilationContext.TableModel;
 
-        if (tableModel.Table.Equals(rootScopeTableModel.Table) && IsRootJsonScope(tableModel.JsonScope))
+        if (tableModel.Equals(rootScopeTableModel))
         {
             return null;
         }
@@ -577,6 +480,9 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         return _deleteSqlEmitter.Emit(tableModel.Table, keyColumnsInOrder, keyParameterNamesInOrder);
     }
 
+    /// <summary>
+    /// Builds a physical column to parameter-name lookup from compiled column bindings.
+    /// </summary>
     private static FrozenDictionary<DbColumnName, string> BuildParameterNameByColumnMapOrThrow(
         DbTableModel tableModel,
         IReadOnlyList<WriteColumnBinding> bindingsInColumnOrder
@@ -591,6 +497,9 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         );
     }
 
+    /// <summary>
+    /// Builds a physical column-name lookup for the table model and rejects duplicate names.
+    /// </summary>
     private static FrozenDictionary<DbColumnName, DbColumnModel> BuildColumnByNameMapOrThrow(
         DbTableModel tableModel
     )
@@ -604,6 +513,9 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         );
     }
 
+    /// <summary>
+    /// Builds a physical column to binding-index lookup aligned to compiled binding order.
+    /// </summary>
     private static FrozenDictionary<DbColumnName, int> BuildBindingIndexByColumnMapOrThrow(
         DbTableModel tableModel,
         IReadOnlyList<WriteColumnBinding> bindingsInColumnOrder
@@ -618,6 +530,9 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         );
     }
 
+    /// <summary>
+    /// Builds a frozen table-scoped lookup keyed by physical column name.
+    /// </summary>
     private static FrozenDictionary<DbColumnName, TValue> BuildColumnKeyedMapOrThrow<TSource, TValue>(
         DbTableModel tableModel,
         IReadOnlyList<TSource> sourceItems,
@@ -642,6 +557,9 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         return mapByColumn.ToFrozenDictionary();
     }
 
+    /// <summary>
+    /// Creates a consistent duplicate-column diagnostic for table-scoped compiler maps.
+    /// </summary>
     private static InvalidOperationException CreateDuplicateColumnNameException(
         DbTableModel tableModel,
         DbColumnName duplicateColumnName,
@@ -653,6 +571,9 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         );
     }
 
+    /// <summary>
+    /// Resolves the bound parameter names for required key columns in authoritative key order.
+    /// </summary>
     private static string[] DeriveRequiredKeyParameterNamesInOrder(
         DbTableModel tableModel,
         IReadOnlyList<DbColumnName> keyColumnsInOrder,
@@ -812,6 +733,9 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         );
     }
 
+    /// <summary>
+    /// Resolves a lookup entry or throws the caller's deterministic missing-entry exception.
+    /// </summary>
     private static TValue GetLookupMatchOrThrow<TValue>(
         IReadOnlyDictionary<WriteSourceLookupKey, TValue> lookupByKey,
         WriteSourceLookupKey lookupKey,

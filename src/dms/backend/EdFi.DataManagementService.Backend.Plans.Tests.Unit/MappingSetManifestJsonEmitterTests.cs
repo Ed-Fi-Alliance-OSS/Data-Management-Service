@@ -16,12 +16,14 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 public class Given_MappingSetManifestJsonEmitter
 {
     private const string FixturePath = "Fixtures/runtime-plan-compilation/ApiSchema.json";
+    private const string CollectionsNestedExtensionFixturePath =
+        "Fixtures/runtime-plan-compilation/collections-nested-extension/fixture.manifest.json";
     private string _manifest = null!;
 
     [SetUp]
     public void Setup()
     {
-        var mappingSets = BuildPermutedMappingSets(reverseMappingSetOrder: true);
+        var mappingSets = BuildPermutedMappingSets(FixturePath, reverseMappingSetOrder: true);
         _manifest = MappingSetManifestJsonEmitter.Emit(mappingSets);
     }
 
@@ -40,8 +42,8 @@ public class Given_MappingSetManifestJsonEmitter
     [Test]
     public void It_should_emit_deterministically_when_mapping_set_and_dictionary_inputs_are_permuted()
     {
-        var forwardInput = BuildPermutedMappingSets(reverseMappingSetOrder: false);
-        var reverseInput = BuildPermutedMappingSets(reverseMappingSetOrder: true);
+        var forwardInput = BuildPermutedMappingSets(FixturePath, reverseMappingSetOrder: false);
+        var reverseInput = BuildPermutedMappingSets(FixturePath, reverseMappingSetOrder: true);
 
         var manifestFromForwardInput = MappingSetManifestJsonEmitter.Emit(forwardInput);
         var manifestFromReverseInput = MappingSetManifestJsonEmitter.Emit(reverseInput);
@@ -101,24 +103,177 @@ public class Given_MappingSetManifestJsonEmitter
             planPresenceByDialect[dialect]
                 ["Ed-Fi.Student"]
                 .Should()
-                .Be(new PlanPresence(WritePlanIsNull: false, ReadPlanIsNull: true));
+                .Be(new PlanPresence(WritePlanIsNull: false, ReadPlanIsNull: false));
             planPresenceByDialect[dialect]
                 ["Ed-Fi.StudentAddressCollection"]
                 .Should()
-                .Be(new PlanPresence(WritePlanIsNull: false, ReadPlanIsNull: true));
+                .Be(new PlanPresence(WritePlanIsNull: false, ReadPlanIsNull: false));
         }
     }
 
     [Test]
-    public void It_should_emit_order_by_key_columns_in_compiled_sql_order_for_non_document_id_first_keys()
+    public void It_should_emit_single_table_read_plan_as_a_compiled_diagnostic_summary_with_story_05_placeholders()
     {
-        var mappingSets = BuildMappingSetsWithNonDocumentIdFirstStudentReadModel();
-        var manifest = MappingSetManifestJsonEmitter.Emit(mappingSets);
-        var orderByColumnsByDialect = ReadStudentOrderByColumnsByDialect(manifest);
+        var programResource = new QualifiedResourceName("Ed-Fi", "Program");
+        var compiledMappingSets = BuildPermutedMappingSets(FixturePath, reverseMappingSetOrder: false);
+        var summariesByDialect = ReadManifestReadPlanDiagnosticSummariesByDialect(
+            _manifest,
+            "Ed-Fi",
+            "Program"
+        );
+        var expectedSummariesByDialect = ReadCompiledReadPlanDiagnosticSummariesByDialect(
+            compiledMappingSets,
+            programResource
+        );
 
-        orderByColumnsByDialect.Keys.Should().BeEquivalentTo("mssql", "pgsql");
-        orderByColumnsByDialect["mssql"].Should().Equal("DocumentId", "SchoolYear");
-        orderByColumnsByDialect["pgsql"].Should().Equal("DocumentId", "SchoolYear");
+        summariesByDialect.Keys.Should().BeEquivalentTo("mssql", "pgsql");
+
+        foreach (var dialect in summariesByDialect.Keys)
+        {
+            var readPlanSummary = summariesByDialect[dialect];
+            var expectedSummary = expectedSummariesByDialect[dialect];
+
+            readPlanSummary.Should().BeEquivalentTo(expectedSummary, options => options.WithStrictOrdering());
+            readPlanSummary.TablePlans.Should().ContainSingle();
+            readPlanSummary.ReferenceIdentityProjectionPlanCount.Should().Be(0);
+            readPlanSummary.DescriptorProjectionPlanCount.Should().Be(0);
+        }
+    }
+
+    [Test]
+    public void It_should_emit_multi_table_read_plan_as_a_compiled_diagnostic_summary_with_story_05_placeholders()
+    {
+        var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
+        var mappingSets = BuildPermutedMappingSets(
+            CollectionsNestedExtensionFixturePath,
+            reverseMappingSetOrder: false
+        );
+        var manifest = MappingSetManifestJsonEmitter.Emit(mappingSets);
+        var summariesByDialect = ReadManifestReadPlanDiagnosticSummariesByDialect(
+            manifest,
+            "Ed-Fi",
+            "School"
+        );
+        var expectedSummariesByDialect = ReadCompiledReadPlanDiagnosticSummariesByDialect(
+            mappingSets,
+            schoolResource
+        );
+
+        summariesByDialect.Keys.Should().BeEquivalentTo("mssql", "pgsql");
+
+        foreach (var dialect in summariesByDialect.Keys)
+        {
+            var readPlanSummary = summariesByDialect[dialect];
+            var expectedSummary = expectedSummariesByDialect[dialect];
+
+            readPlanSummary.Should().BeEquivalentTo(expectedSummary, options => options.WithStrictOrdering());
+            readPlanSummary.TablePlans.Should().HaveCountGreaterThan(1);
+            readPlanSummary.ReferenceIdentityProjectionPlanCount.Should().Be(0);
+            readPlanSummary.DescriptorProjectionPlanCount.Should().Be(0);
+        }
+    }
+
+    [Test]
+    public void It_should_derive_single_table_manifest_ordering_arrays_from_compiled_sql_text()
+    {
+        var programResource = new QualifiedResourceName("Ed-Fi", "Program");
+        var mappingSets = BuildPermutedMappingSets(FixturePath, reverseMappingSetOrder: false);
+        var targetTableName = mappingSets
+            .SelectMany(mappingSet =>
+                mappingSet.ReadPlansByResource[programResource].TablePlansInDependencyOrder
+            )
+            .Select(tablePlan => tablePlan.TableModel.Table.Name)
+            .Distinct(StringComparer.Ordinal)
+            .Single();
+        var mutatedMappingSets = MutateReadPlanTableSql(
+            mappingSets,
+            programResource,
+            targetTableName,
+            CreateSqlWithDiagnosticOrderingDrift
+        );
+        var manifest = MappingSetManifestJsonEmitter.Emit(mutatedMappingSets);
+        var summariesByDialect = ReadManifestReadPlanDiagnosticSummariesByDialect(
+            manifest,
+            "Ed-Fi",
+            "Program"
+        );
+
+        foreach (var mappingSet in mutatedMappingSets)
+        {
+            var dialect = PlanManifestConventions.ToManifestDialect(mappingSet.Key.Dialect);
+            var tablePlan = mappingSet
+                .ReadPlansByResource[programResource]
+                .TablePlansInDependencyOrder.Single();
+            var manifestTableSummary = summariesByDialect[dialect].TablePlans.Single();
+
+            manifestTableSummary
+                .SelectListColumnsInOrder.Should()
+                .Equal(ReadPlanSqlShape.ExtractSelectedColumnNames(tablePlan.SelectByKeysetSql));
+            manifestTableSummary
+                .OrderByKeyColumnsInOrder.Should()
+                .Equal(ReadPlanSqlShape.ExtractOrderByColumnNames(tablePlan.SelectByKeysetSql));
+            manifestTableSummary
+                .SelectListColumnsInOrder.Should()
+                .NotEqual(tablePlan.TableModel.Columns.Select(column => column.ColumnName.Value).ToArray());
+            manifestTableSummary
+                .OrderByKeyColumnsInOrder.Should()
+                .NotEqual(
+                    tablePlan.TableModel.Key.Columns.Select(column => column.ColumnName.Value).ToArray()
+                );
+        }
+    }
+
+    [Test]
+    public void It_should_derive_multi_table_manifest_ordering_arrays_from_compiled_sql_text()
+    {
+        var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
+        var mappingSets = BuildPermutedMappingSets(
+            CollectionsNestedExtensionFixturePath,
+            reverseMappingSetOrder: false
+        );
+        var targetTableName = mappingSets[0]
+            .ReadPlansByResource[schoolResource]
+            .TablePlansInDependencyOrder[^1]
+            .TableModel
+            .Table
+            .Name;
+        var mutatedMappingSets = MutateReadPlanTableSql(
+            mappingSets,
+            schoolResource,
+            targetTableName,
+            CreateSqlWithDiagnosticOrderingDrift
+        );
+        var manifest = MappingSetManifestJsonEmitter.Emit(mutatedMappingSets);
+        var summariesByDialect = ReadManifestReadPlanDiagnosticSummariesByDialect(
+            manifest,
+            "Ed-Fi",
+            "School"
+        );
+
+        foreach (var mappingSet in mutatedMappingSets)
+        {
+            var dialect = PlanManifestConventions.ToManifestDialect(mappingSet.Key.Dialect);
+            var tablePlan = mappingSet
+                .ReadPlansByResource[schoolResource]
+                .TablePlansInDependencyOrder.Single(plan => plan.TableModel.Table.Name == targetTableName);
+            var manifestTableSummary = summariesByDialect[dialect]
+                .TablePlans.Single(summary => summary.TableName == targetTableName);
+
+            manifestTableSummary
+                .SelectListColumnsInOrder.Should()
+                .Equal(ReadPlanSqlShape.ExtractSelectedColumnNames(tablePlan.SelectByKeysetSql));
+            manifestTableSummary
+                .OrderByKeyColumnsInOrder.Should()
+                .Equal(ReadPlanSqlShape.ExtractOrderByColumnNames(tablePlan.SelectByKeysetSql));
+            manifestTableSummary
+                .SelectListColumnsInOrder.Should()
+                .NotEqual(tablePlan.TableModel.Columns.Select(column => column.ColumnName.Value).ToArray());
+            manifestTableSummary
+                .OrderByKeyColumnsInOrder.Should()
+                .NotEqual(
+                    tablePlan.TableModel.Key.Columns.Select(column => column.ColumnName.Value).ToArray()
+                );
+        }
     }
 
     [Test]
@@ -201,9 +356,17 @@ public class Given_MappingSetManifestJsonEmitter
 
     private static IReadOnlyList<MappingSet> BuildPermutedMappingSets(bool reverseMappingSetOrder)
     {
+        return BuildPermutedMappingSets(FixturePath, reverseMappingSetOrder);
+    }
+
+    private static IReadOnlyList<MappingSet> BuildPermutedMappingSets(
+        string fixturePath,
+        bool reverseMappingSetOrder
+    )
+    {
         var compiler = new MappingSetCompiler();
-        var pgsql = compiler.Compile(RuntimePlanFixtureModelSetBuilder.Build(FixturePath, SqlDialect.Pgsql));
-        var mssql = compiler.Compile(RuntimePlanFixtureModelSetBuilder.Build(FixturePath, SqlDialect.Mssql));
+        var pgsql = compiler.Compile(RuntimePlanFixtureModelSetBuilder.Build(fixturePath, SqlDialect.Pgsql));
+        var mssql = compiler.Compile(RuntimePlanFixtureModelSetBuilder.Build(fixturePath, SqlDialect.Mssql));
 
         var mappingSets = new[] { PermutePlanDictionaries(pgsql), PermutePlanDictionaries(mssql) };
 
@@ -213,31 +376,6 @@ public class Given_MappingSetManifestJsonEmitter
         }
 
         return mappingSets;
-    }
-
-    private static IReadOnlyList<MappingSet> BuildMappingSetsWithNonDocumentIdFirstStudentReadModel()
-    {
-        return BuildPermutedMappingSets(reverseMappingSetOrder: false)
-            .Select(InjectNonDocumentIdFirstStudentReadPlan)
-            .ToArray();
-    }
-
-    private static MappingSet InjectNonDocumentIdFirstStudentReadPlan(MappingSet mappingSet)
-    {
-        var studentResource = new QualifiedResourceName("Ed-Fi", "Student");
-        var model = CreateRootOnlyModelWithNonDocumentIdFirstKeyOrder(studentResource);
-        var readPlan = new RootOnlyReadPlanCompiler(mappingSet.Key.Dialect).Compile(model);
-        var readPlansByResource = mappingSet.ReadPlansByResource.ToDictionary(
-            entry => entry.Key,
-            entry => entry.Value
-        );
-
-        readPlansByResource[studentResource] = readPlan;
-
-        return mappingSet with
-        {
-            ReadPlansByResource = readPlansByResource,
-        };
     }
 
     private static MappingSet PermutePlanDictionaries(MappingSet mappingSet)
@@ -295,6 +433,33 @@ public class Given_MappingSetManifestJsonEmitter
 
     private static IReadOnlyDictionary<
         string,
+        ReadPlanDiagnosticSummary
+    > ReadCompiledReadPlanDiagnosticSummariesByDialect(
+        IReadOnlyList<MappingSet> mappingSets,
+        QualifiedResourceName resource
+    )
+    {
+        Dictionary<string, ReadPlanDiagnosticSummary> summariesByDialect = [];
+
+        foreach (var mappingSet in mappingSets)
+        {
+            var dialect = PlanManifestConventions.ToManifestDialect(mappingSet.Key.Dialect);
+
+            if (!mappingSet.ReadPlansByResource.TryGetValue(resource, out var readPlan))
+            {
+                throw new InvalidOperationException(
+                    $"Compiled read plan for resource '{resource.ProjectName}.{resource.ResourceName}' is required."
+                );
+            }
+
+            summariesByDialect[dialect] = ReadCompiledReadPlanDiagnosticSummary(readPlan);
+        }
+
+        return summariesByDialect;
+    }
+
+    private static IReadOnlyDictionary<
+        string,
         IReadOnlyList<string>
     > ReadCompiledKeyUnificationMemberPathsByDialect(
         IReadOnlyList<MappingSet> mappingSets,
@@ -322,57 +487,6 @@ public class Given_MappingSetManifestJsonEmitter
         }
 
         return memberPathsByDialect;
-    }
-
-    private static RelationalResourceModel CreateRootOnlyModelWithNonDocumentIdFirstKeyOrder(
-        QualifiedResourceName resource
-    )
-    {
-        var rootTable = new DbTableModel(
-            Table: new DbTableName(new DbSchemaName("edfi"), resource.ResourceName),
-            JsonScope: new JsonPathExpression("$", []),
-            Key: new TableKey(
-                ConstraintName: $"PK_{resource.ResourceName}",
-                Columns:
-                [
-                    new DbKeyColumn(new DbColumnName("SchoolYear"), ColumnKind.Scalar),
-                    new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart),
-                ]
-            ),
-            Columns:
-            [
-                new DbColumnModel(
-                    ColumnName: new DbColumnName("DocumentId"),
-                    Kind: ColumnKind.ParentKeyPart,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    ColumnName: new DbColumnName("SchoolYear"),
-                    Kind: ColumnKind.Scalar,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
-                    IsNullable: false,
-                    SourceJsonPath: new JsonPathExpression(
-                        "$.schoolYear",
-                        [new JsonPathSegment.Property("schoolYear")]
-                    ),
-                    TargetResource: null
-                ),
-            ],
-            Constraints: []
-        );
-
-        return new RelationalResourceModel(
-            Resource: resource,
-            PhysicalSchema: new DbSchemaName("edfi"),
-            StorageKind: ResourceStorageKind.RelationalTables,
-            Root: rootTable,
-            TablesInDependencyOrder: [rootTable],
-            DocumentReferenceBindings: [],
-            DescriptorEdgeSources: []
-        );
     }
 
     private static IReadOnlyList<string> ReadMappingSetDialects(string manifest)
@@ -416,46 +530,6 @@ public class Given_MappingSetManifestJsonEmitter
         }
 
         return resourceNamesByDialect;
-    }
-
-    private static IReadOnlyDictionary<string, IReadOnlyList<string>> ReadStudentOrderByColumnsByDialect(
-        string manifest
-    )
-    {
-        Dictionary<string, IReadOnlyList<string>> orderByColumnsByDialect = [];
-
-        foreach (var mappingSetObject in ParseMappingSetObjects(manifest))
-        {
-            var dialect = mappingSetObject["mapping_set_key"]?["dialect"]?.GetValue<string>();
-
-            if (dialect is null)
-            {
-                throw new InvalidOperationException("Manifest mapping set key dialect is required.");
-            }
-
-            var studentResource = FindResource(mappingSetObject, "Ed-Fi", "Student");
-            var orderByNode = studentResource["read_plan"]?["order_by_key_columns_in_order"];
-
-            if (orderByNode is not JsonArray orderByColumns)
-            {
-                throw new InvalidOperationException(
-                    "Manifest Student read-plan order_by_key_columns_in_order array is required."
-                );
-            }
-
-            orderByColumnsByDialect[dialect] = orderByColumns
-                .Select(column => column?.GetValue<string>())
-                .Select(value =>
-                    value is null
-                        ? throw new InvalidOperationException(
-                            "Manifest order-by key column name is required."
-                        )
-                        : value
-                )
-                .ToArray();
-        }
-
-        return orderByColumnsByDialect;
     }
 
     private static IReadOnlyDictionary<
@@ -539,6 +613,58 @@ public class Given_MappingSetManifestJsonEmitter
                 )
                 .Select(ReadWriteTablePlanSummary)
                 .ToArray();
+        }
+
+        return summariesByDialect;
+    }
+
+    private static IReadOnlyDictionary<
+        string,
+        ReadPlanDiagnosticSummary
+    > ReadManifestReadPlanDiagnosticSummariesByDialect(
+        string manifest,
+        string projectName,
+        string resourceName
+    )
+    {
+        Dictionary<string, ReadPlanDiagnosticSummary> summariesByDialect = [];
+
+        foreach (var mappingSetObject in ParseMappingSetObjects(manifest))
+        {
+            var dialect = mappingSetObject["mapping_set_key"]?["dialect"]?.GetValue<string>();
+
+            if (dialect is null)
+            {
+                throw new InvalidOperationException("Manifest mapping set key dialect is required.");
+            }
+
+            var resource = FindResource(mappingSetObject, projectName, resourceName);
+            var readPlan = RequireObject(resource["read_plan"], "read_plan");
+            var keysetTable = ReadKeysetTableSummary(RequireObject(readPlan["keyset_table"], "keyset_table"));
+            var tablePlans = RequireArray(
+                readPlan["table_plans_in_dependency_order"],
+                "table_plans_in_dependency_order"
+            );
+            var referenceIdentityProjectionPlans = RequireArray(
+                readPlan["reference_identity_projection_plans_in_dependency_order"],
+                "reference_identity_projection_plans_in_dependency_order"
+            );
+            var descriptorProjectionPlans = RequireArray(
+                readPlan["descriptor_projection_plans_in_order"],
+                "descriptor_projection_plans_in_order"
+            );
+
+            summariesByDialect[dialect] = new ReadPlanDiagnosticSummary(
+                KeysetTable: keysetTable,
+                TablePlans: tablePlans
+                    .Select(tablePlanNode =>
+                        RequireObject(tablePlanNode, "table_plans_in_dependency_order entry")
+                    )
+                    .Select(ReadManifestReadTablePlanDiagnosticSummary)
+                    .ToArray(),
+                ReferenceIdentityProjectionPlanCount: referenceIdentityProjectionPlans.Count,
+                DescriptorProjectionPlanCount: descriptorProjectionPlans.Count
+            );
         }
 
         return summariesByDialect;
@@ -635,6 +761,179 @@ public class Given_MappingSetManifestJsonEmitter
             ),
             ColumnBindingCount: columnBindings.Count
         );
+    }
+
+    private static ReadPlanDiagnosticSummary ReadCompiledReadPlanDiagnosticSummary(ResourceReadPlan readPlan)
+    {
+        return new ReadPlanDiagnosticSummary(
+            KeysetTable: new KeysetTableSummary(
+                TempTableName: readPlan.KeysetTable.Table.Name,
+                DocumentIdColumnName: readPlan.KeysetTable.DocumentIdColumnName.Value
+            ),
+            TablePlans: readPlan
+                .TablePlansInDependencyOrder.Select(ReadCompiledReadTablePlanDiagnosticSummary)
+                .ToArray(),
+            ReferenceIdentityProjectionPlanCount: readPlan
+                .ReferenceIdentityProjectionPlansInDependencyOrder
+                .Length,
+            DescriptorProjectionPlanCount: readPlan.DescriptorProjectionPlansInOrder.Length
+        );
+    }
+
+    private static ReadTablePlanDiagnosticSummary ReadManifestReadTablePlanDiagnosticSummary(
+        JsonObject tablePlan
+    )
+    {
+        var table = RequireObject(tablePlan["table"], "table");
+
+        return new ReadTablePlanDiagnosticSummary(
+            Schema: RequireString(table, "schema"),
+            TableName: RequireString(table, "name"),
+            SelectByKeysetSqlSha256: RequireString(tablePlan, "select_by_keyset_sql_sha256"),
+            SelectListColumnsInOrder: ReadRequiredStringArray(
+                tablePlan["select_list_columns_in_order"],
+                "select_list_columns_in_order"
+            ),
+            OrderByKeyColumnsInOrder: ReadRequiredStringArray(
+                tablePlan["order_by_key_columns_in_order"],
+                "order_by_key_columns_in_order"
+            )
+        );
+    }
+
+    private static ReadTablePlanDiagnosticSummary ReadCompiledReadTablePlanDiagnosticSummary(
+        TableReadPlan tablePlan
+    )
+    {
+        return new ReadTablePlanDiagnosticSummary(
+            Schema: tablePlan.TableModel.Table.Schema.Value,
+            TableName: tablePlan.TableModel.Table.Name,
+            SelectByKeysetSqlSha256: PlanManifestConventions.ComputeNormalizedSha256(
+                tablePlan.SelectByKeysetSql
+            ),
+            SelectListColumnsInOrder: ReadPlanSqlShape
+                .ExtractSelectedColumnNames(tablePlan.SelectByKeysetSql)
+                .ToArray(),
+            OrderByKeyColumnsInOrder: ReadPlanSqlShape
+                .ExtractOrderByColumnNames(tablePlan.SelectByKeysetSql)
+                .ToArray()
+        );
+    }
+
+    private static IReadOnlyList<MappingSet> MutateReadPlanTableSql(
+        IReadOnlyList<MappingSet> mappingSets,
+        QualifiedResourceName resource,
+        string tableName,
+        Func<TableReadPlan, string> mutateSql
+    )
+    {
+        return
+        [
+            .. mappingSets.Select(mappingSet =>
+            {
+                var readPlan = mappingSet.ReadPlansByResource[resource];
+                var mutatedReadPlan = readPlan with
+                {
+                    TablePlansInDependencyOrder =
+                    [
+                        .. readPlan.TablePlansInDependencyOrder.Select(tablePlan =>
+                            tablePlan.TableModel.Table.Name == tableName
+                                ? tablePlan with
+                                {
+                                    SelectByKeysetSql = mutateSql(tablePlan),
+                                }
+                                : tablePlan
+                        ),
+                    ],
+                };
+                var mutatedReadPlans = mappingSet.ReadPlansByResource.ToDictionary(
+                    entry => entry.Key,
+                    entry => entry.Key == resource ? mutatedReadPlan : entry.Value
+                );
+
+                return mappingSet with
+                {
+                    ReadPlansByResource = mutatedReadPlans,
+                };
+            }),
+        ];
+    }
+
+    private static string CreateSqlWithDiagnosticOrderingDrift(TableReadPlan tablePlan)
+    {
+        var selectExpressions = ReadPlanSqlShape
+            .ExtractSelectedColumnExpressions(tablePlan.SelectByKeysetSql)
+            .Reverse()
+            .ToArray();
+        var orderByExpressions = selectExpressions.Take(Math.Min(2, selectExpressions.Length)).ToArray();
+
+        return ReplaceSqlSectionExpressions(
+            ReplaceSqlSectionExpressions(
+                tablePlan.SelectByKeysetSql,
+                "SELECT",
+                "FROM",
+                selectExpressions,
+                expression => expression
+            ),
+            "ORDER BY",
+            ";",
+            orderByExpressions,
+            expression => $"{expression} ASC"
+        );
+    }
+
+    private static string ReplaceSqlSectionExpressions(
+        string sql,
+        string sectionStart,
+        string sectionEnd,
+        IReadOnlyList<string> expressions,
+        Func<string, string> formatExpression
+    )
+    {
+        if (expressions.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Replacement SQL section '{sectionStart}' requires at least one expression."
+            );
+        }
+
+        var lines = sql.Split('\n').ToList();
+        var startIndex = FindLineIndex(lines, sectionStart);
+        var endIndex = FindLineIndex(lines, sectionEnd, startIndex + 1, startsWith: true);
+
+        lines.RemoveRange(startIndex + 1, endIndex - startIndex - 1);
+        lines.InsertRange(
+            startIndex + 1,
+            expressions.Select(
+                (expression, index) =>
+                    $"    {formatExpression(expression)}{(index + 1 < expressions.Count ? "," : string.Empty)}"
+            )
+        );
+
+        return string.Join('\n', lines);
+    }
+
+    private static int FindLineIndex(
+        IReadOnlyList<string> lines,
+        string match,
+        int startIndex = 0,
+        bool startsWith = false
+    )
+    {
+        for (var index = startIndex; index < lines.Count; index++)
+        {
+            var trimmedLine = lines[index].Trim();
+
+            if (
+                (!startsWith && trimmedLine == match)
+                || (startsWith && trimmedLine.StartsWith(match, StringComparison.Ordinal))
+            )
+            {
+                return index;
+            }
+        }
+
+        throw new InvalidOperationException($"Could not find SQL line matching '{match}'.");
     }
 
     private static string ReadResourceName(JsonNode? resourceNode)
@@ -769,6 +1068,28 @@ public class Given_MappingSetManifestJsonEmitter
         };
     }
 
+    private static KeysetTableSummary ReadKeysetTableSummary(JsonObject keysetTable)
+    {
+        return new KeysetTableSummary(
+            TempTableName: RequireString(keysetTable, "temp_table_name"),
+            DocumentIdColumnName: RequireString(keysetTable, "document_id_column_name")
+        );
+    }
+
+    private static IReadOnlyList<string> ReadRequiredStringArray(JsonNode? node, string propertyName)
+    {
+        return RequireArray(node, propertyName)
+            .Select(arrayNode => arrayNode?.GetValue<string>())
+            .Select(value =>
+                value is null
+                    ? throw new InvalidOperationException(
+                        $"Manifest property '{propertyName}' must contain only string values."
+                    )
+                    : value
+            )
+            .ToArray();
+    }
+
     private static JsonArray ParseMappingSetArray(string manifest)
     {
         var root = JsonNode.Parse(manifest);
@@ -814,5 +1135,22 @@ public class Given_MappingSetManifestJsonEmitter
         string? DeleteByParentSqlSha256,
         BulkInsertBatchingSummary BulkInsertBatching,
         int ColumnBindingCount
+    );
+
+    private sealed record KeysetTableSummary(string TempTableName, string DocumentIdColumnName);
+
+    private sealed record ReadPlanDiagnosticSummary(
+        KeysetTableSummary KeysetTable,
+        IReadOnlyList<ReadTablePlanDiagnosticSummary> TablePlans,
+        int ReferenceIdentityProjectionPlanCount,
+        int DescriptorProjectionPlanCount
+    );
+
+    private sealed record ReadTablePlanDiagnosticSummary(
+        string Schema,
+        string TableName,
+        string SelectByKeysetSqlSha256,
+        IReadOnlyList<string> SelectListColumnsInOrder,
+        IReadOnlyList<string> OrderByKeyColumnsInOrder
     );
 }
