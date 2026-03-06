@@ -13,6 +13,9 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// </summary>
 internal static class RelationalResourceModelCompileValidator
 {
+    /// <summary>
+    /// Resolves the single root-scope table model and verifies it matches <see cref="RelationalResourceModel.Root" />.
+    /// </summary>
     public static DbTableModel ResolveRootScopeTableModelOrThrow(
         RelationalResourceModel resourceModel,
         string planKind
@@ -58,6 +61,9 @@ internal static class RelationalResourceModelCompileValidator
         return rootScopeTable;
     }
 
+    /// <summary>
+    /// Validates the deterministic key-shape contract shared by read and write plan compilation.
+    /// </summary>
     public static void ValidateDeterministicTableKeyShapeOrThrow(
         DbTableModel tableModel,
         string planKind,
@@ -144,16 +150,25 @@ internal static class RelationalResourceModelCompileValidator
         }
     }
 
+    /// <summary>
+    /// Returns <see langword="true" /> when the JSON scope is the resource root path <c>$</c>.
+    /// </summary>
     private static bool IsRootJsonScope(JsonPathExpression jsonScope)
     {
         return jsonScope.Canonical == "$" && jsonScope.Segments.Count == 0;
     }
 
+    /// <summary>
+    /// Formats a resource model name as <c>{ProjectName}.{ResourceName}</c> for diagnostics.
+    /// </summary>
     private static string GetResourceDisplayName(RelationalResourceModel resourceModel)
     {
         return $"{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}";
     }
 
+    /// <summary>
+    /// Formats table key columns as <c>{Column}:{Kind}</c> pairs for deterministic error messages.
+    /// </summary>
     private static string FormatKeyColumnSummary(DbTableModel tableModel)
     {
         return string.Join(

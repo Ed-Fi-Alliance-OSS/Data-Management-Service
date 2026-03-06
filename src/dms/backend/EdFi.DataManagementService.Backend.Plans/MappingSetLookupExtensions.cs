@@ -110,6 +110,9 @@ public static class MappingSetLookupExtensions
         );
     }
 
+    /// <summary>
+    /// Rejects hydration-only read plans that still require story-06 projection metadata before execution.
+    /// </summary>
     private static void ThrowIfReadPlanRequiresProjectionCompilation(
         MappingSet mappingSet,
         QualifiedResourceName resource,
