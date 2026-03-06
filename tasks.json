@@ -143,7 +143,7 @@
       "Add or update unit tests in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetLookupExtensionsTests.cs` proving: relational resources without projection dependencies still return a compiled read plan; relational resources with `DocumentReferenceBindings` but empty reference projection plans throw a `NotSupportedException` that points to story 06; relational resources with `DescriptorEdgeSources` but empty descriptor projection plans throw a `NotSupportedException` that points to story 06; and a truly missing relational read plan with no projection dependency still reports an internal compiler or selection bug.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter 'FullyQualifiedName~MappingSetLookupExtensions|FullyQualifiedName~MappingSetCompiler'`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Read Manifest SQL Fidelity",

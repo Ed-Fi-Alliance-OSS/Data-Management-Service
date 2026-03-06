@@ -17,6 +17,7 @@ public static class MappingSetLookupExtensions
 {
     private const string DescriptorWriteStoryRef = "E07-S06 (06-descriptor-writes.md)";
     private const string DescriptorReadStoryRef = "E08-S05 (05-descriptor-endpoints.md)";
+    private const string ProjectionReadStoryRef = "E15-S06 (06-projection-plan-compilers.md)";
     private static readonly ConditionalWeakTable<
         MappingSet,
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel>
@@ -77,6 +78,7 @@ public static class MappingSetLookupExtensions
 
         if (mappingSet.ReadPlansByResource.TryGetValue(resource, out var readPlan))
         {
+            ThrowIfReadPlanRequiresProjectionCompilation(mappingSet, resource, readPlan);
             return readPlan;
         }
 
@@ -105,6 +107,55 @@ public static class MappingSetLookupExtensions
             $"Read plan lookup failed for resource '{FormatResource(resource)}' in mapping set "
                 + $"'{FormatMappingSetKey(mappingSet.Key)}': storage kind '{concreteResourceModel.StorageKind}' "
                 + "is not recognized."
+        );
+    }
+
+    private static void ThrowIfReadPlanRequiresProjectionCompilation(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        ResourceReadPlan readPlan
+    )
+    {
+        if (readPlan.Model.StorageKind != ResourceStorageKind.RelationalTables)
+        {
+            return;
+        }
+
+        var requiresReferenceIdentityProjection =
+            readPlan.Model.DocumentReferenceBindings.Count > 0
+            && readPlan.ReferenceIdentityProjectionPlansInDependencyOrder.IsEmpty;
+        var requiresDescriptorProjection =
+            readPlan.Model.DescriptorEdgeSources.Count > 0
+            && readPlan.DescriptorProjectionPlansInOrder.IsEmpty;
+
+        if (!requiresReferenceIdentityProjection && !requiresDescriptorProjection)
+        {
+            return;
+        }
+
+        var missingProjectionReason = (
+            requiresReferenceIdentityProjection,
+            requiresDescriptorProjection
+        ) switch
+        {
+            (true, true) =>
+                "DocumentReferenceBindings are present while ReferenceIdentityProjectionPlansInDependencyOrder is empty, "
+                    + "and DescriptorEdgeSources are present while DescriptorProjectionPlansInOrder is empty",
+            (true, false) =>
+                "DocumentReferenceBindings are present while ReferenceIdentityProjectionPlansInDependencyOrder is empty",
+            (false, true) =>
+                "DescriptorEdgeSources are present while DescriptorProjectionPlansInOrder is empty",
+            _ => throw new InvalidOperationException(
+                $"Read plan projection gating reached an invalid state for resource '{FormatResource(resource)}'."
+            ),
+        };
+
+        throw new NotSupportedException(
+            $"Read plan for resource '{FormatResource(resource)}' in mapping set "
+                + $"'{FormatMappingSetKey(mappingSet.Key)}' is not executable yet: hydration SQL was compiled for "
+                + $"storage kind '{ResourceStorageKind.RelationalTables}', but {missingProjectionReason}. "
+                + $"Story 05 only compiles hydration SQL; story 06 must compile the remaining projection metadata. "
+                + $"Next story: {ProjectionReadStoryRef}."
         );
     }
 
