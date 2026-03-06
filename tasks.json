@@ -108,5 +108,32 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
     ],
     "completed": true
+  },
+  {
+    "category": "Read Plan Model Validation",
+    "description": "Harden `ReadPlanCompiler` so it rejects malformed relational resource models before emitting hydration SQL. Acceptance: compilation must fail fast for relational resources with no tables in `TablesInDependencyOrder`, with zero or multiple root-scope (`JsonScope == '$'`) tables, or when the root-scope table does not match `resourceModel.Root`. The read compiler should enforce the same baseline structural invariants already required by the write compiler so hydration never produces an empty or misanchored `ResourceReadPlan`.",
+    "steps-to-verify": [
+      "Add unit tests in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReadPlanCompilerTests.cs` covering: no tables, multiple root-scope tables, and root-scope table mismatch with deterministic exception messages.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~ReadPlanCompiler`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Read Manifest Fidelity",
+    "description": "Keep `MappingSetManifestJsonEmitter` as a derived diagnostic summary rather than a second authoritative read-plan serialization format. Acceptance: the normalized plan codec remains the authoritative serialization path, the story-05 empty `read_plan.reference_identity_projection_plans_in_dependency_order` and `read_plan.descriptor_projection_plans_in_order` placeholders remain acceptable until story 06, and manifest metadata such as `select_list_columns_in_order` and `order_by_key_columns_in_order` is explicitly treated and tested as derived diagnostic output. Update manifest tests so they validate emitted data against plans produced by `ReadPlanCompiler`, not the legacy root-only compiler with divergent ordering behavior.",
+    "steps-to-verify": [
+      "Update `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetManifestJsonEmitter.cs` and its tests so manifest assertions compare against the compiled `ResourceReadPlan` inventory, treat the projection arrays as intentional story-05 placeholders, and describe `select_list_columns_in_order` / `order_by_key_columns_in_order` as derived diagnostics rather than serialized plan state.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter 'FullyQualifiedName~MappingSetManifestJsonEmitter|FullyQualifiedName~RuntimePlanCompilation_Determinism|FullyQualifiedName~CollectionsNestedExtension_RuntimePlanCompilation_GoldenFixture|FullyQualifiedName~KeyUnificationPresenceGating_RuntimePlanCompilation_GoldenFixture'`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Thin-Slice Read Compiler Cleanup",
+    "description": "Remove the legacy thin-slice read compiler path now that production mapping-set compilation always uses `ReadPlanCompiler`. Acceptance: delete `RootOnlyReadPlanCompiler` and `ThinSliceReadPlanSupportEvaluator`, migrate any still-useful root-only assertions into `ReadPlanCompiler` coverage, and remove tests that inject obsolete thin-slice ordering semantics such as forcing `DocumentId` first when `TableKey.Columns` says otherwise. The plans assembly should expose one authoritative hydration-read compilation path for relational resources, with only minimal shared helpers extracted if needed during deletion.",
+    "steps-to-verify": [
+      "Delete `src/dms/backend/EdFi.DataManagementService.Backend.Plans/RootOnlyReadPlanCompiler.cs` and `src/dms/backend/EdFi.DataManagementService.Backend.Plans/ThinSliceReadPlanSupportEvaluator.cs`, then move any desired root-only assertions into `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReadPlanCompilerTests.cs` and remove manifest tests that currently inject `RootOnlyReadPlanCompiler` output.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter 'FullyQualifiedName~RootOnlyReadPlanCompiler|FullyQualifiedName~MappingSetManifestJsonEmitter|FullyQualifiedName~ReadPlanCompiler'`"
+    ],
+    "completed": false
   }
 ]
