@@ -16,7 +16,7 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// <summary>
 /// Validates that the selected database has been provisioned by reading the
 /// dms.EffectiveSchema fingerprint. Short-circuits with 503 if unprovisioned.
-/// No-op when EnableDatabaseFingerprintValidation is false.
+/// No-op when UseRelationalBackend is false.
 /// </summary>
 internal class ValidateDatabaseFingerprintMiddleware(
     IOptions<AppSettings> appSettings,
@@ -26,7 +26,7 @@ internal class ValidateDatabaseFingerprintMiddleware(
 {
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
-        if (!appSettings.Value.EnableDatabaseFingerprintValidation)
+        if (!appSettings.Value.UseRelationalBackend)
         {
             await next();
             return;
