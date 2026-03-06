@@ -60,7 +60,7 @@
       "Add or update codec and DTO tests that encode, decode, and hash multi-table `ResourceReadPlan` instances deterministically.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~NormalizedPlanContract`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Hydration Determinism Tests",
