@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Immutable;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
@@ -175,7 +176,7 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
                 );
 
             A.CallTo(() => fingerprintReader.ReadFingerprintAsync("Server=test;Database=testdb"))
-                .Returns(new DatabaseFingerprint("1.0", "abc123", 42, new byte[32]));
+                .Returns(new DatabaseFingerprint("1.0", "abc123", 42, new byte[32].ToImmutableArray()));
 
             await middleware.Execute(
                 _requestInfo,
