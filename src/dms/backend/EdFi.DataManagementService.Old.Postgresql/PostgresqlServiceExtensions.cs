@@ -3,8 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Backend.Postgresql;
-using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Old.Postgresql.Operation;
 using Microsoft.Extensions.DependencyInjection;
@@ -40,9 +38,6 @@ public static class PostgresqlServiceExtensions
         services.AddScoped<IUpsertDocument, UpsertDocument>();
         services.AddScoped<IDeleteDocumentById, DeleteDocumentById>();
         services.AddScoped<ISqlAction, SqlAction>();
-
-        // Override the default NullDatabaseFingerprintReader with the PostgreSQL implementation
-        services.AddSingleton<IDatabaseFingerprintReader, PostgresqlDatabaseFingerprintReader>();
 
         return services;
     }
