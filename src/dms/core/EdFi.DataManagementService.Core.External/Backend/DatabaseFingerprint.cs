@@ -15,6 +15,6 @@ namespace EdFi.DataManagementService.Core.External.Backend;
 public sealed record DatabaseFingerprint(
     string ApiSchemaFormatVersion,
     string EffectiveSchemaHash,
-    int ResourceKeyCount,
+    short ResourceKeyCount,
     byte[] ResourceKeySeedHash
 );
