@@ -3,10 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Backend.RelationalModel.Build;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Utilities;
 using EdFi.DataManagementService.SchemaTools.Bridge;
@@ -58,19 +56,9 @@ internal static class DdlCommandHelpers
         SqlDialect dialect
     )
     {
-        var (sqlDialect, dialectRules) = CreateDialect(dialect);
-
-        // Deep-clone the effective schema set because
-        // DerivedRelationalModelSetBuilder assigns JsonNode.Parent on ProjectSchema
-        // nodes, which prevents reuse of the original tree.
-        var clonedSchemaSet = CloneEffectiveSchemaSet(effectiveSchemaSet);
-
-        var modelSetBuilder = new DerivedRelationalModelSetBuilder(RelationalModelSetPasses.CreateDefault());
-        var modelSet = modelSetBuilder.Build(clonedSchemaSet, dialect, dialectRules);
+        var (modelSet, combinedSql) = DdlPipelineHelpers.BuildDdlForDialect(effectiveSchemaSet, dialect);
 
         LogModelDiagnostics(logger, modelSet);
-
-        var combinedSql = FullDdlEmitter.Emit(sqlDialect, modelSet);
 
         return new DdlBuildResult(effectiveSchemaSet, modelSet, combinedSql);
     }
@@ -88,43 +76,6 @@ internal static class DdlCommandHelpers
     {
         var effectiveSchemaSet = BuildEffectiveSchemaSet(logger, schemaSetBuilder, normalizedNodes);
         return BuildDdlFromSchemaSet(logger, effectiveSchemaSet, dialect);
-    }
-
-    internal static (ISqlDialect Dialect, ISqlDialectRules Rules) CreateDialect(SqlDialect dialect)
-    {
-        return dialect switch
-        {
-            SqlDialect.Pgsql => CreatePgsqlDialect(),
-            SqlDialect.Mssql => CreateMssqlDialect(),
-            _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported dialect"),
-        };
-
-        static (ISqlDialect, ISqlDialectRules) CreatePgsqlDialect()
-        {
-            var rules = new PgsqlDialectRules();
-            return (new PgsqlDialect(rules), rules);
-        }
-
-        static (ISqlDialect, ISqlDialectRules) CreateMssqlDialect()
-        {
-            var rules = new MssqlDialectRules();
-            return (new MssqlDialect(rules), rules);
-        }
-    }
-
-    internal static EffectiveSchemaSet CloneEffectiveSchemaSet(EffectiveSchemaSet original)
-    {
-        var clonedProjects = original
-            .ProjectsInEndpointOrder.Select(p => new EffectiveProjectSchema(
-                p.ProjectEndpointName,
-                p.ProjectName,
-                p.ProjectVersion,
-                p.IsExtensionProject,
-                (JsonObject)p.ProjectSchema.DeepClone()
-            ))
-            .ToList();
-
-        return new EffectiveSchemaSet(original.EffectiveSchema, clonedProjects);
     }
 
     /// <summary>
