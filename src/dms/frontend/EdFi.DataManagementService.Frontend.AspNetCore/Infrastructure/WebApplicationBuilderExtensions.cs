@@ -182,6 +182,10 @@ public static class WebApplicationBuilderExtensions
             );
             webAppBuilder.Services.AddPostgresqlDatastore();
             webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Old.Postgresql.Deploy.DatabaseDeploy>();
+            webAppBuilder.Services.AddSingleton<
+                IDatabaseFingerprintReader,
+                Backend.Postgresql.PostgresqlDatabaseFingerprintReader
+            >();
         }
         else
         {

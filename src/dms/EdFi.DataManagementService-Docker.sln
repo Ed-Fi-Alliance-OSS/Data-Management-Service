@@ -9,8 +9,6 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Backend.Mssql", "backend\EdFi.DataManagementService.Backend.Mssql\EdFi.DataManagementService.Backend.Mssql.csproj", "{0146B374-35C4-4191-9D09-3CDDC4ABCA2F}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Backend.External", "backend\EdFi.DataManagementService.Backend.External\EdFi.DataManagementService.Backend.External.csproj", "{B3FBDA40-5775-4F6A-86C7-A11B67B18D85}"
-EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Backend.Postgresql", "backend\EdFi.DataManagementService.Backend.Postgresql\EdFi.DataManagementService.Backend.Postgresql.csproj", "{1BCE8257-DDEC-4788-BE96-3E3B18606379}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Old.Postgresql", "backend\EdFi.DataManagementService.Old.Postgresql\EdFi.DataManagementService.Old.Postgresql.csproj", "{3B8DB16B-0A35-4565-B8CA-73DE662424BC}"
@@ -42,10 +40,6 @@ Global
 		{0146B374-35C4-4191-9D09-3CDDC4ABCA2F}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{0146B374-35C4-4191-9D09-3CDDC4ABCA2F}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{0146B374-35C4-4191-9D09-3CDDC4ABCA2F}.Release|Any CPU.Build.0 = Release|Any CPU
-		{B3FBDA40-5775-4F6A-86C7-A11B67B18D85}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{B3FBDA40-5775-4F6A-86C7-A11B67B18D85}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{B3FBDA40-5775-4F6A-86C7-A11B67B18D85}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{B3FBDA40-5775-4F6A-86C7-A11B67B18D85}.Release|Any CPU.Build.0 = Release|Any CPU
 		{1BCE8257-DDEC-4788-BE96-3E3B18606379}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{1BCE8257-DDEC-4788-BE96-3E3B18606379}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{1BCE8257-DDEC-4788-BE96-3E3B18606379}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -69,7 +63,6 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{82EA8DF4-4DDB-4944-AF0D-60B7C784FB30} = {75AE8F7B-B980-48AE-8518-073830FA6471}
 		{0146B374-35C4-4191-9D09-3CDDC4ABCA2F} = {75AE8F7B-B980-48AE-8518-073830FA6471}
-		{B3FBDA40-5775-4F6A-86C7-A11B67B18D85} = {75AE8F7B-B980-48AE-8518-073830FA6471}
 		{1BCE8257-DDEC-4788-BE96-3E3B18606379} = {75AE8F7B-B980-48AE-8518-073830FA6471}
 		{3B8DB16B-0A35-4565-B8CA-73DE662424BC} = {75AE8F7B-B980-48AE-8518-073830FA6471}
 		{53914CA2-E0E6-4D84-8899-D9C5CE40AA76} = {5B7BB270-905C-4D2F-BD3C-3374707FE1E3}
