@@ -151,4 +151,111 @@ public class DatabaseFingerprintProviderTests
             _results.Select(r => r!.EffectiveSchemaHash).Distinct().Should().ContainSingle();
         }
     }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_First_Call_Returns_Null_Then_Database_Provisioned : DatabaseFingerprintProviderTests
+    {
+        private DatabaseFingerprint? _result1;
+        private DatabaseFingerprint? _result2;
+        private IDatabaseFingerprintReader _reader = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            int callCount = 0;
+            _reader = A.Fake<IDatabaseFingerprintReader>();
+            A.CallTo(() => _reader.ReadFingerprintAsync("conn1"))
+                .ReturnsLazily(() =>
+                {
+                    callCount++;
+                    return callCount == 1
+                        ? Task.FromResult<DatabaseFingerprint?>(null)
+                        : Task.FromResult<DatabaseFingerprint?>(CreateFingerprint("provisioned"));
+                });
+
+            var provider = new DatabaseFingerprintProvider(_reader);
+
+            _result1 = await provider.GetFingerprintAsync("conn1");
+            _result2 = await provider.GetFingerprintAsync("conn1");
+        }
+
+        [Test]
+        public void It_returns_null_on_first_call()
+        {
+            _result1.Should().BeNull();
+        }
+
+        [Test]
+        public void It_retries_and_returns_fingerprint_on_second_call()
+        {
+            _result2.Should().NotBeNull();
+            _result2!.EffectiveSchemaHash.Should().Be("provisioned");
+        }
+
+        [Test]
+        public void It_invokes_reader_twice()
+        {
+            A.CallTo(() => _reader.ReadFingerprintAsync("conn1")).MustHaveHappenedTwiceExactly();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_First_Call_Throws_Then_Database_Recovers : DatabaseFingerprintProviderTests
+    {
+        private Exception? _firstException;
+        private DatabaseFingerprint? _secondResult;
+        private IDatabaseFingerprintReader _reader = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            int callCount = 0;
+            _reader = A.Fake<IDatabaseFingerprintReader>();
+            A.CallTo(() => _reader.ReadFingerprintAsync("conn1"))
+                .ReturnsLazily(() =>
+                {
+                    callCount++;
+                    if (callCount == 1)
+                    {
+                        throw new InvalidOperationException("connection refused");
+                    }
+                    return Task.FromResult<DatabaseFingerprint?>(CreateFingerprint("recovered"));
+                });
+
+            var provider = new DatabaseFingerprintProvider(_reader);
+
+            try
+            {
+                await provider.GetFingerprintAsync("conn1");
+            }
+            catch (InvalidOperationException ex)
+            {
+                _firstException = ex;
+            }
+
+            _secondResult = await provider.GetFingerprintAsync("conn1");
+        }
+
+        [Test]
+        public void It_throws_on_first_call()
+        {
+            _firstException.Should().NotBeNull();
+            _firstException!.Message.Should().Be("connection refused");
+        }
+
+        [Test]
+        public void It_retries_and_returns_fingerprint_on_second_call()
+        {
+            _secondResult.Should().NotBeNull();
+            _secondResult!.EffectiveSchemaHash.Should().Be("recovered");
+        }
+
+        [Test]
+        public void It_invokes_reader_twice()
+        {
+            A.CallTo(() => _reader.ReadFingerprintAsync("conn1")).MustHaveHappenedTwiceExactly();
+        }
+    }
 }
