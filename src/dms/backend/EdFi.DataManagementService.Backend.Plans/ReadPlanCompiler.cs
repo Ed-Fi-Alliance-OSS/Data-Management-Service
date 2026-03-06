@@ -73,6 +73,10 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
     /// </summary>
     private ResourceReadPlan CompileCore(RelationalResourceModel resourceModel)
     {
+        var rootScopeTableModel = RelationalResourceModelCompileValidator.ResolveRootScopeTableModelOrThrow(
+            resourceModel,
+            "read plan"
+        );
         ValidateHydrationPlanIntegrity(resourceModel);
 
         var keysetTable = KeysetTableConventions.GetKeysetTableContract(_dialect);
@@ -81,10 +85,9 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
         for (var index = 0; index < resourceModel.TablesInDependencyOrder.Count; index++)
         {
             var tableModel = resourceModel.TablesInDependencyOrder[index];
-            var tableAlias =
-                index == 0
-                    ? PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Root)
-                    : PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Table);
+            var tableAlias = tableModel.Equals(rootScopeTableModel)
+                ? PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Root)
+                : PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Table);
 
             tablePlans[index] = new TableReadPlan(
                 TableModel: tableModel,

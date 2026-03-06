@@ -35,7 +35,10 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     {
         ArgumentNullException.ThrowIfNull(resourceModel);
         ValidateCompileEligibility(resourceModel);
-        var rootScopeTableModel = ResolveRootScopeTableModelOrThrow(resourceModel);
+        var rootScopeTableModel = RelationalResourceModelCompileValidator.ResolveRootScopeTableModelOrThrow(
+            resourceModel,
+            "write plan"
+        );
         var writeSourceLookup = BuildWriteSourceLookup(resourceModel);
 
         var tablePlans = resourceModel
@@ -60,50 +63,6 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
                     + $"StorageKind: {resourceModel.StorageKind}."
             );
         }
-
-        if (resourceModel.TablesInDependencyOrder.Count == 0)
-        {
-            throw new InvalidOperationException(
-                $"Cannot compile write plan for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}': no tables were found in dependency order."
-            );
-        }
-    }
-
-    private static DbTableModel ResolveRootScopeTableModelOrThrow(RelationalResourceModel resourceModel)
-    {
-        if (!IsRootJsonScope(resourceModel.Root.JsonScope))
-        {
-            throw new InvalidOperationException(
-                $"Cannot compile write plan for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}': resourceModel.Root must have JsonScope '$', but was '{resourceModel.Root.JsonScope.Canonical}'."
-            );
-        }
-
-        var rootScopeTables = resourceModel
-            .TablesInDependencyOrder.Where(static tableModel => IsRootJsonScope(tableModel.JsonScope))
-            .ToArray();
-
-        if (rootScopeTables.Length != 1)
-        {
-            throw new InvalidOperationException(
-                $"Cannot compile write plan for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}': expected exactly one root-scope table (JsonScope '$') in TablesInDependencyOrder, but found {rootScopeTables.Length}."
-            );
-        }
-
-        var rootScopeTable = rootScopeTables[0];
-
-        if (!rootScopeTable.Table.Equals(resourceModel.Root.Table))
-        {
-            throw new InvalidOperationException(
-                $"Cannot compile write plan for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}': root-scope table '{rootScopeTable.Table}' does not match resourceModel.Root table '{resourceModel.Root.Table}'."
-            );
-        }
-
-        return rootScopeTable;
-    }
-
-    private static bool IsRootJsonScope(JsonPathExpression jsonScope)
-    {
-        return jsonScope.Canonical == "$" && jsonScope.Segments.Count == 0;
     }
 
     private static WriteSourceLookup BuildWriteSourceLookup(RelationalResourceModel resourceModel)
@@ -550,7 +509,7 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     {
         var tableModel = tableCompilationContext.TableModel;
 
-        if (tableModel.Table.Equals(rootScopeTableModel.Table) && IsRootJsonScope(tableModel.JsonScope))
+        if (tableModel.Equals(rootScopeTableModel))
         {
             return null;
         }

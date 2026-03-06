@@ -116,7 +116,7 @@
       "Add unit tests in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReadPlanCompilerTests.cs` covering: no tables, multiple root-scope tables, and root-scope table mismatch with deterministic exception messages.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~ReadPlanCompiler`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Read Manifest Fidelity",

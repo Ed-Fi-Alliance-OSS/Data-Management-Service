@@ -262,6 +262,71 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_fail_fast_when_tables_in_dependency_order_is_empty()
+    {
+        var act = () =>
+            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(CreateModelWithNoTablesInDependencyOrder());
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile read plan for resource 'Ed-Fi.Student': no tables were found in dependency order."
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_resource_model_root_is_not_root_scope()
+    {
+        var act = () =>
+            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(CreateModelWithNonRootResourceModelRoot());
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile read plan for resource 'Ed-Fi.Student': resourceModel.Root must have JsonScope '$', but was '$.shadow'."
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_tables_in_dependency_order_has_no_root_scope_table()
+    {
+        var unsupportedModel = CreateSupportedMultiTableModelWithoutRootScopeTable();
+        var act = () => new ReadPlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile read plan for resource 'Ed-Fi.Student': expected exactly one root-scope table (JsonScope '$') in TablesInDependencyOrder, but found 0."
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_tables_in_dependency_order_has_multiple_root_scope_tables()
+    {
+        var unsupportedModel = CreateSupportedMultiTableModelWithMultipleRootScopeTables();
+        var act = () => new ReadPlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile read plan for resource 'Ed-Fi.Student': expected exactly one root-scope table (JsonScope '$') in TablesInDependencyOrder, but found 2."
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_root_scope_table_does_not_match_resource_model_root_table()
+    {
+        var unsupportedModel = CreateSupportedMultiTableModelWithMismatchedRootScopeTable();
+        var act = () => new ReadPlanCompiler(SqlDialect.Pgsql).Compile(unsupportedModel);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile read plan for resource 'Ed-Fi.Student': root-scope table 'edfi.StudentShadow' does not match resourceModel.Root table 'edfi.Student'."
+            );
+    }
+
+    [Test]
     public void It_should_fail_fast_when_document_id_parent_key_part_is_not_first_in_key_order()
     {
         var act = () =>
@@ -770,6 +835,31 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             DocumentReferenceBindings: [],
             DescriptorEdgeSources: []
         );
+    }
+
+    private static RelationalResourceModel CreateModelWithNoTablesInDependencyOrder()
+    {
+        var model = CreateSupportedRootOnlyModel();
+
+        return model with
+        {
+            TablesInDependencyOrder = [],
+        };
+    }
+
+    private static RelationalResourceModel CreateModelWithNonRootResourceModelRoot()
+    {
+        var model = CreateSupportedRootOnlyModel();
+        var rootTable = model.Root with
+        {
+            JsonScope = new JsonPathExpression("$.shadow", [new JsonPathSegment.Property("shadow")]),
+        };
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
+        };
     }
 
     private static RelationalResourceModel CreateModelWithMissingDocumentIdParentKeyPart()
