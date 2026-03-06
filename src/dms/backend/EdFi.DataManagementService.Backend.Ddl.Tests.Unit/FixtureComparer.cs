@@ -167,7 +167,8 @@ public static class FixtureComparer
         startInfo.ArgumentList.Add(expectedPath);
         startInfo.ArgumentList.Add(actualPath);
 
-        using var process = new Process { StartInfo = startInfo };
+        using var process = new Process();
+        process.StartInfo = startInfo;
         process.Start();
         var outputTask = process.StandardOutput.ReadToEndAsync();
         var errorTask = process.StandardError.ReadToEndAsync();

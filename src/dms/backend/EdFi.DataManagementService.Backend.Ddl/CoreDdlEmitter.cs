@@ -123,7 +123,9 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     {
         var pgcrypto = _dialect.CreateExtensionIfNotExists("pgcrypto");
         if (pgcrypto.Length == 0)
+        {
             return;
+        }
 
         writer.AppendLine("-- ==========================================================");
         writer.AppendLine("-- Phase 2: Extensions");
