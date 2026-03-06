@@ -1,0 +1,94 @@
+[
+  {
+    "category": "Read Plan Coverage",
+    "description": "Introduce a full relational hydration read compiler in `src/dms/backend/EdFi.DataManagementService.Backend.Plans` that replaces the root-only compilation model. Acceptance: for every `RelationalResourceModel` with `StorageKind.RelationalTables`, compile a `ResourceReadPlan` with one `TableReadPlan` per table in `TablesInDependencyOrder`, preserve dependency order exactly, and keep `ReferenceIdentityProjectionPlansInDependencyOrder` and `DescriptorProjectionPlansInOrder` present but empty for story 05.",
+    "steps-to-verify": [
+      "Add or update unit tests in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` proving root, child, nested collection, and `_ext` tables all appear in `TablePlansInDependencyOrder`.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter ReadPlan`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Hydration SQL Emission",
+    "description": "Implement deterministic `SelectByKeysetSql` emission for each compiled table read plan. Acceptance: every table hydration query joins to the dialect keyset temp table on the owning table's root `DocumentId` key column, selects every physical column in `DbTableModel.Columns` order, and emits `ORDER BY` exactly in `TableKey.Columns` order with no special-case `DocumentId` reordering. SQL must remain canonical and stable for pgsql and mssql.",
+    "steps-to-verify": [
+      "Add exact-SQL assertions for root, child, and nested child tables in both dialects.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter SelectByKeysetSql`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Model Validation",
+    "description": "Add compile-time validation for hydration plan integrity. Acceptance: the compiler fails fast with deterministic messages when a table lacks a resolvable root `DocumentId` key column for keyset joining, when key metadata is invalid for deterministic ordering, or when future projection dependencies do not resolve to selected columns on the owning table. Specifically validate that every `DocumentReferenceBinding.FkColumn`, every `ReferenceIdentityBinding.Column`, and every `DescriptorEdgeSource.FkColumn` exists on the owning `DbTableModel` and therefore resolves to a hydration select-list ordinal, without creating projection contracts yet.",
+    "steps-to-verify": [
+      "Add unit tests for missing FK column, missing reference identity binding column, missing descriptor FK column, and invalid key-shape cases with deterministic exception messages.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter Validation`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Mapping Set Integration",
+    "description": "Integrate full hydration read compilation into mapping-set compilation and lookup behavior. Acceptance: `MappingSetCompiler` populates `ReadPlansByResource` for every relational-table resource, including resources with child tables, `_ext` tables, `DocumentReferenceBindings`, and `DescriptorEdgeSources`; shared descriptor-table resources remain omitted. `MappingSetLookupExtensions` must stop reporting thin-slice omission reasons for relational-table read plans and instead treat a missing relational read plan as an internal compiler or selection bug.",
+    "steps-to-verify": [
+      "Update mapping-set unit tests so mixed-resource fixtures expect read plans for all relational-table resources and only omit shared descriptor storage resources.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter MappingSetCompiler`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Read Plan Manifest Emitter",
+    "description": "Change `mappingset.manifest.json` emission to surface multi-table hydration inventory explicitly. Acceptance: read-plan manifests emit `table_plans_in_dependency_order` with one entry per table containing normalized `SelectByKeysetSql` hash, `select_list_columns_in_order`, and `order_by_key_columns_in_order`; multi-table read plans must no longer collapse to `null`. Include empty `reference_identity_projection_plans_in_dependency_order` and `descriptor_projection_plans_in_order` arrays now so story 06 can extend the same shape additively.",
+    "steps-to-verify": [
+      "Update manifest emitter tests to assert the new per-table read-plan shape for both single-table and multi-table resources.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter ManifestJsonEmitter`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Normalized Read Plan Contracts",
+    "description": "Update normalized DTO, codec, and canonical JSON helpers for `ResourceReadPlan` so the new multi-table hydration shape round-trips deterministically. Acceptance: normalized read-plan representations preserve all table plans in dependency order, preserve empty projection arrays, and encode or decode the expanded read-plan shape without assuming a single table.",
+    "steps-to-verify": [
+      "Add or update codec and DTO tests that encode, decode, and hash multi-table `ResourceReadPlan` instances deterministically.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter NormalizedPlanContract`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Hydration Determinism Tests",
+    "description": "Expand deterministic compiler coverage for hydration read plans. Acceptance: tests prove stable SQL and metadata across repeated compilation and input-order permutations, stable aliasing across dialects, select-list order equal to `DbTableModel.Columns`, and `ORDER BY` order equal to `TableKey.Columns` even when the modeled key order differs from prior thin-slice assumptions.",
+    "steps-to-verify": [
+      "Add compiler determinism tests for repeated compile and input-order permutations on representative root-only and multi-table resources.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter Determin`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Thin-Slice Test Cleanup",
+    "description": "Remove or rewrite thin-slice-era tests that now assert behavior contrary to story 05. Acceptance: tests no longer expect relational-table resources with child tables, `DocumentReferenceBindings`, or `DescriptorEdgeSources` to be omitted from `ReadPlansByResource`, and no remaining read-plan test asserts compiler-side `DocumentId` first ordering when `TableKey.Columns` says otherwise.",
+    "steps-to-verify": [
+      "Audit and update read-plan, lookup, and mapping-set tests in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` for story-05 semantics.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter ReadPlan`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Runtime Plan Goldens",
+    "description": "Rebaseline the small runtime-plan-compilation fixture artifacts to match story 05 hydration coverage. Acceptance: `mappingset.manifest.json` files under the runtime-plan-compilation fixtures show read plans for all relational-table resources, emit per-table hydration inventory for multi-table resources, retain empty projection arrays, and remain stable across pgsql and mssql.",
+    "steps-to-verify": [
+      "Run the runtime-plan-compilation golden fixture tests with `UPDATE_GOLDENS=1` to regenerate expected manifests, then rerun without the environment variable to confirm clean diffs.",
+      "Run: `UPDATE_GOLDENS=1 dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RuntimePlanCompilationGoldenFixture`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter RuntimePlanCompilationGoldenFixture`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Authoritative Goldens",
+    "description": "Rebaseline the larger authoritative `mappingset.manifest.json` fixtures used by this test project. Acceptance: authoritative expected outputs reflect story 05's multi-table hydration inventory, no longer emit `null` for relational multi-table read plans, retain empty projection arrays, and continue to compare cleanly with normalized hash stability.",
+    "steps-to-verify": [
+      "Run the authoritative mapping-set golden tests with `UPDATE_GOLDENS=1` after the implementation stabilizes, then rerun without the environment variable to ensure no remaining diff noise.",
+      "Run: `UPDATE_GOLDENS=1 dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter MappingSetManifestGoldenFixture`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter MappingSetManifestGoldenFixture`"
+    ],
+    "completed": false
+  }
+]
