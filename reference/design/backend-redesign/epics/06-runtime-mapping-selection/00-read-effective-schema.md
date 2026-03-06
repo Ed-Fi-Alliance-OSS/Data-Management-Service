@@ -26,6 +26,12 @@ This follows `reference/design/backend-redesign/design-docs/transactions-and-con
 - If `dms.EffectiveSchema` is missing or the singleton row is absent, requests fail fast with an actionable error indicating the DB must be provisioned.
 - The “effective schema read” runs immediately after instance routing and before any schema-dependent operations.
 
+## Configuration
+
+- Fingerprint validation is gated by `AppSettings.EnableDatabaseFingerprintValidation` (default: `false`).
+- When `false`, the middleware is a no-op and requests proceed without schema validation.
+- The default is `false` during incremental implementation; story DMS-978 will finalize configuration defaults when the full mapping selection pipeline is complete.
+
 ## Tasks
 
 1. Add a `DatabaseFingerprintProvider` (or equivalent) keyed by connection string with thread-safe caching.
