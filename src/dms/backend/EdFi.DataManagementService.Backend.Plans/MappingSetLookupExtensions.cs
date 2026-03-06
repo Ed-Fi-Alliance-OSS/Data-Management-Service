@@ -17,7 +17,6 @@ public static class MappingSetLookupExtensions
 {
     private const string DescriptorWriteStoryRef = "E07-S06 (06-descriptor-writes.md)";
     private const string DescriptorReadStoryRef = "E08-S05 (05-descriptor-endpoints.md)";
-    private const string ProjectionReadStoryRef = "E15-S06 (06-projection-plan-compilers.md)";
     private static readonly ConditionalWeakTable<
         MappingSet,
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel>
@@ -78,7 +77,7 @@ public static class MappingSetLookupExtensions
 
         if (mappingSet.ReadPlansByResource.TryGetValue(resource, out var readPlan))
         {
-            ThrowIfReadPlanRequiresProjectionCompilation(mappingSet, resource, readPlan);
+            ThrowIfReadPlanIsMissingCompiledProjectionMetadata(mappingSet, resource, readPlan);
             return readPlan;
         }
 
@@ -111,9 +110,9 @@ public static class MappingSetLookupExtensions
     }
 
     /// <summary>
-    /// Rejects hydration-only read plans that still require story-06 projection metadata before execution.
+    /// Rejects internally inconsistent read plans that are missing projection metadata after compilation.
     /// </summary>
-    private static void ThrowIfReadPlanRequiresProjectionCompilation(
+    private static void ThrowIfReadPlanIsMissingCompiledProjectionMetadata(
         MappingSet mappingSet,
         QualifiedResourceName resource,
         ResourceReadPlan readPlan
@@ -153,12 +152,10 @@ public static class MappingSetLookupExtensions
             ),
         };
 
-        throw new NotSupportedException(
-            $"Read plan for resource '{FormatResource(resource)}' in mapping set "
-                + $"'{FormatMappingSetKey(mappingSet.Key)}' is not executable yet: hydration SQL was compiled for "
-                + $"storage kind '{ResourceStorageKind.RelationalTables}', but {missingProjectionReason}. "
-                + $"Story 05 only compiles hydration SQL; story 06 must compile the remaining projection metadata. "
-                + $"Next story: {ProjectionReadStoryRef}."
+        throw new InvalidOperationException(
+            $"Read plan lookup failed for resource '{FormatResource(resource)}' in mapping set "
+                + $"'{FormatMappingSetKey(mappingSet.Key)}': compiled relational-table read plan is missing projection metadata. "
+                + $"{missingProjectionReason}. This indicates an internal compilation/selection bug."
         );
     }
 

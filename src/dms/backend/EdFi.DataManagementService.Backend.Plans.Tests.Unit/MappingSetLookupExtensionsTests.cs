@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Frozen;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
@@ -52,6 +53,22 @@ public class Given_MappingSetLookupExtensions
         var actualPlan = _mappingSet.GetReadPlanOrThrow(_supportedResource);
 
         actualPlan.Should().BeSameAs(expectedPlan);
+    }
+
+    [Test]
+    public void It_should_return_read_plan_when_reference_identity_projection_metadata_was_compiled()
+    {
+        var actualPlan = _mappingSet.GetReadPlanOrThrow(_projectionMetadataResource);
+
+        actualPlan.ReferenceIdentityProjectionPlansInDependencyOrder.Should().NotBeEmpty();
+    }
+
+    [Test]
+    public void It_should_return_read_plan_when_descriptor_projection_metadata_was_compiled()
+    {
+        var actualPlan = _mappingSet.GetReadPlanOrThrow(_descriptorEdgeResource);
+
+        actualPlan.DescriptorProjectionPlansInOrder.Should().NotBeEmpty();
     }
 
     [Test]
@@ -107,26 +124,36 @@ public class Given_MappingSetLookupExtensions
     }
 
     [Test]
-    public void It_should_throw_actionable_story_06_message_when_document_reference_projection_metadata_is_missing()
+    public void It_should_treat_missing_reference_identity_projection_metadata_on_a_compiled_read_plan_as_internal_bug()
     {
-        var act = () => _mappingSet.GetReadPlanOrThrow(_projectionMetadataResource);
+        var mappingSet = ReplaceReadPlan(
+            _mappingSet,
+            _projectionMetadataResource,
+            CreateHydrationOnlyReadPlan(_mappingSet.ReadPlansByResource[_projectionMetadataResource].Model)
+        );
+        var act = () => mappingSet.GetReadPlanOrThrow(_projectionMetadataResource);
 
         act.Should()
-            .Throw<NotSupportedException>()
+            .Throw<InvalidOperationException>()
             .WithMessage(
-                "*Ed-Fi.StudentProjection*mapping set*hydration SQL was compiled*DocumentReferenceBindings are present while ReferenceIdentityProjectionPlansInDependencyOrder is empty*Story 05 only compiles hydration SQL; story 06 must compile the remaining projection metadata*E15-S06 (06-projection-plan-compilers.md)*"
+                "*Ed-Fi.StudentProjection*mapping set*compiled relational-table read plan is missing projection metadata*DocumentReferenceBindings are present while ReferenceIdentityProjectionPlansInDependencyOrder is empty*internal compilation/selection bug*"
             );
     }
 
     [Test]
-    public void It_should_throw_actionable_story_06_message_when_descriptor_projection_metadata_is_missing()
+    public void It_should_treat_missing_descriptor_projection_metadata_on_a_compiled_read_plan_as_internal_bug()
     {
-        var act = () => _mappingSet.GetReadPlanOrThrow(_descriptorEdgeResource);
+        var mappingSet = ReplaceReadPlan(
+            _mappingSet,
+            _descriptorEdgeResource,
+            CreateHydrationOnlyReadPlan(_mappingSet.ReadPlansByResource[_descriptorEdgeResource].Model)
+        );
+        var act = () => mappingSet.GetReadPlanOrThrow(_descriptorEdgeResource);
 
         act.Should()
-            .Throw<NotSupportedException>()
+            .Throw<InvalidOperationException>()
             .WithMessage(
-                "*Ed-Fi.StudentDescriptorEdge*mapping set*hydration SQL was compiled*DescriptorEdgeSources are present while DescriptorProjectionPlansInOrder is empty*Story 05 only compiles hydration SQL; story 06 must compile the remaining projection metadata*E15-S06 (06-projection-plan-compilers.md)*"
+                "*Ed-Fi.StudentDescriptorEdge*mapping set*compiled relational-table read plan is missing projection metadata*DescriptorEdgeSources are present while DescriptorProjectionPlansInOrder is empty*internal compilation/selection bug*"
             );
     }
 
@@ -394,6 +421,11 @@ public class Given_MappingSetLookupExtensions
 
     private static ResourceReadPlan CreateReadPlan(RelationalResourceModel model)
     {
+        return new ReadPlanCompiler(SqlDialect.Pgsql).Compile(model);
+    }
+
+    private static ResourceReadPlan CreateHydrationOnlyReadPlan(RelationalResourceModel model)
+    {
         return new ResourceReadPlan(
             Model: model,
             KeysetTable: KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
@@ -401,6 +433,24 @@ public class Given_MappingSetLookupExtensions
             ReferenceIdentityProjectionPlansInDependencyOrder: [],
             DescriptorProjectionPlansInOrder: []
         );
+    }
+
+    private static MappingSet ReplaceReadPlan(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        ResourceReadPlan readPlan
+    )
+    {
+        var readPlansByResource = mappingSet.ReadPlansByResource.ToDictionary(
+            entry => entry.Key,
+            entry => entry.Value
+        );
+        readPlansByResource[resource] = readPlan;
+
+        return mappingSet with
+        {
+            ReadPlansByResource = readPlansByResource.ToFrozenDictionary(),
+        };
     }
 
     private static RelationalResourceModel CreateRootOnlyModel(

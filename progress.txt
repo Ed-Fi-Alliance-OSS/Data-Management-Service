@@ -1,0 +1,6 @@
+2026-03-06
+Task completed: Read Plan Integration
+Story: reference/design/backend-redesign/epics/15-plan-compilation/06-projection-plan-compilers.md
+Decisions: added focused reference/descrip projection compilers under ReadPlanCompiler so relational read plans always carry projection metadata; retired Story 05 lookup gate, missing compiled projections now treated as internal integrity bug.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/ReadPlanCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/ReferenceIdentityProjectionPlanCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/DescriptorProjectionPlanCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/MappingSetLookupExtensions.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReadPlanCompilerTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetCompilerTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetLookupExtensionsTests.cs; tasks.json
+Notes: manifest/DTO fixture projection summaries still pending later tasks; verified targeted + full Backend.Plans unit suite green.

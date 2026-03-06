@@ -17,6 +17,8 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
 {
     private readonly SqlDialect _dialect = dialect;
     private readonly ISqlDialect _sqlDialect = SqlDialectFactory.Create(dialect);
+    private readonly ReferenceIdentityProjectionPlanCompiler _referenceIdentityProjectionPlanCompiler = new();
+    private readonly DescriptorProjectionPlanCompiler _descriptorProjectionPlanCompiler = new(dialect);
 
     /// <summary>
     /// Returns <see langword="true" /> when the resource uses relational-table storage.
@@ -76,7 +78,7 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
             resourceModel,
             "read plan"
         );
-        ValidateHydrationPlanIntegrity(resourceModel);
+        var hydrationPlanMetadata = BuildHydrationPlanMetadata(resourceModel);
 
         var keysetTable = KeysetTableConventions.GetKeysetTableContract(_dialect);
         var tablePlans = new TableReadPlan[resourceModel.TablesInDependencyOrder.Count];
@@ -94,25 +96,44 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
             );
         }
 
+        var referenceIdentityProjectionPlans = _referenceIdentityProjectionPlanCompiler.Compile(
+            resourceModel,
+            hydrationPlanMetadata.ColumnOrdinalsByTable
+        );
+        var descriptorProjectionPlans = _descriptorProjectionPlanCompiler.Compile(
+            resourceModel,
+            keysetTable,
+            hydrationPlanMetadata.TablesByName,
+            hydrationPlanMetadata.ColumnOrdinalsByTable
+        );
+
         return new ResourceReadPlan(
             Model: resourceModel,
             KeysetTable: keysetTable,
             TablePlansInDependencyOrder: tablePlans,
-            ReferenceIdentityProjectionPlansInDependencyOrder: [],
-            DescriptorProjectionPlansInOrder: []
+            ReferenceIdentityProjectionPlansInDependencyOrder: referenceIdentityProjectionPlans,
+            DescriptorProjectionPlansInOrder: descriptorProjectionPlans
         );
     }
 
     /// <summary>
-    /// Validates key ordering metadata and future projection dependencies before SQL emission.
+    /// Validates key ordering metadata and builds deterministic hydration metadata used by projection compilers.
     /// </summary>
-    private static void ValidateHydrationPlanIntegrity(RelationalResourceModel resourceModel)
+    private static HydrationPlanMetadata BuildHydrationPlanMetadata(RelationalResourceModel resourceModel)
     {
+        var tablesByName = new Dictionary<DbTableName, DbTableModel>();
         var columnOrdinalByTable = new Dictionary<DbTableName, IReadOnlyDictionary<DbColumnName, int>>();
 
         foreach (var tableModel in resourceModel.TablesInDependencyOrder)
         {
             var columnOrdinalByName = BuildHydrationColumnOrdinalMap(tableModel);
+
+            if (!tablesByName.TryAdd(tableModel.Table, tableModel))
+            {
+                throw new InvalidOperationException(
+                    $"Cannot compile read plan for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}': duplicate table '{tableModel.Table}' encountered while building hydration table metadata."
+                );
+            }
 
             if (!columnOrdinalByTable.TryAdd(tableModel.Table, columnOrdinalByName))
             {
@@ -133,6 +154,8 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
         {
             ValidateDescriptorEdgeSource(edgeSource, columnOrdinalByTable);
         }
+
+        return new HydrationPlanMetadata(tablesByName, columnOrdinalByTable);
     }
 
     /// <summary>
@@ -350,4 +373,9 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
     {
         writer.Append($"{tableAlias}.").AppendQuoted(columnName.Value);
     }
+
+    private sealed record HydrationPlanMetadata(
+        IReadOnlyDictionary<DbTableName, DbTableModel> TablesByName,
+        IReadOnlyDictionary<DbTableName, IReadOnlyDictionary<DbColumnName, int>> ColumnOrdinalsByTable
+    );
 }

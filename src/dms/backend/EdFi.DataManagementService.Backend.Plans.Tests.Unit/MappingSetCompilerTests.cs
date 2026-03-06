@@ -45,6 +45,15 @@ public class Given_MappingSetCompiler
         }
 
         mappingSet
+            .ReadPlansByResource[fixture.ProjectionMetadataResource]
+            .ReferenceIdentityProjectionPlansInDependencyOrder.Should()
+            .NotBeEmpty();
+        mappingSet
+            .ReadPlansByResource[fixture.DescriptorEdgeResource]
+            .DescriptorProjectionPlansInOrder.Should()
+            .NotBeEmpty();
+
+        mappingSet
             .ReadPlansByResource[fixture.NonRootOnlyResource]
             .TablePlansInDependencyOrder.Should()
             .HaveCount(2);
