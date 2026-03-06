@@ -33,6 +33,22 @@ public class OpenApiDocumentHelperTests
                     ["properties"] = new JsonObject
                     {
                         ["contactUniqueId"] = new JsonObject { ["type"] = "string" },
+                        ["addresses"] = new JsonObject
+                        {
+                            ["type"] = "array",
+                            ["items"] = new JsonObject
+                            {
+                                ["$ref"] = "#/components/schemas/EdFi_Contact_Address",
+                            },
+                        },
+                    },
+                },
+                ["EdFi_Contact_Address"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["streetAddress"] = new JsonObject { ["type"] = "string" },
                     },
                 },
                 ["TPDM_Contact"] = new JsonObject
@@ -42,6 +58,22 @@ public class OpenApiDocumentHelperTests
                     ["properties"] = new JsonObject
                     {
                         ["contactUniqueId"] = new JsonObject { ["type"] = "string" },
+                        ["addresses"] = new JsonObject
+                        {
+                            ["type"] = "array",
+                            ["items"] = new JsonObject
+                            {
+                                ["$ref"] = "#/components/schemas/TPDM_Contact_Address",
+                            },
+                        },
+                    },
+                },
+                ["TPDM_Contact_Address"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["streetAddress"] = new JsonObject { ["type"] = "string" },
                     },
                 },
             };
@@ -74,7 +106,7 @@ public class OpenApiDocumentHelperTests
             [
                 new JsonObject
                 {
-                    ["insertionLocations"] = new JsonArray("$.properties.contactUniqueId"),
+                    ["insertionLocations"] = new JsonArray("$.properties.addresses.items"),
                     ["schemaFragment"] = new JsonObject
                     {
                         ["type"] = "object",
@@ -148,6 +180,22 @@ public class OpenApiDocumentHelperTests
                     ["properties"] = new JsonObject
                     {
                         ["contactUniqueId"] = new JsonObject { ["type"] = "string" },
+                        ["addresses"] = new JsonObject
+                        {
+                            ["type"] = "array",
+                            ["items"] = new JsonObject
+                            {
+                                ["$ref"] = "#/components/schemas/WrongPrefix_Contact_Address",
+                            },
+                        },
+                    },
+                },
+                ["WrongPrefix_Contact_Address"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["streetAddress"] = new JsonObject { ["type"] = "string" },
                     },
                 },
             };
@@ -180,7 +228,7 @@ public class OpenApiDocumentHelperTests
             [
                 new JsonObject
                 {
-                    ["insertionLocations"] = new JsonArray("$.properties.contactUniqueId"),
+                    ["insertionLocations"] = new JsonArray("$.properties.addresses.items"),
                     ["schemaFragment"] = new JsonObject
                     {
                         ["type"] = "object",
@@ -475,112 +523,6 @@ public class OpenApiDocumentHelperTests
                 );
 
             act.Should().Throw<InvalidOperationException>().WithMessage("*Duplicate schema name*");
-        }
-    }
-
-    [TestFixture]
-    [Parallelizable]
-    public class Given_No_Matching_Core_Schema_For_Resource : OpenApiDocumentHelperTests
-    {
-        private JsonNode _coreSchemaRootNode = null!;
-        private JsonNode[] _extensionSchemaRootNodes = null!;
-
-        private static JsonNode CoreSchemaWithOnlyStudent()
-        {
-            JsonObject schemas = new()
-            {
-                ["EdFi_Student"] = new JsonObject
-                {
-                    ["description"] = "EdFi Student description",
-                    ["type"] = "object",
-                    ["properties"] = new JsonObject
-                    {
-                        ["studentUniqueId"] = new JsonObject { ["type"] = "string" },
-                    },
-                },
-            };
-
-            var builder = new ApiSchemaBuilder()
-                .WithStartProject("ed-fi", "5.0.0")
-                .WithOpenApiBaseDocuments(
-                    resourcesDoc: new JsonObject
-                    {
-                        ["openapi"] = "3.0.1",
-                        ["info"] = new JsonObject
-                        {
-                            ["title"] = "Ed-Fi Resources API",
-                            ["version"] = "5.0.0",
-                        },
-                        ["components"] = new JsonObject { ["schemas"] = schemas },
-                        ["paths"] = new JsonObject(),
-                        ["tags"] = new JsonArray(),
-                    }
-                )
-                .WithSimpleResource("Student", false)
-                .WithEndProject();
-
-            return builder.AsSingleApiSchemaRootNode();
-        }
-
-        private static JsonNode ExtensionWithCommonOverridesForMissingContact()
-        {
-            JsonArray commonOverrides =
-            [
-                new JsonObject
-                {
-                    ["insertionLocations"] = new JsonArray("$.properties.contactUniqueId"),
-                    ["schemaFragment"] = new JsonObject
-                    {
-                        ["type"] = "object",
-                        ["properties"] = new JsonObject
-                        {
-                            ["extra"] = new JsonObject { ["type"] = "string" },
-                        },
-                    },
-                },
-            ];
-
-            var builder = new ApiSchemaBuilder().WithStartProject("sample", "1.0.0");
-            builder
-                .WithStartResource("Contact", isResourceExtension: true)
-                .WithNewExtensionResourceFragments("resources")
-                .WithCommonExtensionOverrides(commonOverrides)
-                .WithEndResource();
-
-            return builder.WithEndProject().AsSingleApiSchemaRootNode();
-        }
-
-        [SetUp]
-        public void Setup()
-        {
-            _coreSchemaRootNode = CoreSchemaWithOnlyStudent();
-            _extensionSchemaRootNodes = [ExtensionWithCommonOverridesForMissingContact()];
-        }
-
-        [Test]
-        public void It_should_throw_invalid_operation_exception()
-        {
-            OpenApiDocument doc = new(NullLogger.Instance);
-            var action = () =>
-                doc.CreateDocument(
-                    new(_coreSchemaRootNode, _extensionSchemaRootNodes),
-                    OpenApiDocument.OpenApiDocumentType.Resource
-                );
-
-            action.Should().Throw<InvalidOperationException>();
-        }
-
-        [Test]
-        public void It_should_include_no_matching_core_schema_in_message()
-        {
-            OpenApiDocument doc = new(NullLogger.Instance);
-            var action = () =>
-                doc.CreateDocument(
-                    new(_coreSchemaRootNode, _extensionSchemaRootNodes),
-                    OpenApiDocument.OpenApiDocumentType.Resource
-                );
-
-            action.Should().Throw<InvalidOperationException>().WithMessage("*no matching core schema found*");
         }
     }
 
