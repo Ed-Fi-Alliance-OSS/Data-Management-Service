@@ -39,6 +39,12 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
             return [];
         }
 
+        var deduplicatedSqlSources = CompileDeduplicatedSqlSources(
+            resourceModel,
+            tablesByName,
+            columnOrdinalsByTable
+        );
+
         var compiledSources = resourceModel
             .DescriptorEdgeSources.Select(edgeSource =>
             {
@@ -61,21 +67,57 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
         return
         [
             new DescriptorProjectionPlan(
-                SelectByKeysetSql: EmitSelectByKeysetSql(
-                    resourceModel.DescriptorEdgeSources,
-                    keysetTable,
-                    tablesByName
-                ),
+                SelectByKeysetSql: EmitSelectByKeysetSql(deduplicatedSqlSources, keysetTable),
                 ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
                 SourcesInOrder: compiledSources
             ),
         ];
     }
 
+    private static IReadOnlyList<DescriptorProjectionSqlSource> CompileDeduplicatedSqlSources(
+        RelationalResourceModel resourceModel,
+        IReadOnlyDictionary<DbTableName, DbTableModel> tablesByName,
+        IReadOnlyDictionary<DbTableName, IReadOnlyDictionary<DbColumnName, int>> columnOrdinalsByTable
+    )
+    {
+        var tableDependencyOrder = resourceModel
+            .TablesInDependencyOrder.Select((table, index) => (table.Table, index))
+            .ToDictionary(entry => entry.Table, entry => entry.index);
+        Dictionary<DescriptorProjectionSqlSourceKey, DescriptorProjectionSqlSource> sqlSourcesByKey = [];
+
+        foreach (var edgeSource in resourceModel.DescriptorEdgeSources)
+        {
+            var tableModel = ResolveTableModelOrThrow(tablesByName, edgeSource.Table);
+            var tableOrdinals = ResolveColumnOrdinalsOrThrow(columnOrdinalsByTable, edgeSource.Table);
+            var storageColumn = ResolveStorageColumnOrThrow(tableModel, edgeSource);
+            var storageColumnOrdinal = ResolveColumnOrdinalOrThrow(
+                tableOrdinals,
+                edgeSource.Table,
+                storageColumn,
+                $"descriptor edge source '{edgeSource.DescriptorValuePath.Canonical}' storage column"
+            );
+            var sqlSource = new DescriptorProjectionSqlSource(
+                TableModel: tableModel,
+                StorageColumn: storageColumn,
+                TableDependencyOrdinal: tableDependencyOrder[edgeSource.Table],
+                StorageColumnOrdinal: storageColumnOrdinal
+            );
+
+            sqlSourcesByKey.TryAdd(
+                new DescriptorProjectionSqlSourceKey(edgeSource.Table, storageColumn),
+                sqlSource
+            );
+        }
+
+        return sqlSourcesByKey
+            .Values.OrderBy(source => source.TableDependencyOrdinal)
+            .ThenBy(source => source.StorageColumnOrdinal)
+            .ToArray();
+    }
+
     private string EmitSelectByKeysetSql(
-        IReadOnlyList<DescriptorEdgeSource> descriptorEdgeSources,
-        KeysetTableContract keysetTable,
-        IReadOnlyDictionary<DbTableName, DbTableModel> tablesByName
+        IReadOnlyList<DescriptorProjectionSqlSource> sqlSources,
+        KeysetTableContract keysetTable
     )
     {
         const string projectionAlias = "p";
@@ -104,15 +146,15 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
 
             using (writer.Indent())
             {
-                for (var index = 0; index < descriptorEdgeSources.Count; index++)
+                for (var index = 0; index < sqlSources.Count; index++)
                 {
-                    var edgeSource = descriptorEdgeSources[index];
-                    var tableModel = ResolveTableModelOrThrow(tablesByName, edgeSource.Table);
+                    var sqlSource = sqlSources[index];
+                    var tableModel = sqlSource.TableModel;
                     var tableAlias = tableAliasAllocator.AllocateNext();
                     var rootDocumentIdKeyColumn = tableModel.Key.Columns[0].ColumnName;
 
                     writer.Append("SELECT ");
-                    AppendQualifiedColumn(writer, tableAlias, edgeSource.FkColumn);
+                    AppendQualifiedColumn(writer, tableAlias, sqlSource.StorageColumn);
                     writer.Append(" AS ").AppendQuoted(_descriptorIdProjectionColumn.Value).AppendLine();
                     writer.Append("FROM ").AppendTable(tableModel.Table).AppendLine($" {tableAlias}");
                     writer
@@ -124,10 +166,10 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
                     AppendQualifiedColumn(writer, keysetAlias, keysetTable.DocumentIdColumnName);
                     writer.AppendLine();
                     writer.Append("WHERE ");
-                    AppendQualifiedColumn(writer, tableAlias, edgeSource.FkColumn);
+                    AppendQualifiedColumn(writer, tableAlias, sqlSource.StorageColumn);
                     writer.AppendLine(" IS NOT NULL");
 
-                    if (index + 1 < descriptorEdgeSources.Count)
+                    if (index + 1 < sqlSources.Count)
                     {
                         writer.AppendLine("UNION");
                     }
@@ -154,6 +196,59 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
         return writer.ToString();
     }
 
+    private static DbColumnName ResolveStorageColumnOrThrow(
+        DbTableModel tableModel,
+        DescriptorEdgeSource edgeSource
+    )
+    {
+        var contextDescription =
+            $"Cannot compile descriptor projection plan for '{tableModel.Table}': descriptor edge source "
+            + $"'{edgeSource.DescriptorValuePath.Canonical}' FK column";
+        var bindingColumn = ResolveTableColumnOrThrow(
+            tableModel,
+            edgeSource.FkColumn,
+            contextDescription,
+            edgeSource.FkColumn
+        );
+
+        return bindingColumn.Storage switch
+        {
+            ColumnStorage.Stored => bindingColumn.ColumnName,
+            ColumnStorage.UnifiedAlias unifiedAlias => ValidateStoredStorageColumnOrThrow(
+                tableModel,
+                ResolveTableColumnOrThrow(
+                    tableModel,
+                    unifiedAlias.CanonicalColumn,
+                    $"{contextDescription} '{edgeSource.FkColumn.Value}' resolved to missing canonical storage column",
+                    unifiedAlias.CanonicalColumn
+                ),
+                $"{contextDescription} '{edgeSource.FkColumn.Value}' resolved to canonical storage column",
+                unifiedAlias.CanonicalColumn
+            ),
+            _ => throw new InvalidOperationException(
+                $"{contextDescription} '{edgeSource.FkColumn.Value}' uses unsupported storage metadata "
+                    + $"'{bindingColumn.Storage.GetType().Name}'."
+            ),
+        };
+    }
+
+    private static DbColumnName ValidateStoredStorageColumnOrThrow(
+        DbTableModel tableModel,
+        DbColumnModel columnModel,
+        string contextDescription,
+        DbColumnName resolvedColumnName
+    )
+    {
+        if (columnModel.Storage is not ColumnStorage.Stored)
+        {
+            throw new InvalidOperationException(
+                $"{contextDescription} '{resolvedColumnName.Value}' is not stored."
+            );
+        }
+
+        return columnModel.ColumnName;
+    }
+
     private static DbTableModel ResolveTableModelOrThrow(
         IReadOnlyDictionary<DbTableName, DbTableModel> tablesByName,
         DbTableName table
@@ -166,6 +261,27 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
 
         throw new InvalidOperationException(
             $"Cannot compile descriptor projection plan for '{table}': owning table is not present in TablesInDependencyOrder."
+        );
+    }
+
+    private static DbColumnModel ResolveTableColumnOrThrow(
+        DbTableModel tableModel,
+        DbColumnName column,
+        string contextDescription,
+        DbColumnName missingColumn
+    )
+    {
+        var columnModel = tableModel.Columns.SingleOrDefault(candidate =>
+            candidate.ColumnName.Equals(column)
+        );
+
+        if (columnModel is not null)
+        {
+            return columnModel;
+        }
+
+        throw new InvalidOperationException(
+            $"{contextDescription} '{missingColumn.Value}' does not exist in table columns."
         );
     }
 
@@ -205,4 +321,16 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
     {
         writer.Append($"{tableAlias}.").AppendQuoted(columnName.Value);
     }
+
+    private readonly record struct DescriptorProjectionSqlSourceKey(
+        DbTableName Table,
+        DbColumnName StorageColumn
+    );
+
+    private sealed record DescriptorProjectionSqlSource(
+        DbTableModel TableModel,
+        DbColumnName StorageColumn,
+        int TableDependencyOrdinal,
+        int StorageColumnOrdinal
+    );
 }

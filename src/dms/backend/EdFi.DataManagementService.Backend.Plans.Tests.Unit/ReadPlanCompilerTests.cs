@@ -74,7 +74,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
-    public void It_should_emit_exact_pgsql_descriptor_projection_sql_for_projection_metadata_resources()
+    public void It_should_emit_exact_pgsql_DescriptorProjection_sql_for_projection_metadata_resources()
     {
         AssertDescriptorProjectionPlan(
             _pgsqlProjectionReadPlan,
@@ -99,7 +99,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
-    public void It_should_emit_exact_mssql_descriptor_projection_sql_for_projection_metadata_resources()
+    public void It_should_emit_exact_mssql_DescriptorProjection_sql_for_projection_metadata_resources()
     {
         AssertDescriptorProjectionPlan(
             _mssqlProjectionReadPlan,
@@ -113,6 +113,64 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                     FROM [edfi].[StudentProjection] t0
                     INNER JOIN [#page] k ON t0.[DocumentId] = k.[DocumentId]
                     WHERE t0.[AcademicSubjectDescriptorId] IS NOT NULL
+                ) p
+            INNER JOIN [dms].[Descriptor] d ON d.[DocumentId] = p.[DescriptorId]
+            ORDER BY
+                p.[DescriptorId] ASC
+            ;
+
+            """
+        );
+    }
+
+    [Test]
+    public void It_should_preserve_all_logical_DescriptorProjection_sources_in_order_while_deduplicating_pgsql_sql_inputs_by_storage_column()
+    {
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateKeyUnifiedDescriptorProjectionResourceModel()
+        );
+
+        AssertKeyUnifiedDescriptorProjectionPlan(
+            readPlan,
+            """
+            SELECT
+                p."DescriptorId",
+                d."Uri"
+            FROM
+                (
+                    SELECT t0."SchoolYearTypeDescriptorIdCanonical" AS "DescriptorId"
+                    FROM "edfi"."Student" t0
+                    INNER JOIN "page" k ON t0."DocumentId" = k."DocumentId"
+                    WHERE t0."SchoolYearTypeDescriptorIdCanonical" IS NOT NULL
+                ) p
+            INNER JOIN "dms"."Descriptor" d ON d."DocumentId" = p."DescriptorId"
+            ORDER BY
+                p."DescriptorId" ASC
+            ;
+
+            """
+        );
+    }
+
+    [Test]
+    public void It_should_preserve_all_logical_DescriptorProjection_sources_in_order_while_deduplicating_mssql_sql_inputs_by_storage_column()
+    {
+        var readPlan = new ReadPlanCompiler(SqlDialect.Mssql).Compile(
+            CreateKeyUnifiedDescriptorProjectionResourceModel()
+        );
+
+        AssertKeyUnifiedDescriptorProjectionPlan(
+            readPlan,
+            """
+            SELECT
+                p.[DescriptorId],
+                d.[Uri]
+            FROM
+                (
+                    SELECT t0.[SchoolYearTypeDescriptorIdCanonical] AS [DescriptorId]
+                    FROM [edfi].[Student] t0
+                    INNER JOIN [#page] k ON t0.[DocumentId] = k.[DocumentId]
+                    WHERE t0.[SchoolYearTypeDescriptorIdCanonical] IS NOT NULL
                 ) p
             INNER JOIN [dms].[Descriptor] d ON d.[DocumentId] = p.[DescriptorId]
             ORDER BY
@@ -671,6 +729,39 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         source.DescriptorIdColumnOrdinal.Should().Be(5);
     }
 
+    private static void AssertKeyUnifiedDescriptorProjectionPlan(
+        ResourceReadPlan readPlan,
+        string expectedSql
+    )
+    {
+        readPlan.DescriptorProjectionPlansInOrder.Should().ContainSingle();
+
+        var descriptorPlan = readPlan.DescriptorProjectionPlansInOrder.Single();
+        descriptorPlan.SelectByKeysetSql.Should().Be(expectedSql);
+        descriptorPlan.ResultShape.Should().Be(new DescriptorProjectionResultShape(0, 1));
+        descriptorPlan
+            .SourcesInOrder.Select(static source => source.DescriptorValuePath.Canonical)
+            .Should()
+            .Equal("$.localSchoolYearTypeDescriptor", "$.schoolYearTypeDescriptor");
+        descriptorPlan
+            .SourcesInOrder.Select(static source => source.Table)
+            .Should()
+            .Equal(readPlan.Model.Root.Table, readPlan.Model.Root.Table);
+        descriptorPlan
+            .SourcesInOrder.Select(static source => source.DescriptorResource)
+            .Should()
+            .Equal(
+                new QualifiedResourceName("Ed-Fi", "SchoolYearTypeDescriptor"),
+                new QualifiedResourceName("Ed-Fi", "SchoolYearTypeDescriptor")
+            );
+        descriptorPlan
+            .SourcesInOrder.Select(static source => source.DescriptorIdColumnOrdinal)
+            .Should()
+            .Equal(7, 6);
+        descriptorPlan.SelectByKeysetSql.Should().NotContain("SchoolYearTypeDescriptorPrimary");
+        descriptorPlan.SelectByKeysetSql.Should().NotContain("SchoolYearTypeDescriptorSecondary");
+    }
+
     private static string CreateReadPlanFingerprint(ResourceReadPlan readPlan)
     {
         return NormalizedPlanDtoJson.EmitCanonicalJson(NormalizedPlanContractCodec.Encode(readPlan));
@@ -887,6 +978,38 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 ),
             ]
         );
+    }
+
+    private static RelationalResourceModel CreateKeyUnifiedDescriptorProjectionResourceModel()
+    {
+        var model = CreateRootOnlyModelWithReferenceSitePresence();
+
+        return model with
+        {
+            DescriptorEdgeSources =
+            [
+                new DescriptorEdgeSource(
+                    IsIdentityComponent: false,
+                    DescriptorValuePath: new JsonPathExpression(
+                        "$.localSchoolYearTypeDescriptor",
+                        [new JsonPathSegment.Property("localSchoolYearTypeDescriptor")]
+                    ),
+                    Table: model.Root.Table,
+                    FkColumn: new DbColumnName("SchoolYearTypeDescriptorSecondary"),
+                    DescriptorResource: new QualifiedResourceName("Ed-Fi", "SchoolYearTypeDescriptor")
+                ),
+                new DescriptorEdgeSource(
+                    IsIdentityComponent: false,
+                    DescriptorValuePath: new JsonPathExpression(
+                        "$.schoolYearTypeDescriptor",
+                        [new JsonPathSegment.Property("schoolYearTypeDescriptor")]
+                    ),
+                    Table: model.Root.Table,
+                    FkColumn: new DbColumnName("SchoolYearTypeDescriptorPrimary"),
+                    DescriptorResource: new QualifiedResourceName("Ed-Fi", "SchoolYearTypeDescriptor")
+                ),
+            ],
+        };
     }
 
     private static RelationalResourceModel CreateMultiTableResourceModel()
