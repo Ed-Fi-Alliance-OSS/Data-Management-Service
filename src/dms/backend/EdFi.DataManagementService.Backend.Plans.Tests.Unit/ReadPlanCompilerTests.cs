@@ -727,6 +727,21 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_fail_fast_when_document_reference_binding_table_is_not_present_in_tables_in_dependency_order()
+    {
+        var act = () =>
+            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+                CreateModelWithMissingDocumentReferenceBindingTable()
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile read plan for 'edfi.MissingStudentAddress': owning table is not present in TablesInDependencyOrder."
+            );
+    }
+
+    [Test]
     public void It_should_fail_fast_when_descriptor_edge_source_fk_column_does_not_resolve_to_a_hydration_select_list_ordinal()
     {
         var act = () =>
@@ -736,6 +751,32 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             .Throw<InvalidOperationException>()
             .WithMessage(
                 "Cannot compile read plan for 'edfi.StudentAddress': descriptor edge source '$.addresses[*].programTypeDescriptor' FK column 'MissingProgramTypeDescriptorId' does not exist in hydration select-list columns."
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_descriptor_edge_source_table_is_not_present_in_tables_in_dependency_order()
+    {
+        var act = () =>
+            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(CreateModelWithMissingDescriptorEdgeTable());
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile read plan for 'edfi.MissingStudentAddress': owning table is not present in TablesInDependencyOrder."
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_descriptor_edge_source_fk_column_is_not_a_descriptor_fk()
+    {
+        var act = () =>
+            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(CreateModelWithNonDescriptorEdgeFkKind());
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile descriptor projection plan for 'edfi.StudentProjection': descriptor edge source '$.academicSubjectDescriptor' FK column 'AcademicSubjectDescriptorId' has kind 'Scalar'. Expected 'DescriptorFk'."
             );
     }
 
@@ -1906,6 +1947,20 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         };
     }
 
+    private static RelationalResourceModel CreateModelWithMissingDocumentReferenceBindingTable()
+    {
+        var model = CreateSingleTableModelCoveringWriteValueSourceKinds();
+        var binding = model.DocumentReferenceBindings.Single() with
+        {
+            Table = new DbTableName(new DbSchemaName("edfi"), "MissingStudentAddress"),
+        };
+
+        return model with
+        {
+            DocumentReferenceBindings = [binding],
+        };
+    }
+
     private static RelationalResourceModel CreateModelWithMissingDescriptorEdgeFkColumn()
     {
         var model = CreateSingleTableModelCoveringWriteValueSourceKinds();
@@ -1917,6 +1972,45 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         return model with
         {
             DescriptorEdgeSources = [edgeSource],
+        };
+    }
+
+    private static RelationalResourceModel CreateModelWithMissingDescriptorEdgeTable()
+    {
+        var model = CreateSingleTableModelCoveringWriteValueSourceKinds();
+        var edgeSource = model.DescriptorEdgeSources.Single() with
+        {
+            Table = new DbTableName(new DbSchemaName("edfi"), "MissingStudentAddress"),
+        };
+
+        return model with
+        {
+            DescriptorEdgeSources = [edgeSource],
+        };
+    }
+
+    private static RelationalResourceModel CreateModelWithNonDescriptorEdgeFkKind()
+    {
+        var model = CreateProjectionMetadataResourceModel();
+        var descriptorColumnName = new DbColumnName("AcademicSubjectDescriptorId");
+        var rootTable = model.Root with
+        {
+            Columns = model
+                .Root.Columns.Select(column =>
+                    column.ColumnName.Equals(descriptorColumnName)
+                        ? column with
+                        {
+                            Kind = ColumnKind.Scalar,
+                        }
+                        : column
+                )
+                .ToArray(),
+        };
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
         };
     }
 }

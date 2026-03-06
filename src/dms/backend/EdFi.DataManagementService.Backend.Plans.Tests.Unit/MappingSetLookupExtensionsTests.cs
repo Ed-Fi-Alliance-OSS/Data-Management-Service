@@ -136,7 +136,7 @@ public class Given_MappingSetLookupExtensions
         act.Should()
             .Throw<InvalidOperationException>()
             .WithMessage(
-                "*Ed-Fi.StudentProjection*mapping set*compiled relational-table read plan is missing projection metadata*DocumentReferenceBindings are present while ReferenceIdentityProjectionPlansInDependencyOrder is empty*internal compilation/selection bug*"
+                "*Ed-Fi.StudentProjection*mapping set*compiled relational-table read plan has invalid projection metadata*DocumentReferenceBindings are present while ReferenceIdentityProjectionPlansInDependencyOrder is empty*internal compilation/selection bug*"
             );
     }
 
@@ -153,7 +153,89 @@ public class Given_MappingSetLookupExtensions
         act.Should()
             .Throw<InvalidOperationException>()
             .WithMessage(
-                "*Ed-Fi.StudentDescriptorEdge*mapping set*compiled relational-table read plan is missing projection metadata*DescriptorEdgeSources are present while DescriptorProjectionPlansInOrder is empty*internal compilation/selection bug*"
+                "*Ed-Fi.StudentDescriptorEdge*mapping set*compiled relational-table read plan has invalid projection metadata*DescriptorEdgeSources are present while DescriptorProjectionPlansInOrder is empty*internal compilation/selection bug*"
+            );
+    }
+
+    [Test]
+    public void It_should_treat_reference_identity_projection_tables_not_present_in_hydration_plans_as_internal_bug()
+    {
+        var readPlan = _mappingSet.ReadPlansByResource[_projectionMetadataResource];
+        var projectionTablePlan = readPlan.ReferenceIdentityProjectionPlansInDependencyOrder.Single();
+        var invalidReadPlan = readPlan with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder =
+            [
+                projectionTablePlan with
+                {
+                    Table = new DbTableName(new DbSchemaName("edfi"), "MissingProjectionTable"),
+                },
+            ],
+        };
+        var mappingSet = ReplaceReadPlan(_mappingSet, _projectionMetadataResource, invalidReadPlan);
+        var act = () => mappingSet.GetReadPlanOrThrow(_projectionMetadataResource);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*Ed-Fi.StudentProjection*mapping set*compiled relational-table read plan has invalid projection metadata*reference identity projection table 'edfi.MissingProjectionTable' is not present in compiled table plans*internal compilation/selection bug*"
+            );
+    }
+
+    [Test]
+    public void It_should_treat_descriptor_projection_tables_not_present_in_hydration_plans_as_internal_bug()
+    {
+        var readPlan = _mappingSet.ReadPlansByResource[_descriptorEdgeResource];
+        var descriptorPlan = readPlan.DescriptorProjectionPlansInOrder.Single();
+        var descriptorSources = descriptorPlan.SourcesInOrder.ToArray();
+
+        descriptorSources[0] = descriptorSources[0] with
+        {
+            Table = new DbTableName(new DbSchemaName("edfi"), "MissingProjectionTable"),
+        };
+
+        var invalidReadPlan = readPlan with
+        {
+            DescriptorProjectionPlansInOrder =
+            [
+                descriptorPlan with
+                {
+                    SourcesInOrder = [.. descriptorSources],
+                },
+            ],
+        };
+        var mappingSet = ReplaceReadPlan(_mappingSet, _descriptorEdgeResource, invalidReadPlan);
+        var act = () => mappingSet.GetReadPlanOrThrow(_descriptorEdgeResource);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*Ed-Fi.StudentDescriptorEdge*mapping set*compiled relational-table read plan has invalid projection metadata*descriptor projection source '$.academicSubjectDescriptor' references table 'edfi.MissingProjectionTable' that is not present in compiled table plans*internal compilation/selection bug*"
+            );
+    }
+
+    [Test]
+    public void It_should_treat_invalid_descriptor_projection_result_shape_as_internal_bug()
+    {
+        var readPlan = _mappingSet.ReadPlansByResource[_descriptorEdgeResource];
+        var descriptorPlan = readPlan.DescriptorProjectionPlansInOrder.Single();
+        var invalidReadPlan = readPlan with
+        {
+            DescriptorProjectionPlansInOrder =
+            [
+                descriptorPlan with
+                {
+                    ResultShape = new DescriptorProjectionResultShape(DescriptorIdOrdinal: 1, UriOrdinal: 0),
+                },
+            ],
+        };
+        var mappingSet = ReplaceReadPlan(_mappingSet, _descriptorEdgeResource, invalidReadPlan);
+        var act = () => mappingSet.GetReadPlanOrThrow(_descriptorEdgeResource);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*Ed-Fi.StudentDescriptorEdge*mapping set*compiled relational-table read plan has invalid projection metadata*descriptor projection result shape must expose DescriptorId at ordinal '0' and Uri at ordinal '1'*DescriptorId='1'*Uri='0'*internal compilation/selection bug*"
             );
     }
 
@@ -570,19 +652,40 @@ public class Given_MappingSetLookupExtensions
     )
     {
         var model = CreateRootOnlyModel(resource, tableName);
+        var descriptorResource = new QualifiedResourceName("Ed-Fi", "AcademicSubjectDescriptor");
+        var rootTable = model.Root with
+        {
+            Columns =
+            [
+                .. model.Root.Columns,
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("AcademicSubjectDescriptorId"),
+                    Kind: ColumnKind.DescriptorFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: new JsonPathExpression(
+                        "$.academicSubjectDescriptor",
+                        [new JsonPathSegment.Property("academicSubjectDescriptor")]
+                    ),
+                    TargetResource: descriptorResource
+                ),
+            ],
+        };
         var descriptorEdgeSource = new DescriptorEdgeSource(
             IsIdentityComponent: false,
             DescriptorValuePath: new JsonPathExpression(
                 "$.academicSubjectDescriptor",
                 [new JsonPathSegment.Property("academicSubjectDescriptor")]
             ),
-            Table: model.Root.Table,
-            FkColumn: new DbColumnName("SchoolYear"),
-            DescriptorResource: new QualifiedResourceName("Ed-Fi", "AcademicSubjectDescriptor")
+            Table: rootTable.Table,
+            FkColumn: new DbColumnName("AcademicSubjectDescriptorId"),
+            DescriptorResource: descriptorResource
         );
 
         return model with
         {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
             DescriptorEdgeSources = [descriptorEdgeSource],
         };
     }
