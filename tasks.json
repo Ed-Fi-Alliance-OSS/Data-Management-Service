@@ -135,5 +135,24 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter 'FullyQualifiedName~RootOnlyReadPlanCompiler|FullyQualifiedName~MappingSetManifestJsonEmitter|FullyQualifiedName~ReadPlanCompiler'`"
     ],
     "completed": true
+  },
+  {
+    "category": "Executable Read Plan Gating",
+    "description": "Restore the distinction between story-05 hydration SQL coverage and a fully executable read plan. Acceptance: `MappingSetCompiler` may continue compiling `SelectByKeysetSql` for all relational-table resources, but `MappingSetLookupExtensions.GetReadPlanOrThrow` must fail with a deterministic actionable `NotSupportedException` when a relational resource still lacks required projection metadata for runtime execution. Specifically, if `DocumentReferenceBindings` or `DescriptorEdgeSources` are present while `ReferenceIdentityProjectionPlansInDependencyOrder` or `DescriptorProjectionPlansInOrder` remain empty, lookup must explain that hydration SQL exists but story-06 projection compilation is still required, instead of reporting an internal bug. Relational resources with no projection dependencies must continue to return their compiled read plans, and shared descriptor storage resources must retain the descriptor-path message.",
+    "steps-to-verify": [
+      "Add or update unit tests in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetLookupExtensionsTests.cs` proving: relational resources without projection dependencies still return a compiled read plan; relational resources with `DocumentReferenceBindings` but empty reference projection plans throw a `NotSupportedException` that points to story 06; relational resources with `DescriptorEdgeSources` but empty descriptor projection plans throw a `NotSupportedException` that points to story 06; and a truly missing relational read plan with no projection dependency still reports an internal compiler or selection bug.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter 'FullyQualifiedName~MappingSetLookupExtensions|FullyQualifiedName~MappingSetCompiler'`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Read Manifest SQL Fidelity",
+    "description": "Make read-plan manifest diagnostics report what the compiler actually emitted. Acceptance: `MappingSetManifestJsonEmitter` must derive `read_plan.table_plans_in_dependency_order[].select_list_columns_in_order` and `order_by_key_columns_in_order` from the compiled `SelectByKeysetSql` or from compiler metadata produced from the same emitted lists, not by re-reading `TableModel.Columns` and `TableModel.Key.Columns`. The manifest should still include the normalized SQL hash, but its human-readable ordering arrays must fail when SQL ordering drifts from the model so goldens remain sensitive to the story-05 ordering contract.",
+    "steps-to-verify": [
+      "Extract or reuse SQL-shape parsing helpers in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` so manifest emission and tests read select-list and `ORDER BY` columns from compiled SQL instead of re-deriving them from `TableModel`.",
+      "Add or update unit tests in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/MappingSetManifestJsonEmitterTests.cs` to compare emitted manifest ordering arrays against the parsed `SelectByKeysetSql` shape for representative single-table and multi-table resources, and to fail if those arrays would differ from the SQL text.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter 'FullyQualifiedName~MappingSetManifestJsonEmitter|FullyQualifiedName~ReadPlanCompiler'`"
+    ],
+    "completed": false
   }
 ]
