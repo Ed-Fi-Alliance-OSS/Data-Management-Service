@@ -90,6 +90,6 @@
       "Retain targeted negative tests for invalid compiled plans at the chosen validation boundary so malformed projection metadata still fails deterministically.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~Given_MappingSetLookupExtensions|FullyQualifiedName~Given_ReadPlanCompiler`"
     ],
-    "completed": false
+    "completed": true
   }
 ]
