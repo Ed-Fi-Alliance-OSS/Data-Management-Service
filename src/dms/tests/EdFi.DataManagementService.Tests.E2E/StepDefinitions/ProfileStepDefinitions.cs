@@ -619,6 +619,38 @@ public class ProfileStepDefinitions(
         ExtractIdFromResponse();
     }
 
+    [When(@"a POST request is made to ""([^""]*)"" with Content-Type header ""([^""]*)"" and body")]
+    public async Task WhenAPOSTRequestIsMadeToWithContentTypeHeaderAndBody(
+        string url,
+        string contentType,
+        string body
+    )
+    {
+        url = AddDataPrefixIfNecessary(url)
+            .Replace("{id}", _id)
+            .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
+        _logger.log.Information($"POST url: {url}");
+        _logger.log.Information($"Content-Type header: {contentType}");
+        _logger.log.Information($"POST body: {body}");
+
+        var headers = new List<KeyValuePair<string, string>>
+        {
+            new("Authorization", _dmsToken),
+            new("Content-Type", contentType),
+        };
+
+        _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
+            url,
+            new() { Data = body, Headers = headers }
+        )!;
+
+        _logger.log.Information($"Response status: {_apiResponse.Status}");
+        _logger.log.Information($"Response body: {await _apiResponse.TextAsync()}");
+
+        ExtractIdFromResponse();
+    }
+
     /// <summary>
     /// Makes a PUT request with an explicit profile Content-Type header for write filtering tests.
     /// Format: application/vnd.ed-fi.{resource}.{profile}.writable+json
@@ -679,6 +711,38 @@ public class ProfileStepDefinitions(
         {
             new("Authorization", _dmsToken),
             new("Content-Type", "application/json"),
+        };
+
+        _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
+            url,
+            new() { Data = body, Headers = headers }
+        )!;
+
+        _logger.log.Information($"Response status: {_apiResponse.Status}");
+        _logger.log.Information($"Response body: {await _apiResponse.TextAsync()}");
+    }
+
+    [When(@"a PUT request is made to ""([^""]*)"" with Content-Type header ""([^""]*)"" and body")]
+    public async Task WhenAPUTRequestIsMadeToWithContentTypeHeaderAndBody(
+        string url,
+        string contentType,
+        string body
+    )
+    {
+        url = AddDataPrefixIfNecessary(url)
+            .Replace("{id}", _id)
+            .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
+        body = body.Replace("{id}", _id);
+
+        _logger.log.Information($"PUT url: {url}");
+        _logger.log.Information($"Content-Type header: {contentType}");
+        _logger.log.Information($"PUT body: {body}");
+
+        var headers = new List<KeyValuePair<string, string>>
+        {
+            new("Authorization", _dmsToken),
+            new("Content-Type", contentType),
         };
 
         _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
