@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Utilities;
@@ -24,6 +25,10 @@ internal class ValidateDatabaseFingerprintMiddleware(
     ILogger<ValidateDatabaseFingerprintMiddleware> logger
 ) : IPipelineStep
 {
+    private const string MalformedFingerprintTitle = "Database Provisioning Error";
+    private const string MalformedFingerprintDetail =
+        "The target database contains malformed dms.EffectiveSchema provisioning metadata. Repair the database by re-running 'ddl provision' against an empty database. If provisioning was partial or the database was modified after provisioning, drop and recreate the database before reprovisioning.";
+
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         if (!appSettings.Value.UseRelationalBackend)
@@ -70,7 +75,33 @@ internal class ValidateDatabaseFingerprintMiddleware(
         }
 
         var connectionString = selectedInstance.ConnectionString;
-        var fingerprint = await fingerprintProvider.GetFingerprintAsync(connectionString);
+        DatabaseFingerprint? fingerprint;
+
+        try
+        {
+            fingerprint = await fingerprintProvider.GetFingerprintAsync(connectionString);
+        }
+        catch (DatabaseFingerprintValidationException ex)
+        {
+            logger.LogError(
+                ex,
+                "Malformed dms.EffectiveSchema fingerprint for DMS instance {InstanceId} ({InstanceName}) - TraceId: {TraceId}",
+                selectedInstance.Id,
+                LoggingSanitizer.SanitizeForLogging(selectedInstance.InstanceName),
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+
+            requestInfo.FrontendResponse = ProblemDetailsResponse.Create(
+                503,
+                ProblemDetailsResponse.DatabaseFingerprintValidationError,
+                MalformedFingerprintTitle,
+                MalformedFingerprintDetail,
+                [ex.Message, MalformedFingerprintDetail],
+                requestInfo.FrontendRequest.TraceId
+            );
+
+            return;
+        }
 
         if (fingerprint == null)
         {
