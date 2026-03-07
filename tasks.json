@@ -147,7 +147,7 @@
       "Run: `dotnet test --no-restore ./src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/EdFi.DataManagementService.SchemaTools.Tests.Unit.csproj --filter FullyQualifiedName~EffectiveSchemaSetBuilder`",
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~Startup`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Startup Database Fingerprint And Resource Key Validation",
