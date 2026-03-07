@@ -657,14 +657,20 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     [Test]
     public void It_should_fail_fast_when_reference_identity_projection_table_is_duplicated()
     {
-        var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
-        var projectionTablePlan = encoded.ReferenceIdentityProjectionPlansInDependencyOrder[0];
+        var model = CreateInterleavedReferenceProjectionModel(rootBindingFirst: false);
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(model);
+        var encoded = NormalizedPlanContractCodec.Encode(readPlan);
+        var projectionTablePlans = encoded.ReferenceIdentityProjectionPlansInDependencyOrder.ToArray();
         var mutated = encoded with
         {
-            ReferenceIdentityProjectionPlansInDependencyOrder = [projectionTablePlan, projectionTablePlan],
+            ReferenceIdentityProjectionPlansInDependencyOrder =
+            [
+                projectionTablePlans[0],
+                projectionTablePlans[0],
+            ],
         };
 
-        var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, model);
 
         var exception = act.Should().Throw<InvalidOperationException>().Which;
         exception.Message.Should().Contain("Decoded read plan for resource");
@@ -955,6 +961,34 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
         var mutated = encoded with
         {
             ReferenceIdentityProjectionPlansInDependencyOrder = [.. projectionTablePlans],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, model);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        GetDecodedProjectionValidationFailureReason(exception.Message).Should().Be(expectedReason);
+    }
+
+    [Test]
+    public void It_should_fail_with_the_same_projection_contract_reason_as_direct_validation_when_an_extra_reference_projection_table_plan_is_appended()
+    {
+        var model = CreateInterleavedReferenceProjectionModel(rootBindingFirst: false);
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(model);
+        var mutatedReadPlan = CreateReadPlanWithAppendedReferenceProjectionTablePlan(
+            readPlan,
+            sourceIndex: 1
+        );
+        var expectedReason = GetProjectionValidationFailureReason(mutatedReadPlan);
+
+        var encoded = NormalizedPlanContractCodec.Encode(readPlan);
+        var projectionTablePlans = encoded.ReferenceIdentityProjectionPlansInDependencyOrder.ToArray();
+        var mutated = encoded with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder =
+            [
+                .. projectionTablePlans,
+                projectionTablePlans[1],
+            ],
         };
 
         var act = () => NormalizedPlanContractCodec.Decode(mutated, model);
