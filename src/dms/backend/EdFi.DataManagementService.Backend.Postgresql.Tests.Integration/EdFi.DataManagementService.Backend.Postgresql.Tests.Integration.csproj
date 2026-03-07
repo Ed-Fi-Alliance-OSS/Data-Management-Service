@@ -30,6 +30,7 @@
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DataManagementService.Backend.Ddl\EdFi.DataManagementService.Backend.Ddl.csproj" />
+        <ProjectReference Include="..\EdFi.DataManagementService.Backend.Postgresql\EdFi.DataManagementService.Backend.Postgresql.csproj" />
     </ItemGroup>
     <ItemGroup>
         <None Update="appsettings.Test.json">

@@ -1,32 +1,34 @@
 [
   {
-    "category": "Dependency Injection",
-    "description": "Fix request scoping for `ProfileResolutionMiddleware`. `ApiService` currently caches a root-resolved middleware instance while `ProfileResolutionMiddleware` still depends on scoped `IApplicationContextProvider`. Acceptance: no pipeline step resolved from the root service provider captures `IApplicationContextProvider`; profile resolution uses the current request scope; application startup and first-request pipeline construction succeed when scope validation is enabled; existing profile resolution behavior remains unchanged for GET/POST/PUT requests.",
+    "category": "PostgreSQL Fingerprint Reader",
+    "description": "Fix the PostgreSQL `IDatabaseFingerprintReader` so it reads the provisioned `dms.\"EffectiveSchema\"` table using the exact identifier casing and quoting emitted by DDL provisioning. Acceptance: a correctly provisioned PostgreSQL database is not misclassified as unprovisioned; the existence check and singleton-row read both succeed against the real schema; requests only return \"Database Not Provisioned\" when the table or singleton row is actually missing; add coverage that exercises the reader against a provisioned PostgreSQL database or an equivalent end-to-end contract test.",
     "steps-to-verify": [
-      "Update `ProfileResolutionMiddleware` so `IApplicationContextProvider` is resolved from `RequestInfo.ScopedServiceProvider`, or otherwise change registrations so the dependency lifetime is coherent.",
-      "Add a unit test covering pipeline construction with `IApplicationContextProvider` registered as scoped and verifying `ProfileResolutionMiddleware` does not require resolving scoped services from the root provider.",
-      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ProfileResolutionMiddleware|FullyQualifiedName~PipelineOrderingTests\"`"
+      "Update `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/PostgresqlDatabaseFingerprintReader.cs` to use the same table and column identifiers as the PostgreSQL provisioning/DDL path.",
+      "Add a test that provisions or simulates the real PostgreSQL schema shape and verifies `ReadFingerprintAsync()` returns the stored fingerprint instead of `null`.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DatabaseFingerprintReaderSupportTests\"`",
+      "Run the PostgreSQL reader contract/integration test added for this fix."
     ],
     "completed": true
   },
   {
-    "category": "Caching",
-    "description": "Align `DatabaseFingerprintProvider` caching behavior with DMS-975 and the runtime mapping-selection design. The story/design says the fingerprint is read on first use and subsequent requests for the same connection string are cache hits. Acceptance: a connection string that has already returned `null` is not re-read on a timer-driven basis; cache behavior is deterministic and explicit; configuration and code comments no longer imply request-time reprobe or hot-reload-like behavior for unprovisioned databases.",
+    "category": "Caching Concurrency",
+    "description": "Fix the `DatabaseFingerprintProvider` fault-retry path so concurrent callers cannot evict a newer healthy cache entry after an earlier read fails. Acceptance: when the first fingerprint read faults and a later retry succeeds, subsequent callers observe the recovered cached value; concurrent awaiters of the same failed read do not remove a replacement entry created by a retry; the provider still performs a single read for concurrent first-use requests and still retries after genuine transient failures.",
     "steps-to-verify": [
-      "Remove or redesign negative-cache TTL behavior in `DatabaseFingerprintProvider` so repeated requests for the same unprovisioned database do not trigger periodic re-reads unless there is an explicit invalidation mechanism.",
-      "Update unit tests to reflect the intended permanent cache or explicit invalidation semantics for `null` results.",
-      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~DatabaseFingerprintProviderTests|FullyQualifiedName~ValidateDatabaseFingerprintMiddleware\"`"
+      "Update `src/dms/core/EdFi.DataManagementService.Core/DatabaseFingerprintProvider.cs` to remove faulted entries by key-and-instance identity instead of blindly removing by connection string.",
+      "Add a concurrency-focused unit test that reproduces: one cached read faults, one caller retries and succeeds, and a later catch from the original fault does not remove the recovered cache entry.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~DatabaseFingerprintProviderTests\"`"
     ],
-    "completed": true
+    "completed": false
   },
   {
-    "category": "Provisioning Validation",
-    "description": "Implement real fingerprint contract validation in the database fingerprint readers and remove duplicated reader logic where practical. DMS-975 task 2 calls for validating singleton invariants, but the current readers only detect table/row presence. Acceptance: malformed `dms.EffectiveSchema` data fails fast with actionable diagnostics; the runtime validates the singleton-row contract and the expected field shapes (`ApiSchemaFormatVersion` non-empty, `EffectiveSchemaHash` valid lowercase hex, `ResourceKeySeedHash` exactly 32 bytes, `ResourceKeyCount` non-negative); PostgreSQL and MSSQL readers share the same validation rules and minimize duplicated control flow.",
+    "category": "SQL Definition Deduplication",
+    "description": "Remove duplicated runtime/provisioning fingerprint SQL definitions so table names, column names, and singleton-read conventions come from one source of truth per dialect. Acceptance: the PostgreSQL and MSSQL runtime fingerprint readers do not carry hand-maintained copies of identifier metadata that can drift from provisioning; changing the `EffectiveSchema` naming contract requires editing one shared definition per dialect; existing runtime validation behavior and provisioning behavior remain unchanged apart from the bug fix above.",
     "steps-to-verify": [
-      "Centralize fingerprint validation in a shared helper or equivalent so both dialect-specific readers apply the same checks.",
-      "Add unit tests for malformed fingerprint values and singleton-invariant failures, including invalid hash length/format and invalid seed-hash length.",
-      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~DatabaseFingerprint|FullyQualifiedName~ValidateDatabaseFingerprintMiddleware\"`"
+      "Refactor the fingerprint reader query metadata so the runtime readers and provisioning code share the same dialect-specific `EffectiveSchema` identifier definitions where practical.",
+      "Add or update tests that would fail if runtime reader identifiers diverge from provisioning identifiers for either PostgreSQL or MSSQL.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ValidateDatabaseFingerprintMiddleware|FullyQualifiedName~PipelineOrderingTests\"`"
     ],
-    "completed": true
+    "completed": false
   }
 ]

@@ -42,7 +42,17 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
     private const int MaxValuesRows = 999;
 
     private static readonly DbTableName _resourceKeyTable = DmsTableNames.ResourceKey;
-    private static readonly DbTableName _effectiveSchemaTable = DmsTableNames.EffectiveSchema;
+    private static readonly DbTableName _effectiveSchemaTable = EffectiveSchemaTableDefinition.Table;
+    private static readonly DbColumnName _effectiveSchemaSingletonIdColumn =
+        EffectiveSchemaTableDefinition.EffectiveSchemaSingletonId;
+    private static readonly DbColumnName _apiSchemaFormatVersionColumn =
+        EffectiveSchemaTableDefinition.ApiSchemaFormatVersion;
+    private static readonly DbColumnName _effectiveSchemaHashColumn =
+        EffectiveSchemaTableDefinition.EffectiveSchemaHash;
+    private static readonly DbColumnName _resourceKeyCountColumn =
+        EffectiveSchemaTableDefinition.ResourceKeyCount;
+    private static readonly DbColumnName _resourceKeySeedHashColumn =
+        EffectiveSchemaTableDefinition.ResourceKeySeedHash;
     private static readonly DbTableName _schemaComponentTable = DmsTableNames.SchemaComponent;
 
     /// <summary>
@@ -105,6 +115,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
     {
         var table = _dialect.QualifyTable(_effectiveSchemaTable);
         var hashLiteral = _dialect.RenderStringLiteral(effectiveSchemaHash);
+        var tableObjectIdLiteral = RenderTableObjectIdLiteral(_effectiveSchemaTable);
 
         writer.AppendLine("-- Preflight: fail fast if database is provisioned for a different schema hash");
 
@@ -125,8 +136,10 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
                 writer.AppendLine($"IF to_regclass('{regclassLiteral}') IS NOT NULL THEN");
                 using (writer.Indent())
                 {
-                    writer.AppendLine($"SELECT {Quote("EffectiveSchemaHash")} INTO _stored_hash FROM {table}");
-                    writer.AppendLine($"WHERE {Quote("EffectiveSchemaSingletonId")} = 1;");
+                    writer.AppendLine(
+                        $"SELECT {Quote(_effectiveSchemaHashColumn)} INTO _stored_hash FROM {table}"
+                    );
+                    writer.AppendLine($"WHERE {Quote(_effectiveSchemaSingletonIdColumn)} = 1;");
                     writer.AppendLine($"IF _stored_hash IS NOT NULL AND _stored_hash <> {hashLiteral} THEN");
                     using (writer.Indent())
                     {
@@ -144,12 +157,14 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
         {
             writer.AppendLine("DECLARE @preflight_stored_hash nvarchar(200);");
             writer.AppendLine();
-            writer.AppendLine("IF OBJECT_ID(N'dms.EffectiveSchema', N'U') IS NOT NULL");
+            writer.AppendLine($"IF OBJECT_ID(N'{tableObjectIdLiteral}', N'U') IS NOT NULL");
             writer.AppendLine("BEGIN");
             using (writer.Indent())
             {
-                writer.AppendLine($"SELECT @preflight_stored_hash = {Quote("EffectiveSchemaHash")} FROM {table}");
-                writer.AppendLine($"WHERE {Quote("EffectiveSchemaSingletonId")} = 1;");
+                writer.AppendLine(
+                    $"SELECT @preflight_stored_hash = {Quote(_effectiveSchemaHashColumn)} FROM {table}"
+                );
+                writer.AppendLine($"WHERE {Quote(_effectiveSchemaSingletonIdColumn)} = 1;");
                 writer.AppendLine(
                     $"IF @preflight_stored_hash IS NOT NULL AND @preflight_stored_hash <> {hashLiteral}"
                 );
@@ -371,7 +386,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
         var table = _dialect.QualifyTable(_effectiveSchemaTable);
 
         var columns =
-            $"{Quote("EffectiveSchemaSingletonId")}, {Quote("ApiSchemaFormatVersion")}, {Quote("EffectiveSchemaHash")}, {Quote("ResourceKeyCount")}, {Quote("ResourceKeySeedHash")}";
+            $"{Quote(_effectiveSchemaSingletonIdColumn)}, {Quote(_apiSchemaFormatVersionColumn)}, {Quote(_effectiveSchemaHashColumn)}, {Quote(_resourceKeyCountColumn)}, {Quote(_resourceKeySeedHashColumn)}";
 
         var values = string.Join(
             ", ",
@@ -388,12 +403,12 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
         {
             writer.AppendLine($"INSERT INTO {table} ({columns})");
             writer.AppendLine($"VALUES ({values})");
-            writer.AppendLine($"ON CONFLICT ({Quote("EffectiveSchemaSingletonId")}) DO NOTHING;");
+            writer.AppendLine($"ON CONFLICT ({Quote(_effectiveSchemaSingletonIdColumn)}) DO NOTHING;");
         }
         else
         {
             writer.AppendLine(
-                $"IF NOT EXISTS (SELECT 1 FROM {table} WHERE {Quote("EffectiveSchemaSingletonId")} = 1)"
+                $"IF NOT EXISTS (SELECT 1 FROM {table} WHERE {Quote(_effectiveSchemaSingletonIdColumn)} = 1)"
             );
             using (writer.Indent())
             {
@@ -429,10 +444,10 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             using (writer.Indent())
             {
                 writer.AppendLine(
-                    $"SELECT {Quote("ResourceKeyCount")}, {Quote("ResourceKeySeedHash")} INTO _stored_count, _stored_hash"
+                    $"SELECT {Quote(_resourceKeyCountColumn)}, {Quote(_resourceKeySeedHashColumn)} INTO _stored_count, _stored_hash"
                 );
                 writer.AppendLine($"FROM {table}");
-                writer.AppendLine($"WHERE {Quote("EffectiveSchemaSingletonId")} = 1;");
+                writer.AppendLine($"WHERE {Quote(_effectiveSchemaSingletonIdColumn)} = 1;");
                 writer.AppendLine("IF _stored_count IS NOT NULL THEN");
                 using (writer.Indent())
                 {
@@ -464,10 +479,10 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             writer.AppendLine("DECLARE @es_stored_hash varbinary(32);");
             writer.AppendLine();
             writer.AppendLine(
-                $"SELECT @es_stored_count = {Quote("ResourceKeyCount")}, @es_stored_hash = {Quote("ResourceKeySeedHash")}"
+                $"SELECT @es_stored_count = {Quote(_resourceKeyCountColumn)}, @es_stored_hash = {Quote(_resourceKeySeedHashColumn)}"
             );
             writer.AppendLine($"FROM {table}");
-            writer.AppendLine($"WHERE {Quote("EffectiveSchemaSingletonId")} = 1;");
+            writer.AppendLine($"WHERE {Quote(_effectiveSchemaSingletonIdColumn)} = 1;");
             writer.AppendLine("IF @es_stored_count IS NOT NULL");
             writer.AppendLine("BEGIN");
             using (writer.Indent())
@@ -880,4 +895,11 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
     }
 
     private string Quote(string identifier) => _dialect.QuoteIdentifier(identifier);
+
+    private string Quote(DbColumnName column) => _dialect.QuoteIdentifier(column.Value);
+
+    private static string RenderTableObjectIdLiteral(DbTableName table)
+    {
+        return $"{table.Schema.Value}.{table.Name}".Replace("'", "''");
+    }
 }
