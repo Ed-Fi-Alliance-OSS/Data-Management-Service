@@ -25,13 +25,33 @@ public sealed class MappingSetCache(Func<MappingSetKey, Task<MappingSet>> compil
     /// <remarks>
     /// Cancellation only cancels waiting for completion. Compilation continues once started.
     /// </remarks>
-    public Task<MappingSet> GetOrCreateAsync(MappingSetKey key, CancellationToken cancellationToken = default)
+    public async Task<MappingSet> GetOrCreateAsync(
+        MappingSetKey key,
+        CancellationToken cancellationToken = default
+    )
     {
-        var compileTask = _cache
-            .GetOrAdd(key, static (mappingSetKey, state) => state.CreateCacheEntry(mappingSetKey), this)
-            .Value;
+        return (
+            await GetOrCreateWithCacheStatusAsync(key, cancellationToken).ConfigureAwait(false)
+        ).MappingSet;
+    }
 
-        return compileTask.WaitAsync(cancellationToken);
+    /// <summary>
+    /// Gets or creates a compiled mapping set for <paramref name="key" /> and indicates whether
+    /// the returned mapping set came from an existing cache entry.
+    /// </summary>
+    public async Task<MappingSetCacheResult> GetOrCreateWithCacheStatusAsync(
+        MappingSetKey key,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var createdEntry = CreateCacheEntry(key);
+        var cacheEntry = _cache.GetOrAdd(key, createdEntry);
+        var mappingSet = await cacheEntry.Value.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        return new MappingSetCacheResult(
+            MappingSet: mappingSet,
+            WasCacheHit: !ReferenceEquals(cacheEntry, createdEntry)
+        );
     }
 
     /// <summary>
@@ -67,3 +87,8 @@ public sealed class MappingSetCache(Func<MappingSetKey, Task<MappingSet>> compil
         }
     }
 }
+
+/// <summary>
+/// Result returned from <see cref="MappingSetCache.GetOrCreateWithCacheStatusAsync" />.
+/// </summary>
+public readonly record struct MappingSetCacheResult(MappingSet MappingSet, bool WasCacheHit);
