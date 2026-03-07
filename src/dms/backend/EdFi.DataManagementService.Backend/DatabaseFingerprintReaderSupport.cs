@@ -5,6 +5,7 @@
 
 using System.Collections.Immutable;
 using System.Data.Common;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging;
 
@@ -30,6 +31,25 @@ internal static class DatabaseFingerprintReaderSupport
     private const short ExpectedSingletonId = 1;
     private const int EffectiveSchemaHashLength = 64;
     private const int ResourceKeySeedHashLength = 32;
+    private static readonly DatabaseFingerprintColumnNames _effectiveSchemaColumnNames = new(
+        EffectiveSchemaSingletonId: EffectiveSchemaTableDefinition.EffectiveSchemaSingletonId.Value,
+        ApiSchemaFormatVersion: EffectiveSchemaTableDefinition.ApiSchemaFormatVersion.Value,
+        EffectiveSchemaHash: EffectiveSchemaTableDefinition.EffectiveSchemaHash.Value,
+        ResourceKeyCount: EffectiveSchemaTableDefinition.ResourceKeyCount.Value,
+        ResourceKeySeedHash: EffectiveSchemaTableDefinition.ResourceKeySeedHash.Value
+    );
+    private static readonly DatabaseFingerprintReaderQuery _pgsqlEffectiveSchemaQuery =
+        CreateEffectiveSchemaQuery(SqlDialect.Pgsql);
+    private static readonly DatabaseFingerprintReaderQuery _mssqlEffectiveSchemaQuery =
+        CreateEffectiveSchemaQuery(SqlDialect.Mssql);
+
+    public static DatabaseFingerprintReaderQuery GetEffectiveSchemaQuery(SqlDialect dialect) =>
+        dialect switch
+        {
+            SqlDialect.Pgsql => _pgsqlEffectiveSchemaQuery,
+            SqlDialect.Mssql => _mssqlEffectiveSchemaQuery,
+            _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported SQL dialect."),
+        };
 
     public static async Task<DatabaseFingerprint?> ReadFingerprintAsync(
         Func<DbConnection> connectionFactory,
@@ -218,4 +238,12 @@ internal static class DatabaseFingerprintReaderSupport
 
         return true;
     }
+
+    private static DatabaseFingerprintReaderQuery CreateEffectiveSchemaQuery(SqlDialect dialect) =>
+        new(
+            EffectiveSchemaTableDefinition.TableDisplayName,
+            EffectiveSchemaTableDefinition.RenderExistsCommandText(dialect),
+            EffectiveSchemaTableDefinition.RenderReadFingerprintCommandText(dialect),
+            _effectiveSchemaColumnNames
+        );
 }
