@@ -18,7 +18,7 @@
       "Add a concurrency-focused unit test that reproduces: one cached read faults, one caller retries and succeeds, and a later catch from the original fault does not remove the recovered cache entry.",
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~DatabaseFingerprintProviderTests\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "SQL Definition Deduplication",
