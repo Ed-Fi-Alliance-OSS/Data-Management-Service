@@ -19,6 +19,7 @@ public class Given_MappingSetLookupExtensions
     private QualifiedResourceName _supportedResource;
     private QualifiedResourceName _descriptorResource;
     private QualifiedResourceName _descriptorEdgeResource;
+    private QualifiedResourceName _multiDescriptorProjectionResource;
     private QualifiedResourceName _nonRootOnlyResource;
     private QualifiedResourceName _keyUnificationResource;
     private QualifiedResourceName _projectionMetadataResource;
@@ -32,6 +33,7 @@ public class Given_MappingSetLookupExtensions
         _supportedResource = fixture.SupportedResource;
         _descriptorResource = fixture.DescriptorResource;
         _descriptorEdgeResource = fixture.DescriptorEdgeResource;
+        _multiDescriptorProjectionResource = fixture.MultiDescriptorProjectionResource;
         _nonRootOnlyResource = fixture.NonRootOnlyResource;
         _keyUnificationResource = fixture.KeyUnificationResource;
         _projectionMetadataResource = fixture.ProjectionMetadataResource;
@@ -69,6 +71,22 @@ public class Given_MappingSetLookupExtensions
         var actualPlan = _mappingSet.GetReadPlanOrThrow(_descriptorEdgeResource);
 
         actualPlan.DescriptorProjectionPlansInOrder.Should().NotBeEmpty();
+    }
+
+    [Test]
+    public void It_should_return_read_plan_when_multiple_descriptor_projection_plans_are_present()
+    {
+        var actualPlan = _mappingSet.GetReadPlanOrThrow(_multiDescriptorProjectionResource);
+
+        actualPlan
+            .DescriptorProjectionPlansInOrder.Select(static plan => plan.SelectByKeysetSql)
+            .Should()
+            .Equal("SELECT descriptor_plan_0;\n", "SELECT descriptor_plan_1;\n");
+        actualPlan
+            .DescriptorProjectionPlansInOrder.SelectMany(static plan => plan.SourcesInOrder)
+            .Select(static source => source.DescriptorValuePath.Canonical)
+            .Should()
+            .Equal("$.academicSubjectDescriptor", "$.gradeLevelDescriptor");
     }
 
     [Test]
@@ -210,7 +228,7 @@ public class Given_MappingSetLookupExtensions
         act.Should()
             .Throw<InvalidOperationException>()
             .WithMessage(
-                "*Ed-Fi.StudentDescriptorEdge*mapping set*compiled relational-table read plan has invalid projection metadata*descriptor projection source '$.academicSubjectDescriptor' references table 'edfi.MissingProjectionTable' that is not present in compiled table plans*internal compilation/selection bug*"
+                "*Ed-Fi.StudentDescriptorEdge*mapping set*compiled relational-table read plan has invalid projection metadata*descriptor projection plan at index '0' source '$.academicSubjectDescriptor' references table 'edfi.MissingProjectionTable' that is not present in compiled table plans*internal compilation/selection bug*"
             );
     }
 
@@ -235,7 +253,32 @@ public class Given_MappingSetLookupExtensions
         act.Should()
             .Throw<InvalidOperationException>()
             .WithMessage(
-                "*Ed-Fi.StudentDescriptorEdge*mapping set*compiled relational-table read plan has invalid projection metadata*descriptor projection result shape must expose DescriptorId at ordinal '0' and Uri at ordinal '1'*DescriptorId='1'*Uri='0'*internal compilation/selection bug*"
+                "*Ed-Fi.StudentDescriptorEdge*mapping set*compiled relational-table read plan has invalid projection metadata*descriptor projection plan at index '0' result shape must expose DescriptorId at ordinal '0' and Uri at ordinal '1'*DescriptorId='1'*Uri='0'*internal compilation/selection bug*"
+            );
+    }
+
+    [Test]
+    public void It_should_treat_invalid_later_descriptor_projection_plan_as_internal_bug()
+    {
+        var readPlan = _mappingSet.ReadPlansByResource[_multiDescriptorProjectionResource];
+        var invalidReadPlan = readPlan with
+        {
+            DescriptorProjectionPlansInOrder =
+            [
+                readPlan.DescriptorProjectionPlansInOrder[0],
+                readPlan.DescriptorProjectionPlansInOrder[1] with
+                {
+                    ResultShape = new DescriptorProjectionResultShape(DescriptorIdOrdinal: 1, UriOrdinal: 0),
+                },
+            ],
+        };
+        var mappingSet = ReplaceReadPlan(_mappingSet, _multiDescriptorProjectionResource, invalidReadPlan);
+        var act = () => mappingSet.GetReadPlanOrThrow(_multiDescriptorProjectionResource);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*Ed-Fi.StudentDescriptorCollection*mapping set*compiled relational-table read plan has invalid projection metadata*descriptor projection plan at index '1' result shape must expose DescriptorId at ordinal '0' and Uri at ordinal '1'*DescriptorId='1'*Uri='0'*internal compilation/selection bug*"
             );
     }
 
@@ -329,6 +372,10 @@ public class Given_MappingSetLookupExtensions
         var supportedResource = new QualifiedResourceName("Ed-Fi", "Student");
         var projectionMetadataResource = new QualifiedResourceName("Ed-Fi", "StudentProjection");
         var descriptorEdgeResource = new QualifiedResourceName("Ed-Fi", "StudentDescriptorEdge");
+        var multiDescriptorProjectionResource = new QualifiedResourceName(
+            "Ed-Fi",
+            "StudentDescriptorCollection"
+        );
         var nonRootOnlyResource = new QualifiedResourceName("Ed-Fi", "StudentAddress");
 
         var descriptorModel = CreateDescriptorModel(descriptorResource);
@@ -342,6 +389,10 @@ public class Given_MappingSetLookupExtensions
             descriptorEdgeResource,
             "StudentDescriptorEdge"
         );
+        var multiDescriptorProjectionModel = CreateRootOnlyModelWithMultipleDescriptorEdgeSources(
+            multiDescriptorProjectionResource,
+            "StudentDescriptorCollection"
+        );
         var nonRootOnlyModel = CreateNonRootOnlyModel(nonRootOnlyResource, "StudentAddress");
 
         var resourceKeysInIdOrder = new ResourceKeyEntry[]
@@ -351,7 +402,8 @@ public class Given_MappingSetLookupExtensions
             new(102, supportedResource, "5.2.0", false),
             new(103, projectionMetadataResource, "5.2.0", false),
             new(104, descriptorEdgeResource, "5.2.0", false),
-            new(105, nonRootOnlyResource, "5.2.0", false),
+            new(105, multiDescriptorProjectionResource, "5.2.0", false),
+            new(106, nonRootOnlyResource, "5.2.0", false),
         };
 
         var effectiveSchemaInfo = new EffectiveSchemaInfo(
@@ -416,6 +468,11 @@ public class Given_MappingSetLookupExtensions
                 new ConcreteResourceModel(
                     resourceKeysInIdOrder[5],
                     ResourceStorageKind.RelationalTables,
+                    multiDescriptorProjectionModel
+                ),
+                new ConcreteResourceModel(
+                    resourceKeysInIdOrder[6],
+                    ResourceStorageKind.RelationalTables,
                     nonRootOnlyModel
                 ),
             ],
@@ -431,6 +488,9 @@ public class Given_MappingSetLookupExtensions
         var keyUnificationReadPlan = CreateReadPlan(keyUnificationModel);
         var projectionMetadataReadPlan = CreateReadPlan(projectionMetadataModel);
         var descriptorEdgeReadPlan = CreateReadPlan(descriptorEdgeModel);
+        var multiDescriptorProjectionReadPlan = CreateSplitDescriptorProjectionReadPlan(
+            multiDescriptorProjectionModel
+        );
 
         var resourceKeyIdByResource = resourceKeysInIdOrder.ToDictionary(
             static keyEntry => keyEntry.Resource,
@@ -460,6 +520,7 @@ public class Given_MappingSetLookupExtensions
                     [keyUnificationResource] = keyUnificationReadPlan,
                     [projectionMetadataResource] = projectionMetadataReadPlan,
                     [descriptorEdgeResource] = descriptorEdgeReadPlan,
+                    [multiDescriptorProjectionResource] = multiDescriptorProjectionReadPlan,
                 },
                 ResourceKeyIdByResource: resourceKeyIdByResource,
                 ResourceKeyById: resourceKeyById
@@ -467,6 +528,7 @@ public class Given_MappingSetLookupExtensions
             SupportedResource: supportedResource,
             DescriptorResource: descriptorResource,
             DescriptorEdgeResource: descriptorEdgeResource,
+            MultiDescriptorProjectionResource: multiDescriptorProjectionResource,
             NonRootOnlyResource: nonRootOnlyResource,
             KeyUnificationResource: keyUnificationResource,
             ProjectionMetadataResource: projectionMetadataResource
@@ -515,6 +577,31 @@ public class Given_MappingSetLookupExtensions
             ReferenceIdentityProjectionPlansInDependencyOrder: [],
             DescriptorProjectionPlansInOrder: []
         );
+    }
+
+    private static ResourceReadPlan CreateSplitDescriptorProjectionReadPlan(RelationalResourceModel model)
+    {
+        var compiledReadPlan = CreateReadPlan(model);
+        var descriptorSources = compiledReadPlan
+            .DescriptorProjectionPlansInOrder.SelectMany(static plan => plan.SourcesInOrder)
+            .ToArray();
+
+        return compiledReadPlan with
+        {
+            DescriptorProjectionPlansInOrder =
+            [
+                new DescriptorProjectionPlan(
+                    SelectByKeysetSql: "SELECT descriptor_plan_0;\n",
+                    ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
+                    SourcesInOrder: [descriptorSources[0]]
+                ),
+                new DescriptorProjectionPlan(
+                    SelectByKeysetSql: "SELECT descriptor_plan_1;\n",
+                    ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
+                    SourcesInOrder: [descriptorSources[1]]
+                ),
+            ],
+        };
     }
 
     private static MappingSet ReplaceReadPlan(
@@ -685,6 +772,74 @@ public class Given_MappingSetLookupExtensions
             Root = rootTable,
             TablesInDependencyOrder = [rootTable],
             DescriptorEdgeSources = [descriptorEdgeSource],
+        };
+    }
+
+    private static RelationalResourceModel CreateRootOnlyModelWithMultipleDescriptorEdgeSources(
+        QualifiedResourceName resource,
+        string tableName
+    )
+    {
+        var model = CreateRootOnlyModel(resource, tableName);
+        var academicSubjectDescriptor = new QualifiedResourceName("Ed-Fi", "AcademicSubjectDescriptor");
+        var gradeLevelDescriptor = new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor");
+        var rootTable = model.Root with
+        {
+            Columns =
+            [
+                .. model.Root.Columns,
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("AcademicSubjectDescriptorId"),
+                    Kind: ColumnKind.DescriptorFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: new JsonPathExpression(
+                        "$.academicSubjectDescriptor",
+                        [new JsonPathSegment.Property("academicSubjectDescriptor")]
+                    ),
+                    TargetResource: academicSubjectDescriptor
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("GradeLevelDescriptorId"),
+                    Kind: ColumnKind.DescriptorFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: new JsonPathExpression(
+                        "$.gradeLevelDescriptor",
+                        [new JsonPathSegment.Property("gradeLevelDescriptor")]
+                    ),
+                    TargetResource: gradeLevelDescriptor
+                ),
+            ],
+        };
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
+            DescriptorEdgeSources =
+            [
+                new DescriptorEdgeSource(
+                    IsIdentityComponent: false,
+                    DescriptorValuePath: new JsonPathExpression(
+                        "$.academicSubjectDescriptor",
+                        [new JsonPathSegment.Property("academicSubjectDescriptor")]
+                    ),
+                    Table: rootTable.Table,
+                    FkColumn: new DbColumnName("AcademicSubjectDescriptorId"),
+                    DescriptorResource: academicSubjectDescriptor
+                ),
+                new DescriptorEdgeSource(
+                    IsIdentityComponent: false,
+                    DescriptorValuePath: new JsonPathExpression(
+                        "$.gradeLevelDescriptor",
+                        [new JsonPathSegment.Property("gradeLevelDescriptor")]
+                    ),
+                    Table: rootTable.Table,
+                    FkColumn: new DbColumnName("GradeLevelDescriptorId"),
+                    DescriptorResource: gradeLevelDescriptor
+                ),
+            ],
         };
     }
 
@@ -894,6 +1049,7 @@ public class Given_MappingSetLookupExtensions
         QualifiedResourceName SupportedResource,
         QualifiedResourceName DescriptorResource,
         QualifiedResourceName DescriptorEdgeResource,
+        QualifiedResourceName MultiDescriptorProjectionResource,
         QualifiedResourceName NonRootOnlyResource,
         QualifiedResourceName KeyUnificationResource,
         QualifiedResourceName ProjectionMetadataResource

@@ -297,49 +297,47 @@ public static class MappingSetLookupExtensions
             return;
         }
 
-        if (readPlan.DescriptorProjectionPlansInOrder.Length != 1)
-        {
-            throw CreateProjectionIntegrityException(
-                mappingSet,
-                resource,
-                $"descriptor projection plan count '{readPlan.DescriptorProjectionPlansInOrder.Length}' does not match expected count '1'"
-            );
-        }
+        var compiledSourceCount = 0;
 
-        var descriptorProjectionPlan = readPlan.DescriptorProjectionPlansInOrder[0];
-
-        if (descriptorProjectionPlan.ResultShape is not { DescriptorIdOrdinal: 0, UriOrdinal: 1 })
+        for (var planIndex = 0; planIndex < readPlan.DescriptorProjectionPlansInOrder.Length; planIndex++)
         {
-            throw CreateProjectionIntegrityException(
-                mappingSet,
-                resource,
-                "descriptor projection result shape must expose DescriptorId at ordinal '0' and Uri at ordinal '1', "
-                    + $"but was DescriptorId='{descriptorProjectionPlan.ResultShape.DescriptorIdOrdinal}', "
-                    + $"Uri='{descriptorProjectionPlan.ResultShape.UriOrdinal}'"
-            );
-        }
+            var descriptorProjectionPlan = readPlan.DescriptorProjectionPlansInOrder[planIndex];
 
-        foreach (var source in descriptorProjectionPlan.SourcesInOrder)
-        {
-            if (!hydrationTablePlansByTable.TryGetValue(source.Table, out var hydrationTablePlan))
+            if (descriptorProjectionPlan.ResultShape is not { DescriptorIdOrdinal: 0, UriOrdinal: 1 })
             {
                 throw CreateProjectionIntegrityException(
                     mappingSet,
                     resource,
-                    $"descriptor projection source '{source.DescriptorValuePath.Canonical}' references table '{source.Table}' that is not present in compiled table plans"
+                    $"descriptor projection plan at index '{planIndex}' result shape must expose DescriptorId at ordinal '0' and Uri at ordinal '1', "
+                        + $"but was DescriptorId='{descriptorProjectionPlan.ResultShape.DescriptorIdOrdinal}', "
+                        + $"Uri='{descriptorProjectionPlan.ResultShape.UriOrdinal}'"
                 );
             }
 
-            ThrowIfOrdinalIsOutOfRange(
-                mappingSet,
-                resource,
-                source.DescriptorIdColumnOrdinal,
-                hydrationTablePlan.TableModel.Columns.Count,
-                $"descriptor projection source ordinal '{source.DescriptorValuePath.Canonical}' for table '{source.Table}'"
-            );
+            foreach (var source in descriptorProjectionPlan.SourcesInOrder)
+            {
+                compiledSourceCount++;
+
+                if (!hydrationTablePlansByTable.TryGetValue(source.Table, out var hydrationTablePlan))
+                {
+                    throw CreateProjectionIntegrityException(
+                        mappingSet,
+                        resource,
+                        $"descriptor projection plan at index '{planIndex}' source '{source.DescriptorValuePath.Canonical}' references table '{source.Table}' that is not present in compiled table plans"
+                    );
+                }
+
+                ThrowIfOrdinalIsOutOfRange(
+                    mappingSet,
+                    resource,
+                    source.DescriptorIdColumnOrdinal,
+                    hydrationTablePlan.TableModel.Columns.Count,
+                    $"descriptor projection plan at index '{planIndex}' source ordinal '{source.DescriptorValuePath.Canonical}' for table '{source.Table}'"
+                );
+            }
         }
 
-        if (descriptorProjectionPlan.SourcesInOrder.Length == readPlan.Model.DescriptorEdgeSources.Count)
+        if (compiledSourceCount == readPlan.Model.DescriptorEdgeSources.Count)
         {
             return;
         }
@@ -347,7 +345,7 @@ public static class MappingSetLookupExtensions
         throw CreateProjectionIntegrityException(
             mappingSet,
             resource,
-            $"descriptor projection source count '{descriptorProjectionPlan.SourcesInOrder.Length}' does not match DescriptorEdgeSources count '{readPlan.Model.DescriptorEdgeSources.Count}'"
+            $"descriptor projection source count '{compiledSourceCount}' across plan count '{readPlan.DescriptorProjectionPlansInOrder.Length}' does not match DescriptorEdgeSources count '{readPlan.Model.DescriptorEdgeSources.Count}'"
         );
     }
 

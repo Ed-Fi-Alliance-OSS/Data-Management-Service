@@ -185,6 +185,34 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_roundtrip_multiple_descriptor_projection_plans_without_collapsing_collection_order()
+    {
+        var readPlan = CreateReadPlanWithSplitDescriptorProjectionPlans(_model);
+        var encoded = NormalizedPlanContractCodec.Encode(readPlan);
+        var decoded = NormalizedPlanContractCodec.Decode(encoded, _model);
+        var reEncoded = NormalizedPlanContractCodec.Encode(decoded);
+
+        NormalizedPlanDtoJson
+            .ComputeCanonicalSha256(reEncoded)
+            .Should()
+            .Be(NormalizedPlanDtoJson.ComputeCanonicalSha256(encoded));
+
+        encoded.DescriptorProjectionPlansInOrder.Should().HaveCount(2);
+        decoded.DescriptorProjectionPlansInOrder.Should().HaveCount(2);
+
+        decoded
+            .DescriptorProjectionPlansInOrder.Select(static plan => plan.SelectByKeysetSql)
+            .Should()
+            .Equal("SELECT descriptor_plan_0;\n", "SELECT descriptor_plan_1;\n");
+
+        decoded
+            .DescriptorProjectionPlansInOrder.SelectMany(static plan => plan.SourcesInOrder)
+            .Select(static source => source.DescriptorValuePath.Canonical)
+            .Should()
+            .Equal("$.gradeLevelDescriptor", "$.schoolYearDescriptor");
+    }
+
+    [Test]
     public void It_should_roundtrip_multi_table_resource_read_plan_through_normalized_dto_without_collapsing_story_05_shape()
     {
         var multiTableModel = CreateSupportedMultiTableModel();
@@ -1164,6 +1192,49 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
                 ),
             ]
         );
+    }
+
+    private static ResourceReadPlan CreateReadPlanWithSplitDescriptorProjectionPlans(
+        RelationalResourceModel model
+    )
+    {
+        var baseReadPlan = CreateReadPlan(model);
+
+        return baseReadPlan with
+        {
+            DescriptorProjectionPlansInOrder =
+            [
+                new DescriptorProjectionPlan(
+                    SelectByKeysetSql: "SELECT descriptor_plan_0;\n",
+                    ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
+                    SourcesInOrder:
+                    [
+                        new DescriptorProjectionSource(
+                            DescriptorValuePath: Path("$.gradeLevelDescriptor"),
+                            Table: model.Root.Table,
+                            DescriptorResource: new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor"),
+                            DescriptorIdColumnOrdinal: 8
+                        ),
+                    ]
+                ),
+                new DescriptorProjectionPlan(
+                    SelectByKeysetSql: "SELECT descriptor_plan_1;\n",
+                    ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
+                    SourcesInOrder:
+                    [
+                        new DescriptorProjectionSource(
+                            DescriptorValuePath: Path("$.schoolYearDescriptor"),
+                            Table: model.Root.Table,
+                            DescriptorResource: new QualifiedResourceName(
+                                "Ed-Fi",
+                                "SchoolYearTypeDescriptor"
+                            ),
+                            DescriptorIdColumnOrdinal: 10
+                        ),
+                    ]
+                ),
+            ],
+        };
     }
 
     private static PageDocumentIdSqlPlan CreateQueryPlan()
