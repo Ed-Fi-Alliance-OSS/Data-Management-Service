@@ -23,6 +23,10 @@ internal static class ProblemDetailsResponse
     /// <summary>503 - dms.EffectiveSchema not found; database must be provisioned</summary>
     public static readonly string DatabaseNotProvisioned = $"{_typePrefix}:database-not-provisioned";
 
+    /// <summary>503 - dms.EffectiveSchema exists but contains malformed fingerprint content</summary>
+    public static readonly string DatabaseFingerprintValidationError =
+        $"{_typePrefix}:database-fingerprint-validation-error";
+
     /// <summary>403 - client has no authorized database instances</summary>
     public static readonly string AuthorizationDenied = $"{_typePrefix}:security:authorization-denied";
 
