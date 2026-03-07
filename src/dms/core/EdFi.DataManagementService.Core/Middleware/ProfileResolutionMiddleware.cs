@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Utilities;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
@@ -19,7 +20,6 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// </summary>
 internal class ProfileResolutionMiddleware(
     IProfileService profileService,
-    IApplicationContextProvider applicationContextProvider,
     ILogger<ProfileResolutionMiddleware> logger
 ) : IPipelineStep
 {
@@ -55,6 +55,8 @@ internal class ProfileResolutionMiddleware(
         }
 
         // Get application context to find ApplicationId
+        var applicationContextProvider =
+            requestInfo.ScopedServiceProvider.GetRequiredService<IApplicationContextProvider>();
         ApplicationContext? appContext = await applicationContextProvider.GetApplicationByClientIdAsync(
             requestInfo.ClientAuthorizations.ClientId
         );
