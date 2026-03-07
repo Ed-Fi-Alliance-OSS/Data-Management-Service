@@ -58,6 +58,29 @@ Feature: Profile Undefined and Misconfigured Usage
              And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
              And the response body status should equal the response status code
 
+        Scenario: 03 PUT with undefined profile returns 403
+            When a PUT request is made to "/ed-fi/schools/{id}" with profile "Profile-Does-Not-Exist" for resource "School" with body
+                  """
+                  {
+                      "id": "{id}",
+                      "schoolId": 99001001,
+                      "nameOfInstitution": "Undefined Profile Update Test School",
+                      "educationOrganizationCategories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                          }
+                      ],
+                      "gradeLevels": [
+                          {
+                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+                          }
+                      ]
+                  }
+                  """
+            Then the profile response status is 403
+             And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
+             And the response body status should equal the response status code
+
     Rule: Misconfigured profile usage returns invalid profile usage failures
 
         Background:
@@ -87,14 +110,14 @@ Feature: Profile Undefined and Misconfigured Usage
                   """
               And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-School-IncludeAll" and namespacePrefixes "uri://ed-fi.org"
 
-        Scenario: 03 GET with misconfigured resource profile returns 406
+        Scenario: 04 GET with misconfigured resource profile returns 406
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-With-Unexisting-Resource" and namespacePrefixes "uri://ed-fi.org"
             When a GET request is made to "/ed-fi/schools/{id}" with Accept header "application/vnd.ed-fi.school.test-profile-with-unexisting-resource.readable+json"
             Then the profile response status is 406
              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
              And the response body status should equal the response status code
 
-        Scenario: 04 POST with misconfigured property profile returns 406
+        Scenario: 05 POST with misconfigured property profile returns 406
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-With-Unexisting-Property" and namespacePrefixes "uri://ed-fi.org"
             When a POST request is made to "/ed-fi/schools" with profile "Test-Profile-With-Unexisting-Property" for resource "School" with body
                   """
