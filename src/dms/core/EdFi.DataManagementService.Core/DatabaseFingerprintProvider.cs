@@ -15,7 +15,9 @@ namespace EdFi.DataManagementService.Core;
 /// Positive and negative results are cached permanently for the life of the
 /// process. This intentionally avoids request-time re-probing for databases
 /// that were unprovisioned on first use.
-/// Faulted tasks are evicted immediately so transient errors retry on next request.
+/// Permanent validation failures are also cached so malformed databases fail
+/// fast per connection string. Other faulted tasks are evicted immediately so
+/// transient errors retry on next request.
 /// </summary>
 internal sealed class DatabaseFingerprintProvider(IDatabaseFingerprintReader fingerprintReader)
 {
@@ -39,6 +41,10 @@ internal sealed class DatabaseFingerprintProvider(IDatabaseFingerprintReader fin
         try
         {
             return await lazy.Value;
+        }
+        catch (DatabaseFingerprintValidationException)
+        {
+            throw;
         }
         catch
         {

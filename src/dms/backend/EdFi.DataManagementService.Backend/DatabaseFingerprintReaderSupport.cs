@@ -120,7 +120,7 @@ internal static class DatabaseFingerprintReaderSupport
 
         if (await reader.ReadAsync())
         {
-            throw new InvalidOperationException(
+            throw new DatabaseFingerprintValidationException(
                 $"{tableDisplayName} must contain exactly one singleton row, but multiple rows were found."
             );
         }
@@ -139,35 +139,35 @@ internal static class DatabaseFingerprintReaderSupport
     {
         if (effectiveSchemaSingletonId != ExpectedSingletonId)
         {
-            throw new InvalidOperationException(
+            throw new DatabaseFingerprintValidationException(
                 $"{tableDisplayName} must contain a singleton row with EffectiveSchemaSingletonId = 1, but found {effectiveSchemaSingletonId}."
             );
         }
 
         if (string.IsNullOrWhiteSpace(apiSchemaFormatVersion))
         {
-            throw new InvalidOperationException(
+            throw new DatabaseFingerprintValidationException(
                 $"{tableDisplayName}.ApiSchemaFormatVersion must not be empty."
             );
         }
 
         if (!IsValidLowercaseHex(effectiveSchemaHash, EffectiveSchemaHashLength))
         {
-            throw new InvalidOperationException(
+            throw new DatabaseFingerprintValidationException(
                 $"{tableDisplayName}.EffectiveSchemaHash must be 64 lowercase hex characters."
             );
         }
 
         if (resourceKeyCount < 0)
         {
-            throw new InvalidOperationException(
+            throw new DatabaseFingerprintValidationException(
                 $"{tableDisplayName}.ResourceKeyCount must be non-negative, but found {resourceKeyCount}."
             );
         }
 
         if (resourceKeySeedHash.Length != ResourceKeySeedHashLength)
         {
-            throw new InvalidOperationException(
+            throw new DatabaseFingerprintValidationException(
                 $"{tableDisplayName}.ResourceKeySeedHash must be exactly 32 bytes, but found {resourceKeySeedHash.Length}."
             );
         }
@@ -182,43 +182,86 @@ internal static class DatabaseFingerprintReaderSupport
 
     private static string ReadRequiredString(DbDataReader reader, string columnName, string tableDisplayName)
     {
-        var ordinal = reader.GetOrdinal(columnName);
+        var ordinal = GetRequiredOrdinal(reader, columnName, tableDisplayName);
 
         if (reader.IsDBNull(ordinal))
         {
-            throw new InvalidOperationException($"{tableDisplayName}.{columnName} must not be null.");
+            throw new DatabaseFingerprintValidationException(
+                $"{tableDisplayName}.{columnName} must not be null."
+            );
         }
 
-        return reader.GetString(ordinal);
+        try
+        {
+            return reader.GetString(ordinal);
+        }
+        catch (InvalidCastException ex)
+        {
+            throw new DatabaseFingerprintValidationException(
+                $"{tableDisplayName}.{columnName} must be a string.",
+                ex
+            );
+        }
     }
 
     private static short ReadRequiredInt16(DbDataReader reader, string columnName, string tableDisplayName)
     {
-        var ordinal = reader.GetOrdinal(columnName);
+        var ordinal = GetRequiredOrdinal(reader, columnName, tableDisplayName);
 
         if (reader.IsDBNull(ordinal))
         {
-            throw new InvalidOperationException($"{tableDisplayName}.{columnName} must not be null.");
+            throw new DatabaseFingerprintValidationException(
+                $"{tableDisplayName}.{columnName} must not be null."
+            );
         }
 
-        return reader.GetInt16(ordinal);
+        try
+        {
+            return reader.GetInt16(ordinal);
+        }
+        catch (InvalidCastException ex)
+        {
+            throw new DatabaseFingerprintValidationException(
+                $"{tableDisplayName}.{columnName} must be a 16-bit integer.",
+                ex
+            );
+        }
     }
 
     private static byte[] ReadRequiredBytes(DbDataReader reader, string columnName, string tableDisplayName)
     {
-        var ordinal = reader.GetOrdinal(columnName);
+        var ordinal = GetRequiredOrdinal(reader, columnName, tableDisplayName);
 
         if (reader.IsDBNull(ordinal))
         {
-            throw new InvalidOperationException($"{tableDisplayName}.{columnName} must not be null.");
+            throw new DatabaseFingerprintValidationException(
+                $"{tableDisplayName}.{columnName} must not be null."
+            );
         }
 
         if (reader.GetValue(ordinal) is not byte[] value)
         {
-            throw new InvalidOperationException($"{tableDisplayName}.{columnName} must be a byte array.");
+            throw new DatabaseFingerprintValidationException(
+                $"{tableDisplayName}.{columnName} must be a byte array."
+            );
         }
 
         return value;
+    }
+
+    private static int GetRequiredOrdinal(DbDataReader reader, string columnName, string tableDisplayName)
+    {
+        try
+        {
+            return reader.GetOrdinal(columnName);
+        }
+        catch (Exception ex) when (ex is IndexOutOfRangeException or ArgumentException)
+        {
+            throw new DatabaseFingerprintValidationException(
+                $"{tableDisplayName} is missing required column {columnName}.",
+                ex
+            );
+        }
     }
 
     private static bool IsValidLowercaseHex(string value, int expectedLength)
