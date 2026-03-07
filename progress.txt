@@ -1,0 +1,5 @@
+2026-03-06
+Task complete: Dependency Injection - fix ProfileResolutionMiddleware request scoping. Story: reference/design/backend-redesign/epics/06-runtime-mapping-selection/00-read-effective-schema.md
+Decisions: resolve IApplicationContextProvider from RequestInfo.ScopedServiceProvider during Execute(); keep cached/root-built pipelines safe under ValidateScopes; add pipeline-construction + multi-request scope regression tests.
+Files: src/dms/core/EdFi.DataManagementService.Core/Middleware/ProfileResolutionMiddleware.cs; src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Middleware/ProfileResolutionMiddlewareTests.cs; src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Middleware/ProfileResolutionMiddlewarePipelineConstructionTests.cs; tasks.json; progress.txt
+Notes: targeted test loop green. Remaining work in tasks.json: fingerprint negative-cache semantics; EffectiveSchema contract validation.

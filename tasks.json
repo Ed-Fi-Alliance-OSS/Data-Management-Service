@@ -1,0 +1,32 @@
+[
+  {
+    "category": "Dependency Injection",
+    "description": "Fix request scoping for `ProfileResolutionMiddleware`. `ApiService` currently caches a root-resolved middleware instance while `ProfileResolutionMiddleware` still depends on scoped `IApplicationContextProvider`. Acceptance: no pipeline step resolved from the root service provider captures `IApplicationContextProvider`; profile resolution uses the current request scope; application startup and first-request pipeline construction succeed when scope validation is enabled; existing profile resolution behavior remains unchanged for GET/POST/PUT requests.",
+    "steps-to-verify": [
+      "Update `ProfileResolutionMiddleware` so `IApplicationContextProvider` is resolved from `RequestInfo.ScopedServiceProvider`, or otherwise change registrations so the dependency lifetime is coherent.",
+      "Add a unit test covering pipeline construction with `IApplicationContextProvider` registered as scoped and verifying `ProfileResolutionMiddleware` does not require resolving scoped services from the root provider.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ProfileResolutionMiddleware|FullyQualifiedName~PipelineOrderingTests\"`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Caching",
+    "description": "Align `DatabaseFingerprintProvider` caching behavior with DMS-975 and the runtime mapping-selection design. The story/design says the fingerprint is read on first use and subsequent requests for the same connection string are cache hits. Acceptance: a connection string that has already returned `null` is not re-read on a timer-driven basis; cache behavior is deterministic and explicit; configuration and code comments no longer imply request-time reprobe or hot-reload-like behavior for unprovisioned databases.",
+    "steps-to-verify": [
+      "Remove or redesign negative-cache TTL behavior in `DatabaseFingerprintProvider` so repeated requests for the same unprovisioned database do not trigger periodic re-reads unless there is an explicit invalidation mechanism.",
+      "Update unit tests to reflect the intended permanent cache or explicit invalidation semantics for `null` results.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~DatabaseFingerprintProviderTests|FullyQualifiedName~ValidateDatabaseFingerprintMiddleware\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Provisioning Validation",
+    "description": "Implement real fingerprint contract validation in the database fingerprint readers and remove duplicated reader logic where practical. DMS-975 task 2 calls for validating singleton invariants, but the current readers only detect table/row presence. Acceptance: malformed `dms.EffectiveSchema` data fails fast with actionable diagnostics; the runtime validates the singleton-row contract and the expected field shapes (`ApiSchemaFormatVersion` non-empty, `EffectiveSchemaHash` valid lowercase hex, `ResourceKeySeedHash` exactly 32 bytes, `ResourceKeyCount` non-negative); PostgreSQL and MSSQL readers share the same validation rules and minimize duplicated control flow.",
+    "steps-to-verify": [
+      "Centralize fingerprint validation in a shared helper or equivalent so both dialect-specific readers apply the same checks.",
+      "Add unit tests for malformed fingerprint values and singleton-invariant failures, including invalid hash length/format and invalid seed-hash length.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~DatabaseFingerprint|FullyQualifiedName~ValidateDatabaseFingerprintMiddleware\"`"
+    ],
+    "completed": false
+  }
+]
