@@ -30,5 +30,27 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DatabaseFingerprintReaderSupportTests\"`"
     ],
     "completed": true
+  },
+  {
+    "category": "Correctness",
+    "description": "Move `ValidateDatabaseFingerprintMiddleware` so it still runs immediately after instance routing but only after non-schema-dependent request-shape validation that must preserve current error precedence. Acceptance: malformed or unknown routes continue to return the existing `404`/`400` responses from path parsing and route validation instead of attempting a database fingerprint read; valid routed requests still validate `dms.EffectiveSchema` before any schema-dependent middleware or handlers execute; pipeline-ordering tests explicitly lock in the new ordering.",
+    "steps-to-verify": [
+      "Adjust the common pipeline ordering so fingerprint validation occurs after request parsing/route validation steps that do not require schema data, while remaining before schema-dependent middleware and handlers.",
+      "Add or update tests proving invalid paths and invalid route shapes do not invoke `IDatabaseFingerprintReader` and still return the same status codes as before.",
+      "Update pipeline ordering tests to assert the exact relative position of `ValidateDatabaseFingerprintMiddleware` versus `ResolveDmsInstanceMiddleware`, `ParsePathMiddleware`, and the first schema-dependent step.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~PipelineOrderingTests|FullyQualifiedName~ParsePathMiddlewareTests|FullyQualifiedName~ValidateDatabaseFingerprintMiddleware|FullyQualifiedName~ResolveDmsInstanceMiddlewareTests\"`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Error Handling",
+    "description": "Make the malformed-fingerprint operator guidance consistent with the actual cache behavior for permanent validation failures. Acceptance: if malformed `dms.EffectiveSchema` content is cached as a permanent per-connection-string failure, the `503` response and logs explicitly state that DMS must be restarted after the database is repaired; user-facing remediation text and test assertions stay aligned with the implemented behavior.",
+    "steps-to-verify": [
+      "Choose a single supported recovery model for malformed fingerprint failures: either keep permanent caching and update the problem-details/logging text to require restart after repair, or change the provider to allow recovery without restart.",
+      "Add or update middleware/provider tests that assert the exact remediation text and recovery behavior for malformed fingerprint failures.",
+      "Verify that provisioning-missing guidance and malformed-fingerprint guidance are distinct and both remain actionable.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~DatabaseFingerprintProviderTests|FullyQualifiedName~ValidateDatabaseFingerprintMiddlewareValidationErrorTests|FullyQualifiedName~ValidateDatabaseFingerprintMiddlewareMissingTableTests|FullyQualifiedName~ProblemDetailsResponseTests\"`"
+    ],
+    "completed": false
   }
 ]

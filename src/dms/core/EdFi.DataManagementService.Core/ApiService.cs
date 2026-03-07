@@ -148,17 +148,26 @@ internal class ApiService : IApiService
             new TenantValidationMiddleware(_appSettings.Value.MultiTenancy, _logger),
             _serviceProvider.GetRequiredService<JwtAuthenticationMiddleware>(),
             _serviceProvider.GetRequiredService<ResolveDmsInstanceMiddleware>(),
-            _serviceProvider.GetRequiredService<ValidateDatabaseFingerprintMiddleware>(),
         ];
+    }
+
+    private List<IPipelineStep> GetRoutedResourceInitialSteps()
+    {
+        var steps = GetCommonInitialSteps();
+        steps.AddRange([
+            new ParsePathMiddleware(_logger),
+            _serviceProvider.GetRequiredService<ValidateDatabaseFingerprintMiddleware>(),
+        ]);
+
+        return steps;
     }
 
     private PipelineProvider CreateUpsertPipeline()
     {
-        var steps = GetCommonInitialSteps();
+        var steps = GetRoutedResourceInitialSteps();
         steps.AddRange([
             new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
             new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
-            new ParsePathMiddleware(_logger),
             new ParseBodyMiddleware(_logger),
             new RequestInfoBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
             new DuplicatePropertiesMiddleware(_logger),
@@ -206,11 +215,10 @@ internal class ApiService : IApiService
 
     private PipelineProvider CreateGetByIdPipeline()
     {
-        var steps = GetCommonInitialSteps();
+        var steps = GetRoutedResourceInitialSteps();
         steps.AddRange([
             new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
             new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
-            new ParsePathMiddleware(_logger),
             new ValidateEndpointMiddleware(_logger),
             _serviceProvider.GetRequiredService<ProfileResolutionMiddleware>(),
             new BuildResourceInfoMiddleware(
@@ -229,11 +237,10 @@ internal class ApiService : IApiService
 
     private PipelineProvider CreateQueryPipeline()
     {
-        var steps = GetCommonInitialSteps();
+        var steps = GetRoutedResourceInitialSteps();
         steps.AddRange([
             new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
             new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
-            new ParsePathMiddleware(_logger),
             new ValidateEndpointMiddleware(_logger),
             _serviceProvider.GetRequiredService<ProfileResolutionMiddleware>(),
             new ProvideAuthorizationSecurableInfoMiddleware(_logger),
@@ -253,11 +260,10 @@ internal class ApiService : IApiService
 
     private PipelineProvider CreateUpdatePipeline()
     {
-        var steps = GetCommonInitialSteps();
+        var steps = GetRoutedResourceInitialSteps();
         steps.AddRange([
             new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
             new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
-            new ParsePathMiddleware(_logger),
             new ParseBodyMiddleware(_logger),
             new RequestInfoBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
             new DuplicatePropertiesMiddleware(_logger),
@@ -309,11 +315,10 @@ internal class ApiService : IApiService
 
     private PipelineProvider CreateDeleteByIdPipeline()
     {
-        var steps = GetCommonInitialSteps();
+        var steps = GetRoutedResourceInitialSteps();
         steps.AddRange([
             new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
             new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
-            new ParsePathMiddleware(_logger),
             new ValidateEndpointMiddleware(_logger),
             new BuildResourceInfoMiddleware(
                 _logger,
@@ -333,6 +338,7 @@ internal class ApiService : IApiService
     {
         var steps = GetCommonInitialSteps();
         steps.AddRange([
+            _serviceProvider.GetRequiredService<ValidateDatabaseFingerprintMiddleware>(),
             new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
             new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
             _serviceProvider.GetRequiredService<GetTokenInfoHandler>(),

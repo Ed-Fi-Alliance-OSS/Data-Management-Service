@@ -154,11 +154,10 @@ public class ApiServiceJwtAuthenticationTests
         var steps = (List<IPipelineStep>)getCommonInitialStepsMethod!.Invoke(apiService, null)!;
 
         // Assert
-        steps.Should().HaveCount(6); // RequestResponseLoggingMiddleware + CoreExceptionLoggingMiddleware + TenantValidationMiddleware + JwtAuthenticationMiddleware + ResolveDmsInstanceMiddleware + ValidateDatabaseFingerprintMiddleware
+        steps.Should().HaveCount(5); // RequestResponseLoggingMiddleware + CoreExceptionLoggingMiddleware + TenantValidationMiddleware + JwtAuthenticationMiddleware + ResolveDmsInstanceMiddleware
         steps[2].Should().BeOfType<TenantValidationMiddleware>();
         steps[3].Should().BeOfType<JwtAuthenticationMiddleware>();
         steps[4].Should().BeOfType<ResolveDmsInstanceMiddleware>();
-        steps[5].Should().BeOfType<ValidateDatabaseFingerprintMiddleware>();
     }
 
     [Test]

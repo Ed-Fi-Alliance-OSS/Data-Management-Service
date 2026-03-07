@@ -30,7 +30,7 @@ public class PipelineOrderingTests
 {
     [TestFixture]
     [Parallelizable]
-    public class Given_Common_Initial_Steps : PipelineOrderingTests
+    public class Given_The_Query_Pipeline : PipelineOrderingTests
     {
         private List<Type> _stepTypes = [];
 
@@ -65,6 +65,18 @@ public class PipelineOrderingTests
                 NullLogger<ValidateDatabaseFingerprintMiddleware>.Instance
             );
 
+            services.AddSingleton<IProfileService>(A.Fake<IProfileService>());
+            services.AddTransient<ProfileResolutionMiddleware>();
+            services.AddTransient<ILogger<ProfileResolutionMiddleware>>(_ =>
+                NullLogger<ProfileResolutionMiddleware>.Instance
+            );
+
+            services.AddTransient<ProfileFilteringMiddleware>();
+            services.AddSingleton<IProfileResponseFilter>(A.Fake<IProfileResponseFilter>());
+            services.AddTransient<ILogger<ProfileFilteringMiddleware>>(_ =>
+                NullLogger<ProfileFilteringMiddleware>.Instance
+            );
+
             var serviceProvider = services.BuildServiceProvider();
 
             var apiService = new ApiService(
@@ -88,12 +100,20 @@ public class PipelineOrderingTests
             );
 
             var method = typeof(ApiService).GetMethod(
-                "GetCommonInitialSteps",
+                "CreateQueryPipeline",
                 BindingFlags.NonPublic | BindingFlags.Instance
             );
-            method.Should().NotBeNull("GetCommonInitialSteps should exist on ApiService");
-            var steps = (List<IPipelineStep>)method!.Invoke(apiService, null)!;
-            _stepTypes = steps.Select(s => s.GetType()).ToList();
+            method.Should().NotBeNull("CreateQueryPipeline should exist on ApiService");
+
+            var pipeline = (PipelineProvider)method!.Invoke(apiService, null)!;
+            var field = typeof(PipelineProvider)
+                .GetFields(BindingFlags.NonPublic | BindingFlags.Instance)
+                .SingleOrDefault(info => info.FieldType == typeof(List<IPipelineStep>));
+
+            field.Should().NotBeNull("PipelineProvider should store its steps for execution");
+
+            var steps = (List<IPipelineStep>)field!.GetValue(pipeline)!;
+            _stepTypes = steps.Select(step => step.GetType()).ToList();
         }
 
         [Test]
@@ -103,40 +123,49 @@ public class PipelineOrderingTests
         }
 
         [Test]
-        public void It_places_fingerprint_validation_after_resolve_dms_instance()
+        public void It_places_parse_path_after_resolve_dms_instance()
         {
             var resolveIndex = _stepTypes.IndexOf(typeof(ResolveDmsInstanceMiddleware));
-            var fingerprintIndex = _stepTypes.IndexOf(typeof(ValidateDatabaseFingerprintMiddleware));
+            var parsePathIndex = _stepTypes.IndexOf(typeof(ParsePathMiddleware));
 
             resolveIndex.Should().BeGreaterThanOrEqualTo(0);
-            fingerprintIndex
+            parsePathIndex
                 .Should()
                 .BeGreaterThan(
                     resolveIndex,
-                    "ValidateDatabaseFingerprintMiddleware must come after ResolveDmsInstanceMiddleware"
+                    "ParsePathMiddleware must come after ResolveDmsInstanceMiddleware"
                 );
         }
 
         [Test]
-        public void It_places_fingerprint_validation_as_last_common_step()
+        public void It_places_fingerprint_validation_after_parse_path()
         {
+            var parsePathIndex = _stepTypes.IndexOf(typeof(ParsePathMiddleware));
             var fingerprintIndex = _stepTypes.IndexOf(typeof(ValidateDatabaseFingerprintMiddleware));
+
+            parsePathIndex.Should().BeGreaterThanOrEqualTo(0);
             fingerprintIndex
                 .Should()
-                .Be(
-                    _stepTypes.Count - 1,
-                    "ValidateDatabaseFingerprintMiddleware should be the last common initial step"
+                .BeGreaterThan(
+                    parsePathIndex,
+                    "ValidateDatabaseFingerprintMiddleware must come after ParsePathMiddleware"
                 );
         }
 
         [Test]
-        public void It_does_not_contain_schema_dependent_middleware()
+        public void It_places_fingerprint_validation_before_the_first_schema_dependent_step()
         {
-            // Schema-dependent middleware (ApiSchemaValidationMiddleware, ProvideApiSchemaMiddleware)
-            // must NOT be in the common initial steps — they are added per-pipeline after these steps.
-            // This ensures ValidateDatabaseFingerprintMiddleware always runs before them.
-            _stepTypes.Should().NotContain(typeof(ApiSchemaValidationMiddleware));
-            _stepTypes.Should().NotContain(typeof(ProvideApiSchemaMiddleware));
+            var fingerprintIndex = _stepTypes.IndexOf(typeof(ValidateDatabaseFingerprintMiddleware));
+            var apiSchemaValidationIndex = _stepTypes.IndexOf(typeof(ApiSchemaValidationMiddleware));
+
+            fingerprintIndex.Should().BeGreaterThanOrEqualTo(0);
+            apiSchemaValidationIndex.Should().BeGreaterThanOrEqualTo(0);
+            fingerprintIndex
+                .Should()
+                .BeLessThan(
+                    apiSchemaValidationIndex,
+                    "ValidateDatabaseFingerprintMiddleware must run before schema-dependent middleware"
+                );
         }
     }
 }
