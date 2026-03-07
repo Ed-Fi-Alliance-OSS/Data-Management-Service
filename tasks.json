@@ -70,7 +70,7 @@
       "Add a focused multi-row execution-oriented test or SQL-shape assertion proving the single-source path now produces a distinct descriptor-id lookup set.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~DescriptorProjection`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Descriptor Projection Contract Validation",

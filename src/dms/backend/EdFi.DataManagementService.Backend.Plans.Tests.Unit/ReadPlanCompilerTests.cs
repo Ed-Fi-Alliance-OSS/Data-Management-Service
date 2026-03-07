@@ -220,7 +220,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 d."Uri"
             FROM
                 (
-                    SELECT t0."AcademicSubjectDescriptorId" AS "DescriptorId"
+                    SELECT DISTINCT t0."AcademicSubjectDescriptorId" AS "DescriptorId"
                     FROM "edfi"."StudentProjection" t0
                     INNER JOIN "page" k ON t0."DocumentId" = k."DocumentId"
                     WHERE t0."AcademicSubjectDescriptorId" IS NOT NULL
@@ -245,7 +245,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 d.[Uri]
             FROM
                 (
-                    SELECT t0.[AcademicSubjectDescriptorId] AS [DescriptorId]
+                    SELECT DISTINCT t0.[AcademicSubjectDescriptorId] AS [DescriptorId]
                     FROM [edfi].[StudentProjection] t0
                     INNER JOIN [#page] k ON t0.[DocumentId] = k.[DocumentId]
                     WHERE t0.[AcademicSubjectDescriptorId] IS NOT NULL
@@ -274,7 +274,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 d."Uri"
             FROM
                 (
-                    SELECT t0."SchoolYearTypeDescriptorIdCanonical" AS "DescriptorId"
+                    SELECT DISTINCT t0."SchoolYearTypeDescriptorIdCanonical" AS "DescriptorId"
                     FROM "edfi"."Student" t0
                     INNER JOIN "page" k ON t0."DocumentId" = k."DocumentId"
                     WHERE t0."SchoolYearTypeDescriptorIdCanonical" IS NOT NULL
@@ -303,7 +303,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 d.[Uri]
             FROM
                 (
-                    SELECT t0.[SchoolYearTypeDescriptorIdCanonical] AS [DescriptorId]
+                    SELECT DISTINCT t0.[SchoolYearTypeDescriptorIdCanonical] AS [DescriptorId]
                     FROM [edfi].[Student] t0
                     INNER JOIN [#page] k ON t0.[DocumentId] = k.[DocumentId]
                     WHERE t0.[SchoolYearTypeDescriptorIdCanonical] IS NOT NULL
