@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
+using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
@@ -275,6 +276,65 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
         {
             _requestInfo.FrontendResponse.Body.Should().NotBeNull();
             _requestInfo.FrontendResponse.Body!.ToString().Should().Contain("restart DMS");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Feature_Flag_Is_Enabled_And_No_Dialect_Fingerprint_Reader_Is_Registered
+        : ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private Func<Task> _execute = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var dmsInstanceSelection = A.Fake<IDmsInstanceSelection>();
+            A.CallTo(() => dmsInstanceSelection.IsSet).Returns(true);
+            A.CallTo(() => dmsInstanceSelection.GetSelectedDmsInstance())
+                .Returns(
+                    new DmsInstance(
+                        Id: 1,
+                        InstanceType: "Test",
+                        InstanceName: "Test Instance",
+                        ConnectionString: "Server=test;Database=testdb",
+                        RouteContext: []
+                    )
+                );
+
+            var serviceProvider = A.Fake<IServiceProvider>();
+            A.CallTo(() => serviceProvider.GetService(typeof(IDmsInstanceSelection)))
+                .Returns(dmsInstanceSelection);
+
+            var appSettings = Options.Create(
+                new AppSettings { AllowIdentityUpdateOverrides = "", UseRelationalBackend = true }
+            );
+
+            var middleware = new ValidateDatabaseFingerprintMiddleware(
+                appSettings,
+                new DatabaseFingerprintProvider(new MissingDatabaseFingerprintReader(appSettings)),
+                A.Fake<ILogger<ValidateDatabaseFingerprintMiddleware>>()
+            );
+
+            _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
+            _execute = () => middleware.Execute(_requestInfo, () => Task.CompletedTask);
+        }
+
+        [Test]
+        public async Task It_throws_a_configuration_error()
+        {
+            var exception = await _execute.Should().ThrowAsync<InvalidOperationException>();
+
+            exception.Which.Message.Should().Be(MissingDatabaseFingerprintReader.ConfigurationErrorMessage);
+        }
+
+        [Test]
+        public async Task It_does_not_return_the_database_not_provisioned_response()
+        {
+            await _execute.Should().ThrowAsync<InvalidOperationException>();
+
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 }

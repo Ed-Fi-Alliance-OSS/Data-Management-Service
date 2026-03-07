@@ -8,9 +8,8 @@ using EdFi.DataManagementService.Core.External.Backend;
 namespace EdFi.DataManagementService.Core;
 
 /// <summary>
-/// Default no-op implementation of IDatabaseFingerprintReader that always returns null.
-/// Used as a DI fallback when no dialect-specific reader has been registered.
-/// Backend-specific registrations override this default.
+/// Testing-only no-op implementation of IDatabaseFingerprintReader that always returns null.
+/// This should not be the runtime registration when UseRelationalBackend is enabled.
 /// </summary>
 internal sealed class NullDatabaseFingerprintReader : IDatabaseFingerprintReader
 {
