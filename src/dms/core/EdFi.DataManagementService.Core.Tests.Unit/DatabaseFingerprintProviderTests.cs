@@ -343,4 +343,161 @@ public class DatabaseFingerprintProviderTests
             _results.Should().AllSatisfy(r => r.Should().BeNull());
         }
     }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Faulted_Read_With_A_Delayed_Concurrent_Awaiter_And_A_Successful_Retry
+        : DatabaseFingerprintProviderTests
+    {
+        private DatabaseFingerprint? _cachedResult;
+        private Exception? _delayedException;
+        private Exception? _firstException;
+        private IDatabaseFingerprintReader _reader = null!;
+        private DatabaseFingerprint? _retryResult;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _reader = A.Fake<IDatabaseFingerprintReader>();
+
+            var firstRead = new TaskCompletionSource<DatabaseFingerprint?>();
+            var recoveredFingerprint = CreateFingerprint("recovered");
+            int callCount = 0;
+
+            A.CallTo(() => _reader.ReadFingerprintAsync("conn1"))
+                .ReturnsLazily(() =>
+                {
+                    callCount++;
+
+                    return callCount switch
+                    {
+                        1 => firstRead.Task,
+                        2 => Task.FromResult<DatabaseFingerprint?>(recoveredFingerprint),
+                        _ => Task.FromResult<DatabaseFingerprint?>(
+                            CreateFingerprint($"unexpected-{callCount}")
+                        ),
+                    };
+                });
+
+            var provider = new DatabaseFingerprintProvider(_reader);
+
+            var firstCallerTask = provider.GetFingerprintAsync("conn1");
+            var delayedContext = new DeferredSynchronizationContext();
+            var delayedCallerTask = RunOnSynchronizationContext(
+                delayedContext,
+                () => provider.GetFingerprintAsync("conn1")
+            );
+
+            firstRead.SetException(new InvalidOperationException("connection refused"));
+
+            _firstException = await CatchExceptionAsync(firstCallerTask);
+            _retryResult = await provider.GetFingerprintAsync("conn1");
+
+            delayedContext.ExecutePostedCallbacks();
+            _delayedException = await CatchExceptionAsync(delayedCallerTask);
+
+            _cachedResult = await provider.GetFingerprintAsync("conn1");
+        }
+
+        [Test]
+        public void It_retries_once_and_returns_the_recovered_fingerprint()
+        {
+            _retryResult.Should().NotBeNull();
+            _retryResult!.EffectiveSchemaHash.Should().Be("recovered");
+        }
+
+        [Test]
+        public void It_keeps_the_recovered_fingerprint_cached_after_the_delayed_faulted_awaiter_finishes()
+        {
+            _cachedResult.Should().BeSameAs(_retryResult);
+        }
+
+        [Test]
+        public void It_returns_the_original_failure_to_each_faulted_awaiter()
+        {
+            _firstException
+                .Should()
+                .BeOfType<InvalidOperationException>()
+                .Which.Message.Should()
+                .Be("connection refused");
+            _delayedException
+                .Should()
+                .BeOfType<InvalidOperationException>()
+                .Which.Message.Should()
+                .Be("connection refused");
+        }
+
+        [Test]
+        public void It_invokes_reader_only_for_the_fault_and_the_successful_retry()
+        {
+            A.CallTo(() => _reader.ReadFingerprintAsync("conn1")).MustHaveHappenedTwiceExactly();
+        }
+
+        private static async Task<Exception?> CatchExceptionAsync(Task task)
+        {
+            try
+            {
+                await task;
+                return null;
+            }
+            catch (Exception ex)
+            {
+                return ex;
+            }
+        }
+
+        private static Task<T> RunOnSynchronizationContext<T>(
+            DeferredSynchronizationContext synchronizationContext,
+            Func<Task<T>> action
+        )
+        {
+            var previousContext = SynchronizationContext.Current;
+            SynchronizationContext.SetSynchronizationContext(synchronizationContext);
+
+            try
+            {
+                return action();
+            }
+            finally
+            {
+                SynchronizationContext.SetSynchronizationContext(previousContext);
+            }
+        }
+
+        private sealed class DeferredSynchronizationContext : SynchronizationContext
+        {
+            private readonly Queue<(SendOrPostCallback Callback, object? State)> _callbacks = new();
+
+            public override void Post(SendOrPostCallback d, object? state)
+            {
+                lock (_callbacks)
+                {
+                    _callbacks.Enqueue((d, state));
+                }
+            }
+
+            public void ExecutePostedCallbacks()
+            {
+                while (TryDequeue(out var callback))
+                {
+                    callback.Callback(callback.State);
+                }
+            }
+
+            private bool TryDequeue(out (SendOrPostCallback Callback, object? State) callback)
+            {
+                lock (_callbacks)
+                {
+                    if (_callbacks.Count == 0)
+                    {
+                        callback = default;
+                        return false;
+                    }
+
+                    callback = _callbacks.Dequeue();
+                    return true;
+                }
+            }
+        }
+    }
 }

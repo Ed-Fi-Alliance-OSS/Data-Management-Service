@@ -43,7 +43,7 @@ internal sealed class DatabaseFingerprintProvider(IDatabaseFingerprintReader fin
         catch
         {
             // Evict faulted task so next request retries
-            _cache.TryRemove(connectionString, out _);
+            _cache.TryRemove(new(connectionString, lazy));
             throw;
         }
     }
