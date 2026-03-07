@@ -397,6 +397,8 @@ public class Given_SeedDmlEmitter_With_PgsqlDialect_And_SeedData
     [Test]
     public void It_should_emit_effective_schema_validation_block()
     {
+        _ddl.Should().Contain("dms.EffectiveSchema.ApiSchemaFormatVersion must not be empty.");
+        _ddl.Should().Contain("btrim(_stored_api_schema_format_version) = ''");
         _ddl.Should().Contain("dms.EffectiveSchema ResourceKeyCount mismatch");
         _ddl.Should().Contain("dms.EffectiveSchema ResourceKeySeedHash mismatch");
     }
@@ -551,6 +553,8 @@ public class Given_SeedDmlEmitter_With_MssqlDialect_And_SeedData
     [Test]
     public void It_should_emit_effective_schema_validation_block()
     {
+        _ddl.Should().Contain("dms.EffectiveSchema.ApiSchemaFormatVersion must not be empty.");
+        _ddl.Should().Contain("LEN(LTRIM(RTRIM(@es_stored_api_schema_format_version))) = 0");
         _ddl.Should().Contain("dms.EffectiveSchema ResourceKeyCount mismatch: expected 3, found");
         _ddl.Should().Contain("dms.EffectiveSchema ResourceKeySeedHash mismatch:");
     }

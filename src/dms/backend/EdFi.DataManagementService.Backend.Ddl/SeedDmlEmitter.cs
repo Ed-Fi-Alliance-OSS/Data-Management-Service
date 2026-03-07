@@ -433,7 +433,8 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
 
     /// <summary>
     /// Emits a validation block that verifies the existing <c>dms.EffectiveSchema</c> row's
-    /// <c>ResourceKeyCount</c> and <c>ResourceKeySeedHash</c> match the expected values.
+    /// <c>ApiSchemaFormatVersion</c>, <c>ResourceKeyCount</c>, and <c>ResourceKeySeedHash</c>
+    /// satisfy the runtime fingerprint contract.
     /// </summary>
     private void EmitEffectiveSchemaValidation(SqlWriter writer, EffectiveSchemaInfo effectiveSchema)
     {
@@ -441,7 +442,9 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
         var expectedCount = _dialect.RenderSmallintLiteral(checked((short)effectiveSchema.ResourceKeyCount));
         var expectedHash = _dialect.RenderBinaryLiteral(effectiveSchema.ResourceKeySeedHash);
 
-        writer.AppendLine("-- EffectiveSchema validation (ResourceKeyCount + ResourceKeySeedHash)");
+        writer.AppendLine(
+            "-- EffectiveSchema validation (ApiSchemaFormatVersion + ResourceKeyCount + ResourceKeySeedHash)"
+        );
 
         if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
@@ -449,6 +452,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             writer.AppendLine("DECLARE");
             using (writer.Indent())
             {
+                writer.AppendLine("_stored_api_schema_format_version text;");
                 writer.AppendLine("_stored_count smallint;");
                 writer.AppendLine("_stored_hash bytea;");
             }
@@ -456,13 +460,23 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             using (writer.Indent())
             {
                 writer.AppendLine(
-                    $"SELECT {Quote(_resourceKeyCountColumn)}, {Quote(_resourceKeySeedHashColumn)} INTO _stored_count, _stored_hash"
+                    $"SELECT {Quote(_apiSchemaFormatVersionColumn)}, {Quote(_resourceKeyCountColumn)}, {Quote(_resourceKeySeedHashColumn)} INTO _stored_api_schema_format_version, _stored_count, _stored_hash"
                 );
                 writer.AppendLine($"FROM {table}");
                 writer.AppendLine($"WHERE {Quote(_effectiveSchemaSingletonIdColumn)} = 1;");
                 writer.AppendLine("IF _stored_count IS NOT NULL THEN");
                 using (writer.Indent())
                 {
+                    writer.AppendLine(
+                        "IF _stored_api_schema_format_version IS NULL OR btrim(_stored_api_schema_format_version) = '' THEN"
+                    );
+                    using (writer.Indent())
+                    {
+                        writer.AppendLine(
+                            "RAISE EXCEPTION 'dms.EffectiveSchema.ApiSchemaFormatVersion must not be empty.';"
+                        );
+                    }
+                    writer.AppendLine("END IF;");
                     writer.AppendLine($"IF _stored_count <> {expectedCount} THEN");
                     using (writer.Indent())
                     {
@@ -487,11 +501,12 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
         }
         else
         {
+            writer.AppendLine("DECLARE @es_stored_api_schema_format_version nvarchar(255);");
             writer.AppendLine("DECLARE @es_stored_count smallint;");
             writer.AppendLine("DECLARE @es_stored_hash varbinary(32);");
             writer.AppendLine();
             writer.AppendLine(
-                $"SELECT @es_stored_count = {Quote(_resourceKeyCountColumn)}, @es_stored_hash = {Quote(_resourceKeySeedHashColumn)}"
+                $"SELECT @es_stored_api_schema_format_version = {Quote(_apiSchemaFormatVersionColumn)}, @es_stored_count = {Quote(_resourceKeyCountColumn)}, @es_stored_hash = {Quote(_resourceKeySeedHashColumn)}"
             );
             writer.AppendLine($"FROM {table}");
             writer.AppendLine($"WHERE {Quote(_effectiveSchemaSingletonIdColumn)} = 1;");
@@ -499,6 +514,17 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             writer.AppendLine("BEGIN");
             using (writer.Indent())
             {
+                writer.AppendLine(
+                    "IF @es_stored_api_schema_format_version IS NULL OR LEN(LTRIM(RTRIM(@es_stored_api_schema_format_version))) = 0"
+                );
+                writer.AppendLine("BEGIN");
+                using (writer.Indent())
+                {
+                    writer.AppendLine(
+                        "THROW 50000, N'dms.EffectiveSchema.ApiSchemaFormatVersion must not be empty.', 1;"
+                    );
+                }
+                writer.AppendLine("END");
                 writer.AppendLine($"IF @es_stored_count <> {expectedCount}");
                 writer.AppendLine("BEGIN");
                 using (writer.Indent())
