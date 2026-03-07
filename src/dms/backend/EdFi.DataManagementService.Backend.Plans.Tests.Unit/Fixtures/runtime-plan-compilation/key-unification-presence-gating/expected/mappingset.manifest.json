@@ -135,7 +135,7 @@
             "reference_identity_projection_plans_in_dependency_order": [],
             "descriptor_projection_plans_in_order": [
               {
-                "select_by_keyset_sql_sha256": "78133ae030cbe488ba4ab54b06f01b11abdab5ef8d8028f5acc8618eb33414d7",
+                "select_by_keyset_sql_sha256": "20e0c2a2d66dc303a8bedbe47b05b1c32abe04b6f9d4299876e90bcb434bbfae",
                 "result_shape": {
                   "descriptor_id_ordinal": 0,
                   "uri_ordinal": 1
@@ -315,7 +315,7 @@
             "reference_identity_projection_plans_in_dependency_order": [],
             "descriptor_projection_plans_in_order": [
               {
-                "select_by_keyset_sql_sha256": "0ed4417db537f61ce69e762e303116d5d86ad379c46967d0a8adb90ce7c7b336",
+                "select_by_keyset_sql_sha256": "24f7931c9c443dd6b33af1d3e3057c0cdc07b097ba2767cac360b00f0223900e",
                 "result_shape": {
                   "descriptor_id_ordinal": 0,
                   "uri_ordinal": 1

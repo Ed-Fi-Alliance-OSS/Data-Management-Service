@@ -154,6 +154,12 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
                     var rootDocumentIdKeyColumn = tableModel.Key.Columns[0].ColumnName;
 
                     writer.Append("SELECT ");
+
+                    if (sqlSources.Count == 1)
+                    {
+                        writer.Append("DISTINCT ");
+                    }
+
                     AppendQualifiedColumn(writer, tableAlias, sqlSource.StorageColumn);
                     writer.Append(" AS ").AppendQuoted(_descriptorIdProjectionColumn.Value).AppendLine();
                     writer.Append("FROM ").AppendTable(tableModel.Table).AppendLine($" {tableAlias}");
