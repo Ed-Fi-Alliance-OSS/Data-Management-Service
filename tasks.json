@@ -124,5 +124,41 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
     ],
     "completed": true
+  },
+  {
+    "category": "Runtime Mapping Initialization Wiring",
+    "description": "Replace the startup-time `NoOpBackendMappingInitializer` with a backend-specific initializer that compiles and caches runtime mapping sets without changing legacy request execution. Acceptance: application startup invokes a concrete `IBackendMappingInitializer` from the PostgreSQL backend instead of the Core no-op; the initializer builds a `DerivedRelationalModelSet` and compiled `MappingSet` for the running effective schema and configured dialect, stores the result in a process-wide cache keyed by `(EffectiveSchemaHash, Dialect, RelationalMappingVersion)`, and logs whether startup used runtime compilation or reused a cached mapping set; existing legacy repository registrations remain the request-time execution path, so POST/PUT/GET/query behavior does not cut over to compiled-plan execution yet.",
+    "steps-to-verify": [
+      "Register a concrete backend initializer from `src/dms/backend/EdFi.DataManagementService.Old.Postgresql` or another runtime backend assembly so `IBackendMappingInitializer` no longer resolves to `NoOpBackendMappingInitializer` after datastore services are added.",
+      "Add unit tests proving `DmsStartupOrchestrator` runs the concrete initializer at startup and that concurrent initialization requests for the same `(EffectiveSchemaHash, Dialect, RelationalMappingVersion)` share the same cached compile result instead of recompiling.",
+      "Add or update a composition test proving legacy datastore/query-handler registrations are unchanged after the initializer is added, so runtime requests still resolve the current PostgreSQL repositories.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~Startup`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~MappingSetCache`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Runtime Effective Schema Set Builder Sharing",
+    "description": "Move or extract the `EffectiveSchemaSetBuilder` logic into a runtime-usable assembly so startup mapping initialization can build an `EffectiveSchemaSet` from normalized schema inputs without depending on the CLI project. Acceptance: host/runtime code can construct the same `EffectiveSchemaSet` that the DDL CLI currently builds, including identical `EffectiveSchemaHash`, `RelationalMappingVersion`, `SchemaComponentsInEndpointOrder`, `ResourceKeysInIdOrder`, and `ResourceKeySeedHash`; the builder no longer requires referencing `EdFi.DataManagementService.SchemaTools` from production startup code; runtime and CLI callers share one authoritative implementation so schema-hash or seed derivation cannot drift between startup compilation and DDL/provisioning workflows.",
+    "steps-to-verify": [
+      "Extract `EffectiveSchemaSetBuilder` and any minimal supporting types into a runtime-referenced project, or add an equivalent shared service in an existing runtime assembly, and update the CLI to consume that shared implementation instead of its private bridge copy.",
+      "Add unit tests that build an `EffectiveSchemaSet` from the same normalized schema inputs through both the CLI path and the runtime path and assert all effective-schema metadata fields match byte-for-byte, including the seed hash.",
+      "Add or update a startup-path unit test proving the concrete backend initializer can obtain an `EffectiveSchemaSet` without referencing the CLI assembly.",
+      "Run: `dotnet test --no-restore ./src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/EdFi.DataManagementService.SchemaTools.Tests.Unit.csproj --filter FullyQualifiedName~EffectiveSchemaSetBuilder`",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~Startup`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Startup Database Fingerprint And Resource Key Validation",
+    "description": "Add per-instance startup validation that binds compiled mapping sets to configured DMS databases and caches resource-key maps for later runtime selection work. Acceptance: for every loaded DMS instance, startup reads the database fingerprint from `dms.EffectiveSchema`, validates `EffectiveSchemaHash`, `ResourceKeyCount`, and `ResourceKeySeedHash` against the compiled mapping set, falls back to diffing `dms.ResourceKey` when the fast-path fingerprint mismatches, and caches validated `QualifiedResourceName -> ResourceKeyId` and reverse lookup data per database instance; failures are deterministic and identify the instance, expected hash/version/dialect, and whether the mismatch was fingerprint-level or full `dms.ResourceKey` drift; successful validation does not alter legacy request routing but makes the runtime-compiled mapping set usable as a future fallback.",
+    "steps-to-verify": [
+      "Implement a startup validation component used by the concrete backend initializer that enumerates all loaded DMS instances, opens each configured database connection, reads `dms.EffectiveSchema`, and validates the expected schema hash and resource-key seed fingerprint before startup completes.",
+      "Add unit tests for success, effective-schema hash mismatch, resource-key seed mismatch with `dms.ResourceKey` diff fallback, and missing provisioning tables/rows, asserting each failure message includes the DMS instance identity and expected mapping key details.",
+      "Add an integration or E2E-style startup test against a provisioned local PostgreSQL database showing startup succeeds when fingerprints match and fails fast when the seeded `dms.EffectiveSchema` or `dms.ResourceKey` rows are intentionally corrupted.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~Startup`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Old.Postgresql.Tests.Integration/EdFi.DataManagementService.Old.Postgresql.Tests.Integration.csproj`"
+    ],
+    "completed": false
   }
 ]

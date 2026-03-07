@@ -307,12 +307,19 @@ internal static class ReadPlanProjectionContractValidator
                 );
             }
 
-            if (descriptorProjectionPlan.ResultShape is not { DescriptorIdOrdinal: 0, UriOrdinal: 1 })
+            var resultShape = descriptorProjectionPlan.ResultShape;
+
+            if (resultShape is not { DescriptorIdOrdinal: 0, UriOrdinal: 1 })
             {
+                var descriptorIdOrdinal = resultShape is null
+                    ? "<null>"
+                    : resultShape.DescriptorIdOrdinal.ToString();
+                var uriOrdinal = resultShape is null ? "<null>" : resultShape.UriOrdinal.ToString();
+
                 throw createException(
                     $"descriptor projection plan at index '{planIndex}' result shape must expose DescriptorId at ordinal '0' and Uri at ordinal '1', "
-                        + $"but was DescriptorId='{descriptorProjectionPlan.ResultShape.DescriptorIdOrdinal}', "
-                        + $"Uri='{descriptorProjectionPlan.ResultShape.UriOrdinal}'"
+                        + $"but was DescriptorId='{descriptorIdOrdinal}', "
+                        + $"Uri='{uriOrdinal}'"
                 );
             }
 
