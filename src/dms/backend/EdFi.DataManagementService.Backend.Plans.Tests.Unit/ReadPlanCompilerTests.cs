@@ -106,6 +106,66 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_accept_valid_reference_identity_projection_binding_coverage_for_multi_binding_tables()
+    {
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateRootMultiBindingReferenceProjectionResourceModel()
+        );
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                readPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should().NotThrow();
+    }
+
+    [Test]
+    public void It_should_reject_reference_identity_projection_binding_duplicates_that_omit_another_modeled_binding()
+    {
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateRootMultiBindingReferenceProjectionResourceModel()
+        );
+        var duplicatedReadPlan = CreateReadPlanWithDuplicatedReferenceProjectionBinding(
+            readPlan,
+            sourceIndex: 0,
+            targetIndex: 1
+        );
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                duplicatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        exception.Message.Should().Contain("reference identity projection binding at index '1'");
+        exception.Message.Should().Contain("$.schoolReference");
+        exception.Message.Should().Contain("$.calendarReference");
+    }
+
+    [Test]
+    public void It_should_reject_reference_identity_projection_binding_order_that_differs_from_document_reference_bindings()
+    {
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateRootMultiBindingReferenceProjectionResourceModel()
+        );
+        var reorderedReadPlan = CreateReadPlanWithSwappedReferenceProjectionBindings(readPlan);
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                reorderedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        exception.Message.Should().Contain("reference identity projection binding at index '0'");
+        exception.Message.Should().Contain("$.calendarReference");
+        exception.Message.Should().Contain("$.schoolReference");
+    }
+
+    [Test]
     public void It_should_group_reference_identity_projection_bindings_by_dependency_order_subset_when_bindings_are_interleaved()
     {
         var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
@@ -971,6 +1031,52 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 .Should()
                 .Be(PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Keyset));
         }
+    }
+
+    private static ResourceReadPlan CreateReadPlanWithDuplicatedReferenceProjectionBinding(
+        ResourceReadPlan readPlan,
+        int sourceIndex,
+        int targetIndex
+    )
+    {
+        var projectionTablePlan = readPlan.ReferenceIdentityProjectionPlansInDependencyOrder.Single();
+        var bindings = projectionTablePlan.BindingsInOrder.ToArray();
+
+        bindings[targetIndex] = bindings[sourceIndex];
+
+        return readPlan with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder =
+            [
+                projectionTablePlan with
+                {
+                    BindingsInOrder = [.. bindings],
+                },
+            ],
+        };
+    }
+
+    private static ResourceReadPlan CreateReadPlanWithSwappedReferenceProjectionBindings(
+        ResourceReadPlan readPlan
+    )
+    {
+        var projectionTablePlan = readPlan.ReferenceIdentityProjectionPlansInDependencyOrder.Single();
+        var bindings = projectionTablePlan.BindingsInOrder.ToArray();
+        var firstBinding = bindings[0];
+
+        bindings[0] = bindings[1];
+        bindings[1] = firstBinding;
+
+        return readPlan with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder =
+            [
+                projectionTablePlan with
+                {
+                    BindingsInOrder = [.. bindings],
+                },
+            ],
+        };
     }
 
     private static RelationalResourceModel BuildFixtureResourceModel(

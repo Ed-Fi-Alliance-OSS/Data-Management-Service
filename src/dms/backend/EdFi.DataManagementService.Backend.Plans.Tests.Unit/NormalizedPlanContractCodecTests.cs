@@ -316,16 +316,18 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     }
 
     [Test]
-    public void It_should_preserve_read_plan_hash_when_model_lookup_collections_are_permuted()
+    public void It_should_fail_fast_when_model_document_reference_binding_order_is_permuted_relative_to_the_encoded_read_plan()
     {
         var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
-        var baselineHash = NormalizedPlanDtoJson.ComputeCanonicalSha256(encoded);
-        var permutedModel = CreateModelWithPermutedLookups(_model);
+        var permutedModel = CreateModelWithPermutedDocumentReferenceBindings(_model);
 
-        var decoded = NormalizedPlanContractCodec.Decode(encoded, permutedModel);
-        var reEncoded = NormalizedPlanContractCodec.Encode(decoded);
+        var act = () => NormalizedPlanContractCodec.Decode(encoded, permutedModel);
 
-        NormalizedPlanDtoJson.ComputeCanonicalSha256(reEncoded).Should().Be(baselineHash);
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        exception.Message.Should().Contain("Decoded read plan for resource");
+        exception.Message.Should().Contain("reference identity projection binding at index '0'");
+        exception.Message.Should().Contain("$.schoolReference");
+        exception.Message.Should().Contain("$.calendarReference");
     }
 
     [Test]
@@ -608,8 +610,9 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
 
         var exception = act.Should().Throw<InvalidOperationException>().Which;
         exception.Message.Should().Contain("Decoded read plan for resource");
-        exception.Message.Should().Contain("reference identity projection binding count '0'");
-        exception.Message.Should().Contain("DocumentReferenceBindings count '2'");
+        exception.Message.Should().Contain("reference identity projection table");
+        exception.Message.Should().Contain("binding count '0'");
+        exception.Message.Should().Contain("authoritative DocumentReferenceBindings count '2'");
     }
 
     [Test]
@@ -715,6 +718,70 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
         exception.Message.Should().Contain("ReferenceObjectPath");
         exception.Message.Should().Contain("$.schoolReference");
         exception.Message.Should().Contain("$.calendarReference");
+    }
+
+    [Test]
+    public void It_should_fail_with_the_same_projection_contract_reason_as_direct_validation_when_a_reference_identity_projection_binding_is_duplicated()
+    {
+        var mutatedReadPlan = CreateReadPlanWithDuplicatedReferenceProjectionBinding(
+            _readPlan,
+            sourceIndex: 0,
+            targetIndex: 1
+        );
+        var expectedReason = GetProjectionValidationFailureReason(mutatedReadPlan);
+
+        var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
+        var projectionTablePlan = encoded.ReferenceIdentityProjectionPlansInDependencyOrder[0];
+        var bindings = projectionTablePlan.BindingsInOrder.ToArray();
+
+        bindings[1] = bindings[0];
+
+        var mutated = encoded with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder =
+            [
+                projectionTablePlan with
+                {
+                    BindingsInOrder = [.. bindings],
+                },
+            ],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        GetDecodedProjectionValidationFailureReason(exception.Message).Should().Be(expectedReason);
+    }
+
+    [Test]
+    public void It_should_fail_with_the_same_projection_contract_reason_as_direct_validation_when_reference_identity_projection_binding_order_is_reordered()
+    {
+        var mutatedReadPlan = CreateReadPlanWithSwappedReferenceProjectionBindings(_readPlan);
+        var expectedReason = GetProjectionValidationFailureReason(mutatedReadPlan);
+
+        var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
+        var projectionTablePlan = encoded.ReferenceIdentityProjectionPlansInDependencyOrder[0];
+        var bindings = projectionTablePlan.BindingsInOrder.ToArray();
+        var firstBinding = bindings[0];
+
+        bindings[0] = bindings[1];
+        bindings[1] = firstBinding;
+
+        var mutated = encoded with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder =
+            [
+                projectionTablePlan with
+                {
+                    BindingsInOrder = [.. bindings],
+                },
+            ],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        GetDecodedProjectionValidationFailureReason(exception.Message).Should().Be(expectedReason);
     }
 
     [Test]
@@ -1371,13 +1438,11 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
         return JsonPathExpressionCompiler.Compile(value);
     }
 
-    private static RelationalResourceModel CreateModelWithPermutedLookups(RelationalResourceModel model)
+    private static RelationalResourceModel CreateModelWithPermutedDocumentReferenceBindings(
+        RelationalResourceModel model
+    )
     {
-        return model with
-        {
-            DocumentReferenceBindings = [.. model.DocumentReferenceBindings.Reverse()],
-            DescriptorEdgeSources = [.. model.DescriptorEdgeSources.Reverse()],
-        };
+        return model with { DocumentReferenceBindings = [.. model.DocumentReferenceBindings.Reverse()] };
     }
 
     private static string ComputeCanonicalWritePlanHash(ResourceWritePlan plan)
@@ -1414,6 +1479,52 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
         var bindings = projectionTablePlan.BindingsInOrder.ToArray();
 
         bindings[0] = bindings[0] with { IsIdentityComponent = isIdentityComponent };
+
+        return readPlan with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder =
+            [
+                projectionTablePlan with
+                {
+                    BindingsInOrder = [.. bindings],
+                },
+            ],
+        };
+    }
+
+    private static ResourceReadPlan CreateReadPlanWithDuplicatedReferenceProjectionBinding(
+        ResourceReadPlan readPlan,
+        int sourceIndex,
+        int targetIndex
+    )
+    {
+        var projectionTablePlan = readPlan.ReferenceIdentityProjectionPlansInDependencyOrder[0];
+        var bindings = projectionTablePlan.BindingsInOrder.ToArray();
+
+        bindings[targetIndex] = bindings[sourceIndex];
+
+        return readPlan with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder =
+            [
+                projectionTablePlan with
+                {
+                    BindingsInOrder = [.. bindings],
+                },
+            ],
+        };
+    }
+
+    private static ResourceReadPlan CreateReadPlanWithSwappedReferenceProjectionBindings(
+        ResourceReadPlan readPlan
+    )
+    {
+        var projectionTablePlan = readPlan.ReferenceIdentityProjectionPlansInDependencyOrder[0];
+        var bindings = projectionTablePlan.BindingsInOrder.ToArray();
+        var firstBinding = bindings[0];
+
+        bindings[0] = bindings[1];
+        bindings[1] = firstBinding;
 
         return readPlan with
         {
