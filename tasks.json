@@ -7,7 +7,7 @@
       "Retain or add a positive test proving a valid stored `DocumentFk` column still compiles to the expected `FkColumnOrdinal`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~Given_ReadPlanCompiler`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Projection Path Binding Integrity",

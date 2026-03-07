@@ -195,6 +195,9 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         );
 
         var tableColumns = readPlan.TablePlansInDependencyOrder.Single().TableModel.Columns;
+        tableColumns[binding.FkColumnOrdinal].ColumnName.Should().Be(new DbColumnName("School_DocumentId"));
+        tableColumns[binding.FkColumnOrdinal].Kind.Should().Be(ColumnKind.DocumentFk);
+        tableColumns[binding.FkColumnOrdinal].Storage.Should().BeOfType<ColumnStorage.Stored>();
         tableColumns[binding.IdentityFieldOrdinalsInOrder[0].ColumnOrdinal]
             .ColumnName.Should()
             .Be(new DbColumnName("SchoolYearSecondary"));
@@ -799,6 +802,34 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             .Throw<InvalidOperationException>()
             .WithMessage(
                 "Cannot compile read plan for 'edfi.StudentProjection': document-reference binding '$.schoolReference' FK column 'School_DocumentId' has DbColumnModel.SourceJsonPath '$.studentUniqueId', which does not match DocumentReferenceBinding.ReferenceObjectPath '$.schoolReference'."
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_document_reference_fk_column_is_not_a_document_fk()
+    {
+        var act = () =>
+            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(CreateModelWithNonDocumentReferenceFkKind());
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile read plan for 'edfi.StudentProjection': document-reference binding '$.schoolReference' FK column 'School_DocumentId' has kind 'Scalar'. Expected 'DocumentFk'."
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_document_reference_fk_column_is_not_stored()
+    {
+        var act = () =>
+            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+                CreateModelWithNonStoredDocumentReferenceFkColumn()
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile read plan for 'edfi.StudentProjection': document-reference binding '$.schoolReference' FK column 'School_DocumentId' is not stored."
             );
     }
 
@@ -2101,6 +2132,54 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                             SourceJsonPath = CreatePath(
                                 "$.studentUniqueId",
                                 new JsonPathSegment.Property("studentUniqueId")
+                            ),
+                        }
+                        : column
+                )
+                .ToArray(),
+        };
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
+        };
+    }
+
+    private static RelationalResourceModel CreateModelWithNonDocumentReferenceFkKind()
+    {
+        var model = CreateProjectionMetadataResourceModel();
+        var fkColumn = new DbColumnName("School_DocumentId");
+        var rootTable = model.Root with
+        {
+            Columns = model
+                .Root.Columns.Select(column =>
+                    column.ColumnName.Equals(fkColumn) ? column with { Kind = ColumnKind.Scalar } : column
+                )
+                .ToArray(),
+        };
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
+        };
+    }
+
+    private static RelationalResourceModel CreateModelWithNonStoredDocumentReferenceFkColumn()
+    {
+        var model = CreateProjectionMetadataResourceModel();
+        var fkColumn = new DbColumnName("School_DocumentId");
+        var rootTable = model.Root with
+        {
+            Columns = model
+                .Root.Columns.Select(column =>
+                    column.ColumnName.Equals(fkColumn)
+                        ? column with
+                        {
+                            Storage = new ColumnStorage.UnifiedAlias(
+                                CanonicalColumn: new DbColumnName("DocumentId"),
+                                PresenceColumn: null
                             ),
                         }
                         : column
