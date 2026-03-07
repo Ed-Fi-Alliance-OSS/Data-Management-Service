@@ -27,7 +27,7 @@ internal class ValidateDatabaseFingerprintMiddleware(
 {
     private const string MalformedFingerprintTitle = "Database Provisioning Error";
     private const string MalformedFingerprintDetail =
-        "The target database contains malformed dms.EffectiveSchema provisioning metadata. Repair the database by re-running 'ddl provision' against an empty database. If provisioning was partial or the database was modified after provisioning, drop and recreate the database before reprovisioning.";
+        "The target database contains malformed dms.EffectiveSchema provisioning metadata. Repair the database by re-running 'ddl provision' against an empty database. If provisioning was partial or the database was modified after provisioning, drop and recreate the database before reprovisioning. Restart DMS after the database has been repaired to clear the cached fingerprint validation failure.";
 
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
@@ -53,7 +53,7 @@ internal class ValidateDatabaseFingerprintMiddleware(
         {
             logger.LogError(
                 ex,
-                "Malformed dms.EffectiveSchema fingerprint for DMS instance {InstanceId} ({InstanceName}) - TraceId: {TraceId}",
+                "Malformed dms.EffectiveSchema fingerprint for DMS instance {InstanceId} ({InstanceName}). Restart DMS after repairing the database because malformed fingerprint failures are cached per database. TraceId: {TraceId}",
                 selectedInstance.Id,
                 LoggingSanitizer.SanitizeForLogging(selectedInstance.InstanceName),
                 requestInfo.FrontendRequest.TraceId.Value

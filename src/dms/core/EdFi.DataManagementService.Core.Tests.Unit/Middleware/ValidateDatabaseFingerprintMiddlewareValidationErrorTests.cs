@@ -23,7 +23,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
 {
     private const string MalformedFingerprintDetail =
-        "The target database contains malformed dms.EffectiveSchema provisioning metadata. Repair the database by re-running 'ddl provision' against an empty database. If provisioning was partial or the database was modified after provisioning, drop and recreate the database before reprovisioning.";
+        "The target database contains malformed dms.EffectiveSchema provisioning metadata. Repair the database by re-running 'ddl provision' against an empty database. If provisioning was partial or the database was modified after provisioning, drop and recreate the database before reprovisioning. Restart DMS after the database has been repaired to clear the cached fingerprint validation failure.";
 
     private static RequestInfo CreateRequestInfoWithAuthorizations(
         IServiceProvider? scopedServiceProvider = null
@@ -266,6 +266,7 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
                 .Contain(entry =>
                     entry.Level == LogLevel.Error
                     && entry.Message.Contains("Malformed dms.EffectiveSchema fingerprint")
+                    && entry.Message.Contains("Restart DMS after repairing the database")
                     && entry.Message.Contains("Test Instance")
                     && entry.Message.Contains("test-trace-id")
                 );
@@ -360,6 +361,12 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         public void It_includes_ddl_provision_remediation()
         {
             _body["detail"]?.GetValue<string>().Should().Be(MalformedFingerprintDetail);
+        }
+
+        [Test]
+        public void It_includes_restart_guidance_in_the_detail_message()
+        {
+            _body["detail"]?.GetValue<string>().Should().Contain("Restart DMS");
         }
 
         [Test]

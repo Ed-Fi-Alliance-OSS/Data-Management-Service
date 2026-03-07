@@ -269,7 +269,7 @@ public class DatabaseFingerprintProviderTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_First_Call_Throws_A_Permanent_Fingerprint_Validation_Error
+    public class Given_First_Call_Throws_A_Permanent_Fingerprint_Validation_Error_And_The_Database_Is_Repaired
         : DatabaseFingerprintProviderTests
     {
         private Exception? _firstException;
@@ -317,6 +317,12 @@ public class DatabaseFingerprintProviderTests
         public void It_does_not_retry_after_the_permanent_validation_failure()
         {
             A.CallTo(() => _reader.ReadFingerprintAsync("conn1")).MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
+        public void It_keeps_returning_the_cached_validation_failure_until_process_restart()
+        {
+            _secondException.Should().BeOfType<DatabaseFingerprintValidationException>();
         }
     }
 
