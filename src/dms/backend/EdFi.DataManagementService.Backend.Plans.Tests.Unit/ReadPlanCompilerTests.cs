@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 using FluentAssertions;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Backend.Plans.Tests.Unit.ReadPlanProjectionMutationHelper;
 
 namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
@@ -1232,123 +1233,6 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 .Should()
                 .Be(PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Keyset));
         }
-    }
-
-    private static ResourceReadPlan CreateReadPlanWithDuplicatedReferenceProjectionBinding(
-        ResourceReadPlan readPlan,
-        int sourceIndex,
-        int targetIndex
-    )
-    {
-        var projectionTablePlan = readPlan.ReferenceIdentityProjectionPlansInDependencyOrder.Single();
-        var bindings = projectionTablePlan.BindingsInOrder.ToArray();
-
-        bindings[targetIndex] = bindings[sourceIndex];
-
-        return readPlan with
-        {
-            ReferenceIdentityProjectionPlansInDependencyOrder =
-            [
-                projectionTablePlan with
-                {
-                    BindingsInOrder = [.. bindings],
-                },
-            ],
-        };
-    }
-
-    private static ResourceReadPlan CreateReadPlanWithSwappedReferenceProjectionBindings(
-        ResourceReadPlan readPlan
-    )
-    {
-        var projectionTablePlan = readPlan.ReferenceIdentityProjectionPlansInDependencyOrder.Single();
-        var bindings = projectionTablePlan.BindingsInOrder.ToArray();
-        var firstBinding = bindings[0];
-
-        bindings[0] = bindings[1];
-        bindings[1] = firstBinding;
-
-        return readPlan with
-        {
-            ReferenceIdentityProjectionPlansInDependencyOrder =
-            [
-                projectionTablePlan with
-                {
-                    BindingsInOrder = [.. bindings],
-                },
-            ],
-        };
-    }
-
-    private static ResourceReadPlan CreateReadPlanWithDuplicatedDescriptorProjectionSource(
-        ResourceReadPlan readPlan,
-        int sourceIndex,
-        int targetIndex
-    )
-    {
-        var descriptorProjectionPlan = readPlan.DescriptorProjectionPlansInOrder.Single();
-        var sources = descriptorProjectionPlan.SourcesInOrder.ToArray();
-
-        sources[targetIndex] = sources[sourceIndex];
-
-        return readPlan with
-        {
-            DescriptorProjectionPlansInOrder =
-            [
-                descriptorProjectionPlan with
-                {
-                    SourcesInOrder = [.. sources],
-                },
-            ],
-        };
-    }
-
-    private static ResourceReadPlan CreateReadPlanWithSwappedDescriptorProjectionSources(
-        ResourceReadPlan readPlan
-    )
-    {
-        var descriptorProjectionPlan = readPlan.DescriptorProjectionPlansInOrder.Single();
-        var sources = descriptorProjectionPlan.SourcesInOrder.ToArray();
-        var firstSource = sources[0];
-
-        sources[0] = sources[1];
-        sources[1] = firstSource;
-
-        return readPlan with
-        {
-            DescriptorProjectionPlansInOrder =
-            [
-                descriptorProjectionPlan with
-                {
-                    SourcesInOrder = [.. sources],
-                },
-            ],
-        };
-    }
-
-    private static ResourceReadPlan CreateReadPlanWithSplitDescriptorProjectionPlans(
-        ResourceReadPlan readPlan
-    )
-    {
-        var descriptorProjectionPlan = readPlan.DescriptorProjectionPlansInOrder.Single();
-        var sources = descriptorProjectionPlan.SourcesInOrder.ToArray();
-
-        return readPlan with
-        {
-            DescriptorProjectionPlansInOrder =
-            [
-                descriptorProjectionPlan with
-                {
-                    SelectByKeysetSql = "SELECT descriptor_plan_0;\n",
-                    SourcesInOrder = [sources[0]],
-                },
-                descriptorProjectionPlan with
-                {
-                    SelectByKeysetSql = "SELECT descriptor_plan_1;\n",
-                    SourcesInOrder = [.. sources[1..]],
-                },
-            ],
-        };
     }
 
     private static RelationalResourceModel BuildFixtureResourceModel(
