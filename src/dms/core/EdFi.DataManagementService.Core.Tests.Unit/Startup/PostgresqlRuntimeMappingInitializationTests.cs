@@ -10,10 +10,13 @@ using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.RelationalModel.Schema;
 using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Validation;
 using EdFi.DataManagementService.Old.Postgresql;
+using EdFi.DataManagementService.Old.Postgresql.Startup;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
@@ -127,11 +130,17 @@ public class PostgresqlRuntimeMappingInitializationTests
     {
         private ServiceProvider _serviceProvider = null!;
         private ApiSchemaDocumentNodes _schemaNodes = null!;
+        private IDmsInstanceProvider _dmsInstanceProvider = null!;
+        private IPostgresqlRuntimeDatabaseMetadataReader _databaseMetadataReader = null!;
+        private const string ConnectionString =
+            "Host=localhost;Database=startup-instance;Username=test;Password=test";
 
         [SetUp]
         public void Setup()
         {
             _schemaNodes = CreateSchemaNodes();
+            _dmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
+            _databaseMetadataReader = A.Fake<IPostgresqlRuntimeDatabaseMetadataReader>();
 
             var services = new ServiceCollection();
             services.AddLogging();
@@ -148,8 +157,47 @@ public class PostgresqlRuntimeMappingInitializationTests
             services.AddSingleton<IEffectiveSchemaHashProvider, EffectiveSchemaHashProvider>();
             services.AddSingleton<IResourceKeySeedProvider, ResourceKeySeedProvider>();
             services.AddPostgresqlDatastore();
+            services.AddSingleton(_dmsInstanceProvider);
+            services.AddSingleton(_databaseMetadataReader);
 
             _serviceProvider = services.BuildServiceProvider();
+
+            var effectiveSchemaSetBuilder = _serviceProvider.GetRequiredService<EffectiveSchemaSetBuilder>();
+            var inputNormalizer = _serviceProvider.GetRequiredService<IApiSchemaInputNormalizer>();
+            var normalizedNodes = inputNormalizer.Normalize(_schemaNodes);
+            var successResult = normalizedNodes
+                .Should()
+                .BeOfType<ApiSchemaNormalizationResult.SuccessResult>()
+                .Subject;
+            var effectiveSchemaSet = effectiveSchemaSetBuilder.Build(successResult.NormalizedNodes);
+
+            A.CallTo(() => _dmsInstanceProvider.GetLoadedTenantKeys()).Returns([""]);
+            A.CallTo(() => _dmsInstanceProvider.GetAll(null))
+                .Returns([
+                    new DmsInstance(
+                        Id: 1,
+                        InstanceType: "test",
+                        InstanceName: "StartupInstance",
+                        ConnectionString: ConnectionString,
+                        RouteContext: new Dictionary<RouteQualifierName, RouteQualifierValue>()
+                    ),
+                ]);
+            A.CallTo(() =>
+                    _databaseMetadataReader.ReadFingerprintAsync(
+                        ConnectionString,
+                        A<CancellationToken>.Ignored
+                    )
+                )
+                .Returns(
+                    new PostgresqlDatabaseFingerprintReadResult.Success(
+                        new PostgresqlDatabaseFingerprint(
+                            effectiveSchemaSet.EffectiveSchema.ApiSchemaFormatVersion,
+                            effectiveSchemaSet.EffectiveSchema.EffectiveSchemaHash,
+                            checked((short)effectiveSchemaSet.EffectiveSchema.ResourceKeyCount),
+                            effectiveSchemaSet.EffectiveSchema.ResourceKeySeedHash
+                        )
+                    )
+                );
         }
 
         [TearDown]
@@ -187,6 +235,19 @@ public class PostgresqlRuntimeMappingInitializationTests
 
             cacheResult.WasCacheHit.Should().BeTrue();
             cacheResult.MappingSet.Key.Should().Be(mappingSetKey);
+            _serviceProvider
+                .GetRequiredService<PostgresqlValidatedResourceKeyMapCache>()
+                .TryGet(ConnectionString, out var validatedMaps)
+                .Should()
+                .BeTrue();
+            validatedMaps.MappingSetKey.Should().Be(mappingSetKey);
+            A.CallTo(() =>
+                    _databaseMetadataReader.ReadResourceKeysAsync(
+                        ConnectionString,
+                        A<CancellationToken>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
         }
     }
 
