@@ -263,7 +263,7 @@ internal static class NormalizedPlanContractCodec
             documentIdColumnNameArgument
         );
 
-        return new ExternalPlans.ResourceReadPlan(
+        var readPlan = new ExternalPlans.ResourceReadPlan(
             Model: model,
             KeysetTable: new ExternalPlans.KeysetTableContract(
                 Table: new ExternalPlans.SqlRelationRef.TempTable(keysetTempTableName),
@@ -273,6 +273,15 @@ internal static class NormalizedPlanContractCodec
             ReferenceIdentityProjectionPlansInDependencyOrder: referenceIdentityProjectionPlans,
             DescriptorProjectionPlansInOrder: descriptorProjectionPlans
         );
+
+        ReadPlanProjectionContractValidator.ValidateOrThrow(
+            readPlan,
+            reason => new InvalidOperationException(
+                $"Decoded read plan for resource '{FormatResourceName(model.Resource)}' has invalid projection metadata. {reason}."
+            )
+        );
+
+        return readPlan;
     }
 
     public static ExternalPlans.PageDocumentIdSqlPlan Decode(PageDocumentIdSqlPlanDto dto)

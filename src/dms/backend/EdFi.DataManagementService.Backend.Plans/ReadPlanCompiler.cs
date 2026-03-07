@@ -107,13 +107,23 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
             hydrationPlanMetadata.ColumnOrdinalsByTable
         );
 
-        return new ResourceReadPlan(
+        var readPlan = new ResourceReadPlan(
             Model: resourceModel,
             KeysetTable: keysetTable,
             TablePlansInDependencyOrder: tablePlans,
             ReferenceIdentityProjectionPlansInDependencyOrder: referenceIdentityProjectionPlans,
             DescriptorProjectionPlansInOrder: descriptorProjectionPlans
         );
+
+        ReadPlanProjectionContractValidator.ValidateOrThrow(
+            readPlan,
+            reason => new InvalidOperationException(
+                $"Cannot compile read plan for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}': "
+                    + $"compiled projection metadata is invalid. {reason}. This indicates a read-plan compiler bug."
+            )
+        );
+
+        return readPlan;
     }
 
     /// <summary>

@@ -589,6 +589,65 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_fail_fast_when_reference_identity_projection_binding_count_does_not_match_model()
+    {
+        var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
+        var projectionTablePlan = encoded.ReferenceIdentityProjectionPlansInDependencyOrder[0];
+        var mutated = encoded with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder =
+            [
+                projectionTablePlan with
+                {
+                    BindingsInOrder = [],
+                },
+            ],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        exception.Message.Should().Contain("Decoded read plan for resource");
+        exception.Message.Should().Contain("reference identity projection binding count '0'");
+        exception.Message.Should().Contain("DocumentReferenceBindings count '2'");
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_reference_identity_projection_table_is_duplicated()
+    {
+        var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
+        var projectionTablePlan = encoded.ReferenceIdentityProjectionPlansInDependencyOrder[0];
+        var mutated = encoded with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder = [projectionTablePlan, projectionTablePlan],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        exception.Message.Should().Contain("Decoded read plan for resource");
+        exception.Message.Should().Contain("reference identity projection includes duplicate table");
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_descriptor_projection_source_count_does_not_match_model()
+    {
+        var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
+        var descriptorPlan = encoded.DescriptorProjectionPlansInOrder[0];
+        var mutated = encoded with
+        {
+            DescriptorProjectionPlansInOrder = [descriptorPlan with { SourcesInOrder = [] }],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        exception.Message.Should().Contain("Decoded read plan for resource");
+        exception.Message.Should().Contain("descriptor projection source count '0'");
+        exception.Message.Should().Contain("DescriptorEdgeSources count '2'");
+    }
+
+    [Test]
     public void It_should_fail_fast_when_keyset_temp_table_name_is_not_supported()
     {
         var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
@@ -1172,6 +1231,19 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
                                 ),
                             ]
                         ),
+                        new ReferenceIdentityProjectionBinding(
+                            IsIdentityComponent: false,
+                            ReferenceObjectPath: Path("$.calendarReference"),
+                            TargetResource: new QualifiedResourceName("Ed-Fi", "Calendar"),
+                            FkColumnOrdinal: 5,
+                            IdentityFieldOrdinalsInOrder:
+                            [
+                                new ReferenceIdentityProjectionFieldOrdinal(
+                                    ReferenceJsonPath: Path("$.calendarReference.calendarCode"),
+                                    ColumnOrdinal: 6
+                                ),
+                            ]
+                        ),
                     ]
                 ),
             ],
@@ -1187,6 +1259,15 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
                             Table: table,
                             DescriptorResource: new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor"),
                             DescriptorIdColumnOrdinal: 8
+                        ),
+                        new DescriptorProjectionSource(
+                            DescriptorValuePath: Path("$.schoolYearDescriptor"),
+                            Table: table,
+                            DescriptorResource: new QualifiedResourceName(
+                                "Ed-Fi",
+                                "SchoolYearTypeDescriptor"
+                            ),
+                            DescriptorIdColumnOrdinal: 10
                         ),
                     ]
                 ),

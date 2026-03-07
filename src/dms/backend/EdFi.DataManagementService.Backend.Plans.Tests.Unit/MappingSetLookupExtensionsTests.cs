@@ -142,123 +142,7 @@ public class Given_MappingSetLookupExtensions
     }
 
     [Test]
-    public void It_should_treat_missing_reference_identity_projection_metadata_on_a_compiled_read_plan_as_internal_bug()
-    {
-        var mappingSet = ReplaceReadPlan(
-            _mappingSet,
-            _projectionMetadataResource,
-            CreateHydrationOnlyReadPlan(_mappingSet.ReadPlansByResource[_projectionMetadataResource].Model)
-        );
-        var act = () => mappingSet.GetReadPlanOrThrow(_projectionMetadataResource);
-
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "*Ed-Fi.StudentProjection*mapping set*compiled relational-table read plan has invalid projection metadata*DocumentReferenceBindings are present while ReferenceIdentityProjectionPlansInDependencyOrder is empty*internal compilation/selection bug*"
-            );
-    }
-
-    [Test]
-    public void It_should_treat_missing_descriptor_projection_metadata_on_a_compiled_read_plan_as_internal_bug()
-    {
-        var mappingSet = ReplaceReadPlan(
-            _mappingSet,
-            _descriptorEdgeResource,
-            CreateHydrationOnlyReadPlan(_mappingSet.ReadPlansByResource[_descriptorEdgeResource].Model)
-        );
-        var act = () => mappingSet.GetReadPlanOrThrow(_descriptorEdgeResource);
-
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "*Ed-Fi.StudentDescriptorEdge*mapping set*compiled relational-table read plan has invalid projection metadata*DescriptorEdgeSources are present while DescriptorProjectionPlansInOrder is empty*internal compilation/selection bug*"
-            );
-    }
-
-    [Test]
-    public void It_should_treat_reference_identity_projection_tables_not_present_in_hydration_plans_as_internal_bug()
-    {
-        var readPlan = _mappingSet.ReadPlansByResource[_projectionMetadataResource];
-        var projectionTablePlan = readPlan.ReferenceIdentityProjectionPlansInDependencyOrder.Single();
-        var invalidReadPlan = readPlan with
-        {
-            ReferenceIdentityProjectionPlansInDependencyOrder =
-            [
-                projectionTablePlan with
-                {
-                    Table = new DbTableName(new DbSchemaName("edfi"), "MissingProjectionTable"),
-                },
-            ],
-        };
-        var mappingSet = ReplaceReadPlan(_mappingSet, _projectionMetadataResource, invalidReadPlan);
-        var act = () => mappingSet.GetReadPlanOrThrow(_projectionMetadataResource);
-
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "*Ed-Fi.StudentProjection*mapping set*compiled relational-table read plan has invalid projection metadata*reference identity projection table 'edfi.MissingProjectionTable' is not present in compiled table plans*internal compilation/selection bug*"
-            );
-    }
-
-    [Test]
-    public void It_should_treat_descriptor_projection_tables_not_present_in_hydration_plans_as_internal_bug()
-    {
-        var readPlan = _mappingSet.ReadPlansByResource[_descriptorEdgeResource];
-        var descriptorPlan = readPlan.DescriptorProjectionPlansInOrder.Single();
-        var descriptorSources = descriptorPlan.SourcesInOrder.ToArray();
-
-        descriptorSources[0] = descriptorSources[0] with
-        {
-            Table = new DbTableName(new DbSchemaName("edfi"), "MissingProjectionTable"),
-        };
-
-        var invalidReadPlan = readPlan with
-        {
-            DescriptorProjectionPlansInOrder =
-            [
-                descriptorPlan with
-                {
-                    SourcesInOrder = [.. descriptorSources],
-                },
-            ],
-        };
-        var mappingSet = ReplaceReadPlan(_mappingSet, _descriptorEdgeResource, invalidReadPlan);
-        var act = () => mappingSet.GetReadPlanOrThrow(_descriptorEdgeResource);
-
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "*Ed-Fi.StudentDescriptorEdge*mapping set*compiled relational-table read plan has invalid projection metadata*descriptor projection plan at index '0' source '$.academicSubjectDescriptor' references table 'edfi.MissingProjectionTable' that is not present in compiled table plans*internal compilation/selection bug*"
-            );
-    }
-
-    [Test]
-    public void It_should_treat_invalid_descriptor_projection_result_shape_as_internal_bug()
-    {
-        var readPlan = _mappingSet.ReadPlansByResource[_descriptorEdgeResource];
-        var descriptorPlan = readPlan.DescriptorProjectionPlansInOrder.Single();
-        var invalidReadPlan = readPlan with
-        {
-            DescriptorProjectionPlansInOrder =
-            [
-                descriptorPlan with
-                {
-                    ResultShape = new DescriptorProjectionResultShape(DescriptorIdOrdinal: 1, UriOrdinal: 0),
-                },
-            ],
-        };
-        var mappingSet = ReplaceReadPlan(_mappingSet, _descriptorEdgeResource, invalidReadPlan);
-        var act = () => mappingSet.GetReadPlanOrThrow(_descriptorEdgeResource);
-
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "*Ed-Fi.StudentDescriptorEdge*mapping set*compiled relational-table read plan has invalid projection metadata*descriptor projection plan at index '0' result shape must expose DescriptorId at ordinal '0' and Uri at ordinal '1'*DescriptorId='1'*Uri='0'*internal compilation/selection bug*"
-            );
-    }
-
-    [Test]
-    public void It_should_treat_invalid_later_descriptor_projection_plan_as_internal_bug()
+    public void It_should_return_compiled_read_plan_without_revalidating_projection_metadata_at_lookup_time()
     {
         var readPlan = _mappingSet.ReadPlansByResource[_multiDescriptorProjectionResource];
         var invalidReadPlan = readPlan with
@@ -273,13 +157,8 @@ public class Given_MappingSetLookupExtensions
             ],
         };
         var mappingSet = ReplaceReadPlan(_mappingSet, _multiDescriptorProjectionResource, invalidReadPlan);
-        var act = () => mappingSet.GetReadPlanOrThrow(_multiDescriptorProjectionResource);
 
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage(
-                "*Ed-Fi.StudentDescriptorCollection*mapping set*compiled relational-table read plan has invalid projection metadata*descriptor projection plan at index '1' result shape must expose DescriptorId at ordinal '0' and Uri at ordinal '1'*DescriptorId='1'*Uri='0'*internal compilation/selection bug*"
-            );
+        mappingSet.GetReadPlanOrThrow(_multiDescriptorProjectionResource).Should().BeSameAs(invalidReadPlan);
     }
 
     [Test]
@@ -566,17 +445,6 @@ public class Given_MappingSetLookupExtensions
     private static ResourceReadPlan CreateReadPlan(RelationalResourceModel model)
     {
         return new ReadPlanCompiler(SqlDialect.Pgsql).Compile(model);
-    }
-
-    private static ResourceReadPlan CreateHydrationOnlyReadPlan(RelationalResourceModel model)
-    {
-        return new ResourceReadPlan(
-            Model: model,
-            KeysetTable: KeysetTableConventions.GetKeysetTableContract(SqlDialect.Pgsql),
-            TablePlansInDependencyOrder: [new TableReadPlan(model.Root, "SELECT;\n")],
-            ReferenceIdentityProjectionPlansInDependencyOrder: [],
-            DescriptorProjectionPlansInOrder: []
-        );
     }
 
     private static ResourceReadPlan CreateSplitDescriptorProjectionReadPlan(RelationalResourceModel model)
