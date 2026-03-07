@@ -11,7 +11,7 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// <summary>
 /// Validates that compiled projection metadata remains consistent with immutable read-plan hydration metadata.
 /// </summary>
-public static class ReadPlanProjectionContractValidator
+internal static class ReadPlanProjectionContractValidator
 {
     /// <summary>
     /// Validates projection metadata or throws the exception created by <paramref name="createException" />.

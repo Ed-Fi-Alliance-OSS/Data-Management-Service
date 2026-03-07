@@ -234,7 +234,6 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
         {
             ColumnStorage.Stored => bindingColumn.ColumnName,
             ColumnStorage.UnifiedAlias unifiedAlias => ValidateStoredStorageColumnOrThrow(
-                tableModel,
                 ProjectionMetadataResolver.ResolveTableColumnOrThrow(
                     tableModel,
                     unifiedAlias.CanonicalColumn,
@@ -270,7 +269,6 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
     }
 
     private static DbColumnName ValidateStoredStorageColumnOrThrow(
-        DbTableModel tableModel,
         DbColumnModel columnModel,
         string contextDescription,
         DbColumnName resolvedColumnName
