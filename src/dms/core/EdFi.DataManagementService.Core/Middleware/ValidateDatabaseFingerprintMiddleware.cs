@@ -37,44 +37,12 @@ internal class ValidateDatabaseFingerprintMiddleware(
             return;
         }
 
-        var dmsInstanceSelection =
-            requestInfo.ScopedServiceProvider.GetRequiredService<IDmsInstanceSelection>();
-        if (!dmsInstanceSelection.IsSet)
-        {
-            logger.LogError(
-                "DMS instance not set before fingerprint validation - TraceId: {TraceId}",
-                requestInfo.FrontendRequest.TraceId.Value
-            );
-            requestInfo.FrontendResponse = ProblemDetailsResponse.Create(
-                503,
-                ProblemDetailsResponse.ServiceConfigurationError,
-                "Service Configuration Error",
-                "Database instance has not been resolved for this request",
-                requestInfo.FrontendRequest.TraceId
-            );
-            return;
-        }
-
-        var selectedInstance = dmsInstanceSelection.GetSelectedDmsInstance();
-
-        if (string.IsNullOrEmpty(selectedInstance.ConnectionString))
-        {
-            logger.LogError(
-                "DMS instance {InstanceName} has no connection string configured - TraceId: {TraceId}",
-                LoggingSanitizer.SanitizeForLogging(selectedInstance.InstanceName),
-                requestInfo.FrontendRequest.TraceId.Value
-            );
-            requestInfo.FrontendResponse = ProblemDetailsResponse.Create(
-                503,
-                ProblemDetailsResponse.ServiceConfigurationError,
-                "Service Configuration Error",
-                "DMS instance has no connection string configured",
-                requestInfo.FrontendRequest.TraceId
-            );
-            return;
-        }
-
-        var connectionString = selectedInstance.ConnectionString;
+        // ResolveDmsInstanceMiddleware runs earlier in the common pipeline and
+        // IDmsInstanceSelection rejects empty connection strings when populated.
+        var selectedInstance = requestInfo
+            .ScopedServiceProvider.GetRequiredService<IDmsInstanceSelection>()
+            .GetSelectedDmsInstance();
+        var connectionString = selectedInstance.ConnectionString!;
         DatabaseFingerprint? fingerprint;
 
         try

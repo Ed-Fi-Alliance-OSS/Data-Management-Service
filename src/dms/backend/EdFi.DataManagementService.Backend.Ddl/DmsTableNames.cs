@@ -10,16 +10,17 @@ namespace EdFi.DataManagementService.Backend.Ddl;
 /// <summary>
 /// Shared table name constants for the <c>dms.*</c> schema, used by both
 /// <see cref="CoreDdlEmitter"/> (DDL) and <see cref="SeedDmlEmitter"/> (DML).
+/// <c>dms.EffectiveSchema</c> is defined in <see cref="EffectiveSchemaTableDefinition"/>
+/// so runtime readers and DDL share one authoritative definition.
 /// </summary>
 internal static class DmsTableNames
 {
-    public static readonly DbSchemaName DmsSchema = new("dms");
+    public static readonly DbSchemaName DmsSchema = EffectiveSchemaTableDefinition.Table.Schema;
 
     public static readonly DbTableName Descriptor = new(DmsSchema, "Descriptor");
     public static readonly DbTableName Document = new(DmsSchema, "Document");
     public static readonly DbTableName DocumentCache = new(DmsSchema, "DocumentCache");
     public static readonly DbTableName DocumentChangeEvent = new(DmsSchema, "DocumentChangeEvent");
-    public static readonly DbTableName EffectiveSchema = new(DmsSchema, "EffectiveSchema");
     public static readonly DbTableName ReferentialIdentity = new(DmsSchema, "ReferentialIdentity");
     public static readonly DbTableName ResourceKey = new(DmsSchema, "ResourceKey");
     public static readonly DbTableName SchemaComponent = new(DmsSchema, "SchemaComponent");
