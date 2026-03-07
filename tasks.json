@@ -81,7 +81,7 @@
       "Retain or add positive tests proving both the compiler-generated single-plan case and an intentional multi-plan split case still validate successfully.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_ReadPlanCompiler|FullyQualifiedName~Given_NormalizedPlanContractCodec\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Projection Test Helper Consolidation",

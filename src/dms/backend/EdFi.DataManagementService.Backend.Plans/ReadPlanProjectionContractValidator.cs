@@ -292,6 +292,13 @@ public static class ReadPlanProjectionContractValidator
         {
             var descriptorProjectionPlan = readPlan.DescriptorProjectionPlansInOrder[planIndex];
 
+            if (descriptorProjectionPlan.SourcesInOrder.IsDefaultOrEmpty)
+            {
+                throw createException(
+                    $"descriptor projection plan at index '{planIndex}' must contain at least one source to cover a non-empty contiguous slice of authoritative DescriptorEdgeSources"
+                );
+            }
+
             if (descriptorProjectionPlan.ResultShape is not { DescriptorIdOrdinal: 0, UriOrdinal: 1 })
             {
                 throw createException(

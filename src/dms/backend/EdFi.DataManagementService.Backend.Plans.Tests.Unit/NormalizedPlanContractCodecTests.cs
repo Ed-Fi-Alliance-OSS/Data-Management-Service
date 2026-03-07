@@ -671,7 +671,7 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     }
 
     [Test]
-    public void It_should_fail_fast_when_descriptor_projection_source_count_does_not_match_model()
+    public void It_should_fail_fast_when_descriptor_projection_plan_has_no_sources()
     {
         var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
         var descriptorPlan = encoded.DescriptorProjectionPlansInOrder[0];
@@ -684,11 +684,10 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
 
         var exception = act.Should().Throw<InvalidOperationException>().Which;
         exception.Message.Should().Contain("Decoded read plan for resource");
-        exception.Message.Should().Contain("descriptor projection source count '0'");
-        exception.Message.Should().Contain("DescriptorEdgeSources count '2'");
-        exception.Message.Should().Contain("missing authoritative DescriptorEdgeSource(s)");
-        exception.Message.Should().Contain("$.gradeLevelDescriptor");
-        exception.Message.Should().Contain("$.schoolYearDescriptor");
+        exception
+            .Message.Should()
+            .Contain("descriptor projection plan at index '0' must contain at least one source");
+        exception.Message.Should().Contain("contiguous slice of authoritative DescriptorEdgeSources");
     }
 
     [Test]
@@ -758,6 +757,44 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
         descriptorProjectionPlans[1] = firstPlan;
 
         var mutated = encoded with { DescriptorProjectionPlansInOrder = [.. descriptorProjectionPlans] };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        GetDecodedProjectionValidationFailureReason(exception.Message).Should().Be(expectedReason);
+    }
+
+    [Test]
+    public void It_should_fail_with_the_same_projection_contract_reason_as_direct_validation_when_a_split_descriptor_projection_plan_is_empty()
+    {
+        var readPlan = CreateReadPlanWithSplitDescriptorProjectionPlans(_model);
+        var descriptorProjectionPlans = readPlan.DescriptorProjectionPlansInOrder.ToArray();
+        var mutatedReadPlan = readPlan with
+        {
+            DescriptorProjectionPlansInOrder =
+            [
+                descriptorProjectionPlans[0],
+                descriptorProjectionPlans[1] with
+                {
+                    SourcesInOrder = [],
+                },
+            ],
+        };
+        var expectedReason = GetProjectionValidationFailureReason(mutatedReadPlan);
+
+        var encoded = NormalizedPlanContractCodec.Encode(readPlan);
+        var encodedDescriptorProjectionPlans = encoded.DescriptorProjectionPlansInOrder.ToArray();
+        var mutated = encoded with
+        {
+            DescriptorProjectionPlansInOrder =
+            [
+                encodedDescriptorProjectionPlans[0],
+                encodedDescriptorProjectionPlans[1] with
+                {
+                    SourcesInOrder = [],
+                },
+            ],
+        };
 
         var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
 

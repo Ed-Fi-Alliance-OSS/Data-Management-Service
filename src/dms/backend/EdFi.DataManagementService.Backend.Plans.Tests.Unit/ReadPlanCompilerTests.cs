@@ -497,6 +497,23 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_accept_valid_split_descriptor_projection_plan_slices()
+    {
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateKeyUnifiedDescriptorProjectionResourceModel()
+        );
+        var splitReadPlan = CreateReadPlanWithSplitDescriptorProjectionPlans(readPlan);
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                splitReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should().NotThrow();
+    }
+
+    [Test]
     public void It_should_reject_descriptor_projection_source_duplicates_that_omit_another_modeled_source()
     {
         var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
@@ -542,6 +559,72 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             .Contain("descriptor projection source at plan index '0', source index '0'");
         exception.Message.Should().Contain("$.schoolYearTypeDescriptor");
         exception.Message.Should().Contain("$.localSchoolYearTypeDescriptor");
+    }
+
+    [Test]
+    public void It_should_reject_descriptor_projection_plan_lists_that_include_empty_trailing_result_sets()
+    {
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateKeyUnifiedDescriptorProjectionResourceModel()
+        );
+        var descriptorProjectionPlan = readPlan.DescriptorProjectionPlansInOrder.Single();
+        var mutatedReadPlan = readPlan with
+        {
+            DescriptorProjectionPlansInOrder =
+            [
+                descriptorProjectionPlan,
+                descriptorProjectionPlan with
+                {
+                    SelectByKeysetSql = "SELECT descriptor_plan_empty;\n",
+                    SourcesInOrder = [],
+                },
+            ],
+        };
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        exception
+            .Message.Should()
+            .Contain("descriptor projection plan at index '1' must contain at least one source");
+        exception.Message.Should().Contain("contiguous slice of authoritative DescriptorEdgeSources");
+    }
+
+    [Test]
+    public void It_should_reject_descriptor_projection_plans_that_have_empty_source_slices()
+    {
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateKeyUnifiedDescriptorProjectionResourceModel()
+        );
+        var splitReadPlan = CreateReadPlanWithSplitDescriptorProjectionPlans(readPlan);
+        var descriptorProjectionPlans = splitReadPlan.DescriptorProjectionPlansInOrder.ToArray();
+        var mutatedReadPlan = splitReadPlan with
+        {
+            DescriptorProjectionPlansInOrder =
+            [
+                descriptorProjectionPlans[0],
+                descriptorProjectionPlans[1] with
+                {
+                    SourcesInOrder = [],
+                },
+            ],
+        };
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        exception
+            .Message.Should()
+            .Contain("descriptor projection plan at index '1' must contain at least one source");
+        exception.Message.Should().Contain("contiguous slice of authoritative DescriptorEdgeSources");
     }
 
     [Test]
@@ -1238,6 +1321,31 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 descriptorProjectionPlan with
                 {
                     SourcesInOrder = [.. sources],
+                },
+            ],
+        };
+    }
+
+    private static ResourceReadPlan CreateReadPlanWithSplitDescriptorProjectionPlans(
+        ResourceReadPlan readPlan
+    )
+    {
+        var descriptorProjectionPlan = readPlan.DescriptorProjectionPlansInOrder.Single();
+        var sources = descriptorProjectionPlan.SourcesInOrder.ToArray();
+
+        return readPlan with
+        {
+            DescriptorProjectionPlansInOrder =
+            [
+                descriptorProjectionPlan with
+                {
+                    SelectByKeysetSql = "SELECT descriptor_plan_0;\n",
+                    SourcesInOrder = [sources[0]],
+                },
+                descriptorProjectionPlan with
+                {
+                    SelectByKeysetSql = "SELECT descriptor_plan_1;\n",
+                    SourcesInOrder = [.. sources[1..]],
                 },
             ],
         };
