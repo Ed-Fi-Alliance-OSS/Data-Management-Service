@@ -5,6 +5,7 @@
 
 using System.Data;
 using System.Data.Common;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
 using FluentAssertions;
 using NUnit.Framework;
@@ -64,6 +65,39 @@ public class DatabaseFingerprintReaderSupportTests
         short ResourceKeyCount,
         byte[] ResourceKeySeedHash
     );
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Shared_EffectiveSchema_Query_Metadata : DatabaseFingerprintReaderSupportTests
+    {
+        [TestCase(SqlDialect.Pgsql)]
+        [TestCase(SqlDialect.Mssql)]
+        public void It_matches_the_provisioned_effective_schema_definition(SqlDialect dialect)
+        {
+            var query = DatabaseFingerprintReaderSupport.GetEffectiveSchemaQuery(dialect);
+
+            query.TableDisplayName.Should().Be(EffectiveSchemaTableDefinition.TableDisplayName);
+            query
+                .ExistsCommandText.Should()
+                .Be(EffectiveSchemaTableDefinition.RenderExistsCommandText(dialect));
+            query
+                .ReadCommandText.Should()
+                .Be(EffectiveSchemaTableDefinition.RenderReadFingerprintCommandText(dialect));
+            query
+                .ColumnNames.Should()
+                .BeEquivalentTo(
+                    new DatabaseFingerprintColumnNames(
+                        EffectiveSchemaSingletonId: EffectiveSchemaTableDefinition
+                            .EffectiveSchemaSingletonId
+                            .Value,
+                        ApiSchemaFormatVersion: EffectiveSchemaTableDefinition.ApiSchemaFormatVersion.Value,
+                        EffectiveSchemaHash: EffectiveSchemaTableDefinition.EffectiveSchemaHash.Value,
+                        ResourceKeyCount: EffectiveSchemaTableDefinition.ResourceKeyCount.Value,
+                        ResourceKeySeedHash: EffectiveSchemaTableDefinition.ResourceKeySeedHash.Value
+                    )
+                );
+        }
+    }
 
     [TestFixture]
     [Parallelizable]

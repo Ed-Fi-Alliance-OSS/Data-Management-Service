@@ -14,18 +14,8 @@ namespace EdFi.DataManagementService.Backend.Postgresql;
 public class PostgresqlDatabaseFingerprintReader(ILogger<PostgresqlDatabaseFingerprintReader> logger)
     : IDatabaseFingerprintReader
 {
-    private static readonly DatabaseFingerprintReaderQuery _query = new(
-        EffectiveSchemaTableDefinition.TableDisplayName,
-        EffectiveSchemaTableDefinition.RenderExistsCommandText(SqlDialect.Pgsql),
-        EffectiveSchemaTableDefinition.RenderReadFingerprintCommandText(SqlDialect.Pgsql),
-        new DatabaseFingerprintColumnNames(
-            EffectiveSchemaSingletonId: EffectiveSchemaTableDefinition.EffectiveSchemaSingletonId.Value,
-            ApiSchemaFormatVersion: EffectiveSchemaTableDefinition.ApiSchemaFormatVersion.Value,
-            EffectiveSchemaHash: EffectiveSchemaTableDefinition.EffectiveSchemaHash.Value,
-            ResourceKeyCount: EffectiveSchemaTableDefinition.ResourceKeyCount.Value,
-            ResourceKeySeedHash: EffectiveSchemaTableDefinition.ResourceKeySeedHash.Value
-        )
-    );
+    private static readonly DatabaseFingerprintReaderQuery _query =
+        DatabaseFingerprintReaderSupport.GetEffectiveSchemaQuery(SqlDialect.Pgsql);
 
     public Task<DatabaseFingerprint?> ReadFingerprintAsync(string connectionString) =>
         DatabaseFingerprintReaderSupport.ReadFingerprintAsync(
