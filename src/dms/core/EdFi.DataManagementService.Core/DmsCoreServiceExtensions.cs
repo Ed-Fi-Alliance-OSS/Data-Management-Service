@@ -59,6 +59,7 @@ public static class DmsCoreServiceExtensions
             )
             // Startup orchestration
             .AddSingleton<DmsStartupOrchestrator>()
+            .AddSingleton<IDmsStartupTask, ValidateDatabaseFingerprintReaderRegistrationTask>()
             .AddSingleton<IDmsStartupTask, LoadAndBuildEffectiveSchemaTask>()
             .AddSingleton<IDmsStartupTask, BackendMappingInitializationTask>()
             // Startup components
@@ -99,7 +100,10 @@ public static class DmsCoreServiceExtensions
             .AddScoped<IDmsInstanceSelection, DmsInstanceSelection>()
             .AddScoped<IApplicationContextProvider, CachedApplicationContextProvider>()
             .AddSingleton<IConfigurationServiceApplicationProvider, ConfigurationServiceApplicationProvider>()
-            .AddScoped<ResolveDmsInstanceMiddleware>()
+            .AddSingleton<IDatabaseFingerprintReader, MissingDatabaseFingerprintReader>()
+            .AddSingleton<DatabaseFingerprintProvider>()
+            .AddSingleton<ResolveDmsInstanceMiddleware>()
+            .AddSingleton<ValidateDatabaseFingerprintMiddleware>()
             .AddSingleton<IProfileCmsProvider, ConfigurationServiceProfileProvider>()
             .AddSingleton<IProfileService, CachedProfileService>()
             .AddSingleton<IProfileResponseFilter, ProfileResponseFilter>()
@@ -108,7 +112,7 @@ public static class DmsCoreServiceExtensions
             .AddTransient<ProfileResolutionMiddleware>()
             .AddTransient<ProfileFilteringMiddleware>()
             .AddTransient<ProfileWriteValidationMiddleware>()
-            .AddScoped<GetTokenInfoHandler>();
+            .AddSingleton<GetTokenInfoHandler>();
 
         return services;
 

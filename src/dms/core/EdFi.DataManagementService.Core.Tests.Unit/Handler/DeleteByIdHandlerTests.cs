@@ -26,18 +26,21 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 [Parallelizable]
 public class DeleteByIdHandlerTests
 {
-    internal static IPipelineStep Handler(IDocumentStoreRepository documentStoreRepository)
+    internal static (IPipelineStep handler, IServiceProvider serviceProvider) Handler(
+        IDocumentStoreRepository documentStoreRepository
+    )
     {
         var serviceProvider = A.Fake<IServiceProvider>();
         A.CallTo(() => serviceProvider.GetService(typeof(IDocumentStoreRepository)))
             .Returns(documentStoreRepository);
 
-        return new DeleteByIdHandler(
-            serviceProvider,
+        var handler = new DeleteByIdHandler(
             NullLogger.Instance,
             ResiliencePipeline.Empty,
             new NoAuthorizationServiceFactory()
         );
+
+        return (handler, serviceProvider);
     }
 
     internal static ResourceSchema GetResourceSchema()
@@ -79,7 +82,8 @@ public class DeleteByIdHandlerTests
                 ["educationOrganizationTypes"] = new JsonArray { "Type1", "Type2" },
             };
             _requestInfo.ProjectSchema = new ProjectSchema(projectSchemaNode, NullLogger.Instance);
-            IPipelineStep deleteByIdHandler = Handler(new Repository());
+            var (deleteByIdHandler, serviceProvider) = Handler(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
             _requestInfo.ResourceSchema = GetResourceSchema();
             await deleteByIdHandler.Execute(_requestInfo, NullNext);
         }
@@ -115,7 +119,8 @@ public class DeleteByIdHandlerTests
             };
             _requestInfo.ProjectSchema = new ProjectSchema(projectSchemaNode, NullLogger.Instance);
 
-            IPipelineStep deleteByIdHandler = Handler(new Repository());
+            var (deleteByIdHandler, serviceProvider) = Handler(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
             _requestInfo.ResourceSchema = GetResourceSchema();
             await deleteByIdHandler.Execute(_requestInfo, NullNext);
         }
@@ -153,7 +158,8 @@ public class DeleteByIdHandlerTests
             };
             _requestInfo.ProjectSchema = new ProjectSchema(projectSchemaNode, NullLogger.Instance);
 
-            IPipelineStep deleteByIdHandler = Handler(new Repository());
+            var (deleteByIdHandler, serviceProvider) = Handler(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
             _requestInfo.ResourceSchema = GetResourceSchema();
             await deleteByIdHandler.Execute(_requestInfo, NullNext);
         }
@@ -191,7 +197,8 @@ public class DeleteByIdHandlerTests
                 ["educationOrganizationTypes"] = new JsonArray { "Type1", "Type2" },
             };
             _requestInfo.ProjectSchema = new ProjectSchema(projectSchemaNode, NullLogger.Instance);
-            IPipelineStep deleteByIdHandler = Handler(new Repository());
+            var (deleteByIdHandler, serviceProvider) = Handler(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
             _requestInfo.ResourceSchema = GetResourceSchema();
             await deleteByIdHandler.Execute(_requestInfo, NullNext);
         }
@@ -229,7 +236,8 @@ public class DeleteByIdHandlerTests
                 ["educationOrganizationTypes"] = new JsonArray { "Type1", "Type2" },
             };
             _requestInfo.ProjectSchema = new ProjectSchema(projectSchemaNode, NullLogger.Instance);
-            IPipelineStep deleteByIdHandler = Handler(new Repository());
+            var (deleteByIdHandler, serviceProvider) = Handler(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
             _requestInfo.ResourceSchema = GetResourceSchema();
             await deleteByIdHandler.Execute(_requestInfo, NullNext);
         }

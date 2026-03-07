@@ -57,7 +57,7 @@ public class JwtRoleAuthenticationMiddlewareTests
                 TraceId: new TraceId("trace123"),
                 RouteQualifiers: []
             );
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET);
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, No.ServiceProvider);
 
             var (middleware, _, _) = CreateMiddleware();
 
@@ -129,7 +129,7 @@ public class JwtRoleAuthenticationMiddlewareTests
                 TraceId: new TraceId("trace123"),
                 RouteQualifiers: []
             );
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET);
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, No.ServiceProvider);
 
             var (middleware, _, _) = CreateMiddleware();
 
@@ -178,7 +178,7 @@ public class JwtRoleAuthenticationMiddlewareTests
                 TraceId: new TraceId("trace123"),
                 RouteQualifiers: []
             );
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET);
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, No.ServiceProvider);
 
             var (middleware, jwtValidationService, _) = CreateMiddleware();
 
@@ -235,7 +235,7 @@ public class JwtRoleAuthenticationMiddlewareTests
                 TraceId: new TraceId("trace123"),
                 RouteQualifiers: []
             );
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET);
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, No.ServiceProvider);
 
             var claims = new List<Claim>
             {
@@ -319,7 +319,7 @@ public class JwtRoleAuthenticationMiddlewareTests
                 TraceId: new TraceId("trace123"),
                 RouteQualifiers: []
             );
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET);
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, No.ServiceProvider);
 
             var claims = new List<Claim>
             {
@@ -391,7 +391,7 @@ public class JwtRoleAuthenticationMiddlewareTests
                 TraceId: new TraceId("trace123"),
                 RouteQualifiers: []
             );
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET);
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, No.ServiceProvider);
 
             var claims = new List<Claim> { new Claim(ClaimTypes.Name, "test-user") };
             var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, "Test"));
@@ -460,7 +460,7 @@ public class JwtRoleAuthenticationMiddlewareTests
                 TraceId: new TraceId("trace123"),
                 RouteQualifiers: []
             );
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET);
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, No.ServiceProvider);
 
             var claims = new List<Claim>
             {

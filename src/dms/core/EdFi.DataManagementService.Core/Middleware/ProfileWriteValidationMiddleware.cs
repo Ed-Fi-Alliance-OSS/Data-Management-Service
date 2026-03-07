@@ -29,7 +29,6 @@ namespace EdFi.DataManagementService.Core.Middleware;
 internal class ProfileWriteValidationMiddleware(
     IProfileResponseFilter profileFilter,
     IProfileCreatabilityValidator creatabilityValidator,
-    IServiceProvider serviceProvider,
     ILogger<ProfileWriteValidationMiddleware> logger
 ) : IPipelineStep
 {
@@ -171,8 +170,9 @@ internal class ProfileWriteValidationMiddleware(
         HashSet<string> identityPropertyNames
     )
     {
-        // Get repository from service provider
-        var documentStoreRepository = serviceProvider.GetRequiredService<IDocumentStoreRepository>();
+        // Get repository from per-request scoped service provider
+        var documentStoreRepository =
+            requestInfo.ScopedServiceProvider.GetRequiredService<IDocumentStoreRepository>();
 
         // Create a bypass authorization handler for internal document fetch
         // The actual authorization will be performed by the UpdateByIdHandler later

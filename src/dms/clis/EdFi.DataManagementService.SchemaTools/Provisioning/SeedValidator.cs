@@ -48,8 +48,8 @@ public sealed record SchemaComponentRow(
 /// </list>
 /// SeedValidator runs before the DDL transaction as a fail-fast check; SeedDmlEmitter's
 /// in-SQL validation runs inside the transaction as defense-in-depth.
-/// <para>In addition to row-level checks, the C# preflight also validates
-/// <c>EffectiveSchema.ResourceKeyCount</c> and <c>ResourceKeySeedHash</c> via
+/// <para>In addition to row-level checks, the C# preflight also validates the
+/// runtime <c>dms.EffectiveSchema</c> fingerprint contract via
 /// <see cref="ValidateEffectiveSchemaOrThrow"/>.</para>
 /// <para><b>Important:</b> Changes to validation columns or comparison logic must be
 /// reflected in both locations to keep the dual-path strategy consistent.</para>
@@ -189,43 +189,85 @@ public static class SeedValidator
     }
 
     /// <summary>
-    /// Validates EffectiveSchema.ResourceKeyCount and ResourceKeySeedHash against expected values.
-    /// Throws <see cref="InvalidOperationException"/> listing all mismatched fields.
+    /// Validates the stored <c>dms.EffectiveSchema</c> singleton against the runtime fingerprint
+    /// contract and the expected provisioning metadata.
+    /// Throws <see cref="InvalidOperationException"/> listing all invalid or mismatched fields.
     /// </summary>
     public static void ValidateEffectiveSchemaOrThrow(
+        short storedEffectiveSchemaSingletonId,
+        string storedApiSchemaFormatVersion,
+        string storedEffectiveSchemaHash,
         short storedResourceKeyCount,
         byte[] storedResourceKeySeedHash,
-        int expectedResourceKeyCount,
-        byte[] expectedResourceKeySeedHash,
+        EffectiveSchemaInfo expectedSchema,
         ILogger logger
     )
     {
-        var issues = new List<string>();
+        ArgumentNullException.ThrowIfNull(storedApiSchemaFormatVersion);
+        ArgumentNullException.ThrowIfNull(storedEffectiveSchemaHash);
+        ArgumentNullException.ThrowIfNull(storedResourceKeySeedHash);
+        ArgumentNullException.ThrowIfNull(expectedSchema);
 
-        if (storedResourceKeyCount != expectedResourceKeyCount)
-        {
-            issues.Add(
-                $"ResourceKeyCount: stored={storedResourceKeyCount}, expected={expectedResourceKeyCount}"
-            );
-        }
-
-        if (!storedResourceKeySeedHash.AsSpan().SequenceEqual(expectedResourceKeySeedHash))
-        {
-            issues.Add(
-                $"ResourceKeySeedHash: stored={Convert.ToHexString(storedResourceKeySeedHash)}, "
-                    + $"expected={Convert.ToHexString(expectedResourceKeySeedHash)}"
-            );
-        }
-
-        if (issues.Count == 0)
-        {
-            logger.LogInformation("Preflight EffectiveSchema seed validation passed");
-            return;
-        }
-
-        throw new InvalidOperationException(
-            $"dms.EffectiveSchema validation failed: {string.Join("; ", issues)}"
+        var storedContractIssues = EffectiveSchemaFingerprintContract.GetStoredValidationIssues(
+            storedEffectiveSchemaSingletonId,
+            storedApiSchemaFormatVersion,
+            storedEffectiveSchemaHash,
+            storedResourceKeyCount,
+            storedResourceKeySeedHash
         );
+
+        var expectedContractIssues = EffectiveSchemaFingerprintContract
+            .GetExpectedValidationIssues(expectedSchema)
+            .Select(issue => $"Expected provisioning metadata invalid: {issue}")
+            .ToList();
+
+        if (storedContractIssues.Count > 0 || expectedContractIssues.Count > 0)
+        {
+            List<string> contractIssues = [.. storedContractIssues, .. expectedContractIssues];
+
+            throw new InvalidOperationException(
+                $"dms.EffectiveSchema validation failed: {string.Join("; ", contractIssues)}"
+            );
+        }
+
+        List<string> comparisonIssues = [];
+
+        if (
+            !string.Equals(
+                storedEffectiveSchemaHash,
+                expectedSchema.EffectiveSchemaHash,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            comparisonIssues.Add(
+                $"EffectiveSchemaHash: stored={storedEffectiveSchemaHash}, expected={expectedSchema.EffectiveSchemaHash}"
+            );
+        }
+
+        if (storedResourceKeyCount != expectedSchema.ResourceKeyCount)
+        {
+            comparisonIssues.Add(
+                $"ResourceKeyCount: stored={storedResourceKeyCount}, expected={expectedSchema.ResourceKeyCount}"
+            );
+        }
+
+        if (!storedResourceKeySeedHash.AsSpan().SequenceEqual(expectedSchema.ResourceKeySeedHash))
+        {
+            comparisonIssues.Add(
+                $"ResourceKeySeedHash: stored={Convert.ToHexString(storedResourceKeySeedHash)}, "
+                    + $"expected={Convert.ToHexString(expectedSchema.ResourceKeySeedHash)}"
+            );
+        }
+
+        if (comparisonIssues.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"dms.EffectiveSchema validation failed: {string.Join("; ", comparisonIssues)}"
+            );
+        }
+
+        logger.LogInformation("Preflight EffectiveSchema seed validation passed");
     }
 
     private static string BuildDiffReport(

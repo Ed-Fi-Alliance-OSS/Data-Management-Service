@@ -25,18 +25,21 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 [Parallelizable]
 public class GetByIdHandlerTests
 {
-    internal static IPipelineStep Handler(IDocumentStoreRepository documentStoreRepository)
+    internal static (IPipelineStep handler, IServiceProvider serviceProvider) Handler(
+        IDocumentStoreRepository documentStoreRepository
+    )
     {
         var serviceProvider = A.Fake<IServiceProvider>();
         A.CallTo(() => serviceProvider.GetService(typeof(IDocumentStoreRepository)))
             .Returns(documentStoreRepository);
 
-        return new GetByIdHandler(
-            serviceProvider,
+        var handler = new GetByIdHandler(
             NullLogger.Instance,
             ResiliencePipeline.Empty,
             new NoAuthorizationServiceFactory()
         );
+
+        return (handler, serviceProvider);
     }
 
     [TestFixture]
@@ -60,7 +63,8 @@ public class GetByIdHandlerTests
         [SetUp]
         public async Task Setup()
         {
-            IPipelineStep getByIdHandler = Handler(new Repository());
+            var (getByIdHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
             await getByIdHandler.Execute(requestInfo, NullNext);
         }
 
@@ -89,7 +93,8 @@ public class GetByIdHandlerTests
         [SetUp]
         public async Task Setup()
         {
-            IPipelineStep getByIdHandler = Handler(new Repository());
+            var (getByIdHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
             await getByIdHandler.Execute(requestInfo, NullNext);
         }
 
@@ -121,7 +126,8 @@ public class GetByIdHandlerTests
         [SetUp]
         public async Task Setup()
         {
-            IPipelineStep getByIdHandler = Handler(new Repository());
+            var (getByIdHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
             await getByIdHandler.Execute(requestInfo, NullNext);
         }
 

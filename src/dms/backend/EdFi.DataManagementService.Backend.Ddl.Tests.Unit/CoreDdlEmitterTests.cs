@@ -360,6 +360,13 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
+    public void It_should_have_non_blank_api_schema_format_version_check_on_effective_schema()
+    {
+        _ddl.Should().Contain("\"CK_EffectiveSchema_ApiSchemaFormatVersion_NotBlank\"");
+        _ddl.Should().Contain("btrim(\"ApiSchemaFormatVersion\") <> ''");
+    }
+
+    [Test]
     public void It_should_have_pg_only_bytea_length_check()
     {
         _ddl.Should().Contain("\"CK_EffectiveSchema_ResourceKeySeedHash_Length\"");
@@ -809,6 +816,13 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     {
         _ddl.Should().Contain("[CK_EffectiveSchema_Singleton]");
         _ddl.Should().Contain("[EffectiveSchemaSingletonId] = 1");
+    }
+
+    [Test]
+    public void It_should_have_non_blank_api_schema_format_version_check_on_effective_schema()
+    {
+        _ddl.Should().Contain("[CK_EffectiveSchema_ApiSchemaFormatVersion_NotBlank]");
+        _ddl.Should().Contain("LEN(LTRIM(RTRIM([ApiSchemaFormatVersion]))) > 0");
     }
 
     [Test]

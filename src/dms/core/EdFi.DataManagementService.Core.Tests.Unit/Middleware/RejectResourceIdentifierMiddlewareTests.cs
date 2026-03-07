@@ -42,7 +42,7 @@ public class RejectResourceIdentifierMiddlewareTests
                 TraceId: new TraceId(""),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontendRequest, RequestMethod.POST)
+            _requestInfo = new(frontendRequest, RequestMethod.POST, No.ServiceProvider)
             {
                 ParsedBody = System.Text.Json.Nodes.JsonNode.Parse(frontendRequest.Body!)!,
             };
@@ -91,7 +91,7 @@ public class RejectResourceIdentifierMiddlewareTests
                 TraceId: new TraceId(""),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontendRequest, RequestMethod.POST)
+            _requestInfo = new(frontendRequest, RequestMethod.POST, No.ServiceProvider)
             {
                 ParsedBody = System.Text.Json.Nodes.JsonNode.Parse(frontendRequest.Body!)!,
             };
