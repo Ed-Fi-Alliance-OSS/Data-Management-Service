@@ -59,7 +59,6 @@ public class PipelineOrderingTests
             );
             services.AddSingleton(appSettingsOptions);
             services.AddSingleton<IDatabaseFingerprintReader, NullDatabaseFingerprintReader>();
-            services.AddSingleton(TimeProvider.System);
             services.AddSingleton<DatabaseFingerprintProvider>();
             services.AddTransient<ValidateDatabaseFingerprintMiddleware>();
             services.AddTransient<ILogger<ValidateDatabaseFingerprintMiddleware>>(_ =>

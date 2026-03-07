@@ -54,7 +54,6 @@ public class Given_Scope_Validation_Is_Enabled_For_Profile_Resolution_Middleware
 
         services.AddSingleton(CreateAppSettings());
         services.AddSingleton<IDatabaseFingerprintReader, NullDatabaseFingerprintReader>();
-        services.AddSingleton(TimeProvider.System);
         services.AddSingleton<DatabaseFingerprintProvider>();
         services.AddTransient<ValidateDatabaseFingerprintMiddleware>();
         services.AddTransient<ILogger<ValidateDatabaseFingerprintMiddleware>>(_ =>
