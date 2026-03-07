@@ -87,6 +87,6 @@
       "Run: `dotnet test --no-restore ./src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/EdFi.DataManagementService.SchemaTools.Tests.Unit.csproj --filter \"FullyQualifiedName~SeedValidatorTests\"`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DatabaseFingerprintReaderSupportTests\"`"
     ],
-    "completed": false
+    "completed": true
   }
 ]

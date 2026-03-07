@@ -12,11 +12,13 @@ namespace EdFi.DataManagementService.Backend.Ddl.Tests.Unit;
 
 internal static class ManifestTestData
 {
+    internal const string ValidEffectiveSchemaHash = SeedTestData.ValidEffectiveSchemaHash;
+
     internal static EffectiveSchemaInfo BuildEffectiveSchema() =>
         new(
             ApiSchemaFormatVersion: "1.0.0",
             RelationalMappingVersion: "1.0.0",
-            EffectiveSchemaHash: "abc123def456",
+            EffectiveSchemaHash: ValidEffectiveSchemaHash,
             ResourceKeyCount: 2,
             ResourceKeySeedHash:
             [
@@ -593,7 +595,10 @@ public class Given_DdlManifestEmitter_Emit_With_Empty_Entries
     public void It_should_still_include_schema_metadata()
     {
         using var doc = JsonDocument.Parse(_manifest);
-        doc.RootElement.GetProperty("effective_schema_hash").GetString().Should().Be("abc123def456");
+        doc.RootElement.GetProperty("effective_schema_hash")
+            .GetString()
+            .Should()
+            .Be(ManifestTestData.ValidEffectiveSchemaHash);
         doc.RootElement.GetProperty("relational_mapping_version").GetString().Should().Be("1.0.0");
     }
 }
@@ -730,7 +735,10 @@ public class Given_DdlManifestEmitter_Emit_Manifest_Schema
     [Test]
     public void It_should_include_effective_schema_hash()
     {
-        _doc.RootElement.GetProperty("effective_schema_hash").GetString().Should().Be("abc123def456");
+        _doc.RootElement.GetProperty("effective_schema_hash")
+            .GetString()
+            .Should()
+            .Be(ManifestTestData.ValidEffectiveSchemaHash);
     }
 
     [Test]
