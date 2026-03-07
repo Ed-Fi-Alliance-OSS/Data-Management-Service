@@ -233,12 +233,13 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
             $"document-reference binding '{binding.ReferenceObjectPath.Canonical}' FK column"
         );
 
-        ValidateProjectionBindingPath(
+        ReadPlanProjectionContractValidator.ValidateDocumentReferenceBindingPathOrThrow(
             tableModel.Table,
             fkColumn,
-            binding.ReferenceObjectPath,
-            $"document-reference binding '{binding.ReferenceObjectPath.Canonical}' FK column",
-            $"{nameof(DocumentReferenceBinding)}.{nameof(DocumentReferenceBinding.ReferenceObjectPath)}"
+            binding,
+            reason => new InvalidOperationException(
+                $"Cannot compile read plan for '{tableModel.Table}': {reason}."
+            )
         );
 
         foreach (var identityBinding in binding.IdentityBindings)
@@ -250,12 +251,14 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
                 $"reference-identity binding '{identityBinding.ReferenceJsonPath.Canonical}' for reference '{binding.ReferenceObjectPath.Canonical}' column"
             );
 
-            ValidateProjectionBindingPath(
+            ReadPlanProjectionContractValidator.ValidateReferenceIdentityBindingPathOrThrow(
                 tableModel.Table,
                 identityColumn,
-                identityBinding.ReferenceJsonPath,
-                $"reference-identity binding '{identityBinding.ReferenceJsonPath.Canonical}' for reference '{binding.ReferenceObjectPath.Canonical}' column",
-                $"{nameof(ReferenceIdentityBinding)}.{nameof(ReferenceIdentityBinding.ReferenceJsonPath)}"
+                binding,
+                identityBinding,
+                reason => new InvalidOperationException(
+                    $"Cannot compile read plan for '{tableModel.Table}': {reason}."
+                )
             );
         }
     }
@@ -278,12 +281,13 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
             $"descriptor edge source '{edgeSource.DescriptorValuePath.Canonical}' FK column"
         );
 
-        ValidateProjectionBindingPath(
+        ReadPlanProjectionContractValidator.ValidateDescriptorEdgeSourcePathOrThrow(
             tableModel.Table,
             fkColumn,
-            edgeSource.DescriptorValuePath,
-            $"descriptor edge source '{edgeSource.DescriptorValuePath.Canonical}' FK column",
-            $"{nameof(DescriptorEdgeSource)}.{nameof(DescriptorEdgeSource.DescriptorValuePath)}"
+            edgeSource,
+            reason => new InvalidOperationException(
+                $"Cannot compile read plan for '{tableModel.Table}': {reason}."
+            )
         );
     }
 
@@ -341,28 +345,6 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
         }
 
         return tableModel.Columns[columnOrdinal];
-    }
-
-    /// <summary>
-    /// Ensures a compiled projection binding still targets the API-bound column for its declared JSON path.
-    /// </summary>
-    private static void ValidateProjectionBindingPath(
-        DbTableName table,
-        DbColumnModel columnModel,
-        JsonPathExpression expectedPath,
-        string dependencyDescription,
-        string expectedPathDescription
-    )
-    {
-        if (columnModel.SourceJsonPath?.Canonical == expectedPath.Canonical)
-        {
-            return;
-        }
-
-        throw new InvalidOperationException(
-            $"Cannot compile read plan for '{table}': {dependencyDescription} '{columnModel.ColumnName.Value}' has DbColumnModel.SourceJsonPath '{columnModel.SourceJsonPath?.Canonical ?? "<null>"}', "
-                + $"which does not match {expectedPathDescription} '{expectedPath.Canonical}'."
-        );
     }
 
     /// <summary>

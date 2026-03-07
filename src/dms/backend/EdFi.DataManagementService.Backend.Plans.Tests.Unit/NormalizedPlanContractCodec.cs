@@ -241,12 +241,8 @@ internal static class NormalizedPlanContractCodec
 
         var tablesByName = BuildTableLookup(model);
         var tablePlans = DecodeTableReadPlans(dto, tablesByName);
-        var referenceIdentityProjectionPlans = DecodeReferenceIdentityProjectionPlans(
-            dto,
-            model,
-            tablesByName
-        );
-        var descriptorProjectionPlans = DecodeDescriptorProjectionPlans(dto, model, tablesByName);
+        var referenceIdentityProjectionPlans = DecodeReferenceIdentityProjectionPlans(dto, tablesByName);
+        var descriptorProjectionPlans = DecodeDescriptorProjectionPlans(dto, tablesByName);
 
         var tempTableNameArgument =
             $"{nameof(ResourceReadPlanDto.KeysetTable)}.{nameof(KeysetTableContractDto.TempTableName)}";
@@ -395,7 +391,6 @@ internal static class NormalizedPlanContractCodec
 
     private static IReadOnlyList<ExternalPlans.ReferenceIdentityProjectionTablePlan> DecodeReferenceIdentityProjectionPlans(
         ResourceReadPlanDto dto,
-        RelationalResourceModel model,
         IReadOnlyDictionary<DbTableName, DbTableModel> tablesByName
     )
     {
@@ -434,14 +429,6 @@ internal static class NormalizedPlanContractCodec
                     $"FK column ordinal on table '{FormatTableName(tableModel.Table)}'"
                 );
 
-                var fkColumn = tableModel.Columns[fkColumnOrdinal].ColumnName;
-                var (modelBindingIndex, modelBinding) = ResolveDocumentReferenceBindingByTableAndColumn(
-                    model,
-                    tableModel.Table,
-                    fkColumn,
-                    bindingArgument
-                );
-
                 var referenceObjectPathArgument =
                     $"{bindingArgument}.{nameof(ReferenceIdentityProjectionBindingDto.ReferenceObjectPath)}";
                 var referenceObjectPath = CompileJsonPath(
@@ -449,32 +436,7 @@ internal static class NormalizedPlanContractCodec
                     referenceObjectPathArgument
                 );
 
-                if (
-                    !string.Equals(
-                        referenceObjectPath.Canonical,
-                        modelBinding.ReferenceObjectPath.Canonical,
-                        StringComparison.Ordinal
-                    )
-                )
-                {
-                    throw new InvalidOperationException(
-                        $"Document-reference binding index '{modelBindingIndex}' has reference-object path "
-                            + $"'{modelBinding.ReferenceObjectPath.Canonical}', but "
-                            + $"'{referenceObjectPathArgument}' was '{referenceObjectPath.Canonical}'."
-                    );
-                }
-
                 var targetResource = DecodeQualifiedResourceName(bindingDto.TargetResource);
-
-                if (targetResource != modelBinding.TargetResource)
-                {
-                    throw new InvalidOperationException(
-                        $"Document-reference binding index '{modelBindingIndex}' targets "
-                            + $"'{FormatResourceName(modelBinding.TargetResource)}' in model, but "
-                            + $"'{bindingArgument}.{nameof(ReferenceIdentityProjectionBindingDto.TargetResource)}' "
-                            + $"was '{FormatResourceName(targetResource)}'."
-                    );
-                }
 
                 var fieldOrdinals = new ExternalPlans.ReferenceIdentityProjectionFieldOrdinal[
                     bindingDto.IdentityFieldOrdinalsInOrder.Length
@@ -506,25 +468,6 @@ internal static class NormalizedPlanContractCodec
                         referenceJsonPathArgument
                     );
 
-                    var columnName = tableModel.Columns[columnOrdinal].ColumnName;
-                    var hasMatchingIdentityBinding = modelBinding.IdentityBindings.Any(identityBinding =>
-                        string.Equals(
-                            identityBinding.ReferenceJsonPath.Canonical,
-                            referenceJsonPath.Canonical,
-                            StringComparison.Ordinal
-                        )
-                        && identityBinding.Column == columnName
-                    );
-
-                    if (!hasMatchingIdentityBinding)
-                    {
-                        throw new InvalidOperationException(
-                            $"Reference identity field '{referenceJsonPath.Canonical}' at ordinal '{columnOrdinal}' "
-                                + $"does not match any identity binding for document-reference binding index "
-                                + $"'{modelBindingIndex}' on table '{FormatTableName(tableModel.Table)}'."
-                        );
-                    }
-
                     fieldOrdinals[fieldIndex] = new ExternalPlans.ReferenceIdentityProjectionFieldOrdinal(
                         ReferenceJsonPath: referenceJsonPath,
                         ColumnOrdinal: columnOrdinal
@@ -551,7 +494,6 @@ internal static class NormalizedPlanContractCodec
 
     private static IReadOnlyList<ExternalPlans.DescriptorProjectionPlan> DecodeDescriptorProjectionPlans(
         ResourceReadPlanDto dto,
-        RelationalResourceModel model,
         IReadOnlyDictionary<DbTableName, DbTableModel> tablesByName
     )
     {
@@ -572,11 +514,6 @@ internal static class NormalizedPlanContractCodec
                     $"{planArgument}.{nameof(DescriptorProjectionPlanDto.ResultShape)}.{nameof(DescriptorProjectionResultShapeDto.UriOrdinal)}",
                     "descriptor result-shape URI ordinal"
                 )
-            );
-
-            ValidateDescriptorProjectionResultShape(
-                resultShape,
-                $"{planArgument}.{nameof(DescriptorProjectionPlanDto.ResultShape)}"
             );
 
             var sources = new ExternalPlans.DescriptorProjectionSource[planDto.SourcesInOrder.Length];
@@ -602,14 +539,6 @@ internal static class NormalizedPlanContractCodec
                     $"descriptor-id column ordinal on table '{FormatTableName(tableModel.Table)}'"
                 );
 
-                var descriptorColumn = tableModel.Columns[descriptorIdColumnOrdinal].ColumnName;
-                var (descriptorEdgeIndex, descriptorEdgeSource) = ResolveDescriptorEdgeSourceByTableAndColumn(
-                    model,
-                    tableModel.Table,
-                    descriptorColumn,
-                    sourceArgument
-                );
-
                 var descriptorValuePathArgument =
                     $"{sourceArgument}.{nameof(DescriptorProjectionSourceDto.DescriptorValuePath)}";
                 var descriptorValuePath = CompileJsonPath(
@@ -617,32 +546,7 @@ internal static class NormalizedPlanContractCodec
                     descriptorValuePathArgument
                 );
 
-                if (
-                    !string.Equals(
-                        descriptorValuePath.Canonical,
-                        descriptorEdgeSource.DescriptorValuePath.Canonical,
-                        StringComparison.Ordinal
-                    )
-                )
-                {
-                    throw new InvalidOperationException(
-                        $"Descriptor edge source index '{descriptorEdgeIndex}' has descriptor value path "
-                            + $"'{descriptorEdgeSource.DescriptorValuePath.Canonical}', but "
-                            + $"'{descriptorValuePathArgument}' was '{descriptorValuePath.Canonical}'."
-                    );
-                }
-
                 var descriptorResource = DecodeQualifiedResourceName(sourceDto.DescriptorResource);
-
-                if (descriptorResource != descriptorEdgeSource.DescriptorResource)
-                {
-                    throw new InvalidOperationException(
-                        $"Descriptor edge source index '{descriptorEdgeIndex}' targets "
-                            + $"'{FormatResourceName(descriptorEdgeSource.DescriptorResource)}' in model, but "
-                            + $"'{sourceArgument}.{nameof(DescriptorProjectionSourceDto.DescriptorResource)}' "
-                            + $"was '{FormatResourceName(descriptorResource)}'."
-                    );
-                }
 
                 sources[sourceIndex] = new ExternalPlans.DescriptorProjectionSource(
                     DescriptorValuePath: descriptorValuePath,
@@ -660,22 +564,6 @@ internal static class NormalizedPlanContractCodec
         }
 
         return decoded;
-    }
-
-    private static void ValidateDescriptorProjectionResultShape(
-        ExternalPlans.DescriptorProjectionResultShape resultShape,
-        string argumentName
-    )
-    {
-        if (resultShape is { DescriptorIdOrdinal: 0, UriOrdinal: 1 })
-        {
-            return;
-        }
-
-        throw new ArgumentException(
-            "Descriptor projection result shape must expose DescriptorId at ordinal 0 and Uri at ordinal 1.",
-            argumentName
-        );
     }
 
     private static IReadOnlyList<ExternalPlans.KeyUnificationWritePlan> DecodeKeyUnificationPlans(
@@ -1216,96 +1104,6 @@ internal static class NormalizedPlanContractCodec
         }
 
         return model.DocumentReferenceBindings[bindingIndex];
-    }
-
-    private static (
-        int BindingIndex,
-        DocumentReferenceBinding Binding
-    ) ResolveDocumentReferenceBindingByTableAndColumn(
-        RelationalResourceModel model,
-        DbTableName table,
-        DbColumnName fkColumn,
-        string context
-    )
-    {
-        var bindingIndex = -1;
-        DocumentReferenceBinding binding = null!;
-
-        for (var index = 0; index < model.DocumentReferenceBindings.Count; index++)
-        {
-            var candidate = model.DocumentReferenceBindings[index];
-
-            if (candidate.Table != table || candidate.FkColumn != fkColumn)
-            {
-                continue;
-            }
-
-            if (bindingIndex >= 0)
-            {
-                throw new InvalidOperationException(
-                    $"Multiple document-reference bindings were found for "
-                        + $"'{FormatTableName(table)}.{fkColumn.Value}' while decoding '{context}'."
-                );
-            }
-
-            bindingIndex = index;
-            binding = candidate;
-        }
-
-        if (bindingIndex < 0)
-        {
-            throw new InvalidOperationException(
-                $"No document-reference binding was found for '{FormatTableName(table)}.{fkColumn.Value}' "
-                    + $"while decoding '{context}'."
-            );
-        }
-
-        return (bindingIndex, binding);
-    }
-
-    private static (
-        int DescriptorEdgeIndex,
-        DescriptorEdgeSource Source
-    ) ResolveDescriptorEdgeSourceByTableAndColumn(
-        RelationalResourceModel model,
-        DbTableName table,
-        DbColumnName fkColumn,
-        string context
-    )
-    {
-        var descriptorEdgeIndex = -1;
-        DescriptorEdgeSource source = null!;
-
-        for (var index = 0; index < model.DescriptorEdgeSources.Count; index++)
-        {
-            var candidate = model.DescriptorEdgeSources[index];
-
-            if (candidate.Table != table || candidate.FkColumn != fkColumn)
-            {
-                continue;
-            }
-
-            if (descriptorEdgeIndex >= 0)
-            {
-                throw new InvalidOperationException(
-                    $"Multiple descriptor edge sources were found for "
-                        + $"'{FormatTableName(table)}.{fkColumn.Value}' while decoding '{context}'."
-                );
-            }
-
-            descriptorEdgeIndex = index;
-            source = candidate;
-        }
-
-        if (descriptorEdgeIndex < 0)
-        {
-            throw new InvalidOperationException(
-                $"No descriptor edge source was found for '{FormatTableName(table)}.{fkColumn.Value}' "
-                    + $"while decoding '{context}'."
-            );
-        }
-
-        return (descriptorEdgeIndex, source);
     }
 
     private static int ValidateOrdinal(int ordinal, int count, string argumentName, string context)

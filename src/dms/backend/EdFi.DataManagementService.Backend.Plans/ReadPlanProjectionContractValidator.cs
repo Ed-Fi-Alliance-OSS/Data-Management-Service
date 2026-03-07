@@ -144,12 +144,55 @@ public static class ReadPlanProjectionContractValidator
                     createException
                 );
 
-                foreach (var fieldOrdinal in binding.IdentityFieldOrdinalsInOrder)
+                var fkColumnModel = hydrationTablePlan.TableModel.Columns[binding.FkColumnOrdinal];
+                var modelBinding = ResolveDocumentReferenceBindingByTableAndColumnOrThrow(
+                    readPlan.Model,
+                    projectionTablePlan.Table,
+                    fkColumnModel.ColumnName,
+                    createException
+                );
+
+                ValidateReferenceProjectionBindingContractOrThrow(
+                    projectionTablePlan.Table,
+                    binding,
+                    fkColumnModel,
+                    modelBinding,
+                    createException
+                );
+
+                if (binding.IdentityFieldOrdinalsInOrder.Length != modelBinding.IdentityBindings.Count)
                 {
+                    throw createException(
+                        $"reference identity projection binding '{modelBinding.ReferenceObjectPath.Canonical}' on table '{projectionTablePlan.Table}' field count "
+                            + $"'{binding.IdentityFieldOrdinalsInOrder.Length}' does not match model identity binding count '{modelBinding.IdentityBindings.Count}'"
+                    );
+                }
+
+                for (
+                    var fieldIndex = 0;
+                    fieldIndex < binding.IdentityFieldOrdinalsInOrder.Length;
+                    fieldIndex++
+                )
+                {
+                    var fieldOrdinal = binding.IdentityFieldOrdinalsInOrder[fieldIndex];
+
                     ThrowIfOrdinalIsOutOfRange(
                         fieldOrdinal.ColumnOrdinal,
                         hydrationTablePlan.TableModel.Columns.Count,
                         $"reference identity field ordinal '{fieldOrdinal.ReferenceJsonPath.Canonical}' for table '{projectionTablePlan.Table}'",
+                        createException
+                    );
+
+                    var fieldColumnModel = hydrationTablePlan.TableModel.Columns[fieldOrdinal.ColumnOrdinal];
+                    var modelIdentityBinding = modelBinding.IdentityBindings[fieldIndex];
+
+                    ValidateReferenceProjectionFieldContractOrThrow(
+                        projectionTablePlan.Table,
+                        fieldOrdinal,
+                        fieldIndex,
+                        fieldColumnModel,
+                        modelBinding,
+                        modelIdentityBinding,
                         createException
                     );
                 }
@@ -209,6 +252,23 @@ public static class ReadPlanProjectionContractValidator
                     $"descriptor projection plan at index '{planIndex}' source ordinal '{source.DescriptorValuePath.Canonical}' for table '{source.Table}'",
                     createException
                 );
+
+                var descriptorColumnModel = hydrationTablePlan.TableModel.Columns[
+                    source.DescriptorIdColumnOrdinal
+                ];
+                var modelSource = ResolveDescriptorEdgeSourceByTableAndColumnOrThrow(
+                    readPlan.Model,
+                    source.Table,
+                    descriptorColumnModel.ColumnName,
+                    createException
+                );
+
+                ValidateDescriptorProjectionSourceContractOrThrow(
+                    source,
+                    descriptorColumnModel,
+                    modelSource,
+                    createException
+                );
             }
         }
 
@@ -237,5 +297,247 @@ public static class ReadPlanProjectionContractValidator
         throw createException(
             $"ordinal '{ordinal}' for {context} is out of range for hydration select-list columns (count: {count})"
         );
+    }
+
+    internal static void ValidateDocumentReferenceBindingPathOrThrow(
+        DbTableName table,
+        DbColumnModel columnModel,
+        DocumentReferenceBinding binding,
+        Func<string, Exception> createException
+    )
+    {
+        ValidateProjectionBindingPathOrThrow(
+            table,
+            columnModel,
+            binding.ReferenceObjectPath,
+            $"document-reference binding '{binding.ReferenceObjectPath.Canonical}' FK column",
+            $"{nameof(DocumentReferenceBinding)}.{nameof(DocumentReferenceBinding.ReferenceObjectPath)}",
+            createException
+        );
+    }
+
+    internal static void ValidateReferenceIdentityBindingPathOrThrow(
+        DbTableName table,
+        DbColumnModel columnModel,
+        DocumentReferenceBinding binding,
+        ReferenceIdentityBinding identityBinding,
+        Func<string, Exception> createException
+    )
+    {
+        ValidateProjectionBindingPathOrThrow(
+            table,
+            columnModel,
+            identityBinding.ReferenceJsonPath,
+            $"reference-identity binding '{identityBinding.ReferenceJsonPath.Canonical}' for reference '{binding.ReferenceObjectPath.Canonical}' column",
+            $"{nameof(ReferenceIdentityBinding)}.{nameof(ReferenceIdentityBinding.ReferenceJsonPath)}",
+            createException
+        );
+    }
+
+    internal static void ValidateDescriptorEdgeSourcePathOrThrow(
+        DbTableName table,
+        DbColumnModel columnModel,
+        DescriptorEdgeSource edgeSource,
+        Func<string, Exception> createException
+    )
+    {
+        ValidateProjectionBindingPathOrThrow(
+            table,
+            columnModel,
+            edgeSource.DescriptorValuePath,
+            $"descriptor edge source '{edgeSource.DescriptorValuePath.Canonical}' FK column",
+            $"{nameof(DescriptorEdgeSource)}.{nameof(DescriptorEdgeSource.DescriptorValuePath)}",
+            createException
+        );
+    }
+
+    private static void ValidateReferenceProjectionBindingContractOrThrow(
+        DbTableName table,
+        ReferenceIdentityProjectionBinding binding,
+        DbColumnModel fkColumnModel,
+        DocumentReferenceBinding modelBinding,
+        Func<string, Exception> createException
+    )
+    {
+        ValidateDocumentReferenceBindingPathOrThrow(table, fkColumnModel, modelBinding, createException);
+
+        if (binding.IsIdentityComponent != modelBinding.IsIdentityComponent)
+        {
+            throw createException(
+                $"reference identity projection binding '{modelBinding.ReferenceObjectPath.Canonical}' on table '{table}' has IsIdentityComponent "
+                    + $"'{binding.IsIdentityComponent}', but model binding requires '{modelBinding.IsIdentityComponent}'"
+            );
+        }
+
+        if (binding.ReferenceObjectPath.Canonical != modelBinding.ReferenceObjectPath.Canonical)
+        {
+            throw createException(
+                $"reference identity projection binding for FK column '{fkColumnModel.ColumnName.Value}' on table '{table}' has ReferenceObjectPath "
+                    + $"'{binding.ReferenceObjectPath.Canonical}', but model binding requires '{modelBinding.ReferenceObjectPath.Canonical}'"
+            );
+        }
+
+        if (binding.TargetResource != modelBinding.TargetResource)
+        {
+            throw createException(
+                $"reference identity projection binding '{modelBinding.ReferenceObjectPath.Canonical}' on table '{table}' targets "
+                    + $"'{FormatResource(binding.TargetResource)}', but model binding requires '{FormatResource(modelBinding.TargetResource)}'"
+            );
+        }
+    }
+
+    private static void ValidateReferenceProjectionFieldContractOrThrow(
+        DbTableName table,
+        ReferenceIdentityProjectionFieldOrdinal fieldOrdinal,
+        int fieldIndex,
+        DbColumnModel fieldColumnModel,
+        DocumentReferenceBinding modelBinding,
+        ReferenceIdentityBinding modelIdentityBinding,
+        Func<string, Exception> createException
+    )
+    {
+        if (fieldOrdinal.ReferenceJsonPath.Canonical != modelIdentityBinding.ReferenceJsonPath.Canonical)
+        {
+            throw createException(
+                $"reference identity projection field at index '{fieldIndex}' for reference '{modelBinding.ReferenceObjectPath.Canonical}' on table '{table}' has ReferenceJsonPath "
+                    + $"'{fieldOrdinal.ReferenceJsonPath.Canonical}', but model binding requires '{modelIdentityBinding.ReferenceJsonPath.Canonical}'"
+            );
+        }
+
+        if (fieldColumnModel.ColumnName != modelIdentityBinding.Column)
+        {
+            throw createException(
+                $"reference identity projection field '{fieldOrdinal.ReferenceJsonPath.Canonical}' at index '{fieldIndex}' on table '{table}' targets column "
+                    + $"'{fieldColumnModel.ColumnName.Value}', but model binding requires '{modelIdentityBinding.Column.Value}'"
+            );
+        }
+
+        ValidateReferenceIdentityBindingPathOrThrow(
+            table,
+            fieldColumnModel,
+            modelBinding,
+            modelIdentityBinding,
+            createException
+        );
+    }
+
+    private static void ValidateDescriptorProjectionSourceContractOrThrow(
+        DescriptorProjectionSource source,
+        DbColumnModel descriptorColumnModel,
+        DescriptorEdgeSource modelSource,
+        Func<string, Exception> createException
+    )
+    {
+        ValidateDescriptorEdgeSourcePathOrThrow(
+            source.Table,
+            descriptorColumnModel,
+            modelSource,
+            createException
+        );
+
+        if (source.DescriptorValuePath.Canonical != modelSource.DescriptorValuePath.Canonical)
+        {
+            throw createException(
+                $"descriptor projection source for FK column '{descriptorColumnModel.ColumnName.Value}' on table '{source.Table}' has DescriptorValuePath "
+                    + $"'{source.DescriptorValuePath.Canonical}', but model edge source requires '{modelSource.DescriptorValuePath.Canonical}'"
+            );
+        }
+
+        if (source.DescriptorResource != modelSource.DescriptorResource)
+        {
+            throw createException(
+                $"descriptor projection source '{modelSource.DescriptorValuePath.Canonical}' on table '{source.Table}' targets "
+                    + $"'{FormatResource(source.DescriptorResource)}', but model edge source requires '{FormatResource(modelSource.DescriptorResource)}'"
+            );
+        }
+    }
+
+    private static DocumentReferenceBinding ResolveDocumentReferenceBindingByTableAndColumnOrThrow(
+        RelationalResourceModel model,
+        DbTableName table,
+        DbColumnName fkColumn,
+        Func<string, Exception> createException
+    )
+    {
+        DocumentReferenceBinding? resolvedBinding = null;
+
+        foreach (var binding in model.DocumentReferenceBindings)
+        {
+            if (binding.Table != table || binding.FkColumn != fkColumn)
+            {
+                continue;
+            }
+
+            if (resolvedBinding is not null)
+            {
+                throw createException(
+                    $"multiple DocumentReferenceBindings match table '{table}' FK column '{fkColumn.Value}'"
+                );
+            }
+
+            resolvedBinding = binding;
+        }
+
+        return resolvedBinding
+            ?? throw createException(
+                $"no DocumentReferenceBinding matches table '{table}' FK column '{fkColumn.Value}'"
+            );
+    }
+
+    private static DescriptorEdgeSource ResolveDescriptorEdgeSourceByTableAndColumnOrThrow(
+        RelationalResourceModel model,
+        DbTableName table,
+        DbColumnName fkColumn,
+        Func<string, Exception> createException
+    )
+    {
+        DescriptorEdgeSource? resolvedSource = null;
+
+        foreach (var edgeSource in model.DescriptorEdgeSources)
+        {
+            if (edgeSource.Table != table || edgeSource.FkColumn != fkColumn)
+            {
+                continue;
+            }
+
+            if (resolvedSource is not null)
+            {
+                throw createException(
+                    $"multiple DescriptorEdgeSources match table '{table}' FK column '{fkColumn.Value}'"
+                );
+            }
+
+            resolvedSource = edgeSource;
+        }
+
+        return resolvedSource
+            ?? throw createException(
+                $"no DescriptorEdgeSource matches table '{table}' FK column '{fkColumn.Value}'"
+            );
+    }
+
+    private static void ValidateProjectionBindingPathOrThrow(
+        DbTableName table,
+        DbColumnModel columnModel,
+        JsonPathExpression expectedPath,
+        string dependencyDescription,
+        string expectedPathDescription,
+        Func<string, Exception> createException
+    )
+    {
+        if (columnModel.SourceJsonPath?.Canonical == expectedPath.Canonical)
+        {
+            return;
+        }
+
+        throw createException(
+            $"{dependencyDescription} '{columnModel.ColumnName.Value}' has DbColumnModel.SourceJsonPath '{columnModel.SourceJsonPath?.Canonical ?? "<null>"}', "
+                + $"which does not match {expectedPathDescription} '{expectedPath.Canonical}'"
+        );
+    }
+
+    private static string FormatResource(QualifiedResourceName resource)
+    {
+        return $"{resource.ProjectName}.{resource.ResourceName}";
     }
 }
