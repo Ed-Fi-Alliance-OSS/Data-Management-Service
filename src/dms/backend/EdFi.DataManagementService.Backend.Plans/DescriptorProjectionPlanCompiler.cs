@@ -44,17 +44,24 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
         var compiledSources = resourceModel
             .DescriptorEdgeSources.Select(edgeSource =>
             {
-                var columnOrdinals = ResolveColumnOrdinalsOrThrow(columnOrdinalsByTable, edgeSource.Table);
+                var columnOrdinals = ProjectionMetadataResolver.ResolveHydrationColumnOrdinalsOrThrow(
+                    edgeSource.Table,
+                    columnOrdinalsByTable,
+                    missingTable => new InvalidOperationException(
+                        $"Cannot compile descriptor projection plan for '{missingTable}': owning table is not present in TablesInDependencyOrder."
+                    )
+                );
 
                 return new DescriptorProjectionSource(
                     DescriptorValuePath: edgeSource.DescriptorValuePath,
                     Table: edgeSource.Table,
                     DescriptorResource: edgeSource.DescriptorResource,
-                    DescriptorIdColumnOrdinal: ResolveColumnOrdinalOrThrow(
+                    DescriptorIdColumnOrdinal: ProjectionMetadataResolver.ResolveHydrationColumnOrdinalOrThrow(
                         columnOrdinals,
-                        edgeSource.Table,
                         edgeSource.FkColumn,
-                        $"descriptor edge source '{edgeSource.DescriptorValuePath.Canonical}' FK column"
+                        missingColumn => new InvalidOperationException(
+                            $"Cannot compile descriptor projection plan for '{edgeSource.Table}': descriptor edge source '{edgeSource.DescriptorValuePath.Canonical}' FK column '{missingColumn.Value}' does not exist in hydration select-list columns."
+                        )
                     )
                 );
             })
@@ -82,7 +89,13 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
 
         foreach (var edgeSource in resourceModel.DescriptorEdgeSources)
         {
-            var tableModel = ResolveTableModelOrThrow(tablesByName, edgeSource.Table);
+            var tableModel = ProjectionMetadataResolver.ResolveTableModelOrThrow(
+                edgeSource.Table,
+                tablesByName,
+                missingTable => new InvalidOperationException(
+                    $"Cannot compile descriptor projection plan for '{missingTable}': owning table is not present in TablesInDependencyOrder."
+                )
+            );
             var storageColumn = ResolveStorageColumnOrThrow(tableModel, edgeSource);
             var sqlSource = new DescriptorProjectionSqlSource(
                 TableModel: tableModel,
@@ -91,10 +104,12 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
                     tableDependencyOrder,
                     edgeSource.Table
                 ),
-                StorageColumnOrdinal: ResolveTableColumnOrdinalOrThrow(
+                StorageColumnOrdinal: ProjectionMetadataResolver.ResolveTableColumnOrdinalOrThrow(
                     tableModel,
                     storageColumn,
-                    $"descriptor edge source '{edgeSource.DescriptorValuePath.Canonical}' storage column"
+                    missingColumn => new InvalidOperationException(
+                        $"Cannot compile descriptor projection plan for '{tableModel.Table}': descriptor edge source '{edgeSource.DescriptorValuePath.Canonical}' storage column '{missingColumn.Value}' does not exist in table columns."
+                    )
                 )
             );
 
@@ -205,11 +220,12 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
         var contextDescription =
             $"Cannot compile descriptor projection plan for '{tableModel.Table}': descriptor edge source "
             + $"'{edgeSource.DescriptorValuePath.Canonical}' FK column";
-        var bindingColumn = ResolveTableColumnOrThrow(
+        var bindingColumn = ProjectionMetadataResolver.ResolveTableColumnOrThrow(
             tableModel,
             edgeSource.FkColumn,
-            contextDescription,
-            edgeSource.FkColumn
+            missingColumn => new InvalidOperationException(
+                $"{contextDescription} '{missingColumn.Value}' does not exist in table columns."
+            )
         );
 
         ValidateDescriptorFkColumnKindOrThrow(bindingColumn, contextDescription, edgeSource.FkColumn);
@@ -219,11 +235,12 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
             ColumnStorage.Stored => bindingColumn.ColumnName,
             ColumnStorage.UnifiedAlias unifiedAlias => ValidateStoredStorageColumnOrThrow(
                 tableModel,
-                ResolveTableColumnOrThrow(
+                ProjectionMetadataResolver.ResolveTableColumnOrThrow(
                     tableModel,
                     unifiedAlias.CanonicalColumn,
-                    $"{contextDescription} '{edgeSource.FkColumn.Value}' resolved to missing canonical storage column",
-                    unifiedAlias.CanonicalColumn
+                    missingColumn => new InvalidOperationException(
+                        $"{contextDescription} '{edgeSource.FkColumn.Value}' resolved to missing canonical storage column '{missingColumn.Value}' does not exist in table columns."
+                    )
                 ),
                 $"{contextDescription} '{edgeSource.FkColumn.Value}' resolved to canonical storage column",
                 unifiedAlias.CanonicalColumn
@@ -283,93 +300,6 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
 
         throw new InvalidOperationException(
             $"Cannot compile descriptor projection plan for '{table}': owning table is not present in TablesInDependencyOrder."
-        );
-    }
-
-    private static DbTableModel ResolveTableModelOrThrow(
-        IReadOnlyDictionary<DbTableName, DbTableModel> tablesByName,
-        DbTableName table
-    )
-    {
-        if (tablesByName.TryGetValue(table, out var tableModel))
-        {
-            return tableModel;
-        }
-
-        throw new InvalidOperationException(
-            $"Cannot compile descriptor projection plan for '{table}': owning table is not present in TablesInDependencyOrder."
-        );
-    }
-
-    private static DbColumnModel ResolveTableColumnOrThrow(
-        DbTableModel tableModel,
-        DbColumnName column,
-        string contextDescription,
-        DbColumnName missingColumn
-    )
-    {
-        var columnModel = tableModel.Columns.SingleOrDefault(candidate =>
-            candidate.ColumnName.Equals(column)
-        );
-
-        if (columnModel is not null)
-        {
-            return columnModel;
-        }
-
-        throw new InvalidOperationException(
-            $"{contextDescription} '{missingColumn.Value}' does not exist in table columns."
-        );
-    }
-
-    private static int ResolveTableColumnOrdinalOrThrow(
-        DbTableModel tableModel,
-        DbColumnName column,
-        string dependencyDescription
-    )
-    {
-        for (var index = 0; index < tableModel.Columns.Count; index++)
-        {
-            if (tableModel.Columns[index].ColumnName.Equals(column))
-            {
-                return index;
-            }
-        }
-
-        throw new InvalidOperationException(
-            $"Cannot compile descriptor projection plan for '{tableModel.Table}': {dependencyDescription} '{column.Value}' does not exist in table columns."
-        );
-    }
-
-    private static IReadOnlyDictionary<DbColumnName, int> ResolveColumnOrdinalsOrThrow(
-        IReadOnlyDictionary<DbTableName, IReadOnlyDictionary<DbColumnName, int>> columnOrdinalsByTable,
-        DbTableName table
-    )
-    {
-        if (columnOrdinalsByTable.TryGetValue(table, out var columnOrdinals))
-        {
-            return columnOrdinals;
-        }
-
-        throw new InvalidOperationException(
-            $"Cannot compile descriptor projection plan for '{table}': owning table is not present in TablesInDependencyOrder."
-        );
-    }
-
-    private static int ResolveColumnOrdinalOrThrow(
-        IReadOnlyDictionary<DbColumnName, int> columnOrdinals,
-        DbTableName table,
-        DbColumnName column,
-        string dependencyDescription
-    )
-    {
-        if (columnOrdinals.TryGetValue(column, out var columnOrdinal))
-        {
-            return columnOrdinal;
-        }
-
-        throw new InvalidOperationException(
-            $"Cannot compile descriptor projection plan for '{table}': {dependencyDescription} '{column.Value}' does not exist in hydration select-list columns."
         );
     }
 
