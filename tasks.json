@@ -113,7 +113,7 @@
       "Add or update a decode-path regression test proving the same malformed shape also fails deterministically when reconstructed through `NormalizedPlanContractCodec`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_ReadPlanCompiler|FullyQualifiedName~Given_NormalizedPlanContractCodec\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Projection Metadata Helper Simplification",

@@ -129,6 +129,14 @@ public static class ReadPlanProjectionContractValidator
                 projectionTableIndex
             ];
 
+            if (projectionTableIndex >= authoritativeProjectionTablesInDependencyOrder.Length)
+            {
+                throw createException(
+                    $"reference identity projection includes extra table plan at index '{projectionTableIndex}' for table '{projectionTablePlan.Table}', "
+                        + $"but authoritative DocumentReferenceBindings only require '{authoritativeProjectionTablesInDependencyOrder.Length}' projection table plan(s)"
+                );
+            }
+
             if (!seenProjectionTables.Add(projectionTablePlan.Table))
             {
                 throw createException(

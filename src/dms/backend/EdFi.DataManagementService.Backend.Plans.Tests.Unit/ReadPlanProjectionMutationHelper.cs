@@ -93,6 +93,23 @@ internal static class ReadPlanProjectionMutationHelper
         };
     }
 
+    public static ResourceReadPlan CreateReadPlanWithAppendedReferenceProjectionTablePlan(
+        ResourceReadPlan readPlan,
+        int sourceIndex
+    )
+    {
+        var projectionTablePlans = readPlan.ReferenceIdentityProjectionPlansInDependencyOrder.ToArray();
+
+        return readPlan with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder =
+            [
+                .. projectionTablePlans,
+                projectionTablePlans[sourceIndex],
+            ],
+        };
+    }
+
     public static ResourceReadPlan CreateReadPlanWithDuplicatedDescriptorProjectionSource(
         ResourceReadPlan readPlan,
         int sourceIndex,

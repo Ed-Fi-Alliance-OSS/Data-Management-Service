@@ -167,6 +167,33 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_reject_extra_reference_identity_projection_table_plans_with_a_deterministic_validator_error()
+    {
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateInterleavedReferenceProjectionResourceModel(rootBindingFirst: false)
+        );
+        var mutatedReadPlan = CreateReadPlanWithAppendedReferenceProjectionTablePlan(
+            readPlan,
+            sourceIndex: 1
+        );
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                mutatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        exception
+            .Message.Should()
+            .Contain("reference identity projection includes extra table plan at index '2'");
+        exception.Message.Should().Contain("edfi.StudentAddressReferenceGrouping");
+        exception
+            .Message.Should()
+            .Contain("authoritative DocumentReferenceBindings only require '2' projection table plan(s)");
+    }
+
+    [Test]
     public void It_should_group_reference_identity_projection_bindings_by_dependency_order_subset_when_bindings_are_interleaved()
     {
         var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
