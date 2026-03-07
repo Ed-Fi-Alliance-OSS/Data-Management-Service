@@ -192,6 +192,35 @@ public class Given_MappingSetLookupExtensions
     }
 
     [Test]
+    public void It_should_throw_deterministic_error_when_cached_read_plan_has_null_descriptor_projection_result_shape()
+    {
+        var readPlan = _mappingSet.ReadPlansByResource[_multiDescriptorProjectionResource];
+        var invalidReadPlan = readPlan with
+        {
+            DescriptorProjectionPlansInOrder =
+            [
+                readPlan.DescriptorProjectionPlansInOrder[0],
+                readPlan.DescriptorProjectionPlansInOrder[1] with
+                {
+                    ResultShape = null!,
+                },
+            ],
+        };
+        var mappingSet = ReplaceReadPlan(_mappingSet, _multiDescriptorProjectionResource, invalidReadPlan);
+
+        var act = () => mappingSet.GetReadPlanOrThrow(_multiDescriptorProjectionResource);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                $"Read plan lookup failed for resource '{FormatResource(_multiDescriptorProjectionResource)}' in mapping set "
+                    + $"'{FormatMappingSetKey(mappingSet.Key)}': compiled relational-table read plan has invalid projection metadata. "
+                    + "descriptor projection plan at index '1' result shape must expose DescriptorId at ordinal '0' and Uri at ordinal '1', "
+                    + "but was DescriptorId='<null>', Uri='<null>'. This indicates an internal compilation/selection bug."
+            );
+    }
+
+    [Test]
     public void It_should_treat_missing_key_unification_relational_write_plan_as_internal_bug()
     {
         var act = () => _mappingSet.GetWritePlanOrThrow(_keyUnificationResource);
