@@ -41,6 +41,7 @@
         <None Include="Fixtures/EffectiveSchemaHash/core-schema-fixture.json">
             <CopyToOutputDirectory>Always</CopyToOutputDirectory>
         </None>
+        <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.RelationalModel\EdFi.DataManagementService.Backend.RelationalModel.csproj" />
         <ProjectReference Include="..\EdFi.DataManagementService.Core\EdFi.DataManagementService.Core.csproj" />
         <ProjectReference Include="..\EdFi.DataManagementService.Core.External\EdFi.DataManagementService.Core.External.csproj" />
         <ProjectReference Include="..\..\frontend\EdFi.DataManagementService.Frontend.AspNetCore\EdFi.DataManagementService.Frontend.AspNetCore.csproj" />
