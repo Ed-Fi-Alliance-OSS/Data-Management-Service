@@ -4,32 +4,26 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
 namespace EdFi.DataManagementService.Backend.Postgresql;
 
-// TODO(DMS-939): Add an integration test that reads from an actual provisioned PostgreSQL database
-// to verify the reader's column names match the DDL-emitted schema.
 public class PostgresqlDatabaseFingerprintReader(ILogger<PostgresqlDatabaseFingerprintReader> logger)
     : IDatabaseFingerprintReader
 {
     private static readonly DatabaseFingerprintReaderQuery _query = new(
-        "dms.EffectiveSchema",
-        "SELECT 1 FROM information_schema.tables WHERE table_schema = 'dms' AND table_name = 'effectiveschema'",
-        """
-        SELECT effectiveschemasingletonid, apischemaformatversion, effectiveschemahash, resourcekeycount, resourcekeyseedhash
-        FROM dms.effectiveschema
-        ORDER BY effectiveschemasingletonid
-        LIMIT 2
-        """,
+        EffectiveSchemaTableDefinition.TableDisplayName,
+        EffectiveSchemaTableDefinition.RenderExistsCommandText(SqlDialect.Pgsql),
+        EffectiveSchemaTableDefinition.RenderReadFingerprintCommandText(SqlDialect.Pgsql),
         new DatabaseFingerprintColumnNames(
-            EffectiveSchemaSingletonId: "effectiveschemasingletonid",
-            ApiSchemaFormatVersion: "apischemaformatversion",
-            EffectiveSchemaHash: "effectiveschemahash",
-            ResourceKeyCount: "resourcekeycount",
-            ResourceKeySeedHash: "resourcekeyseedhash"
+            EffectiveSchemaSingletonId: EffectiveSchemaTableDefinition.EffectiveSchemaSingletonId.Value,
+            ApiSchemaFormatVersion: EffectiveSchemaTableDefinition.ApiSchemaFormatVersion.Value,
+            EffectiveSchemaHash: EffectiveSchemaTableDefinition.EffectiveSchemaHash.Value,
+            ResourceKeyCount: EffectiveSchemaTableDefinition.ResourceKeyCount.Value,
+            ResourceKeySeedHash: EffectiveSchemaTableDefinition.ResourceKeySeedHash.Value
         )
     );
 
