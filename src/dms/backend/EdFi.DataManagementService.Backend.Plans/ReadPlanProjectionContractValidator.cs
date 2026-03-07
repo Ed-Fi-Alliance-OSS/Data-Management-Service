@@ -113,10 +113,22 @@ public static class ReadPlanProjectionContractValidator
         }
 
         var modelBindingsByTable = BuildDocumentReferenceBindingsByTable(readPlan.Model);
+        var authoritativeProjectionTablesInDependencyOrder = readPlan
+            .Model.TablesInDependencyOrder.Select(static tableModel => tableModel.Table)
+            .Where(modelBindingsByTable.ContainsKey)
+            .ToArray();
         HashSet<DbTableName> seenProjectionTables = [];
 
-        foreach (var projectionTablePlan in readPlan.ReferenceIdentityProjectionPlansInDependencyOrder)
+        for (
+            var projectionTableIndex = 0;
+            projectionTableIndex < readPlan.ReferenceIdentityProjectionPlansInDependencyOrder.Length;
+            projectionTableIndex++
+        )
         {
+            var projectionTablePlan = readPlan.ReferenceIdentityProjectionPlansInDependencyOrder[
+                projectionTableIndex
+            ];
+
             if (!seenProjectionTables.Add(projectionTablePlan.Table))
             {
                 throw createException(
@@ -137,6 +149,16 @@ public static class ReadPlanProjectionContractValidator
             {
                 throw createException(
                     $"reference identity projection table '{projectionTablePlan.Table}' does not match any authoritative DocumentReferenceBindings"
+                );
+            }
+
+            var authoritativeTable = authoritativeProjectionTablesInDependencyOrder[projectionTableIndex];
+
+            if (!projectionTablePlan.Table.Equals(authoritativeTable))
+            {
+                throw createException(
+                    $"reference identity projection table plan at index '{projectionTableIndex}' targets table '{projectionTablePlan.Table}', "
+                        + $"but authoritative dependency order requires table '{authoritativeTable}'"
                 );
             }
 

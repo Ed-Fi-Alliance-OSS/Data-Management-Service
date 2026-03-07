@@ -59,6 +59,6 @@
       "Add or update round-trip tests proving a valid encoded read plan still re-encodes to the same canonical JSON and preserves projection collection ordering byte-for-byte.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~Given_NormalizedPlanContractCodec`"
     ],
-    "completed": false
+    "completed": true
   }
 ]
