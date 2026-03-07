@@ -28,9 +28,6 @@ internal sealed record DatabaseFingerprintReaderQuery(
 
 internal static class DatabaseFingerprintReaderSupport
 {
-    private const short ExpectedSingletonId = 1;
-    private const int EffectiveSchemaHashLength = 64;
-    private const int ResourceKeySeedHashLength = 32;
     private const string ProjectionValidationFailureMessageSuffix =
         "does not match the expected fingerprint projection. Required fingerprint columns may be missing, renamed, or incompatible with the runtime query.";
     private static readonly DatabaseFingerprintColumnNames _effectiveSchemaColumnNames = new(
@@ -129,7 +126,6 @@ internal static class DatabaseFingerprintReaderSupport
         }
 
         var fingerprint = ValidateFingerprint(
-            tableDisplayName,
             ReadRequiredInt16(reader, columns.EffectiveSchemaSingletonId, tableDisplayName),
             ReadRequiredString(reader, columns.ApiSchemaFormatVersion, tableDisplayName),
             ReadRequiredString(reader, columns.EffectiveSchemaHash, tableDisplayName),
@@ -148,7 +144,6 @@ internal static class DatabaseFingerprintReaderSupport
     }
 
     private static DatabaseFingerprint ValidateFingerprint(
-        string tableDisplayName,
         short effectiveSchemaSingletonId,
         string apiSchemaFormatVersion,
         string effectiveSchemaHash,
@@ -156,39 +151,17 @@ internal static class DatabaseFingerprintReaderSupport
         byte[] resourceKeySeedHash
     )
     {
-        if (effectiveSchemaSingletonId != ExpectedSingletonId)
-        {
-            throw new DatabaseFingerprintValidationException(
-                $"{tableDisplayName} must contain a singleton row with EffectiveSchemaSingletonId = 1, but found {effectiveSchemaSingletonId}."
-            );
-        }
+        var validationIssues = EffectiveSchemaFingerprintContract.GetStoredValidationIssues(
+            effectiveSchemaSingletonId,
+            apiSchemaFormatVersion,
+            effectiveSchemaHash,
+            resourceKeyCount,
+            resourceKeySeedHash
+        );
 
-        if (string.IsNullOrWhiteSpace(apiSchemaFormatVersion))
+        if (validationIssues.Count > 0)
         {
-            throw new DatabaseFingerprintValidationException(
-                $"{tableDisplayName}.ApiSchemaFormatVersion must not be empty."
-            );
-        }
-
-        if (!IsValidLowercaseHex(effectiveSchemaHash, EffectiveSchemaHashLength))
-        {
-            throw new DatabaseFingerprintValidationException(
-                $"{tableDisplayName}.EffectiveSchemaHash must be 64 lowercase hex characters."
-            );
-        }
-
-        if (resourceKeyCount < 0)
-        {
-            throw new DatabaseFingerprintValidationException(
-                $"{tableDisplayName}.ResourceKeyCount must be non-negative, but found {resourceKeyCount}."
-            );
-        }
-
-        if (resourceKeySeedHash.Length != ResourceKeySeedHashLength)
-        {
-            throw new DatabaseFingerprintValidationException(
-                $"{tableDisplayName}.ResourceKeySeedHash must be exactly 32 bytes, but found {resourceKeySeedHash.Length}."
-            );
+            throw new DatabaseFingerprintValidationException(validationIssues[0]);
         }
 
         return new DatabaseFingerprint(
@@ -281,24 +254,6 @@ internal static class DatabaseFingerprintReaderSupport
                 ex
             );
         }
-    }
-
-    private static bool IsValidLowercaseHex(string value, int expectedLength)
-    {
-        if (value.Length != expectedLength)
-        {
-            return false;
-        }
-
-        foreach (var c in value)
-        {
-            if (!char.IsAsciiDigit(c) && (c < 'a' || c > 'f'))
-            {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     private static DatabaseFingerprintReaderQuery CreateEffectiveSchemaQuery(SqlDialect dialect) =>

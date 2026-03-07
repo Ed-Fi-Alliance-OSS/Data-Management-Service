@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -20,7 +21,9 @@ public class PgsqlDatabaseProvisioner(ILogger logger) : DatabaseProvisionerBase(
         EffectiveSchemaTableExistsSql: "SELECT 1 FROM information_schema.tables WHERE table_schema = 'dms' AND table_name = 'EffectiveSchema'",
         EffectiveSchemaHashSql: """SELECT "EffectiveSchemaHash" FROM dms."EffectiveSchema" WHERE "EffectiveSchemaSingletonId" = 1""",
         SeedTableCheckSql: "SELECT table_name FROM information_schema.tables WHERE table_schema = 'dms' AND table_name IN ('ResourceKey', 'SchemaComponent')",
-        EffectiveSchemaCountAndHashSql: @"SELECT ""ResourceKeyCount"", ""ResourceKeySeedHash"" FROM dms.""EffectiveSchema"" WHERE ""EffectiveSchemaSingletonId"" = 1",
+        EffectiveSchemaFingerprintSql: EffectiveSchemaTableDefinition.RenderReadFingerprintCommandText(
+            SqlDialect.Pgsql
+        ),
         ResourceKeySelectSql: @"SELECT ""ResourceKeyId"", ""ProjectName"", ""ResourceName"", ""ResourceVersion"" FROM dms.""ResourceKey"" ORDER BY ""ResourceKeyId""",
         SchemaComponentSelectSql: @"SELECT ""ProjectEndpointName"", ""ProjectName"", ""ProjectVersion"", ""IsExtensionProject"" FROM dms.""SchemaComponent"" WHERE ""EffectiveSchemaHash"" = @hash ORDER BY ""ProjectEndpointName""",
         MissingTableResourceKey: "dms.\"ResourceKey\"",

@@ -22,8 +22,8 @@ namespace EdFi.DataManagementService.SchemaTools.Provisioning;
 /// <param name="SeedTableCheckSql">
 /// Query that returns table_name rows for ResourceKey and SchemaComponent in the dms schema.
 /// </param>
-/// <param name="EffectiveSchemaCountAndHashSql">
-/// Query that selects ResourceKeyCount and ResourceKeySeedHash from the singleton row.
+/// <param name="EffectiveSchemaFingerprintSql">
+/// Query that selects the runtime fingerprint projection from the singleton row.
 /// </param>
 /// <param name="ResourceKeySelectSql">
 /// Query that selects all ResourceKey rows ordered by ResourceKeyId.
@@ -42,7 +42,7 @@ public sealed record DialectSql(
     string EffectiveSchemaTableExistsSql,
     string EffectiveSchemaHashSql,
     string SeedTableCheckSql,
-    string EffectiveSchemaCountAndHashSql,
+    string EffectiveSchemaFingerprintSql,
     string ResourceKeySelectSql,
     string SchemaComponentSelectSql,
     string MissingTableResourceKey,
@@ -127,25 +127,7 @@ public abstract class DatabaseProvisionerBase(ILogger logger) : IDatabaseProvisi
             return;
         }
 
-        // Read the current EffectiveSchemaHash to scope the SchemaComponent query
-        using var hashCommand = connection.CreateCommand();
-        hashCommand.CommandText = Dialect.EffectiveSchemaHashSql;
-        var currentHash = hashCommand.ExecuteScalar() as string;
-
-        // Table exists but singleton row is missing — partial/corrupt state
-        if (currentHash is null)
-        {
-            throw new InvalidOperationException(
-                "The dms.EffectiveSchema table exists but contains no singleton row. "
-                    + "This indicates a partial or corrupt provisioning state. "
-                    + "Drop and recreate the database before re-provisioning."
-            );
-        }
-
-        // Guard: ensure the stored hash matches the expected hash.
-        // This is self-contained so PreflightSeedValidation works independently
-        // of any prior checks (e.g., standalone PreflightSchemaHashCheck).
-        SchemaHashChecker.ValidateOrThrow(currentHash, expectedSchema.EffectiveSchemaHash, logger);
+        string currentHash;
 
         // --- Check that required seed tables exist ---
         var missingTables = new List<string>();
@@ -175,23 +157,41 @@ public abstract class DatabaseProvisionerBase(ILogger logger) : IDatabaseProvisi
             );
         }
 
-        // --- Validate EffectiveSchema ResourceKeyCount and ResourceKeySeedHash ---
+        // --- Validate EffectiveSchema singleton contents ---
         using (var esCommand = connection.CreateCommand())
         {
-            esCommand.CommandText = Dialect.EffectiveSchemaCountAndHashSql;
+            esCommand.CommandText = Dialect.EffectiveSchemaFingerprintSql;
             using var reader = esCommand.ExecuteReader();
+
+            if (!reader.Read())
+            {
+                throw new InvalidOperationException(
+                    "The dms.EffectiveSchema table exists but contains no singleton row. "
+                        + "This indicates a partial or corrupt provisioning state. "
+                        + "Drop and recreate the database before re-provisioning."
+                );
+            }
+
+            var storedEffectiveSchemaSingletonId = ReadInt16OrDefault(reader, 0, 0);
+            var storedApiSchemaFormatVersion = ReadStringOrEmpty(reader, 1);
+            currentHash = ReadStringOrEmpty(reader, 2);
+            var storedResourceKeyCount = ReadInt16OrDefault(reader, 3, short.MinValue);
+            var storedResourceKeySeedHash = ReadBytesOrEmpty(reader, 4);
+
+            SeedValidator.ValidateEffectiveSchemaOrThrow(
+                storedEffectiveSchemaSingletonId,
+                storedApiSchemaFormatVersion,
+                currentHash,
+                storedResourceKeyCount,
+                storedResourceKeySeedHash,
+                expectedSchema,
+                logger
+            );
+
             if (reader.Read())
             {
-                var storedCount = reader.GetInt16(0);
-                var storedHash = new byte[32];
-                reader.GetBytes(1, 0, storedHash, 0, 32);
-
-                SeedValidator.ValidateEffectiveSchemaOrThrow(
-                    storedCount,
-                    storedHash,
-                    expectedSchema.ResourceKeyCount,
-                    expectedSchema.ResourceKeySeedHash,
-                    logger
+                throw new InvalidOperationException(
+                    $"dms.EffectiveSchema validation failed: {EffectiveSchemaFingerprintContract.CreateMultipleRowsMessage()}"
                 );
             }
         }
@@ -249,5 +249,52 @@ public abstract class DatabaseProvisionerBase(ILogger logger) : IDatabaseProvisi
             expectedSchema.SchemaComponentsInEndpointOrder,
             logger
         );
+    }
+
+    private static short ReadInt16OrDefault(DbDataReader reader, int ordinal, short defaultValue)
+    {
+        if (reader.IsDBNull(ordinal))
+        {
+            return defaultValue;
+        }
+
+        return reader.GetValue(ordinal) switch
+        {
+            short value => value,
+            byte value => value,
+            int value when value is >= short.MinValue and <= short.MaxValue => checked((short)value),
+            long value when value is >= short.MinValue and <= short.MaxValue => checked((short)value),
+            _ => defaultValue,
+        };
+    }
+
+    private static string ReadStringOrEmpty(DbDataReader reader, int ordinal)
+    {
+        if (reader.IsDBNull(ordinal))
+        {
+            return string.Empty;
+        }
+
+        return reader.GetValue(ordinal) switch
+        {
+            string value => value,
+            _ => reader.GetValue(ordinal).ToString() ?? string.Empty,
+        };
+    }
+
+    private static byte[] ReadBytesOrEmpty(DbDataReader reader, int ordinal)
+    {
+        if (reader.IsDBNull(ordinal))
+        {
+            return [];
+        }
+
+        return reader.GetValue(ordinal) switch
+        {
+            byte[] value => value,
+            ArraySegment<byte> value => value.ToArray(),
+            ReadOnlyMemory<byte> value => value.ToArray(),
+            _ => [],
+        };
     }
 }

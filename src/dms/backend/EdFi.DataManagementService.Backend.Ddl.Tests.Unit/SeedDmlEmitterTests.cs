@@ -16,11 +16,14 @@ namespace EdFi.DataManagementService.Backend.Ddl.Tests.Unit;
 
 internal static class SeedTestData
 {
+    internal const string ValidEffectiveSchemaHash =
+        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
     internal static EffectiveSchemaInfo BuildEffectiveSchema() =>
         new(
             ApiSchemaFormatVersion: "1.0.0",
             RelationalMappingVersion: "1.0.0",
-            EffectiveSchemaHash: "abc123def456",
+            EffectiveSchemaHash: ValidEffectiveSchemaHash,
             ResourceKeyCount: 3,
             ResourceKeySeedHash:
             [
@@ -74,7 +77,7 @@ internal static class SeedTestData
         new(
             ApiSchemaFormatVersion: "1.0.0",
             RelationalMappingVersion: "1.0.0",
-            EffectiveSchemaHash: "abc123def456",
+            EffectiveSchemaHash: ValidEffectiveSchemaHash,
             ResourceKeyCount: 0,
             ResourceKeySeedHash:
             [
@@ -122,7 +125,7 @@ internal static class SeedTestData
         new(
             ApiSchemaFormatVersion: "1.0.0",
             RelationalMappingVersion: "1.0.0",
-            EffectiveSchemaHash: "abc123def456",
+            EffectiveSchemaHash: ValidEffectiveSchemaHash,
             ResourceKeyCount: 1,
             ResourceKeySeedHash:
             [
@@ -227,6 +230,99 @@ public class Given_SeedDmlEmitter_With_MssqlDialect_And_SeedData_Emitting_Twice
     public void It_should_produce_non_empty_output()
     {
         _first.Should().NotBeNullOrWhiteSpace();
+    }
+}
+
+[TestFixture]
+public class Given_SeedDmlEmitter_With_Empty_ApiSchemaFormatVersion
+{
+    private InvalidOperationException? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        var emitter = new SeedDmlEmitter(new PgsqlDialect(new PgsqlDialectRules()));
+
+        _exception = Assert.Catch<InvalidOperationException>(() =>
+            emitter.Emit(SeedTestData.BuildEffectiveSchema() with { ApiSchemaFormatVersion = " " })
+        );
+    }
+
+    [Test]
+    public void It_rejects_runtime_invalid_effective_schema_metadata()
+    {
+        _exception!.Message.Should().Contain("ApiSchemaFormatVersion must not be empty.");
+    }
+}
+
+[TestFixture]
+public class Given_SeedDmlEmitter_With_A_Non_Lowercase_Hex_EffectiveSchemaHash
+{
+    private InvalidOperationException? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        var emitter = new SeedDmlEmitter(new PgsqlDialect(new PgsqlDialectRules()));
+
+        _exception = Assert.Catch<InvalidOperationException>(() =>
+            emitter.Emit(
+                SeedTestData.BuildEffectiveSchema() with
+                {
+                    EffectiveSchemaHash = $"{new string('a', 63)}G",
+                }
+            )
+        );
+    }
+
+    [Test]
+    public void It_rejects_runtime_invalid_effective_schema_metadata()
+    {
+        _exception!.Message.Should().Contain("EffectiveSchemaHash must be 64 lowercase hex characters.");
+    }
+}
+
+[TestFixture]
+public class Given_SeedDmlEmitter_With_A_Negative_ResourceKeyCount
+{
+    private InvalidOperationException? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        var emitter = new SeedDmlEmitter(new PgsqlDialect(new PgsqlDialectRules()));
+
+        _exception = Assert.Catch<InvalidOperationException>(() =>
+            emitter.Emit(SeedTestData.BuildEffectiveSchema() with { ResourceKeyCount = -1 })
+        );
+    }
+
+    [Test]
+    public void It_rejects_runtime_invalid_effective_schema_metadata()
+    {
+        _exception!.Message.Should().Contain("ResourceKeyCount must be non-negative, but found -1.");
+    }
+}
+
+[TestFixture]
+public class Given_SeedDmlEmitter_With_A_Short_ResourceKeySeedHash
+{
+    private InvalidOperationException? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        var emitter = new SeedDmlEmitter(new PgsqlDialect(new PgsqlDialectRules()));
+
+        _exception = Assert.Catch<InvalidOperationException>(() =>
+            emitter.Emit(SeedTestData.BuildEffectiveSchema() with { ResourceKeySeedHash = new byte[31] })
+        );
+    }
+
+    [Test]
+    public void It_rejects_runtime_invalid_effective_schema_metadata()
+    {
+        _exception!.Message.Should().Contain("ResourceKeySeedHash must be exactly 32 bytes, but found 31.");
     }
 }
 
@@ -705,7 +801,7 @@ public class Given_SeedDmlEmitter_EmitPreflightOnly_With_PgsqlDialect
     public void Setup()
     {
         var emitter = new SeedDmlEmitter(new PgsqlDialect(new PgsqlDialectRules()));
-        _sql = emitter.EmitPreflightOnly("abc123def456");
+        _sql = emitter.EmitPreflightOnly(SeedTestData.ValidEffectiveSchemaHash);
     }
 
     [Test]
@@ -722,7 +818,7 @@ public class Given_SeedDmlEmitter_EmitPreflightOnly_With_PgsqlDialect
         _sql.Should().Contain("RAISE EXCEPTION");
         _sql.Should().Contain("_stored_hash");
         _sql.Should().Contain("but expected");
-        _sql.Should().Contain("'abc123def456'");
+        _sql.Should().Contain($"'{SeedTestData.ValidEffectiveSchemaHash}'");
     }
 
     [Test]
@@ -747,7 +843,7 @@ public class Given_SeedDmlEmitter_EmitPreflightOnly_With_MssqlDialect
     public void Setup()
     {
         var emitter = new SeedDmlEmitter(new MssqlDialect(new MssqlDialectRules()));
-        _sql = emitter.EmitPreflightOnly("abc123def456");
+        _sql = emitter.EmitPreflightOnly(SeedTestData.ValidEffectiveSchemaHash);
     }
 
     [Test]
@@ -763,7 +859,7 @@ public class Given_SeedDmlEmitter_EmitPreflightOnly_With_MssqlDialect
         _sql.Should().Contain("OBJECT_ID");
         _sql.Should().Contain("THROW 50000");
         _sql.Should().Contain("@preflight_stored_hash");
-        _sql.Should().Contain("but expected ''', N'abc123def456'");
+        _sql.Should().Contain($"but expected ''', N'{SeedTestData.ValidEffectiveSchemaHash}'");
     }
 
     [Test]
@@ -789,7 +885,7 @@ internal static class ChunkingTestData
         new(
             ApiSchemaFormatVersion: "1.0.0",
             RelationalMappingVersion: "1.0.0",
-            EffectiveSchemaHash: "abc123def456",
+            EffectiveSchemaHash: SeedTestData.ValidEffectiveSchemaHash,
             ResourceKeyCount: resourceKeyCount,
             ResourceKeySeedHash:
             [

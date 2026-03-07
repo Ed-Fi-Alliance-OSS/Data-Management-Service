@@ -83,6 +83,18 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
     {
         ArgumentNullException.ThrowIfNull(effectiveSchema);
 
+        var effectiveSchemaIssues = EffectiveSchemaFingerprintContract
+            .GetExpectedValidationIssues(effectiveSchema)
+            .Select(issue => $"Expected provisioning metadata invalid: {issue}")
+            .ToList();
+
+        if (effectiveSchemaIssues.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"Cannot emit seed DML because dms.EffectiveSchema metadata is invalid: {string.Join("; ", effectiveSchemaIssues)}"
+            );
+        }
+
         var writer = new SqlWriter(_dialect);
 
         writer.AppendLine("-- ==========================================================");
