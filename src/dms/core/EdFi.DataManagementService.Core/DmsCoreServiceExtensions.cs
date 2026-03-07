@@ -59,6 +59,7 @@ public static class DmsCoreServiceExtensions
             )
             // Startup orchestration
             .AddSingleton<DmsStartupOrchestrator>()
+            .AddSingleton<IDmsStartupTask, ValidateDatabaseFingerprintReaderRegistrationTask>()
             .AddSingleton<IDmsStartupTask, LoadAndBuildEffectiveSchemaTask>()
             .AddSingleton<IDmsStartupTask, BackendMappingInitializationTask>()
             // Startup components
@@ -99,7 +100,7 @@ public static class DmsCoreServiceExtensions
             .AddScoped<IDmsInstanceSelection, DmsInstanceSelection>()
             .AddScoped<IApplicationContextProvider, CachedApplicationContextProvider>()
             .AddSingleton<IConfigurationServiceApplicationProvider, ConfigurationServiceApplicationProvider>()
-            .AddSingleton<IDatabaseFingerprintReader, NullDatabaseFingerprintReader>()
+            .AddSingleton<IDatabaseFingerprintReader, MissingDatabaseFingerprintReader>()
             .AddSingleton<DatabaseFingerprintProvider>()
             .AddSingleton<ResolveDmsInstanceMiddleware>()
             .AddSingleton<ValidateDatabaseFingerprintMiddleware>()
