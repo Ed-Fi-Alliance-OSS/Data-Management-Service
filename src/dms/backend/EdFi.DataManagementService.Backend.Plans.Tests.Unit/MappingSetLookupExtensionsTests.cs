@@ -60,8 +60,10 @@ public class Given_MappingSetLookupExtensions
     [Test]
     public void It_should_return_read_plan_when_reference_identity_projection_metadata_was_compiled()
     {
+        var expectedPlan = _mappingSet.ReadPlansByResource[_projectionMetadataResource];
         var actualPlan = _mappingSet.GetReadPlanOrThrow(_projectionMetadataResource);
 
+        actualPlan.Should().BeSameAs(expectedPlan);
         actualPlan.ReferenceIdentityProjectionPlansInDependencyOrder.Should().NotBeEmpty();
     }
 
@@ -87,6 +89,25 @@ public class Given_MappingSetLookupExtensions
             .Select(static source => source.DescriptorValuePath.Canonical)
             .Should()
             .Equal("$.academicSubjectDescriptor", "$.gradeLevelDescriptor");
+    }
+
+    [Test]
+    public void It_should_return_normalized_decoded_read_plan_when_projection_metadata_is_valid()
+    {
+        var model = GetConcreteResourceModelOrThrowByLegacyScan(
+            _mappingSet,
+            _descriptorEdgeResource
+        ).RelationalModel;
+        var normalizedDecodedReadPlan = NormalizedPlanContractCodec.Decode(
+            NormalizedPlanContractCodec.Encode(_mappingSet.ReadPlansByResource[_descriptorEdgeResource]),
+            model
+        );
+        var mappingSet = ReplaceReadPlan(_mappingSet, _descriptorEdgeResource, normalizedDecodedReadPlan);
+
+        var actualPlan = mappingSet.GetReadPlanOrThrow(_descriptorEdgeResource);
+
+        actualPlan.Should().BeSameAs(normalizedDecodedReadPlan);
+        actualPlan.DescriptorProjectionPlansInOrder.Should().NotBeEmpty();
     }
 
     [Test]
@@ -142,7 +163,7 @@ public class Given_MappingSetLookupExtensions
     }
 
     [Test]
-    public void It_should_return_compiled_read_plan_without_revalidating_projection_metadata_at_lookup_time()
+    public void It_should_throw_deterministic_error_when_cached_read_plan_has_invalid_projection_metadata()
     {
         var readPlan = _mappingSet.ReadPlansByResource[_multiDescriptorProjectionResource];
         var invalidReadPlan = readPlan with
@@ -158,7 +179,16 @@ public class Given_MappingSetLookupExtensions
         };
         var mappingSet = ReplaceReadPlan(_mappingSet, _multiDescriptorProjectionResource, invalidReadPlan);
 
-        mappingSet.GetReadPlanOrThrow(_multiDescriptorProjectionResource).Should().BeSameAs(invalidReadPlan);
+        var act = () => mappingSet.GetReadPlanOrThrow(_multiDescriptorProjectionResource);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                $"Read plan lookup failed for resource '{FormatResource(_multiDescriptorProjectionResource)}' in mapping set "
+                    + $"'{FormatMappingSetKey(mappingSet.Key)}': compiled relational-table read plan has invalid projection metadata. "
+                    + "descriptor projection plan at index '1' result shape must expose DescriptorId at ordinal '0' and Uri at ordinal '1', "
+                    + "but was DescriptorId='1', Uri='0'. This indicates an internal compilation/selection bug."
+            );
     }
 
     [Test]

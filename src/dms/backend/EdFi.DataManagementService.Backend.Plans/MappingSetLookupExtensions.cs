@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.Runtime.CompilerServices;
 using EdFi.DataManagementService.Backend.External;
@@ -21,6 +22,10 @@ public static class MappingSetLookupExtensions
         MappingSet,
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel>
     > ConcreteResourceModelsByResource = new();
+    private static readonly ConditionalWeakTable<
+        MappingSet,
+        ConcurrentDictionary<QualifiedResourceName, ResourceReadPlan>
+    > ValidatedReadPlansByResource = new();
 
     /// <summary>
     /// Gets the compiled write plan for <paramref name="resource" /> or throws a deterministic actionable exception.
@@ -77,7 +82,7 @@ public static class MappingSetLookupExtensions
 
         if (mappingSet.ReadPlansByResource.TryGetValue(resource, out var readPlan))
         {
-            return readPlan;
+            return GetValidatedReadPlanOrThrow(mappingSet, resource, readPlan);
         }
 
         var concreteResourceModel = GetConcreteResourceModelOrThrow(mappingSet, resource);
@@ -146,6 +151,38 @@ public static class MappingSetLookupExtensions
 
         throw new KeyNotFoundException(
             $"Mapping set '{FormatMappingSetKey(mappingSet.Key)}' does not contain resource '{FormatResource(resource)}' in ConcreteResourcesInNameOrder."
+        );
+    }
+
+    private static ResourceReadPlan GetValidatedReadPlanOrThrow(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        ResourceReadPlan readPlan
+    )
+    {
+        var validatedReadPlansByResource = ValidatedReadPlansByResource.GetValue(
+            mappingSet,
+            static _ => new ConcurrentDictionary<QualifiedResourceName, ResourceReadPlan>()
+        );
+
+        return validatedReadPlansByResource.GetOrAdd(
+            resource,
+            static (validatedResource, state) =>
+            {
+                var (validatedMappingSet, cachedReadPlan) = state;
+
+                ReadPlanProjectionContractValidator.ValidateOrThrow(
+                    cachedReadPlan,
+                    reason => new InvalidOperationException(
+                        $"Read plan lookup failed for resource '{FormatResource(validatedResource)}' in mapping set "
+                            + $"'{FormatMappingSetKey(validatedMappingSet.Key)}': compiled relational-table read plan has invalid projection metadata. "
+                            + $"{reason}. This indicates an internal compilation/selection bug."
+                    )
+                );
+
+                return cachedReadPlan;
+            },
+            (mappingSet, readPlan)
         );
     }
 

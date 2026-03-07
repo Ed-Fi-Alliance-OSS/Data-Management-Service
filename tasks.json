@@ -102,7 +102,7 @@
       "Add or update positive tests proving a valid runtime-compiled read plan and a valid normalized decoded read plan still pass through the chosen boundary unchanged.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_MappingSetLookupExtensions|FullyQualifiedName~Given_NormalizedPlanContractCodec|FullyQualifiedName~Given_ReadPlanCompiler\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Projection Validator Bounds Safety",
