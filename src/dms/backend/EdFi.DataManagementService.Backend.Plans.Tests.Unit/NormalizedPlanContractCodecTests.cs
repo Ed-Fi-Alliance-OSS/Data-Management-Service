@@ -648,6 +648,61 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
         exception.Message.Should().Contain("Decoded read plan for resource");
         exception.Message.Should().Contain("descriptor projection source count '0'");
         exception.Message.Should().Contain("DescriptorEdgeSources count '2'");
+        exception.Message.Should().Contain("missing authoritative DescriptorEdgeSource(s)");
+        exception.Message.Should().Contain("$.gradeLevelDescriptor");
+        exception.Message.Should().Contain("$.schoolYearDescriptor");
+    }
+
+    [Test]
+    public void It_should_fail_with_the_same_projection_contract_reason_as_direct_validation_when_a_descriptor_projection_source_is_duplicated()
+    {
+        var mutatedReadPlan = CreateReadPlanWithDuplicatedDescriptorProjectionSource(
+            _readPlan,
+            sourceIndex: 0,
+            targetIndex: 1
+        );
+        var expectedReason = GetProjectionValidationFailureReason(mutatedReadPlan);
+
+        var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
+        var descriptorPlan = encoded.DescriptorProjectionPlansInOrder[0];
+        var sources = descriptorPlan.SourcesInOrder.ToArray();
+
+        sources[1] = sources[0];
+
+        var mutated = encoded with
+        {
+            DescriptorProjectionPlansInOrder = [descriptorPlan with { SourcesInOrder = [.. sources] }],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        GetDecodedProjectionValidationFailureReason(exception.Message).Should().Be(expectedReason);
+    }
+
+    [Test]
+    public void It_should_fail_with_the_same_projection_contract_reason_as_direct_validation_when_descriptor_projection_source_order_is_reordered()
+    {
+        var mutatedReadPlan = CreateReadPlanWithSwappedDescriptorProjectionSources(_readPlan);
+        var expectedReason = GetProjectionValidationFailureReason(mutatedReadPlan);
+
+        var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
+        var descriptorPlan = encoded.DescriptorProjectionPlansInOrder[0];
+        var sources = descriptorPlan.SourcesInOrder.ToArray();
+        var firstSource = sources[0];
+
+        sources[0] = sources[1];
+        sources[1] = firstSource;
+
+        var mutated = encoded with
+        {
+            DescriptorProjectionPlansInOrder = [descriptorPlan with { SourcesInOrder = [.. sources] }],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        GetDecodedProjectionValidationFailureReason(exception.Message).Should().Be(expectedReason);
     }
 
     [Test]
@@ -1515,6 +1570,29 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
         };
     }
 
+    private static ResourceReadPlan CreateReadPlanWithDuplicatedDescriptorProjectionSource(
+        ResourceReadPlan readPlan,
+        int sourceIndex,
+        int targetIndex
+    )
+    {
+        var descriptorProjectionPlan = readPlan.DescriptorProjectionPlansInOrder[0];
+        var sources = descriptorProjectionPlan.SourcesInOrder.ToArray();
+
+        sources[targetIndex] = sources[sourceIndex];
+
+        return readPlan with
+        {
+            DescriptorProjectionPlansInOrder =
+            [
+                descriptorProjectionPlan with
+                {
+                    SourcesInOrder = [.. sources],
+                },
+            ],
+        };
+    }
+
     private static ResourceReadPlan CreateReadPlanWithSwappedReferenceProjectionBindings(
         ResourceReadPlan readPlan
     )
@@ -1533,6 +1611,29 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
                 projectionTablePlan with
                 {
                     BindingsInOrder = [.. bindings],
+                },
+            ],
+        };
+    }
+
+    private static ResourceReadPlan CreateReadPlanWithSwappedDescriptorProjectionSources(
+        ResourceReadPlan readPlan
+    )
+    {
+        var descriptorProjectionPlan = readPlan.DescriptorProjectionPlansInOrder[0];
+        var sources = descriptorProjectionPlan.SourcesInOrder.ToArray();
+        var firstSource = sources[0];
+
+        sources[0] = sources[1];
+        sources[1] = firstSource;
+
+        return readPlan with
+        {
+            DescriptorProjectionPlansInOrder =
+            [
+                descriptorProjectionPlan with
+                {
+                    SourcesInOrder = [.. sources],
                 },
             ],
         };

@@ -263,6 +263,7 @@ public static class ReadPlanProjectionContractValidator
             return;
         }
 
+        var authoritativeSourcesInOrder = readPlan.Model.DescriptorEdgeSources;
         var compiledSourceCount = 0;
 
         for (var planIndex = 0; planIndex < readPlan.DescriptorProjectionPlansInOrder.Length; planIndex++)
@@ -278,8 +279,13 @@ public static class ReadPlanProjectionContractValidator
                 );
             }
 
-            foreach (var source in descriptorProjectionPlan.SourcesInOrder)
+            for (
+                var sourceIndex = 0;
+                sourceIndex < descriptorProjectionPlan.SourcesInOrder.Length;
+                sourceIndex++
+            )
             {
+                var source = descriptorProjectionPlan.SourcesInOrder[sourceIndex];
                 compiledSourceCount++;
 
                 if (!hydrationTablePlansByTable.TryGetValue(source.Table, out var hydrationTablePlan))
@@ -312,16 +318,36 @@ public static class ReadPlanProjectionContractValidator
                     modelSource,
                     createException
                 );
+
+                if (compiledSourceCount > authoritativeSourcesInOrder.Count)
+                {
+                    throw createException(
+                        $"descriptor projection source at plan index '{planIndex}', source index '{sourceIndex}' resolves to "
+                            + $"{FormatDescriptorSource(modelSource)}, but authoritative DescriptorEdgeSources count is only '{authoritativeSourcesInOrder.Count}'"
+                    );
+                }
+
+                var authoritativeSource = authoritativeSourcesInOrder[compiledSourceCount - 1];
+
+                if (!DescriptorSourcesMatch(modelSource, authoritativeSource))
+                {
+                    throw createException(
+                        $"descriptor projection source at plan index '{planIndex}', source index '{sourceIndex}' resolves to "
+                            + $"{FormatDescriptorSource(modelSource)}, but authoritative DescriptorEdgeSources at index '{compiledSourceCount - 1}' requires "
+                            + $"{FormatDescriptorSource(authoritativeSource)}"
+                    );
+                }
             }
         }
 
-        if (compiledSourceCount == readPlan.Model.DescriptorEdgeSources.Count)
+        if (compiledSourceCount == authoritativeSourcesInOrder.Count)
         {
             return;
         }
 
         throw createException(
-            $"descriptor projection source count '{compiledSourceCount}' across plan count '{readPlan.DescriptorProjectionPlansInOrder.Length}' does not match DescriptorEdgeSources count '{readPlan.Model.DescriptorEdgeSources.Count}'"
+            $"descriptor projection source count '{compiledSourceCount}' across plan count '{readPlan.DescriptorProjectionPlansInOrder.Length}' does not match DescriptorEdgeSources count '{authoritativeSourcesInOrder.Count}'; "
+                + $"missing authoritative DescriptorEdgeSource(s): {string.Join(", ", authoritativeSourcesInOrder.Skip(compiledSourceCount).Select(FormatDescriptorSource))}"
         );
     }
 
@@ -620,5 +646,18 @@ public static class ReadPlanProjectionContractValidator
                 bindings.Select(static binding => $"'{binding.ReferenceObjectPath.Canonical}'")
             )
             + "]";
+    }
+
+    private static bool DescriptorSourcesMatch(DescriptorEdgeSource actual, DescriptorEdgeSource expected)
+    {
+        return actual.Table == expected.Table
+            && actual.FkColumn == expected.FkColumn
+            && actual.DescriptorValuePath.Canonical == expected.DescriptorValuePath.Canonical
+            && actual.DescriptorResource == expected.DescriptorResource;
+    }
+
+    private static string FormatDescriptorSource(DescriptorEdgeSource source)
+    {
+        return $"'{source.DescriptorValuePath.Canonical}' on table '{source.Table}' FK column '{source.FkColumn.Value}'";
     }
 }

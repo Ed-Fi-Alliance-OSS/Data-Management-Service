@@ -427,6 +427,70 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_accept_valid_descriptor_projection_source_coverage_for_key_unified_models()
+    {
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateKeyUnifiedDescriptorProjectionResourceModel()
+        );
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                readPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        act.Should().NotThrow();
+    }
+
+    [Test]
+    public void It_should_reject_descriptor_projection_source_duplicates_that_omit_another_modeled_source()
+    {
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateKeyUnifiedDescriptorProjectionResourceModel()
+        );
+        var duplicatedReadPlan = CreateReadPlanWithDuplicatedDescriptorProjectionSource(
+            readPlan,
+            sourceIndex: 0,
+            targetIndex: 1
+        );
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                duplicatedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        exception
+            .Message.Should()
+            .Contain("descriptor projection source at plan index '0', source index '1'");
+        exception.Message.Should().Contain("$.localSchoolYearTypeDescriptor");
+        exception.Message.Should().Contain("$.schoolYearTypeDescriptor");
+    }
+
+    [Test]
+    public void It_should_reject_descriptor_projection_source_order_that_differs_from_descriptor_edge_sources()
+    {
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateKeyUnifiedDescriptorProjectionResourceModel()
+        );
+        var reorderedReadPlan = CreateReadPlanWithSwappedDescriptorProjectionSources(readPlan);
+
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                reorderedReadPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        exception
+            .Message.Should()
+            .Contain("descriptor projection source at plan index '0', source index '0'");
+        exception.Message.Should().Contain("$.schoolYearTypeDescriptor");
+        exception.Message.Should().Contain("$.localSchoolYearTypeDescriptor");
+    }
+
+    [Test]
     public void It_should_compile_a_single_root_only_table_plan_with_expected_keyset_contract()
     {
         _pgsqlRootOnlyReadPlan.Model.Should().Be(_rootOnlyResourceModel);
@@ -1074,6 +1138,52 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 projectionTablePlan with
                 {
                     BindingsInOrder = [.. bindings],
+                },
+            ],
+        };
+    }
+
+    private static ResourceReadPlan CreateReadPlanWithDuplicatedDescriptorProjectionSource(
+        ResourceReadPlan readPlan,
+        int sourceIndex,
+        int targetIndex
+    )
+    {
+        var descriptorProjectionPlan = readPlan.DescriptorProjectionPlansInOrder.Single();
+        var sources = descriptorProjectionPlan.SourcesInOrder.ToArray();
+
+        sources[targetIndex] = sources[sourceIndex];
+
+        return readPlan with
+        {
+            DescriptorProjectionPlansInOrder =
+            [
+                descriptorProjectionPlan with
+                {
+                    SourcesInOrder = [.. sources],
+                },
+            ],
+        };
+    }
+
+    private static ResourceReadPlan CreateReadPlanWithSwappedDescriptorProjectionSources(
+        ResourceReadPlan readPlan
+    )
+    {
+        var descriptorProjectionPlan = readPlan.DescriptorProjectionPlansInOrder.Single();
+        var sources = descriptorProjectionPlan.SourcesInOrder.ToArray();
+        var firstSource = sources[0];
+
+        sources[0] = sources[1];
+        sources[1] = firstSource;
+
+        return readPlan with
+        {
+            DescriptorProjectionPlansInOrder =
+            [
+                descriptorProjectionPlan with
+                {
+                    SourcesInOrder = [.. sources],
                 },
             ],
         };
