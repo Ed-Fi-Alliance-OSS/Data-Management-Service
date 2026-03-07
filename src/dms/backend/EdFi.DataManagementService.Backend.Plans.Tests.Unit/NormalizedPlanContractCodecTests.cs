@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.RelationalModel.Schema;
 using FluentAssertions;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Backend.Plans.Tests.Unit.ReadPlanProjectionMutationHelper;
 
 namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
@@ -187,7 +188,7 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     [Test]
     public void It_should_roundtrip_multiple_descriptor_projection_plans_without_collapsing_collection_order()
     {
-        var readPlan = CreateReadPlanWithSplitDescriptorProjectionPlans(_model);
+        var readPlan = CreateReadPlanWithSplitDescriptorProjectionPlans(CreateReadPlan(_model));
         var encoded = NormalizedPlanContractCodec.Encode(readPlan);
         var decoded = NormalizedPlanContractCodec.Decode(encoded, _model);
         var reEncoded = NormalizedPlanContractCodec.Encode(decoded);
@@ -745,7 +746,7 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     [Test]
     public void It_should_fail_with_the_same_projection_contract_reason_as_direct_validation_when_descriptor_projection_plan_order_is_reordered()
     {
-        var readPlan = CreateReadPlanWithSplitDescriptorProjectionPlans(_model);
+        var readPlan = CreateReadPlanWithSplitDescriptorProjectionPlans(CreateReadPlan(_model));
         var mutatedReadPlan = CreateReadPlanWithSwappedDescriptorProjectionPlans(readPlan);
         var expectedReason = GetProjectionValidationFailureReason(mutatedReadPlan);
 
@@ -767,7 +768,7 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     [Test]
     public void It_should_fail_with_the_same_projection_contract_reason_as_direct_validation_when_a_split_descriptor_projection_plan_is_empty()
     {
-        var readPlan = CreateReadPlanWithSplitDescriptorProjectionPlans(_model);
+        var readPlan = CreateReadPlanWithSplitDescriptorProjectionPlans(CreateReadPlan(_model));
         var descriptorProjectionPlans = readPlan.DescriptorProjectionPlansInOrder.ToArray();
         var mutatedReadPlan = readPlan with
         {
@@ -1553,49 +1554,6 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
         );
     }
 
-    private static ResourceReadPlan CreateReadPlanWithSplitDescriptorProjectionPlans(
-        RelationalResourceModel model
-    )
-    {
-        var baseReadPlan = CreateReadPlan(model);
-
-        return baseReadPlan with
-        {
-            DescriptorProjectionPlansInOrder =
-            [
-                new DescriptorProjectionPlan(
-                    SelectByKeysetSql: "SELECT descriptor_plan_0;\n",
-                    ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
-                    SourcesInOrder:
-                    [
-                        new DescriptorProjectionSource(
-                            DescriptorValuePath: Path("$.gradeLevelDescriptor"),
-                            Table: model.Root.Table,
-                            DescriptorResource: new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor"),
-                            DescriptorIdColumnOrdinal: 8
-                        ),
-                    ]
-                ),
-                new DescriptorProjectionPlan(
-                    SelectByKeysetSql: "SELECT descriptor_plan_1;\n",
-                    ResultShape: new DescriptorProjectionResultShape(DescriptorIdOrdinal: 0, UriOrdinal: 1),
-                    SourcesInOrder:
-                    [
-                        new DescriptorProjectionSource(
-                            DescriptorValuePath: Path("$.schoolYearDescriptor"),
-                            Table: model.Root.Table,
-                            DescriptorResource: new QualifiedResourceName(
-                                "Ed-Fi",
-                                "SchoolYearTypeDescriptor"
-                            ),
-                            DescriptorIdColumnOrdinal: 10
-                        ),
-                    ]
-                ),
-            ],
-        };
-    }
-
     private static RelationalResourceModel CreateInterleavedReferenceProjectionModel(bool rootBindingFirst)
     {
         var rootTable = new DbTableModel(
@@ -1807,152 +1765,6 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
             WriteValueSource.DescriptorReference => nameof(WriteValueSource.DescriptorReference),
             WriteValueSource.Precomputed => nameof(WriteValueSource.Precomputed),
             _ => throw new ArgumentOutOfRangeException(nameof(source), source.GetType().Name),
-        };
-    }
-
-    private static ResourceReadPlan CreateReadPlanWithReferenceIdentityComponent(
-        ResourceReadPlan readPlan,
-        bool isIdentityComponent
-    )
-    {
-        var projectionTablePlan = readPlan.ReferenceIdentityProjectionPlansInDependencyOrder[0];
-        var bindings = projectionTablePlan.BindingsInOrder.ToArray();
-
-        bindings[0] = bindings[0] with { IsIdentityComponent = isIdentityComponent };
-
-        return readPlan with
-        {
-            ReferenceIdentityProjectionPlansInDependencyOrder =
-            [
-                projectionTablePlan with
-                {
-                    BindingsInOrder = [.. bindings],
-                },
-            ],
-        };
-    }
-
-    private static ResourceReadPlan CreateReadPlanWithDuplicatedReferenceProjectionBinding(
-        ResourceReadPlan readPlan,
-        int sourceIndex,
-        int targetIndex
-    )
-    {
-        var projectionTablePlan = readPlan.ReferenceIdentityProjectionPlansInDependencyOrder[0];
-        var bindings = projectionTablePlan.BindingsInOrder.ToArray();
-
-        bindings[targetIndex] = bindings[sourceIndex];
-
-        return readPlan with
-        {
-            ReferenceIdentityProjectionPlansInDependencyOrder =
-            [
-                projectionTablePlan with
-                {
-                    BindingsInOrder = [.. bindings],
-                },
-            ],
-        };
-    }
-
-    private static ResourceReadPlan CreateReadPlanWithDuplicatedDescriptorProjectionSource(
-        ResourceReadPlan readPlan,
-        int sourceIndex,
-        int targetIndex
-    )
-    {
-        var descriptorProjectionPlan = readPlan.DescriptorProjectionPlansInOrder[0];
-        var sources = descriptorProjectionPlan.SourcesInOrder.ToArray();
-
-        sources[targetIndex] = sources[sourceIndex];
-
-        return readPlan with
-        {
-            DescriptorProjectionPlansInOrder =
-            [
-                descriptorProjectionPlan with
-                {
-                    SourcesInOrder = [.. sources],
-                },
-            ],
-        };
-    }
-
-    private static ResourceReadPlan CreateReadPlanWithSwappedReferenceProjectionBindings(
-        ResourceReadPlan readPlan
-    )
-    {
-        var projectionTablePlan = readPlan.ReferenceIdentityProjectionPlansInDependencyOrder[0];
-        var bindings = projectionTablePlan.BindingsInOrder.ToArray();
-        var firstBinding = bindings[0];
-
-        bindings[0] = bindings[1];
-        bindings[1] = firstBinding;
-
-        return readPlan with
-        {
-            ReferenceIdentityProjectionPlansInDependencyOrder =
-            [
-                projectionTablePlan with
-                {
-                    BindingsInOrder = [.. bindings],
-                },
-            ],
-        };
-    }
-
-    private static ResourceReadPlan CreateReadPlanWithSwappedReferenceProjectionTablePlans(
-        ResourceReadPlan readPlan
-    )
-    {
-        var projectionTablePlans = readPlan.ReferenceIdentityProjectionPlansInDependencyOrder.ToArray();
-        var firstTablePlan = projectionTablePlans[0];
-
-        projectionTablePlans[0] = projectionTablePlans[1];
-        projectionTablePlans[1] = firstTablePlan;
-
-        return readPlan with
-        {
-            ReferenceIdentityProjectionPlansInDependencyOrder = [.. projectionTablePlans],
-        };
-    }
-
-    private static ResourceReadPlan CreateReadPlanWithSwappedDescriptorProjectionSources(
-        ResourceReadPlan readPlan
-    )
-    {
-        var descriptorProjectionPlan = readPlan.DescriptorProjectionPlansInOrder[0];
-        var sources = descriptorProjectionPlan.SourcesInOrder.ToArray();
-        var firstSource = sources[0];
-
-        sources[0] = sources[1];
-        sources[1] = firstSource;
-
-        return readPlan with
-        {
-            DescriptorProjectionPlansInOrder =
-            [
-                descriptorProjectionPlan with
-                {
-                    SourcesInOrder = [.. sources],
-                },
-            ],
-        };
-    }
-
-    private static ResourceReadPlan CreateReadPlanWithSwappedDescriptorProjectionPlans(
-        ResourceReadPlan readPlan
-    )
-    {
-        var descriptorProjectionPlans = readPlan.DescriptorProjectionPlansInOrder.ToArray();
-        var firstPlan = descriptorProjectionPlans[0];
-
-        descriptorProjectionPlans[0] = descriptorProjectionPlans[1];
-        descriptorProjectionPlans[1] = firstPlan;
-
-        return readPlan with
-        {
-            DescriptorProjectionPlansInOrder = [.. descriptorProjectionPlans],
         };
     }
 

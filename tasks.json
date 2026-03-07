@@ -91,6 +91,6 @@
       "Confirm the refactor preserves the existing projection validation assertions for duplicated bindings, reordered bindings, duplicated descriptor sources, reordered descriptor sources, and reordered descriptor plans.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_ReadPlanCompiler|FullyQualifiedName~Given_NormalizedPlanContractCodec\"`"
     ],
-    "completed": false
+    "completed": true
   }
 ]
