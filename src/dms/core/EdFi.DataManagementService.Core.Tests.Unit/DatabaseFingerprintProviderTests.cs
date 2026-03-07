@@ -18,6 +18,19 @@ public class DatabaseFingerprintProviderTests
     private static DatabaseFingerprint CreateFingerprint(string hash = "abc123") =>
         new("1.0", hash, 42, new byte[32].ToImmutableArray());
 
+    private static async Task<Exception?> CatchExceptionAsync(Task task)
+    {
+        try
+        {
+            await task;
+            return null;
+        }
+        catch (Exception ex)
+        {
+            return ex;
+        }
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_First_Call_For_A_Connection_String : DatabaseFingerprintProviderTests
@@ -203,7 +216,8 @@ public class DatabaseFingerprintProviderTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_First_Call_Throws_Then_Database_Recovers : DatabaseFingerprintProviderTests
+    public class Given_First_Call_Throws_A_Transient_Reader_Failure_Then_Database_Recovers
+        : DatabaseFingerprintProviderTests
     {
         private Exception? _firstException;
         private DatabaseFingerprint? _secondResult;
@@ -220,21 +234,13 @@ public class DatabaseFingerprintProviderTests
                     callCount++;
                     if (callCount == 1)
                     {
-                        throw new InvalidOperationException("connection refused");
+                        throw new TimeoutException("connection refused");
                     }
                     return Task.FromResult<DatabaseFingerprint?>(CreateFingerprint("recovered"));
                 });
 
             var provider = new DatabaseFingerprintProvider(_reader);
-
-            try
-            {
-                await provider.GetFingerprintAsync("conn1");
-            }
-            catch (InvalidOperationException ex)
-            {
-                _firstException = ex;
-            }
+            _firstException = await CatchExceptionAsync(provider.GetFingerprintAsync("conn1"));
 
             _secondResult = await provider.GetFingerprintAsync("conn1");
         }
@@ -243,6 +249,7 @@ public class DatabaseFingerprintProviderTests
         public void It_throws_on_first_call()
         {
             _firstException.Should().NotBeNull();
+            _firstException.Should().BeOfType<TimeoutException>();
             _firstException!.Message.Should().Be("connection refused");
         }
 
@@ -257,6 +264,59 @@ public class DatabaseFingerprintProviderTests
         public void It_invokes_reader_twice()
         {
             A.CallTo(() => _reader.ReadFingerprintAsync("conn1")).MustHaveHappenedTwiceExactly();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_First_Call_Throws_A_Permanent_Fingerprint_Validation_Error
+        : DatabaseFingerprintProviderTests
+    {
+        private Exception? _firstException;
+        private Exception? _secondException;
+        private IDatabaseFingerprintReader _reader = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            int callCount = 0;
+            _reader = A.Fake<IDatabaseFingerprintReader>();
+            A.CallTo(() => _reader.ReadFingerprintAsync("conn1"))
+                .ReturnsLazily(() =>
+                {
+                    callCount++;
+                    return callCount == 1
+                        ? Task.FromException<DatabaseFingerprint?>(
+                            new DatabaseFingerprintValidationException("malformed fingerprint")
+                        )
+                        : Task.FromResult<DatabaseFingerprint?>(CreateFingerprint("recovered"));
+                });
+
+            var provider = new DatabaseFingerprintProvider(_reader);
+
+            _firstException = await CatchExceptionAsync(provider.GetFingerprintAsync("conn1"));
+            _secondException = await CatchExceptionAsync(provider.GetFingerprintAsync("conn1"));
+        }
+
+        [Test]
+        public void It_returns_the_validation_failure_on_each_call()
+        {
+            _firstException
+                .Should()
+                .BeOfType<DatabaseFingerprintValidationException>()
+                .Which.Message.Should()
+                .Be("malformed fingerprint");
+            _secondException
+                .Should()
+                .BeOfType<DatabaseFingerprintValidationException>()
+                .Which.Message.Should()
+                .Be("malformed fingerprint");
+        }
+
+        [Test]
+        public void It_does_not_retry_after_the_permanent_validation_failure()
+        {
+            A.CallTo(() => _reader.ReadFingerprintAsync("conn1")).MustHaveHappenedOnceExactly();
         }
     }
 
@@ -388,7 +448,7 @@ public class DatabaseFingerprintProviderTests
                 () => provider.GetFingerprintAsync("conn1")
             );
 
-            firstRead.SetException(new InvalidOperationException("connection refused"));
+            firstRead.SetException(new TimeoutException("connection refused"));
 
             _firstException = await CatchExceptionAsync(firstCallerTask);
             _retryResult = await provider.GetFingerprintAsync("conn1");
@@ -417,12 +477,12 @@ public class DatabaseFingerprintProviderTests
         {
             _firstException
                 .Should()
-                .BeOfType<InvalidOperationException>()
+                .BeOfType<TimeoutException>()
                 .Which.Message.Should()
                 .Be("connection refused");
             _delayedException
                 .Should()
-                .BeOfType<InvalidOperationException>()
+                .BeOfType<TimeoutException>()
                 .Which.Message.Should()
                 .Be("connection refused");
         }
@@ -431,19 +491,6 @@ public class DatabaseFingerprintProviderTests
         public void It_invokes_reader_only_for_the_fault_and_the_successful_retry()
         {
             A.CallTo(() => _reader.ReadFingerprintAsync("conn1")).MustHaveHappenedTwiceExactly();
-        }
-
-        private static async Task<Exception?> CatchExceptionAsync(Task task)
-        {
-            try
-            {
-                await task;
-                return null;
-            }
-            catch (Exception ex)
-            {
-                return ex;
-            }
         }
 
         private static Task<T> RunOnSynchronizationContext<T>(

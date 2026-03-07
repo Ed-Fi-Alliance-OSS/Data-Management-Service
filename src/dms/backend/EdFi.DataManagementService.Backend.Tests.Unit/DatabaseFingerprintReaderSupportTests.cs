@@ -182,7 +182,7 @@ public class DatabaseFingerprintReaderSupportTests
         public async Task It_fails_the_singleton_contract()
         {
             await _act.Should()
-                .ThrowAsync<InvalidOperationException>()
+                .ThrowAsync<DatabaseFingerprintValidationException>()
                 .WithMessage(
                     "dms.EffectiveSchema must contain exactly one singleton row, but multiple rows were found."
                 );
@@ -219,7 +219,7 @@ public class DatabaseFingerprintReaderSupportTests
         public async Task It_reports_the_invalid_singleton_id()
         {
             await _act.Should()
-                .ThrowAsync<InvalidOperationException>()
+                .ThrowAsync<DatabaseFingerprintValidationException>()
                 .WithMessage(
                     "dms.EffectiveSchema must contain a singleton row with EffectiveSchemaSingletonId = 1, but found 2."
                 );
@@ -251,7 +251,7 @@ public class DatabaseFingerprintReaderSupportTests
         public async Task It_reports_the_empty_version()
         {
             await _act.Should()
-                .ThrowAsync<InvalidOperationException>()
+                .ThrowAsync<DatabaseFingerprintValidationException>()
                 .WithMessage("dms.EffectiveSchema.ApiSchemaFormatVersion must not be empty.");
         }
     }
@@ -286,7 +286,7 @@ public class DatabaseFingerprintReaderSupportTests
         public async Task It_reports_the_invalid_hash_format()
         {
             await _act.Should()
-                .ThrowAsync<InvalidOperationException>()
+                .ThrowAsync<DatabaseFingerprintValidationException>()
                 .WithMessage("dms.EffectiveSchema.EffectiveSchemaHash must be 64 lowercase hex characters.");
         }
     }
@@ -321,7 +321,7 @@ public class DatabaseFingerprintReaderSupportTests
         public async Task It_reports_the_invalid_hash_length()
         {
             await _act.Should()
-                .ThrowAsync<InvalidOperationException>()
+                .ThrowAsync<DatabaseFingerprintValidationException>()
                 .WithMessage("dms.EffectiveSchema.EffectiveSchemaHash must be 64 lowercase hex characters.");
         }
     }
@@ -351,7 +351,7 @@ public class DatabaseFingerprintReaderSupportTests
         public async Task It_reports_the_invalid_count()
         {
             await _act.Should()
-                .ThrowAsync<InvalidOperationException>()
+                .ThrowAsync<DatabaseFingerprintValidationException>()
                 .WithMessage("dms.EffectiveSchema.ResourceKeyCount must be non-negative, but found -1.");
         }
     }
@@ -386,7 +386,7 @@ public class DatabaseFingerprintReaderSupportTests
         public async Task It_reports_the_invalid_seed_hash_length()
         {
             await _act.Should()
-                .ThrowAsync<InvalidOperationException>()
+                .ThrowAsync<DatabaseFingerprintValidationException>()
                 .WithMessage(
                     "dms.EffectiveSchema.ResourceKeySeedHash must be exactly 32 bytes, but found 31."
                 );

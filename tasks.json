@@ -1,34 +1,34 @@
 [
   {
-    "category": "PostgreSQL Fingerprint Reader",
-    "description": "Fix the PostgreSQL `IDatabaseFingerprintReader` so it reads the provisioned `dms.\"EffectiveSchema\"` table using the exact identifier casing and quoting emitted by DDL provisioning. Acceptance: a correctly provisioned PostgreSQL database is not misclassified as unprovisioned; the existence check and singleton-row read both succeed against the real schema; requests only return \"Database Not Provisioned\" when the table or singleton row is actually missing; add coverage that exercises the reader against a provisioned PostgreSQL database or an equivalent end-to-end contract test.",
+    "category": "Correctness",
+    "description": "Fix `DatabaseFingerprintProvider` so permanent `dms.EffectiveSchema` validation failures are handled as per-database fail-fast conditions instead of being retried on every request. Acceptance: malformed singleton states such as duplicate rows, wrong `EffectiveSchemaSingletonId`, invalid `EffectiveSchemaHash`, or invalid `ResourceKeySeedHash` length are classified distinctly from transient connection/command failures; permanent fingerprint validation failures are cached per connection string or otherwise prevented from re-querying the database on every request; genuine transient read failures still retry on the next request; concurrent first-use requests still collapse to a single database read.",
     "steps-to-verify": [
-      "Update `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/PostgresqlDatabaseFingerprintReader.cs` to use the same table and column identifiers as the PostgreSQL provisioning/DDL path.",
-      "Add a test that provisions or simulates the real PostgreSQL schema shape and verifies `ReadFingerprintAsync()` returns the stored fingerprint instead of `null`.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DatabaseFingerprintReaderSupportTests\"`",
-      "Run the PostgreSQL reader contract/integration test added for this fix."
+      "Add unit tests covering permanent malformed fingerprint states and transient reader failures in `DatabaseFingerprintProviderTests` and/or `DatabaseFingerprintReaderSupportTests`.",
+      "Verify that repeated requests against the same malformed fingerprint state do not invoke the reader repeatedly, while a transient exception still allows a later successful retry.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~DatabaseFingerprintProviderTests\"`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DatabaseFingerprintReaderSupportTests\"`"
     ],
     "completed": true
   },
   {
-    "category": "Caching Concurrency",
-    "description": "Fix the `DatabaseFingerprintProvider` fault-retry path so concurrent callers cannot evict a newer healthy cache entry after an earlier read fails. Acceptance: when the first fingerprint read faults and a later retry succeeds, subsequent callers observe the recovered cached value; concurrent awaiters of the same failed read do not remove a replacement entry created by a retry; the provider still performs a single read for concurrent first-use requests and still retries after genuine transient failures.",
+    "category": "Error Handling",
+    "description": "Return actionable provisioning/fingerprint errors for malformed `dms.EffectiveSchema` content instead of falling through to a generic 500. Acceptance: missing table and missing singleton row continue to produce the existing provisioning response; malformed singleton content (for example duplicate rows or invalid fingerprint column values) produces a deterministic `application/problem+json` response that identifies the database fingerprint/provisioning problem and gives the operator an actionable remediation path; logs include the selected DMS instance and trace/correlation information; generic 500 handling is reserved for unexpected failures only.",
     "steps-to-verify": [
-      "Update `src/dms/core/EdFi.DataManagementService.Core/DatabaseFingerprintProvider.cs` to remove faulted entries by key-and-instance identity instead of blindly removing by connection string.",
-      "Add a concurrency-focused unit test that reproduces: one cached read faults, one caller retries and succeeds, and a later catch from the original fault does not remove the recovered cache entry.",
-      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~DatabaseFingerprintProviderTests\"`"
+      "Add middleware or pipeline tests covering malformed fingerprint cases such as duplicate rows and invalid hash/seed data, and assert the exact response type/status/body shape.",
+      "Verify that the malformed-fingerprint path no longer falls through `CoreExceptionLoggingMiddleware` as an unknown error.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ValidateDatabaseFingerprintMiddleware|FullyQualifiedName~ProblemDetailsResponseTests\"`"
     ],
-    "completed": true
+    "completed": false
   },
   {
-    "category": "SQL Definition Deduplication",
-    "description": "Remove duplicated runtime/provisioning fingerprint SQL definitions so table names, column names, and singleton-read conventions come from one source of truth per dialect. Acceptance: the PostgreSQL and MSSQL runtime fingerprint readers do not carry hand-maintained copies of identifier metadata that can drift from provisioning; changing the `EffectiveSchema` naming contract requires editing one shared definition per dialect; existing runtime validation behavior and provisioning behavior remain unchanged apart from the bug fix above.",
+    "category": "Simplification",
+    "description": "Remove duplicated and redundant fingerprint-validation code so the runtime path has a single source of truth and fewer defensive checks. Acceptance: `ValidateDatabaseFingerprintMiddleware` no longer repeats instance/connection-string checks already guaranteed by `ResolveDmsInstanceMiddleware` and documented pipeline ordering; `EffectiveSchema` table metadata is defined in one shared place rather than duplicated between `DmsTableNames` and `EffectiveSchemaTableDefinition`; the simplified code preserves current behavior and test coverage for routing, pipeline ordering, and fingerprint reads.",
     "steps-to-verify": [
-      "Refactor the fingerprint reader query metadata so the runtime readers and provisioning code share the same dialect-specific `EffectiveSchema` identifier definitions where practical.",
-      "Add or update tests that would fail if runtime reader identifiers diverge from provisioning identifiers for either PostgreSQL or MSSQL.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
-      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ValidateDatabaseFingerprintMiddleware|FullyQualifiedName~PipelineOrderingTests\"`"
+      "Delete or refactor redundant `EffectiveSchema` constants and repeated middleware guard code, keeping one shared definition and one authoritative validation point.",
+      "Update or add tests so pipeline ordering and fingerprint reader behavior still pass after the cleanup.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~PipelineOrderingTests|FullyQualifiedName~ResolveDmsInstanceMiddlewareTests|FullyQualifiedName~ValidateDatabaseFingerprintMiddleware\"`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"FullyQualifiedName~DatabaseFingerprintReaderSupportTests\"`"
     ],
-    "completed": true
+    "completed": false
   }
 ]
