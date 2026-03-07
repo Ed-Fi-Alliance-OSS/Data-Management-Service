@@ -233,7 +233,7 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
             $"document-reference binding '{binding.ReferenceObjectPath.Canonical}' FK column"
         );
 
-        ReadPlanProjectionContractValidator.ValidateDocumentReferenceBindingPathOrThrow(
+        ReadPlanProjectionContractValidator.ValidateDocumentReferenceFkColumnOrThrow(
             tableModel.Table,
             fkColumn,
             binding,

@@ -299,6 +299,26 @@ public static class ReadPlanProjectionContractValidator
         );
     }
 
+    internal static void ValidateDocumentReferenceFkColumnOrThrow(
+        DbTableName table,
+        DbColumnModel columnModel,
+        DocumentReferenceBinding binding,
+        Func<string, Exception> createException
+    )
+    {
+        var contextDescription =
+            $"document-reference binding '{binding.ReferenceObjectPath.Canonical}' FK column";
+
+        ValidateColumnKindOrThrow(
+            columnModel,
+            expectedKind: ColumnKind.DocumentFk,
+            contextDescription,
+            createException
+        );
+        ValidateStoredColumnOrThrow(columnModel, contextDescription, createException);
+        ValidateDocumentReferenceBindingPathOrThrow(table, columnModel, binding, createException);
+    }
+
     internal static void ValidateDocumentReferenceBindingPathOrThrow(
         DbTableName table,
         DbColumnModel columnModel,
@@ -359,7 +379,7 @@ public static class ReadPlanProjectionContractValidator
         Func<string, Exception> createException
     )
     {
-        ValidateDocumentReferenceBindingPathOrThrow(table, fkColumnModel, modelBinding, createException);
+        ValidateDocumentReferenceFkColumnOrThrow(table, fkColumnModel, modelBinding, createException);
 
         if (binding.IsIdentityComponent != modelBinding.IsIdentityComponent)
         {
@@ -534,6 +554,37 @@ public static class ReadPlanProjectionContractValidator
             $"{dependencyDescription} '{columnModel.ColumnName.Value}' has DbColumnModel.SourceJsonPath '{columnModel.SourceJsonPath?.Canonical ?? "<null>"}', "
                 + $"which does not match {expectedPathDescription} '{expectedPath.Canonical}'"
         );
+    }
+
+    private static void ValidateColumnKindOrThrow(
+        DbColumnModel columnModel,
+        ColumnKind expectedKind,
+        string contextDescription,
+        Func<string, Exception> createException
+    )
+    {
+        if (columnModel.Kind == expectedKind)
+        {
+            return;
+        }
+
+        throw createException(
+            $"{contextDescription} '{columnModel.ColumnName.Value}' has kind '{columnModel.Kind}'. Expected '{expectedKind}'"
+        );
+    }
+
+    private static void ValidateStoredColumnOrThrow(
+        DbColumnModel columnModel,
+        string contextDescription,
+        Func<string, Exception> createException
+    )
+    {
+        if (columnModel.Storage is ColumnStorage.Stored)
+        {
+            return;
+        }
+
+        throw createException($"{contextDescription} '{columnModel.ColumnName.Value}' is not stored");
     }
 
     private static string FormatResource(QualifiedResourceName resource)
