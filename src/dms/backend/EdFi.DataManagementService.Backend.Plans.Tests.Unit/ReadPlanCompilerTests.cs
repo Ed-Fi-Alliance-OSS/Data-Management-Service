@@ -318,6 +318,52 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_accept_key_unified_projection_path_columns_while_descriptor_sql_still_deduplicates_by_storage_column()
+    {
+        var referenceReadPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateKeyUnifiedReferenceProjectionResourceModel()
+        );
+        var descriptorReadPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+            CreateKeyUnifiedDescriptorProjectionResourceModel()
+        );
+
+        var binding = referenceReadPlan
+            .ReferenceIdentityProjectionPlansInDependencyOrder.Single()
+            .BindingsInOrder.Single();
+
+        AssertReferenceIdentityProjectionBinding(
+            binding,
+            isIdentityComponent: true,
+            referenceObjectPath: "$.schoolReference",
+            targetResource: new QualifiedResourceName("Ed-Fi", "School"),
+            fkColumnOrdinal: 3,
+            ("$.schoolReference.localSchoolYear", 5),
+            ("$.schoolReference.schoolYear", 4)
+        );
+
+        AssertKeyUnifiedDescriptorProjectionPlan(
+            descriptorReadPlan,
+            """
+            SELECT
+                p."DescriptorId",
+                d."Uri"
+            FROM
+                (
+                    SELECT DISTINCT t0."SchoolYearTypeDescriptorIdCanonical" AS "DescriptorId"
+                    FROM "edfi"."Student" t0
+                    INNER JOIN "page" k ON t0."DocumentId" = k."DocumentId"
+                    WHERE t0."SchoolYearTypeDescriptorIdCanonical" IS NOT NULL
+                ) p
+            INNER JOIN "dms"."Descriptor" d ON d."DocumentId" = p."DescriptorId"
+            ORDER BY
+                p."DescriptorId" ASC
+            ;
+
+            """
+        );
+    }
+
+    [Test]
     public void It_should_compile_a_single_root_only_table_plan_with_expected_keyset_contract()
     {
         _pgsqlRootOnlyReadPlan.Model.Should().Be(_rootOnlyResourceModel);
@@ -742,6 +788,36 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_fail_fast_when_document_reference_fk_column_source_json_path_does_not_match_reference_object_path()
+    {
+        var act = () =>
+            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+                CreateModelWithMismatchedDocumentReferenceFkSourcePath()
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile read plan for 'edfi.StudentProjection': document-reference binding '$.schoolReference' FK column 'School_DocumentId' has DbColumnModel.SourceJsonPath '$.studentUniqueId', which does not match DocumentReferenceBinding.ReferenceObjectPath '$.schoolReference'."
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_key_unified_reference_identity_binding_points_at_canonical_storage_column()
+    {
+        var act = () =>
+            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+                CreateKeyUnifiedModelWithCanonicalReferenceIdentityBindingColumn()
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile read plan for 'edfi.Student': reference-identity binding '$.schoolReference.localSchoolYear' for reference '$.schoolReference' column 'SchoolYearCanonical' has DbColumnModel.SourceJsonPath '<null>', which does not match ReferenceIdentityBinding.ReferenceJsonPath '$.schoolReference.localSchoolYear'."
+            );
+    }
+
+    [Test]
     public void It_should_fail_fast_when_descriptor_edge_source_fk_column_does_not_resolve_to_a_hydration_select_list_ordinal()
     {
         var act = () =>
@@ -764,6 +840,21 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             .Throw<InvalidOperationException>()
             .WithMessage(
                 "Cannot compile read plan for 'edfi.MissingStudentAddress': owning table is not present in TablesInDependencyOrder."
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_key_unified_descriptor_edge_source_points_at_canonical_storage_column()
+    {
+        var act = () =>
+            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+                CreateKeyUnifiedModelWithCanonicalDescriptorEdgeBindingColumn()
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile read plan for 'edfi.Student': descriptor edge source '$.localSchoolYearTypeDescriptor' FK column 'SchoolYearTypeDescriptorIdCanonical' has DbColumnModel.SourceJsonPath '<null>', which does not match DescriptorEdgeSource.DescriptorValuePath '$.localSchoolYearTypeDescriptor'."
             );
     }
 
@@ -1624,9 +1715,44 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     {
         var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
         var model = CreateRootOnlyModelWithReferenceGroupDocumentFkPresence(false);
+        var primaryColumnName = new DbColumnName("SchoolYearPrimary");
+        var secondaryColumnName = new DbColumnName("SchoolYearSecondary");
+
+        DbColumnModel MapColumn(DbColumnModel column)
+        {
+            if (column.ColumnName.Equals(primaryColumnName))
+            {
+                return column with
+                {
+                    SourceJsonPath = CreatePath(
+                        "$.schoolReference.schoolYear",
+                        new JsonPathSegment.Property("schoolReference"),
+                        new JsonPathSegment.Property("schoolYear")
+                    ),
+                };
+            }
+
+            if (column.ColumnName.Equals(secondaryColumnName))
+            {
+                return column with
+                {
+                    SourceJsonPath = CreatePath(
+                        "$.schoolReference.localSchoolYear",
+                        new JsonPathSegment.Property("schoolReference"),
+                        new JsonPathSegment.Property("localSchoolYear")
+                    ),
+                };
+            }
+
+            return column;
+        }
+
+        var rootTable = model.Root with { Columns = model.Root.Columns.Select(MapColumn).ToArray() };
 
         return model with
         {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
             DocumentReferenceBindings =
             [
                 new DocumentReferenceBinding(
@@ -1635,7 +1761,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                         "$.schoolReference",
                         new JsonPathSegment.Property("schoolReference")
                     ),
-                    Table: model.Root.Table,
+                    Table: rootTable.Table,
                     FkColumn: new DbColumnName("School_DocumentId"),
                     TargetResource: schoolResource,
                     IdentityBindings:
@@ -1961,6 +2087,34 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         };
     }
 
+    private static RelationalResourceModel CreateModelWithMismatchedDocumentReferenceFkSourcePath()
+    {
+        var model = CreateProjectionMetadataResourceModel();
+        var fkColumn = new DbColumnName("School_DocumentId");
+        var rootTable = model.Root with
+        {
+            Columns = model
+                .Root.Columns.Select(column =>
+                    column.ColumnName.Equals(fkColumn)
+                        ? column with
+                        {
+                            SourceJsonPath = CreatePath(
+                                "$.studentUniqueId",
+                                new JsonPathSegment.Property("studentUniqueId")
+                            ),
+                        }
+                        : column
+                )
+                .ToArray(),
+        };
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
+        };
+    }
+
     private static RelationalResourceModel CreateModelWithMissingDescriptorEdgeFkColumn()
     {
         var model = CreateSingleTableModelCoveringWriteValueSourceKinds();
@@ -2011,6 +2165,52 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         {
             Root = rootTable,
             TablesInDependencyOrder = [rootTable],
+        };
+    }
+
+    private static RelationalResourceModel CreateKeyUnifiedModelWithCanonicalReferenceIdentityBindingColumn()
+    {
+        var model = CreateKeyUnifiedReferenceProjectionResourceModel();
+        var binding = model.DocumentReferenceBindings.Single();
+
+        return model with
+        {
+            DocumentReferenceBindings =
+            [
+                binding with
+                {
+                    IdentityBindings =
+                    [
+                        new ReferenceIdentityBinding(
+                            ReferenceJsonPath: CreatePath(
+                                "$.schoolReference.localSchoolYear",
+                                new JsonPathSegment.Property("schoolReference"),
+                                new JsonPathSegment.Property("localSchoolYear")
+                            ),
+                            Column: new DbColumnName("SchoolYearCanonical")
+                        ),
+                        .. binding.IdentityBindings.Skip(1),
+                    ],
+                },
+            ],
+        };
+    }
+
+    private static RelationalResourceModel CreateKeyUnifiedModelWithCanonicalDescriptorEdgeBindingColumn()
+    {
+        var model = CreateKeyUnifiedDescriptorProjectionResourceModel();
+        var localDescriptorEdge = model.DescriptorEdgeSources[0];
+
+        return model with
+        {
+            DescriptorEdgeSources =
+            [
+                localDescriptorEdge with
+                {
+                    FkColumn = new DbColumnName("SchoolYearTypeDescriptorIdCanonical"),
+                },
+                .. model.DescriptorEdgeSources.Skip(1),
+            ],
         };
     }
 }
