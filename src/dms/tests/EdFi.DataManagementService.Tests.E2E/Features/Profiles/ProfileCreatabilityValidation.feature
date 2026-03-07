@@ -282,7 +282,54 @@ Feature: Profile Creatability Validation
                   """
             Then the profile response status is 201
 
-        Scenario: 09 Profile with non-creatable embedded object rule fails creation
+        Scenario: 09 PUT with non-creatable child collection item fails
+            When a POST request is made to "/ed-fi/schools" with profile "Test-Profile-Resource-Includes-Child-Collection-With-Non-Creatable-Items" for resource "School" with body
+                  """
+                  {
+                      "schoolId": 99000709,
+                      "nameOfInstitution": "NonCreatable Child Collection School Update Seed",
+                      "educationOrganizationCategories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                          }
+                      ],
+                      "gradeLevels": [
+                          {
+                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+                          }
+                      ]
+                  }
+                  """
+            Then the profile response status is 201
+            When a PUT request is made to "/ed-fi/schools/{id}" with profile "Test-Profile-Resource-Includes-Child-Collection-With-Non-Creatable-Items" for resource "School" with body
+                  """
+                  {
+                      "id": "{id}",
+                      "schoolId": 99000709,
+                      "nameOfInstitution": "NonCreatable Child Collection School Update",
+                      "educationOrganizationCategories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                          }
+                      ],
+                      "gradeLevels": [
+                          {
+                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+                          }
+                      ],
+                      "internationalAddresses": [
+                          {
+                              "addressTypeDescriptor": "uri://ed-fi.org/AddressTypeDescriptor#Mailing",
+                              "addressLine1": "Address Line 1",
+                              "countryDescriptor": "uri://ed-fi.org/CountryDescriptor#AD"
+                          }
+                      ]
+                  }
+                  """
+            Then the profile response status is 400
+             And the response body should have error type "urn:ed-fi:api:data-policy-enforced"
+
+        Scenario: 10 Profile with non-creatable embedded object rule fails creation
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Assessment-Writable-Includes-Non-Creatable-Embedded-Object" and namespacePrefixes "uri://ed-fi.org"
             When a POST request is made to "/ed-fi/assessments" with profile "Assessment-Writable-Includes-Non-Creatable-Embedded-Object" for resource "Assessment" with body
                   """
@@ -304,7 +351,7 @@ Feature: Profile Creatability Validation
             Then the profile response status is 400
              And the response body should have error type "urn:ed-fi:api:data-policy-enforced"
 
-        Scenario: 10 Profile allows assessment creation when non-creatable embedded object is not supplied
+        Scenario: 11 Profile allows assessment creation when non-creatable embedded object is not supplied
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Assessment-Writable-Includes-Non-Creatable-Embedded-Object" and namespacePrefixes "uri://ed-fi.org"
             When a POST request is made to "/ed-fi/assessments" with profile "Assessment-Writable-Includes-Non-Creatable-Embedded-Object" for resource "Assessment" with body
                   """
@@ -321,3 +368,41 @@ Feature: Profile Creatability Validation
                   }
                   """
             Then the profile response status is 201
+
+        Scenario: 12 PUT with non-creatable embedded object fails
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Assessment-Writable-Includes-Non-Creatable-Embedded-Object" and namespacePrefixes "uri://ed-fi.org"
+            When a POST request is made to "/ed-fi/assessments" with profile "Assessment-Writable-Includes-Non-Creatable-Embedded-Object" for resource "Assessment" with body
+                  """
+                  {
+                      "assessmentIdentifier": "ASSESSMENT-99000712",
+                      "namespace": "uri://ed-fi.org/Assessment/Assessment.xml",
+                      "assessmentCategoryDescriptor": "uri://ed-fi.org/AssessmentCategoryDescriptor#Benchmark test",
+                      "assessmentTitle": "Assessment NonCreatable Embedded Update Seed",
+                      "academicSubjects": [
+                          {
+                              "academicSubjectDescriptor": "uri://ed-fi.org/AcademicSubjectDescriptor#English Language Arts"
+                          }
+                      ]
+                  }
+                  """
+            Then the profile response status is 201
+            When a PUT request is made to "/ed-fi/assessments/{id}" with profile "Assessment-Writable-Includes-Non-Creatable-Embedded-Object" for resource "Assessment" with body
+                  """
+                  {
+                      "id": "{id}",
+                      "assessmentIdentifier": "ASSESSMENT-99000712",
+                      "namespace": "uri://ed-fi.org/Assessment/Assessment.xml",
+                      "assessmentCategoryDescriptor": "uri://ed-fi.org/AssessmentCategoryDescriptor#Benchmark test",
+                      "assessmentTitle": "Assessment NonCreatable Embedded Update",
+                      "academicSubjects": [
+                          {
+                              "academicSubjectDescriptor": "uri://ed-fi.org/AcademicSubjectDescriptor#English Language Arts"
+                          }
+                      ],
+                      "contentStandard": {
+                          "title": "State Essential Knowledge and Skills"
+                      }
+                  }
+                  """
+            Then the profile response status is 400
+             And the response body should have error type "urn:ed-fi:api:data-policy-enforced"

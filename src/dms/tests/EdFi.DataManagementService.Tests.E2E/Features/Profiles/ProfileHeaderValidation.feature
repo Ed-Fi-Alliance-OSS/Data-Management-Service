@@ -58,6 +58,110 @@ Feature: Profile Header Validation
               And the response body should have detail "The request construction was invalid with respect to usage of a data policy."
               And the response body errors should match regex "(?i)A profile-based content type that is writable cannot be used with GET requests\."
 
+        Scenario: 04 Malformed profile Content-Type header on POST returns 400
+             When a POST request is made to "/ed-fi/schools" with Content-Type header "application/vnd.ed-fi.invalid" and body
+                 """
+                 {
+                     "schoolId": 99000311,
+                     "nameOfInstitution": "Malformed Content-Type Header POST",
+                     "educationOrganizationCategories": [
+                         {
+                             "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                         }
+                     ],
+                     "gradeLevels": [
+                         {
+                             "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+                         }
+                     ]
+                 }
+                 """
+             Then the profile response status is 400
+              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
+              And the response body status should equal the response status code
+              And the response body should have error message "The format of the profile-based content type header was invalid"
+              And the response body should have detail "The request construction was invalid with respect to usage of a data policy."
+              And the response body errors should match regex "(?i)The format of the profile-based content type header was invalid\."
+
+        Scenario: 05 Readable profile Content-Type on POST returns 400
+             When a POST request is made to "/ed-fi/schools" with Content-Type header "application/vnd.ed-fi.school.e2e-test-school-includeonly.readable+json" and body
+                 """
+                 {
+                     "schoolId": 99000312,
+                     "nameOfInstitution": "Readable Content-Type POST",
+                     "educationOrganizationCategories": [
+                         {
+                             "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                         }
+                     ],
+                     "gradeLevels": [
+                         {
+                             "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+                         }
+                     ]
+                 }
+                 """
+             Then the profile response status is 400
+              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
+              And the response body status should equal the response status code
+              And the response body should have detail "The request construction was invalid with respect to usage of a data policy."
+              And the response body errors should match regex "(?i)A profile-based content type that is readable cannot be used with POST requests\."
+
+        Scenario: 06 Malformed profile Content-Type header on PUT returns 400
+             When a PUT request is made to "/ed-fi/schools/{id}" with Content-Type header "application/vnd.ed-fi.invalid" and body
+                 """
+                 {
+                     "id": "{id}",
+                     "schoolId": 99000301,
+                     "nameOfInstitution": "Malformed Content-Type Header PUT",
+                     "shortNameOfInstitution": "HVTS",
+                     "webSite": "https://headertest.example.com",
+                     "educationOrganizationCategories": [
+                         {
+                             "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                         }
+                     ],
+                     "gradeLevels": [
+                         {
+                             "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+                         }
+                     ]
+                 }
+                 """
+             Then the profile response status is 400
+              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
+              And the response body status should equal the response status code
+              And the response body should have error message "The format of the profile-based content type header was invalid"
+              And the response body should have detail "The request construction was invalid with respect to usage of a data policy."
+              And the response body errors should match regex "(?i)The format of the profile-based content type header was invalid\."
+
+        Scenario: 07 Readable profile Content-Type on PUT returns 400
+             When a PUT request is made to "/ed-fi/schools/{id}" with Content-Type header "application/vnd.ed-fi.school.e2e-test-school-includeonly.readable+json" and body
+                 """
+                 {
+                     "id": "{id}",
+                     "schoolId": 99000301,
+                     "nameOfInstitution": "Readable Content-Type PUT",
+                     "shortNameOfInstitution": "HVTS",
+                     "webSite": "https://headertest.example.com",
+                     "educationOrganizationCategories": [
+                         {
+                             "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                         }
+                     ],
+                     "gradeLevels": [
+                         {
+                             "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+                         }
+                     ]
+                 }
+                 """
+             Then the profile response status is 400
+              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
+              And the response body status should equal the response status code
+              And the response body should have detail "The request construction was invalid with respect to usage of a data policy."
+              And the response body errors should match regex "(?i)A profile-based content type that is readable cannot be used with PUT requests\."
+
     Rule: Profile header on app with no profiles returns 406 Not Acceptable
 
         Background:
@@ -87,7 +191,7 @@ Feature: Profile Header Validation
                   """
 
         # When app has no profiles, using any profile header returns 406 (Not Acceptable)
-        Scenario: 04 Using profile header on app without profiles returns 406
+        Scenario: 08 Using profile header on app without profiles returns 406
              When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly" for resource "School"
              Then the profile response status is 406
               And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
@@ -123,13 +227,13 @@ Feature: Profile Header Validation
                   }
                   """
 
-        Scenario: 05 Using nonexistent profile returns 403
+        Scenario: 09 Using nonexistent profile returns 403
              When a GET request is made to "/ed-fi/schools/{id}" with Accept header "application/vnd.ed-fi.school.nonexistent-profile.readable+json"
              Then the profile response status is 403
               And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
               And the response body status should equal the response status code
-              And the response body should have detail "The request construction was invalid with respect to usage of a data policy."
-              And the response body errors should match regex "(?i)The profile usage segment in the profile-based 'Accept' header was not recognized\."
+              And the response body should have detail "A data policy failure was encountered. The request was not constructed correctly for the data policy that has been applied to this data for the caller."
+              And the response body errors should match regex "(?i)Based on profile assignments, one of the following profile-specific content types is required when requesting this resource: 'application/vnd\.ed-fi\.school\.e2e-test-school-includeonly\.readable\+json'"
 
 
     Rule: Valid profile header succeeds
@@ -160,6 +264,6 @@ Feature: Profile Header Validation
                   }
                   """
 
-        Scenario: 06 Valid profile header for correct resource succeeds
+        Scenario: 10 Valid profile header for correct resource succeeds
              When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly" for resource "School"
              Then the profile response status is 200
