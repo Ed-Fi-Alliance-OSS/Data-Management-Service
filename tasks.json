@@ -61,5 +61,35 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~RuntimePlanCompilationGoldenFixture`"
     ],
     "completed": true
+  },
+  {
+    "category": "Descriptor Projection Deduplication",
+    "description": "Ensure descriptor projection SQL returns distinct descriptor ids even when a resource has only one descriptor projection source. Acceptance: `DescriptorProjectionPlanCompiler` emits SQL that de-duplicates `(DescriptorId, Uri)` lookups for the single-source path as well as the multi-source path, the compiled result set scales with distinct descriptor ids instead of hydrated row count, and the emitted SQL remains canonical and deterministic for both pgsql and mssql.",
+    "steps-to-verify": [
+      "Add or update unit tests covering a single-source descriptor projection resource so the expected SQL includes explicit de-duplication and does not return repeated descriptor ids when multiple hydrated rows share the same descriptor.",
+      "Add a focused multi-row execution-oriented test or SQL-shape assertion proving the single-source path now produces a distinct descriptor-id lookup set.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~DescriptorProjection`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Descriptor Projection Contract Validation",
+    "description": "Remove the singleton assumption from descriptor projection lookup validation and honor the public `DescriptorProjectionPlansInOrder` contract as an ordered collection. Acceptance: `MappingSetLookupExtensions` validates every descriptor projection plan present in `DescriptorProjectionPlansInOrder` instead of requiring `Length == 1`, preserves deterministic plan ordering, and continues to reject malformed result shapes, bad source tables, and out-of-range ordinals with actionable internal-integrity errors.",
+    "steps-to-verify": [
+      "Add unit tests covering valid read plans with more than one descriptor projection plan and ensure `GetReadPlanOrThrow()` returns the plan instead of rejecting it as invalid projection metadata.",
+      "Retain or update negative tests proving malformed descriptor projection plans still fail when result ordinals, source tables, or source ordinals are invalid.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_MappingSetLookupExtensions|FullyQualifiedName~Given_NormalizedPlanContractCodec\"`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Projection Validation Simplification",
+    "description": "Consolidate projection-plan validation so immutable read plans are validated once at compilation or decode time instead of being fully re-walked on every `GetReadPlanOrThrow()` call. Acceptance: projection metadata integrity checks live in a single authoritative validation path, lookup-time plan retrieval does not repeat the full table/binding/source walk for already-validated plans, and existing error messages for invalid compiled plans remain deterministic and actionable.",
+    "steps-to-verify": [
+      "Refactor the current projection validation flow so compile-time or decode-time validation owns the integrity checks, then update lookup tests to confirm successful lookups no longer depend on repeated deep validation.",
+      "Retain targeted negative tests for invalid compiled plans at the chosen validation boundary so malformed projection metadata still fails deterministically.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~Given_MappingSetLookupExtensions|FullyQualifiedName~Given_ReadPlanCompiler`"
+    ],
+    "completed": false
   }
 ]
