@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
+using System.Security.Cryptography;
 using System.Text;
 using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
@@ -178,11 +179,9 @@ public abstract class DdlEmissionGoldenTestBase
     /// then calls <see cref="DdlManifestEmitter.Emit"/> to produce the manifest JSON.
     /// </summary>
     /// <remarks>
-    /// The golden expected files use a synthetic <c>effective_schema_hash</c> value (e.g., <c>"hash"</c>)
-    /// rather than a real 64-char SHA-256 hex string. This is intentional: test fixtures build models
-    /// from inline ApiSchema fragments whose <see cref="EffectiveSchemaInfo.EffectiveSchemaHash"/>
-    /// is a placeholder. Hash format validation is covered by <c>DdlManifestEmitterTests</c> and
-    /// <c>EffectiveSchemaManifestEmitter</c> unit tests, not by golden snapshot comparison.
+    /// The golden fixtures use deterministic, contract-valid synthetic fingerprint values generated
+    /// from a stable fixture key. This keeps full DDL emission coverage aligned with the runtime
+    /// provisioning contract without coupling snapshot tests to production fingerprint generation logic.
     /// </remarks>
     protected static GoldenTestPaths EmitDdlManifest(
         string fixtureName,
@@ -234,6 +233,36 @@ public abstract class DdlEmissionGoldenTestBase
     }
 
     protected record GoldenTestPaths(string ExpectedPath, string ActualPath);
+}
+
+internal static class GoldenEffectiveSchemaFixtureData
+{
+    internal static EffectiveSchemaInfo Create(
+        string fixtureKey,
+        IReadOnlyList<SchemaComponentInfo> schemaComponentsInEndpointOrder,
+        IReadOnlyList<ResourceKeyEntry> resourceKeysInIdOrder
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(fixtureKey);
+        ArgumentNullException.ThrowIfNull(schemaComponentsInEndpointOrder);
+        ArgumentNullException.ThrowIfNull(resourceKeysInIdOrder);
+
+        return new EffectiveSchemaInfo(
+            "1.0.0",
+            "1.0.0",
+            CreateEffectiveSchemaHash(fixtureKey),
+            resourceKeysInIdOrder.Count,
+            CreateResourceKeySeedHash(fixtureKey),
+            schemaComponentsInEndpointOrder,
+            resourceKeysInIdOrder
+        );
+    }
+
+    private static string CreateEffectiveSchemaHash(string fixtureKey) =>
+        Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes($"{fixtureKey}:effective-schema")));
+
+    private static byte[] CreateResourceKeySeedHash(string fixtureKey) =>
+        SHA256.HashData(Encoding.UTF8.GetBytes($"{fixtureKey}:resource-key-seed"));
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -903,12 +932,8 @@ internal static class NestedCollectionsFixture
         ];
 
         return new DerivedRelationalModelSet(
-            new EffectiveSchemaInfo(
-                "1.0.0",
-                "1.0.0",
-                "hash",
-                1,
-                [0x01],
+            GoldenEffectiveSchemaFixtureData.Create(
+                "nested-collections",
                 [
                     new SchemaComponentInfo(
                         "ed-fi",
@@ -1235,12 +1260,8 @@ internal static class PolymorphicAbstractFixture
         ];
 
         return new DerivedRelationalModelSet(
-            new EffectiveSchemaInfo(
-                "1.0.0",
-                "1.0.0",
-                "hash",
-                3,
-                [0x01, 0x02, 0x03],
+            GoldenEffectiveSchemaFixtureData.Create(
+                "polymorphic-abstract",
                 [
                     new SchemaComponentInfo(
                         "ed-fi",
@@ -1525,12 +1546,8 @@ internal static class ExtensionMappingFixture
         ];
 
         return new DerivedRelationalModelSet(
-            new EffectiveSchemaInfo(
-                "1.0.0",
-                "1.0.0",
-                "hash",
-                1,
-                [0x01],
+            GoldenEffectiveSchemaFixtureData.Create(
+                "identity-propagation",
                 [
                     new SchemaComponentInfo(
                         "ed-fi",
@@ -1815,12 +1832,8 @@ internal static class IdentityPropagationFixture
         }
 
         return new DerivedRelationalModelSet(
-            new EffectiveSchemaInfo(
-                "1.0.0",
-                "1.0.0",
-                "hash",
-                2,
-                [0x01, 0x02],
+            GoldenEffectiveSchemaFixtureData.Create(
+                "extension-mapping",
                 [
                     new SchemaComponentInfo(
                         "ed-fi",
@@ -1997,12 +2010,8 @@ internal static class FkSupportIndexFixture
         ];
 
         return new DerivedRelationalModelSet(
-            new EffectiveSchemaInfo(
-                "1.0.0",
-                "1.0.0",
-                "hash",
-                2,
-                [0x01, 0x02],
+            GoldenEffectiveSchemaFixtureData.Create(
+                "key-unification",
                 [
                     new SchemaComponentInfo(
                         "ed-fi",
@@ -2346,12 +2355,8 @@ internal static class KeyUnificationFixture
         }
 
         return new DerivedRelationalModelSet(
-            new EffectiveSchemaInfo(
-                "1.0.0",
-                "1.0.0",
-                "hash",
-                2,
-                [0x01, 0x02],
+            GoldenEffectiveSchemaFixtureData.Create(
+                "fk-support-index",
                 [
                     new SchemaComponentInfo(
                         "ed-fi",
