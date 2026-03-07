@@ -21,6 +21,7 @@ public class MssqlDatabaseFingerprintReader(ILogger<MssqlDatabaseFingerprintRead
         DatabaseFingerprintReaderSupport.ReadFingerprintAsync(
             () => new SqlConnection(connectionString),
             _query,
-            logger
+            logger,
+            static exception => exception is SqlException { Number: 207 }
         );
 }

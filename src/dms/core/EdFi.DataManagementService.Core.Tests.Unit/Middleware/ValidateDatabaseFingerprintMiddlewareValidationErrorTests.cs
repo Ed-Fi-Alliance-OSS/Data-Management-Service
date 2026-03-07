@@ -375,4 +375,102 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
             _requestInfo.DatabaseFingerprint.Should().BeNull();
         }
     }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Database_Fingerprint_Runtime_Projection_Is_Invalid
+        : ValidateDatabaseFingerprintMiddlewareValidationErrorTests
+    {
+        private const string ProjectionFailureMessage =
+            "dms.EffectiveSchema does not match the expected fingerprint projection. Required fingerprint columns may be missing, renamed, or incompatible with the runtime query.";
+
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private JsonNode _body = default!;
+        private bool _nextCalled;
+        private CapturingLogger _exceptionLogger = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (middleware, fingerprintReader, dmsInstanceSelection, _, serviceProvider) =
+                CreateMiddleware();
+
+            _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
+            _exceptionLogger = new CapturingLogger();
+
+            A.CallTo(() => dmsInstanceSelection.IsSet).Returns(true);
+            A.CallTo(() => dmsInstanceSelection.GetSelectedDmsInstance())
+                .Returns(
+                    new DmsInstance(
+                        Id: 1,
+                        InstanceType: "Test",
+                        InstanceName: "Test Instance",
+                        ConnectionString: "Server=test;Database=projection-failure",
+                        RouteContext: []
+                    )
+                );
+
+            A.CallTo(() => fingerprintReader.ReadFingerprintAsync("Server=test;Database=projection-failure"))
+                .Returns(
+                    Task.FromException<DatabaseFingerprint?>(
+                        new DatabaseFingerprintValidationException(ProjectionFailureMessage)
+                    )
+                );
+
+            var exceptionLoggingMiddleware = new CoreExceptionLoggingMiddleware(_exceptionLogger);
+
+            await exceptionLoggingMiddleware.Execute(
+                _requestInfo,
+                () =>
+                    middleware.Execute(
+                        _requestInfo,
+                        () =>
+                        {
+                            _nextCalled = true;
+                            return Task.CompletedTask;
+                        }
+                    )
+            );
+
+            _body = ((FrontendResponse)_requestInfo.FrontendResponse).Body!;
+        }
+
+        [Test]
+        public void It_does_not_call_next()
+        {
+            _nextCalled.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_returns_503_service_unavailable()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(503);
+        }
+
+        [Test]
+        public void It_returns_the_database_fingerprint_validation_problem_type()
+        {
+            _body["type"]
+                ?.GetValue<string>()
+                .Should()
+                .Be(ProblemDetailsResponse.DatabaseFingerprintValidationError);
+        }
+
+        [Test]
+        public void It_returns_the_projection_failure_message_and_shared_remediation()
+        {
+            var errors = _body["errors"]!.AsArray();
+
+            errors.Count.Should().Be(2);
+            errors[0]?.GetValue<string>().Should().Be(ProjectionFailureMessage);
+            errors[1]?.GetValue<string>().Should().Be(MalformedFingerprintDetail);
+            _body["detail"]?.GetValue<string>().Should().Be(MalformedFingerprintDetail);
+        }
+
+        [Test]
+        public void It_does_not_fall_through_the_unknown_error_handler()
+        {
+            _exceptionLogger.Entries.Should().NotContain(entry => entry.Message.Contains("Unknown Error"));
+        }
+    }
 }
