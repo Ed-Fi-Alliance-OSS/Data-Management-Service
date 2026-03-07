@@ -31,6 +31,8 @@ internal static class DatabaseFingerprintReaderSupport
     private const short ExpectedSingletonId = 1;
     private const int EffectiveSchemaHashLength = 64;
     private const int ResourceKeySeedHashLength = 32;
+    private const string ProjectionValidationFailureMessageSuffix =
+        "does not match the expected fingerprint projection. Required fingerprint columns may be missing, renamed, or incompatible with the runtime query.";
     private static readonly DatabaseFingerprintColumnNames _effectiveSchemaColumnNames = new(
         EffectiveSchemaSingletonId: EffectiveSchemaTableDefinition.EffectiveSchemaSingletonId.Value,
         ApiSchemaFormatVersion: EffectiveSchemaTableDefinition.ApiSchemaFormatVersion.Value,
@@ -54,7 +56,8 @@ internal static class DatabaseFingerprintReaderSupport
     public static async Task<DatabaseFingerprint?> ReadFingerprintAsync(
         Func<DbConnection> connectionFactory,
         DatabaseFingerprintReaderQuery query,
-        ILogger logger
+        ILogger logger,
+        Predicate<Exception>? isProjectionValidationFailure = null
     )
     {
         ArgumentNullException.ThrowIfNull(connectionFactory);
@@ -76,12 +79,28 @@ internal static class DatabaseFingerprintReaderSupport
         await using var readCommand = connection.CreateCommand();
         readCommand.CommandText = query.ReadCommandText;
 
-        await using var reader = await readCommand.ExecuteReaderAsync();
-        var fingerprint = await ReadValidatedFingerprintAsync(
-            reader,
-            query.ColumnNames,
-            query.TableDisplayName
-        );
+        DatabaseFingerprint? fingerprint;
+
+        try
+        {
+            await using var reader = await readCommand.ExecuteReaderAsync();
+            fingerprint = await ReadValidatedFingerprintAsync(
+                reader,
+                query.ColumnNames,
+                query.TableDisplayName
+            );
+        }
+        catch (DatabaseFingerprintValidationException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (isProjectionValidationFailure?.Invoke(ex) is true)
+        {
+            throw new DatabaseFingerprintValidationException(
+                $"{query.TableDisplayName} {ProjectionValidationFailureMessageSuffix}",
+                ex
+            );
+        }
 
         if (fingerprint is null)
         {

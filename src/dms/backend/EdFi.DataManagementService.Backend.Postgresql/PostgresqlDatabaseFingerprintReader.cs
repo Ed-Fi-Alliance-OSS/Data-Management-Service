@@ -21,6 +21,8 @@ public class PostgresqlDatabaseFingerprintReader(ILogger<PostgresqlDatabaseFinge
         DatabaseFingerprintReaderSupport.ReadFingerprintAsync(
             () => new NpgsqlConnection(connectionString),
             _query,
-            logger
+            logger,
+            static exception =>
+                exception is PostgresException { SqlState: PostgresErrorCodes.UndefinedColumn }
         );
 }
