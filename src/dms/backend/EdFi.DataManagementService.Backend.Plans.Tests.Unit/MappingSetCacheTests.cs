@@ -175,6 +175,29 @@ public class Given_MappingSetCache
         compileInvocationCount.Should().Be(1);
     }
 
+    [Test]
+    public async Task It_should_report_cache_miss_then_cache_hit_for_the_same_key()
+    {
+        var key = CreateMappingSetKey(new string('f', 64), SqlDialect.Pgsql, "v1");
+        var compiledMappingSet = CreateMappingSet(key);
+        var compileInvocationCount = 0;
+
+        var cache = new MappingSetCache(_ =>
+        {
+            Interlocked.Increment(ref compileInvocationCount);
+            return Task.FromResult(compiledMappingSet);
+        });
+
+        var firstResult = await cache.GetOrCreateWithCacheStatusAsync(key, CancellationToken.None);
+        var secondResult = await cache.GetOrCreateWithCacheStatusAsync(key, CancellationToken.None);
+
+        firstResult.WasCacheHit.Should().BeFalse();
+        secondResult.WasCacheHit.Should().BeTrue();
+        firstResult.MappingSet.Should().BeSameAs(compiledMappingSet);
+        secondResult.MappingSet.Should().BeSameAs(compiledMappingSet);
+        compileInvocationCount.Should().Be(1);
+    }
+
     private static MappingSetKey CreateMappingSetKey(
         string effectiveSchemaHash,
         SqlDialect dialect,
