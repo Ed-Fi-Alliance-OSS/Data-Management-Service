@@ -60,5 +60,37 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~Given_NormalizedPlanContractCodec`"
     ],
     "completed": true
+  },
+  {
+    "category": "Descriptor Projection Compiler Decoupling",
+    "description": "Remove the descriptor projection compiler's incidental dependency on hydration select-list ordinals for storage-only canonical descriptor columns. Acceptance: descriptor projection SQL ordering is derived from authoritative table-model column order rather than `columnOrdinalsByTable`; compilation continues to deduplicate descriptor SQL by `(table, storage column)` for key-unified models; valid models compile even if a future hydration plan no longer selects storage-only canonical descriptor columns, while invalid descriptor bindings still fail deterministically with actionable messages.",
+    "steps-to-verify": [
+      "Refactor `DescriptorProjectionPlanCompiler` so the ordering for deduplicated SQL sources comes from `DbTableModel.Columns` or equivalent table-model metadata instead of hydration projection ordinals for the storage column.",
+      "Add a regression test covering a key-unified descriptor model where the binding/path columns remain hydrated but the canonical storage column is treated as storage-only for descriptor SQL ordering, and assert compilation still succeeds with deterministic SQL and source ordering.",
+      "Retain or add negative tests proving missing tables, missing binding columns, or non-`DescriptorFk` bindings still fail with deterministic compiler errors.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~Given_ReadPlanCompiler`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Descriptor Projection Plan Shape Validation",
+    "description": "Tighten descriptor projection contract validation so each compiled `DescriptorProjectionPlan` is structurally valid on its own instead of only participating in a flattened source-count check. Acceptance: validation rejects any read plan that contains an empty descriptor projection plan, a plan whose sources do not form a valid contiguous slice of the authoritative `DescriptorEdgeSources`, or extra descriptor result sets that runtime would otherwise execute without consuming useful sources; valid split-plan and single-plan descriptor projections continue to round-trip through normalized DTO decode and compile successfully.",
+    "steps-to-verify": [
+      "Update `ReadPlanProjectionContractValidator` so each descriptor projection plan must contain at least one source and preserve deterministic source coverage without allowing trailing empty plans or other structurally empty result sets.",
+      "Add negative tests for `[plan-with-all-sources, empty-plan]`, `[]` sources within a non-empty descriptor plan, and any equivalent malformed DTO decode case, and assert validation fails with deterministic messages.",
+      "Retain or add positive tests proving both the compiler-generated single-plan case and an intentional multi-plan split case still validate successfully.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_ReadPlanCompiler|FullyQualifiedName~Given_NormalizedPlanContractCodec\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Projection Test Helper Consolidation",
+    "description": "Eliminate duplicated projection-plan mutation helpers across the plans unit-test suites so projection-contract tests are maintained from one shared set of utilities. Acceptance: helper methods for duplicating, swapping, and mutating reference-identity and descriptor projection plans are defined once in a shared test utility or base type; `Given_ReadPlanCompiler` and `Given_NormalizedPlanContractCodec` reuse the shared helpers without changing existing test intent; the refactor reduces copy-pasted helper code while keeping all current projection validation scenarios intact.",
+    "steps-to-verify": [
+      "Extract the duplicated read-plan mutation helpers from `ReadPlanCompilerTests.cs` and `NormalizedPlanContractCodecTests.cs` into a shared test helper or test base and update both suites to use it.",
+      "Confirm the refactor preserves the existing projection validation assertions for duplicated bindings, reordered bindings, duplicated descriptor sources, reordered descriptor sources, and reordered descriptor plans.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_ReadPlanCompiler|FullyQualifiedName~Given_NormalizedPlanContractCodec\"`"
+    ],
+    "completed": false
   }
 ]
