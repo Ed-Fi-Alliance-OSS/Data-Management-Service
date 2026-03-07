@@ -28,5 +28,37 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_ReadPlanCompiler|FullyQualifiedName~Given_NormalizedPlanContractCodec\"`"
     ],
     "completed": true
+  },
+  {
+    "category": "Reference Projection Coverage Validation",
+    "description": "Harden read-plan projection validation so reference-identity projection plans must cover each modeled `DocumentReferenceBinding` exactly once instead of only matching the total binding count. Acceptance: `ReadPlanProjectionContractValidator` rejects a plan when one compiled binding is duplicated, when one modeled binding is omitted, or when projection bindings appear in an order that does not match the authoritative `DocumentReferenceBindings` order for the owning table; valid plans compiled by `ReadPlanCompiler` still pass without changing the expected ordinals or SQL.",
+    "steps-to-verify": [
+      "Add negative tests that construct a `ResourceReadPlan` or decoded DTO with the same reference projection binding repeated twice while another modeled binding is missing, and assert validation fails with an actionable message that identifies the missing or duplicate binding.",
+      "Add a negative test that swaps two modeled reference projection bindings for the same table and assert validation fails because the authoritative projection order was not preserved.",
+      "Retain or add a positive test proving a valid compiled plan for a resource with multiple reference bindings still passes validation unchanged.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_ReadPlanCompiler|FullyQualifiedName~Given_NormalizedPlanContractCodec\"`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Descriptor Projection Coverage Validation",
+    "description": "Harden read-plan projection validation so descriptor projection plans must cover each modeled `DescriptorEdgeSource` exactly once instead of only matching the total source count. Acceptance: `ReadPlanProjectionContractValidator` rejects a plan when one descriptor source is duplicated, when one modeled descriptor source is omitted, or when `SourcesInOrder` no longer preserves the deterministic execution order required by the model; valid descriptor projection plans, including key-unified storage deduplication scenarios, still pass with the current canonical SQL.",
+    "steps-to-verify": [
+      "Add negative tests that construct a `ResourceReadPlan` or decoded DTO with the same descriptor source repeated twice while another modeled source is missing, and assert validation fails with an actionable message that identifies the missing or duplicate source.",
+      "Add a negative test that reverses two descriptor projection sources and assert validation fails because the authoritative descriptor source order was not preserved.",
+      "Retain or add a positive key-unification test proving logical descriptor sources remain distinct while SQL input deduplicates by storage column.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_ReadPlanCompiler|FullyQualifiedName~Given_NormalizedPlanContractCodec\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Projection Ordering In Pack Decode",
+    "description": "Restore deterministic projection-order guarantees in normalized read-plan decode so AOT and manifest consumers cannot accept reordered projection metadata that still happens to be individually valid. Acceptance: `NormalizedPlanContractCodec.Decode` and the shared projection validator reject decoded read plans whose `ReferenceIdentityProjectionPlansInDependencyOrder`, per-table `BindingsInOrder`, `DescriptorProjectionPlansInOrder`, or per-plan `SourcesInOrder` differ from the authoritative model order; round-trip encode/decode remains stable for valid plans and continues to preserve the exact projection ordering required by the design documents.",
+    "steps-to-verify": [
+      "Add decode-path negative tests that reorder reference projection table plans, per-table reference bindings, descriptor projection plans, and descriptor sources, and assert `NormalizedPlanContractCodec.Decode` fails with deterministic validation messages.",
+      "Add or update round-trip tests proving a valid encoded read plan still re-encodes to the same canonical JSON and preserves projection collection ordering byte-for-byte.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~Given_NormalizedPlanContractCodec`"
+    ],
+    "completed": false
   }
 ]

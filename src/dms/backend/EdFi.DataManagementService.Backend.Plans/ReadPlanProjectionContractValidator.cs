@@ -112,7 +112,7 @@ public static class ReadPlanProjectionContractValidator
             return;
         }
 
-        var compiledBindingCount = 0;
+        var modelBindingsByTable = BuildDocumentReferenceBindingsByTable(readPlan.Model);
         HashSet<DbTableName> seenProjectionTables = [];
 
         foreach (var projectionTablePlan in readPlan.ReferenceIdentityProjectionPlansInDependencyOrder)
@@ -133,9 +133,29 @@ public static class ReadPlanProjectionContractValidator
                 );
             }
 
-            foreach (var binding in projectionTablePlan.BindingsInOrder)
+            if (!modelBindingsByTable.TryGetValue(projectionTablePlan.Table, out var modelBindingsInOrder))
             {
-                compiledBindingCount++;
+                throw createException(
+                    $"reference identity projection table '{projectionTablePlan.Table}' does not match any authoritative DocumentReferenceBindings"
+                );
+            }
+
+            if (projectionTablePlan.BindingsInOrder.Length != modelBindingsInOrder.Count)
+            {
+                throw createException(
+                    $"reference identity projection table '{projectionTablePlan.Table}' binding count '{projectionTablePlan.BindingsInOrder.Length}' does not match authoritative DocumentReferenceBindings count '{modelBindingsInOrder.Count}' for ordered bindings "
+                        + $"{FormatReferenceBindingOrder(modelBindingsInOrder)}"
+                );
+            }
+
+            for (
+                var bindingIndex = 0;
+                bindingIndex < projectionTablePlan.BindingsInOrder.Length;
+                bindingIndex++
+            )
+            {
+                var binding = projectionTablePlan.BindingsInOrder[bindingIndex];
+                var modelBinding = modelBindingsInOrder[bindingIndex];
 
                 ThrowIfOrdinalIsOutOfRange(
                     binding.FkColumnOrdinal,
@@ -145,16 +165,11 @@ public static class ReadPlanProjectionContractValidator
                 );
 
                 var fkColumnModel = hydrationTablePlan.TableModel.Columns[binding.FkColumnOrdinal];
-                var modelBinding = ResolveDocumentReferenceBindingByTableAndColumnOrThrow(
-                    readPlan.Model,
-                    projectionTablePlan.Table,
-                    fkColumnModel.ColumnName,
-                    createException
-                );
 
                 ValidateReferenceProjectionBindingContractOrThrow(
                     projectionTablePlan.Table,
                     binding,
+                    bindingIndex,
                     fkColumnModel,
                     modelBinding,
                     createException
@@ -199,14 +214,42 @@ public static class ReadPlanProjectionContractValidator
             }
         }
 
-        if (compiledBindingCount == readPlan.Model.DocumentReferenceBindings.Count)
+        if (seenProjectionTables.Count == modelBindingsByTable.Count)
         {
             return;
         }
 
+        var missingProjectionTables = modelBindingsByTable
+            .Where(pair => !seenProjectionTables.Contains(pair.Key))
+            .Select(static pair =>
+                $"'{pair.Key}' for ordered bindings {FormatReferenceBindingOrder(pair.Value)}"
+            );
+
         throw createException(
-            $"reference identity projection binding count '{compiledBindingCount}' does not match DocumentReferenceBindings count '{readPlan.Model.DocumentReferenceBindings.Count}'"
+            "reference identity projection is missing authoritative table plan(s): "
+                + string.Join(", ", missingProjectionTables)
         );
+    }
+
+    private static IReadOnlyDictionary<
+        DbTableName,
+        List<DocumentReferenceBinding>
+    > BuildDocumentReferenceBindingsByTable(RelationalResourceModel model)
+    {
+        Dictionary<DbTableName, List<DocumentReferenceBinding>> bindingsByTable = [];
+
+        foreach (var binding in model.DocumentReferenceBindings)
+        {
+            if (bindingsByTable.TryGetValue(binding.Table, out var tableBindings))
+            {
+                tableBindings.Add(binding);
+                continue;
+            }
+
+            bindingsByTable.Add(binding.Table, [binding]);
+        }
+
+        return bindingsByTable;
     }
 
     private static void ValidateDescriptorProjectionPlanContracts(
@@ -374,34 +417,43 @@ public static class ReadPlanProjectionContractValidator
     private static void ValidateReferenceProjectionBindingContractOrThrow(
         DbTableName table,
         ReferenceIdentityProjectionBinding binding,
+        int bindingIndex,
         DbColumnModel fkColumnModel,
         DocumentReferenceBinding modelBinding,
         Func<string, Exception> createException
     )
     {
-        ValidateDocumentReferenceFkColumnOrThrow(table, fkColumnModel, modelBinding, createException);
-
-        if (binding.IsIdentityComponent != modelBinding.IsIdentityComponent)
-        {
-            throw createException(
-                $"reference identity projection binding '{modelBinding.ReferenceObjectPath.Canonical}' on table '{table}' has IsIdentityComponent "
-                    + $"'{binding.IsIdentityComponent}', but model binding requires '{modelBinding.IsIdentityComponent}'"
-            );
-        }
-
         if (binding.ReferenceObjectPath.Canonical != modelBinding.ReferenceObjectPath.Canonical)
         {
             throw createException(
-                $"reference identity projection binding for FK column '{fkColumnModel.ColumnName.Value}' on table '{table}' has ReferenceObjectPath "
+                $"reference identity projection binding at index '{bindingIndex}' on table '{table}' has ReferenceObjectPath "
                     + $"'{binding.ReferenceObjectPath.Canonical}', but model binding requires '{modelBinding.ReferenceObjectPath.Canonical}'"
             );
         }
+
+        if (fkColumnModel.ColumnName != modelBinding.FkColumn)
+        {
+            throw createException(
+                $"reference identity projection binding '{modelBinding.ReferenceObjectPath.Canonical}' at index '{bindingIndex}' on table '{table}' targets FK column "
+                    + $"'{fkColumnModel.ColumnName.Value}', but model binding requires '{modelBinding.FkColumn.Value}'"
+            );
+        }
+
+        ValidateDocumentReferenceFkColumnOrThrow(table, fkColumnModel, modelBinding, createException);
 
         if (binding.TargetResource != modelBinding.TargetResource)
         {
             throw createException(
                 $"reference identity projection binding '{modelBinding.ReferenceObjectPath.Canonical}' on table '{table}' targets "
                     + $"'{FormatResource(binding.TargetResource)}', but model binding requires '{FormatResource(modelBinding.TargetResource)}'"
+            );
+        }
+
+        if (binding.IsIdentityComponent != modelBinding.IsIdentityComponent)
+        {
+            throw createException(
+                $"reference identity projection binding '{modelBinding.ReferenceObjectPath.Canonical}' on table '{table}' has IsIdentityComponent "
+                    + $"'{binding.IsIdentityComponent}', but model binding requires '{modelBinding.IsIdentityComponent}'"
             );
         }
     }
@@ -470,38 +522,6 @@ public static class ReadPlanProjectionContractValidator
                     + $"'{FormatResource(source.DescriptorResource)}', but model edge source requires '{FormatResource(modelSource.DescriptorResource)}'"
             );
         }
-    }
-
-    private static DocumentReferenceBinding ResolveDocumentReferenceBindingByTableAndColumnOrThrow(
-        RelationalResourceModel model,
-        DbTableName table,
-        DbColumnName fkColumn,
-        Func<string, Exception> createException
-    )
-    {
-        DocumentReferenceBinding? resolvedBinding = null;
-
-        foreach (var binding in model.DocumentReferenceBindings)
-        {
-            if (binding.Table != table || binding.FkColumn != fkColumn)
-            {
-                continue;
-            }
-
-            if (resolvedBinding is not null)
-            {
-                throw createException(
-                    $"multiple DocumentReferenceBindings match table '{table}' FK column '{fkColumn.Value}'"
-                );
-            }
-
-            resolvedBinding = binding;
-        }
-
-        return resolvedBinding
-            ?? throw createException(
-                $"no DocumentReferenceBinding matches table '{table}' FK column '{fkColumn.Value}'"
-            );
     }
 
     private static DescriptorEdgeSource ResolveDescriptorEdgeSourceByTableAndColumnOrThrow(
@@ -590,5 +610,15 @@ public static class ReadPlanProjectionContractValidator
     private static string FormatResource(QualifiedResourceName resource)
     {
         return $"{resource.ProjectName}.{resource.ResourceName}";
+    }
+
+    private static string FormatReferenceBindingOrder(IEnumerable<DocumentReferenceBinding> bindings)
+    {
+        return "["
+            + string.Join(
+                ", ",
+                bindings.Select(static binding => $"'{binding.ReferenceObjectPath.Canonical}'")
+            )
+            + "]";
     }
 }
