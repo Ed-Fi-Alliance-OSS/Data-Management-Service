@@ -27,6 +27,6 @@
       "Add or update tests proving the same malformed projection payload fails identically whether it is compiled directly or reconstructed through `NormalizedPlanContractCodec`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_ReadPlanCompiler|FullyQualifiedName~Given_NormalizedPlanContractCodec\"`"
     ],
-    "completed": false
+    "completed": true
   }
 ]

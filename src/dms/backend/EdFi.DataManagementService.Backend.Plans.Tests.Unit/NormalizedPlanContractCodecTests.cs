@@ -579,12 +579,12 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
 
         var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
 
-        var exception = act.Should().Throw<ArgumentException>().Which;
-        exception.ParamName.Should().Contain(nameof(DescriptorProjectionPlanDto.ResultShape));
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        exception.Message.Should().Contain("Decoded read plan for resource");
         exception
             .Message.Should()
             .Contain(
-                "Descriptor projection result shape must expose DescriptorId at ordinal 0 and Uri at ordinal 1"
+                "descriptor projection plan at index '0' result shape must expose DescriptorId at ordinal '0' and Uri at ordinal '1'"
             );
     }
 
@@ -711,9 +711,42 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
         var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
 
         var exception = act.Should().Throw<InvalidOperationException>().Which;
-        exception.Message.Should().Contain("Document-reference binding index");
+        exception.Message.Should().Contain("Decoded read plan for resource");
+        exception.Message.Should().Contain("ReferenceObjectPath");
         exception.Message.Should().Contain("$.schoolReference");
         exception.Message.Should().Contain("$.calendarReference");
+    }
+
+    [Test]
+    public void It_should_fail_with_the_same_projection_contract_reason_as_direct_validation_when_reference_identity_component_is_mismatched()
+    {
+        var mutatedReadPlan = CreateReadPlanWithReferenceIdentityComponent(
+            _readPlan,
+            isIdentityComponent: false
+        );
+        var expectedReason = GetProjectionValidationFailureReason(mutatedReadPlan);
+
+        var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
+        var projectionTablePlan = encoded.ReferenceIdentityProjectionPlansInDependencyOrder[0];
+        var bindings = projectionTablePlan.BindingsInOrder.ToArray();
+
+        bindings[0] = bindings[0] with { IsIdentityComponent = false };
+
+        var mutated = encoded with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder =
+            [
+                projectionTablePlan with
+                {
+                    BindingsInOrder = [.. bindings],
+                },
+            ],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        GetDecodedProjectionValidationFailureReason(exception.Message).Should().Be(expectedReason);
     }
 
     [Test]
@@ -1370,5 +1403,49 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
             WriteValueSource.Precomputed => nameof(WriteValueSource.Precomputed),
             _ => throw new ArgumentOutOfRangeException(nameof(source), source.GetType().Name),
         };
+    }
+
+    private static ResourceReadPlan CreateReadPlanWithReferenceIdentityComponent(
+        ResourceReadPlan readPlan,
+        bool isIdentityComponent
+    )
+    {
+        var projectionTablePlan = readPlan.ReferenceIdentityProjectionPlansInDependencyOrder[0];
+        var bindings = projectionTablePlan.BindingsInOrder.ToArray();
+
+        bindings[0] = bindings[0] with { IsIdentityComponent = isIdentityComponent };
+
+        return readPlan with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder =
+            [
+                projectionTablePlan with
+                {
+                    BindingsInOrder = [.. bindings],
+                },
+            ],
+        };
+    }
+
+    private static string GetProjectionValidationFailureReason(ResourceReadPlan readPlan)
+    {
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                readPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        return act.Should().Throw<InvalidOperationException>().Which.Message;
+    }
+
+    private static string GetDecodedProjectionValidationFailureReason(string message)
+    {
+        const string prefix =
+            "Decoded read plan for resource 'Ed-Fi.StudentSchoolAssociation' has invalid projection metadata. ";
+
+        message.Should().StartWith(prefix);
+        message.Should().EndWith(".");
+
+        return message[prefix.Length..^1];
     }
 }
