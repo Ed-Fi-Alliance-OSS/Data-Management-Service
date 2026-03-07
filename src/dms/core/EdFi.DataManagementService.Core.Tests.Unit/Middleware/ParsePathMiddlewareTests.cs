@@ -3,15 +3,28 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Security.Claims;
 using System.Text.Json;
+using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Profile;
+using EdFi.DataManagementService.Core.ResourceLoadOrder;
+using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Validation;
+using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NUnit.Framework;
+using Polly;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 using static EdFi.DataManagementService.Core.UtilityService;
 
@@ -21,9 +34,136 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 [Parallelizable]
 public class ParsePathMiddlewareTests
 {
+    private static readonly Dictionary<string, string> AuthorizationHeaders = new()
+    {
+        ["Authorization"] = "Bearer test-token",
+    };
+
     internal static IPipelineStep Middleware()
     {
         return new ParsePathMiddleware(NullLogger.Instance);
+    }
+
+    private static FrontendRequest CreateFrontendRequest(string path)
+    {
+        return new FrontendRequest(
+            Body: null,
+            Form: null,
+            Headers: AuthorizationHeaders,
+            Path: path,
+            QueryParameters: [],
+            TraceId: new TraceId("test-trace-id"),
+            RouteQualifiers: []
+        );
+    }
+
+    private static ApiService CreateApiService(IDatabaseFingerprintReader fingerprintReader)
+    {
+        var services = new ServiceCollection();
+
+        services.Configure<JwtAuthenticationOptions>(options => { });
+
+        var jwtValidationService = A.Fake<IJwtValidationService>();
+        A.CallTo(() =>
+                jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
+                    A<string>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(
+                Task.FromResult<(ClaimsPrincipal?, ClientAuthorizations?)>(
+                    (
+                        new ClaimsPrincipal(),
+                        new ClientAuthorizations(
+                            ClientId: "test-client",
+                            TokenId: "test-token",
+                            ClaimSetName: "test-claimset",
+                            EducationOrganizationIds: [],
+                            NamespacePrefixes: [],
+                            DmsInstanceIds: [new DmsInstanceId(1)]
+                        )
+                    )
+                )
+            );
+
+        services.AddSingleton<IJwtValidationService>(jwtValidationService);
+        services.AddTransient<JwtAuthenticationMiddleware>();
+        services.AddTransient<ILogger<JwtAuthenticationMiddleware>>(_ =>
+            NullLogger<JwtAuthenticationMiddleware>.Instance
+        );
+
+        services.AddTransient<ResolveDmsInstanceMiddleware>();
+
+        var dmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
+        A.CallTo(() => dmsInstanceProvider.RefreshInstancesIfExpiredAsync(A<string?>._))
+            .Returns(Task.CompletedTask);
+        A.CallTo(() => dmsInstanceProvider.GetById(1, A<string?>.Ignored))
+            .Returns(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "Test",
+                    InstanceName: "Test Instance",
+                    ConnectionString: "Server=test;Database=testdb",
+                    RouteContext: []
+                )
+            );
+
+        services.AddSingleton<IDmsInstanceProvider>(dmsInstanceProvider);
+        services.AddScoped<IDmsInstanceSelection>(_ => A.Fake<IDmsInstanceSelection>());
+        services.AddTransient<ILogger<ResolveDmsInstanceMiddleware>>(_ =>
+            NullLogger<ResolveDmsInstanceMiddleware>.Instance
+        );
+
+        var appSettingsOptions = Options.Create(
+            new AppSettings
+            {
+                AllowIdentityUpdateOverrides = "",
+                MaskRequestBodyInLogs = false,
+                UseRelationalBackend = true,
+            }
+        );
+
+        services.AddSingleton(appSettingsOptions);
+        services.AddSingleton(fingerprintReader);
+        services.AddSingleton<DatabaseFingerprintProvider>();
+        services.AddTransient<ValidateDatabaseFingerprintMiddleware>();
+        services.AddTransient<ILogger<ValidateDatabaseFingerprintMiddleware>>(_ =>
+            NullLogger<ValidateDatabaseFingerprintMiddleware>.Instance
+        );
+
+        services.AddSingleton<IProfileService>(A.Fake<IProfileService>());
+        services.AddTransient<ProfileResolutionMiddleware>();
+        services.AddTransient<ILogger<ProfileResolutionMiddleware>>(_ =>
+            NullLogger<ProfileResolutionMiddleware>.Instance
+        );
+
+        services.AddTransient<ProfileFilteringMiddleware>();
+        services.AddSingleton<IProfileResponseFilter>(A.Fake<IProfileResponseFilter>());
+        services.AddTransient<ILogger<ProfileFilteringMiddleware>>(_ =>
+            NullLogger<ProfileFilteringMiddleware>.Instance
+        );
+
+        var serviceProvider = services.BuildServiceProvider();
+
+        return new ApiService(
+            A.Fake<IApiSchemaProvider>(),
+            A.Fake<IEffectiveApiSchemaProvider>(),
+            A.Fake<IClaimSetProvider>(),
+            A.Fake<IDocumentValidator>(),
+            A.Fake<IMatchingDocumentUuidsValidator>(),
+            A.Fake<IEqualityConstraintValidator>(),
+            A.Fake<IDecimalValidator>(),
+            NullLogger<ApiService>.Instance,
+            appSettingsOptions,
+            A.Fake<IAuthorizationServiceFactory>(),
+            ResiliencePipeline.Empty,
+            A.Fake<ResourceLoadOrderCalculator>(),
+            serviceProvider,
+            serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            A.Fake<CachedClaimSetProvider>(),
+            A.Fake<IResourceDependencyGraphMLFactory>(),
+            A.Fake<IProfileService>()
+        );
     }
 
     [TestFixture]
@@ -345,6 +485,68 @@ public class ParsePathMiddlewareTests
             string response = JsonSerializer.Serialize(_requestInfo.FrontendResponse.Body, SerializerOptions);
 
             response.Should().Contain("Method Not Allowed");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Fingerprint_Validation_Is_Enabled_And_The_Request_Path_Is_Invalid
+        : ParsePathMiddlewareTests
+    {
+        private IFrontendResponse _response = null!;
+        private IDatabaseFingerprintReader _fingerprintReader = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _fingerprintReader = A.Fake<IDatabaseFingerprintReader>();
+
+            var apiService = CreateApiService(_fingerprintReader);
+
+            _response = await apiService.Get(CreateFrontendRequest("badpath"));
+        }
+
+        [Test]
+        public void It_returns_status_404()
+        {
+            _response.StatusCode.Should().Be(404);
+        }
+
+        [Test]
+        public void It_does_not_read_the_database_fingerprint()
+        {
+            A.CallTo(() => _fingerprintReader.ReadFingerprintAsync(A<string>._)).MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Fingerprint_Validation_Is_Enabled_And_The_Request_Resource_Id_Is_Invalid
+        : ParsePathMiddlewareTests
+    {
+        private IFrontendResponse _response = null!;
+        private IDatabaseFingerprintReader _fingerprintReader = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _fingerprintReader = A.Fake<IDatabaseFingerprintReader>();
+
+            var apiService = CreateApiService(_fingerprintReader);
+
+            _response = await apiService.Get(CreateFrontendRequest("/ed-fi/students/invalidId"));
+        }
+
+        [Test]
+        public void It_returns_status_400()
+        {
+            _response.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_does_not_read_the_database_fingerprint()
+        {
+            A.CallTo(() => _fingerprintReader.ReadFingerprintAsync(A<string>._)).MustNotHaveHappened();
         }
     }
 }
