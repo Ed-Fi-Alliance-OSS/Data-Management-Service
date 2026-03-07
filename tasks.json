@@ -92,5 +92,37 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_ReadPlanCompiler|FullyQualifiedName~Given_NormalizedPlanContractCodec\"`"
     ],
     "completed": true
+  },
+  {
+    "category": "Read Plan Lookup Validation",
+    "description": "Restore a deterministic validation boundary for read plans returned from `MappingSet.GetReadPlanOrThrow` so lookup never hands malformed projection metadata to downstream execution. Acceptance: every `ResourceReadPlan` returned from the mapping-set lookup path is guaranteed to satisfy `ReadPlanProjectionContractValidator`, regardless of whether it came from runtime compilation, normalized DTO decode, or a future AOT mapping-pack decode path; malformed projection metadata fails with an actionable exception before runtime execution starts; valid runtime-compiled plans still return without behavior changes.",
+    "steps-to-verify": [
+      "Choose and implement one authoritative validation boundary for cached read plans, either at lookup or at all mapping-set population/decode entry points, and remove the current gap where an invalid cached `ResourceReadPlan` can be returned unchanged.",
+      "Add a negative unit test that injects an invalid read plan into a `MappingSet` and assert the chosen boundary throws a deterministic message instead of returning the malformed plan.",
+      "Add or update positive tests proving a valid runtime-compiled read plan and a valid normalized decoded read plan still pass through the chosen boundary unchanged.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_MappingSetLookupExtensions|FullyQualifiedName~Given_NormalizedPlanContractCodec|FullyQualifiedName~Given_ReadPlanCompiler\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Projection Validator Bounds Safety",
+    "description": "Harden `ReadPlanProjectionContractValidator` so malformed projection metadata always fails through the validator's deterministic exception path instead of leaking raw indexing errors. Acceptance: when reference-identity projection table plans exceed the authoritative dependency-order subset, validation throws the supplied `createException` with a message that identifies the extra or out-of-order projection table; no `IndexOutOfRangeException` or similar runtime exception escapes from validator internals; existing valid and already-covered invalid plans continue to report deterministic diagnostics.",
+    "steps-to-verify": [
+      "Update the reference projection validation flow to check compiled projection table counts before indexing into the authoritative table list, and make the failure message identify the extra table or count mismatch.",
+      "Add a negative unit test that appends an extra reference-identity projection table plan and assert `ReadPlanProjectionContractValidator.ValidateOrThrow` fails with the expected deterministic error message rather than a raw indexing exception.",
+      "Add or update a decode-path regression test proving the same malformed shape also fails deterministically when reconstructed through `NormalizedPlanContractCodec`.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_ReadPlanCompiler|FullyQualifiedName~Given_NormalizedPlanContractCodec\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Projection Metadata Helper Simplification",
+    "description": "Reduce duplication in projection metadata compilation and validation by consolidating repeated table and column resolution logic across `ReadPlanCompiler`, `ReferenceIdentityProjectionPlanCompiler`, `DescriptorProjectionPlanCompiler`, and `ReadPlanProjectionContractValidator`. Acceptance: shared resolution behavior for table lookup, hydration ordinal lookup, and projection-column lookup lives in one authoritative helper or a small cohesive set of helpers; duplicate ad hoc implementations are removed; the refactor preserves current validation semantics and deterministic error messages while making future projection changes less error-prone.",
+    "steps-to-verify": [
+      "Extract the repeated table and column resolution routines into shared helper code used by projection compilation and validation paths, and remove the now-redundant local implementations.",
+      "Retain or update unit tests that cover missing tables, missing columns, invalid column kinds, and invalid projection paths so the refactor proves behavior stayed intact.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": true
   }
 ]

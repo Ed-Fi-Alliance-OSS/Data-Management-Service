@@ -136,14 +136,14 @@ public static class ReadPlanProjectionContractValidator
                 );
             }
 
-            if (
-                !hydrationTablePlansByTable.TryGetValue(projectionTablePlan.Table, out var hydrationTablePlan)
-            )
-            {
-                throw createException(
-                    $"reference identity projection table '{projectionTablePlan.Table}' is not present in compiled table plans"
-                );
-            }
+            var hydrationTablePlan = ProjectionMetadataResolver.ResolveHydrationTablePlanOrThrow(
+                projectionTablePlan.Table,
+                hydrationTablePlansByTable,
+                missingTable =>
+                    createException(
+                        $"reference identity projection table '{missingTable}' is not present in compiled table plans"
+                    )
+            );
 
             if (!modelBindingsByTable.TryGetValue(projectionTablePlan.Table, out var modelBindingsInOrder))
             {
@@ -317,12 +317,14 @@ public static class ReadPlanProjectionContractValidator
                 var source = descriptorProjectionPlan.SourcesInOrder[sourceIndex];
                 compiledSourceCount++;
 
-                if (!hydrationTablePlansByTable.TryGetValue(source.Table, out var hydrationTablePlan))
-                {
-                    throw createException(
-                        $"descriptor projection plan at index '{planIndex}' source '{source.DescriptorValuePath.Canonical}' references table '{source.Table}' that is not present in compiled table plans"
-                    );
-                }
+                var hydrationTablePlan = ProjectionMetadataResolver.ResolveHydrationTablePlanOrThrow(
+                    source.Table,
+                    hydrationTablePlansByTable,
+                    missingTable =>
+                        createException(
+                            $"descriptor projection plan at index '{planIndex}' source '{source.DescriptorValuePath.Canonical}' references table '{missingTable}' that is not present in compiled table plans"
+                        )
+                );
 
                 ThrowIfOrdinalIsOutOfRange(
                     source.DescriptorIdColumnOrdinal,

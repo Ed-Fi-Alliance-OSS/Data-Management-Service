@@ -35,26 +35,34 @@ internal sealed class ReferenceIdentityProjectionPlanCompiler
                 .DocumentReferenceBindings.Where(binding => binding.Table.Equals(tableModel.Table))
                 .Select(binding =>
                 {
-                    var columnOrdinals = ResolveColumnOrdinalsOrThrow(columnOrdinalsByTable, binding.Table);
+                    var columnOrdinals = ProjectionMetadataResolver.ResolveHydrationColumnOrdinalsOrThrow(
+                        binding.Table,
+                        columnOrdinalsByTable,
+                        missingTable => new InvalidOperationException(
+                            $"Cannot compile reference identity projection plan for '{missingTable}': owning table is not present in TablesInDependencyOrder."
+                        )
+                    );
 
                     return new ReferenceIdentityProjectionBinding(
                         IsIdentityComponent: binding.IsIdentityComponent,
                         ReferenceObjectPath: binding.ReferenceObjectPath,
                         TargetResource: binding.TargetResource,
-                        FkColumnOrdinal: ResolveColumnOrdinalOrThrow(
+                        FkColumnOrdinal: ProjectionMetadataResolver.ResolveHydrationColumnOrdinalOrThrow(
                             columnOrdinals,
-                            binding.Table,
                             binding.FkColumn,
-                            $"document-reference binding '{binding.ReferenceObjectPath.Canonical}' FK column"
+                            missingColumn => new InvalidOperationException(
+                                $"Cannot compile reference identity projection plan for '{binding.Table}': document-reference binding '{binding.ReferenceObjectPath.Canonical}' FK column '{missingColumn.Value}' does not exist in hydration select-list columns."
+                            )
                         ),
                         IdentityFieldOrdinalsInOrder: binding.IdentityBindings.Select(
                             identityBinding => new ReferenceIdentityProjectionFieldOrdinal(
                                 ReferenceJsonPath: identityBinding.ReferenceJsonPath,
-                                ColumnOrdinal: ResolveColumnOrdinalOrThrow(
+                                ColumnOrdinal: ProjectionMetadataResolver.ResolveHydrationColumnOrdinalOrThrow(
                                     columnOrdinals,
-                                    binding.Table,
                                     identityBinding.Column,
-                                    $"reference-identity binding '{identityBinding.ReferenceJsonPath.Canonical}' for reference '{binding.ReferenceObjectPath.Canonical}' column"
+                                    missingColumn => new InvalidOperationException(
+                                        $"Cannot compile reference identity projection plan for '{binding.Table}': reference-identity binding '{identityBinding.ReferenceJsonPath.Canonical}' for reference '{binding.ReferenceObjectPath.Canonical}' column '{missingColumn.Value}' does not exist in hydration select-list columns."
+                                    )
                                 )
                             )
                         )
@@ -76,37 +84,5 @@ internal sealed class ReferenceIdentityProjectionPlanCompiler
         }
 
         return plans;
-    }
-
-    private static IReadOnlyDictionary<DbColumnName, int> ResolveColumnOrdinalsOrThrow(
-        IReadOnlyDictionary<DbTableName, IReadOnlyDictionary<DbColumnName, int>> columnOrdinalsByTable,
-        DbTableName table
-    )
-    {
-        if (columnOrdinalsByTable.TryGetValue(table, out var columnOrdinals))
-        {
-            return columnOrdinals;
-        }
-
-        throw new InvalidOperationException(
-            $"Cannot compile reference identity projection plan for '{table}': owning table is not present in TablesInDependencyOrder."
-        );
-    }
-
-    private static int ResolveColumnOrdinalOrThrow(
-        IReadOnlyDictionary<DbColumnName, int> columnOrdinals,
-        DbTableName table,
-        DbColumnName column,
-        string dependencyDescription
-    )
-    {
-        if (columnOrdinals.TryGetValue(column, out var columnOrdinal))
-        {
-            return columnOrdinal;
-        }
-
-        throw new InvalidOperationException(
-            $"Cannot compile reference identity projection plan for '{table}': {dependencyDescription} '{column.Value}' does not exist in hydration select-list columns."
-        );
     }
 }
