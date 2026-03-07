@@ -46,11 +46,7 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
         A.CallTo(() => serviceProvider.GetService(typeof(IDmsInstanceSelection)))
             .Returns(dmsInstanceSelection);
 
-        var fingerprintProvider = new DatabaseFingerprintProvider(
-            fingerprintReader,
-            appSettings,
-            TimeProvider.System
-        );
+        var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
         var middleware = new ValidateDatabaseFingerprintMiddleware(appSettings, fingerprintProvider, logger);
 
         return (middleware, fingerprintReader, dmsInstanceSelection, serviceProvider);
@@ -272,6 +268,13 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
         {
             _requestInfo.FrontendResponse.Body.Should().NotBeNull();
             _requestInfo.FrontendResponse.Body!.ToString().Should().Contain("ddl provision");
+        }
+
+        [Test]
+        public void It_returns_error_body_with_restart_guidance()
+        {
+            _requestInfo.FrontendResponse.Body.Should().NotBeNull();
+            _requestInfo.FrontendResponse.Body!.ToString().Should().Contain("restart DMS");
         }
     }
 }

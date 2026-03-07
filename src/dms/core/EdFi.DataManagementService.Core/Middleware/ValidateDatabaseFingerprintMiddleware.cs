@@ -83,7 +83,7 @@ internal class ValidateDatabaseFingerprintMiddleware(
                 503,
                 ProblemDetailsResponse.DatabaseNotProvisioned,
                 "Database Not Provisioned",
-                "The target database has not been provisioned. Run 'ddl provision' to initialize the database schema.",
+                "The target database has not been provisioned. Run 'ddl provision' to initialize the database schema. If this database was provisioned after DMS first tried to use it, restart DMS to clear the cached provisioning state.",
                 requestInfo.FrontendRequest.TraceId
             );
             return;

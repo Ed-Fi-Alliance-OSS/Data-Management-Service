@@ -65,12 +65,6 @@ public class AppSettings
     public bool MultiTenancy { get; set; }
 
     /// <summary>
-    /// How long (in seconds) to cache a "database not provisioned" result before
-    /// retrying the dms.EffectiveSchema read. Default: 30 seconds.
-    /// </summary>
-    public int DatabaseFingerprintNegativeCacheTtlSeconds { get; set; } = 30;
-
-    /// <summary>
     /// If true, activates the redesigned relational backend pipeline including
     /// database fingerprint validation, effective-schema caching, and runtime
     /// mapping selection. When false (default), the legacy backend path is used.
