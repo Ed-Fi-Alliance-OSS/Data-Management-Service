@@ -33,6 +33,12 @@ public static class PostgresqlServiceExtensions
             return new MappingSetCache(compiler.CompileAsync);
         });
         services.AddSingleton<PostgresqlRuntimeMappingSetAccessor>();
+        services.AddSingleton<
+            IPostgresqlRuntimeDatabaseMetadataReader,
+            PostgresqlRuntimeDatabaseMetadataReader
+        >();
+        services.AddSingleton<PostgresqlValidatedResourceKeyMapCache>();
+        services.AddSingleton<PostgresqlRuntimeInstanceMappingValidator>();
         services.Replace(
             ServiceDescriptor.Singleton<IBackendMappingInitializer, PostgresqlBackendMappingInitializer>()
         );

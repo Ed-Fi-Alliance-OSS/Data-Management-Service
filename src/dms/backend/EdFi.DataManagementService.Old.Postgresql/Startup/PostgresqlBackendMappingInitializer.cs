@@ -10,6 +10,7 @@ namespace EdFi.DataManagementService.Old.Postgresql.Startup;
 
 internal sealed class PostgresqlBackendMappingInitializer(
     PostgresqlRuntimeMappingSetAccessor runtimeMappingSetAccessor,
+    PostgresqlRuntimeInstanceMappingValidator runtimeInstanceMappingValidator,
     ILogger<PostgresqlBackendMappingInitializer> logger
 ) : IBackendMappingInitializer
 {
@@ -20,13 +21,19 @@ internal sealed class PostgresqlBackendMappingInitializer(
             .ConfigureAwait(false);
 
         var mappingSetKey = cacheResult.MappingSet.Key;
+        var validationSummary = await runtimeInstanceMappingValidator
+            .ValidateLoadedInstancesAsync(cacheResult.MappingSet, cancellationToken)
+            .ConfigureAwait(false);
 
         logger.LogInformation(
-            "{InitializationMode} PostgreSQL runtime mapping set for EffectiveSchemaHash {EffectiveSchemaHash}, Dialect {Dialect}, RelationalMappingVersion {RelationalMappingVersion}",
+            "{InitializationMode} PostgreSQL runtime mapping set for EffectiveSchemaHash {EffectiveSchemaHash}, Dialect {Dialect}, RelationalMappingVersion {RelationalMappingVersion}; validated {ValidatedDatabaseCount} database(s) across {InstanceCount} loaded DMS instance(s), reused {ReusedValidationCount} cached validation(s)",
             cacheResult.WasCacheHit ? "Reused cached" : "Compiled",
             mappingSetKey.EffectiveSchemaHash,
             mappingSetKey.Dialect,
-            mappingSetKey.RelationalMappingVersion
+            mappingSetKey.RelationalMappingVersion,
+            validationSummary.ValidatedDatabaseCount,
+            validationSummary.InstanceCount,
+            validationSummary.ReusedValidationCount
         );
     }
 }
