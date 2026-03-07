@@ -447,6 +447,20 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         );
         writer.AppendLine();
 
+        var apiSchemaFormatVersionCheck =
+            _dialect.Rules.Dialect == SqlDialect.Pgsql
+                ? $"btrim({_dialect.QuoteIdentifier(_apiSchemaFormatVersionColumn.Value)}) <> ''"
+                : $"LEN(LTRIM(RTRIM({_dialect.QuoteIdentifier(_apiSchemaFormatVersionColumn.Value)}))) > 0";
+
+        writer.AppendLine(
+            _dialect.AddCheckConstraint(
+                _effectiveSchemaTable,
+                "CK_EffectiveSchema_ApiSchemaFormatVersion_NotBlank",
+                apiSchemaFormatVersionCheck
+            )
+        );
+        writer.AppendLine();
+
         if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
             writer.AppendLine(
