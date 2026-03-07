@@ -427,6 +427,60 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_order_descriptor_projection_sql_by_table_column_order_when_storage_only_canonical_columns_are_not_hydrated()
+    {
+        var model = CreateKeyUnifiedDescriptorProjectionResourceModelWithStoredDescriptorSource();
+        var descriptorProjectionPlans = CompileDescriptorProjectionPlans(
+            model,
+            SqlDialect.Pgsql,
+            CreateHydrationColumnOrdinalsExcludingStorageOnlyColumns(model.Root)
+        );
+
+        descriptorProjectionPlans.Should().ContainSingle();
+
+        var descriptorProjectionPlan = descriptorProjectionPlans.Single();
+
+        descriptorProjectionPlan
+            .SelectByKeysetSql.Should()
+            .Be(
+                """
+                SELECT
+                    p."DescriptorId",
+                    d."Uri"
+                FROM
+                    (
+                        SELECT t0."SchoolYearTypeDescriptorIdCanonical" AS "DescriptorId"
+                        FROM "edfi"."Student" t0
+                        INNER JOIN "page" k ON t0."DocumentId" = k."DocumentId"
+                        WHERE t0."SchoolYearTypeDescriptorIdCanonical" IS NOT NULL
+                        UNION
+                        SELECT t1."ProgramTypeDescriptorId" AS "DescriptorId"
+                        FROM "edfi"."Student" t1
+                        INNER JOIN "page" k ON t1."DocumentId" = k."DocumentId"
+                        WHERE t1."ProgramTypeDescriptorId" IS NOT NULL
+                    ) p
+                INNER JOIN "dms"."Descriptor" d ON d."DocumentId" = p."DescriptorId"
+                ORDER BY
+                    p."DescriptorId" ASC
+                ;
+
+                """
+            );
+        descriptorProjectionPlan
+            .SourcesInOrder.Select(static source => source.DescriptorValuePath.Canonical)
+            .Should()
+            .Equal(
+                "$.localSchoolYearTypeDescriptor",
+                "$.schoolYearTypeDescriptor",
+                "$.programTypeDescriptor"
+            );
+        descriptorProjectionPlan
+            .SourcesInOrder.Select(static source => source.DescriptorIdColumnOrdinal)
+            .Should()
+            .Equal(5, 4, 6);
+    }
+
+    [Test]
     public void It_should_accept_valid_descriptor_projection_source_coverage_for_key_unified_models()
     {
         var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
@@ -1550,6 +1604,48 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         };
     }
 
+    private static RelationalResourceModel CreateKeyUnifiedDescriptorProjectionResourceModelWithStoredDescriptorSource()
+    {
+        var model = CreateKeyUnifiedDescriptorProjectionResourceModel();
+        var descriptorResource = new QualifiedResourceName("Ed-Fi", "ProgramTypeDescriptor");
+        var programTypeDescriptorPath = CreatePath(
+            "$.programTypeDescriptor",
+            new JsonPathSegment.Property("programTypeDescriptor")
+        );
+        var rootTable = model.Root with
+        {
+            Columns =
+            [
+                .. model.Root.Columns,
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("ProgramTypeDescriptorId"),
+                    Kind: ColumnKind.DescriptorFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: programTypeDescriptorPath,
+                    TargetResource: descriptorResource
+                ),
+            ],
+        };
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
+            DescriptorEdgeSources =
+            [
+                .. model.DescriptorEdgeSources,
+                new DescriptorEdgeSource(
+                    IsIdentityComponent: false,
+                    DescriptorValuePath: programTypeDescriptorPath,
+                    Table: rootTable.Table,
+                    FkColumn: new DbColumnName("ProgramTypeDescriptorId"),
+                    DescriptorResource: descriptorResource
+                ),
+            ],
+        };
+    }
+
     private static RelationalResourceModel CreateRootMultiBindingReferenceProjectionResourceModel()
     {
         var rootTable = new DbTableModel(
@@ -2507,5 +2603,53 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 .. model.DescriptorEdgeSources.Skip(1),
             ],
         };
+    }
+
+    private static IReadOnlyDictionary<
+        DbTableName,
+        IReadOnlyDictionary<DbColumnName, int>
+    > CreateHydrationColumnOrdinalsExcludingStorageOnlyColumns(DbTableModel tableModel)
+    {
+        Dictionary<DbColumnName, int> columnOrdinals = [];
+        var ordinal = 0;
+
+        foreach (var column in tableModel.Columns)
+        {
+            if (column.Kind is ColumnKind.ParentKeyPart || column.SourceJsonPath is not null)
+            {
+                columnOrdinals.Add(column.ColumnName, ordinal);
+                ordinal++;
+            }
+        }
+
+        return new Dictionary<DbTableName, IReadOnlyDictionary<DbColumnName, int>>
+        {
+            [tableModel.Table] = columnOrdinals,
+        };
+    }
+
+    private static IReadOnlyList<DescriptorProjectionPlan> CompileDescriptorProjectionPlans(
+        RelationalResourceModel model,
+        SqlDialect dialect,
+        IReadOnlyDictionary<DbTableName, IReadOnlyDictionary<DbColumnName, int>> columnOrdinalsByTable
+    )
+    {
+        var compilerType = typeof(ReadPlanCompiler).Assembly.GetType(
+            "EdFi.DataManagementService.Backend.Plans.DescriptorProjectionPlanCompiler",
+            throwOnError: true
+        )!;
+        var compiler = Activator.CreateInstance(compilerType, dialect)!;
+        var compileMethod = compilerType.GetMethod(nameof(ReadPlanCompiler.Compile))!;
+
+        return (IReadOnlyList<DescriptorProjectionPlan>)
+            compileMethod.Invoke(
+                compiler,
+                [
+                    model,
+                    KeysetTableConventions.GetKeysetTableContract(dialect),
+                    new Dictionary<DbTableName, DbTableModel> { [model.Root.Table] = model.Root },
+                    columnOrdinalsByTable,
+                ]
+            )!;
     }
 }

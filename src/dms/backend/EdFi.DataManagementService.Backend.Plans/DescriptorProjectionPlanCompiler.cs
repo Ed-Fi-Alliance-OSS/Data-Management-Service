@@ -39,11 +39,7 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
             return [];
         }
 
-        var deduplicatedSqlSources = CompileDeduplicatedSqlSources(
-            resourceModel,
-            tablesByName,
-            columnOrdinalsByTable
-        );
+        var deduplicatedSqlSources = CompileDeduplicatedSqlSources(resourceModel, tablesByName);
 
         var compiledSources = resourceModel
             .DescriptorEdgeSources.Select(edgeSource =>
@@ -76,8 +72,7 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
 
     private static IReadOnlyList<DescriptorProjectionSqlSource> CompileDeduplicatedSqlSources(
         RelationalResourceModel resourceModel,
-        IReadOnlyDictionary<DbTableName, DbTableModel> tablesByName,
-        IReadOnlyDictionary<DbTableName, IReadOnlyDictionary<DbColumnName, int>> columnOrdinalsByTable
+        IReadOnlyDictionary<DbTableName, DbTableModel> tablesByName
     )
     {
         var tableDependencyOrder = resourceModel
@@ -88,19 +83,19 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
         foreach (var edgeSource in resourceModel.DescriptorEdgeSources)
         {
             var tableModel = ResolveTableModelOrThrow(tablesByName, edgeSource.Table);
-            var tableOrdinals = ResolveColumnOrdinalsOrThrow(columnOrdinalsByTable, edgeSource.Table);
             var storageColumn = ResolveStorageColumnOrThrow(tableModel, edgeSource);
-            var storageColumnOrdinal = ResolveColumnOrdinalOrThrow(
-                tableOrdinals,
-                edgeSource.Table,
-                storageColumn,
-                $"descriptor edge source '{edgeSource.DescriptorValuePath.Canonical}' storage column"
-            );
             var sqlSource = new DescriptorProjectionSqlSource(
                 TableModel: tableModel,
                 StorageColumn: storageColumn,
-                TableDependencyOrdinal: tableDependencyOrder[edgeSource.Table],
-                StorageColumnOrdinal: storageColumnOrdinal
+                TableDependencyOrdinal: ResolveTableDependencyOrdinalOrThrow(
+                    tableDependencyOrder,
+                    edgeSource.Table
+                ),
+                StorageColumnOrdinal: ResolveTableColumnOrdinalOrThrow(
+                    tableModel,
+                    storageColumn,
+                    $"descriptor edge source '{edgeSource.DescriptorValuePath.Canonical}' storage column"
+                )
             );
 
             sqlSourcesByKey.TryAdd(
@@ -276,6 +271,21 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
         return columnModel.ColumnName;
     }
 
+    private static int ResolveTableDependencyOrdinalOrThrow(
+        IReadOnlyDictionary<DbTableName, int> tableDependencyOrder,
+        DbTableName table
+    )
+    {
+        if (tableDependencyOrder.TryGetValue(table, out var tableOrdinal))
+        {
+            return tableOrdinal;
+        }
+
+        throw new InvalidOperationException(
+            $"Cannot compile descriptor projection plan for '{table}': owning table is not present in TablesInDependencyOrder."
+        );
+    }
+
     private static DbTableModel ResolveTableModelOrThrow(
         IReadOnlyDictionary<DbTableName, DbTableModel> tablesByName,
         DbTableName table
@@ -309,6 +319,25 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
 
         throw new InvalidOperationException(
             $"{contextDescription} '{missingColumn.Value}' does not exist in table columns."
+        );
+    }
+
+    private static int ResolveTableColumnOrdinalOrThrow(
+        DbTableModel tableModel,
+        DbColumnName column,
+        string dependencyDescription
+    )
+    {
+        for (var index = 0; index < tableModel.Columns.Count; index++)
+        {
+            if (tableModel.Columns[index].ColumnName.Equals(column))
+            {
+                return index;
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Cannot compile descriptor projection plan for '{tableModel.Table}': {dependencyDescription} '{column.Value}' does not exist in table columns."
         );
     }
 
