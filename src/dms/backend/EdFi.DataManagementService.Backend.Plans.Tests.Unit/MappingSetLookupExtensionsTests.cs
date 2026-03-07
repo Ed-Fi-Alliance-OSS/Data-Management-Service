@@ -546,14 +546,46 @@ public class Given_MappingSetLookupExtensions
     )
     {
         var model = CreateRootOnlyModel(resource, tableName);
+        var rootTable = model.Root with
+        {
+            Columns =
+            [
+                .. model.Root.Columns,
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_DocumentId"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: new JsonPathExpression(
+                        "$.schoolReference",
+                        [new JsonPathSegment.Property("schoolReference")]
+                    ),
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "School")
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_RefSchoolId"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: true,
+                    SourceJsonPath: new JsonPathExpression(
+                        "$.schoolReference.schoolId",
+                        [
+                            new JsonPathSegment.Property("schoolReference"),
+                            new JsonPathSegment.Property("schoolId"),
+                        ]
+                    ),
+                    TargetResource: null
+                ),
+            ],
+        };
         var binding = new DocumentReferenceBinding(
             IsIdentityComponent: false,
             ReferenceObjectPath: new JsonPathExpression(
                 "$.schoolReference",
                 [new JsonPathSegment.Property("schoolReference")]
             ),
-            Table: model.Root.Table,
-            FkColumn: new DbColumnName("SchoolYear"),
+            Table: rootTable.Table,
+            FkColumn: new DbColumnName("School_DocumentId"),
             TargetResource: new QualifiedResourceName("Ed-Fi", "School"),
             IdentityBindings:
             [
@@ -565,13 +597,15 @@ public class Given_MappingSetLookupExtensions
                             new JsonPathSegment.Property("schoolId"),
                         ]
                     ),
-                    Column: new DbColumnName("SchoolYear")
+                    Column: new DbColumnName("School_RefSchoolId")
                 ),
             ]
         );
 
         return model with
         {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
             DocumentReferenceBindings = [binding],
         };
     }

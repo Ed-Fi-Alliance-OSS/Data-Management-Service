@@ -157,12 +157,12 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
 
         foreach (var binding in resourceModel.DocumentReferenceBindings)
         {
-            ValidateDocumentReferenceBinding(binding, columnOrdinalByTable);
+            ValidateDocumentReferenceBinding(binding, tablesByName, columnOrdinalByTable);
         }
 
         foreach (var edgeSource in resourceModel.DescriptorEdgeSources)
         {
-            ValidateDescriptorEdgeSource(edgeSource, columnOrdinalByTable);
+            ValidateDescriptorEdgeSource(edgeSource, tablesByName, columnOrdinalByTable);
         }
 
         return new HydrationPlanMetadata(tablesByName, columnOrdinalByTable);
@@ -220,25 +220,42 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
     /// </summary>
     private static void ValidateDocumentReferenceBinding(
         DocumentReferenceBinding binding,
+        IReadOnlyDictionary<DbTableName, DbTableModel> tablesByName,
         IReadOnlyDictionary<DbTableName, IReadOnlyDictionary<DbColumnName, int>> columnOrdinalByTable
     )
     {
+        var tableModel = ResolveHydrationTableModel(binding.Table, tablesByName);
         var columnOrdinalByName = ResolveHydrationColumnOrdinals(binding.Table, columnOrdinalByTable);
-
-        ValidateHydrationProjectionColumn(
-            binding.Table,
+        var fkColumn = ResolveHydrationProjectionColumn(
+            tableModel,
             binding.FkColumn,
             columnOrdinalByName,
             $"document-reference binding '{binding.ReferenceObjectPath.Canonical}' FK column"
         );
 
+        ValidateProjectionBindingPath(
+            tableModel.Table,
+            fkColumn,
+            binding.ReferenceObjectPath,
+            $"document-reference binding '{binding.ReferenceObjectPath.Canonical}' FK column",
+            $"{nameof(DocumentReferenceBinding)}.{nameof(DocumentReferenceBinding.ReferenceObjectPath)}"
+        );
+
         foreach (var identityBinding in binding.IdentityBindings)
         {
-            ValidateHydrationProjectionColumn(
-                binding.Table,
+            var identityColumn = ResolveHydrationProjectionColumn(
+                tableModel,
                 identityBinding.Column,
                 columnOrdinalByName,
                 $"reference-identity binding '{identityBinding.ReferenceJsonPath.Canonical}' for reference '{binding.ReferenceObjectPath.Canonical}' column"
+            );
+
+            ValidateProjectionBindingPath(
+                tableModel.Table,
+                identityColumn,
+                identityBinding.ReferenceJsonPath,
+                $"reference-identity binding '{identityBinding.ReferenceJsonPath.Canonical}' for reference '{binding.ReferenceObjectPath.Canonical}' column",
+                $"{nameof(ReferenceIdentityBinding)}.{nameof(ReferenceIdentityBinding.ReferenceJsonPath)}"
             );
         }
     }
@@ -248,16 +265,43 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
     /// </summary>
     private static void ValidateDescriptorEdgeSource(
         DescriptorEdgeSource edgeSource,
+        IReadOnlyDictionary<DbTableName, DbTableModel> tablesByName,
         IReadOnlyDictionary<DbTableName, IReadOnlyDictionary<DbColumnName, int>> columnOrdinalByTable
     )
     {
+        var tableModel = ResolveHydrationTableModel(edgeSource.Table, tablesByName);
         var columnOrdinalByName = ResolveHydrationColumnOrdinals(edgeSource.Table, columnOrdinalByTable);
-
-        ValidateHydrationProjectionColumn(
-            edgeSource.Table,
+        var fkColumn = ResolveHydrationProjectionColumn(
+            tableModel,
             edgeSource.FkColumn,
             columnOrdinalByName,
             $"descriptor edge source '{edgeSource.DescriptorValuePath.Canonical}' FK column"
+        );
+
+        ValidateProjectionBindingPath(
+            tableModel.Table,
+            fkColumn,
+            edgeSource.DescriptorValuePath,
+            $"descriptor edge source '{edgeSource.DescriptorValuePath.Canonical}' FK column",
+            $"{nameof(DescriptorEdgeSource)}.{nameof(DescriptorEdgeSource.DescriptorValuePath)}"
+        );
+    }
+
+    /// <summary>
+    /// Resolves the table model for a projection binding owner.
+    /// </summary>
+    private static DbTableModel ResolveHydrationTableModel(
+        DbTableName table,
+        IReadOnlyDictionary<DbTableName, DbTableModel> tablesByName
+    )
+    {
+        if (tablesByName.TryGetValue(table, out var tableModel))
+        {
+            return tableModel;
+        }
+
+        throw new InvalidOperationException(
+            $"Cannot compile read plan for '{table}': owning table is not present in TablesInDependencyOrder."
         );
     }
 
@@ -282,19 +326,43 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
     /// <summary>
     /// Ensures a binding column resolves to a deterministic hydration select-list ordinal.
     /// </summary>
-    private static void ValidateHydrationProjectionColumn(
-        DbTableName table,
+    private static DbColumnModel ResolveHydrationProjectionColumn(
+        DbTableModel tableModel,
         DbColumnName column,
         IReadOnlyDictionary<DbColumnName, int> columnOrdinalByName,
         string dependencyDescription
     )
     {
-        if (!columnOrdinalByName.ContainsKey(column))
+        if (!columnOrdinalByName.TryGetValue(column, out var columnOrdinal))
         {
             throw new InvalidOperationException(
-                $"Cannot compile read plan for '{table}': {dependencyDescription} '{column.Value}' does not exist in hydration select-list columns."
+                $"Cannot compile read plan for '{tableModel.Table}': {dependencyDescription} '{column.Value}' does not exist in hydration select-list columns."
             );
         }
+
+        return tableModel.Columns[columnOrdinal];
+    }
+
+    /// <summary>
+    /// Ensures a compiled projection binding still targets the API-bound column for its declared JSON path.
+    /// </summary>
+    private static void ValidateProjectionBindingPath(
+        DbTableName table,
+        DbColumnModel columnModel,
+        JsonPathExpression expectedPath,
+        string dependencyDescription,
+        string expectedPathDescription
+    )
+    {
+        if (columnModel.SourceJsonPath?.Canonical == expectedPath.Canonical)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Cannot compile read plan for '{table}': {dependencyDescription} '{columnModel.ColumnName.Value}' has DbColumnModel.SourceJsonPath '{columnModel.SourceJsonPath?.Canonical ?? "<null>"}', "
+                + $"which does not match {expectedPathDescription} '{expectedPath.Canonical}'."
+        );
     }
 
     /// <summary>
