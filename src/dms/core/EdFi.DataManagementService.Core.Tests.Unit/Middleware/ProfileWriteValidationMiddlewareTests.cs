@@ -966,6 +966,494 @@ public class ProfileWriteValidationMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_PUT_With_NonCreatable_Embedded_Object_And_No_Existing_Object
+        : ProfileWriteValidationMiddlewareTests
+    {
+        private RequestInfo _requestInfo = null!;
+        private bool _nextCalled;
+
+        private sealed class AssessmentWithoutContentStandardRepository : IDocumentStoreRepository
+        {
+            public Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest) =>
+                throw new NotImplementedException();
+
+            public Task<GetResult> GetDocumentById(IGetRequest getRequest) =>
+                Task.FromResult<GetResult>(
+                    new GetResult.GetSuccess(
+                        DocumentUuid: new DocumentUuid(Guid.Parse("12345678-1234-1234-1234-123456789012")),
+                        EdfiDoc: new JsonObject
+                        {
+                            ["id"] = "12345678-1234-1234-1234-123456789012",
+                            ["assessmentIdentifier"] = "ASSESSMENT-003",
+                            ["namespace"] = "uri://ed-fi.org/Assessment/Assessment.xml",
+                            ["assessmentCategoryDescriptor"] =
+                                "uri://ed-fi.org/AssessmentCategoryDescriptor#Benchmark test",
+                            ["assessmentTitle"] = "Existing Assessment",
+                        },
+                        LastModifiedDate: DateTime.UtcNow,
+                        LastModifiedTraceId: "existing-trace-id"
+                    )
+                );
+
+            public Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest) =>
+                throw new NotImplementedException();
+
+            public Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest) =>
+                throw new NotImplementedException();
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo = CreateRequestInfo(method: RequestMethod.PUT, resourceName: "Assessment");
+            _requestInfo.PathComponents = new PathComponents(
+                ProjectEndpointName: new CoreApiSchemaModel.ProjectEndpointName("ed-fi"),
+                EndpointName: new CoreApiSchemaModel.EndpointName("assessments"),
+                DocumentUuid: new DocumentUuid(Guid.Parse("12345678-1234-1234-1234-123456789012"))
+            );
+
+            var objectRule = new ObjectRule(
+                Name: "contentStandard",
+                MemberSelection: MemberSelection.ExcludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("title")],
+                NestedObjects: null,
+                Collections: null,
+                Extensions: null
+            );
+
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                [],
+                [objectRule],
+                [],
+                []
+            );
+
+            var resourceProfile = new ResourceProfile(
+                ResourceName: "Assessment",
+                LogicalSchema: null,
+                ReadContentType: null,
+                WriteContentType: contentType
+            );
+
+            _requestInfo.ProfileContext = new ProfileContext(
+                ProfileName: "NonCreatableObjectProfile",
+                ContentType: ProfileContentType.Write,
+                ResourceProfile: resourceProfile,
+                WasExplicitlySpecified: true
+            );
+
+            _requestInfo.ParsedBody = new JsonObject
+            {
+                ["id"] = "12345678-1234-1234-1234-123456789012",
+                ["assessmentIdentifier"] = "ASSESSMENT-003",
+                ["namespace"] = "uri://ed-fi.org/Assessment/Assessment.xml",
+                ["assessmentCategoryDescriptor"] =
+                    "uri://ed-fi.org/AssessmentCategoryDescriptor#Benchmark test",
+                ["assessmentTitle"] = "Updated Assessment",
+                ["contentStandard"] = new JsonObject { ["title"] = "Blocked title" },
+            };
+
+            _nextCalled = false;
+            var middleware = CreateMiddleware(
+                documentStoreRepository: new AssessmentWithoutContentStandardRepository()
+            );
+
+            await middleware.Execute(
+                _requestInfo,
+                () =>
+                {
+                    _nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_returns_400_and_blocks_the_request()
+        {
+            _nextCalled.Should().BeFalse();
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_PUT_With_NonCreatable_Embedded_Object_And_Existing_Object
+        : ProfileWriteValidationMiddlewareTests
+    {
+        private RequestInfo _requestInfo = null!;
+        private bool _nextCalled;
+
+        private sealed class AssessmentWithContentStandardRepository : IDocumentStoreRepository
+        {
+            public Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest) =>
+                throw new NotImplementedException();
+
+            public Task<GetResult> GetDocumentById(IGetRequest getRequest) =>
+                Task.FromResult<GetResult>(
+                    new GetResult.GetSuccess(
+                        DocumentUuid: new DocumentUuid(Guid.Parse("12345678-1234-1234-1234-123456789012")),
+                        EdfiDoc: new JsonObject
+                        {
+                            ["id"] = "12345678-1234-1234-1234-123456789012",
+                            ["assessmentIdentifier"] = "ASSESSMENT-004",
+                            ["namespace"] = "uri://ed-fi.org/Assessment/Assessment.xml",
+                            ["assessmentCategoryDescriptor"] =
+                                "uri://ed-fi.org/AssessmentCategoryDescriptor#Benchmark test",
+                            ["assessmentTitle"] = "Existing Assessment",
+                            ["contentStandard"] = new JsonObject { ["title"] = "Existing title" },
+                        },
+                        LastModifiedDate: DateTime.UtcNow,
+                        LastModifiedTraceId: "existing-trace-id"
+                    )
+                );
+
+            public Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest) =>
+                throw new NotImplementedException();
+
+            public Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest) =>
+                throw new NotImplementedException();
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo = CreateRequestInfo(method: RequestMethod.PUT, resourceName: "Assessment");
+            _requestInfo.PathComponents = new PathComponents(
+                ProjectEndpointName: new CoreApiSchemaModel.ProjectEndpointName("ed-fi"),
+                EndpointName: new CoreApiSchemaModel.EndpointName("assessments"),
+                DocumentUuid: new DocumentUuid(Guid.Parse("12345678-1234-1234-1234-123456789012"))
+            );
+
+            var objectRule = new ObjectRule(
+                Name: "contentStandard",
+                MemberSelection: MemberSelection.ExcludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("title")],
+                NestedObjects: null,
+                Collections: null,
+                Extensions: null
+            );
+
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                [],
+                [objectRule],
+                [],
+                []
+            );
+
+            var resourceProfile = new ResourceProfile(
+                ResourceName: "Assessment",
+                LogicalSchema: null,
+                ReadContentType: null,
+                WriteContentType: contentType
+            );
+
+            _requestInfo.ProfileContext = new ProfileContext(
+                ProfileName: "NonCreatableObjectProfile",
+                ContentType: ProfileContentType.Write,
+                ResourceProfile: resourceProfile,
+                WasExplicitlySpecified: true
+            );
+
+            _requestInfo.ParsedBody = new JsonObject
+            {
+                ["id"] = "12345678-1234-1234-1234-123456789012",
+                ["assessmentIdentifier"] = "ASSESSMENT-004",
+                ["namespace"] = "uri://ed-fi.org/Assessment/Assessment.xml",
+                ["assessmentCategoryDescriptor"] =
+                    "uri://ed-fi.org/AssessmentCategoryDescriptor#Benchmark test",
+                ["assessmentTitle"] = "Updated Assessment",
+                ["contentStandard"] = new JsonObject { ["title"] = "Blocked title" },
+            };
+
+            _nextCalled = false;
+            var middleware = CreateMiddleware(
+                documentStoreRepository: new AssessmentWithContentStandardRepository()
+            );
+
+            await middleware.Execute(
+                _requestInfo,
+                () =>
+                {
+                    _nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_calls_next()
+        {
+            _nextCalled.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_preserves_the_existing_embedded_object_value()
+        {
+            var body = _requestInfo.ParsedBody as JsonObject;
+            var contentStandard = body!["contentStandard"] as JsonObject;
+            contentStandard!["title"]?.GetValue<string>().Should().Be("Existing title");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_PUT_With_NonCreatable_Child_Collection_Item_And_New_Item
+        : ProfileWriteValidationMiddlewareTests
+    {
+        private RequestInfo _requestInfo = null!;
+        private bool _nextCalled;
+
+        private sealed class SchoolWithoutInternationalAddressRepository : IDocumentStoreRepository
+        {
+            public Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest) =>
+                throw new NotImplementedException();
+
+            public Task<GetResult> GetDocumentById(IGetRequest getRequest) =>
+                Task.FromResult<GetResult>(
+                    new GetResult.GetSuccess(
+                        DocumentUuid: new DocumentUuid(Guid.Parse("12345678-1234-1234-1234-123456789012")),
+                        EdfiDoc: new JsonObject
+                        {
+                            ["id"] = "12345678-1234-1234-1234-123456789012",
+                            ["schoolId"] = 99000103,
+                            ["nameOfInstitution"] = "Existing School",
+                        },
+                        LastModifiedDate: DateTime.UtcNow,
+                        LastModifiedTraceId: "existing-trace-id"
+                    )
+                );
+
+            public Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest) =>
+                throw new NotImplementedException();
+
+            public Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest) =>
+                throw new NotImplementedException();
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo = CreateRequestInfo(method: RequestMethod.PUT, resourceName: "School");
+            _requestInfo.PathComponents = new PathComponents(
+                ProjectEndpointName: new CoreApiSchemaModel.ProjectEndpointName("ed-fi"),
+                EndpointName: new CoreApiSchemaModel.EndpointName("schools"),
+                DocumentUuid: new DocumentUuid(Guid.Parse("12345678-1234-1234-1234-123456789012"))
+            );
+
+            var collectionRule = new CollectionRule(
+                Name: "internationalAddresses",
+                MemberSelection: MemberSelection.ExcludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("addressLine1")],
+                NestedObjects: null,
+                NestedCollections: null,
+                Extensions: null,
+                ItemFilter: null
+            );
+
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                [],
+                [],
+                [collectionRule],
+                []
+            );
+
+            var resourceProfile = new ResourceProfile(
+                ResourceName: "School",
+                LogicalSchema: null,
+                ReadContentType: null,
+                WriteContentType: contentType
+            );
+
+            _requestInfo.ProfileContext = new ProfileContext(
+                ProfileName: "NonCreatableCollectionProfile",
+                ContentType: ProfileContentType.Write,
+                ResourceProfile: resourceProfile,
+                WasExplicitlySpecified: true
+            );
+
+            _requestInfo.ParsedBody = new JsonObject
+            {
+                ["id"] = "12345678-1234-1234-1234-123456789012",
+                ["schoolId"] = 99000103,
+                ["nameOfInstitution"] = "Updated School",
+                ["internationalAddresses"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["addressTypeDescriptor"] = "uri://ed-fi.org/AddressTypeDescriptor#Mailing",
+                        ["countryDescriptor"] = "uri://ed-fi.org/CountryDescriptor#AD",
+                        ["addressLine1"] = "Blocked Address Line",
+                    },
+                },
+            };
+
+            _nextCalled = false;
+            var middleware = CreateMiddleware(
+                documentStoreRepository: new SchoolWithoutInternationalAddressRepository()
+            );
+
+            await middleware.Execute(
+                _requestInfo,
+                () =>
+                {
+                    _nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_returns_400_and_blocks_the_request()
+        {
+            _nextCalled.Should().BeFalse();
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_PUT_With_NonCreatable_Child_Collection_Item_And_Existing_Item
+        : ProfileWriteValidationMiddlewareTests
+    {
+        private RequestInfo _requestInfo = null!;
+        private bool _nextCalled;
+
+        private sealed class SchoolWithInternationalAddressRepository : IDocumentStoreRepository
+        {
+            public Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest) =>
+                throw new NotImplementedException();
+
+            public Task<GetResult> GetDocumentById(IGetRequest getRequest) =>
+                Task.FromResult<GetResult>(
+                    new GetResult.GetSuccess(
+                        DocumentUuid: new DocumentUuid(Guid.Parse("12345678-1234-1234-1234-123456789012")),
+                        EdfiDoc: new JsonObject
+                        {
+                            ["id"] = "12345678-1234-1234-1234-123456789012",
+                            ["schoolId"] = 99000104,
+                            ["nameOfInstitution"] = "Existing School",
+                            ["internationalAddresses"] = new JsonArray
+                            {
+                                new JsonObject
+                                {
+                                    ["addressTypeDescriptor"] =
+                                        "uri://ed-fi.org/AddressTypeDescriptor#Mailing",
+                                    ["countryDescriptor"] = "uri://ed-fi.org/CountryDescriptor#AD",
+                                    ["addressLine1"] = "Existing Address Line",
+                                },
+                            },
+                        },
+                        LastModifiedDate: DateTime.UtcNow,
+                        LastModifiedTraceId: "existing-trace-id"
+                    )
+                );
+
+            public Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest) =>
+                throw new NotImplementedException();
+
+            public Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest) =>
+                throw new NotImplementedException();
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo = CreateRequestInfo(method: RequestMethod.PUT, resourceName: "School");
+            _requestInfo.PathComponents = new PathComponents(
+                ProjectEndpointName: new CoreApiSchemaModel.ProjectEndpointName("ed-fi"),
+                EndpointName: new CoreApiSchemaModel.EndpointName("schools"),
+                DocumentUuid: new DocumentUuid(Guid.Parse("12345678-1234-1234-1234-123456789012"))
+            );
+
+            var collectionRule = new CollectionRule(
+                Name: "internationalAddresses",
+                MemberSelection: MemberSelection.ExcludeOnly,
+                LogicalSchema: null,
+                Properties: [new PropertyRule("addressLine1")],
+                NestedObjects: null,
+                NestedCollections: null,
+                Extensions: null,
+                ItemFilter: null
+            );
+
+            var contentType = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                [],
+                [],
+                [collectionRule],
+                []
+            );
+
+            var resourceProfile = new ResourceProfile(
+                ResourceName: "School",
+                LogicalSchema: null,
+                ReadContentType: null,
+                WriteContentType: contentType
+            );
+
+            _requestInfo.ProfileContext = new ProfileContext(
+                ProfileName: "NonCreatableCollectionProfile",
+                ContentType: ProfileContentType.Write,
+                ResourceProfile: resourceProfile,
+                WasExplicitlySpecified: true
+            );
+
+            _requestInfo.ParsedBody = new JsonObject
+            {
+                ["id"] = "12345678-1234-1234-1234-123456789012",
+                ["schoolId"] = 99000104,
+                ["nameOfInstitution"] = "Updated School",
+                ["internationalAddresses"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["addressTypeDescriptor"] = "uri://ed-fi.org/AddressTypeDescriptor#Mailing",
+                        ["countryDescriptor"] = "uri://ed-fi.org/CountryDescriptor#AD",
+                        ["addressLine1"] = "Blocked Address Line",
+                    },
+                },
+            };
+
+            _nextCalled = false;
+            var middleware = CreateMiddleware(
+                documentStoreRepository: new SchoolWithInternationalAddressRepository()
+            );
+
+            await middleware.Execute(
+                _requestInfo,
+                () =>
+                {
+                    _nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_calls_next()
+        {
+            _nextCalled.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_preserves_the_existing_collection_item_value()
+        {
+            var body = _requestInfo.ParsedBody as JsonObject;
+            var internationalAddresses = body!["internationalAddresses"] as JsonArray;
+            var address = internationalAddresses![0] as JsonObject;
+            address!["addressLine1"]?.GetValue<string>().Should().Be("Existing Address Line");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_POST_With_NonCreatable_Child_Collection_Item_Using_Legacy_Casing
         : ProfileWriteValidationMiddlewareTests
     {
