@@ -95,8 +95,8 @@ internal class ProfileWriteValidationMiddleware(
             requestInfo.ResourceSchema.IdentityJsonPaths
         );
 
-        // For POST requests only, validate that the profile doesn't exclude required fields
-        // PUT requests skip this check because existing resources already have the required values
+        // For POST requests only, validate that the profile doesn't exclude required fields.
+        // PUT requests skip this check because existing resources already have the required values.
         if (requestInfo.Method == RequestMethod.POST)
         {
             IReadOnlyList<string> excludedRequiredFields = creatabilityValidator.GetExcludedRequiredFields(
@@ -125,6 +125,19 @@ internal class ProfileWriteValidationMiddleware(
                 return;
             }
 
+        }
+
+        // Filter the request body according to profile rules
+        JsonNode filteredBody = profileFilter.FilterDocument(
+            requestBody,
+            writeContentType,
+            identityPropertyNames
+        );
+
+        JsonObject? existingDoc = null;
+
+        if (requestInfo.Method == RequestMethod.POST)
+        {
             IReadOnlyList<string> nonCreatableNestedPaths = GetNonCreatableNestedPaths(
                 requestBody,
                 writeContentType
@@ -133,8 +146,9 @@ internal class ProfileWriteValidationMiddleware(
             if (nonCreatableNestedPaths.Count > 0)
             {
                 logger.LogDebug(
-                    "Profile {ProfileName} blocks creation because non-creatable nested members were supplied: {BlockedPaths} - {TraceId}",
+                    "Profile {ProfileName} blocks {Method} because non-creatable nested members were supplied: {BlockedPaths} - {TraceId}",
                     SanitizeForLog(requestInfo.ProfileContext.ProfileName),
+                    requestInfo.Method,
                     SanitizeForLog(string.Join(", ", nonCreatableNestedPaths)),
                     requestInfo.FrontendRequest.TraceId.Value
                 );
@@ -151,12 +165,41 @@ internal class ProfileWriteValidationMiddleware(
             }
         }
 
-        // Filter the request body according to profile rules
-        JsonNode filteredBody = profileFilter.FilterDocument(
-            requestBody,
-            writeContentType,
-            identityPropertyNames
-        );
+        if (requestInfo.Method == RequestMethod.PUT)
+        {
+            existingDoc = await GetExistingDocument(requestInfo);
+
+            if (existingDoc != null)
+            {
+                IReadOnlyList<string> nonCreatableNestedPaths = GetNonCreatableNestedPathsForPut(
+                    requestBody,
+                    filteredBody as JsonObject ?? new JsonObject(),
+                    existingDoc,
+                    writeContentType
+                );
+
+                if (nonCreatableNestedPaths.Count > 0)
+                {
+                    logger.LogDebug(
+                        "Profile {ProfileName} blocks {Method} because non-creatable nested members were introduced on update: {BlockedPaths} - {TraceId}",
+                        SanitizeForLog(requestInfo.ProfileContext.ProfileName),
+                        requestInfo.Method,
+                        SanitizeForLog(string.Join(", ", nonCreatableNestedPaths)),
+                        requestInfo.FrontendRequest.TraceId.Value
+                    );
+
+                    requestInfo.FrontendResponse = new FrontendResponse(
+                        StatusCode: 400,
+                        Body: FailureResponse.ForDataPolicyEnforced(
+                            requestInfo.ProfileContext.ProfileName,
+                            requestInfo.FrontendRequest.TraceId
+                        ),
+                        Headers: []
+                    );
+                    return;
+                }
+            }
+        }
 
         if (requestInfo.Method == RequestMethod.POST && HasRequiredFieldViolations(requestInfo, filteredBody))
         {
@@ -180,7 +223,8 @@ internal class ProfileWriteValidationMiddleware(
                 filteredBody as JsonObject ?? new JsonObject(),
                 requestBody,
                 writeContentType,
-                identityPropertyNames
+                identityPropertyNames,
+                existingDoc
             );
 
             if (mergedBody == null)
@@ -296,6 +340,96 @@ internal class ProfileWriteValidationMiddleware(
         return blockedPaths;
     }
 
+    private static IReadOnlyList<string> GetNonCreatableNestedPathsForPut(
+        JsonObject requestBody,
+        JsonObject filteredBody,
+        JsonObject existingDoc,
+        ContentTypeDefinition writeContentType
+    )
+    {
+        var blockedPaths = new List<string>();
+
+        foreach (var kvp in writeContentType.ObjectRulesByName)
+        {
+            string objectName = kvp.Key;
+            ObjectRule objectRule = kvp.Value;
+
+            if (
+                TryGetPropertyValueCaseInsensitive(
+                    requestBody,
+                    objectName,
+                    out string matchedObjectName,
+                    out JsonNode? requestObjectNode
+                )
+                && requestObjectNode is JsonObject requestObject
+            )
+            {
+                TryGetPropertyValueCaseInsensitive(
+                    filteredBody,
+                    objectName,
+                    out _,
+                    out JsonNode? filteredObjectNode
+                );
+                TryGetPropertyValueCaseInsensitive(
+                    existingDoc,
+                    objectName,
+                    out _,
+                    out JsonNode? existingObjectNode
+                );
+
+                CollectNonCreatableObjectPathsForPut(
+                    requestObject,
+                    filteredObjectNode as JsonObject,
+                    existingObjectNode as JsonObject,
+                    objectRule,
+                    $"$.{matchedObjectName}",
+                    blockedPaths
+                );
+            }
+        }
+
+        foreach (var kvp in writeContentType.CollectionRulesByName)
+        {
+            string collectionName = kvp.Key;
+            CollectionRule collectionRule = kvp.Value;
+
+            if (
+                TryGetPropertyValueCaseInsensitive(
+                    requestBody,
+                    collectionName,
+                    out string matchedCollectionName,
+                    out JsonNode? requestCollectionNode
+                )
+                && requestCollectionNode is JsonArray requestCollection
+            )
+            {
+                TryGetPropertyValueCaseInsensitive(
+                    filteredBody,
+                    collectionName,
+                    out _,
+                    out JsonNode? filteredCollectionNode
+                );
+                TryGetPropertyValueCaseInsensitive(
+                    existingDoc,
+                    collectionName,
+                    out _,
+                    out JsonNode? existingCollectionNode
+                );
+
+                CollectNonCreatableCollectionPathsForPut(
+                    requestCollection,
+                    filteredCollectionNode as JsonArray,
+                    existingCollectionNode as JsonArray,
+                    collectionRule,
+                    $"$.{matchedCollectionName}",
+                    blockedPaths
+                );
+            }
+        }
+
+        return blockedPaths;
+    }
+
     private static void CollectNonCreatableObjectPaths(
         JsonObject sourceObject,
         ObjectRule objectRule,
@@ -362,6 +496,100 @@ internal class ProfileWriteValidationMiddleware(
             {
                 CollectNonCreatableCollectionPaths(
                     nestedCollection,
+                    nestedCollectionRule,
+                    $"{pathPrefix}.{matchedNestedCollectionName}",
+                    blockedPaths
+                );
+            }
+        }
+    }
+
+    private static void CollectNonCreatableObjectPathsForPut(
+        JsonObject requestObject,
+        JsonObject? filteredObject,
+        JsonObject? existingObject,
+        ObjectRule objectRule,
+        string pathPrefix,
+        List<string> blockedPaths
+    )
+    {
+        if (existingObject == null)
+        {
+            CollectNonCreatableObjectPaths(requestObject, objectRule, pathPrefix, blockedPaths);
+            return;
+        }
+
+        foreach (var kvp in objectRule.NestedObjectRulesByName)
+        {
+            string nestedObjectName = kvp.Key;
+            ObjectRule nestedObjectRule = kvp.Value;
+
+            if (
+                TryGetPropertyValueCaseInsensitive(
+                    requestObject,
+                    nestedObjectName,
+                    out string matchedNestedObjectName,
+                    out JsonNode? requestNestedNode
+                )
+                && requestNestedNode is JsonObject requestNestedObject
+            )
+            {
+                TryGetPropertyValueCaseInsensitive(
+                    filteredObject ?? requestObject,
+                    nestedObjectName,
+                    out _,
+                    out JsonNode? filteredNestedNode
+                );
+                TryGetPropertyValueCaseInsensitive(
+                    existingObject,
+                    nestedObjectName,
+                    out _,
+                    out JsonNode? existingNestedNode
+                );
+
+                CollectNonCreatableObjectPathsForPut(
+                    requestNestedObject,
+                    filteredNestedNode as JsonObject,
+                    existingNestedNode as JsonObject,
+                    nestedObjectRule,
+                    $"{pathPrefix}.{matchedNestedObjectName}",
+                    blockedPaths
+                );
+            }
+        }
+
+        foreach (var kvp in objectRule.CollectionRulesByName)
+        {
+            string nestedCollectionName = kvp.Key;
+            CollectionRule nestedCollectionRule = kvp.Value;
+
+            if (
+                TryGetPropertyValueCaseInsensitive(
+                    requestObject,
+                    nestedCollectionName,
+                    out string matchedNestedCollectionName,
+                    out JsonNode? requestNestedCollectionNode
+                )
+                && requestNestedCollectionNode is JsonArray requestNestedCollection
+            )
+            {
+                TryGetPropertyValueCaseInsensitive(
+                    filteredObject ?? requestObject,
+                    nestedCollectionName,
+                    out _,
+                    out JsonNode? filteredNestedCollectionNode
+                );
+                TryGetPropertyValueCaseInsensitive(
+                    existingObject,
+                    nestedCollectionName,
+                    out _,
+                    out JsonNode? existingNestedCollectionNode
+                );
+
+                CollectNonCreatableCollectionPathsForPut(
+                    requestNestedCollection,
+                    filteredNestedCollectionNode as JsonArray,
+                    existingNestedCollectionNode as JsonArray,
                     nestedCollectionRule,
                     $"{pathPrefix}.{matchedNestedCollectionName}",
                     blockedPaths
@@ -454,6 +682,240 @@ internal class ProfileWriteValidationMiddleware(
         }
     }
 
+    private static void CollectNonCreatableCollectionPathsForPut(
+        JsonArray requestCollection,
+        JsonArray? filteredCollection,
+        JsonArray? existingCollection,
+        CollectionRule collectionRule,
+        string pathPrefix,
+        List<string> blockedPaths
+    )
+    {
+        for (int i = 0; i < requestCollection.Count; i++)
+        {
+            if (requestCollection[i] is not JsonObject requestItem)
+            {
+                continue;
+            }
+
+            string itemPath = $"{pathPrefix}[{i}]";
+            JsonObject? filteredItem =
+                i < (filteredCollection?.Count ?? 0) ? filteredCollection![i] as JsonObject : null;
+
+            JsonObject? existingItem = existingCollection == null
+                ? null
+                : FindMatchingExistingItem(
+                    filteredItem ?? CreateCollectionMatchCandidate(requestItem, collectionRule),
+                    existingCollection,
+                    collectionRule
+                );
+
+            if (existingItem == null)
+            {
+                CollectNonCreatableCollectionItemPaths(requestItem, collectionRule, itemPath, blockedPaths);
+                continue;
+            }
+
+            foreach (var kvp in collectionRule.NestedObjectRulesByName)
+            {
+                string nestedObjectName = kvp.Key;
+                ObjectRule nestedObjectRule = kvp.Value;
+
+                if (
+                    TryGetPropertyValueCaseInsensitive(
+                        requestItem,
+                        nestedObjectName,
+                        out string matchedNestedObjectName,
+                        out JsonNode? requestNestedNode
+                    )
+                    && requestNestedNode is JsonObject requestNestedObject
+                )
+                {
+                    TryGetPropertyValueCaseInsensitive(
+                        filteredItem ?? requestItem,
+                        nestedObjectName,
+                        out _,
+                        out JsonNode? filteredNestedNode
+                    );
+                    TryGetPropertyValueCaseInsensitive(
+                        existingItem,
+                        nestedObjectName,
+                        out _,
+                        out JsonNode? existingNestedNode
+                    );
+
+                    CollectNonCreatableObjectPathsForPut(
+                        requestNestedObject,
+                        filteredNestedNode as JsonObject,
+                        existingNestedNode as JsonObject,
+                        nestedObjectRule,
+                        $"{itemPath}.{matchedNestedObjectName}",
+                        blockedPaths
+                    );
+                }
+            }
+
+            foreach (var kvp in collectionRule.NestedCollectionRulesByName)
+            {
+                string nestedCollectionName = kvp.Key;
+                CollectionRule nestedCollectionRule = kvp.Value;
+
+                if (
+                    TryGetPropertyValueCaseInsensitive(
+                        requestItem,
+                        nestedCollectionName,
+                        out string matchedNestedCollectionName,
+                        out JsonNode? requestNestedCollectionNode
+                    )
+                    && requestNestedCollectionNode is JsonArray requestNestedCollection
+                )
+                {
+                    TryGetPropertyValueCaseInsensitive(
+                        filteredItem ?? requestItem,
+                        nestedCollectionName,
+                        out _,
+                        out JsonNode? filteredNestedCollectionNode
+                    );
+                    TryGetPropertyValueCaseInsensitive(
+                        existingItem,
+                        nestedCollectionName,
+                        out _,
+                        out JsonNode? existingNestedCollectionNode
+                    );
+
+                    CollectNonCreatableCollectionPathsForPut(
+                        requestNestedCollection,
+                        filteredNestedCollectionNode as JsonArray,
+                        existingNestedCollectionNode as JsonArray,
+                        nestedCollectionRule,
+                        $"{itemPath}.{matchedNestedCollectionName}",
+                        blockedPaths
+                    );
+                }
+            }
+        }
+    }
+
+    private static void CollectNonCreatableCollectionItemPaths(
+        JsonObject collectionItem,
+        CollectionRule collectionRule,
+        string itemPath,
+        List<string> blockedPaths
+    )
+    {
+        if (collectionRule.MemberSelection == MemberSelection.ExcludeOnly)
+        {
+            foreach (string excludedPropertyName in collectionRule.PropertyNameSet)
+            {
+                if (
+                    TryGetPropertyValueCaseInsensitive(
+                        collectionItem,
+                        excludedPropertyName,
+                        out string matchedPropertyName,
+                        out _
+                    )
+                )
+                {
+                    blockedPaths.Add($"{itemPath}.{matchedPropertyName}");
+                }
+            }
+        }
+
+        foreach (var kvp in collectionRule.NestedObjectRulesByName)
+        {
+            string nestedObjectName = kvp.Key;
+            ObjectRule nestedObjectRule = kvp.Value;
+
+            if (
+                TryGetPropertyValueCaseInsensitive(
+                    collectionItem,
+                    nestedObjectName,
+                    out string matchedNestedObjectName,
+                    out JsonNode? nestedNode
+                )
+                && nestedNode is JsonObject nestedObject
+            )
+            {
+                CollectNonCreatableObjectPaths(
+                    nestedObject,
+                    nestedObjectRule,
+                    $"{itemPath}.{matchedNestedObjectName}",
+                    blockedPaths
+                );
+            }
+        }
+
+        foreach (var kvp in collectionRule.NestedCollectionRulesByName)
+        {
+            string nestedCollectionName = kvp.Key;
+            CollectionRule nestedCollectionRule = kvp.Value;
+
+            if (
+                TryGetPropertyValueCaseInsensitive(
+                    collectionItem,
+                    nestedCollectionName,
+                    out string matchedNestedCollectionName,
+                    out JsonNode? nestedCollectionNode
+                )
+                && nestedCollectionNode is JsonArray nestedCollection
+            )
+            {
+                CollectNonCreatableCollectionPaths(
+                    nestedCollection,
+                    nestedCollectionRule,
+                    $"{itemPath}.{matchedNestedCollectionName}",
+                    blockedPaths
+                );
+            }
+        }
+    }
+
+    private static JsonObject CreateCollectionMatchCandidate(
+        JsonObject requestItem,
+        CollectionRule collectionRule
+    )
+    {
+        var candidate = new JsonObject();
+
+        if (
+            collectionRule.ItemFilter != null
+            && TryGetPropertyValueCaseInsensitive(
+                requestItem,
+                collectionRule.ItemFilter.PropertyName,
+                out _,
+                out JsonNode? itemFilterValue
+            )
+            && itemFilterValue != null
+        )
+        {
+            candidate[collectionRule.ItemFilter.PropertyName] = itemFilterValue.DeepClone();
+        }
+
+        foreach (var kvp in requestItem)
+        {
+            if (kvp.Value == null || kvp.Value is JsonObject or JsonArray)
+            {
+                continue;
+            }
+
+            bool includeProperty = collectionRule.MemberSelection switch
+            {
+                MemberSelection.IncludeOnly => collectionRule.PropertyNameSet.Contains(kvp.Key),
+                MemberSelection.ExcludeOnly => !collectionRule.PropertyNameSet.Contains(kvp.Key),
+                _ => true,
+            };
+
+            if (!includeProperty || candidate.ContainsKey(kvp.Key))
+            {
+                continue;
+            }
+
+            candidate[kvp.Key] = kvp.Value.DeepClone();
+        }
+
+        return candidate.Count > 0 ? candidate : requestItem;
+    }
+
     private static bool TryGetPropertyValueCaseInsensitive(
         JsonObject sourceObject,
         string propertyName,
@@ -500,18 +962,40 @@ internal class ProfileWriteValidationMiddleware(
         JsonObject filteredBody,
         JsonObject originalRequest,
         ContentTypeDefinition writeContentType,
-        HashSet<string> identityPropertyNames
+        HashSet<string> identityPropertyNames,
+        JsonObject? existingDoc = null
     )
+    {
+        existingDoc ??= await GetExistingDocument(requestInfo);
+
+        if (existingDoc is not JsonObject)
+        {
+            return filteredBody;
+        }
+
+        // Determine which fields were stripped and merge them from existing document
+        MergeStrippedFields(
+            filteredBody,
+            originalRequest,
+            existingDoc,
+            writeContentType,
+            identityPropertyNames
+        );
+
+        return filteredBody;
+    }
+
+    private async Task<JsonObject?> GetExistingDocument(RequestInfo requestInfo)
     {
         // Get repository from service provider
         var documentStoreRepository = serviceProvider.GetRequiredService<IDocumentStoreRepository>();
 
         // Create a bypass authorization handler for internal document fetch
-        // The actual authorization will be performed by the UpdateByIdHandler later
+        // The actual authorization will be performed later by the update handler.
         var bypassAuthHandler = new BypassResourceAuthorizationHandler();
 
         logger.LogDebug(
-            "ProfileWriteValidationMiddleware: Fetching existing document for merge. DocumentUuid: {DocumentUuid}, ResourceName: {ResourceName} - {TraceId}",
+            "ProfileWriteValidationMiddleware: Fetching existing document. DocumentUuid: {DocumentUuid}, ResourceName: {ResourceName} - {TraceId}",
             requestInfo.PathComponents.DocumentUuid.Value,
             SanitizeForLog(requestInfo.ResourceSchema.ResourceName.Value),
             requestInfo.FrontendRequest.TraceId.Value
@@ -528,25 +1012,23 @@ internal class ProfileWriteValidationMiddleware(
 
         if (getResult is GetFailureNotExists)
         {
-            // Document doesn't exist - let the normal update handler return 404
             logger.LogDebug(
                 "ProfileWriteValidationMiddleware: GetDocumentById returned NotExists. DocumentUuid: {DocumentUuid}, ResourceName: {ResourceName} - {TraceId}",
                 requestInfo.PathComponents.DocumentUuid.Value,
                 SanitizeForLog(requestInfo.ResourceSchema.ResourceName.Value),
                 requestInfo.FrontendRequest.TraceId.Value
             );
-            return filteredBody;
+            return null;
         }
 
         if (getResult is not GetSuccess success)
         {
-            // Unexpected failure - let it pass through, will be handled later
             logger.LogWarning(
-                "Failed to fetch existing document for profile merge: {ResultType} - {TraceId}",
+                "Failed to fetch existing document for profile write validation: {ResultType} - {TraceId}",
                 getResult.GetType().Name,
                 requestInfo.FrontendRequest.TraceId.Value
             );
-            return filteredBody;
+            return null;
         }
 
         if (success.EdfiDoc is not JsonObject existingDoc)
@@ -555,19 +1037,10 @@ internal class ProfileWriteValidationMiddleware(
                 "Existing document is null or not a JsonObject - {TraceId}",
                 requestInfo.FrontendRequest.TraceId.Value
             );
-            return filteredBody;
+            return null;
         }
 
-        // Determine which fields were stripped and merge them from existing document
-        MergeStrippedFields(
-            filteredBody,
-            originalRequest,
-            existingDoc,
-            writeContentType,
-            identityPropertyNames
-        );
-
-        return filteredBody;
+        return existingDoc;
     }
 
     /// <summary>
