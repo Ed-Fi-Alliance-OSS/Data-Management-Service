@@ -128,13 +128,13 @@ public class ProfileHeaderParserTests
         }
 
         [Test]
-        public void It_returns_no_profile_for_header_with_leading_whitespace()
+        public void It_parses_profile_header_with_leading_whitespace()
         {
-            // Leading whitespace causes the StartsWith check to fail, treating it as non-profile header
             var result = ProfileHeaderParser.Parse("  application/vnd.ed-fi.student.myprofile.readable+json");
 
             result.IsSuccess.Should().BeTrue();
-            result.ParsedHeader.Should().BeNull();
+            result.ParsedHeader.Should().NotBeNull();
+            result.ParsedHeader!.ProfileName.Should().Be("myprofile");
         }
 
         [Test]
@@ -155,6 +155,30 @@ public class ProfileHeaderParserTests
 
             result.IsSuccess.Should().BeTrue();
             result.ParsedHeader!.ProfileName.Should().Be("my-complex-profile-name");
+        }
+
+        [Test]
+        public void It_parses_profile_header_with_charset_parameter()
+        {
+            var result = ProfileHeaderParser.Parse(
+                "application/vnd.ed-fi.student.test-profile.readable+json; charset=utf-8"
+            );
+
+            result.IsSuccess.Should().BeTrue();
+            result.ParsedHeader.Should().NotBeNull();
+            result.ParsedHeader!.ProfileName.Should().Be("test-profile");
+        }
+
+        [Test]
+        public void It_parses_profile_header_with_quality_parameter()
+        {
+            var result = ProfileHeaderParser.Parse(
+                "application/vnd.ed-fi.student.test-profile.readable+json; q=1.0"
+            );
+
+            result.IsSuccess.Should().BeTrue();
+            result.ParsedHeader.Should().NotBeNull();
+            result.ParsedHeader!.UsageType.Should().Be(ProfileUsageType.Readable);
         }
     }
 

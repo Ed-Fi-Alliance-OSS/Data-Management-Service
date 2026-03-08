@@ -38,8 +38,8 @@
   <Profile name="Test-Profile-Resource-Includes-Child-Collection-With-Non-Creatable-Items">
     <Resource name="School">
       <WriteContentType memberSelection="IncludeAll">
-        <Collection name="EducationOrganizationInternationalAddresses" memberSelection="ExcludeOnly"> <!-- Inherited Collection -->
-          <Property name="AddressLine1" /> <!-- Required, non-primary key property -->
+        <Collection name="internationalAddresses" memberSelection="ExcludeOnly">
+          <Property name="addressLine1" /> <!-- Required, non-primary key property -->
         </Collection>
       </WriteContentType>
     </Resource>
@@ -512,7 +512,7 @@
     <Resource name="Assessment">
       <ReadContentType memberSelection="IncludeOnly">
         <Property name="AssessmentCategoryDescriptor" />
-        <Object name="AssessmentContentStandard" memberSelection="IncludeAll" />
+        <Property name="contentStandard" />
       </ReadContentType>
     </Resource>
   </Profile>
@@ -520,7 +520,16 @@
   <Profile name="Assessment-Readable-Excludes-Embedded-Object">
     <Resource name="Assessment">
       <ReadContentType memberSelection="ExcludeOnly">
-        <Object name="AssessmentContentStandard" memberSelection="IncludeAll" />
+        <Property name="contentStandard" />
+      </ReadContentType>
+    </Resource>
+  </Profile>
+
+  <Profile name="Assessment-Readable-Excludes-Embedded-Object-Unsupported">
+    <Resource name="Assessment">
+      <ReadContentType memberSelection="IncludeOnly">
+        <Property name="AssessmentCategoryDescriptor" />
+        <Property name="contentStandard" />
       </ReadContentType>
     </Resource>
   </Profile>
@@ -529,7 +538,7 @@
     <Resource name="Assessment">
       <WriteContentType memberSelection="IncludeOnly">
         <Property name="AssessmentCategoryDescriptor" />
-        <Object name="AssessmentContentStandard" memberSelection="IncludeAll" />
+        <Property name="contentStandard" />
       </WriteContentType>
     </Resource>
   </Profile>
@@ -537,8 +546,8 @@
   <Profile name="Assessment-Writable-Includes-Non-Creatable-Embedded-Object">
     <Resource name="Assessment">
       <WriteContentType memberSelection="IncludeAll">
-        <Object name="AssessmentContentStandard" memberSelection="ExcludeOnly">
-          <Property name="Title" /> <!-- Required, non-primary key property -->
+        <Object name="contentStandard" memberSelection="ExcludeOnly">
+          <Property name="title" /> <!-- Required, non-primary key property -->
         </Object>
       </WriteContentType>
     </Resource>
@@ -546,8 +555,17 @@
 
   <Profile name="Assessment-Writable-Excludes-Embedded-Object">
     <Resource name="Assessment">
+      <WriteContentType memberSelection="ExcludeOnly">
+        <Property name="contentStandard" />
+      </WriteContentType>
+    </Resource>
+  </Profile>
+
+  <Profile name="Assessment-Writable-Excludes-Embedded-Object-Unsupported">
+    <Resource name="Assessment">
       <WriteContentType memberSelection="IncludeOnly">
         <Property name="AssessmentCategoryDescriptor" />
+        <Property name="contentStandard" />
       </WriteContentType>
     </Resource>
   </Profile>

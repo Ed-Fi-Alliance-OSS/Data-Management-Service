@@ -52,6 +52,10 @@ Feature: Profile XML File Method Usage
                   }
                   """
              Then the profile response status is 405
+              And the response body should have error type "urn:ed-fi:api:profile:method-usage"
+              And the response body should have detail "The request construction was invalid with respect to usage of a data policy. An attempt was made to access a resource that is not writable using the profile."
+              And the response body status should equal the response status code
+              And the response body errors should match regex "(?i)Resource class 'School' is not writable using API profile 'test-profile-resource-readonly'\."
              When a POST request is made to "/ed-fi/schools" with profile "Test-Profile-Resource-ReadOnly" for resource "School" with body
                   """
                   {

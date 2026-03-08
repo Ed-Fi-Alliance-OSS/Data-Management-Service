@@ -80,9 +80,10 @@ Feature: Profile Assigned Profiles
             Then the profile response status is 403
              And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
 
-        Scenario: 05 Covered resource with standard content type and one assigned profile is currently allowed
+        Scenario: 05 Covered resource with standard content type and one assigned profile fails
             When a GET request is made to "/ed-fi/schools" without profile header
-            Then the profile response status is 200
+            Then the profile response status is 403
+             And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
 
         Scenario: 06 Covered resource with one of several assigned profiles succeeds
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profiles "Test-Profile-Resource-IncludeAll, Test-Profile-StudentOnly-Resource-IncludeAll" and namespacePrefixes "uri://ed-fi.org"
@@ -99,11 +100,11 @@ Feature: Profile Assigned Profiles
             When a GET request is made to "/ed-fi/students/{id}" with profile "Test-Profile-StudentOnly-Resource-IncludeAll" for resource "Student"
             Then the profile response status is 200
 
-        Scenario: 07 Covered resource with different profile content type for API client with several assigned profiles fails with invalid-profile-usage
+        Scenario: 07 Covered resource with different profile content type for API client with several assigned profiles fails with incorrect-usage
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profiles "Test-Profile-Resource-IncludeAll, Test-Profile-StudentOnly-Resource-IncludeAll" and namespacePrefixes "uri://ed-fi.org"
             When a GET request is made to "/ed-fi/schools" with profile "Test-Profile-StudentOnly-Resource-IncludeAll" for resource "School"
-            Then the profile response status is 400
-             And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
+            Then the profile response status is 403
+             And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
 
         Scenario: 08 Covered resource write with one of several assigned profiles succeeds
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profiles "Test-Profile-Resource-IncludeAll, Test-Profile-StudentOnly-Resource-IncludeAll" and namespacePrefixes "uri://ed-fi.org"
@@ -118,7 +119,7 @@ Feature: Profile Assigned Profiles
                   """
             Then the profile response status is 201
 
-        Scenario: 09 Covered resource write with standard content type and one assigned profile is currently allowed
+        Scenario: 09 Covered resource write with standard content type and one assigned profile fails
             When a POST request is made to "/ed-fi/schools" without profile header with body
                   """
                   {
@@ -136,9 +137,10 @@ Feature: Profile Assigned Profiles
                       ]
                   }
                   """
-            Then the profile response status is 201
+            Then the profile response status is 403
+             And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
 
-        Scenario: 10 Covered resource write with standard content type and several assigned profiles is currently allowed
+        Scenario: 10 Covered resource write with standard content type and several assigned profiles fails
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profiles "Test-Profile-Resource-IncludeAll, Test-Profile-StudentOnly-Resource-IncludeAll" and namespacePrefixes "uri://ed-fi.org"
             When a POST request is made to "/ed-fi/schools" without profile header with body
                   """
@@ -157,12 +159,95 @@ Feature: Profile Assigned Profiles
                       ]
                   }
                   """
-            Then the profile response status is 201
+            Then the profile response status is 403
+             And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
 
-        Scenario: 11 Covered resource with standard content type and several assigned profiles is currently allowed
+        Scenario: 11 Covered resource with standard content type and several assigned profiles fails
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profiles "Test-Profile-Resource-IncludeAll, Test-Profile-StudentOnly-Resource-IncludeAll" and namespacePrefixes "uri://ed-fi.org"
             When a GET request is made to "/ed-fi/schools" without profile header
-            Then the profile response status is 200
+            Then the profile response status is 403
+             And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
+
+        Scenario: 12 Covered resource update with standard content type and one assigned profile fails
+            When a POST request is made to "/ed-fi/schools" with profile "Test-Profile-Resource-IncludeAll" for resource "School" with body
+                  """
+                  {
+                      "schoolId": 99004012,
+                      "nameOfInstitution": "Assigned Profile Covered School Update Seed",
+                      "educationOrganizationCategories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                          }
+                      ],
+                      "gradeLevels": [
+                          {
+                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+                          }
+                      ]
+                  }
+                  """
+            Then the profile response status is 201
+            When a PUT request is made to "/ed-fi/schools/{id}" without profile header with body
+                  """
+                  {
+                      "id": "{id}",
+                      "schoolId": 99004012,
+                      "nameOfInstitution": "Assigned Profile Covered School Update Standard Content Type",
+                      "educationOrganizationCategories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                          }
+                      ],
+                      "gradeLevels": [
+                          {
+                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+                          }
+                      ]
+                  }
+                  """
+            Then the profile response status is 403
+             And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
+
+        Scenario: 13 Covered resource update with standard content type and several assigned profiles fails
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profiles "Test-Profile-Resource-IncludeAll, Test-Profile-StudentOnly-Resource-IncludeAll" and namespacePrefixes "uri://ed-fi.org"
+            When a POST request is made to "/ed-fi/schools" with profile "Test-Profile-Resource-IncludeAll" for resource "School" with body
+                  """
+                  {
+                      "schoolId": 99004013,
+                      "nameOfInstitution": "Assigned Profile Covered School Multi Update Seed",
+                      "educationOrganizationCategories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                          }
+                      ],
+                      "gradeLevels": [
+                          {
+                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+                          }
+                      ]
+                  }
+                  """
+            Then the profile response status is 201
+            When a PUT request is made to "/ed-fi/schools/{id}" without profile header with body
+                  """
+                  {
+                      "id": "{id}",
+                      "schoolId": 99004013,
+                      "nameOfInstitution": "Assigned Profile Covered School Multi Update Standard Content Type",
+                      "educationOrganizationCategories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                          }
+                      ],
+                      "gradeLevels": [
+                          {
+                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+                          }
+                      ]
+                  }
+                  """
+            Then the profile response status is 403
+             And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
 
     Rule: Resources not covered by an assigned profile use standard behavior
 
@@ -215,3 +300,19 @@ Feature: Profile Assigned Profiles
                   """
             Then the profile response status is 403
              And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
+
+        Scenario: 07 Not-covered resource update with standard content type succeeds
+            When a PUT request is made to "/ed-fi/students/{id}" without profile header with body
+                  """
+                  {
+                      "id": "{id}",
+                      "studentUniqueId": "99004002",
+                      "birthDate": "2010-02-15",
+                      "firstName": "Updated",
+                      "lastSurname": "Resource"
+                  }
+                  """
+            Then the profile response status is 204
+            When a GET request is made to "/ed-fi/students/{id}" without profile header
+            Then the profile response status is 200
+             And the response body path "firstName" should have value "Updated"
