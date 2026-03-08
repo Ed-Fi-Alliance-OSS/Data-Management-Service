@@ -5,18 +5,40 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.RelationalModel.Schema;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Startup;
-using EdFi.DataManagementService.SchemaTools.Bridge;
+using EdFi.DataManagementService.Core.Utilities;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EdFi.DataManagementService.SchemaTools.Tests.Unit;
 
 [TestFixture]
 public class EffectiveSchemaSetBuilderTests
 {
+    private sealed record ProjectSummary(
+        string ProjectEndpointName,
+        string ProjectName,
+        string ProjectVersion,
+        bool IsExtensionProject,
+        string CanonicalProjectSchemaJson
+    );
+
+    private sealed record EffectiveSchemaSetSummary(
+        string ApiSchemaFormatVersion,
+        string RelationalMappingVersion,
+        string EffectiveSchemaHash,
+        int ResourceKeyCount,
+        string ResourceKeySeedHashHex,
+        IReadOnlyList<SchemaComponentInfo> SchemaComponentsInEndpointOrder,
+        IReadOnlyList<ResourceKeyEntry> ResourceKeysInIdOrder,
+        IReadOnlyList<ProjectSummary> ProjectsInEndpointOrder
+    );
+
     private const string MinimalCoreSchemaJson = """
         {
           "apiSchemaVersion": "1.0.0",
@@ -308,6 +330,79 @@ public class EffectiveSchemaSetBuilderTests
             _result1
                 .EffectiveSchema.ResourceKeySeedHash.Should()
                 .BeEquivalentTo(_result2.EffectiveSchema.ResourceKeySeedHash);
+        }
+    }
+
+    [TestFixture]
+    public class Given_Cli_And_Runtime_Builder_Paths : EffectiveSchemaSetBuilderTests
+    {
+        private EffectiveSchemaSet _cliResult = null!;
+        private EffectiveSchemaSet _runtimeResult = null!;
+
+        private static EffectiveSchemaSet BuildUsingCliRegistration(ApiSchemaDocumentNodes nodes)
+        {
+            var services = new ServiceCollection();
+            services.AddSingleton<IEffectiveSchemaHashProvider>(
+                new EffectiveSchemaHashProvider(NullLogger<EffectiveSchemaHashProvider>.Instance)
+            );
+            services.AddSingleton<IResourceKeySeedProvider>(
+                new ResourceKeySeedProvider(NullLogger<ResourceKeySeedProvider>.Instance)
+            );
+            services.AddSingleton<EffectiveSchemaSetBuilder>();
+
+            using var serviceProvider = services.BuildServiceProvider();
+            return serviceProvider.GetRequiredService<EffectiveSchemaSetBuilder>().Build(nodes);
+        }
+
+        private static EffectiveSchemaSetSummary Summarize(EffectiveSchemaSet schemaSet)
+        {
+            var effectiveSchema = schemaSet.EffectiveSchema;
+
+            return new EffectiveSchemaSetSummary(
+                effectiveSchema.ApiSchemaFormatVersion,
+                effectiveSchema.RelationalMappingVersion,
+                effectiveSchema.EffectiveSchemaHash,
+                effectiveSchema.ResourceKeyCount,
+                Convert.ToHexStringLower(effectiveSchema.ResourceKeySeedHash),
+                effectiveSchema.SchemaComponentsInEndpointOrder,
+                effectiveSchema.ResourceKeysInIdOrder,
+                schemaSet
+                    .ProjectsInEndpointOrder.Select(project => new ProjectSummary(
+                        project.ProjectEndpointName,
+                        project.ProjectName,
+                        project.ProjectVersion,
+                        project.IsExtensionProject,
+                        CanonicalJsonSerializer.SerializeToString(project.ProjectSchema)
+                    ))
+                    .ToArray()
+            );
+        }
+
+        [SetUp]
+        public void SetUp()
+        {
+            _cliResult = BuildUsingCliRegistration(
+                new ApiSchemaDocumentNodes(
+                    JsonNode.Parse(MinimalCoreSchemaJson)!,
+                    [JsonNode.Parse(MinimalExtensionSchemaJson)!]
+                )
+            );
+
+            _runtimeResult = CreateBuilder()
+                .Build(
+                    new ApiSchemaDocumentNodes(
+                        JsonNode.Parse(MinimalCoreSchemaJson)!,
+                        [JsonNode.Parse(MinimalExtensionSchemaJson)!]
+                    )
+                );
+        }
+
+        [Test]
+        public void It_matches_effective_schema_metadata_byte_for_byte()
+        {
+            Summarize(_cliResult)
+                .Should()
+                .BeEquivalentTo(Summarize(_runtimeResult), options => options.WithStrictOrdering());
         }
     }
 }

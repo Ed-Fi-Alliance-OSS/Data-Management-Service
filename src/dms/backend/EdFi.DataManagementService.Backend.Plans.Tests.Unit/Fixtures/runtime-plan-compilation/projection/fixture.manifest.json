@@ -1,0 +1,8 @@
+{
+  "inputs": [
+    {
+      "fileName": "core.ApiSchema.json",
+      "isExtensionProject": false
+    }
+  ]
+}

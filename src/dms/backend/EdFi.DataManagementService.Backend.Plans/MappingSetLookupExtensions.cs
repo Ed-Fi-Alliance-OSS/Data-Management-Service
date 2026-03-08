@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.Runtime.CompilerServices;
 using EdFi.DataManagementService.Backend.External;
@@ -17,11 +18,14 @@ public static class MappingSetLookupExtensions
 {
     private const string DescriptorWriteStoryRef = "E07-S06 (06-descriptor-writes.md)";
     private const string DescriptorReadStoryRef = "E08-S05 (05-descriptor-endpoints.md)";
-    private const string ProjectionReadStoryRef = "E15-S06 (06-projection-plan-compilers.md)";
     private static readonly ConditionalWeakTable<
         MappingSet,
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel>
     > ConcreteResourceModelsByResource = new();
+    private static readonly ConditionalWeakTable<
+        MappingSet,
+        ConcurrentDictionary<QualifiedResourceName, ResourceReadPlan>
+    > ValidatedReadPlansByResource = new();
 
     /// <summary>
     /// Gets the compiled write plan for <paramref name="resource" /> or throws a deterministic actionable exception.
@@ -78,8 +82,7 @@ public static class MappingSetLookupExtensions
 
         if (mappingSet.ReadPlansByResource.TryGetValue(resource, out var readPlan))
         {
-            ThrowIfReadPlanRequiresProjectionCompilation(mappingSet, resource, readPlan);
-            return readPlan;
+            return GetValidatedReadPlanOrThrow(mappingSet, resource, readPlan);
         }
 
         var concreteResourceModel = GetConcreteResourceModelOrThrow(mappingSet, resource);
@@ -107,58 +110,6 @@ public static class MappingSetLookupExtensions
             $"Read plan lookup failed for resource '{FormatResource(resource)}' in mapping set "
                 + $"'{FormatMappingSetKey(mappingSet.Key)}': storage kind '{concreteResourceModel.StorageKind}' "
                 + "is not recognized."
-        );
-    }
-
-    /// <summary>
-    /// Rejects hydration-only read plans that still require story-06 projection metadata before execution.
-    /// </summary>
-    private static void ThrowIfReadPlanRequiresProjectionCompilation(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        ResourceReadPlan readPlan
-    )
-    {
-        if (readPlan.Model.StorageKind != ResourceStorageKind.RelationalTables)
-        {
-            return;
-        }
-
-        var requiresReferenceIdentityProjection =
-            readPlan.Model.DocumentReferenceBindings.Count > 0
-            && readPlan.ReferenceIdentityProjectionPlansInDependencyOrder.IsEmpty;
-        var requiresDescriptorProjection =
-            readPlan.Model.DescriptorEdgeSources.Count > 0
-            && readPlan.DescriptorProjectionPlansInOrder.IsEmpty;
-
-        if (!requiresReferenceIdentityProjection && !requiresDescriptorProjection)
-        {
-            return;
-        }
-
-        var missingProjectionReason = (
-            requiresReferenceIdentityProjection,
-            requiresDescriptorProjection
-        ) switch
-        {
-            (true, true) =>
-                "DocumentReferenceBindings are present while ReferenceIdentityProjectionPlansInDependencyOrder is empty, "
-                    + "and DescriptorEdgeSources are present while DescriptorProjectionPlansInOrder is empty",
-            (true, false) =>
-                "DocumentReferenceBindings are present while ReferenceIdentityProjectionPlansInDependencyOrder is empty",
-            (false, true) =>
-                "DescriptorEdgeSources are present while DescriptorProjectionPlansInOrder is empty",
-            _ => throw new InvalidOperationException(
-                $"Read plan projection gating reached an invalid state for resource '{FormatResource(resource)}'."
-            ),
-        };
-
-        throw new NotSupportedException(
-            $"Read plan for resource '{FormatResource(resource)}' in mapping set "
-                + $"'{FormatMappingSetKey(mappingSet.Key)}' is not executable yet: hydration SQL was compiled for "
-                + $"storage kind '{ResourceStorageKind.RelationalTables}', but {missingProjectionReason}. "
-                + $"Story 05 only compiles hydration SQL; story 06 must compile the remaining projection metadata. "
-                + $"Next story: {ProjectionReadStoryRef}."
         );
     }
 
@@ -200,6 +151,38 @@ public static class MappingSetLookupExtensions
 
         throw new KeyNotFoundException(
             $"Mapping set '{FormatMappingSetKey(mappingSet.Key)}' does not contain resource '{FormatResource(resource)}' in ConcreteResourcesInNameOrder."
+        );
+    }
+
+    private static ResourceReadPlan GetValidatedReadPlanOrThrow(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        ResourceReadPlan readPlan
+    )
+    {
+        var validatedReadPlansByResource = ValidatedReadPlansByResource.GetValue(
+            mappingSet,
+            static _ => new ConcurrentDictionary<QualifiedResourceName, ResourceReadPlan>()
+        );
+
+        return validatedReadPlansByResource.GetOrAdd(
+            resource,
+            static (validatedResource, state) =>
+            {
+                var (validatedMappingSet, cachedReadPlan) = state;
+
+                ReadPlanProjectionContractValidator.ValidateOrThrow(
+                    cachedReadPlan,
+                    reason => new InvalidOperationException(
+                        $"Read plan lookup failed for resource '{FormatResource(validatedResource)}' in mapping set "
+                            + $"'{FormatMappingSetKey(validatedMappingSet.Key)}': compiled relational-table read plan has invalid projection metadata. "
+                            + $"{reason}. This indicates an internal compilation/selection bug."
+                    )
+                );
+
+                return cachedReadPlan;
+            },
+            (mappingSet, readPlan)
         );
     }
 

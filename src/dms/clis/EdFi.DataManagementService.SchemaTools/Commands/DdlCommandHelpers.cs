@@ -7,9 +7,9 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.RelationalModel.Build;
+using EdFi.DataManagementService.Backend.RelationalModel.Schema;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Utilities;
-using EdFi.DataManagementService.SchemaTools.Bridge;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.SchemaTools.Commands;

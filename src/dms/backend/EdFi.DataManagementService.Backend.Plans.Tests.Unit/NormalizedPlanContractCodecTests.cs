@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.RelationalModel.Schema;
 using FluentAssertions;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Backend.Plans.Tests.Unit.ReadPlanProjectionMutationHelper;
 
 namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
@@ -111,11 +112,17 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
         var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
         var decoded = NormalizedPlanContractCodec.Decode(encoded, _model);
         var reEncoded = NormalizedPlanContractCodec.Encode(decoded);
+        var canonicalJson = NormalizedPlanDtoJson.EmitCanonicalJson(encoded);
 
         NormalizedPlanDtoJson
             .ComputeCanonicalSha256(reEncoded)
             .Should()
             .Be(NormalizedPlanDtoJson.ComputeCanonicalSha256(encoded));
+
+        canonicalJson.Should().Contain("\"reference_identity_projection_plans_in_dependency_order\"");
+        canonicalJson.Should().Contain("\"reference_object_path\": \"$.schoolReference\"");
+        canonicalJson.Should().Contain("\"descriptor_projection_plans_in_order\"");
+        canonicalJson.Should().Contain("\"descriptor_value_path\": \"$.gradeLevelDescriptor\"");
 
         var sourceTablePlan = _readPlan.TablePlansInDependencyOrder[0];
         var decodedTablePlan = decoded.TablePlansInDependencyOrder[0];
@@ -179,6 +186,72 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_roundtrip_multiple_descriptor_projection_plans_without_collapsing_collection_order()
+    {
+        var readPlan = CreateReadPlanWithSplitDescriptorProjectionPlans(CreateReadPlan(_model));
+        var encoded = NormalizedPlanContractCodec.Encode(readPlan);
+        var decoded = NormalizedPlanContractCodec.Decode(encoded, _model);
+        var reEncoded = NormalizedPlanContractCodec.Encode(decoded);
+
+        NormalizedPlanDtoJson
+            .ComputeCanonicalSha256(reEncoded)
+            .Should()
+            .Be(NormalizedPlanDtoJson.ComputeCanonicalSha256(encoded));
+
+        encoded.DescriptorProjectionPlansInOrder.Should().HaveCount(2);
+        decoded.DescriptorProjectionPlansInOrder.Should().HaveCount(2);
+
+        decoded
+            .DescriptorProjectionPlansInOrder.Select(static plan => plan.SelectByKeysetSql)
+            .Should()
+            .Equal("SELECT descriptor_plan_0;\n", "SELECT descriptor_plan_1;\n");
+
+        decoded
+            .DescriptorProjectionPlansInOrder.SelectMany(static plan => plan.SourcesInOrder)
+            .Select(static source => source.DescriptorValuePath.Canonical)
+            .Should()
+            .Equal("$.gradeLevelDescriptor", "$.schoolYearDescriptor");
+    }
+
+    [Test]
+    public void It_should_roundtrip_multiple_reference_projection_table_plans_without_collapsing_dependency_order()
+    {
+        var multiTableModel = CreateInterleavedReferenceProjectionModel(rootBindingFirst: false);
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(multiTableModel);
+        var encoded = NormalizedPlanContractCodec.Encode(readPlan);
+        var decoded = NormalizedPlanContractCodec.Decode(encoded, multiTableModel);
+        var reEncoded = NormalizedPlanContractCodec.Encode(decoded);
+
+        NormalizedPlanDtoJson
+            .ComputeCanonicalSha256(reEncoded)
+            .Should()
+            .Be(NormalizedPlanDtoJson.ComputeCanonicalSha256(encoded));
+
+        encoded.ReferenceIdentityProjectionPlansInDependencyOrder.Should().HaveCount(2);
+        decoded.ReferenceIdentityProjectionPlansInDependencyOrder.Should().HaveCount(2);
+
+        decoded
+            .ReferenceIdentityProjectionPlansInDependencyOrder.Select(static plan => plan.Table)
+            .Should()
+            .Equal(
+                multiTableModel.TablesInDependencyOrder[0].Table,
+                multiTableModel.TablesInDependencyOrder[1].Table
+            );
+
+        decoded
+            .ReferenceIdentityProjectionPlansInDependencyOrder[0]
+            .BindingsInOrder.Select(static binding => binding.ReferenceObjectPath.Canonical)
+            .Should()
+            .Equal("$.schoolReference");
+
+        decoded
+            .ReferenceIdentityProjectionPlansInDependencyOrder[1]
+            .BindingsInOrder.Select(static binding => binding.ReferenceObjectPath.Canonical)
+            .Should()
+            .Equal("$.addresses[*].calendarReference", "$.addresses[*].sessionReference");
+    }
+
+    [Test]
     public void It_should_roundtrip_multi_table_resource_read_plan_through_normalized_dto_without_collapsing_story_05_shape()
     {
         var multiTableModel = CreateSupportedMultiTableModel();
@@ -234,6 +307,31 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_fail_fast_when_decoding_read_plan_with_unknown_reference_projection_table()
+    {
+        var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
+        var projectionTablePlan = encoded.ReferenceIdentityProjectionPlansInDependencyOrder[0];
+        var mutated = encoded with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder =
+            [
+                projectionTablePlan with
+                {
+                    Table = new DbTableNameDto("edfi", "MissingReferenceProjectionTable"),
+                },
+            ],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception
+            .ParamName.Should()
+            .Contain(nameof(ResourceReadPlanDto.ReferenceIdentityProjectionPlansInDependencyOrder));
+        exception.Message.Should().Contain("Unknown table 'edfi.MissingReferenceProjectionTable'");
+    }
+
+    [Test]
     public void It_should_roundtrip_query_plan_through_normalized_dto_without_losing_parameter_inventory_order()
     {
         var encoded = NormalizedPlanContractCodec.Encode(_queryPlan);
@@ -257,16 +355,18 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     }
 
     [Test]
-    public void It_should_preserve_read_plan_hash_when_model_lookup_collections_are_permuted()
+    public void It_should_fail_fast_when_model_document_reference_binding_order_is_permuted_relative_to_the_encoded_read_plan()
     {
         var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
-        var baselineHash = NormalizedPlanDtoJson.ComputeCanonicalSha256(encoded);
-        var permutedModel = CreateModelWithPermutedLookups(_model);
+        var permutedModel = CreateModelWithPermutedDocumentReferenceBindings(_model);
 
-        var decoded = NormalizedPlanContractCodec.Decode(encoded, permutedModel);
-        var reEncoded = NormalizedPlanContractCodec.Encode(decoded);
+        var act = () => NormalizedPlanContractCodec.Decode(encoded, permutedModel);
 
-        NormalizedPlanDtoJson.ComputeCanonicalSha256(reEncoded).Should().Be(baselineHash);
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        exception.Message.Should().Contain("Decoded read plan for resource");
+        exception.Message.Should().Contain("reference identity projection binding at index '0'");
+        exception.Message.Should().Contain("$.schoolReference");
+        exception.Message.Should().Contain("$.calendarReference");
     }
 
     [Test]
@@ -503,6 +603,213 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_fail_fast_when_descriptor_projection_result_shape_is_not_descriptor_id_then_uri()
+    {
+        var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
+        var descriptorPlan = encoded.DescriptorProjectionPlansInOrder[0];
+        var mutated = encoded with
+        {
+            DescriptorProjectionPlansInOrder =
+            [
+                descriptorPlan with
+                {
+                    ResultShape = descriptorPlan.ResultShape with { DescriptorIdOrdinal = 1, UriOrdinal = 0 },
+                },
+            ],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        exception.Message.Should().Contain("Decoded read plan for resource");
+        exception
+            .Message.Should()
+            .Contain(
+                "descriptor projection plan at index '0' result shape must expose DescriptorId at ordinal '0' and Uri at ordinal '1'"
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_reference_identity_projection_binding_count_does_not_match_model()
+    {
+        var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
+        var projectionTablePlan = encoded.ReferenceIdentityProjectionPlansInDependencyOrder[0];
+        var mutated = encoded with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder =
+            [
+                projectionTablePlan with
+                {
+                    BindingsInOrder = [],
+                },
+            ],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        exception.Message.Should().Contain("Decoded read plan for resource");
+        exception.Message.Should().Contain("reference identity projection table");
+        exception.Message.Should().Contain("binding count '0'");
+        exception.Message.Should().Contain("authoritative DocumentReferenceBindings count '2'");
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_reference_identity_projection_table_is_duplicated()
+    {
+        var model = CreateInterleavedReferenceProjectionModel(rootBindingFirst: false);
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(model);
+        var encoded = NormalizedPlanContractCodec.Encode(readPlan);
+        var projectionTablePlans = encoded.ReferenceIdentityProjectionPlansInDependencyOrder.ToArray();
+        var mutated = encoded with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder =
+            [
+                projectionTablePlans[0],
+                projectionTablePlans[0],
+            ],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, model);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        exception.Message.Should().Contain("Decoded read plan for resource");
+        exception.Message.Should().Contain("reference identity projection includes duplicate table");
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_descriptor_projection_plan_has_no_sources()
+    {
+        var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
+        var descriptorPlan = encoded.DescriptorProjectionPlansInOrder[0];
+        var mutated = encoded with
+        {
+            DescriptorProjectionPlansInOrder = [descriptorPlan with { SourcesInOrder = [] }],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        exception.Message.Should().Contain("Decoded read plan for resource");
+        exception
+            .Message.Should()
+            .Contain("descriptor projection plan at index '0' must contain at least one source");
+        exception.Message.Should().Contain("contiguous slice of authoritative DescriptorEdgeSources");
+    }
+
+    [Test]
+    public void It_should_fail_with_the_same_projection_contract_reason_as_direct_validation_when_a_descriptor_projection_source_is_duplicated()
+    {
+        var mutatedReadPlan = CreateReadPlanWithDuplicatedDescriptorProjectionSource(
+            _readPlan,
+            sourceIndex: 0,
+            targetIndex: 1
+        );
+        var expectedReason = GetProjectionValidationFailureReason(mutatedReadPlan);
+
+        var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
+        var descriptorPlan = encoded.DescriptorProjectionPlansInOrder[0];
+        var sources = descriptorPlan.SourcesInOrder.ToArray();
+
+        sources[1] = sources[0];
+
+        var mutated = encoded with
+        {
+            DescriptorProjectionPlansInOrder = [descriptorPlan with { SourcesInOrder = [.. sources] }],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        GetDecodedProjectionValidationFailureReason(exception.Message).Should().Be(expectedReason);
+    }
+
+    [Test]
+    public void It_should_fail_with_the_same_projection_contract_reason_as_direct_validation_when_descriptor_projection_source_order_is_reordered()
+    {
+        var mutatedReadPlan = CreateReadPlanWithSwappedDescriptorProjectionSources(_readPlan);
+        var expectedReason = GetProjectionValidationFailureReason(mutatedReadPlan);
+
+        var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
+        var descriptorPlan = encoded.DescriptorProjectionPlansInOrder[0];
+        var sources = descriptorPlan.SourcesInOrder.ToArray();
+        var firstSource = sources[0];
+
+        sources[0] = sources[1];
+        sources[1] = firstSource;
+
+        var mutated = encoded with
+        {
+            DescriptorProjectionPlansInOrder = [descriptorPlan with { SourcesInOrder = [.. sources] }],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        GetDecodedProjectionValidationFailureReason(exception.Message).Should().Be(expectedReason);
+    }
+
+    [Test]
+    public void It_should_fail_with_the_same_projection_contract_reason_as_direct_validation_when_descriptor_projection_plan_order_is_reordered()
+    {
+        var readPlan = CreateReadPlanWithSplitDescriptorProjectionPlans(CreateReadPlan(_model));
+        var mutatedReadPlan = CreateReadPlanWithSwappedDescriptorProjectionPlans(readPlan);
+        var expectedReason = GetProjectionValidationFailureReason(mutatedReadPlan);
+
+        var encoded = NormalizedPlanContractCodec.Encode(readPlan);
+        var descriptorProjectionPlans = encoded.DescriptorProjectionPlansInOrder.ToArray();
+        var firstPlan = descriptorProjectionPlans[0];
+
+        descriptorProjectionPlans[0] = descriptorProjectionPlans[1];
+        descriptorProjectionPlans[1] = firstPlan;
+
+        var mutated = encoded with { DescriptorProjectionPlansInOrder = [.. descriptorProjectionPlans] };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        GetDecodedProjectionValidationFailureReason(exception.Message).Should().Be(expectedReason);
+    }
+
+    [Test]
+    public void It_should_fail_with_the_same_projection_contract_reason_as_direct_validation_when_a_split_descriptor_projection_plan_is_empty()
+    {
+        var readPlan = CreateReadPlanWithSplitDescriptorProjectionPlans(CreateReadPlan(_model));
+        var descriptorProjectionPlans = readPlan.DescriptorProjectionPlansInOrder.ToArray();
+        var mutatedReadPlan = readPlan with
+        {
+            DescriptorProjectionPlansInOrder =
+            [
+                descriptorProjectionPlans[0],
+                descriptorProjectionPlans[1] with
+                {
+                    SourcesInOrder = [],
+                },
+            ],
+        };
+        var expectedReason = GetProjectionValidationFailureReason(mutatedReadPlan);
+
+        var encoded = NormalizedPlanContractCodec.Encode(readPlan);
+        var encodedDescriptorProjectionPlans = encoded.DescriptorProjectionPlansInOrder.ToArray();
+        var mutated = encoded with
+        {
+            DescriptorProjectionPlansInOrder =
+            [
+                encodedDescriptorProjectionPlans[0],
+                encodedDescriptorProjectionPlans[1] with
+                {
+                    SourcesInOrder = [],
+                },
+            ],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        GetDecodedProjectionValidationFailureReason(exception.Message).Should().Be(expectedReason);
+    }
+
+    [Test]
     public void It_should_fail_fast_when_keyset_temp_table_name_is_not_supported()
     {
         var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
@@ -566,9 +873,160 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
         var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
 
         var exception = act.Should().Throw<InvalidOperationException>().Which;
-        exception.Message.Should().Contain("Document-reference binding index");
+        exception.Message.Should().Contain("Decoded read plan for resource");
+        exception.Message.Should().Contain("ReferenceObjectPath");
         exception.Message.Should().Contain("$.schoolReference");
         exception.Message.Should().Contain("$.calendarReference");
+    }
+
+    [Test]
+    public void It_should_fail_with_the_same_projection_contract_reason_as_direct_validation_when_a_reference_identity_projection_binding_is_duplicated()
+    {
+        var mutatedReadPlan = CreateReadPlanWithDuplicatedReferenceProjectionBinding(
+            _readPlan,
+            sourceIndex: 0,
+            targetIndex: 1
+        );
+        var expectedReason = GetProjectionValidationFailureReason(mutatedReadPlan);
+
+        var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
+        var projectionTablePlan = encoded.ReferenceIdentityProjectionPlansInDependencyOrder[0];
+        var bindings = projectionTablePlan.BindingsInOrder.ToArray();
+
+        bindings[1] = bindings[0];
+
+        var mutated = encoded with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder =
+            [
+                projectionTablePlan with
+                {
+                    BindingsInOrder = [.. bindings],
+                },
+            ],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        GetDecodedProjectionValidationFailureReason(exception.Message).Should().Be(expectedReason);
+    }
+
+    [Test]
+    public void It_should_fail_with_the_same_projection_contract_reason_as_direct_validation_when_reference_identity_projection_binding_order_is_reordered()
+    {
+        var mutatedReadPlan = CreateReadPlanWithSwappedReferenceProjectionBindings(_readPlan);
+        var expectedReason = GetProjectionValidationFailureReason(mutatedReadPlan);
+
+        var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
+        var projectionTablePlan = encoded.ReferenceIdentityProjectionPlansInDependencyOrder[0];
+        var bindings = projectionTablePlan.BindingsInOrder.ToArray();
+        var firstBinding = bindings[0];
+
+        bindings[0] = bindings[1];
+        bindings[1] = firstBinding;
+
+        var mutated = encoded with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder =
+            [
+                projectionTablePlan with
+                {
+                    BindingsInOrder = [.. bindings],
+                },
+            ],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        GetDecodedProjectionValidationFailureReason(exception.Message).Should().Be(expectedReason);
+    }
+
+    [Test]
+    public void It_should_fail_with_the_same_projection_contract_reason_as_direct_validation_when_reference_projection_table_plan_order_is_reordered()
+    {
+        var model = CreateInterleavedReferenceProjectionModel(rootBindingFirst: false);
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(model);
+        var mutatedReadPlan = CreateReadPlanWithSwappedReferenceProjectionTablePlans(readPlan);
+        var expectedReason = GetProjectionValidationFailureReason(mutatedReadPlan);
+
+        var encoded = NormalizedPlanContractCodec.Encode(readPlan);
+        var projectionTablePlans = encoded.ReferenceIdentityProjectionPlansInDependencyOrder.ToArray();
+        var firstTablePlan = projectionTablePlans[0];
+
+        projectionTablePlans[0] = projectionTablePlans[1];
+        projectionTablePlans[1] = firstTablePlan;
+
+        var mutated = encoded with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder = [.. projectionTablePlans],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, model);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        GetDecodedProjectionValidationFailureReason(exception.Message).Should().Be(expectedReason);
+    }
+
+    [Test]
+    public void It_should_fail_with_the_same_projection_contract_reason_as_direct_validation_when_an_extra_reference_projection_table_plan_is_appended()
+    {
+        var model = CreateInterleavedReferenceProjectionModel(rootBindingFirst: false);
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(model);
+        var mutatedReadPlan = CreateReadPlanWithAppendedReferenceProjectionTablePlan(
+            readPlan,
+            sourceIndex: 1
+        );
+        var expectedReason = GetProjectionValidationFailureReason(mutatedReadPlan);
+
+        var encoded = NormalizedPlanContractCodec.Encode(readPlan);
+        var projectionTablePlans = encoded.ReferenceIdentityProjectionPlansInDependencyOrder.ToArray();
+        var mutated = encoded with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder =
+            [
+                .. projectionTablePlans,
+                projectionTablePlans[1],
+            ],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, model);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        GetDecodedProjectionValidationFailureReason(exception.Message).Should().Be(expectedReason);
+    }
+
+    [Test]
+    public void It_should_fail_with_the_same_projection_contract_reason_as_direct_validation_when_reference_identity_component_is_mismatched()
+    {
+        var mutatedReadPlan = CreateReadPlanWithReferenceIdentityComponent(
+            _readPlan,
+            isIdentityComponent: false
+        );
+        var expectedReason = GetProjectionValidationFailureReason(mutatedReadPlan);
+
+        var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
+        var projectionTablePlan = encoded.ReferenceIdentityProjectionPlansInDependencyOrder[0];
+        var bindings = projectionTablePlan.BindingsInOrder.ToArray();
+
+        bindings[0] = bindings[0] with { IsIdentityComponent = false };
+
+        var mutated = encoded with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder =
+            [
+                projectionTablePlan with
+                {
+                    BindingsInOrder = [.. bindings],
+                },
+            ],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        GetDecodedProjectionValidationFailureReason(exception.Message).Should().Be(expectedReason);
     }
 
     [Test]
@@ -1086,6 +1544,19 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
                                 ),
                             ]
                         ),
+                        new ReferenceIdentityProjectionBinding(
+                            IsIdentityComponent: false,
+                            ReferenceObjectPath: Path("$.calendarReference"),
+                            TargetResource: new QualifiedResourceName("Ed-Fi", "Calendar"),
+                            FkColumnOrdinal: 5,
+                            IdentityFieldOrdinalsInOrder:
+                            [
+                                new ReferenceIdentityProjectionFieldOrdinal(
+                                    ReferenceJsonPath: Path("$.calendarReference.calendarCode"),
+                                    ColumnOrdinal: 6
+                                ),
+                            ]
+                        ),
                     ]
                 ),
             ],
@@ -1102,9 +1573,180 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
                             DescriptorResource: new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor"),
                             DescriptorIdColumnOrdinal: 8
                         ),
+                        new DescriptorProjectionSource(
+                            DescriptorValuePath: Path("$.schoolYearDescriptor"),
+                            Table: table,
+                            DescriptorResource: new QualifiedResourceName(
+                                "Ed-Fi",
+                                "SchoolYearTypeDescriptor"
+                            ),
+                            DescriptorIdColumnOrdinal: 10
+                        ),
                     ]
                 ),
             ]
+        );
+    }
+
+    private static RelationalResourceModel CreateInterleavedReferenceProjectionModel(bool rootBindingFirst)
+    {
+        var rootTable = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "StudentReferenceGrouping"),
+            JsonScope: Path("$"),
+            Key: new TableKey(
+                ConstraintName: "PK_StudentReferenceGrouping",
+                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_DocumentId"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: Path("$.schoolReference"),
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "School")
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_RefSchoolId"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: true,
+                    SourceJsonPath: Path("$.schoolReference.schoolId"),
+                    TargetResource: null
+                ),
+            ],
+            Constraints: []
+        );
+
+        var childTable = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "StudentAddressReferenceGrouping"),
+            JsonScope: Path("$.addresses[*]"),
+            Key: new TableKey(
+                ConstraintName: "PK_StudentAddressReferenceGrouping",
+                Columns:
+                [
+                    new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart),
+                    new DbKeyColumn(new DbColumnName("Ordinal"), ColumnKind.Ordinal),
+                ]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("Ordinal"),
+                    Kind: ColumnKind.Ordinal,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("Calendar_DocumentId"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: Path("$.addresses[*].calendarReference"),
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "Calendar")
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("Calendar_RefCalendarCode"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 50),
+                    IsNullable: true,
+                    SourceJsonPath: Path("$.addresses[*].calendarReference.calendarCode"),
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("Session_DocumentId"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: Path("$.addresses[*].sessionReference"),
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "Session")
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("Session_RefSessionName"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 128),
+                    IsNullable: true,
+                    SourceJsonPath: Path("$.addresses[*].sessionReference.sessionName"),
+                    TargetResource: null
+                ),
+            ],
+            Constraints: []
+        );
+
+        var rootBinding = new DocumentReferenceBinding(
+            IsIdentityComponent: true,
+            ReferenceObjectPath: Path("$.schoolReference"),
+            Table: rootTable.Table,
+            FkColumn: new DbColumnName("School_DocumentId"),
+            TargetResource: new QualifiedResourceName("Ed-Fi", "School"),
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    ReferenceJsonPath: Path("$.schoolReference.schoolId"),
+                    Column: new DbColumnName("School_RefSchoolId")
+                ),
+            ]
+        );
+        var calendarBinding = new DocumentReferenceBinding(
+            IsIdentityComponent: false,
+            ReferenceObjectPath: Path("$.addresses[*].calendarReference"),
+            Table: childTable.Table,
+            FkColumn: new DbColumnName("Calendar_DocumentId"),
+            TargetResource: new QualifiedResourceName("Ed-Fi", "Calendar"),
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    ReferenceJsonPath: Path("$.addresses[*].calendarReference.calendarCode"),
+                    Column: new DbColumnName("Calendar_RefCalendarCode")
+                ),
+            ]
+        );
+        var sessionBinding = new DocumentReferenceBinding(
+            IsIdentityComponent: false,
+            ReferenceObjectPath: Path("$.addresses[*].sessionReference"),
+            Table: childTable.Table,
+            FkColumn: new DbColumnName("Session_DocumentId"),
+            TargetResource: new QualifiedResourceName("Ed-Fi", "Session"),
+            IdentityBindings:
+            [
+                new ReferenceIdentityBinding(
+                    ReferenceJsonPath: Path("$.addresses[*].sessionReference.sessionName"),
+                    Column: new DbColumnName("Session_RefSessionName")
+                ),
+            ]
+        );
+
+        var documentReferenceBindings = rootBindingFirst
+            ? new[] { rootBinding, calendarBinding, sessionBinding }
+            : new[] { calendarBinding, rootBinding, sessionBinding };
+
+        return new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "StudentReferenceGrouping"),
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTable,
+            TablesInDependencyOrder: [rootTable, childTable],
+            DocumentReferenceBindings: documentReferenceBindings,
+            DescriptorEdgeSources: []
         );
     }
 
@@ -1128,13 +1770,11 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
         return JsonPathExpressionCompiler.Compile(value);
     }
 
-    private static RelationalResourceModel CreateModelWithPermutedLookups(RelationalResourceModel model)
+    private static RelationalResourceModel CreateModelWithPermutedDocumentReferenceBindings(
+        RelationalResourceModel model
+    )
     {
-        return model with
-        {
-            DocumentReferenceBindings = [.. model.DocumentReferenceBindings.Reverse()],
-            DescriptorEdgeSources = [.. model.DescriptorEdgeSources.Reverse()],
-        };
+        return model with { DocumentReferenceBindings = [.. model.DocumentReferenceBindings.Reverse()] };
     }
 
     private static string ComputeCanonicalWritePlanHash(ResourceWritePlan plan)
@@ -1160,5 +1800,30 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
             WriteValueSource.Precomputed => nameof(WriteValueSource.Precomputed),
             _ => throw new ArgumentOutOfRangeException(nameof(source), source.GetType().Name),
         };
+    }
+
+    private static string GetProjectionValidationFailureReason(ResourceReadPlan readPlan)
+    {
+        var act = () =>
+            ReadPlanProjectionContractValidator.ValidateOrThrow(
+                readPlan,
+                reason => new InvalidOperationException(reason)
+            );
+
+        return act.Should().Throw<InvalidOperationException>().Which.Message;
+    }
+
+    private static string GetDecodedProjectionValidationFailureReason(string message)
+    {
+        const string prefix = "Decoded read plan for resource '";
+        const string separator = "' has invalid projection metadata. ";
+
+        message.Should().StartWith(prefix);
+        message.Should().EndWith(".");
+
+        var separatorIndex = message.IndexOf(separator, StringComparison.Ordinal);
+        separatorIndex.Should().BeGreaterOrEqualTo(prefix.Length);
+
+        return message[(separatorIndex + separator.Length)..^1];
     }
 }
