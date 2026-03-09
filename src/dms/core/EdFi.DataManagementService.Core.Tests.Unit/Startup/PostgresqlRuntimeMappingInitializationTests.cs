@@ -151,16 +151,29 @@ public class PostgresqlRuntimeMappingInitializationTests
         ApiSchemaDocumentNodes schemaNodes,
         IDmsInstanceProvider dmsInstanceProvider,
         IPostgresqlRuntimeDatabaseMetadataReader databaseMetadataReader
+    ) =>
+        CreateStartupServiceProvider(
+            CreateApiSchemaProvider(schemaNodes),
+            dmsInstanceProvider,
+            databaseMetadataReader
+        );
+
+    private static ServiceProvider CreateStartupServiceProvider(
+        IApiSchemaProvider apiSchemaProvider,
+        IDmsInstanceProvider dmsInstanceProvider,
+        IPostgresqlRuntimeDatabaseMetadataReader databaseMetadataReader
     )
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton<IApiSchemaProvider>(CreateApiSchemaProvider(schemaNodes));
+        services.AddSingleton(apiSchemaProvider);
         services.AddSingleton<ICompiledSchemaCache, CompiledSchemaCache>();
         services.AddSingleton<EffectiveApiSchemaProvider>();
         services.AddSingleton<IEffectiveApiSchemaProvider>(serviceProvider =>
             serviceProvider.GetRequiredService<EffectiveApiSchemaProvider>()
         );
+        services.AddSingleton<EffectiveSchemaSetBuilder>();
+        services.AddSingleton<IEffectiveSchemaSetProvider, EffectiveSchemaSetProvider>();
         services.AddSingleton<DmsStartupOrchestrator>();
         services.AddSingleton<IDmsStartupTask, LoadAndBuildEffectiveSchemaTask>();
         services.AddSingleton<IDmsStartupTask, BackendMappingInitializationTask>();
@@ -889,6 +902,153 @@ public class PostgresqlRuntimeMappingInitializationTests
             exception.InnerException.Should().NotBeNull();
             exception.InnerException!.Message.Should().Contain("rootTableNameOverride");
             exception.InnerException.Message.Should().Contain("Sample:Contact");
+        }
+    }
+
+    [TestFixture]
+    public class Given_The_Raw_Api_Schema_Source_Changes_After_Api_Initialization
+        : PostgresqlRuntimeMappingInitializationTests
+    {
+        private const string ConnectionString =
+            "Host=localhost;Database=startup-shared-effective-schema-instance;Username=test;Password=test";
+
+        private ServiceProvider _serviceProvider = null!;
+        private ApiSchemaDocumentNodes _startupSchemaNodes = null!;
+        private IApiSchemaProvider _apiSchemaProvider = null!;
+        private IDmsInstanceProvider _dmsInstanceProvider = null!;
+        private IPostgresqlRuntimeDatabaseMetadataReader _databaseMetadataReader = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _startupSchemaNodes = CreateSchemaNodes();
+            _apiSchemaProvider = A.Fake<IApiSchemaProvider>();
+            _dmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
+            _databaseMetadataReader = A.Fake<IPostgresqlRuntimeDatabaseMetadataReader>();
+            _serviceProvider = CreateStartupServiceProvider(
+                _apiSchemaProvider,
+                _dmsInstanceProvider,
+                _databaseMetadataReader
+            );
+
+            A.CallTo(() => _apiSchemaProvider.GetApiSchemaNodes()).Returns(_startupSchemaNodes);
+            A.CallTo(() => _apiSchemaProvider.IsSchemaValid).Returns(true);
+            A.CallTo(() => _apiSchemaProvider.ApiSchemaFailures).Returns([]);
+
+            var effectiveSchemaSet = BuildEffectiveSchemaSet(_startupSchemaNodes);
+
+            A.CallTo(() => _dmsInstanceProvider.GetLoadedTenantKeys()).Returns([""]);
+            A.CallTo(() => _dmsInstanceProvider.GetAll(null))
+                .Returns([
+                    new DmsInstance(
+                        Id: 5,
+                        InstanceType: "test",
+                        InstanceName: "SharedEffectiveSchemaStartupInstance",
+                        ConnectionString: ConnectionString,
+                        RouteContext: new Dictionary<RouteQualifierName, RouteQualifierValue>()
+                    ),
+                ]);
+            A.CallTo(() =>
+                    _databaseMetadataReader.ReadFingerprintAsync(
+                        ConnectionString,
+                        A<CancellationToken>.Ignored
+                    )
+                )
+                .Returns(
+                    new PostgresqlDatabaseFingerprintReadResult.Success(
+                        CreateMatchingFingerprint(effectiveSchemaSet)
+                    )
+                );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _serviceProvider.Dispose();
+        }
+
+        [Test]
+        public async Task It_reuses_the_authoritative_effective_schema_set_from_api_schema_startup()
+        {
+            var orchestrator = _serviceProvider.GetRequiredService<DmsStartupOrchestrator>();
+
+            await orchestrator.RunByOrderRangeAsync(
+                0,
+                DmsStartupTaskOrderRanges.ApiSchemaInitializationMaximum,
+                CancellationToken.None
+            );
+
+            var changedSchemaNodes = CreateSchemaNodes(
+                BuildExtensionBearingStartupCoreProjectSchema(),
+                BuildExtensionBearingStartupExtensionProjectSchema(includeUnsupportedRootTableOverride: true)
+            );
+
+            A.CallTo(() => _apiSchemaProvider.GetApiSchemaNodes()).Returns(changedSchemaNodes);
+
+            await orchestrator.RunByOrderRangeAsync(
+                DmsStartupTaskOrderRanges.BackendMappingMinimum,
+                DmsStartupTaskOrderRanges.BackendMappingMaximum,
+                CancellationToken.None
+            );
+
+            var mappingSetKey = CreateMappingSetKey(BuildEffectiveSchemaSet(_startupSchemaNodes));
+            var cache = _serviceProvider.GetRequiredService<MappingSetCache>();
+            var cacheResult = await cache.GetOrCreateWithCacheStatusAsync(
+                mappingSetKey,
+                CancellationToken.None
+            );
+
+            cacheResult.WasCacheHit.Should().BeTrue();
+            cacheResult.MappingSet.Key.Should().Be(mappingSetKey);
+            A.CallTo(() => _apiSchemaProvider.GetApiSchemaNodes()).MustHaveHappenedOnceExactly();
+        }
+    }
+
+    [TestFixture]
+    public class Given_Backend_Mapping_Initialization_Runs_Without_Api_Schema_Initialization
+        : PostgresqlRuntimeMappingInitializationTests
+    {
+        private ServiceProvider _serviceProvider = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _serviceProvider = CreateStartupServiceProvider(
+                CreateSchemaNodes(),
+                A.Fake<IDmsInstanceProvider>(),
+                A.Fake<IPostgresqlRuntimeDatabaseMetadataReader>()
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _serviceProvider.Dispose();
+        }
+
+        [Test]
+        public async Task It_fails_fast_with_an_actionable_missing_startup_state_message()
+        {
+            var orchestrator = _serviceProvider.GetRequiredService<DmsStartupOrchestrator>();
+
+            Func<Task> act = () =>
+                orchestrator.RunByOrderRangeAsync(
+                    DmsStartupTaskOrderRanges.BackendMappingMinimum,
+                    DmsStartupTaskOrderRanges.BackendMappingMaximum,
+                    CancellationToken.None
+                );
+
+            var exception = (await act.Should().ThrowAsync<InvalidOperationException>()).Which;
+
+            exception.Message.Should().Contain("Startup task 'Backend Mapping Initialization' failed");
+            exception.InnerException.Should().NotBeNull();
+            exception
+                .InnerException!.Message.Should()
+                .Contain("authoritative effective schema startup state is unavailable");
+            exception.InnerException.InnerException.Should().NotBeNull();
+            exception
+                .InnerException.InnerException!.Message.Should()
+                .Contain("EffectiveSchemaSetProvider has not been initialized");
         }
     }
 

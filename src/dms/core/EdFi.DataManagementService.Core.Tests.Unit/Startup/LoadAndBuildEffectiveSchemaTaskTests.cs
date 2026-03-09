@@ -4,6 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.RelationalModel.Schema;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Startup;
@@ -22,11 +24,56 @@ public class LoadAndBuildEffectiveSchemaTaskTests
         var coreSchema = JsonNode.Parse(
             """
             {
+                "apiSchemaVersion": "1.0.0",
                 "projectSchema": {
-                    "projectName": "ed-fi",
+                    "projectName": "Ed-Fi",
+                    "projectEndpointName": "ed-fi",
                     "projectVersion": "5.0.0",
                     "isExtensionProject": false,
-                    "resourceSchemas": {}
+                    "abstractResources": {},
+                    "resourceSchemas": {
+                        "students": {
+                            "resourceName": "Student",
+                            "isDescriptor": false,
+                            "isSchoolYearEnumeration": false,
+                            "isResourceExtension": false,
+                            "allowIdentityUpdates": false,
+                            "isSubclass": false,
+                            "identityJsonPaths": ["$.studentUniqueId"],
+                            "booleanJsonPaths": [],
+                            "numericJsonPaths": [],
+                            "dateJsonPaths": [],
+                            "dateTimeJsonPaths": [],
+                            "equalityConstraints": [],
+                            "arrayUniquenessConstraints": [],
+                            "documentPathsMapping": {
+                                "StudentUniqueId": {
+                                    "isReference": false,
+                                    "isPartOfIdentity": true,
+                                    "isRequired": true,
+                                    "path": "$.studentUniqueId"
+                                }
+                            },
+                            "queryFieldMapping": {},
+                            "securableElements": {
+                                "Namespace": [],
+                                "EducationOrganization": [],
+                                "Student": [],
+                                "Contact": [],
+                                "Staff": []
+                            },
+                            "authorizationPathways": [],
+                            "decimalPropertyValidationInfos": [],
+                            "jsonSchemaForInsert": {
+                                "type": "object",
+                                "properties": {
+                                    "studentUniqueId": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             """
@@ -34,16 +81,23 @@ public class LoadAndBuildEffectiveSchemaTaskTests
         return new ApiSchemaDocumentNodes(coreSchema, []);
     }
 
+    private static EffectiveSchemaSetBuilder CreateBuilder(
+        IEffectiveSchemaHashProvider hashProvider,
+        IResourceKeySeedProvider seedProvider
+    ) => new(hashProvider, seedProvider);
+
     [TestFixture]
     public class Given_Valid_Schema : LoadAndBuildEffectiveSchemaTaskTests
     {
         private IApiSchemaProvider _mockSchemaProvider = null!;
         private IEffectiveApiSchemaProvider _mockEffectiveProvider = null!;
+        private IEffectiveSchemaSetProvider _mockEffectiveSchemaSetProvider = null!;
         private IApiSchemaInputNormalizer _mockNormalizer = null!;
         private IEffectiveSchemaHashProvider _mockHashProvider = null!;
         private IResourceKeySeedProvider _mockSeedProvider = null!;
         private LoadAndBuildEffectiveSchemaTask _task = null!;
         private ApiSchemaDocumentNodes _schemaNodes = null!;
+        private IReadOnlyList<ResourceKeySeed> _seeds = null!;
 
         [SetUp]
         public void Setup()
@@ -56,6 +110,7 @@ public class LoadAndBuildEffectiveSchemaTaskTests
             A.CallTo(() => _mockSchemaProvider.ApiSchemaFailures).Returns([]);
 
             _mockEffectiveProvider = A.Fake<IEffectiveApiSchemaProvider>();
+            _mockEffectiveSchemaSetProvider = A.Fake<IEffectiveSchemaSetProvider>();
 
             _mockNormalizer = A.Fake<IApiSchemaInputNormalizer>();
             A.CallTo(() => _mockNormalizer.Normalize(A<ApiSchemaDocumentNodes>._))
@@ -64,18 +119,31 @@ public class LoadAndBuildEffectiveSchemaTaskTests
                 );
 
             _mockHashProvider = A.Fake<IEffectiveSchemaHashProvider>();
-            A.CallTo(() => _mockHashProvider.ComputeHash(A<ApiSchemaDocumentNodes>._)).Returns(string.Empty);
+            A.CallTo(() =>
+                    _mockHashProvider.ComputeHash(A<string>._, A<IReadOnlyList<ProjectSchemaMetadata>>._)
+                )
+                .Returns("expected-schema-hash");
 
             _mockSeedProvider = A.Fake<IResourceKeySeedProvider>();
-            A.CallTo(() => _mockSeedProvider.GetSeeds(A<ApiSchemaDocumentNodes>._))
-                .Returns(new List<ResourceKeySeed>());
+            _seeds =
+            [
+                new ResourceKeySeed(
+                    ResourceKeyId: 1,
+                    ProjectName: "Ed-Fi",
+                    ResourceName: "Student",
+                    ResourceVersion: "5.0.0",
+                    IsAbstract: false
+                ),
+            ];
+            A.CallTo(() => _mockSeedProvider.GetSeeds(_schemaNodes)).Returns(_seeds);
+            A.CallTo(() => _mockSeedProvider.ComputeSeedHash(_seeds)).Returns([0x12, 0x34]);
 
             _task = new LoadAndBuildEffectiveSchemaTask(
                 _mockSchemaProvider,
                 _mockEffectiveProvider,
+                _mockEffectiveSchemaSetProvider,
                 _mockNormalizer,
-                _mockHashProvider,
-                _mockSeedProvider,
+                CreateBuilder(_mockHashProvider, _mockSeedProvider),
                 NullLogger<LoadAndBuildEffectiveSchemaTask>.Instance
             );
         }
@@ -119,7 +187,9 @@ public class LoadAndBuildEffectiveSchemaTaskTests
             await _task.ExecuteAsync(CancellationToken.None);
 
             // Assert
-            A.CallTo(() => _mockHashProvider.ComputeHash(A<ApiSchemaDocumentNodes>._))
+            A.CallTo(() =>
+                    _mockHashProvider.ComputeHash(A<string>._, A<IReadOnlyList<ProjectSchemaMetadata>>._)
+                )
                 .MustHaveHappenedOnceExactly();
         }
 
@@ -130,8 +200,8 @@ public class LoadAndBuildEffectiveSchemaTaskTests
             await _task.ExecuteAsync(CancellationToken.None);
 
             // Assert
-            A.CallTo(() => _mockSeedProvider.GetSeeds(A<ApiSchemaDocumentNodes>._))
-                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => _mockSeedProvider.GetSeeds(_schemaNodes)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _mockSeedProvider.ComputeSeedHash(_seeds)).MustHaveHappenedOnceExactly();
         }
 
         [Test]
@@ -144,6 +214,25 @@ public class LoadAndBuildEffectiveSchemaTaskTests
             A.CallTo(() => _mockEffectiveProvider.Initialize(A<ApiSchemaDocumentNodes>._))
                 .MustHaveHappenedOnceExactly();
         }
+
+        [Test]
+        public async Task It_initializes_effective_schema_set_provider()
+        {
+            // Act
+            await _task.ExecuteAsync(CancellationToken.None);
+
+            // Assert
+            A.CallTo(() =>
+                    _mockEffectiveSchemaSetProvider.Initialize(
+                        A<EffectiveSchemaSet>.That.Matches(set =>
+                            set.EffectiveSchema.EffectiveSchemaHash == "expected-schema-hash"
+                            && set.EffectiveSchema.ResourceKeyCount == 1
+                            && set.ProjectsInEndpointOrder.Count == 1
+                        )
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+        }
     }
 
     [TestFixture]
@@ -151,6 +240,7 @@ public class LoadAndBuildEffectiveSchemaTaskTests
     {
         private IApiSchemaProvider _mockSchemaProvider = null!;
         private IEffectiveApiSchemaProvider _mockEffectiveProvider = null!;
+        private IEffectiveSchemaSetProvider _mockEffectiveSchemaSetProvider = null!;
         private LoadAndBuildEffectiveSchemaTask _task = null!;
 
         [SetUp]
@@ -161,13 +251,14 @@ public class LoadAndBuildEffectiveSchemaTaskTests
                 .Throws(new InvalidOperationException("Schema file not found"));
 
             _mockEffectiveProvider = A.Fake<IEffectiveApiSchemaProvider>();
+            _mockEffectiveSchemaSetProvider = A.Fake<IEffectiveSchemaSetProvider>();
 
             _task = new LoadAndBuildEffectiveSchemaTask(
                 _mockSchemaProvider,
                 _mockEffectiveProvider,
+                _mockEffectiveSchemaSetProvider,
                 A.Fake<IApiSchemaInputNormalizer>(),
-                A.Fake<IEffectiveSchemaHashProvider>(),
-                A.Fake<IResourceKeySeedProvider>(),
+                CreateBuilder(A.Fake<IEffectiveSchemaHashProvider>(), A.Fake<IResourceKeySeedProvider>()),
                 NullLogger<LoadAndBuildEffectiveSchemaTask>.Instance
             );
         }
@@ -200,6 +291,8 @@ public class LoadAndBuildEffectiveSchemaTaskTests
             // Assert
             A.CallTo(() => _mockEffectiveProvider.Initialize(A<ApiSchemaDocumentNodes>._))
                 .MustNotHaveHappened();
+            A.CallTo(() => _mockEffectiveSchemaSetProvider.Initialize(A<EffectiveSchemaSet>._))
+                .MustNotHaveHappened();
         }
     }
 
@@ -208,6 +301,7 @@ public class LoadAndBuildEffectiveSchemaTaskTests
     {
         private IApiSchemaProvider _mockSchemaProvider = null!;
         private IEffectiveApiSchemaProvider _mockEffectiveProvider = null!;
+        private IEffectiveSchemaSetProvider _mockEffectiveSchemaSetProvider = null!;
         private LoadAndBuildEffectiveSchemaTask _task = null!;
 
         [SetUp]
@@ -223,13 +317,14 @@ public class LoadAndBuildEffectiveSchemaTaskTests
                 ]);
 
             _mockEffectiveProvider = A.Fake<IEffectiveApiSchemaProvider>();
+            _mockEffectiveSchemaSetProvider = A.Fake<IEffectiveSchemaSetProvider>();
 
             _task = new LoadAndBuildEffectiveSchemaTask(
                 _mockSchemaProvider,
                 _mockEffectiveProvider,
+                _mockEffectiveSchemaSetProvider,
                 A.Fake<IApiSchemaInputNormalizer>(),
-                A.Fake<IEffectiveSchemaHashProvider>(),
-                A.Fake<IResourceKeySeedProvider>(),
+                CreateBuilder(A.Fake<IEffectiveSchemaHashProvider>(), A.Fake<IResourceKeySeedProvider>()),
                 NullLogger<LoadAndBuildEffectiveSchemaTask>.Instance
             );
         }
@@ -260,6 +355,8 @@ public class LoadAndBuildEffectiveSchemaTaskTests
             // Assert
             A.CallTo(() => _mockEffectiveProvider.Initialize(A<ApiSchemaDocumentNodes>._))
                 .MustNotHaveHappened();
+            A.CallTo(() => _mockEffectiveSchemaSetProvider.Initialize(A<EffectiveSchemaSet>._))
+                .MustNotHaveHappened();
         }
     }
 
@@ -268,6 +365,7 @@ public class LoadAndBuildEffectiveSchemaTaskTests
     {
         private IApiSchemaProvider _mockSchemaProvider = null!;
         private IEffectiveApiSchemaProvider _mockEffectiveProvider = null!;
+        private IEffectiveSchemaSetProvider _mockEffectiveSchemaSetProvider = null!;
         private LoadAndBuildEffectiveSchemaTask _task = null!;
 
         [SetUp]
@@ -275,13 +373,14 @@ public class LoadAndBuildEffectiveSchemaTaskTests
         {
             _mockSchemaProvider = A.Fake<IApiSchemaProvider>();
             _mockEffectiveProvider = A.Fake<IEffectiveApiSchemaProvider>();
+            _mockEffectiveSchemaSetProvider = A.Fake<IEffectiveSchemaSetProvider>();
 
             _task = new LoadAndBuildEffectiveSchemaTask(
                 _mockSchemaProvider,
                 _mockEffectiveProvider,
+                _mockEffectiveSchemaSetProvider,
                 A.Fake<IApiSchemaInputNormalizer>(),
-                A.Fake<IEffectiveSchemaHashProvider>(),
-                A.Fake<IResourceKeySeedProvider>(),
+                CreateBuilder(A.Fake<IEffectiveSchemaHashProvider>(), A.Fake<IResourceKeySeedProvider>()),
                 NullLogger<LoadAndBuildEffectiveSchemaTask>.Instance
             );
         }

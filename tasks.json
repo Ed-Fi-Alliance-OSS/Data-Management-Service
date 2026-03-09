@@ -58,5 +58,27 @@
       "Validate the edited workflow YAML in CI or with the repo's normal workflow review process before merge."
     ],
     "completed": true
+  },
+  {
+    "category": "Startup Cancellation Status Handling",
+    "description": "Align fatal startup status signaling with the orchestrator's cancellation contract so `OperationCanceledException` is not recorded as a fatal startup failure. Acceptance: `StartupPhaseExecutor.RunFatalAsync` must rethrow `OperationCanceledException` without writing `Failed`, without requesting process exit, and without overwriting the most recent non-failure startup phase status; real exceptions must continue to write `Failed` with the configured phase and summary before exit. Add unit coverage proving backend-mapping cancellation preserves non-fatal behavior while ordinary failures still emit `Failed` and exit.",
+    "steps-to-verify": [
+      "Add a frontend startup-status unit test that invokes `StartupPhaseExecutor.RunFatalAsync` with an action that throws `OperationCanceledException`, then assert no exit is requested and the status file is not transitioned to `Failed` for `InitializeBackendMappings`.",
+      "Keep or extend the existing failure-path test to assert a non-cancellation exception still writes `Failed` for `InitializeBackendMappings` and requests process exit.",
+      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter FullyQualifiedName~StartupStatus`",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~DmsStartupOrchestrator`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Single-Source Effective Schema Initialization",
+    "description": "Remove the duplicated effective-schema normalization/hash/resource-key derivation path between `LoadAndBuildEffectiveSchemaTask` and PostgreSQL backend mapping compilation so startup and backend mapping consume one authoritative `EffectiveSchemaSet` contract. Acceptance: backend mapping initialization must reuse the effective schema data already produced during startup instead of rebuilding it from raw API schema nodes; the runtime mapping-set key and compiled mapping set must be derived from that shared authoritative startup state; schema normalization, effective-schema hash derivation, and resource-key seed derivation logic must not exist in two independent startup code paths with separately formatted failure handling. Preserve the current extension-aware resource-key behavior and actionable compile-time diagnostics.",
+    "steps-to-verify": [
+      "Refactor the backend mapping startup path so `PostgresqlRuntimeMappingSetCompiler` (or its replacement) receives the already-initialized effective schema contract rather than recomputing it from `IApiSchemaProvider`.",
+      "Add or update unit coverage proving backend mapping initialization uses the same effective-schema metadata established during the API-schema startup phase and still fails fast with actionable errors when the authoritative startup schema is invalid or missing.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~PostgresqlRuntimeMappingInitialization|FullyQualifiedName~EffectiveSchemaSetBuilder|FullyQualifiedName~LoadAndBuildEffectiveSchemaTask\"`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"FullyQualifiedName~EffectiveSchema|FullyQualifiedName~RelationalModelSetValidation\"`"
+    ],
+    "completed": true
   }
 ]

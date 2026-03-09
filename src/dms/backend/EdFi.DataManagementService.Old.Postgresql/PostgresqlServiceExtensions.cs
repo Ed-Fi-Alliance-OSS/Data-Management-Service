@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.Plans;
-using EdFi.DataManagementService.Backend.RelationalModel.Schema;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Old.Postgresql.Operation;
@@ -24,7 +23,6 @@ public static class PostgresqlServiceExtensions
     /// </summary>
     public static IServiceCollection AddPostgresqlDatastore(this IServiceCollection services)
     {
-        services.AddSingleton<EffectiveSchemaSetBuilder>();
         services.AddSingleton<MappingSetCompiler>();
         services.AddSingleton<PostgresqlRuntimeMappingSetCompiler>();
         services.AddSingleton<MappingSetCache>(serviceProvider =>

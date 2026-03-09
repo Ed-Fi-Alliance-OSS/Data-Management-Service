@@ -7,27 +7,23 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.RelationalModel.Build;
-using EdFi.DataManagementService.Backend.RelationalModel.Schema;
-using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Startup;
 
 namespace EdFi.DataManagementService.Old.Postgresql.Startup;
 
 internal sealed class PostgresqlRuntimeMappingSetCompiler(
-    IApiSchemaProvider apiSchemaProvider,
-    IApiSchemaInputNormalizer apiSchemaInputNormalizer,
-    EffectiveSchemaSetBuilder effectiveSchemaSetBuilder,
+    IEffectiveSchemaSetProvider effectiveSchemaSetProvider,
     MappingSetCompiler mappingSetCompiler
 )
 {
     public MappingSetKey GetCurrentKey()
     {
-        return CreateKey(BuildCurrentEffectiveSchemaSet().EffectiveSchema);
+        return CreateKey(GetCurrentEffectiveSchemaSet().EffectiveSchema);
     }
 
     public Task<MappingSet> CompileAsync(MappingSetKey expectedKey)
     {
-        var effectiveSchemaSet = BuildCurrentEffectiveSchemaSet();
+        var effectiveSchemaSet = GetCurrentEffectiveSchemaSet();
         var actualKey = CreateKey(effectiveSchemaSet.EffectiveSchema);
 
         if (actualKey != expectedKey)
@@ -45,34 +41,20 @@ internal sealed class PostgresqlRuntimeMappingSetCompiler(
         return Task.FromResult(mappingSetCompiler.Compile(derivedModelSet));
     }
 
-    private EffectiveSchemaSet BuildCurrentEffectiveSchemaSet()
+    private EffectiveSchemaSet GetCurrentEffectiveSchemaSet()
     {
-        var normalizationResult = apiSchemaInputNormalizer.Normalize(apiSchemaProvider.GetApiSchemaNodes());
-
-        return normalizationResult switch
+        try
         {
-            ApiSchemaNormalizationResult.SuccessResult success => effectiveSchemaSetBuilder.Build(
-                success.NormalizedNodes
-            ),
-            ApiSchemaNormalizationResult.MissingOrMalformedProjectSchemaResult failure =>
-                throw new InvalidOperationException(
-                    $"PostgreSQL runtime mapping initialization failed for '{failure.SchemaSource}': {failure.Details}"
-                ),
-            ApiSchemaNormalizationResult.ApiSchemaVersionMismatchResult failure =>
-                throw new InvalidOperationException(
-                    "PostgreSQL runtime mapping initialization failed: "
-                        + $"apiSchemaVersion mismatch in '{failure.SchemaSource}': expected '{failure.ExpectedVersion}', "
-                        + $"got '{failure.ActualVersion}'."
-                ),
-            ApiSchemaNormalizationResult.ProjectEndpointNameCollisionResult failure =>
-                throw new InvalidOperationException(
-                    "PostgreSQL runtime mapping initialization failed: duplicate "
-                        + $"projectEndpointName(s) found: {string.Join("; ", failure.Collisions.Select(c => $"'{c.ProjectEndpointName}' in [{string.Join(", ", c.ConflictingSources)}]"))}"
-                ),
-            _ => throw new InvalidOperationException(
-                "PostgreSQL runtime mapping initialization failed: unknown schema normalization result."
-            ),
-        };
+            return effectiveSchemaSetProvider.EffectiveSchemaSet;
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new InvalidOperationException(
+                "PostgreSQL runtime mapping initialization failed: authoritative effective schema startup state is unavailable. "
+                    + "Run API schema initialization before backend mapping initialization.",
+                ex
+            );
+        }
     }
 
     private static MappingSetKey CreateKey(EffectiveSchemaInfo effectiveSchemaInfo)

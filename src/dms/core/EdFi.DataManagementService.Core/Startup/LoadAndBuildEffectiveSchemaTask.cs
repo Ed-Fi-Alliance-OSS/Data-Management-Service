@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.RelationalModel.Schema;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging;
@@ -17,17 +18,17 @@ namespace EdFi.DataManagementService.Core.Startup;
 internal class LoadAndBuildEffectiveSchemaTask(
     IApiSchemaProvider apiSchemaProvider,
     IEffectiveApiSchemaProvider effectiveApiSchemaProvider,
+    IEffectiveSchemaSetProvider effectiveSchemaSetProvider,
     IApiSchemaInputNormalizer inputNormalizer,
-    IEffectiveSchemaHashProvider hashProvider,
-    IResourceKeySeedProvider seedProvider,
+    EffectiveSchemaSetBuilder effectiveSchemaSetBuilder,
     ILogger<LoadAndBuildEffectiveSchemaTask> logger
 ) : IDmsStartupTask
 {
     private readonly IApiSchemaProvider _apiSchemaProvider = apiSchemaProvider;
     private readonly IEffectiveApiSchemaProvider _effectiveApiSchemaProvider = effectiveApiSchemaProvider;
+    private readonly IEffectiveSchemaSetProvider _effectiveSchemaSetProvider = effectiveSchemaSetProvider;
     private readonly IApiSchemaInputNormalizer _inputNormalizer = inputNormalizer;
-    private readonly IEffectiveSchemaHashProvider _hashProvider = hashProvider;
-    private readonly IResourceKeySeedProvider _seedProvider = seedProvider;
+    private readonly EffectiveSchemaSetBuilder _effectiveSchemaSetBuilder = effectiveSchemaSetBuilder;
     private readonly ILogger _logger = logger;
 
     /// <inheritdoc />
@@ -100,35 +101,28 @@ internal class LoadAndBuildEffectiveSchemaTask(
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Step 3: Compute effective schema hash
-        _logger.LogDebug("Computing effective schema hash");
-        var effectiveSchemaHash = _hashProvider.ComputeHash(normalizedNodes);
-        if (!string.IsNullOrEmpty(effectiveSchemaHash))
-        {
-            _logger.LogInformation("Effective schema hash: {Hash}", effectiveSchemaHash);
-        }
+        // Step 3: Build the authoritative effective schema set once for all later startup consumers.
+        _logger.LogDebug("Building effective schema set");
+        var effectiveSchemaSet = _effectiveSchemaSetBuilder.Build(normalizedNodes);
+        var effectiveSchemaInfo = effectiveSchemaSet.EffectiveSchema;
 
-        cancellationToken.ThrowIfCancellationRequested();
+        _logger.LogInformation("Effective schema hash: {Hash}", effectiveSchemaInfo.EffectiveSchemaHash);
 
-        // Step 4: Derive resource key seeds
-        _logger.LogDebug("Deriving resource key seeds");
-        var seeds = _seedProvider.GetSeeds(normalizedNodes);
-        if (seeds.Count > 0)
+        if (effectiveSchemaInfo.ResourceKeyCount > 0)
         {
-            var seedHashBytes = _seedProvider.ComputeSeedHash(seeds);
-            var seedHashHex = Convert.ToHexStringLower(seedHashBytes);
             _logger.LogInformation(
                 "Resource key seeds: {SeedCount} entries, hash: {Hash}",
-                seeds.Count,
-                seedHashHex
+                effectiveSchemaInfo.ResourceKeyCount,
+                Convert.ToHexStringLower(effectiveSchemaInfo.ResourceKeySeedHash)
             );
         }
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Step 5: Build the effective schema and prime caches
+        // Step 4: Build the effective API schema documents and cache the authoritative schema set.
         _logger.LogInformation("Building effective schema and priming caches");
         _effectiveApiSchemaProvider.Initialize(normalizedNodes);
+        _effectiveSchemaSetProvider.Initialize(effectiveSchemaSet);
 
         _logger.LogInformation(
             "Effective API schema initialization complete. SchemaId: {SchemaId}",

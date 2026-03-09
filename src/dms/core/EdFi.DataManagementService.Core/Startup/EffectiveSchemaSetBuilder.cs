@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Utilities;
@@ -11,7 +12,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.Schema;
 
 /// <summary>
 /// Bridges normalized <see cref="ApiSchemaDocumentNodes" /> input to the backend-facing
-/// <see cref="EffectiveSchemaSet" /> consumed by DDL and runtime compilation workflows.
+/// <see cref="EffectiveSchemaSet" /> consumed by startup, DDL, and runtime compilation workflows.
 ///
 /// The returned <see cref="EffectiveSchemaSet" /> contains <see cref="EffectiveProjectSchema" />
 /// instances whose <c>ProjectSchema</c> JsonObjects share references with the input nodes.
