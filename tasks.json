@@ -68,6 +68,6 @@
       "Add a negative startup or compiler-path test proving an arbitrary duplicated scalar path still fails during runtime mapping compilation.",
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~PostgresqlRuntimeMappingInitialization`"
     ],
-    "completed": false
+    "completed": true
   }
 ]

@@ -7,7 +7,9 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.RelationalModel.Build;
 using EdFi.DataManagementService.Backend.RelationalModel.Schema;
+using EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
@@ -22,6 +24,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using Serilog;
 
@@ -113,6 +116,14 @@ public class PostgresqlRuntimeMappingInitializationTests
         return new ApiSchemaDocumentNodes(JsonNode.Parse(MinimalRuntimeSchemaJson)!, []);
     }
 
+    private static ApiSchemaDocumentNodes CreateSchemaNodes(JsonObject projectSchema)
+    {
+        return new ApiSchemaDocumentNodes(
+            new JsonObject { ["apiSchemaVersion"] = "1.0.0", ["projectSchema"] = projectSchema },
+            []
+        );
+    }
+
     private static IApiSchemaProvider CreateApiSchemaProvider(ApiSchemaDocumentNodes schemaNodes)
     {
         var apiSchemaProvider = A.Fake<IApiSchemaProvider>();
@@ -122,6 +133,136 @@ public class PostgresqlRuntimeMappingInitializationTests
         A.CallTo(() => apiSchemaProvider.ApiSchemaFailures).Returns([]);
 
         return apiSchemaProvider;
+    }
+
+    private static ServiceProvider CreateStartupServiceProvider(
+        ApiSchemaDocumentNodes schemaNodes,
+        IDmsInstanceProvider dmsInstanceProvider,
+        IPostgresqlRuntimeDatabaseMetadataReader databaseMetadataReader
+    )
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IApiSchemaProvider>(CreateApiSchemaProvider(schemaNodes));
+        services.AddSingleton<ICompiledSchemaCache, CompiledSchemaCache>();
+        services.AddSingleton<EffectiveApiSchemaProvider>();
+        services.AddSingleton<IEffectiveApiSchemaProvider>(serviceProvider =>
+            serviceProvider.GetRequiredService<EffectiveApiSchemaProvider>()
+        );
+        services.AddSingleton<DmsStartupOrchestrator>();
+        services.AddSingleton<IDmsStartupTask, LoadAndBuildEffectiveSchemaTask>();
+        services.AddSingleton<IDmsStartupTask, BackendMappingInitializationTask>();
+        services.AddSingleton<IApiSchemaInputNormalizer, ApiSchemaInputNormalizer>();
+        services.AddSingleton<IEffectiveSchemaHashProvider, EffectiveSchemaHashProvider>();
+        services.AddSingleton<IResourceKeySeedProvider, ResourceKeySeedProvider>();
+        services.AddPostgresqlDatastore();
+        services.AddSingleton(dmsInstanceProvider);
+        services.AddSingleton(databaseMetadataReader);
+
+        return services.BuildServiceProvider();
+    }
+
+    private static EffectiveSchemaSet BuildEffectiveSchemaSet(ApiSchemaDocumentNodes schemaNodes)
+    {
+        var inputNormalizer = new ApiSchemaInputNormalizer(NullLogger<ApiSchemaInputNormalizer>.Instance);
+        var normalizationResult = inputNormalizer.Normalize(schemaNodes);
+
+        if (normalizationResult is not ApiSchemaNormalizationResult.SuccessResult successResult)
+        {
+            throw new InvalidOperationException(
+                $"Expected schema normalization to succeed, but got '{normalizationResult.GetType().Name}'."
+            );
+        }
+
+        return new EffectiveSchemaSetBuilder(
+            new EffectiveSchemaHashProvider(NullLogger<EffectiveSchemaHashProvider>.Instance),
+            new ResourceKeySeedProvider(NullLogger<ResourceKeySeedProvider>.Instance)
+        ).Build(successResult.NormalizedNodes);
+    }
+
+    private static MappingSetKey CreateMappingSetKey(EffectiveSchemaSet effectiveSchemaSet)
+    {
+        return new MappingSetKey(
+            EffectiveSchemaHash: effectiveSchemaSet.EffectiveSchema.EffectiveSchemaHash,
+            Dialect: SqlDialect.Pgsql,
+            RelationalMappingVersion: effectiveSchemaSet.EffectiveSchema.RelationalMappingVersion
+        );
+    }
+
+    private static PostgresqlDatabaseFingerprint CreateMatchingFingerprint(
+        EffectiveSchemaSet effectiveSchemaSet
+    )
+    {
+        return new PostgresqlDatabaseFingerprint(
+            effectiveSchemaSet.EffectiveSchema.ApiSchemaFormatVersion,
+            effectiveSchemaSet.EffectiveSchema.EffectiveSchemaHash,
+            checked((short)effectiveSchemaSet.EffectiveSchema.ResourceKeyCount),
+            effectiveSchemaSet.EffectiveSchema.ResourceKeySeedHash
+        );
+    }
+
+    private static JsonObject CreateProjectSchema(JsonObject resourceSchemas)
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectVersion"] = "5.0.0",
+            ["projectEndpointName"] = "ed-fi",
+            ["isExtensionProject"] = false,
+            ["description"] = "Test schema",
+            ["resourceNameMapping"] = new JsonObject(),
+            ["caseInsensitiveEndpointNameMapping"] = new JsonObject(),
+            ["educationOrganizationHierarchy"] = new JsonObject(),
+            ["educationOrganizationTypes"] = new JsonArray(),
+            ["resourceSchemas"] = resourceSchemas,
+            ["abstractResources"] = new JsonObject(),
+        };
+    }
+
+    private static JsonObject CreateCommonResourceSchema(
+        string resourceName,
+        bool isDescriptor,
+        bool allowIdentityUpdates,
+        JsonArray identityJsonPaths,
+        JsonObject documentPathsMapping,
+        JsonArray equalityConstraints,
+        JsonObject jsonSchemaForInsert
+    )
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = resourceName,
+            ["isDescriptor"] = isDescriptor,
+            ["isSchoolYearEnumeration"] = false,
+            ["isResourceExtension"] = false,
+            ["allowIdentityUpdates"] = allowIdentityUpdates,
+            ["isSubclass"] = false,
+            ["identityJsonPaths"] = identityJsonPaths,
+            ["booleanJsonPaths"] = new JsonArray(),
+            ["numericJsonPaths"] = new JsonArray(),
+            ["dateJsonPaths"] = new JsonArray(),
+            ["dateTimeJsonPaths"] = new JsonArray(),
+            ["equalityConstraints"] = equalityConstraints,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["documentPathsMapping"] = documentPathsMapping,
+            ["queryFieldMapping"] = new JsonObject(),
+            ["securableElements"] = CreateEmptySecurableElements(),
+            ["authorizationPathways"] = new JsonArray(),
+            ["decimalPropertyValidationInfos"] = new JsonArray(),
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    private static JsonObject CreateEmptySecurableElements()
+    {
+        return new JsonObject
+        {
+            ["Namespace"] = new JsonArray(),
+            ["EducationOrganization"] = new JsonArray(),
+            ["Student"] = new JsonArray(),
+            ["Contact"] = new JsonArray(),
+            ["Staff"] = new JsonArray(),
+        };
     }
 
     [TestFixture]
@@ -141,35 +282,12 @@ public class PostgresqlRuntimeMappingInitializationTests
             _schemaNodes = CreateSchemaNodes();
             _dmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
             _databaseMetadataReader = A.Fake<IPostgresqlRuntimeDatabaseMetadataReader>();
-
-            var services = new ServiceCollection();
-            services.AddLogging();
-            services.AddSingleton<IApiSchemaProvider>(CreateApiSchemaProvider(_schemaNodes));
-            services.AddSingleton<ICompiledSchemaCache, CompiledSchemaCache>();
-            services.AddSingleton<EffectiveApiSchemaProvider>();
-            services.AddSingleton<IEffectiveApiSchemaProvider>(serviceProvider =>
-                serviceProvider.GetRequiredService<EffectiveApiSchemaProvider>()
+            _serviceProvider = CreateStartupServiceProvider(
+                _schemaNodes,
+                _dmsInstanceProvider,
+                _databaseMetadataReader
             );
-            services.AddSingleton<DmsStartupOrchestrator>();
-            services.AddSingleton<IDmsStartupTask, LoadAndBuildEffectiveSchemaTask>();
-            services.AddSingleton<IDmsStartupTask, BackendMappingInitializationTask>();
-            services.AddSingleton<IApiSchemaInputNormalizer, ApiSchemaInputNormalizer>();
-            services.AddSingleton<IEffectiveSchemaHashProvider, EffectiveSchemaHashProvider>();
-            services.AddSingleton<IResourceKeySeedProvider, ResourceKeySeedProvider>();
-            services.AddPostgresqlDatastore();
-            services.AddSingleton(_dmsInstanceProvider);
-            services.AddSingleton(_databaseMetadataReader);
-
-            _serviceProvider = services.BuildServiceProvider();
-
-            var effectiveSchemaSetBuilder = _serviceProvider.GetRequiredService<EffectiveSchemaSetBuilder>();
-            var inputNormalizer = _serviceProvider.GetRequiredService<IApiSchemaInputNormalizer>();
-            var normalizedNodes = inputNormalizer.Normalize(_schemaNodes);
-            var successResult = normalizedNodes
-                .Should()
-                .BeOfType<ApiSchemaNormalizationResult.SuccessResult>()
-                .Subject;
-            var effectiveSchemaSet = effectiveSchemaSetBuilder.Build(successResult.NormalizedNodes);
+            var effectiveSchemaSet = BuildEffectiveSchemaSet(_schemaNodes);
 
             A.CallTo(() => _dmsInstanceProvider.GetLoadedTenantKeys()).Returns([""]);
             A.CallTo(() => _dmsInstanceProvider.GetAll(null))
@@ -190,12 +308,7 @@ public class PostgresqlRuntimeMappingInitializationTests
                 )
                 .Returns(
                     new PostgresqlDatabaseFingerprintReadResult.Success(
-                        new PostgresqlDatabaseFingerprint(
-                            effectiveSchemaSet.EffectiveSchema.ApiSchemaFormatVersion,
-                            effectiveSchemaSet.EffectiveSchema.EffectiveSchemaHash,
-                            checked((short)effectiveSchemaSet.EffectiveSchema.ResourceKeyCount),
-                            effectiveSchemaSet.EffectiveSchema.ResourceKeySeedHash
-                        )
+                        CreateMatchingFingerprint(effectiveSchemaSet)
                     )
                 );
         }
@@ -213,19 +326,7 @@ public class PostgresqlRuntimeMappingInitializationTests
                 .GetRequiredService<DmsStartupOrchestrator>()
                 .RunAllAsync(CancellationToken.None);
 
-            var effectiveSchemaSetBuilder = _serviceProvider.GetRequiredService<EffectiveSchemaSetBuilder>();
-            var inputNormalizer = _serviceProvider.GetRequiredService<IApiSchemaInputNormalizer>();
-            var normalizedNodes = inputNormalizer.Normalize(_schemaNodes);
-            var successResult = normalizedNodes
-                .Should()
-                .BeOfType<ApiSchemaNormalizationResult.SuccessResult>()
-                .Subject;
-            var effectiveSchemaSet = effectiveSchemaSetBuilder.Build(successResult.NormalizedNodes);
-            var mappingSetKey = new MappingSetKey(
-                EffectiveSchemaHash: effectiveSchemaSet.EffectiveSchema.EffectiveSchemaHash,
-                Dialect: SqlDialect.Pgsql,
-                RelationalMappingVersion: effectiveSchemaSet.EffectiveSchema.RelationalMappingVersion
-            );
+            var mappingSetKey = CreateMappingSetKey(BuildEffectiveSchemaSet(_schemaNodes));
 
             var cache = _serviceProvider.GetRequiredService<MappingSetCache>();
             var cacheResult = await cache.GetOrCreateWithCacheStatusAsync(
@@ -248,6 +349,347 @@ public class PostgresqlRuntimeMappingInitializationTests
                     )
                 )
                 .MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    public class Given_Dms_Startup_Runs_With_Grouped_Reference_Runtime_Mapping_Initialization
+        : PostgresqlRuntimeMappingInitializationTests
+    {
+        private const string ConnectionString =
+            "Host=localhost;Database=startup-grouped-reference-instance;Username=test;Password=test";
+
+        private ServiceProvider _serviceProvider = null!;
+        private ApiSchemaDocumentNodes _schemaNodes = null!;
+        private IDmsInstanceProvider _dmsInstanceProvider = null!;
+        private IPostgresqlRuntimeDatabaseMetadataReader _databaseMetadataReader = null!;
+
+        private static JsonObject CreateScalarPathMapping(string path, bool isPartOfIdentity, bool isRequired)
+        {
+            return new JsonObject
+            {
+                ["isReference"] = false,
+                ["isPartOfIdentity"] = isPartOfIdentity,
+                ["isRequired"] = isRequired,
+                ["path"] = path,
+            };
+        }
+
+        private static JsonObject CreateReferenceMapping(
+            string resourceName,
+            params (string IdentityJsonPath, string ReferenceJsonPath)[] referenceJsonPaths
+        )
+        {
+            return new JsonObject
+            {
+                ["isReference"] = true,
+                ["isDescriptor"] = false,
+                ["isRequired"] = false,
+                ["projectName"] = "Ed-Fi",
+                ["resourceName"] = resourceName,
+                ["referenceJsonPaths"] = new JsonArray(
+                    referenceJsonPaths
+                        .Select(path =>
+                            (JsonNode)
+                                new JsonObject
+                                {
+                                    ["identityJsonPath"] = path.IdentityJsonPath,
+                                    ["referenceJsonPath"] = path.ReferenceJsonPath,
+                                }
+                        )
+                        .ToArray()
+                ),
+            };
+        }
+
+        private static JsonObject BuildGroupedReferenceStartupProjectSchema()
+        {
+            return CreateProjectSchema(
+                new JsonObject
+                {
+                    ["enrollments"] = BuildGroupedReferenceStartupEnrollmentSchema(),
+                    ["schools"] = BuildGroupedReferenceStartupSchoolSchema(),
+                }
+            );
+        }
+
+        private static JsonObject BuildGroupedReferenceStartupEnrollmentSchema()
+        {
+            return CreateCommonResourceSchema(
+                resourceName: "Enrollment",
+                isDescriptor: false,
+                allowIdentityUpdates: false,
+                identityJsonPaths: new JsonArray("$.enrollmentCode"),
+                documentPathsMapping: new JsonObject
+                {
+                    ["EnrollmentCode"] = CreateScalarPathMapping(
+                        path: "$.enrollmentCode",
+                        isPartOfIdentity: true,
+                        isRequired: true
+                    ),
+                    ["School"] = CreateReferenceMapping(
+                        "School",
+                        ("$.schoolId", "$.schoolReference.schoolId"),
+                        ("$.localEducationAgencyId", "$.schoolReference.schoolId")
+                    ),
+                },
+                equalityConstraints: new JsonArray(),
+                jsonSchemaForInsert: new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["enrollmentCode"] = new JsonObject { ["type"] = "string", ["maxLength"] = 30 },
+                        ["schoolReference"] = new JsonObject
+                        {
+                            ["type"] = "object",
+                            ["properties"] = new JsonObject
+                            {
+                                ["schoolId"] = new JsonObject { ["type"] = "integer" },
+                            },
+                        },
+                    },
+                    ["required"] = new JsonArray("enrollmentCode"),
+                }
+            );
+        }
+
+        private static JsonObject BuildGroupedReferenceStartupSchoolSchema()
+        {
+            return CreateCommonResourceSchema(
+                resourceName: "School",
+                isDescriptor: false,
+                allowIdentityUpdates: true,
+                identityJsonPaths: new JsonArray("$.schoolId", "$.localEducationAgencyId"),
+                documentPathsMapping: new JsonObject
+                {
+                    ["SchoolId"] = CreateScalarPathMapping(
+                        path: "$.schoolId",
+                        isPartOfIdentity: true,
+                        isRequired: true
+                    ),
+                    ["LocalEducationAgencyId"] = CreateScalarPathMapping(
+                        path: "$.localEducationAgencyId",
+                        isPartOfIdentity: true,
+                        isRequired: true
+                    ),
+                },
+                equalityConstraints: new JsonArray(
+                    new JsonObject
+                    {
+                        ["sourceJsonPath"] = "$.schoolId",
+                        ["targetJsonPath"] = "$.localEducationAgencyId",
+                    }
+                ),
+                jsonSchemaForInsert: new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["schoolId"] = new JsonObject { ["type"] = "integer" },
+                        ["localEducationAgencyId"] = new JsonObject { ["type"] = "integer" },
+                    },
+                    ["required"] = new JsonArray("schoolId", "localEducationAgencyId"),
+                }
+            );
+        }
+
+        [SetUp]
+        public void Setup()
+        {
+            _schemaNodes = CreateSchemaNodes(BuildGroupedReferenceStartupProjectSchema());
+            _dmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
+            _databaseMetadataReader = A.Fake<IPostgresqlRuntimeDatabaseMetadataReader>();
+            _serviceProvider = CreateStartupServiceProvider(
+                _schemaNodes,
+                _dmsInstanceProvider,
+                _databaseMetadataReader
+            );
+
+            var effectiveSchemaSet = BuildEffectiveSchemaSet(_schemaNodes);
+
+            A.CallTo(() => _dmsInstanceProvider.GetLoadedTenantKeys()).Returns([""]);
+            A.CallTo(() => _dmsInstanceProvider.GetAll(null))
+                .Returns([
+                    new DmsInstance(
+                        Id: 2,
+                        InstanceType: "test",
+                        InstanceName: "GroupedReferenceStartupInstance",
+                        ConnectionString: ConnectionString,
+                        RouteContext: new Dictionary<RouteQualifierName, RouteQualifierValue>()
+                    ),
+                ]);
+            A.CallTo(() =>
+                    _databaseMetadataReader.ReadFingerprintAsync(
+                        ConnectionString,
+                        A<CancellationToken>.Ignored
+                    )
+                )
+                .Returns(
+                    new PostgresqlDatabaseFingerprintReadResult.Success(
+                        CreateMatchingFingerprint(effectiveSchemaSet)
+                    )
+                );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _serviceProvider.Dispose();
+        }
+
+        [Test]
+        public async Task It_primes_the_runtime_mapping_cache_for_grouped_reference_schemas()
+        {
+            await _serviceProvider
+                .GetRequiredService<DmsStartupOrchestrator>()
+                .RunAllAsync(CancellationToken.None);
+
+            var mappingSetKey = CreateMappingSetKey(BuildEffectiveSchemaSet(_schemaNodes));
+            var cache = _serviceProvider.GetRequiredService<MappingSetCache>();
+            var cacheResult = await cache.GetOrCreateWithCacheStatusAsync(
+                mappingSetKey,
+                CancellationToken.None
+            );
+
+            cacheResult.WasCacheHit.Should().BeTrue();
+            cacheResult.MappingSet.Key.Should().Be(mappingSetKey);
+            cacheResult
+                .MappingSet.ReadPlansByResource.Should()
+                .ContainKey(new QualifiedResourceName("Ed-Fi", "Enrollment"));
+
+            var schoolReferenceBinding = cacheResult
+                .MappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "Enrollment")]
+                .ReferenceIdentityProjectionPlansInDependencyOrder.Should()
+                .ContainSingle()
+                .Subject.BindingsInOrder.Should()
+                .ContainSingle()
+                .Subject;
+
+            schoolReferenceBinding.ReferenceObjectPath.Canonical.Should().Be("$.schoolReference");
+            schoolReferenceBinding
+                .IdentityFieldOrdinalsInOrder.Select(static field => field.ReferenceJsonPath.Canonical)
+                .Should()
+                .Equal("$.schoolReference.schoolId");
+
+            _serviceProvider
+                .GetRequiredService<PostgresqlValidatedResourceKeyMapCache>()
+                .TryGet(ConnectionString, out var validatedMaps)
+                .Should()
+                .BeTrue();
+            validatedMaps.MappingSetKey.Should().Be(mappingSetKey);
+            A.CallTo(() =>
+                    _databaseMetadataReader.ReadResourceKeysAsync(
+                        ConnectionString,
+                        A<CancellationToken>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    public class Given_Postgresql_Runtime_Mapping_Compilation_With_An_Arbitrary_Duplicate_Scalar_Path
+        : PostgresqlRuntimeMappingInitializationTests
+    {
+        private Action _act = null!;
+
+        private static EffectiveSchemaSet CloneEffectiveSchemaSet(EffectiveSchemaSet original)
+        {
+            var clonedProjects = original
+                .ProjectsInEndpointOrder.Select(project => new EffectiveProjectSchema(
+                    project.ProjectEndpointName,
+                    project.ProjectName,
+                    project.ProjectVersion,
+                    project.IsExtensionProject,
+                    (JsonObject)project.ProjectSchema.DeepClone()
+                ))
+                .ToArray();
+
+            return new EffectiveSchemaSet(original.EffectiveSchema, clonedProjects);
+        }
+
+        private static MappingSet CompileRuntimeMappingSet(
+            ApiSchemaDocumentNodes schemaNodes,
+            IReadOnlyList<IRelationalModelSetPass> passes
+        )
+        {
+            var effectiveSchemaSet = CloneEffectiveSchemaSet(BuildEffectiveSchemaSet(schemaNodes));
+            var derivedModelSet = new DerivedRelationalModelSetBuilder(passes).Build(
+                effectiveSchemaSet,
+                SqlDialect.Pgsql,
+                new PgsqlDialectRules()
+            );
+
+            return new MappingSetCompiler().Compile(derivedModelSet);
+        }
+
+        private static JsonObject BuildAmbiguousEndpointProjectSchema()
+        {
+            return CreateProjectSchema(
+                new JsonObject { ["ambiguousExamples"] = BuildAmbiguousEndpointResourceSchema() }
+            );
+        }
+
+        private static JsonObject BuildAmbiguousEndpointResourceSchema()
+        {
+            return CreateCommonResourceSchema(
+                resourceName: "AmbiguousExample",
+                isDescriptor: false,
+                allowIdentityUpdates: false,
+                identityJsonPaths: new JsonArray(),
+                documentPathsMapping: new JsonObject(),
+                equalityConstraints: new JsonArray(
+                    new JsonObject
+                    {
+                        ["sourceJsonPath"] = "$.fiscalYear",
+                        ["targetJsonPath"] = "$.localFiscalYear",
+                    }
+                ),
+                jsonSchemaForInsert: new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["fiscalYear"] = new JsonObject { ["type"] = "integer" },
+                        ["localFiscalYear"] = new JsonObject { ["type"] = "integer" },
+                    },
+                }
+            );
+        }
+
+        [SetUp]
+        public void Setup()
+        {
+            var schemaNodes = CreateSchemaNodes(BuildAmbiguousEndpointProjectSchema());
+            var passes = RelationalModelSetPasses.CreateDefault().ToList();
+            var keyUnificationPassIndex = passes.FindIndex(static pass => pass is KeyUnificationPass);
+
+            if (keyUnificationPassIndex < 0)
+            {
+                throw new InvalidOperationException(
+                    "Default relational-model passes do not include KeyUnificationPass."
+                );
+            }
+
+            passes.Insert(
+                keyUnificationPassIndex,
+                new DuplicateSourcePathBindingPass(
+                    resourceName: "AmbiguousExample",
+                    sourcePath: "$.fiscalYear",
+                    aliasSuffix: "Alias"
+                )
+            );
+
+            _act = () => _ = CompileRuntimeMappingSet(schemaNodes, passes);
+        }
+
+        [Test]
+        public void It_still_fails_fast_during_runtime_mapping_compilation()
+        {
+            _act.Should()
+                .Throw<InvalidOperationException>()
+                .WithMessage("*resolved to multiple distinct bindings*");
         }
     }
 
@@ -311,6 +753,97 @@ public class PostgresqlRuntimeMappingInitializationTests
                     && descriptor.ImplementationType == typeof(PostgresqlDocumentStoreRepository)
                     && descriptor.Lifetime == ServiceLifetime.Scoped
                 );
+        }
+    }
+}
+
+file sealed class DuplicateSourcePathBindingPass(string resourceName, string sourcePath, string aliasSuffix)
+    : IRelationalModelSetPass
+{
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        for (var index = 0; index < context.ConcreteResourcesInNameOrder.Count; index++)
+        {
+            var concreteResource = context.ConcreteResourcesInNameOrder[index];
+
+            if (
+                !string.Equals(
+                    concreteResource.ResourceKey.Resource.ResourceName,
+                    resourceName,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                continue;
+            }
+
+            var updatedTables = concreteResource
+                .RelationalModel.TablesInDependencyOrder.Select(DuplicateSourcePathColumn)
+                .ToArray();
+            var updatedRoot = updatedTables.Single(table =>
+                table.Table.Equals(concreteResource.RelationalModel.Root.Table)
+            );
+            var updatedModel = concreteResource.RelationalModel with
+            {
+                Root = updatedRoot,
+                TablesInDependencyOrder = updatedTables,
+            };
+
+            context.ConcreteResourcesInNameOrder[index] = concreteResource with
+            {
+                RelationalModel = updatedModel,
+            };
+        }
+    }
+
+    private DbTableModel DuplicateSourcePathColumn(DbTableModel table)
+    {
+        var sourceColumn = table.Columns.SingleOrDefault(column =>
+            column.SourceJsonPath?.Canonical == sourcePath
+        );
+
+        if (sourceColumn is null)
+        {
+            return table;
+        }
+
+        var duplicateName = AllocateDuplicateName(table.Columns, sourceColumn.ColumnName, aliasSuffix);
+        var duplicateColumn = sourceColumn with { ColumnName = duplicateName };
+
+        return table with
+        {
+            Columns = table.Columns.Concat([duplicateColumn]).ToArray(),
+        };
+    }
+
+    private static DbColumnName AllocateDuplicateName(
+        IReadOnlyList<DbColumnModel> existingColumns,
+        DbColumnName sourceColumnName,
+        string aliasSuffix
+    )
+    {
+        var existingNames = existingColumns
+            .Select(column => column.ColumnName.Value)
+            .ToHashSet(StringComparer.Ordinal);
+        var initialName = $"{sourceColumnName.Value}_{aliasSuffix}";
+
+        if (existingNames.Add(initialName))
+        {
+            return new DbColumnName(initialName);
+        }
+
+        var suffix = 2;
+
+        while (true)
+        {
+            var candidate = $"{sourceColumnName.Value}_{aliasSuffix}_{suffix}";
+
+            if (existingNames.Add(candidate))
+            {
+                return new DbColumnName(candidate);
+            }
+
+            suffix++;
         }
     }
 }
