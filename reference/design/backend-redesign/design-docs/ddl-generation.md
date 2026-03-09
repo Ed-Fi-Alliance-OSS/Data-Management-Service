@@ -68,7 +68,7 @@ Explicitly out of scope for this redesign phase:
   - All schemas, tables, views, sequences, triggers
   - Deterministic seed inserts for `dms.ResourceKey` (`ResourceKeyId ↔ (ProjectName, ResourceName, ResourceVersion)`)
   - Deterministic `ResourceKeySeedHash`/`ResourceKeyCount` recorded alongside `EffectiveSchemaHash` in `dms.EffectiveSchema` (fast runtime validation; `ResourceKeySeedHash` stored as raw SHA-256 bytes, 32 bytes)
-  - Insert-if-missing statements for the singleton `dms.EffectiveSchema` row and the corresponding `dms.SchemaComponent` rows (keyed by `EffectiveSchemaHash`).
+  - Insert-if-missing statements for the singleton `dms.EffectiveSchema` row and the corresponding `dms.SchemaComponent` rows (keyed by `EffectiveSchemaHash`). These make the emitted SQL script idempotent for standalone execution (`psql -f` / `sqlcmd -i`). Note: when provisioning via `ddl provision`, a preflight check runs first — if the `dms.EffectiveSchema` table exists but the singleton row is missing, this is treated as a partial/corrupt state and provisioning fails fast with a diagnostic directing the operator to drop and recreate the database.
   - Indexes explicitly called out in the design docs plus supporting indexes for all foreign keys (no query indexes)
 - Optional deterministic **diagnostic/test artifacts** (non-SQL) used by the verification harness:
   - `effective-schema.manifest.json` (schema fingerprint inputs + schema components + resource-key seed summary)
@@ -259,7 +259,8 @@ The emitted SQL must include deterministic DML that establishes the runtime cont
 1. `dms.ResourceKey` seed inserts with explicit `ResourceKeyId` values (deterministic ordering), using **insert-if-missing** semantics.
    - After inserts, validate that the table contents match the expected seed set exactly; fail on mismatch.
 2. Insert-if-missing of the singleton `dms.EffectiveSchema` row (`EffectiveSchemaSingletonId=1`) including:
-   - `ApiSchemaFormatVersion`, `EffectiveSchemaHash`, `ResourceKeyCount`, `ResourceKeySeedHash`, `AppliedAt`
+   - `ApiSchemaFormatVersion`, `EffectiveSchemaHash`, `ResourceKeyCount`, `ResourceKeySeedHash`
+   - (`AppliedAt` is omitted from the INSERT column list; it is populated automatically by the column DEFAULT constraint `DF_EffectiveSchema_AppliedAt`, which uses the dialect-appropriate current-timestamp expression.)
    - If the singleton row already exists with a **different** `EffectiveSchemaHash`, fail fast (this utility is not a migration tool).
 3. `dms.SchemaComponent` inserts for the current `EffectiveSchemaHash`, using insert-if-missing semantics.
    - Validate that the recorded components match the expected project list (exact match); fail on mismatch.

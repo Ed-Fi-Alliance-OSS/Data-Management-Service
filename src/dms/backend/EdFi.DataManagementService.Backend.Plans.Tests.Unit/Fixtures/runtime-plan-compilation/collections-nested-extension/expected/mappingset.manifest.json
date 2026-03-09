@@ -1,0 +1,804 @@
+{
+  "mapping_sets": [
+    {
+      "mapping_set_key": {
+        "effective_schema_hash": "832a96908962618380b5f9bfa3824a34946bce20b75cc5bfd4ccd45aea31bee8",
+        "dialect": "mssql",
+        "relational_mapping_version": "1.0.0"
+      },
+      "resources": [
+        {
+          "resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "School"
+          },
+          "write_plan": {
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "School"
+                },
+                "insert_sql_sha256": "0cb9a236aabc8c50e9f3ce930b38dffafc9c55a9291215a9de8fbccc6f76632a",
+                "update_sql_sha256": "1107b4888af31afc2130e27401740eb08fb7a318f137e87b65f6aec6983b4c11",
+                "delete_by_parent_sql_sha256": null,
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 700,
+                  "parameters_per_row": 3,
+                  "max_parameters_per_command": 2100
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "documentId",
+                    "write_value_source": {
+                      "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "NameOfInstitution",
+                    "column_kind": "scalar",
+                    "parameter_name": "nameOfInstitution",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.nameOfInstitution",
+                      "scalar_kind": "string"
+                    }
+                  },
+                  {
+                    "column_name": "SchoolId",
+                    "column_kind": "scalar",
+                    "parameter_name": "schoolId",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.schoolId",
+                      "scalar_kind": "int32"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtension"
+                },
+                "insert_sql_sha256": "9d4e641c2e4751cf05122d595161859b93a01454869796c290252265db1aaae2",
+                "update_sql_sha256": "cf0481f393ade2c61caccd9c66c2248b0f8d10e299885b4ded4229e2917dfe52",
+                "delete_by_parent_sql_sha256": "d0d9450dbf9bc7d29ffcd08eb14c773dd899cf7bdb2bdc8f9585769e1d43692d",
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 1000,
+                  "parameters_per_row": 2,
+                  "max_parameters_per_command": 2100
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "documentId",
+                    "write_value_source": {
+                      "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "CampusCode",
+                    "column_kind": "scalar",
+                    "parameter_name": "campusCode",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.campusCode",
+                      "scalar_kind": "string"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtensionAddress"
+                },
+                "insert_sql_sha256": "8fd639ed4b8f064addb51fa289ec1bf1a835d45983d1fec403fdaf69b2c785c8",
+                "update_sql_sha256": null,
+                "delete_by_parent_sql_sha256": "8c202607a81873da936df3dd5813d0642cb5906a9582e6ebc1e6cd6f3fa76498",
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 700,
+                  "parameters_per_row": 3,
+                  "max_parameters_per_command": 2100
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "School_DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "school_DocumentId",
+                    "write_value_source": {
+                      "kind": "parent_key_part",
+                      "index": 0
+                    }
+                  },
+                  {
+                    "column_name": "Ordinal",
+                    "column_kind": "ordinal",
+                    "parameter_name": "ordinal",
+                    "write_value_source": {
+                      "kind": "ordinal"
+                    }
+                  },
+                  {
+                    "column_name": "Zone",
+                    "column_kind": "scalar",
+                    "parameter_name": "zone",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.zone",
+                      "scalar_kind": "string"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              },
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "SchoolAddress"
+                },
+                "insert_sql_sha256": "879376a4de5dc771dae9d8583e12e79c8edfec1ef1707b7ccd41fff46e310f38",
+                "update_sql_sha256": null,
+                "delete_by_parent_sql_sha256": "cfa72015c203e5ff45702425136f9c79b580fe9367f3917fe39c8bc55710293d",
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 700,
+                  "parameters_per_row": 3,
+                  "max_parameters_per_command": 2100
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "School_DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "school_DocumentId",
+                    "write_value_source": {
+                      "kind": "parent_key_part",
+                      "index": 0
+                    }
+                  },
+                  {
+                    "column_name": "Ordinal",
+                    "column_kind": "ordinal",
+                    "parameter_name": "ordinal",
+                    "write_value_source": {
+                      "kind": "ordinal"
+                    }
+                  },
+                  {
+                    "column_name": "City",
+                    "column_kind": "scalar",
+                    "parameter_name": "city",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.city",
+                      "scalar_kind": "string"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtensionAddressPeriod"
+                },
+                "insert_sql_sha256": "0c209d5c2cb144c181c109621ddff57fef38b0bd47caca408458e523e6670d33",
+                "update_sql_sha256": null,
+                "delete_by_parent_sql_sha256": "7e22b97f747299cf410860342bc91a9dc6d8db542a823a8f8dd00e32b511fc9a",
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 525,
+                  "parameters_per_row": 4,
+                  "max_parameters_per_command": 2100
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "School_DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "school_DocumentId",
+                    "write_value_source": {
+                      "kind": "parent_key_part",
+                      "index": 0
+                    }
+                  },
+                  {
+                    "column_name": "AddressOrdinal",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "addressOrdinal",
+                    "write_value_source": {
+                      "kind": "parent_key_part",
+                      "index": 1
+                    }
+                  },
+                  {
+                    "column_name": "Ordinal",
+                    "column_kind": "ordinal",
+                    "parameter_name": "ordinal",
+                    "write_value_source": {
+                      "kind": "ordinal"
+                    }
+                  },
+                  {
+                    "column_name": "Track",
+                    "column_kind": "scalar",
+                    "parameter_name": "track",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.track",
+                      "scalar_kind": "string"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              },
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "SchoolAddressPeriod"
+                },
+                "insert_sql_sha256": "8b702ff69d8a48b08834e1c6a863a2e559dd7ff05c5ebc36704917d77e15dcdd",
+                "update_sql_sha256": null,
+                "delete_by_parent_sql_sha256": "42bbda1e3cace75b4aa21f0b7442bac4d9eb118c580ee24ea43e60b18e07a288",
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 525,
+                  "parameters_per_row": 4,
+                  "max_parameters_per_command": 2100
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "School_DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "school_DocumentId",
+                    "write_value_source": {
+                      "kind": "parent_key_part",
+                      "index": 0
+                    }
+                  },
+                  {
+                    "column_name": "AddressOrdinal",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "addressOrdinal",
+                    "write_value_source": {
+                      "kind": "parent_key_part",
+                      "index": 1
+                    }
+                  },
+                  {
+                    "column_name": "Ordinal",
+                    "column_kind": "ordinal",
+                    "parameter_name": "ordinal",
+                    "write_value_source": {
+                      "kind": "ordinal"
+                    }
+                  },
+                  {
+                    "column_name": "PeriodName",
+                    "column_kind": "scalar",
+                    "parameter_name": "periodName",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.periodName",
+                      "scalar_kind": "string"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              }
+            ]
+          },
+          "read_plan": {
+            "keyset_table": {
+              "temp_table_name": "#page",
+              "document_id_column_name": "DocumentId"
+            },
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "School"
+                },
+                "select_by_keyset_sql_sha256": "d7a3421806ad3a17ebb6a5aad975b928f5a9defb4f9dd342dfbaf1eca35690af",
+                "select_list_columns_in_order": [
+                  "DocumentId",
+                  "NameOfInstitution",
+                  "SchoolId"
+                ],
+                "order_by_key_columns_in_order": [
+                  "DocumentId"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtension"
+                },
+                "select_by_keyset_sql_sha256": "2f050e2892d49fc3695519951ec8bd5d632029a09f09e8c7f5c37d4158ac8dd2",
+                "select_list_columns_in_order": [
+                  "DocumentId",
+                  "CampusCode"
+                ],
+                "order_by_key_columns_in_order": [
+                  "DocumentId"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtensionAddress"
+                },
+                "select_by_keyset_sql_sha256": "cfa6bc718cdae2fc3cd9d6863e5ad3427d234202a7affb4d2a1e3b15967fa3db",
+                "select_list_columns_in_order": [
+                  "School_DocumentId",
+                  "Ordinal",
+                  "Zone"
+                ],
+                "order_by_key_columns_in_order": [
+                  "School_DocumentId",
+                  "Ordinal"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "SchoolAddress"
+                },
+                "select_by_keyset_sql_sha256": "f7a36ed15aca8a7eefa53508eb872a21663a0b21674e4bf78162407dd648fdca",
+                "select_list_columns_in_order": [
+                  "School_DocumentId",
+                  "Ordinal",
+                  "City"
+                ],
+                "order_by_key_columns_in_order": [
+                  "School_DocumentId",
+                  "Ordinal"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtensionAddressPeriod"
+                },
+                "select_by_keyset_sql_sha256": "aa803f67cedfbfecc574944672a6fc6e60adbf2e22c568f641a6384f28dd938b",
+                "select_list_columns_in_order": [
+                  "School_DocumentId",
+                  "AddressOrdinal",
+                  "Ordinal",
+                  "Track"
+                ],
+                "order_by_key_columns_in_order": [
+                  "School_DocumentId",
+                  "AddressOrdinal",
+                  "Ordinal"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "SchoolAddressPeriod"
+                },
+                "select_by_keyset_sql_sha256": "a4fde100f439ad420d306b74000c497a087d3d54da14a25b379d0430f0304296",
+                "select_list_columns_in_order": [
+                  "School_DocumentId",
+                  "AddressOrdinal",
+                  "Ordinal",
+                  "PeriodName"
+                ],
+                "order_by_key_columns_in_order": [
+                  "School_DocumentId",
+                  "AddressOrdinal",
+                  "Ordinal"
+                ]
+              }
+            ],
+            "reference_identity_projection_plans_in_dependency_order": [],
+            "descriptor_projection_plans_in_order": []
+          }
+        }
+      ]
+    },
+    {
+      "mapping_set_key": {
+        "effective_schema_hash": "832a96908962618380b5f9bfa3824a34946bce20b75cc5bfd4ccd45aea31bee8",
+        "dialect": "pgsql",
+        "relational_mapping_version": "1.0.0"
+      },
+      "resources": [
+        {
+          "resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "School"
+          },
+          "write_plan": {
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "School"
+                },
+                "insert_sql_sha256": "d73fde7b11668b5e1b3235a75f61f4b9a09dea41ce51fcd407fe80a7c633b56b",
+                "update_sql_sha256": "5daa822bc2283e7974c9bc6a6dc488e5854a239b8ee8dea98afc9eacbee493fb",
+                "delete_by_parent_sql_sha256": null,
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 1000,
+                  "parameters_per_row": 3,
+                  "max_parameters_per_command": 65535
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "documentId",
+                    "write_value_source": {
+                      "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "NameOfInstitution",
+                    "column_kind": "scalar",
+                    "parameter_name": "nameOfInstitution",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.nameOfInstitution",
+                      "scalar_kind": "string"
+                    }
+                  },
+                  {
+                    "column_name": "SchoolId",
+                    "column_kind": "scalar",
+                    "parameter_name": "schoolId",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.schoolId",
+                      "scalar_kind": "int32"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtension"
+                },
+                "insert_sql_sha256": "f6e76bbe4fb483425bd17adcb0d6964bde19e19844cd51d9129eb9c03a9df67d",
+                "update_sql_sha256": "e23a7fdcb115f136481a309ebf952e32bfaa992a607c22672d96543b06009515",
+                "delete_by_parent_sql_sha256": "8263638c0d98f4920497c789d763261fc9177fa6f6d3116dd4eb1b8e9a01258b",
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 1000,
+                  "parameters_per_row": 2,
+                  "max_parameters_per_command": 65535
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "documentId",
+                    "write_value_source": {
+                      "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "CampusCode",
+                    "column_kind": "scalar",
+                    "parameter_name": "campusCode",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.campusCode",
+                      "scalar_kind": "string"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtensionAddress"
+                },
+                "insert_sql_sha256": "6fdcd70329b43a31cf95d185025b330101ebff9858ada4f6bc48d850d9852945",
+                "update_sql_sha256": null,
+                "delete_by_parent_sql_sha256": "01e596b8b662f9c18797a6f1bf7cc8e05c58f8062f4fa002bd695907cf16672a",
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 1000,
+                  "parameters_per_row": 3,
+                  "max_parameters_per_command": 65535
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "School_DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "school_DocumentId",
+                    "write_value_source": {
+                      "kind": "parent_key_part",
+                      "index": 0
+                    }
+                  },
+                  {
+                    "column_name": "Ordinal",
+                    "column_kind": "ordinal",
+                    "parameter_name": "ordinal",
+                    "write_value_source": {
+                      "kind": "ordinal"
+                    }
+                  },
+                  {
+                    "column_name": "Zone",
+                    "column_kind": "scalar",
+                    "parameter_name": "zone",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.zone",
+                      "scalar_kind": "string"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              },
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "SchoolAddress"
+                },
+                "insert_sql_sha256": "602405e056310fb0083719bc60169fc3fc59733d932b17506a7f7401b229e060",
+                "update_sql_sha256": null,
+                "delete_by_parent_sql_sha256": "8f4b35307b54ede81fadc454935cef8e413c939bbc51d7f981b2570345758c97",
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 1000,
+                  "parameters_per_row": 3,
+                  "max_parameters_per_command": 65535
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "School_DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "school_DocumentId",
+                    "write_value_source": {
+                      "kind": "parent_key_part",
+                      "index": 0
+                    }
+                  },
+                  {
+                    "column_name": "Ordinal",
+                    "column_kind": "ordinal",
+                    "parameter_name": "ordinal",
+                    "write_value_source": {
+                      "kind": "ordinal"
+                    }
+                  },
+                  {
+                    "column_name": "City",
+                    "column_kind": "scalar",
+                    "parameter_name": "city",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.city",
+                      "scalar_kind": "string"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtensionAddressPeriod"
+                },
+                "insert_sql_sha256": "be92ef501fe93e6a19b903ce01149f05b8d3853ac03468110285fda4cdee9ae7",
+                "update_sql_sha256": null,
+                "delete_by_parent_sql_sha256": "382a49ed7dbc3c629f774b6a44445ac8e9d9efe42b2a960ffda0bea7515af49e",
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 1000,
+                  "parameters_per_row": 4,
+                  "max_parameters_per_command": 65535
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "School_DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "school_DocumentId",
+                    "write_value_source": {
+                      "kind": "parent_key_part",
+                      "index": 0
+                    }
+                  },
+                  {
+                    "column_name": "AddressOrdinal",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "addressOrdinal",
+                    "write_value_source": {
+                      "kind": "parent_key_part",
+                      "index": 1
+                    }
+                  },
+                  {
+                    "column_name": "Ordinal",
+                    "column_kind": "ordinal",
+                    "parameter_name": "ordinal",
+                    "write_value_source": {
+                      "kind": "ordinal"
+                    }
+                  },
+                  {
+                    "column_name": "Track",
+                    "column_kind": "scalar",
+                    "parameter_name": "track",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.track",
+                      "scalar_kind": "string"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              },
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "SchoolAddressPeriod"
+                },
+                "insert_sql_sha256": "fc3844890e74a9216d7735059935d4a39e9ce804b52d7be54f1183db759e5ac0",
+                "update_sql_sha256": null,
+                "delete_by_parent_sql_sha256": "c826b5efbb66d7799e9999815c7453a76ae72eb796b078c7e471624bcee302a0",
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 1000,
+                  "parameters_per_row": 4,
+                  "max_parameters_per_command": 65535
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "School_DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "school_DocumentId",
+                    "write_value_source": {
+                      "kind": "parent_key_part",
+                      "index": 0
+                    }
+                  },
+                  {
+                    "column_name": "AddressOrdinal",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "addressOrdinal",
+                    "write_value_source": {
+                      "kind": "parent_key_part",
+                      "index": 1
+                    }
+                  },
+                  {
+                    "column_name": "Ordinal",
+                    "column_kind": "ordinal",
+                    "parameter_name": "ordinal",
+                    "write_value_source": {
+                      "kind": "ordinal"
+                    }
+                  },
+                  {
+                    "column_name": "PeriodName",
+                    "column_kind": "scalar",
+                    "parameter_name": "periodName",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.periodName",
+                      "scalar_kind": "string"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              }
+            ]
+          },
+          "read_plan": {
+            "keyset_table": {
+              "temp_table_name": "page",
+              "document_id_column_name": "DocumentId"
+            },
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "School"
+                },
+                "select_by_keyset_sql_sha256": "36223892da5c8525807c546734af1747dd20caf8a6491d358b6cdb5cc8a6b989",
+                "select_list_columns_in_order": [
+                  "DocumentId",
+                  "NameOfInstitution",
+                  "SchoolId"
+                ],
+                "order_by_key_columns_in_order": [
+                  "DocumentId"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtension"
+                },
+                "select_by_keyset_sql_sha256": "052bc8ea6ce4a1bc660f28b46728dab281da03b5876e1fa738fad180eca973aa",
+                "select_list_columns_in_order": [
+                  "DocumentId",
+                  "CampusCode"
+                ],
+                "order_by_key_columns_in_order": [
+                  "DocumentId"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtensionAddress"
+                },
+                "select_by_keyset_sql_sha256": "fea1faedb5af4e085aeb910f2295fba097fee791d17d5d9c201e1721ecd2c1c5",
+                "select_list_columns_in_order": [
+                  "School_DocumentId",
+                  "Ordinal",
+                  "Zone"
+                ],
+                "order_by_key_columns_in_order": [
+                  "School_DocumentId",
+                  "Ordinal"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "SchoolAddress"
+                },
+                "select_by_keyset_sql_sha256": "314746d66eb4c0d9e0b77ee72503ebdb3db36d821623755414b036bd43aa3dc6",
+                "select_list_columns_in_order": [
+                  "School_DocumentId",
+                  "Ordinal",
+                  "City"
+                ],
+                "order_by_key_columns_in_order": [
+                  "School_DocumentId",
+                  "Ordinal"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtensionAddressPeriod"
+                },
+                "select_by_keyset_sql_sha256": "c7e895bde1eb04ca7c2b1f641beee69e9fac4ce013dae8a879175f754eee03f0",
+                "select_list_columns_in_order": [
+                  "School_DocumentId",
+                  "AddressOrdinal",
+                  "Ordinal",
+                  "Track"
+                ],
+                "order_by_key_columns_in_order": [
+                  "School_DocumentId",
+                  "AddressOrdinal",
+                  "Ordinal"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "SchoolAddressPeriod"
+                },
+                "select_by_keyset_sql_sha256": "b4b48a5a683592522c3b67087a0d01afffef6fdda0f4568a15b01735b683ee17",
+                "select_list_columns_in_order": [
+                  "School_DocumentId",
+                  "AddressOrdinal",
+                  "Ordinal",
+                  "PeriodName"
+                ],
+                "order_by_key_columns_in_order": [
+                  "School_DocumentId",
+                  "AddressOrdinal",
+                  "Ordinal"
+                ]
+              }
+            ],
+            "reference_identity_projection_plans_in_dependency_order": [],
+            "descriptor_projection_plans_in_order": []
+          }
+        }
+      ]
+    }
+  ]
+}

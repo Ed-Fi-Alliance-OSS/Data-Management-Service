@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Diagnostics;
 using FluentAssertions;
 
 namespace EdFi.DataManagementService.SchemaTools.Tests.Integration;
@@ -11,100 +10,6 @@ namespace EdFi.DataManagementService.SchemaTools.Tests.Integration;
 [TestFixture]
 public class SchemaToolsTests
 {
-    private static string GetExecutablePath()
-    {
-        var assemblyLocation = typeof(SchemaToolsTests).Assembly.Location;
-        var testBinDir = Path.GetDirectoryName(assemblyLocation)!;
-
-        // Extract configuration and framework from current test assembly path
-        // Path structure: .../bin/{Configuration}/{Framework}/
-        var frameworkDir = new DirectoryInfo(testBinDir);
-        var configurationDir = frameworkDir.Parent!;
-        var framework = frameworkDir.Name;
-        var configuration = configurationDir.Name;
-
-        // Navigate from test bin to SchemaTools bin (same configuration)
-        var schemaToolsBinDir = Path.Combine(
-            testBinDir,
-            "..",
-            "..",
-            "..",
-            "..",
-            "EdFi.DataManagementService.SchemaTools",
-            "bin",
-            configuration,
-            framework
-        );
-
-        var exePath = Path.Combine(schemaToolsBinDir, "dms-schema.exe");
-        if (!File.Exists(exePath))
-        {
-            // Try .dll with dotnet on non-Windows
-            exePath = Path.Combine(schemaToolsBinDir, "dms-schema.dll");
-        }
-
-        return Path.GetFullPath(exePath);
-    }
-
-    private static (int ExitCode, string Output, string Error) RunCli(params string[] args)
-    {
-        var exePath = GetExecutablePath();
-
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = exePath.EndsWith(".dll") ? "dotnet" : exePath,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
-
-        if (exePath.EndsWith(".dll"))
-        {
-            startInfo.ArgumentList.Add(exePath);
-        }
-
-        foreach (var arg in args)
-        {
-            startInfo.ArgumentList.Add(arg);
-        }
-
-        using var process = Process.Start(startInfo)!;
-        var outputTask = process.StandardOutput.ReadToEndAsync();
-        var errorTask = process.StandardError.ReadToEndAsync();
-        process.WaitForExit();
-        var output = outputTask.GetAwaiter().GetResult();
-        var error = errorTask.GetAwaiter().GetResult();
-
-        return (process.ExitCode, output, error);
-    }
-
-    private static string GetAuthoritativeFixturePath()
-    {
-        var assemblyLocation = typeof(SchemaToolsTests).Assembly.Location;
-        var testBinDir = Path.GetDirectoryName(assemblyLocation)!;
-
-        // Navigate from test bin to backend Fixtures
-        // Path: .../clis/SchemaTools.Tests.Integration/bin/Debug/net10.0/
-        // Go up 5 levels to reach .../dms/, then down to backend/Fixtures
-        var fixturePath = Path.Combine(
-            testBinDir,
-            "..",
-            "..",
-            "..",
-            "..",
-            "..",
-            "backend",
-            "Fixtures",
-            "authoritative",
-            "ds-5.2",
-            "inputs",
-            "ds-5.2-api-schema-authoritative.json"
-        );
-
-        return Path.GetFullPath(fixturePath);
-    }
-
     [TestFixture]
     public class Given_No_Arguments : SchemaToolsTests
     {
@@ -114,7 +19,7 @@ public class SchemaToolsTests
         [SetUp]
         public void SetUp()
         {
-            (_exitCode, _output, _) = RunCli();
+            (_exitCode, _output, _) = CliTestHelper.RunCli();
         }
 
         [Test]
@@ -154,8 +59,8 @@ public class SchemaToolsTests
         [SetUp]
         public void SetUp()
         {
-            var fixturePath = GetAuthoritativeFixturePath();
-            (_exitCode, _output, _) = RunCli("hash", fixturePath);
+            var fixturePath = CliTestHelper.GetAuthoritativeFixturePath();
+            (_exitCode, _output, _) = CliTestHelper.RunCli("hash", fixturePath);
         }
 
         [Test]
@@ -186,7 +91,7 @@ public class SchemaToolsTests
         [SetUp]
         public void SetUp()
         {
-            (_exitCode, _, _error) = RunCli("hash", "nonexistent/path/ApiSchema.json");
+            (_exitCode, _, _error) = CliTestHelper.RunCli("hash", "nonexistent/path/ApiSchema.json");
         }
 
         [Test]
@@ -214,8 +119,8 @@ public class SchemaToolsTests
         public void SetUp()
         {
             _outputDir = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
-            var fixturePath = GetAuthoritativeFixturePath();
-            (_exitCode, _output, _) = RunCli(
+            var fixturePath = CliTestHelper.GetAuthoritativeFixturePath();
+            (_exitCode, _output, _) = CliTestHelper.RunCli(
                 "ddl",
                 "emit",
                 "--schema",
@@ -314,8 +219,8 @@ public class SchemaToolsTests
         public void SetUp()
         {
             _outputDir = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
-            var fixturePath = GetAuthoritativeFixturePath();
-            (_exitCode, _, _) = RunCli(
+            var fixturePath = CliTestHelper.GetAuthoritativeFixturePath();
+            (_exitCode, _, _) = CliTestHelper.RunCli(
                 "ddl",
                 "emit",
                 "--schema",
@@ -370,13 +275,6 @@ public class SchemaToolsTests
         private string _outputDir3 = null!;
         private string _outputDir4 = null!;
 
-        private static string GetMinimalFixturePath()
-        {
-            var assemblyLocation = typeof(SchemaToolsTests).Assembly.Location;
-            var testBinDir = Path.GetDirectoryName(assemblyLocation)!;
-            return Path.Combine(testBinDir, "Fixtures", "minimal-api-schema.json");
-        }
-
         [SetUp]
         public void SetUp()
         {
@@ -384,9 +282,9 @@ public class SchemaToolsTests
             _outputDir2 = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
             _outputDir3 = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
             _outputDir4 = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
-            var fixturePath = GetMinimalFixturePath();
+            var fixturePath = CliTestHelper.GetMinimalFixturePath();
 
-            var (exit1, _, err1) = RunCli(
+            var (exit1, _, err1) = CliTestHelper.RunCli(
                 "ddl",
                 "emit",
                 "--schema",
@@ -398,7 +296,7 @@ public class SchemaToolsTests
             );
             Assert.That(exit1, Is.EqualTo(0), $"pgsql run 1 failed: {err1}");
 
-            var (exit2, _, err2) = RunCli(
+            var (exit2, _, err2) = CliTestHelper.RunCli(
                 "ddl",
                 "emit",
                 "--schema",
@@ -410,7 +308,7 @@ public class SchemaToolsTests
             );
             Assert.That(exit2, Is.EqualTo(0), $"pgsql run 2 failed: {err2}");
 
-            var (exit3, _, err3) = RunCli(
+            var (exit3, _, err3) = CliTestHelper.RunCli(
                 "ddl",
                 "emit",
                 "--schema",
@@ -422,7 +320,7 @@ public class SchemaToolsTests
             );
             Assert.That(exit3, Is.EqualTo(0), $"mssql run 1 failed: {err3}");
 
-            var (exit4, _, err4) = RunCli(
+            var (exit4, _, err4) = CliTestHelper.RunCli(
                 "ddl",
                 "emit",
                 "--schema",
@@ -497,6 +395,109 @@ public class SchemaToolsTests
     }
 
     [TestFixture]
+    public class Given_Ddl_Emit_Without_Ddl_Manifest_Flag : SchemaToolsTests
+    {
+        private int _exitCode;
+        private string _outputDir = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            _outputDir = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
+            var fixturePath = CliTestHelper.GetMinimalFixturePath();
+            (_exitCode, _, _) = CliTestHelper.RunCli(
+                "ddl",
+                "emit",
+                "--schema",
+                fixturePath,
+                "--output",
+                _outputDir,
+                "--dialect",
+                "pgsql"
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            if (Directory.Exists(_outputDir))
+            {
+                Directory.Delete(_outputDir, recursive: true);
+            }
+        }
+
+        [Test]
+        public void It_returns_exit_code_0()
+        {
+            _exitCode.Should().Be(0);
+        }
+
+        [Test]
+        public void It_does_not_create_ddl_manifest()
+        {
+            File.Exists(Path.Combine(_outputDir, "ddl.manifest.json")).Should().BeFalse();
+        }
+
+        [Test]
+        public void It_still_creates_effective_schema_manifest()
+        {
+            File.Exists(Path.Combine(_outputDir, "effective-schema.manifest.json")).Should().BeTrue();
+        }
+    }
+
+    [TestFixture]
+    public class Given_Ddl_Emit_With_Ddl_Manifest_Flag : SchemaToolsTests
+    {
+        private int _exitCode;
+        private string _outputDir = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            _outputDir = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
+            var fixturePath = CliTestHelper.GetMinimalFixturePath();
+            (_exitCode, _, _) = CliTestHelper.RunCli(
+                "ddl",
+                "emit",
+                "--schema",
+                fixturePath,
+                "--output",
+                _outputDir,
+                "--dialect",
+                "pgsql",
+                "--ddl-manifest"
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            if (Directory.Exists(_outputDir))
+            {
+                Directory.Delete(_outputDir, recursive: true);
+            }
+        }
+
+        [Test]
+        public void It_returns_exit_code_0()
+        {
+            _exitCode.Should().Be(0);
+        }
+
+        [Test]
+        public void It_creates_ddl_manifest()
+        {
+            File.Exists(Path.Combine(_outputDir, "ddl.manifest.json")).Should().BeTrue();
+        }
+
+        [Test]
+        public void It_creates_effective_schema_manifest()
+        {
+            File.Exists(Path.Combine(_outputDir, "effective-schema.manifest.json")).Should().BeTrue();
+        }
+    }
+
+    [TestFixture]
     [Category("Authoritative")]
     public class Given_Ddl_Emit_With_Invalid_Dialect : SchemaToolsTests
     {
@@ -508,8 +509,8 @@ public class SchemaToolsTests
         public void SetUp()
         {
             _outputDir = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
-            var fixturePath = GetAuthoritativeFixturePath();
-            (_exitCode, _, _error) = RunCli(
+            var fixturePath = CliTestHelper.GetAuthoritativeFixturePath();
+            (_exitCode, _, _error) = CliTestHelper.RunCli(
                 "ddl",
                 "emit",
                 "--schema",
@@ -555,7 +556,7 @@ public class SchemaToolsTests
         public void SetUp()
         {
             _outputDir = Path.Combine(Path.GetTempPath(), $"dms-schema-test-{Guid.NewGuid():N}");
-            (_exitCode, _, _error) = RunCli(
+            (_exitCode, _, _error) = CliTestHelper.RunCli(
                 "ddl",
                 "emit",
                 "--schema",

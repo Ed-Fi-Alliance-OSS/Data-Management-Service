@@ -19,7 +19,9 @@ namespace EdFi.DataManagementService.Backend.Ddl;
 /// and ensure deterministic, byte-for-byte stable output:
 /// <list type="number">
 /// <item>Schemas</item>
+/// <item>Extensions (pgcrypto for PostgreSQL; no-op for SQL Server)</item>
 /// <item>Sequences</item>
+/// <item>Functions (UUIDv5 helper)</item>
 /// <item>Tables (PK / UNIQUE / CHECK inline; no cross-table FKs)</item>
 /// <item>Foreign keys (ALTER TABLE ADD CONSTRAINT)</item>
 /// <item>Indexes</item>
@@ -83,7 +85,9 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         var writer = new SqlWriter(_dialect);
 
         EmitSchemas(writer);
+        EmitExtensions(writer);
         EmitSequences(writer);
+        EmitFunctions(writer);
         EmitTables(writer);
         EmitForeignKeys(writer);
         EmitIndexes(writer);
@@ -108,7 +112,29 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         writer.AppendLine();
     }
 
-    // ── Phase 2: Sequences ──────────────────────────────────────────────
+    // ── Phase 2: Extensions ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Emits database extension creation statements required by core functions.
+    /// For PostgreSQL this includes <c>pgcrypto</c> (used by the UUIDv5 helper).
+    /// For SQL Server this is a no-op.
+    /// </summary>
+    private void EmitExtensions(SqlWriter writer)
+    {
+        var pgcrypto = _dialect.CreateExtensionIfNotExists("pgcrypto");
+        if (pgcrypto.Length == 0)
+            return;
+
+        writer.AppendLine("-- ==========================================================");
+        writer.AppendLine("-- Phase 2: Extensions");
+        writer.AppendLine("-- ==========================================================");
+        writer.AppendLine();
+
+        writer.AppendLine(pgcrypto);
+        writer.AppendLine();
+    }
+
+    // ── Phase 3: Sequences ──────────────────────────────────────────────
 
     /// <summary>
     /// Emits the core sequence inventory required by core tables and triggers.
@@ -116,7 +142,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     private void EmitSequences(SqlWriter writer)
     {
         writer.AppendLine("-- ==========================================================");
-        writer.AppendLine("-- Phase 2: Sequences");
+        writer.AppendLine("-- Phase 3: Sequences");
         writer.AppendLine("-- ==========================================================");
         writer.AppendLine();
 
@@ -134,7 +160,24 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         writer.AppendLine();
     }
 
-    // ── Phase 3: Tables ─────────────────────────────────────────────────
+    // ── Phase 4: Functions ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Emits database functions required by core triggers and relational model triggers.
+    /// The UUIDv5 helper must exist before any triggers that call it.
+    /// </summary>
+    private void EmitFunctions(SqlWriter writer)
+    {
+        writer.AppendLine("-- ==========================================================");
+        writer.AppendLine("-- Phase 4: Functions");
+        writer.AppendLine("-- ==========================================================");
+        writer.AppendLine();
+
+        writer.AppendLine(_dialect.CreateUuidv5Function(DmsTableNames.DmsSchema));
+        writer.AppendLine();
+    }
+
+    // ── Phase 5: Tables ─────────────────────────────────────────────────
 
     /// <summary>
     /// Emits core table definitions (primary keys, unique constraints, and check constraints only).
@@ -142,7 +185,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     private void EmitTables(SqlWriter writer)
     {
         writer.AppendLine("-- ==========================================================");
-        writer.AppendLine("-- Phase 3: Tables (PK/UNIQUE/CHECK only, no cross-table FKs)");
+        writer.AppendLine("-- Phase 5: Tables (PK/UNIQUE/CHECK only, no cross-table FKs)");
         writer.AppendLine("-- ==========================================================");
         writer.AppendLine();
 
@@ -536,7 +579,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         writer.AppendLine();
     }
 
-    // ── Phase 4: Foreign Keys ───────────────────────────────────────────
+    // ── Phase 6: Foreign Keys ───────────────────────────────────────────
 
     /// <summary>
     /// Emits cross-table foreign keys for core tables using <c>ALTER TABLE</c> statements.
@@ -544,7 +587,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     private void EmitForeignKeys(SqlWriter writer)
     {
         writer.AppendLine("-- ==========================================================");
-        writer.AppendLine("-- Phase 4: Foreign Keys");
+        writer.AppendLine("-- Phase 6: Foreign Keys");
         writer.AppendLine("-- ==========================================================");
         writer.AppendLine();
 
@@ -644,7 +687,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         writer.AppendLine();
     }
 
-    // ── Phase 5: Indexes ────────────────────────────────────────────────
+    // ── Phase 7: Indexes ────────────────────────────────────────────────
 
     /// <summary>
     /// Emits core indexes that are required in addition to constraint-implied indexes.
@@ -652,7 +695,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     private void EmitIndexes(SqlWriter writer)
     {
         writer.AppendLine("-- ==========================================================");
-        writer.AppendLine("-- Phase 5: Indexes");
+        writer.AppendLine("-- Phase 7: Indexes");
         writer.AppendLine("-- ==========================================================");
         writer.AppendLine();
 
@@ -713,7 +756,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         writer.AppendLine();
     }
 
-    // ── Phase 6: Triggers ───────────────────────────────────────────────
+    // ── Phase 8: Triggers ───────────────────────────────────────────────
 
     /// <summary>
     /// Emits core triggers, including dialect-specific document journaling triggers.
@@ -721,7 +764,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     private void EmitTriggers(SqlWriter writer)
     {
         writer.AppendLine("-- ==========================================================");
-        writer.AppendLine("-- Phase 6: Triggers");
+        writer.AppendLine("-- Phase 8: Triggers");
         writer.AppendLine("-- ==========================================================");
         writer.AppendLine();
 
@@ -745,9 +788,11 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         var changeTable = _dialect.QualifyTable(_documentChangeEventTable);
         var funcName = $"{Quote(DmsTableNames.DmsSchema.Value)}.{Quote("TF_Document_Journal")}";
 
-        // Trigger function
+        // Row-level trigger function. Uses FOR EACH ROW instead of statement-level
+        // transition tables because PostgreSQL 16 does not support transition tables
+        // with column lists or multiple events.
         writer.AppendLine($"CREATE OR REPLACE FUNCTION {funcName}()");
-        writer.AppendLine("RETURNS TRIGGER AS $$");
+        writer.AppendLine("RETURNS TRIGGER AS $func$");
         writer.AppendLine("BEGIN");
         using (writer.Indent())
         {
@@ -755,21 +800,12 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
                 $"INSERT INTO {changeTable} ({Quote("ChangeVersion")}, {Quote("DocumentId")}, {Quote("ResourceKeyId")}, {Quote("CreatedAt")})"
             );
             writer.AppendLine(
-                $"SELECT d.{Quote("ContentVersion")}, d.{Quote("DocumentId")}, d.{Quote("ResourceKeyId")}, now()"
+                $"VALUES (NEW.{Quote("ContentVersion")}, NEW.{Quote("DocumentId")}, NEW.{Quote("ResourceKeyId")}, now());"
             );
-            writer.AppendLine("FROM (");
-            using (writer.Indent())
-            {
-                writer.AppendLine(
-                    $"SELECT DISTINCT ON ({Quote("DocumentId")}) {Quote("ContentVersion")}, {Quote("DocumentId")}, {Quote("ResourceKeyId")}"
-                );
-                writer.AppendLine("FROM new_table");
-            }
-            writer.AppendLine(") d;");
-            writer.AppendLine("RETURN NULL;");
+            writer.AppendLine("RETURN NEW;");
         }
         writer.AppendLine("END;");
-        writer.AppendLine("$$ LANGUAGE plpgsql;");
+        writer.AppendLine("$func$ LANGUAGE plpgsql;");
         writer.AppendLine();
 
         // Drop and recreate trigger
@@ -778,8 +814,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         using (writer.Indent())
         {
             writer.AppendLine($"AFTER INSERT OR UPDATE OF {Quote("ContentVersion")} ON {docTable}");
-            writer.AppendLine("REFERENCING NEW TABLE AS new_table");
-            writer.AppendLine("FOR EACH STATEMENT");
+            writer.AppendLine("FOR EACH ROW");
             writer.AppendLine($"EXECUTE FUNCTION {funcName}();");
         }
         writer.AppendLine();
@@ -821,6 +856,9 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
             writer.AppendLine("END");
         }
         writer.AppendLine("END;");
+        // Close the batch so that subsequent DDL (e.g., relational model DDL
+        // concatenated after core DDL) starts in a fresh batch.
+        writer.AppendLine("GO");
         writer.AppendLine();
     }
 

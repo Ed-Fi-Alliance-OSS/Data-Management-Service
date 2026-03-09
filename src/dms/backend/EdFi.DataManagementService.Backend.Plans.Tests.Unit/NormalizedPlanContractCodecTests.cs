@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.RelationalModel.Schema;
 using FluentAssertions;
 using NUnit.Framework;
@@ -12,7 +13,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
 [TestFixture]
-public class Given_NormalizedPlanContractCodec
+public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
 {
     private RelationalResourceModel _model = null!;
     private ResourceWritePlan _writePlan = null!;
@@ -20,7 +21,7 @@ public class Given_NormalizedPlanContractCodec
     private PageDocumentIdSqlPlan _queryPlan = null!;
 
     [SetUp]
-    public void Setup()
+    public void SetUpSubject()
     {
         _model = CreateModel();
         _writePlan = CreateWritePlan(_model);
@@ -178,6 +179,40 @@ public class Given_NormalizedPlanContractCodec
     }
 
     [Test]
+    public void It_should_roundtrip_multi_table_resource_read_plan_through_normalized_dto_without_collapsing_story_05_shape()
+    {
+        var multiTableModel = CreateSupportedMultiTableModel();
+        var multiTableReadPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(multiTableModel);
+        var encoded = NormalizedPlanContractCodec.Encode(multiTableReadPlan);
+        var decoded = NormalizedPlanContractCodec.Decode(encoded, multiTableModel);
+        var reEncoded = NormalizedPlanContractCodec.Encode(decoded);
+
+        NormalizedPlanDtoJson
+            .ComputeCanonicalSha256(reEncoded)
+            .Should()
+            .Be(NormalizedPlanDtoJson.ComputeCanonicalSha256(encoded));
+
+        encoded
+            .TablePlansInDependencyOrder.Select(static plan => $"{plan.Table.Schema}.{plan.Table.Name}")
+            .Should()
+            .Equal(
+                multiTableModel.TablesInDependencyOrder.Select(static table =>
+                    $"{table.Table.Schema.Value}.{table.Table.Name}"
+                )
+            );
+
+        decoded
+            .TablePlansInDependencyOrder.Select(static plan => plan.TableModel.Table)
+            .Should()
+            .Equal(multiTableModel.TablesInDependencyOrder.Select(static table => table.Table));
+
+        encoded.ReferenceIdentityProjectionPlansInDependencyOrder.Should().BeEmpty();
+        encoded.DescriptorProjectionPlansInOrder.Should().BeEmpty();
+        decoded.ReferenceIdentityProjectionPlansInDependencyOrder.Should().BeEmpty();
+        decoded.DescriptorProjectionPlansInOrder.Should().BeEmpty();
+    }
+
+    [Test]
     public void It_should_fail_fast_when_decoding_read_plan_with_unknown_projection_table()
     {
         var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
@@ -211,9 +246,14 @@ public class Given_NormalizedPlanContractCodec
             .Be(NormalizedPlanDtoJson.ComputeCanonicalSha256(encoded));
 
         decoded
-            .ParametersInOrder.Select(static parameter => parameter.ParameterName)
+            .PageParametersInOrder.Select(static parameter => parameter.ParameterName)
             .Should()
             .Equal("schoolYear", "offset", "limit");
+        decoded.TotalCountParametersInOrder.Should().NotBeNull();
+        decoded
+            .TotalCountParametersInOrder!.Value.Select(static parameter => parameter.ParameterName)
+            .Should()
+            .Equal("schoolYear");
     }
 
     [Test]
@@ -276,11 +316,11 @@ public class Given_NormalizedPlanContractCodec
 
         var reorderedQueryPlan = _queryPlan with
         {
-            ParametersInOrder =
+            PageParametersInOrder =
             [
-                _queryPlan.ParametersInOrder[0],
-                _queryPlan.ParametersInOrder[2],
-                _queryPlan.ParametersInOrder[1],
+                _queryPlan.PageParametersInOrder[0],
+                _queryPlan.PageParametersInOrder[2],
+                _queryPlan.PageParametersInOrder[1],
             ],
         };
 
@@ -296,7 +336,7 @@ public class Given_NormalizedPlanContractCodec
 
         var firstPermutation = encoded with
         {
-            ParametersInOrder =
+            PageParametersInOrder =
             [
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Filter, "schoolYear"),
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Offset, "offset"),
@@ -306,7 +346,7 @@ public class Given_NormalizedPlanContractCodec
 
         var secondPermutation = encoded with
         {
-            ParametersInOrder =
+            PageParametersInOrder =
             [
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Limit, "OffSet"),
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Filter, "schoolYear"),
@@ -538,7 +578,7 @@ public class Given_NormalizedPlanContractCodec
 
         var mutated = encoded with
         {
-            ParametersInOrder =
+            PageParametersInOrder =
             [
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Filter, "schoolYear"),
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Limit, "limit"),
@@ -548,7 +588,7 @@ public class Given_NormalizedPlanContractCodec
         var act = () => NormalizedPlanContractCodec.Decode(mutated);
 
         var exception = act.Should().Throw<ArgumentException>().Which;
-        exception.ParamName.Should().Be(nameof(PageDocumentIdSqlPlanDto.ParametersInOrder));
+        exception.ParamName.Should().Be(nameof(PageDocumentIdSqlPlanDto.PageParametersInOrder));
         exception.Message.Should().Contain("exactly one Offset and one Limit role entry");
         exception.Message.Should().Contain("Offset=0");
         exception.Message.Should().Contain("Limit=1");
@@ -561,7 +601,7 @@ public class Given_NormalizedPlanContractCodec
 
         var mutated = encoded with
         {
-            ParametersInOrder =
+            PageParametersInOrder =
             [
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Filter, "schoolYear"),
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Offset, "offset"),
@@ -571,7 +611,7 @@ public class Given_NormalizedPlanContractCodec
         var act = () => NormalizedPlanContractCodec.Decode(mutated);
 
         var exception = act.Should().Throw<ArgumentException>().Which;
-        exception.ParamName.Should().Be(nameof(PageDocumentIdSqlPlanDto.ParametersInOrder));
+        exception.ParamName.Should().Be(nameof(PageDocumentIdSqlPlanDto.PageParametersInOrder));
         exception.Message.Should().Contain("exactly one Offset and one Limit role entry");
         exception.Message.Should().Contain("Offset=1");
         exception.Message.Should().Contain("Limit=0");
@@ -584,7 +624,7 @@ public class Given_NormalizedPlanContractCodec
 
         var mutated = encoded with
         {
-            ParametersInOrder =
+            PageParametersInOrder =
             [
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Filter, "schoolYear"),
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Offset, "offset"),
@@ -596,7 +636,7 @@ public class Given_NormalizedPlanContractCodec
         var act = () => NormalizedPlanContractCodec.Decode(mutated);
 
         var exception = act.Should().Throw<ArgumentException>().Which;
-        exception.ParamName.Should().Be(nameof(PageDocumentIdSqlPlanDto.ParametersInOrder));
+        exception.ParamName.Should().Be(nameof(PageDocumentIdSqlPlanDto.PageParametersInOrder));
         exception.Message.Should().Contain("exactly one Offset and one Limit role entry");
         exception.Message.Should().Contain("Offset=2");
         exception.Message.Should().Contain("Limit=1");
@@ -609,7 +649,7 @@ public class Given_NormalizedPlanContractCodec
 
         var mutated = encoded with
         {
-            ParametersInOrder =
+            PageParametersInOrder =
             [
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Filter, "schoolYear"),
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Offset, "offset"),
@@ -621,7 +661,7 @@ public class Given_NormalizedPlanContractCodec
         var act = () => NormalizedPlanContractCodec.Decode(mutated);
 
         var exception = act.Should().Throw<ArgumentException>().Which;
-        exception.ParamName.Should().Be(nameof(PageDocumentIdSqlPlanDto.ParametersInOrder));
+        exception.ParamName.Should().Be(nameof(PageDocumentIdSqlPlanDto.PageParametersInOrder));
         exception.Message.Should().Contain("exactly one Offset and one Limit role entry");
         exception.Message.Should().Contain("Offset=1");
         exception.Message.Should().Contain("Limit=2");
@@ -631,11 +671,11 @@ public class Given_NormalizedPlanContractCodec
     public void It_should_fail_fast_when_query_parameter_name_is_invalid()
     {
         var encoded = NormalizedPlanContractCodec.Encode(_queryPlan);
-        var mutatedParameters = encoded.ParametersInOrder.ToArray();
+        var mutatedParameters = encoded.PageParametersInOrder.ToArray();
 
         mutatedParameters[0] = mutatedParameters[0] with { ParameterName = "invalid-name" };
 
-        var mutated = encoded with { ParametersInOrder = [.. mutatedParameters] };
+        var mutated = encoded with { PageParametersInOrder = [.. mutatedParameters] };
 
         var act = () => NormalizedPlanContractCodec.Decode(mutated);
 
@@ -650,7 +690,7 @@ public class Given_NormalizedPlanContractCodec
 
         var mutated = encoded with
         {
-            ParametersInOrder =
+            PageParametersInOrder =
             [
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Filter, "schoolYear"),
                 new QuerySqlParameterDto(QuerySqlParameterRoleDto.Offset, "offset"),
@@ -664,6 +704,58 @@ public class Given_NormalizedPlanContractCodec
         exception.Message.Should().Contain("Duplicate parameter names");
         exception.Message.Should().Contain("'OffSet'");
         exception.Message.Should().Contain("'offset'");
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_total_count_parameters_are_present_without_total_count_sql()
+    {
+        var encoded = NormalizedPlanContractCodec.Encode(_queryPlan);
+        var mutated = encoded with
+        {
+            TotalCountSql = null,
+            TotalCountParametersInOrder =
+            [
+                new QuerySqlParameterDto(QuerySqlParameterRoleDto.Filter, "schoolYear"),
+            ],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated);
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.Message.Should().Contain("must be null when");
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_total_count_parameters_are_missing_for_total_count_sql()
+    {
+        var encoded = NormalizedPlanContractCodec.Encode(_queryPlan);
+        var mutated = encoded with { TotalCountParametersInOrder = null };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated);
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.Message.Should().Contain("is required when");
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_total_count_parameters_include_non_filter_roles()
+    {
+        var encoded = NormalizedPlanContractCodec.Encode(_queryPlan);
+        var mutated = encoded with
+        {
+            TotalCountParametersInOrder =
+            [
+                new QuerySqlParameterDto(QuerySqlParameterRoleDto.Filter, "schoolYear"),
+                new QuerySqlParameterDto(QuerySqlParameterRoleDto.Offset, "offset"),
+            ],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated);
+
+        var exception = act.Should().Throw<ArgumentException>().Which;
+        exception.ParamName.Should().Be(nameof(PageDocumentIdSqlPlanDto.TotalCountParametersInOrder));
+        exception.Message.Should().Contain("may only include Filter role entries");
+        exception.Message.Should().Contain("Offset=1");
     }
 
     private static RelationalResourceModel CreateModel()
@@ -1021,12 +1113,13 @@ public class Given_NormalizedPlanContractCodec
         return new PageDocumentIdSqlPlan(
             PageDocumentIdSql: "SELECT r.[DocumentId]\nFROM [edfi].[StudentSchoolAssociation] r\nWHERE r.[SchoolYear] = @schoolYear\nORDER BY r.[DocumentId] ASC\nOFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY;",
             TotalCountSql: "SELECT COUNT(1)\nFROM [edfi].[StudentSchoolAssociation] r\nWHERE r.[SchoolYear] = @schoolYear;",
-            ParametersInOrder:
+            PageParametersInOrder:
             [
                 new QuerySqlParameter(QuerySqlParameterRole.Filter, "schoolYear"),
                 new QuerySqlParameter(QuerySqlParameterRole.Offset, "offset"),
                 new QuerySqlParameter(QuerySqlParameterRole.Limit, "limit"),
-            ]
+            ],
+            TotalCountParametersInOrder: [new QuerySqlParameter(QuerySqlParameterRole.Filter, "schoolYear")]
         );
     }
 

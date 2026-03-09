@@ -1,0 +1,296 @@
+{
+  "mapping_sets": [
+    {
+      "mapping_set_key": {
+        "effective_schema_hash": "689a856d773350632e4d8d67022cfcf5ae9585df80bd8dec625d483071aa8afc",
+        "dialect": "mssql",
+        "relational_mapping_version": "1.0.0"
+      },
+      "resources": [
+        {
+          "resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "PresenceGateExample"
+          },
+          "write_plan": {
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "PresenceGateExample"
+                },
+                "insert_sql_sha256": "564cadc980a6e1d33482d70740e4975ba725c6368a93f2b95e7ca669a3783e99",
+                "update_sql_sha256": "91400a12037d34e0421cb2939465ce49f88b132fb10fa1281d68ef7db6ed345f",
+                "delete_by_parent_sql_sha256": null,
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 420,
+                  "parameters_per_row": 5,
+                  "max_parameters_per_command": 2100
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "documentId",
+                    "write_value_source": {
+                      "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "PrimarySchoolTypeDescriptor_DescriptorId_Present",
+                    "column_kind": "scalar",
+                    "parameter_name": "primarySchoolTypeDescriptor_DescriptorId_Present",
+                    "write_value_source": {
+                      "kind": "precomputed"
+                    }
+                  },
+                  {
+                    "column_name": "PrimarySchoolTypeDescriptor_Unified_DescriptorId",
+                    "column_kind": "descriptor_fk",
+                    "parameter_name": "primarySchoolTypeDescriptor_Unified_DescriptorId",
+                    "write_value_source": {
+                      "kind": "precomputed"
+                    }
+                  },
+                  {
+                    "column_name": "SecondarySchoolTypeDescriptor_DescriptorId_Present",
+                    "column_kind": "scalar",
+                    "parameter_name": "secondarySchoolTypeDescriptor_DescriptorId_Present",
+                    "write_value_source": {
+                      "kind": "precomputed"
+                    }
+                  },
+                  {
+                    "column_name": "PresenceGateExampleId",
+                    "column_kind": "scalar",
+                    "parameter_name": "presenceGateExampleId",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.presenceGateExampleId",
+                      "scalar_kind": "int32"
+                    }
+                  }
+                ],
+                "key_unification_plans": [
+                  {
+                    "canonical_column_name": "PrimarySchoolTypeDescriptor_Unified_DescriptorId",
+                    "canonical_binding_index": 2,
+                    "members_in_order": [
+                      {
+                        "kind": "descriptor",
+                        "member_path_column_name": "PrimarySchoolTypeDescriptor_DescriptorId",
+                        "relative_path": "$.primarySchoolTypeDescriptor",
+                        "presence_column_name": "PrimarySchoolTypeDescriptor_DescriptorId_Present",
+                        "presence_binding_index": 1,
+                        "presence_is_synthetic": true,
+                        "descriptor_resource": {
+                          "project_name": "Ed-Fi",
+                          "resource_name": "SchoolTypeDescriptor"
+                        }
+                      },
+                      {
+                        "kind": "descriptor",
+                        "member_path_column_name": "SecondarySchoolTypeDescriptor_DescriptorId",
+                        "relative_path": "$.secondarySchoolTypeDescriptor",
+                        "presence_column_name": "SecondarySchoolTypeDescriptor_DescriptorId_Present",
+                        "presence_binding_index": 3,
+                        "presence_is_synthetic": true,
+                        "descriptor_resource": {
+                          "project_name": "Ed-Fi",
+                          "resource_name": "SchoolTypeDescriptor"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "read_plan": {
+            "keyset_table": {
+              "temp_table_name": "#page",
+              "document_id_column_name": "DocumentId"
+            },
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "PresenceGateExample"
+                },
+                "select_by_keyset_sql_sha256": "5568aea267d644c571e9c03aad741c3af091ab5f0a31d13657f698189a024ab0",
+                "select_list_columns_in_order": [
+                  "DocumentId",
+                  "PrimarySchoolTypeDescriptor_DescriptorId_Present",
+                  "PrimarySchoolTypeDescriptor_Unified_DescriptorId",
+                  "SecondarySchoolTypeDescriptor_DescriptorId_Present",
+                  "PrimarySchoolTypeDescriptor_DescriptorId",
+                  "SecondarySchoolTypeDescriptor_DescriptorId",
+                  "PresenceGateExampleId"
+                ],
+                "order_by_key_columns_in_order": [
+                  "DocumentId"
+                ]
+              }
+            ],
+            "reference_identity_projection_plans_in_dependency_order": [],
+            "descriptor_projection_plans_in_order": []
+          }
+        },
+        {
+          "resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "SchoolTypeDescriptor"
+          },
+          "write_plan": null,
+          "read_plan": null
+        }
+      ]
+    },
+    {
+      "mapping_set_key": {
+        "effective_schema_hash": "689a856d773350632e4d8d67022cfcf5ae9585df80bd8dec625d483071aa8afc",
+        "dialect": "pgsql",
+        "relational_mapping_version": "1.0.0"
+      },
+      "resources": [
+        {
+          "resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "PresenceGateExample"
+          },
+          "write_plan": {
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "PresenceGateExample"
+                },
+                "insert_sql_sha256": "db09e0dbdaad0376ee085ebf7c81fe4f130595fcaa4e1c7f2f649d35b0630308",
+                "update_sql_sha256": "6dd6fa4478b267062fbae278fa9c52a756e6d17bfedb88ea1dc570acf3d54e80",
+                "delete_by_parent_sql_sha256": null,
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 1000,
+                  "parameters_per_row": 5,
+                  "max_parameters_per_command": 65535
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "documentId",
+                    "write_value_source": {
+                      "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "PrimarySchoolTypeDescriptor_DescriptorId_Present",
+                    "column_kind": "scalar",
+                    "parameter_name": "primarySchoolTypeDescriptor_DescriptorId_Present",
+                    "write_value_source": {
+                      "kind": "precomputed"
+                    }
+                  },
+                  {
+                    "column_name": "PrimarySchoolTypeDescriptor_Unified_DescriptorId",
+                    "column_kind": "descriptor_fk",
+                    "parameter_name": "primarySchoolTypeDescriptor_Unified_DescriptorId",
+                    "write_value_source": {
+                      "kind": "precomputed"
+                    }
+                  },
+                  {
+                    "column_name": "SecondarySchoolTypeDescriptor_DescriptorId_Present",
+                    "column_kind": "scalar",
+                    "parameter_name": "secondarySchoolTypeDescriptor_DescriptorId_Present",
+                    "write_value_source": {
+                      "kind": "precomputed"
+                    }
+                  },
+                  {
+                    "column_name": "PresenceGateExampleId",
+                    "column_kind": "scalar",
+                    "parameter_name": "presenceGateExampleId",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.presenceGateExampleId",
+                      "scalar_kind": "int32"
+                    }
+                  }
+                ],
+                "key_unification_plans": [
+                  {
+                    "canonical_column_name": "PrimarySchoolTypeDescriptor_Unified_DescriptorId",
+                    "canonical_binding_index": 2,
+                    "members_in_order": [
+                      {
+                        "kind": "descriptor",
+                        "member_path_column_name": "PrimarySchoolTypeDescriptor_DescriptorId",
+                        "relative_path": "$.primarySchoolTypeDescriptor",
+                        "presence_column_name": "PrimarySchoolTypeDescriptor_DescriptorId_Present",
+                        "presence_binding_index": 1,
+                        "presence_is_synthetic": true,
+                        "descriptor_resource": {
+                          "project_name": "Ed-Fi",
+                          "resource_name": "SchoolTypeDescriptor"
+                        }
+                      },
+                      {
+                        "kind": "descriptor",
+                        "member_path_column_name": "SecondarySchoolTypeDescriptor_DescriptorId",
+                        "relative_path": "$.secondarySchoolTypeDescriptor",
+                        "presence_column_name": "SecondarySchoolTypeDescriptor_DescriptorId_Present",
+                        "presence_binding_index": 3,
+                        "presence_is_synthetic": true,
+                        "descriptor_resource": {
+                          "project_name": "Ed-Fi",
+                          "resource_name": "SchoolTypeDescriptor"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          "read_plan": {
+            "keyset_table": {
+              "temp_table_name": "page",
+              "document_id_column_name": "DocumentId"
+            },
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "PresenceGateExample"
+                },
+                "select_by_keyset_sql_sha256": "49eb0398d73417022717e648a7905cf2eb0444ba1c7d1adff6a044b0251b11a2",
+                "select_list_columns_in_order": [
+                  "DocumentId",
+                  "PrimarySchoolTypeDescriptor_DescriptorId_Present",
+                  "PrimarySchoolTypeDescriptor_Unified_DescriptorId",
+                  "SecondarySchoolTypeDescriptor_DescriptorId_Present",
+                  "PrimarySchoolTypeDescriptor_DescriptorId",
+                  "SecondarySchoolTypeDescriptor_DescriptorId",
+                  "PresenceGateExampleId"
+                ],
+                "order_by_key_columns_in_order": [
+                  "DocumentId"
+                ]
+              }
+            ],
+            "reference_identity_projection_plans_in_dependency_order": [],
+            "descriptor_projection_plans_in_order": []
+          }
+        },
+        {
+          "resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "SchoolTypeDescriptor"
+          },
+          "write_plan": null,
+          "read_plan": null
+        }
+      ]
+    }
+  ]
+}

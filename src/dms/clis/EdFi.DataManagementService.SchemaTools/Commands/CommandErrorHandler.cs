@@ -28,9 +28,9 @@ public static class CommandErrorHandler
         }
         catch (InvalidOperationException ex)
         {
-            logger.LogError(ex, "Schema processing failed during {Operation}", operationName);
+            logger.LogError(ex, "{Operation} failed", operationName);
             Console.Error.WriteLine(
-                $"Error: Schema processing failed: {LoggingSanitizer.SanitizeForConsole(ex.Message)}"
+                $"Error: {operationName} failed: {LoggingSanitizer.SanitizeForConsole(ex.Message)}"
             );
             return 1;
         }

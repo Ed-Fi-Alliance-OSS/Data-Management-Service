@@ -38,11 +38,10 @@ internal sealed record ResourceWritePlanDto
     )
     {
         ArgumentNullException.ThrowIfNull(Resource);
+        ArgumentNullException.ThrowIfNull(TablePlansInDependencyOrder);
 
         this.Resource = Resource;
-        this.TablePlansInDependencyOrder = NormalizedPlanDtoCollectionCloner.ToImmutableArray(
-            TablePlansInDependencyOrder
-        );
+        this.TablePlansInDependencyOrder = [.. TablePlansInDependencyOrder];
     }
 
     public QualifiedResourceNameDto Resource { get; init; }
@@ -65,14 +64,16 @@ internal sealed record TableWritePlanDto
         ArgumentNullException.ThrowIfNull(Table);
         ArgumentNullException.ThrowIfNull(InsertSql);
         ArgumentNullException.ThrowIfNull(BulkInsertBatching);
+        ArgumentNullException.ThrowIfNull(ColumnBindings);
+        ArgumentNullException.ThrowIfNull(KeyUnificationPlans);
 
         this.Table = Table;
         this.InsertSql = InsertSql;
         this.UpdateSql = UpdateSql;
         this.DeleteByParentSql = DeleteByParentSql;
         this.BulkInsertBatching = BulkInsertBatching;
-        this.ColumnBindings = NormalizedPlanDtoCollectionCloner.ToImmutableArray(ColumnBindings);
-        this.KeyUnificationPlans = NormalizedPlanDtoCollectionCloner.ToImmutableArray(KeyUnificationPlans);
+        this.ColumnBindings = [.. ColumnBindings];
+        this.KeyUnificationPlans = [.. KeyUnificationPlans];
     }
 
     public DbTableNameDto Table { get; init; }
@@ -132,9 +133,11 @@ internal sealed record KeyUnificationWritePlanDto
         IEnumerable<KeyUnificationMemberWritePlanDto> MembersInOrder
     )
     {
+        ArgumentNullException.ThrowIfNull(MembersInOrder);
+
         this.CanonicalColumnName = CanonicalColumnName;
         this.CanonicalBindingIndex = CanonicalBindingIndex;
-        this.MembersInOrder = NormalizedPlanDtoCollectionCloner.ToImmutableArray(MembersInOrder);
+        this.MembersInOrder = [.. MembersInOrder];
     }
 
     public string CanonicalColumnName { get; init; }
@@ -197,19 +200,18 @@ internal sealed record ResourceReadPlanDto
     {
         ArgumentNullException.ThrowIfNull(Resource);
         ArgumentNullException.ThrowIfNull(KeysetTable);
+        ArgumentNullException.ThrowIfNull(TablePlansInDependencyOrder);
+        ArgumentNullException.ThrowIfNull(ReferenceIdentityProjectionPlansInDependencyOrder);
+        ArgumentNullException.ThrowIfNull(DescriptorProjectionPlansInOrder);
 
         this.Resource = Resource;
         this.KeysetTable = KeysetTable;
-        this.TablePlansInDependencyOrder = NormalizedPlanDtoCollectionCloner.ToImmutableArray(
-            TablePlansInDependencyOrder
-        );
+        this.TablePlansInDependencyOrder = [.. TablePlansInDependencyOrder];
         this.ReferenceIdentityProjectionPlansInDependencyOrder =
-            NormalizedPlanDtoCollectionCloner.ToImmutableArray(
-                ReferenceIdentityProjectionPlansInDependencyOrder
-            );
-        this.DescriptorProjectionPlansInOrder = NormalizedPlanDtoCollectionCloner.ToImmutableArray(
-            DescriptorProjectionPlansInOrder
-        );
+        [
+            .. ReferenceIdentityProjectionPlansInDependencyOrder,
+        ];
+        this.DescriptorProjectionPlansInOrder = [.. DescriptorProjectionPlansInOrder];
     }
 
     public QualifiedResourceNameDto Resource { get; init; }
@@ -234,8 +236,10 @@ internal sealed record ReferenceIdentityProjectionTablePlanDto
         IEnumerable<ReferenceIdentityProjectionBindingDto> BindingsInOrder
     )
     {
+        ArgumentNullException.ThrowIfNull(BindingsInOrder);
+
         this.Table = Table;
-        this.BindingsInOrder = NormalizedPlanDtoCollectionCloner.ToImmutableArray(BindingsInOrder);
+        this.BindingsInOrder = [.. BindingsInOrder];
     }
 
     public DbTableNameDto Table { get; init; }
@@ -253,13 +257,13 @@ internal sealed record ReferenceIdentityProjectionBindingDto
         IEnumerable<ReferenceIdentityProjectionFieldOrdinalDto> IdentityFieldOrdinalsInOrder
     )
     {
+        ArgumentNullException.ThrowIfNull(IdentityFieldOrdinalsInOrder);
+
         this.IsIdentityComponent = IsIdentityComponent;
         this.ReferenceObjectPath = ReferenceObjectPath;
         this.TargetResource = TargetResource;
         this.FkColumnOrdinal = FkColumnOrdinal;
-        this.IdentityFieldOrdinalsInOrder = NormalizedPlanDtoCollectionCloner.ToImmutableArray(
-            IdentityFieldOrdinalsInOrder
-        );
+        this.IdentityFieldOrdinalsInOrder = [.. IdentityFieldOrdinalsInOrder];
     }
 
     public bool IsIdentityComponent { get; init; }
@@ -286,9 +290,11 @@ internal sealed record DescriptorProjectionPlanDto
         IEnumerable<DescriptorProjectionSourceDto> SourcesInOrder
     )
     {
+        ArgumentNullException.ThrowIfNull(SourcesInOrder);
+
         this.SelectByKeysetSql = SelectByKeysetSql;
         this.ResultShape = ResultShape;
-        this.SourcesInOrder = NormalizedPlanDtoCollectionCloner.ToImmutableArray(SourcesInOrder);
+        this.SourcesInOrder = [.. SourcesInOrder];
     }
 
     public string SelectByKeysetSql { get; init; }
@@ -312,19 +318,46 @@ internal sealed record PageDocumentIdSqlPlanDto
     public PageDocumentIdSqlPlanDto(
         string PageDocumentIdSql,
         string? TotalCountSql,
-        IEnumerable<QuerySqlParameterDto> ParametersInOrder
+        IEnumerable<QuerySqlParameterDto> PageParametersInOrder,
+        IEnumerable<QuerySqlParameterDto>? TotalCountParametersInOrder
     )
     {
+        ArgumentNullException.ThrowIfNull(PageParametersInOrder);
+
         this.PageDocumentIdSql = PageDocumentIdSql;
         this.TotalCountSql = TotalCountSql;
-        this.ParametersInOrder = NormalizedPlanDtoCollectionCloner.ToImmutableArray(ParametersInOrder);
+        this.PageParametersInOrder = [.. PageParametersInOrder];
+
+        if (TotalCountSql is null)
+        {
+            if (TotalCountParametersInOrder is not null)
+            {
+                throw new ArgumentException(
+                    $"{nameof(TotalCountParametersInOrder)} must be null when {nameof(TotalCountSql)} is null.",
+                    nameof(TotalCountParametersInOrder)
+                );
+            }
+
+            this.TotalCountParametersInOrder = null;
+            return;
+        }
+
+        this.TotalCountParametersInOrder =
+        [
+            .. (
+                TotalCountParametersInOrder
+                ?? throw new ArgumentNullException(nameof(TotalCountParametersInOrder))
+            ),
+        ];
     }
 
     public string PageDocumentIdSql { get; init; }
 
     public string? TotalCountSql { get; init; }
 
-    public ImmutableArray<QuerySqlParameterDto> ParametersInOrder { get; init; }
+    public ImmutableArray<QuerySqlParameterDto> PageParametersInOrder { get; init; }
+
+    public ImmutableArray<QuerySqlParameterDto>? TotalCountParametersInOrder { get; init; }
 }
 
 internal sealed record QuerySqlParameterDto(QuerySqlParameterRoleDto Role, string ParameterName);
@@ -334,14 +367,4 @@ internal enum QuerySqlParameterRoleDto
     Filter,
     Offset,
     Limit,
-}
-
-internal static class NormalizedPlanDtoCollectionCloner
-{
-    public static ImmutableArray<T> ToImmutableArray<T>(IEnumerable<T> values)
-    {
-        ArgumentNullException.ThrowIfNull(values);
-
-        return [.. values];
-    }
 }

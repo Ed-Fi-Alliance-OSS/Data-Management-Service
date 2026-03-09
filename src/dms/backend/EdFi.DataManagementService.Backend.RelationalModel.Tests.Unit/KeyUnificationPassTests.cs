@@ -93,6 +93,20 @@ public class Given_Key_Unification_For_Reference_Sites
     }
 
     /// <summary>
+    /// It should mark unified member aliases as non-writable.
+    /// </summary>
+    [Test]
+    public void It_should_mark_unified_member_aliases_as_non_writable()
+    {
+        var unifiedAliasColumns = _rootTable
+            .Columns.Where(column => column.Storage is ColumnStorage.UnifiedAlias)
+            .ToArray();
+
+        unifiedAliasColumns.Should().NotBeEmpty();
+        unifiedAliasColumns.Should().OnlyContain(column => !column.IsWritable);
+    }
+
+    /// <summary>
     /// It should keep foreign keys on storage-safe columns for invariant validation.
     /// </summary>
     [Test]
@@ -539,7 +553,8 @@ public class Given_Key_Unification_With_Duplicate_Table_Names_Across_Scopes
 }
 
 /// <summary>
-/// Test fixture for unresolved equality-constraint endpoint failures.
+/// Test fixture for unresolved equality-constraint endpoint handling.
+/// Constraints with unresolved endpoints are silently skipped.
 /// </summary>
 [TestFixture]
 public class Given_Key_Unification_With_An_Unresolved_Endpoint
@@ -557,12 +572,12 @@ public class Given_Key_Unification_With_An_Unresolved_Endpoint
     }
 
     /// <summary>
-    /// It should fail fast when an endpoint does not bind to any source path.
+    /// It should silently skip constraints with unresolved endpoints.
     /// </summary>
     [Test]
-    public void It_should_fail_fast_for_unresolved_endpoints()
+    public void It_should_skip_constraints_with_unresolved_endpoints()
     {
-        _act.Should().Throw<InvalidOperationException>().WithMessage("*was not bound to any column*");
+        _act.Should().NotThrow();
     }
 }
 

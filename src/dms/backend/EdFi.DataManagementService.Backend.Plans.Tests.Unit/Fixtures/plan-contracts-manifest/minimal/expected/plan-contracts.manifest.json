@@ -7,7 +7,7 @@
       "page_document_id_sql_sha256": "8e8810a3b74c81b9ed148ba83371e3dd4b87aafa620f83d3ab30c453e1c141c9",
       "total_count_sql": "SELECT COUNT(1)\nFROM \u0022edfi\u0022.\u0022StudentSchoolAssociation\u0022 r\nWHERE\n    (r.\u0022AliasC\u0022 \u003C @mParam)\n    AND (r.\u0022CanonicalB\u0022 \u003E @zParam)\n    AND (r.\u0022PresenceA\u0022 IS NOT NULL AND r.\u0022CanonicalA\u0022 = @aParam)\n;",
       "total_count_sql_sha256": "bb811ea14806e8792a79ea0d80227425f1c9cae235afb876f7531cb86df778b9",
-      "parameters_in_order": [
+      "page_parameters_in_order": [
         {
           "role": "filter",
           "parameter_name": "mParam"
@@ -28,6 +28,20 @@
           "role": "limit",
           "parameter_name": "limit"
         }
+      ],
+      "total_count_parameters_in_order": [
+        {
+          "role": "filter",
+          "parameter_name": "mParam"
+        },
+        {
+          "role": "filter",
+          "parameter_name": "zParam"
+        },
+        {
+          "role": "filter",
+          "parameter_name": "aParam"
+        }
       ]
     },
     {
@@ -36,7 +50,7 @@
       "page_document_id_sql_sha256": "bf46fb8a1f6e57debe0862287130b218b599842cfc91db1075908d1dd888fd53",
       "total_count_sql": "SELECT COUNT(1)\nFROM [edfi].[StudentSchoolAssociation] r\nWHERE\n    (r.[AliasC] \u003C @mParam)\n    AND (r.[CanonicalB] \u003E @zParam)\n    AND (r.[PresenceA] IS NOT NULL AND r.[CanonicalA] = @aParam)\n;",
       "total_count_sql_sha256": "359d248a2e995488fd0a46ac687e28c79330a8a8cda06b2ca117a8fa2e852a92",
-      "parameters_in_order": [
+      "page_parameters_in_order": [
         {
           "role": "filter",
           "parameter_name": "mParam"
@@ -56,6 +70,20 @@
         {
           "role": "limit",
           "parameter_name": "limit"
+        }
+      ],
+      "total_count_parameters_in_order": [
+        {
+          "role": "filter",
+          "parameter_name": "mParam"
+        },
+        {
+          "role": "filter",
+          "parameter_name": "zParam"
+        },
+        {
+          "role": "filter",
+          "parameter_name": "aParam"
         }
       ]
     }

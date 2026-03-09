@@ -361,10 +361,14 @@ For a write request targeting resource `R`:
    - The compiled `InsertSql` for the table is emitted such that its parameter placeholders correspond to `ColumnBindings[0..N)` in that same order and use `WriteColumnBinding.ParameterName`.
    - Runtime binds parameters from `WriteColumnBinding.ParameterName` (not by “guessing” from SQL text), so it always knows which extracted value goes in which SQL parameter position.
 
-6. **Execute (single transaction, replace semantics for collections)**
+6. **Execute (single transaction, replace semantics for scoped child data)**
    - Root table:
      - `InsertSql` for insert and/or `UpdateSql` for update (depending on identity outcome).
-   - Child/collection tables:
+   - Non-root 1:1 tables (including root-scope `_ext` tables):
+     - `InsertSql` when the scoped row is newly present,
+     - `UpdateSql` when the scoped row already exists, and
+     - `DeleteByParentSql` when the scoped object is absent in the payload.
+   - Collection tables:
      - execute `DeleteByParentSql` (for the parent key) then bulk insert the new rows.
    - Bulk insert is used whenever a table has 0..N rows to write (especially child/collection and extension tables): a dialect-aware executor (e.g. `IBulkInserter`) batches `RowBuffer`s into multi-row inserts (or `COPY`/`SqlBulkCopy`-style paths for large batches), using `InsertSql` + ordered `ColumnBindings` and chunking by `TableWritePlan.BulkInsertBatching.MaxRowsPerBatch` to respect dialect parameter limits.
 

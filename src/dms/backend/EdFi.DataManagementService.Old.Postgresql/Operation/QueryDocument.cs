@@ -75,6 +75,11 @@ public class QueryDocument(
             _logger.LogDebug(pe, "Transaction deadlock on query - {TraceId}", queryRequest.TraceId.Value);
             return new QueryResult.QueryFailureRetryable();
         }
+        catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.SerializationFailure)
+        {
+            _logger.LogDebug(pe, "Transaction conflict on query - {TraceId}", queryRequest.TraceId.Value);
+            return new QueryResult.QueryFailureRetryable();
+        }
         catch (Exception ex)
         {
             _logger.LogError(

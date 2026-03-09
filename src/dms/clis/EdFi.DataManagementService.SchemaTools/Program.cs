@@ -12,8 +12,12 @@ using Microsoft.Extensions.Logging;
 using Serilog;
 using Serilog.Events;
 
+// Pre-scan for --verbose before configuring services, since the logger must be
+// created before System.CommandLine parses the full command tree.
+var verbose = Array.Exists(args, a => a is "--verbose" or "-v");
+
 var serviceCollection = new ServiceCollection();
-ConfigureServices(serviceCollection);
+ConfigureServices(serviceCollection, verbose);
 await using var serviceProvider = serviceCollection.BuildServiceProvider();
 
 try
@@ -25,12 +29,22 @@ try
 
     var rootCommand = new RootCommand("Ed-Fi DMS schema tool for hashing and DDL generation");
 
+    // Registered so --verbose appears in help; the actual log level switch happens
+    // via the pre-scan above, before DI/logger construction.
+    var verboseOption = new Option<bool>("--verbose", "-v")
+    {
+        Description = "Enable verbose (debug-level) logging",
+        Recursive = true,
+    };
+    rootCommand.Options.Add(verboseOption);
+
     // hash subcommand
     rootCommand.Subcommands.Add(HashCommand.Create(logger, fileLoader, hashProvider));
 
     // ddl command group
     var ddlCommand = new Command("ddl", "DDL generation commands");
     ddlCommand.Subcommands.Add(DdlEmitCommand.Create(logger, fileLoader, schemaSetBuilder));
+    ddlCommand.Subcommands.Add(DdlProvisionCommand.Create(logger, fileLoader, schemaSetBuilder));
     rootCommand.Subcommands.Add(ddlCommand);
 
     var parseResult = rootCommand.Parse(args);
@@ -41,11 +55,28 @@ finally
     await Log.CloseAndFlushAsync();
 }
 
-void ConfigureServices(IServiceCollection services)
+void ConfigureServices(IServiceCollection services, bool enableVerbose)
 {
-    var logConfiguration = new LoggerConfiguration()
-        .MinimumLevel.Information()
-        .WriteTo.File("logs/dms-schema.log", rollingInterval: RollingInterval.Day);
+    var logConfiguration = new LoggerConfiguration().MinimumLevel.Is(
+        enableVerbose ? LogEventLevel.Debug : LogEventLevel.Information
+    );
+
+    try
+    {
+        // Attempt file logging; fall back to console-only in restricted environments.
+        var logDir = Path.Combine(Directory.GetCurrentDirectory(), "logs");
+        Directory.CreateDirectory(logDir);
+        logConfiguration.WriteTo.File(
+            Path.Combine(logDir, "dms-schema.log"),
+            rollingInterval: RollingInterval.Day
+        );
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+    {
+        Console.Error.WriteLine(
+            $"Warning: Unable to create log file, continuing with console-only logging ({ex.GetType().Name})."
+        );
+    }
 
     if (Console.IsOutputRedirected)
     {

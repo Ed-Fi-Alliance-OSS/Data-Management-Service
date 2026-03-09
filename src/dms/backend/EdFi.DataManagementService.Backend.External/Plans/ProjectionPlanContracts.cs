@@ -26,7 +26,7 @@ public sealed record ReferenceIdentityProjectionTablePlan
     )
     {
         this.Table = Table;
-        this.BindingsInOrder = PlanContractCollectionCloner.ToImmutableArray(
+        this.BindingsInOrder = PlanContractArgumentValidator.RequireImmutableArray(
             BindingsInOrder,
             nameof(BindingsInOrder)
         );
@@ -74,7 +74,7 @@ public sealed record ReferenceIdentityProjectionBinding
         this.ReferenceObjectPath = ReferenceObjectPath;
         this.TargetResource = TargetResource;
         this.FkColumnOrdinal = FkColumnOrdinal;
-        this.IdentityFieldOrdinalsInOrder = PlanContractCollectionCloner.ToImmutableArray(
+        this.IdentityFieldOrdinalsInOrder = PlanContractArgumentValidator.RequireImmutableArray(
             IdentityFieldOrdinalsInOrder,
             nameof(IdentityFieldOrdinalsInOrder)
         );
@@ -135,12 +135,12 @@ public sealed record DescriptorProjectionPlan
         IEnumerable<DescriptorProjectionSource> SourcesInOrder
     )
     {
-        ArgumentNullException.ThrowIfNull(SelectByKeysetSql);
-        ArgumentNullException.ThrowIfNull(ResultShape);
-
-        this.SelectByKeysetSql = SelectByKeysetSql;
-        this.ResultShape = ResultShape;
-        this.SourcesInOrder = PlanContractCollectionCloner.ToImmutableArray(
+        this.SelectByKeysetSql = PlanContractArgumentValidator.RequireNotNull(
+            SelectByKeysetSql,
+            nameof(SelectByKeysetSql)
+        );
+        this.ResultShape = PlanContractArgumentValidator.RequireNotNull(ResultShape, nameof(ResultShape));
+        this.SourcesInOrder = PlanContractArgumentValidator.RequireImmutableArray(
             SourcesInOrder,
             nameof(SourcesInOrder)
         );

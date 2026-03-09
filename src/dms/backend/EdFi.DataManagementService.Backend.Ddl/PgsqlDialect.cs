@@ -107,10 +107,10 @@ public sealed class PgsqlDialect : SqlDialectBase
         }
 
         var uniqueKeyword = isUnique ? "UNIQUE " : "";
-        var qualifiedIndex = $"{QuoteIdentifier(table.Schema.Value)}.{QuoteIdentifier(indexName)}";
+        var quotedIndex = QuoteIdentifier(indexName);
         var columnList = string.Join(", ", columns.Select(c => QuoteIdentifier(c.Value)));
 
-        return $"CREATE {uniqueKeyword}INDEX IF NOT EXISTS {qualifiedIndex} ON {QualifyTable(table)} ({columnList});";
+        return $"CREATE {uniqueKeyword}INDEX IF NOT EXISTS {quotedIndex} ON {QualifyTable(table)} ({columnList});";
     }
 
     /// <inheritdoc />

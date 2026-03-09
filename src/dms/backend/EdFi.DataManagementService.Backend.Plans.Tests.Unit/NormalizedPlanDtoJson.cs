@@ -277,9 +277,9 @@ internal static class NormalizedPlanDtoJson
             );
         }
 
-        writer.WritePropertyName("parameters_in_order");
+        writer.WritePropertyName("page_parameters_in_order");
         writer.WriteStartArray();
-        foreach (var parameter in value.ParametersInOrder)
+        foreach (var parameter in value.PageParametersInOrder)
         {
             writer.WriteStartObject();
             writer.WriteString("role", PlanJsonCanonicalization.ToQueryParameterRoleToken(parameter.Role));
@@ -287,6 +287,28 @@ internal static class NormalizedPlanDtoJson
             writer.WriteEndObject();
         }
         writer.WriteEndArray();
+
+        if (value.TotalCountParametersInOrder is null)
+        {
+            writer.WriteNull("total_count_parameters_in_order");
+        }
+        else
+        {
+            writer.WritePropertyName("total_count_parameters_in_order");
+            writer.WriteStartArray();
+            foreach (var parameter in value.TotalCountParametersInOrder.Value)
+            {
+                writer.WriteStartObject();
+                writer.WriteString(
+                    "role",
+                    PlanJsonCanonicalization.ToQueryParameterRoleToken(parameter.Role)
+                );
+                writer.WriteString("parameter_name", parameter.ParameterName);
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+        }
+
         writer.WriteEndObject();
     }
 

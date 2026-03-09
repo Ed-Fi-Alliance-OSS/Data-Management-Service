@@ -26,10 +26,8 @@ public sealed record ResourceWritePlan
         IEnumerable<TableWritePlan> TablePlansInDependencyOrder
     )
     {
-        ArgumentNullException.ThrowIfNull(Model);
-
-        this.Model = Model;
-        this.TablePlansInDependencyOrder = PlanContractCollectionCloner.ToImmutableArray(
+        this.Model = PlanContractArgumentValidator.RequireNotNull(Model, nameof(Model));
+        this.TablePlansInDependencyOrder = PlanContractArgumentValidator.RequireImmutableArray(
             TablePlansInDependencyOrder,
             nameof(TablePlansInDependencyOrder)
         );
@@ -60,9 +58,16 @@ public sealed record TableWritePlan
     /// </summary>
     /// <param name="TableModel">The table shape model.</param>
     /// <param name="InsertSql">Parameterized insert SQL.</param>
-    /// <param name="UpdateSql">Optional parameterized update SQL (root table only).</param>
+    /// <param name="UpdateSql">
+    /// Optional parameterized <c>UPDATE</c> SQL for 1:1 tables (table key contains no <c>Ordinal</c>).
+    /// When provided, executors should treat the table scope as upsertable when the scoped object is present in the
+    /// payload (insert when newly present; update when it already exists).
+    /// </param>
     /// <param name="DeleteByParentSql">
-    /// Optional delete SQL used for replace semantics by parent key (non-root tables).
+    /// Optional <c>DELETE</c> SQL used for scope replacement by parent key (non-root tables).
+    /// For child/collection tables (key contains <c>Ordinal</c>), executors run this before bulk insert (replace
+    /// semantics). For non-root 1:1 tables (no <c>Ordinal</c>), executors run this when the scoped object is absent from
+    /// the payload.
     /// </param>
     /// <param name="BulkInsertBatching">Deterministic bulk-insert batching metadata for this table.</param>
     /// <param name="ColumnBindings">
@@ -81,20 +86,19 @@ public sealed record TableWritePlan
         IEnumerable<KeyUnificationWritePlan> KeyUnificationPlans
     )
     {
-        ArgumentNullException.ThrowIfNull(TableModel);
-        ArgumentNullException.ThrowIfNull(InsertSql);
-        ArgumentNullException.ThrowIfNull(BulkInsertBatching);
-
-        this.TableModel = TableModel;
-        this.InsertSql = InsertSql;
+        this.TableModel = PlanContractArgumentValidator.RequireNotNull(TableModel, nameof(TableModel));
+        this.InsertSql = PlanContractArgumentValidator.RequireNotNull(InsertSql, nameof(InsertSql));
         this.UpdateSql = UpdateSql;
         this.DeleteByParentSql = DeleteByParentSql;
-        this.BulkInsertBatching = BulkInsertBatching;
-        this.ColumnBindings = PlanContractCollectionCloner.ToImmutableArray(
+        this.BulkInsertBatching = PlanContractArgumentValidator.RequireNotNull(
+            BulkInsertBatching,
+            nameof(BulkInsertBatching)
+        );
+        this.ColumnBindings = PlanContractArgumentValidator.RequireImmutableArray(
             ColumnBindings,
             nameof(ColumnBindings)
         );
-        this.KeyUnificationPlans = PlanContractCollectionCloner.ToImmutableArray(
+        this.KeyUnificationPlans = PlanContractArgumentValidator.RequireImmutableArray(
             KeyUnificationPlans,
             nameof(KeyUnificationPlans)
         );
@@ -111,13 +115,27 @@ public sealed record TableWritePlan
     public string InsertSql { get; init; }
 
     /// <summary>
-    /// Optional canonical parameterized <c>UPDATE</c> SQL (root table only).
+    /// Optional canonical parameterized <c>UPDATE</c> SQL for 1:1 tables (table key contains no <c>Ordinal</c>).
     /// </summary>
+    /// <remarks>
+    /// For non-root 1:1 scopes (including document-scope <c>_ext</c> tables) where <see cref="DeleteByParentSql" /> is
+    /// also present:
+    /// - when the scoped object is present in the payload, execution uses <see cref="InsertSql" /> for newly present
+    ///   rows and <see cref="UpdateSql" /> for existing rows (existence detection is executor-specific), and
+    /// - when the scoped object is absent from the payload, execution uses <see cref="DeleteByParentSql" /> to remove
+    ///   the scoped row.
+    /// </remarks>
     public string? UpdateSql { get; init; }
 
     /// <summary>
-    /// Optional delete SQL used to remove all child rows for a parent key (replace semantics).
+    /// Optional canonical parameterized <c>DELETE</c> SQL used for scope replacement by parent key (non-root tables).
     /// </summary>
+    /// <remarks>
+    /// - For child/collection tables (key contains <c>Ordinal</c>), executors execute this before bulk insert to replace
+    ///   all rows for the parent scope.
+    /// - For non-root 1:1 tables (no <c>Ordinal</c>), executors execute this only when the scoped object is absent from
+    ///   the payload.
+    /// </remarks>
     public string? DeleteByParentSql { get; init; }
 
     /// <summary>
@@ -197,7 +215,10 @@ public abstract record WriteValueSource
     /// <param name="DescriptorResource">The descriptor resource type expected at this path.</param>
     /// <param name="RelativePath">Descriptor value path relative to the table scope.</param>
     /// <param name="DescriptorValuePath">
-    /// Optional canonical absolute descriptor value path for diagnostics/traceability.
+    /// Optional canonical absolute descriptor value path for diagnostics/traceability. Executors SHOULD use
+    /// <paramref name="RelativePath" /> for execution and treat <paramref name="DescriptorValuePath" /> as informational
+    /// only. When compiled by the DMS plan compiler, this value is always populated; plan decoders MAY omit it for
+    /// backward compatibility.
     /// </param>
     public sealed record DescriptorReference(
         QualifiedResourceName DescriptorResource,
@@ -232,7 +253,7 @@ public sealed record KeyUnificationWritePlan
     {
         this.CanonicalColumn = CanonicalColumn;
         this.CanonicalBindingIndex = CanonicalBindingIndex;
-        this.MembersInOrder = PlanContractCollectionCloner.ToImmutableArray(
+        this.MembersInOrder = PlanContractArgumentValidator.RequireImmutableArray(
             MembersInOrder,
             nameof(MembersInOrder)
         );

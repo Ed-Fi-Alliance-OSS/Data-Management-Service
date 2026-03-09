@@ -116,10 +116,16 @@ internal static class NormalizedPlanContractCodec
         return new PageDocumentIdSqlPlanDto(
             PageDocumentIdSql: plan.PageDocumentIdSql,
             TotalCountSql: plan.TotalCountSql,
-            ParametersInOrder: plan.ParametersInOrder.Select(parameter => new QuerySqlParameterDto(
+            PageParametersInOrder: plan.PageParametersInOrder.Select(parameter => new QuerySqlParameterDto(
                 Role: EncodeQuerySqlParameterRole(parameter.Role),
                 ParameterName: parameter.ParameterName
-            ))
+            )),
+            TotalCountParametersInOrder: plan.TotalCountParametersInOrder is null
+                ? null
+                : plan.TotalCountParametersInOrder.Value.Select(parameter => new QuerySqlParameterDto(
+                    Role: EncodeQuerySqlParameterRole(parameter.Role),
+                    ParameterName: parameter.ParameterName
+                ))
         );
     }
 
@@ -273,13 +279,80 @@ internal static class NormalizedPlanContractCodec
     {
         ArgumentNullException.ThrowIfNull(dto);
 
-        var decodedParameters = new ExternalPlans.QuerySqlParameter[dto.ParametersInOrder.Length];
+        var decodedPageParameters = DecodeQueryParameters(
+            dto.PageParametersInOrder,
+            nameof(PageDocumentIdSqlPlanDto.PageParametersInOrder)
+        );
 
-        for (var index = 0; index < dto.ParametersInOrder.Length; index++)
+        ValidateUniqueParameterNames(
+            decodedPageParameters.Select(static parameter => parameter.ParameterName),
+            nameof(PageDocumentIdSqlPlanDto.PageParametersInOrder),
+            "page query plan"
+        );
+        ValidatePagingRoleInventory(
+            decodedPageParameters,
+            nameof(PageDocumentIdSqlPlanDto.PageParametersInOrder)
+        );
+
+        ExternalPlans.QuerySqlParameter[]? decodedTotalCountParameters;
+
+        if (dto.TotalCountSql is null)
         {
-            var parameter = dto.ParametersInOrder[index];
+            if (dto.TotalCountParametersInOrder is not null)
+            {
+                throw new ArgumentException(
+                    $"{nameof(PageDocumentIdSqlPlanDto.TotalCountParametersInOrder)} must be null when {nameof(PageDocumentIdSqlPlanDto.TotalCountSql)} is null.",
+                    nameof(dto)
+                );
+            }
+
+            decodedTotalCountParameters = null;
+        }
+        else
+        {
+            if (dto.TotalCountParametersInOrder is null)
+            {
+                throw new ArgumentException(
+                    $"{nameof(PageDocumentIdSqlPlanDto.TotalCountParametersInOrder)} is required when {nameof(PageDocumentIdSqlPlanDto.TotalCountSql)} is provided.",
+                    nameof(dto)
+                );
+            }
+
+            decodedTotalCountParameters = DecodeQueryParameters(
+                dto.TotalCountParametersInOrder.Value,
+                nameof(PageDocumentIdSqlPlanDto.TotalCountParametersInOrder)
+            );
+            ValidateUniqueParameterNames(
+                decodedTotalCountParameters.Select(static parameter => parameter.ParameterName),
+                nameof(PageDocumentIdSqlPlanDto.TotalCountParametersInOrder),
+                "total-count query plan"
+            );
+            ValidateFilterOnlyRoleInventory(
+                decodedTotalCountParameters,
+                nameof(PageDocumentIdSqlPlanDto.TotalCountParametersInOrder)
+            );
+        }
+
+        return new ExternalPlans.PageDocumentIdSqlPlan(
+            PageDocumentIdSql: dto.PageDocumentIdSql,
+            TotalCountSql: dto.TotalCountSql,
+            PageParametersInOrder: decodedPageParameters,
+            TotalCountParametersInOrder: decodedTotalCountParameters
+        );
+    }
+
+    private static ExternalPlans.QuerySqlParameter[] DecodeQueryParameters(
+        IReadOnlyList<QuerySqlParameterDto> parametersInOrder,
+        string argumentName
+    )
+    {
+        var decodedParameters = new ExternalPlans.QuerySqlParameter[parametersInOrder.Count];
+
+        for (var index = 0; index < parametersInOrder.Count; index++)
+        {
+            var parameter = parametersInOrder[index];
             var parameterNameArgument =
-                $"{nameof(PageDocumentIdSqlPlanDto.ParametersInOrder)}[{index}].{nameof(QuerySqlParameterDto.ParameterName)}";
+                $"{argumentName}[{index}].{nameof(QuerySqlParameterDto.ParameterName)}";
 
             PlanSqlWriterExtensions.ValidateBareParameterName(parameter.ParameterName, parameterNameArgument);
 
@@ -289,18 +362,7 @@ internal static class NormalizedPlanContractCodec
             );
         }
 
-        ValidateUniqueParameterNames(
-            decodedParameters.Select(static parameter => parameter.ParameterName),
-            nameof(PageDocumentIdSqlPlanDto.ParametersInOrder),
-            "query plan"
-        );
-        ValidatePagingRoleInventory(decodedParameters, nameof(PageDocumentIdSqlPlanDto.ParametersInOrder));
-
-        return new ExternalPlans.PageDocumentIdSqlPlan(
-            PageDocumentIdSql: dto.PageDocumentIdSql,
-            TotalCountSql: dto.TotalCountSql,
-            ParametersInOrder: decodedParameters
-        );
+        return decodedParameters;
     }
 
     private static IReadOnlyList<ExternalPlans.TableReadPlan> DecodeTableReadPlans(
@@ -1320,6 +1382,30 @@ internal static class NormalizedPlanContractCodec
         throw new ArgumentException(
             "Query plan parameters must include exactly one Offset and one Limit role entry. "
                 + $"Observed counts: Offset={offsetCount}, Limit={limitCount}.",
+            argumentName
+        );
+    }
+
+    private static void ValidateFilterOnlyRoleInventory(
+        IReadOnlyList<ExternalPlans.QuerySqlParameter> parametersInOrder,
+        string argumentName
+    )
+    {
+        var invalidRoleCounts = parametersInOrder
+            .Where(static parameter => parameter.Role is not ExternalPlans.QuerySqlParameterRole.Filter)
+            .GroupBy(static parameter => parameter.Role)
+            .Select(static group => $"{group.Key}={group.Count()}")
+            .OrderBy(static summary => summary, StringComparer.Ordinal)
+            .ToArray();
+
+        if (invalidRoleCounts.Length == 0)
+        {
+            return;
+        }
+
+        throw new ArgumentException(
+            "Total-count query plan parameters may only include Filter role entries. "
+                + $"Observed non-filter counts: {string.Join(", ", invalidRoleCounts)}.",
             argumentName
         );
     }

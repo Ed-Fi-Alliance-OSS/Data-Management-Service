@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
 using NUnit.Framework;
@@ -252,11 +253,10 @@ public class Given_SeedDmlEmitter_With_PgsqlDialect_And_SeedData
     }
 
     [Test]
-    public void It_should_emit_effective_schema_hash_preflight_check()
+    public void It_should_not_emit_preflight_check()
     {
-        _ddl.Should().Contain("EffectiveSchemaHash mismatch");
-        _ddl.Should().Contain("RAISE EXCEPTION");
-        _ddl.Should().Contain("'abc123def456'");
+        _ddl.Should().NotContain("Preflight: fail fast");
+        _ddl.Should().NotContain("EffectiveSchemaHash mismatch");
     }
 
     [Test]
@@ -285,9 +285,24 @@ public class Given_SeedDmlEmitter_With_PgsqlDialect_And_SeedData
     }
 
     [Test]
+    public void It_should_include_resource_key_ids_in_content_mismatch_error()
+    {
+        _ddl.Should().Contain("ResourceKeyIds: %");
+        _ddl.Should().Contain("string_agg(sub.id, ', ' ORDER BY sub.id_num)");
+        _ddl.Should().Contain("LIMIT 10");
+    }
+
+    [Test]
     public void It_should_emit_effective_schema_insert_with_on_conflict()
     {
         _ddl.Should().Contain("ON CONFLICT (\"EffectiveSchemaSingletonId\") DO NOTHING;");
+    }
+
+    [Test]
+    public void It_should_emit_effective_schema_validation_block()
+    {
+        _ddl.Should().Contain("dms.EffectiveSchema ResourceKeyCount mismatch");
+        _ddl.Should().Contain("dms.EffectiveSchema ResourceKeySeedHash mismatch");
     }
 
     [Test]
@@ -305,6 +320,13 @@ public class Given_SeedDmlEmitter_With_PgsqlDialect_And_SeedData
     {
         _ddl.Should().Contain("dms.SchemaComponent count mismatch");
         _ddl.Should().Contain("dms.SchemaComponent contents mismatch");
+    }
+
+    [Test]
+    public void It_should_include_project_endpoint_names_in_schema_component_mismatch_error()
+    {
+        _ddl.Should().Contain("ProjectEndpointNames: %");
+        _ddl.Should().Contain("string_agg(sub.name, ', ' ORDER BY sub.name)");
     }
 
     [Test]
@@ -374,11 +396,10 @@ public class Given_SeedDmlEmitter_With_MssqlDialect_And_SeedData
     }
 
     [Test]
-    public void It_should_emit_effective_schema_hash_preflight_check()
+    public void It_should_not_emit_preflight_check()
     {
-        _ddl.Should().Contain("EffectiveSchemaHash mismatch");
-        _ddl.Should().Contain("THROW 50000");
-        _ddl.Should().Contain("(expected: ', N'abc123def456'");
+        _ddl.Should().NotContain("Preflight: fail fast");
+        _ddl.Should().NotContain("EffectiveSchemaHash mismatch");
     }
 
     [Test]
@@ -407,6 +428,15 @@ public class Given_SeedDmlEmitter_With_MssqlDialect_And_SeedData
     }
 
     [Test]
+    public void It_should_include_resource_key_ids_in_content_mismatch_error()
+    {
+        _ddl.Should().Contain("ResourceKeyIds: ");
+        _ddl.Should()
+            .Contain("STRING_AGG(sub.[ResourceKeyId], N', ') WITHIN GROUP (ORDER BY sub.[ResourceKeyIdNum])");
+        _ddl.Should().Contain("TOP 10");
+    }
+
+    [Test]
     public void It_should_wrap_mssql_validation_throws_in_begin_end()
     {
         _ddl.Should().Contain("BEGIN");
@@ -420,6 +450,13 @@ public class Given_SeedDmlEmitter_With_MssqlDialect_And_SeedData
             .Contain(
                 "IF NOT EXISTS (SELECT 1 FROM [dms].[EffectiveSchema] WHERE [EffectiveSchemaSingletonId] = 1)"
             );
+    }
+
+    [Test]
+    public void It_should_emit_effective_schema_validation_block()
+    {
+        _ddl.Should().Contain("dms.EffectiveSchema ResourceKeyCount mismatch: expected 3, found");
+        _ddl.Should().Contain("dms.EffectiveSchema ResourceKeySeedHash mismatch:");
     }
 
     [Test]
@@ -437,6 +474,16 @@ public class Given_SeedDmlEmitter_With_MssqlDialect_And_SeedData
     {
         _ddl.Should().Contain("dms.SchemaComponent count mismatch: expected 2, found");
         _ddl.Should().Contain("dms.SchemaComponent contents mismatch:");
+    }
+
+    [Test]
+    public void It_should_include_project_endpoint_names_in_schema_component_mismatch_error()
+    {
+        _ddl.Should().Contain("ProjectEndpointNames: ");
+        _ddl.Should()
+            .Contain(
+                "STRING_AGG(sub.[ProjectEndpointName], N', ') WITHIN GROUP (ORDER BY sub.[ProjectEndpointName])"
+            );
     }
 
     [Test]
@@ -642,5 +689,288 @@ public class Given_SeedDmlEmitter_With_Single_SchemaComponent
     public void It_should_validate_single_component_count_for_mssql()
     {
         _mssqlDdl.Should().Contain("@sc_actual_count <> 1");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// EmitPreflightOnly tests
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_SeedDmlEmitter_EmitPreflightOnly_With_PgsqlDialect
+{
+    private string _sql = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var emitter = new SeedDmlEmitter(new PgsqlDialect(new PgsqlDialectRules()));
+        _sql = emitter.EmitPreflightOnly("abc123def456");
+    }
+
+    [Test]
+    public void It_should_emit_preflight_comment()
+    {
+        _sql.Should().Contain("Preflight: fail fast");
+    }
+
+    [Test]
+    public void It_should_emit_hash_mismatch_check()
+    {
+        _sql.Should().Contain("EffectiveSchemaHash mismatch");
+        _sql.Should().Contain("to_regclass");
+        _sql.Should().Contain("RAISE EXCEPTION");
+        _sql.Should().Contain("_stored_hash");
+        _sql.Should().Contain("but expected");
+        _sql.Should().Contain("'abc123def456'");
+    }
+
+    [Test]
+    public void It_should_not_contain_phase_7_header()
+    {
+        _sql.Should().NotContain("Phase 7");
+    }
+
+    [Test]
+    public void It_should_use_unix_line_endings()
+    {
+        _sql.Should().NotContain("\r\n");
+    }
+}
+
+[TestFixture]
+public class Given_SeedDmlEmitter_EmitPreflightOnly_With_MssqlDialect
+{
+    private string _sql = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var emitter = new SeedDmlEmitter(new MssqlDialect(new MssqlDialectRules()));
+        _sql = emitter.EmitPreflightOnly("abc123def456");
+    }
+
+    [Test]
+    public void It_should_emit_preflight_comment()
+    {
+        _sql.Should().Contain("Preflight: fail fast");
+    }
+
+    [Test]
+    public void It_should_emit_hash_mismatch_check()
+    {
+        _sql.Should().Contain("EffectiveSchemaHash mismatch");
+        _sql.Should().Contain("OBJECT_ID");
+        _sql.Should().Contain("THROW 50000");
+        _sql.Should().Contain("@preflight_stored_hash");
+        _sql.Should().Contain("but expected ''', N'abc123def456'");
+    }
+
+    [Test]
+    public void It_should_not_contain_phase_7_header()
+    {
+        _sql.Should().NotContain("Phase 7");
+    }
+
+    [Test]
+    public void It_should_use_unix_line_endings()
+    {
+        _sql.Should().NotContain("\r\n");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// VALUES chunking tests (SQL Server 1000-row limit)
+// ═══════════════════════════════════════════════════════════════════
+
+internal static class ChunkingTestData
+{
+    internal static EffectiveSchemaInfo BuildLargeResourceKeySchema(int resourceKeyCount) =>
+        new(
+            ApiSchemaFormatVersion: "1.0.0",
+            RelationalMappingVersion: "1.0.0",
+            EffectiveSchemaHash: "abc123def456",
+            ResourceKeyCount: resourceKeyCount,
+            ResourceKeySeedHash:
+            [
+                0xAB,
+                0xCD,
+                0xEF,
+                0x01,
+                0x23,
+                0x45,
+                0x67,
+                0x89,
+                0xAB,
+                0xCD,
+                0xEF,
+                0x01,
+                0x23,
+                0x45,
+                0x67,
+                0x89,
+                0xAB,
+                0xCD,
+                0xEF,
+                0x01,
+                0x23,
+                0x45,
+                0x67,
+                0x89,
+                0xAB,
+                0xCD,
+                0xEF,
+                0x01,
+                0x23,
+                0x45,
+                0x67,
+                0x89,
+            ],
+            SchemaComponentsInEndpointOrder:
+            [
+                new SchemaComponentInfo("ed-fi", "Ed-Fi", "5.1.0", false, "hash1"),
+            ],
+            ResourceKeysInIdOrder: Enumerable
+                .Range(1, resourceKeyCount)
+                .Select(i => new ResourceKeyEntry(
+                    (short)i,
+                    new QualifiedResourceName("Ed-Fi", $"Resource{i}"),
+                    "5.1.0",
+                    false
+                ))
+                .ToList()
+        );
+}
+
+[TestFixture]
+public class Given_SeedDmlEmitter_With_MssqlDialect_And_Over_999_ResourceKeys
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var emitter = new SeedDmlEmitter(new MssqlDialect(new MssqlDialectRules()));
+        _ddl = emitter.Emit(ChunkingTestData.BuildLargeResourceKeySchema(1001));
+    }
+
+    [Test]
+    public void It_should_emit_union_all_between_chunks()
+    {
+        _ddl.Should().Contain("UNION ALL");
+    }
+
+    [Test]
+    public void It_should_have_multiple_values_blocks()
+    {
+        var valuesCount = Regex.Matches(_ddl, @"\bVALUES\b").Count;
+        // Each chunk emits a VALUES keyword; 1001 rows / 999 = 2 chunks per subquery invocation.
+        // The subquery is used twice (count check + diagnostic), so expect at least 4 VALUES keywords.
+        valuesCount.Should().BeGreaterThanOrEqualTo(4);
+    }
+
+    [Test]
+    public void It_should_use_chunk_alias_for_inner_blocks()
+    {
+        _ddl.Should().Contain(") AS chunk(");
+    }
+
+    [Test]
+    public void It_should_use_expected_alias_for_outer_wrapper()
+    {
+        _ddl.Should().Contain(") AS expected(");
+    }
+
+    [Test]
+    public void It_should_still_contain_where_clause_with_expected_alias()
+    {
+        _ddl.Should().Contain("WHERE expected.[ResourceKeyId] = rk.[ResourceKeyId]");
+    }
+}
+
+[TestFixture]
+public class Given_SeedDmlEmitter_With_PgsqlDialect_And_Over_999_ResourceKeys
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var emitter = new SeedDmlEmitter(new PgsqlDialect(new PgsqlDialectRules()));
+        _ddl = emitter.Emit(ChunkingTestData.BuildLargeResourceKeySchema(1001));
+    }
+
+    [Test]
+    public void It_should_emit_union_all_between_chunks()
+    {
+        _ddl.Should().Contain("UNION ALL");
+    }
+
+    [Test]
+    public void It_should_use_chunk_alias_for_inner_blocks()
+    {
+        _ddl.Should().Contain(") AS chunk(");
+    }
+
+    [Test]
+    public void It_should_use_expected_alias_for_outer_wrapper()
+    {
+        _ddl.Should().Contain(") AS expected(");
+    }
+
+    [Test]
+    public void It_should_still_use_pgsql_smallint_cast()
+    {
+        _ddl.Should().Contain("::smallint");
+    }
+}
+
+[TestFixture]
+public class Given_SeedDmlEmitter_With_MssqlDialect_And_Exactly_999_ResourceKeys
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var emitter = new SeedDmlEmitter(new MssqlDialect(new MssqlDialectRules()));
+        _ddl = emitter.Emit(ChunkingTestData.BuildLargeResourceKeySchema(999));
+    }
+
+    [Test]
+    public void It_should_not_emit_union_all()
+    {
+        _ddl.Should().NotContain("UNION ALL");
+    }
+
+    [Test]
+    public void It_should_not_use_chunk_alias()
+    {
+        _ddl.Should().NotContain(") AS chunk(");
+    }
+}
+
+[TestFixture]
+public class Given_SeedDmlEmitter_With_MssqlDialect_And_1000_ResourceKeys
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var emitter = new SeedDmlEmitter(new MssqlDialect(new MssqlDialectRules()));
+        _ddl = emitter.Emit(ChunkingTestData.BuildLargeResourceKeySchema(1000));
+    }
+
+    [Test]
+    public void It_should_emit_union_all_at_the_boundary()
+    {
+        _ddl.Should().Contain("UNION ALL");
+    }
+
+    [Test]
+    public void It_should_use_chunk_alias()
+    {
+        _ddl.Should().Contain(") AS chunk(");
     }
 }

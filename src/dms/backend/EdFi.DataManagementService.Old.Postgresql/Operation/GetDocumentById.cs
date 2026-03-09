@@ -83,7 +83,12 @@ public class GetDocumentById(ISqlAction _sqlAction, ILogger<GetDocumentById> _lo
         }
         catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.DeadlockDetected)
         {
-            _logger.LogDebug(pe, "Transaction deadlock on query - {TraceId}", getRequest.TraceId.Value);
+            _logger.LogDebug(pe, "Transaction deadlock on GetById - {TraceId}", getRequest.TraceId.Value);
+            return new GetResult.GetFailureRetryable();
+        }
+        catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.SerializationFailure)
+        {
+            _logger.LogDebug(pe, "Transaction conflict on GetById - {TraceId}", getRequest.TraceId.Value);
             return new GetResult.GetFailureRetryable();
         }
         catch (Exception ex)

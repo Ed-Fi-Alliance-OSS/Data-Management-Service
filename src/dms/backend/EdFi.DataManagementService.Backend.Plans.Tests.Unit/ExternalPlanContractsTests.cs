@@ -186,7 +186,7 @@ public class Given_ExternalPlanContracts
         var queryPlan = new ExternalPlans.PageDocumentIdSqlPlan(
             PageDocumentIdSql: "SELECT DocumentId FROM page",
             TotalCountSql: "SELECT COUNT(1) FROM page",
-            ParametersInOrder:
+            PageParametersInOrder:
             [
                 new ExternalPlans.QuerySqlParameter(
                     ExternalPlans.QuerySqlParameterRole.Filter,
@@ -200,11 +200,18 @@ public class Given_ExternalPlanContracts
                     ExternalPlans.QuerySqlParameterRole.Limit,
                     ParameterName: "limit"
                 ),
+            ],
+            TotalCountParametersInOrder:
+            [
+                new ExternalPlans.QuerySqlParameter(
+                    ExternalPlans.QuerySqlParameterRole.Filter,
+                    ParameterName: "schoolYear"
+                ),
             ]
         );
 
         queryPlan
-            .ParametersInOrder.Select(parameter => parameter.Role)
+            .PageParametersInOrder.Select(parameter => parameter.Role)
             .Should()
             .Equal(
                 ExternalPlans.QuerySqlParameterRole.Filter,
@@ -213,9 +220,27 @@ public class Given_ExternalPlanContracts
             );
 
         queryPlan
-            .ParametersInOrder.Select(parameter => parameter.ParameterName)
+            .PageParametersInOrder.Select(parameter => parameter.ParameterName)
             .Should()
             .Equal("schoolYear", "offset", "limit");
+        queryPlan.TotalCountParametersInOrder.Should().NotBeNull();
+        queryPlan
+            .TotalCountParametersInOrder!.Value.Select(parameter => parameter.ParameterName)
+            .Should()
+            .Equal("schoolYear");
+    }
+
+    [Test]
+    public void It_should_throw_actionable_not_supported_for_mapping_set_aot_payload_entry_point()
+    {
+        var act = () => MappingSet.FromPayload(new MappingPackPayload());
+
+        act.Should()
+            .Throw<NotSupportedException>()
+            .WithMessage(
+                "AOT mapping-pack decode is not implemented yet for MappingSet.FromPayload(MappingPackPayload). "
+                    + "See E05-S05: reference/design/backend-redesign/epics/05-mpack-generation/05-pack-loader-validation.md."
+            );
     }
 
     [Test]

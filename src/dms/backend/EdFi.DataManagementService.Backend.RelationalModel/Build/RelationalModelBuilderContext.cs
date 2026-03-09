@@ -144,6 +144,11 @@ public sealed class RelationalModelBuilderContext : INameOverrideProvider
     public List<ExtensionSite> ExtensionSites { get; } = [];
 
     /// <summary>
+    /// Decimal properties that fell back to default precision/scale during scalar type resolution.
+    /// </summary>
+    public List<DecimalPrecisionFallback> DecimalPrecisionFallbacks { get; } = [];
+
+    /// <summary>
     /// Looks up descriptor metadata for a JSONPath value.
     /// </summary>
     public bool TryGetDescriptorPath(JsonPathExpression path, out DescriptorPathInfo descriptorPathInfo)
@@ -214,6 +219,18 @@ public sealed class RelationalModelBuilderContext : INameOverrideProvider
         if (ResourceModel is null)
         {
             throw new InvalidOperationException("Resource model must be set before building results.");
+        }
+
+        // Wire collected decimal fallback diagnostics onto the model
+        if (DecimalPrecisionFallbacks.Count > 0)
+        {
+            ResourceModel = ResourceModel with
+            {
+                DecimalPrecisionFallbacks = DecimalPrecisionFallbacks
+                    .OrderBy(f => f.SourcePath.Canonical, StringComparer.Ordinal)
+                    .ThenBy(f => f.Reason, StringComparer.Ordinal)
+                    .ToArray(),
+            };
         }
 
         return new RelationalModelBuildResult(ResourceModel, ExtensionSites.ToArray());

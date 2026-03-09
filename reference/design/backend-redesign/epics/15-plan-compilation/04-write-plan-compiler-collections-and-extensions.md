@@ -33,8 +33,12 @@ Design references:
 
 - The plan compiler produces a `TableWritePlan` for every table in `TablesInDependencyOrder`:
   - `InsertSql` for all tables,
-  - `UpdateSql` for root tables where applicable,
+  - `UpdateSql` for any 1:1 table where applicable (table key contains no `Ordinal`),
   - `DeleteByParentSql` for non-root tables (child/collection/_ext).
+- For non-root 1:1 tables (including root-scope `_ext` tables):
+  - `InsertSql` is used when the scoped row is newly present,
+  - `UpdateSql` is used when the scoped row already exists, and
+  - `DeleteByParentSql` is used when the scoped object is absent from the payload.
 - `DeleteByParentSql` predicates are correct and scope-aligned:
   - deletes by the *parent key prefix* (root `DocumentId` plus any parent ordinals),
   - does not include the child row’s own `Ordinal` key column (deletes the whole collection/scope for that parent).
@@ -73,7 +77,7 @@ Design references:
   - deterministic SQL output (pgsql + mssql).
 - When fixture-based artifacts are emitted, `mappingset.manifest.json` includes stable, normalized SQL hashes and binding-order metadata for:
   - `InsertSql` (all tables),
-  - `UpdateSql` (root when applicable),
+  - `UpdateSql` (any 1:1 table when applicable),
   - `DeleteByParentSql` (all non-root tables),
   enabling golden comparisons per `reference/design/backend-redesign/design-docs/ddl-generator-testing.md`.
 

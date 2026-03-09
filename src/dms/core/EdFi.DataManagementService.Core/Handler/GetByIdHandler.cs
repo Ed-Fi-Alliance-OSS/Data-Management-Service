@@ -34,32 +34,46 @@ internal class GetByIdHandler(
         // Resolve repository from service provider within request scope
         var documentStoreRepository = _serviceProvider.GetRequiredService<IDocumentStoreRepository>();
 
-        var getResult = await _resiliencePipeline.ExecuteAsync(async t =>
-            await documentStoreRepository.GetDocumentById(
-                new GetRequest(
-                    DocumentUuid: requestInfo.PathComponents.DocumentUuid,
-                    ResourceName: requestInfo.ResourceInfo.ResourceName,
-                    ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
-                        requestInfo.AuthorizationStrategyEvaluators,
-                        requestInfo.AuthorizationSecurableInfo,
-                        authorizationServiceFactory,
-                        _logger
-                    ),
-                    TraceId: requestInfo.FrontendRequest.TraceId
-                )
-            )
+        var getResult = await ExecuteWithRetryLogging(
+            _resiliencePipeline,
+            _logger,
+            "get",
+            requestInfo.FrontendRequest.TraceId,
+            r => IsRetryableResult(r),
+            r => r is GetSuccess,
+            async ct =>
+                await documentStoreRepository.GetDocumentById(
+                    new GetRequest(
+                        DocumentUuid: requestInfo.PathComponents.DocumentUuid,
+                        ResourceName: requestInfo.ResourceInfo.ResourceName,
+                        ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
+                            requestInfo.AuthorizationStrategyEvaluators,
+                            requestInfo.AuthorizationSecurableInfo,
+                            authorizationServiceFactory,
+                            _logger
+                        ),
+                        TraceId: requestInfo.FrontendRequest.TraceId
+                    )
+                ),
+            requestInfo
         );
-
         _logger.LogDebug(
             "Document store GetDocumentById returned {GetResult}- {TraceId}",
             getResult.GetType().FullName,
-            requestInfo.FrontendRequest.TraceId
+            requestInfo.FrontendRequest.TraceId.Value
         );
 
         requestInfo.FrontendResponse = getResult switch
         {
             GetSuccess success => new FrontendResponse(StatusCode: 200, Body: success.EdfiDoc, Headers: []),
             GetFailureNotExists => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
+            // Returns 500 to match ODS/API behavior: after retries are exhausted for a deadlock,
+            // the client receives a generic system error rather than a retryable status code.
+            GetFailureRetryable => new FrontendResponse(
+                StatusCode: 500,
+                Body: FailureResponse.ForSystemError(requestInfo.FrontendRequest.TraceId),
+                Headers: []
+            ),
             GetFailureNotAuthorized notAuthorized => new FrontendResponse(
                 StatusCode: 403,
                 Body: FailureResponse.ForForbidden(

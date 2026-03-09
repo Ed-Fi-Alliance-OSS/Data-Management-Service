@@ -37,6 +37,7 @@ public static class WebApplicationBuilderExtensions
             .Services.AddDmsDefaultConfiguration(
                 logger,
                 webAppBuilder.Configuration.GetSection("CircuitBreaker"),
+                webAppBuilder.Configuration.GetSection("DeadlockRetry"),
                 webAppBuilder.Configuration.GetSection("AppSettings").GetValue<bool>("MaskRequestBodyInLogs")
             )
             .AddTransient<IAssemblyLoader, ApiSchemaAssemblyLoader>()

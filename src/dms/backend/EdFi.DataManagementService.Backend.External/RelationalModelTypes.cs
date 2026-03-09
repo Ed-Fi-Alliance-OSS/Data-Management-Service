@@ -218,6 +218,11 @@ public sealed record RelationalResourceModel(
     /// </summary>
     public IReadOnlyList<DescriptorForeignKeyDeduplication> DescriptorForeignKeyDeduplications { get; init; } =
     [];
+
+    /// <summary>
+    /// Per-resource diagnostics for decimal properties that fell back to default precision/scale.
+    /// </summary>
+    public IReadOnlyList<DecimalPrecisionFallback> DecimalPrecisionFallbacks { get; init; } = [];
 }
 
 /// <summary>
@@ -327,23 +332,38 @@ public sealed record KeyUnificationIgnoredConstraint(
 public sealed record KeyUnificationIgnoredByReasonEntry(KeyUnificationIgnoredReason Reason, int Count);
 
 /// <summary>
+/// Skipped equality-constraint diagnostic entry, recorded when one or both endpoint binding paths
+/// could not be resolved to any physical column.
+/// </summary>
+/// <param name="SourcePath">The source (left) endpoint JSONPath.</param>
+/// <param name="TargetPath">The target (right) endpoint JSONPath.</param>
+/// <param name="UnresolvedEndpoint">Which endpoint(s) were unresolved: "source", "target", or "both".</param>
+public sealed record KeyUnificationSkippedConstraint(
+    JsonPathExpression SourcePath,
+    JsonPathExpression TargetPath,
+    string UnresolvedEndpoint
+);
+
+/// <summary>
 /// Per-resource key-unification equality-constraint diagnostics.
 /// </summary>
 /// <param name="Applied">Applied same-table constraints.</param>
 /// <param name="Redundant">Redundant same-binding constraints.</param>
 /// <param name="Ignored">Ignored constraints (for v1: cross-table only).</param>
 /// <param name="IgnoredByReason">Aggregate ignored counts by reason.</param>
+/// <param name="Skipped">Constraints skipped because endpoint binding paths were unresolved.</param>
 public sealed record KeyUnificationEqualityConstraintDiagnostics(
     IReadOnlyList<KeyUnificationAppliedConstraint> Applied,
     IReadOnlyList<KeyUnificationRedundantConstraint> Redundant,
     IReadOnlyList<KeyUnificationIgnoredConstraint> Ignored,
-    IReadOnlyList<KeyUnificationIgnoredByReasonEntry> IgnoredByReason
+    IReadOnlyList<KeyUnificationIgnoredByReasonEntry> IgnoredByReason,
+    IReadOnlyList<KeyUnificationSkippedConstraint> Skipped
 )
 {
     /// <summary>
     /// Empty diagnostics payload.
     /// </summary>
-    public static KeyUnificationEqualityConstraintDiagnostics Empty { get; } = new([], [], [], []);
+    public static KeyUnificationEqualityConstraintDiagnostics Empty { get; } = new([], [], [], [], []);
 }
 
 /// <summary>
@@ -363,6 +383,14 @@ public sealed record DescriptorForeignKeyDeduplication(
 );
 
 /// <summary>
+/// Diagnostic entry for a decimal property that fell back to the default precision/scale
+/// because validation metadata was missing or incomplete.
+/// </summary>
+/// <param name="SourcePath">The canonical JSONPath of the decimal property.</param>
+/// <param name="Reason">Why the fallback occurred: "missing" or "incomplete".</param>
+public sealed record DecimalPrecisionFallback(JsonPathExpression SourcePath, string Reason);
+
+/// <summary>
 /// Primary key definition for a derived table.
 /// </summary>
 /// <param name="ConstraintName">The physical primary-key constraint name.</param>
@@ -379,7 +407,7 @@ public sealed record DbKeyColumn(DbColumnName ColumnName, ColumnKind Kind);
 /// <summary>
 /// Discriminated union describing how a derived table column is physically stored.
 /// <list type="bullet">
-/// <item><see cref="Stored"/> — the column is directly stored and writable.</item>
+/// <item><see cref="Stored"/> — the column is directly stored.</item>
 /// <item><see cref="UnifiedAlias"/> — the column is a generated (persisted computed) alias
 /// over a canonical stored column, optionally gated by a presence column.</item>
 /// </list>
@@ -387,7 +415,7 @@ public sealed record DbKeyColumn(DbColumnName ColumnName, ColumnKind Kind);
 public abstract record ColumnStorage
 {
     /// <summary>
-    /// Column is physically stored and writable.
+    /// Column is physically stored.
     /// </summary>
     public sealed record Stored : ColumnStorage;
 
@@ -410,6 +438,11 @@ public abstract record ColumnStorage
 /// <param name="SourceJsonPath">The JSONPath that sources the column value (when applicable).</param>
 /// <param name="TargetResource">The referenced resource type for FK columns (when applicable).</param>
 /// <param name="Storage">Storage metadata for bind-vs-storage behavior.</param>
+/// <param name="IsWritable">
+/// Whether this stored column is writable by write-plan compilation. Defaults to
+/// <see langword="true" /> for <see cref="ColumnStorage.Stored"/> columns and
+/// <see langword="false" /> for <see cref="ColumnStorage.UnifiedAlias"/> columns.
+/// </param>
 public sealed record DbColumnModel(
     DbColumnName ColumnName,
     ColumnKind Kind,
@@ -420,6 +453,12 @@ public sealed record DbColumnModel(
     ColumnStorage Storage
 )
 {
+    /// <summary>
+    /// Whether the column should participate in write bindings when stored.
+    /// Key columns and key-unification precomputed targets may still be required by write-plan compilation.
+    /// </summary>
+    public bool IsWritable { get; init; } = Storage is ColumnStorage.Stored;
+
     /// <summary>
     /// Initializes a new instance with stored-column default behavior.
     /// </summary>

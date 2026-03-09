@@ -41,28 +41,35 @@ internal class UpdateByIdHandler(
 
         var updateCascadeHandler = new UpdateCascadeHandler(_apiSchemaProvider, _logger);
 
-        var updateResult = await _resiliencePipeline.ExecuteAsync(async t =>
-            await documentStoreRepository.UpdateDocumentById(
-                new UpdateRequest(
-                    DocumentUuid: requestInfo.PathComponents.DocumentUuid,
-                    ResourceInfo: requestInfo.ResourceInfo,
-                    DocumentInfo: requestInfo.DocumentInfo,
-                    EdfiDoc: requestInfo.ParsedBody,
-                    Headers: requestInfo.FrontendRequest.Headers,
-                    DocumentSecurityElements: requestInfo.DocumentSecurityElements,
-                    TraceId: requestInfo.FrontendRequest.TraceId,
-                    UpdateCascadeHandler: updateCascadeHandler,
-                    ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
-                        requestInfo.AuthorizationStrategyEvaluators,
-                        requestInfo.AuthorizationSecurableInfo,
-                        authorizationServiceFactory,
-                        _logger
-                    ),
-                    ResourceAuthorizationPathways: requestInfo.AuthorizationPathways
-                )
-            )
+        var updateResult = await ExecuteWithRetryLogging(
+            _resiliencePipeline,
+            _logger,
+            "update",
+            requestInfo.FrontendRequest.TraceId,
+            r => IsRetryableResult(r),
+            r => r is UpdateSuccess,
+            async ct =>
+                await documentStoreRepository.UpdateDocumentById(
+                    new UpdateRequest(
+                        DocumentUuid: requestInfo.PathComponents.DocumentUuid,
+                        ResourceInfo: requestInfo.ResourceInfo,
+                        DocumentInfo: requestInfo.DocumentInfo,
+                        EdfiDoc: requestInfo.ParsedBody,
+                        Headers: requestInfo.FrontendRequest.Headers,
+                        DocumentSecurityElements: requestInfo.DocumentSecurityElements,
+                        TraceId: requestInfo.FrontendRequest.TraceId,
+                        UpdateCascadeHandler: updateCascadeHandler,
+                        ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
+                            requestInfo.AuthorizationStrategyEvaluators,
+                            requestInfo.AuthorizationSecurableInfo,
+                            authorizationServiceFactory,
+                            _logger
+                        ),
+                        ResourceAuthorizationPathways: requestInfo.AuthorizationPathways
+                    )
+                ),
+            requestInfo
         );
-
         _logger.LogDebug(
             "Document store UpdateDocumentById returned {UpdateResult}- {TraceId}",
             updateResult.GetType().FullName,
@@ -136,7 +143,13 @@ internal class UpdateByIdHandler(
                 ),
                 Headers: []
             ),
-            UpdateFailureWriteConflict => new FrontendResponse(StatusCode: 409, Body: null, Headers: []),
+            // Returns 500 to match ODS/API behavior: after retries are exhausted for a deadlock,
+            // the client receives a generic system error rather than a retryable status code.
+            UpdateFailureWriteConflict => new FrontendResponse(
+                StatusCode: 500,
+                Body: FailureResponse.ForSystemError(requestInfo.FrontendRequest.TraceId),
+                Headers: []
+            ),
             UpdateFailureImmutableIdentity failure => new FrontendResponse(
                 StatusCode: 400,
                 Body: FailureResponse.ForImmutableIdentity(
