@@ -98,7 +98,7 @@
       "Add a negative startup initialization test with an intentionally invalid extension-bearing schema and assert the thrown exception includes the relevant resource or invariant failure detail.",
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~PostgresqlRuntimeMappingInitialization`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Relational Fixture Contract Alignment",

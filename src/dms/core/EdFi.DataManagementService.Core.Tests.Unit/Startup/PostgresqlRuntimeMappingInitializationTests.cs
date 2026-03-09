@@ -116,11 +116,23 @@ public class PostgresqlRuntimeMappingInitializationTests
         return new ApiSchemaDocumentNodes(JsonNode.Parse(MinimalRuntimeSchemaJson)!, []);
     }
 
-    private static ApiSchemaDocumentNodes CreateSchemaNodes(JsonObject projectSchema)
+    private static ApiSchemaDocumentNodes CreateSchemaNodes(
+        JsonObject projectSchema,
+        params JsonObject[] extensionProjectSchemas
+    )
     {
         return new ApiSchemaDocumentNodes(
             new JsonObject { ["apiSchemaVersion"] = "1.0.0", ["projectSchema"] = projectSchema },
-            []
+            [
+                .. extensionProjectSchemas.Select(static extensionProjectSchema =>
+                    (JsonNode)
+                        new JsonObject
+                        {
+                            ["apiSchemaVersion"] = "1.0.0",
+                            ["projectSchema"] = extensionProjectSchema,
+                        }
+                ),
+            ]
         );
     }
 
@@ -201,14 +213,19 @@ public class PostgresqlRuntimeMappingInitializationTests
         );
     }
 
-    private static JsonObject CreateProjectSchema(JsonObject resourceSchemas)
+    private static JsonObject CreateProjectSchema(
+        JsonObject resourceSchemas,
+        string projectName = "Ed-Fi",
+        string projectEndpointName = "ed-fi",
+        bool isExtensionProject = false
+    )
     {
         return new JsonObject
         {
-            ["projectName"] = "Ed-Fi",
+            ["projectName"] = projectName,
             ["projectVersion"] = "5.0.0",
-            ["projectEndpointName"] = "ed-fi",
-            ["isExtensionProject"] = false,
+            ["projectEndpointName"] = projectEndpointName,
+            ["isExtensionProject"] = isExtensionProject,
             ["description"] = "Test schema",
             ["resourceNameMapping"] = new JsonObject(),
             ["caseInsensitiveEndpointNameMapping"] = new JsonObject(),
@@ -226,7 +243,8 @@ public class PostgresqlRuntimeMappingInitializationTests
         JsonArray identityJsonPaths,
         JsonObject documentPathsMapping,
         JsonArray equalityConstraints,
-        JsonObject jsonSchemaForInsert
+        JsonObject jsonSchemaForInsert,
+        bool isResourceExtension = false
     )
     {
         return new JsonObject
@@ -234,7 +252,7 @@ public class PostgresqlRuntimeMappingInitializationTests
             ["resourceName"] = resourceName,
             ["isDescriptor"] = isDescriptor,
             ["isSchoolYearEnumeration"] = false,
-            ["isResourceExtension"] = false,
+            ["isResourceExtension"] = isResourceExtension,
             ["allowIdentityUpdates"] = allowIdentityUpdates,
             ["isSubclass"] = false,
             ["identityJsonPaths"] = identityJsonPaths,
@@ -251,6 +269,110 @@ public class PostgresqlRuntimeMappingInitializationTests
             ["decimalPropertyValidationInfos"] = new JsonArray(),
             ["jsonSchemaForInsert"] = jsonSchemaForInsert,
         };
+    }
+
+    private static JsonObject CreateScalarPathMapping(string path, bool isPartOfIdentity, bool isRequired)
+    {
+        return new JsonObject
+        {
+            ["isReference"] = false,
+            ["isPartOfIdentity"] = isPartOfIdentity,
+            ["isRequired"] = isRequired,
+            ["path"] = path,
+        };
+    }
+
+    private static JsonObject BuildExtensionBearingStartupCoreProjectSchema()
+    {
+        return CreateProjectSchema(new JsonObject { ["contacts"] = BuildStartupContactSchema() });
+    }
+
+    private static JsonObject BuildExtensionBearingStartupExtensionProjectSchema(
+        bool includeUnsupportedRootTableOverride = false
+    )
+    {
+        return CreateProjectSchema(
+            new JsonObject
+            {
+                ["contacts"] = BuildStartupContactExtensionSchema(includeUnsupportedRootTableOverride),
+            },
+            projectName: "Sample",
+            projectEndpointName: "sample",
+            isExtensionProject: true
+        );
+    }
+
+    private static JsonObject BuildStartupContactSchema()
+    {
+        return CreateCommonResourceSchema(
+            resourceName: "Contact",
+            isDescriptor: false,
+            allowIdentityUpdates: true,
+            identityJsonPaths: new JsonArray("$.contactUniqueId"),
+            documentPathsMapping: new JsonObject
+            {
+                ["ContactUniqueId"] = CreateScalarPathMapping(
+                    path: "$.contactUniqueId",
+                    isPartOfIdentity: true,
+                    isRequired: true
+                ),
+            },
+            equalityConstraints: new JsonArray(),
+            jsonSchemaForInsert: new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["contactUniqueId"] = new JsonObject { ["type"] = "string", ["maxLength"] = 32 },
+                },
+                ["required"] = new JsonArray("contactUniqueId"),
+            }
+        );
+    }
+
+    private static JsonObject BuildStartupContactExtensionSchema(bool includeUnsupportedRootTableOverride)
+    {
+        var resourceSchema = CreateCommonResourceSchema(
+            resourceName: "Contact",
+            isDescriptor: false,
+            allowIdentityUpdates: false,
+            identityJsonPaths: new JsonArray(),
+            documentPathsMapping: new JsonObject(),
+            equalityConstraints: new JsonArray(),
+            jsonSchemaForInsert: new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["_ext"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["sample"] = new JsonObject
+                            {
+                                ["type"] = "object",
+                                ["properties"] = new JsonObject
+                                {
+                                    ["nickname"] = new JsonObject { ["type"] = "string", ["maxLength"] = 50 },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            isResourceExtension: true
+        );
+
+        if (includeUnsupportedRootTableOverride)
+        {
+            resourceSchema["relational"] = new JsonObject
+            {
+                ["rootTableNameOverride"] = "ContactExtensionOverride",
+            };
+        }
+
+        return resourceSchema;
     }
 
     private static JsonObject CreateEmptySecurableElements()
@@ -363,17 +485,6 @@ public class PostgresqlRuntimeMappingInitializationTests
         private ApiSchemaDocumentNodes _schemaNodes = null!;
         private IDmsInstanceProvider _dmsInstanceProvider = null!;
         private IPostgresqlRuntimeDatabaseMetadataReader _databaseMetadataReader = null!;
-
-        private static JsonObject CreateScalarPathMapping(string path, bool isPartOfIdentity, bool isRequired)
-        {
-            return new JsonObject
-            {
-                ["isReference"] = false,
-                ["isPartOfIdentity"] = isPartOfIdentity,
-                ["isRequired"] = isRequired,
-                ["path"] = path,
-            };
-        }
 
         private static JsonObject CreateReferenceMapping(
             string resourceName,
@@ -585,6 +696,176 @@ public class PostgresqlRuntimeMappingInitializationTests
                     )
                 )
                 .MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    public class Given_Dms_Startup_Runs_With_Extension_Bearing_Postgresql_Runtime_Mapping_Initialization
+        : PostgresqlRuntimeMappingInitializationTests
+    {
+        private const string ConnectionString =
+            "Host=localhost;Database=startup-extension-instance;Username=test;Password=test";
+
+        private ServiceProvider _serviceProvider = null!;
+        private ApiSchemaDocumentNodes _schemaNodes = null!;
+        private IDmsInstanceProvider _dmsInstanceProvider = null!;
+        private IPostgresqlRuntimeDatabaseMetadataReader _databaseMetadataReader = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _schemaNodes = CreateSchemaNodes(
+                BuildExtensionBearingStartupCoreProjectSchema(),
+                BuildExtensionBearingStartupExtensionProjectSchema()
+            );
+            _dmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
+            _databaseMetadataReader = A.Fake<IPostgresqlRuntimeDatabaseMetadataReader>();
+            _serviceProvider = CreateStartupServiceProvider(
+                _schemaNodes,
+                _dmsInstanceProvider,
+                _databaseMetadataReader
+            );
+
+            var effectiveSchemaSet = BuildEffectiveSchemaSet(_schemaNodes);
+
+            A.CallTo(() => _dmsInstanceProvider.GetLoadedTenantKeys()).Returns([""]);
+            A.CallTo(() => _dmsInstanceProvider.GetAll(null))
+                .Returns([
+                    new DmsInstance(
+                        Id: 3,
+                        InstanceType: "test",
+                        InstanceName: "ExtensionStartupInstance",
+                        ConnectionString: ConnectionString,
+                        RouteContext: new Dictionary<RouteQualifierName, RouteQualifierValue>()
+                    ),
+                ]);
+            A.CallTo(() =>
+                    _databaseMetadataReader.ReadFingerprintAsync(
+                        ConnectionString,
+                        A<CancellationToken>.Ignored
+                    )
+                )
+                .Returns(
+                    new PostgresqlDatabaseFingerprintReadResult.Success(
+                        CreateMatchingFingerprint(effectiveSchemaSet)
+                    )
+                );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _serviceProvider.Dispose();
+        }
+
+        [Test]
+        public async Task It_primes_the_runtime_mapping_cache_for_extension_bearing_schemas()
+        {
+            await _serviceProvider
+                .GetRequiredService<DmsStartupOrchestrator>()
+                .RunAllAsync(CancellationToken.None);
+
+            var mappingSetKey = CreateMappingSetKey(BuildEffectiveSchemaSet(_schemaNodes));
+            var cache = _serviceProvider.GetRequiredService<MappingSetCache>();
+            var cacheResult = await cache.GetOrCreateWithCacheStatusAsync(
+                mappingSetKey,
+                CancellationToken.None
+            );
+
+            cacheResult.WasCacheHit.Should().BeTrue();
+            cacheResult.MappingSet.Key.Should().Be(mappingSetKey);
+
+            var contactReadPlan = cacheResult.MappingSet.ReadPlansByResource[
+                new QualifiedResourceName("Ed-Fi", "Contact")
+            ];
+            var extensionTablePlan = contactReadPlan
+                .TablePlansInDependencyOrder.Should()
+                .ContainSingle(tablePlan =>
+                    tablePlan.TableModel.Table.Schema.Value == "sample"
+                    && tablePlan.TableModel.Table.Name == "ContactExtension"
+                )
+                .Which;
+
+            extensionTablePlan.TableModel.JsonScope.Canonical.Should().Be("$._ext.sample");
+
+            _serviceProvider
+                .GetRequiredService<PostgresqlValidatedResourceKeyMapCache>()
+                .TryGet(ConnectionString, out var validatedMaps)
+                .Should()
+                .BeTrue();
+            validatedMaps.MappingSetKey.Should().Be(mappingSetKey);
+            A.CallTo(() =>
+                    _databaseMetadataReader.ReadResourceKeysAsync(
+                        ConnectionString,
+                        A<CancellationToken>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    public class Given_Dms_Startup_Runs_With_Invalid_Extension_Bearing_Postgresql_Runtime_Mapping_Initialization
+        : PostgresqlRuntimeMappingInitializationTests
+    {
+        private const string ConnectionString =
+            "Host=localhost;Database=startup-invalid-extension-instance;Username=test;Password=test";
+
+        private ServiceProvider _serviceProvider = null!;
+        private ApiSchemaDocumentNodes _schemaNodes = null!;
+        private IDmsInstanceProvider _dmsInstanceProvider = null!;
+        private IPostgresqlRuntimeDatabaseMetadataReader _databaseMetadataReader = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _schemaNodes = CreateSchemaNodes(
+                BuildExtensionBearingStartupCoreProjectSchema(),
+                BuildExtensionBearingStartupExtensionProjectSchema(includeUnsupportedRootTableOverride: true)
+            );
+            _dmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
+            _databaseMetadataReader = A.Fake<IPostgresqlRuntimeDatabaseMetadataReader>();
+            _serviceProvider = CreateStartupServiceProvider(
+                _schemaNodes,
+                _dmsInstanceProvider,
+                _databaseMetadataReader
+            );
+
+            A.CallTo(() => _dmsInstanceProvider.GetLoadedTenantKeys()).Returns([""]);
+            A.CallTo(() => _dmsInstanceProvider.GetAll(null))
+                .Returns([
+                    new DmsInstance(
+                        Id: 4,
+                        InstanceType: "test",
+                        InstanceName: "InvalidExtensionStartupInstance",
+                        ConnectionString: ConnectionString,
+                        RouteContext: new Dictionary<RouteQualifierName, RouteQualifierValue>()
+                    ),
+                ]);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _serviceProvider.Dispose();
+        }
+
+        [Test]
+        public async Task It_surfaces_the_extension_compile_failure_details()
+        {
+            Func<Task> act = () =>
+                _serviceProvider
+                    .GetRequiredService<DmsStartupOrchestrator>()
+                    .RunAllAsync(CancellationToken.None);
+
+            var exception = (await act.Should().ThrowAsync<InvalidOperationException>()).Which;
+
+            exception.Message.Should().Contain("Startup task 'Backend Mapping Initialization' failed");
+            exception.Message.Should().Contain("rootTableNameOverride");
+            exception.Message.Should().Contain("Sample:Contact");
+            exception.InnerException.Should().NotBeNull();
+            exception.InnerException!.Message.Should().Contain("rootTableNameOverride");
+            exception.InnerException.Message.Should().Contain("Sample:Contact");
         }
     }
 
