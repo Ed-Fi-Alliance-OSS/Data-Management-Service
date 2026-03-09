@@ -269,6 +269,13 @@ internal class CachedProfileService(
         CachedProfileStore profileStore
     )
     {
+        IReadOnlyList<string> availableProfiles = GetAvailableProfileContentTypes(
+            cachedProfiles,
+            profileStore,
+            resourceName,
+            method
+        );
+
         // Check if the profile is assigned to this application
         if (
             !cachedProfiles.AssignedProfileNames.Contains(
@@ -277,20 +284,7 @@ internal class CachedProfileService(
             )
         )
         {
-            string availableProfiles = BuildAvailableProfiles(cachedProfiles, resourceName, method);
-
-            return ProfileResolutionResult.Failure(
-                new ProfileResolutionError(
-                    StatusCode: 403,
-                    ErrorType: "urn:ed-fi:api:security:data-policy:incorrect-usage",
-                    Title: "Data Policy Failure Due to Incorrect Usage",
-                    Detail: "A data policy failure was encountered. The request was not constructed correctly for the data policy that has been applied to this data for the caller.",
-                    Errors:
-                    [
-                        $"Based on profile assignments, one of the following profile-specific content types is required when requesting this resource: {availableProfiles}",
-                    ]
-                )
-            );
+            return CreateIncorrectUsageFailure(availableProfiles);
         }
 
         if (
@@ -334,20 +328,7 @@ internal class CachedProfileService(
         {
             if (cachedProfiles.AssignedProfileNames.Count() > 1)
             {
-                string availableProfiles = BuildAvailableProfiles(cachedProfiles, resourceName, method);
-
-                return ProfileResolutionResult.Failure(
-                    new ProfileResolutionError(
-                        StatusCode: 403,
-                        ErrorType: "urn:ed-fi:api:security:data-policy:incorrect-usage",
-                        Title: "Data Policy Failure Due to Incorrect Usage",
-                        Detail: "A data policy failure was encountered. The request was not constructed correctly for the data policy that has been applied to this data for the caller.",
-                        Errors:
-                        [
-                            $"Based on profile assignments, one of the following profile-specific content types is required when requesting this resource: {availableProfiles}",
-                        ]
-                    )
-                );
+                return CreateIncorrectUsageFailure(availableProfiles);
             }
 
             return ProfileResolutionResult.Failure(
@@ -395,42 +376,21 @@ internal class CachedProfileService(
         CachedProfileStore profileStore
     )
     {
-        var applicableProfiles = cachedProfiles
-            .AssignedProfileNames.Select(profileName =>
-                profileStore.TryGetByName(profileName, out ProfileDefinition? definition) ? definition : null
-            )
-            .Where(definition => definition is not null)
-            .Select(definition => new
-            {
-                Definition = definition!,
-                ResourceProfile = definition!.Resources.FirstOrDefault(r =>
-                    r.ResourceName.Equals(resourceName, StringComparison.OrdinalIgnoreCase)
-                ),
-            })
-            .Where(x => x.ResourceProfile is not null)
-            .ToList();
+        IReadOnlyList<string> availableProfiles = GetAvailableProfileContentTypes(
+            cachedProfiles,
+            profileStore,
+            resourceName,
+            method
+        );
 
-        if (applicableProfiles.Count == 0)
+        if (availableProfiles.Count == 0)
         {
             // No profiles cover this resource - no profile applies
             return ProfileResolutionResult.NoProfileApplies();
         }
 
         // One or more profiles cover this resource - client must specify which one
-        string availableProfiles = BuildAvailableProfiles(cachedProfiles, resourceName, method);
-
-        return ProfileResolutionResult.Failure(
-            new ProfileResolutionError(
-                StatusCode: 403,
-                ErrorType: "urn:ed-fi:api:security:data-policy:incorrect-usage",
-                Title: "Data Policy Failure Due to Incorrect Usage",
-                Detail: "A data policy failure was encountered. The request was not constructed correctly for the data policy that has been applied to this data for the caller.",
-                Errors:
-                [
-                    $"Based on profile assignments, one of the following profile-specific content types is required when requesting this resource: {availableProfiles}",
-                ]
-            )
-        );
+        return CreateIncorrectUsageFailure(availableProfiles);
     }
 
     /// <summary>
@@ -440,18 +400,51 @@ internal class CachedProfileService(
     private static ProfileUsageType GetUsageTypeForMethod(RequestMethod method) =>
         method == RequestMethod.GET ? ProfileUsageType.Readable : ProfileUsageType.Writable;
 
-    private static string BuildAvailableProfiles(
+    private static IReadOnlyList<string> GetAvailableProfileContentTypes(
         CachedApplicationProfiles cachedProfiles,
+        CachedProfileStore profileStore,
         string resourceName,
         RequestMethod method
     )
     {
         ProfileUsageType usageType = GetUsageTypeForMethod(method);
+        bool isReadOperation = method == RequestMethod.GET;
 
-        return string.Join(
-            ", ",
-            cachedProfiles.AssignedProfileNames.Select(name =>
-                $"'{ProfileHeaderParser.BuildProfileContentType(resourceName.ToLowerInvariant(), name, usageType)}'"
+        return cachedProfiles
+            .AssignedProfileNames.Select(profileName =>
+                profileStore.TryGetByName(profileName, out ProfileDefinition? definition) ? definition : null
+            )
+            .Where(definition => definition is not null)
+            .Select(definition => new
+            {
+                definition!.ProfileName,
+                ResourceProfile = definition.Resources.FirstOrDefault(r =>
+                    r.ResourceName.Equals(resourceName, StringComparison.OrdinalIgnoreCase)
+                ),
+            })
+            .Where(x => x.ResourceProfile is not null)
+            .Where(x => isReadOperation ? x.ResourceProfile!.ReadContentType is not null : x.ResourceProfile!.WriteContentType is not null)
+            .Select(x =>
+                $"'{ProfileHeaderParser.BuildProfileContentType(resourceName.ToLowerInvariant(), x.ProfileName, usageType)}'"
+            )
+            .ToList();
+    }
+
+    private static ProfileResolutionResult CreateIncorrectUsageFailure(
+        IReadOnlyList<string> availableProfiles
+    )
+    {
+        string errorMessage = availableProfiles.Count > 0
+            ? $"Based on profile assignments, one of the following profile-specific content types is required when requesting this resource: {string.Join(", ", availableProfiles)}"
+            : "None of the profiles assigned to the caller provide a profile-specific content type for this resource and method.";
+
+        return ProfileResolutionResult.Failure(
+            new ProfileResolutionError(
+                StatusCode: 403,
+                ErrorType: "urn:ed-fi:api:security:data-policy:incorrect-usage",
+                Title: "Data Policy Failure Due to Incorrect Usage",
+                Detail: "A data policy failure was encountered. The request was not constructed correctly for the data policy that has been applied to this data for the caller.",
+                Errors: [errorMessage]
             )
         );
     }

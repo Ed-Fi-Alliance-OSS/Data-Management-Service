@@ -624,6 +624,39 @@ public class CachedProfileServiceTests
                 .Error.Errors.Should()
                 .Contain(e => e.Contains("profile-specific content types is required"));
         }
+
+        [Test]
+        public async Task It_returns_no_profile_when_assigned_profiles_do_not_support_the_method()
+        {
+            var fakeCmsProvider = A.Fake<IProfileCmsProvider>();
+            A.CallTo(() => fakeCmsProvider.GetApplicationProfileInfoAsync(A<long>._, A<string?>._))
+                .Returns(new ApplicationProfileInfo(1, [100]));
+            A.CallTo(() => fakeCmsProvider.GetProfilesAsync(A<string?>._))
+                .Returns(
+                    Task.FromResult<IReadOnlyList<CmsProfileResponse>>([
+                        new CmsProfileResponse(100, "WriteOnlyProfile", WriteOnlyProfileXml),
+                    ])
+                );
+            A.CallTo(() => fakeCmsProvider.GetProfileAsync(100, A<string?>._))
+                .Returns(
+                    Task.FromResult<CmsProfileResponse?>(
+                        new CmsProfileResponse(100, "WriteOnlyProfile", WriteOnlyProfileXml)
+                    )
+                );
+
+            var service = CreateService(fakeCmsProvider);
+
+            var result = await service.ResolveProfileAsync(
+                parsedHeader: null,
+                method: RequestMethod.GET,
+                resourceName: "Student",
+                applicationId: 1,
+                tenantId: null
+            );
+
+            result.IsSuccess.Should().BeTrue();
+            result.ProfileContext.Should().BeNull();
+        }
     }
 
     [TestFixture]
@@ -704,6 +737,58 @@ public class CachedProfileServiceTests
             result.IsSuccess.Should().BeFalse();
             result.Error!.StatusCode.Should().Be(403);
             result.Error.ErrorType.Should().Be("urn:ed-fi:api:security:data-policy:incorrect-usage");
+        }
+
+        [Test]
+        public async Task It_recommends_only_profiles_that_support_the_requested_resource_and_method()
+        {
+            var fakeCmsProvider = A.Fake<IProfileCmsProvider>();
+            A.CallTo(() => fakeCmsProvider.GetApplicationProfileInfoAsync(A<long>._, A<string?>._))
+                .Returns(new ApplicationProfileInfo(1, [100, 101, 102]));
+            A.CallTo(() => fakeCmsProvider.GetProfilesAsync(A<string?>._))
+                .Returns(
+                    Task.FromResult<IReadOnlyList<CmsProfileResponse>>([
+                        new CmsProfileResponse(100, "StudentProfile", StudentProfileXml),
+                        new CmsProfileResponse(101, "SchoolProfile", SchoolProfileXml),
+                        new CmsProfileResponse(102, "WriteOnlyProfile", WriteOnlyProfileXml),
+                    ])
+                );
+            A.CallTo(() => fakeCmsProvider.GetProfileAsync(100, A<string?>._))
+                .Returns(
+                    Task.FromResult<CmsProfileResponse?>(
+                        new CmsProfileResponse(100, "StudentProfile", StudentProfileXml)
+                    )
+                );
+            A.CallTo(() => fakeCmsProvider.GetProfileAsync(101, A<string?>._))
+                .Returns(
+                    Task.FromResult<CmsProfileResponse?>(
+                        new CmsProfileResponse(101, "SchoolProfile", SchoolProfileXml)
+                    )
+                );
+            A.CallTo(() => fakeCmsProvider.GetProfileAsync(102, A<string?>._))
+                .Returns(
+                    Task.FromResult<CmsProfileResponse?>(
+                        new CmsProfileResponse(102, "WriteOnlyProfile", WriteOnlyProfileXml)
+                    )
+                );
+
+            var service = CreateService(fakeCmsProvider);
+            var parsedHeader = new ParsedProfileHeader("School", "StudentProfile", ProfileUsageType.Readable);
+
+            var result = await service.ResolveProfileAsync(
+                parsedHeader: parsedHeader,
+                method: RequestMethod.GET,
+                resourceName: "School",
+                applicationId: 1,
+                tenantId: null
+            );
+
+            result.IsSuccess.Should().BeFalse();
+            result.Error!.StatusCode.Should().Be(403);
+            result.Error.Errors.Should().ContainSingle();
+            result.Error.Errors[0].Should().Contain("application/vnd.ed-fi.school.schoolprofile.readable+json");
+            result.Error.Errors[0].Should().NotContain("application/vnd.ed-fi.school.studentprofile.readable+json");
+            result.Error.Errors[0].Should().NotContain("application/vnd.ed-fi.school.writeonlyprofile.readable+json");
         }
     }
 
