@@ -128,6 +128,72 @@ public class Given_Key_Unification_For_Reference_Sites
 }
 
 /// <summary>
+/// Test fixture for grouped same-site reference-field endpoints.
+/// </summary>
+[TestFixture]
+public class Given_Key_Unification_With_Grouped_Reference_Endpoints
+{
+    private RelationalResourceModel _resourceModel = default!;
+    private DbTableModel _rootTable = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = KeyUnificationPassTestSchemaBuilder.BuildGroupedReferenceEndpointProjectSchema();
+        var result = KeyUnificationPassTestSchemaBuilder.BuildDerivedSet(projectSchema);
+        _resourceModel = result
+            .ConcreteResourcesInNameOrder.Single(resource =>
+                resource.ResourceKey.Resource.ResourceName == "Enrollment"
+            )
+            .RelationalModel;
+        _rootTable = _resourceModel.Root;
+    }
+
+    /// <summary>
+    /// It should add equality edges for every physical member in one same-site grouped reference endpoint.
+    /// </summary>
+    [Test]
+    public void It_should_add_edges_for_every_physical_member_in_one_grouped_reference_endpoint()
+    {
+        var keyUnificationClass = _rootTable.KeyUnificationClasses.Should().ContainSingle().Subject;
+        var appliedConstraints = _resourceModel.KeyUnificationEqualityConstraints.Applied;
+
+        keyUnificationClass
+            .MemberPathColumns.Select(column => column.Value)
+            .Should()
+            .Equal(
+                "LocalEducationAgency_LocalEducationAgencyId",
+                "School_LocalEducationAgencyId",
+                "School_SchoolId"
+            );
+
+        appliedConstraints.Should().HaveCount(2);
+        appliedConstraints
+            .Select(constraint => $"{constraint.EndpointAColumn.Value}->{constraint.EndpointBColumn.Value}")
+            .Should()
+            .Equal(
+                "LocalEducationAgency_LocalEducationAgencyId->School_LocalEducationAgencyId",
+                "LocalEducationAgency_LocalEducationAgencyId->School_SchoolId"
+            );
+        appliedConstraints
+            .Should()
+            .OnlyContain(constraint =>
+                constraint.EndpointAPath.Canonical == "$.localEducationAgencyReference.localEducationAgencyId"
+                && constraint.EndpointBPath.Canonical == "$.schoolReference.schoolId"
+                && constraint.Table.Equals(_rootTable.Table)
+                && constraint.CanonicalColumn.Equals(keyUnificationClass.CanonicalColumn)
+            );
+
+        _resourceModel.KeyUnificationEqualityConstraints.Redundant.Should().BeEmpty();
+        _resourceModel.KeyUnificationEqualityConstraints.Ignored.Should().BeEmpty();
+        _resourceModel.KeyUnificationEqualityConstraints.Skipped.Should().BeEmpty();
+    }
+}
+
+/// <summary>
 /// Test fixture for optional non-reference scalar key-unification behavior.
 /// </summary>
 [TestFixture]
@@ -1341,6 +1407,25 @@ file static class KeyUnificationPassTestSchemaBuilder
     }
 
     /// <summary>
+    /// Build project schema for same-site grouped reference endpoint unification.
+    /// </summary>
+    internal static JsonObject BuildGroupedReferenceEndpointProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["enrollments"] = BuildEnrollmentGroupedReferenceEndpointSchema(),
+                ["schools"] = BuildGroupedReferenceEndpointSchoolSchema(),
+                ["localEducationAgencies"] = BuildLocalEducationAgencySchema(),
+            },
+        };
+    }
+
+    /// <summary>
     /// Build project schema for optional non-reference scalar unification.
     /// </summary>
     internal static JsonObject BuildOptionalScalarUnificationProjectSchema()
@@ -1561,6 +1646,142 @@ file static class KeyUnificationPassTestSchemaBuilder
     }
 
     /// <summary>
+    /// Build enrollment schema with one equality endpoint that resolves to a grouped reference field.
+    /// </summary>
+    private static JsonObject BuildEnrollmentGroupedReferenceEndpointSchema()
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["schoolReference"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["schoolId"] = new JsonObject { ["type"] = "integer" },
+                    },
+                },
+                ["localEducationAgencyReference"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["localEducationAgencyId"] = new JsonObject { ["type"] = "integer" },
+                    },
+                },
+            },
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "Enrollment",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray(),
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["School"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = false,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "School",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.schoolId",
+                            ["referenceJsonPath"] = "$.schoolReference.schoolId",
+                        },
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.localEducationAgencyId",
+                            ["referenceJsonPath"] = "$.schoolReference.schoolId",
+                        },
+                    },
+                },
+                ["LocalEducationAgency"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = false,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "LocalEducationAgency",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.localEducationAgencyId",
+                            ["referenceJsonPath"] = "$.localEducationAgencyReference.localEducationAgencyId",
+                        },
+                    },
+                },
+            },
+            ["equalityConstraints"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["sourceJsonPath"] = "$.schoolReference.schoolId",
+                    ["targetJsonPath"] = "$.localEducationAgencyReference.localEducationAgencyId",
+                },
+            },
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    /// <summary>
+    /// Build target school schema whose identity exposes two distinct stored columns.
+    /// </summary>
+    private static JsonObject BuildGroupedReferenceEndpointSchoolSchema()
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["schoolId"] = new JsonObject { ["type"] = "integer" },
+                ["localEducationAgencyId"] = new JsonObject { ["type"] = "integer" },
+            },
+            ["required"] = new JsonArray("schoolId", "localEducationAgencyId"),
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "School",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = true,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.schoolId", "$.localEducationAgencyId" },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["SchoolId"] = new JsonObject { ["isReference"] = false, ["path"] = "$.schoolId" },
+                ["LocalEducationAgencyId"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["path"] = "$.localEducationAgencyId",
+                },
+            },
+            ["equalityConstraints"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["sourceJsonPath"] = "$.schoolId",
+                    ["targetJsonPath"] = "$.localEducationAgencyId",
+                },
+            },
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    /// <summary>
     /// Build enrollment schema with equality constraints over reference-object endpoints.
     /// </summary>
     private static JsonObject BuildEnrollmentUnsupportedEndpointKindSchema()
@@ -1602,6 +1823,43 @@ file static class KeyUnificationPassTestSchemaBuilder
             ["documentPathsMapping"] = new JsonObject
             {
                 ["SchoolId"] = new JsonObject { ["isReference"] = false, ["path"] = "$.schoolId" },
+            },
+            ["equalityConstraints"] = new JsonArray(),
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    /// <summary>
+    /// Build canonical local-education-agency target schema.
+    /// </summary>
+    private static JsonObject BuildLocalEducationAgencySchema()
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["localEducationAgencyId"] = new JsonObject { ["type"] = "integer" },
+            },
+            ["required"] = new JsonArray("localEducationAgencyId"),
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "LocalEducationAgency",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = true,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.localEducationAgencyId" },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["LocalEducationAgencyId"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["path"] = "$.localEducationAgencyId",
+                },
             },
             ["equalityConstraints"] = new JsonArray(),
             ["jsonSchemaForInsert"] = jsonSchemaForInsert,

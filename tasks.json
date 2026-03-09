@@ -17,7 +17,7 @@
       "Retain the existing ambiguous-endpoint negative test and assert it still throws `resolved to multiple distinct bindings` for an arbitrary duplicated scalar path.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter FullyQualifiedName~Given_Key_Unification`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Implicit Same-Site Unification",
