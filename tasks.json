@@ -78,7 +78,7 @@
       "Confirm the failing GitHub Actions log shows the `dms-local-dms` log inline without requiring artifact download to see the startup exception.",
       "Run a successful `build-and-start-dms` path and confirm the failure-only log export steps are skipped."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Schema Compile Preflight In CI",

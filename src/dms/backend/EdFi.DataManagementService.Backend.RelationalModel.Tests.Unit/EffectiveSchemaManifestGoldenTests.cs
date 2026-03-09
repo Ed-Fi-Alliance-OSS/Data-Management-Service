@@ -277,6 +277,7 @@ public class Given_An_Authoritative_Core_EffectiveSchemaManifest
 public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaManifest
 {
     private string _diffOutput = default!;
+    private string[] _resourceKeys = default!;
 
     /// <summary>
     /// Sets up the test fixture.
@@ -338,6 +339,12 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaManifest
             effectiveSchemaSet.EffectiveSchema,
             includeResourceKeys: true
         );
+        _resourceKeys = JsonNode.Parse(manifest)!["resource_keys"]!
+            .AsArray()
+            .Select(resourceKey =>
+                $"{resourceKey!["project_name"]!.GetValue<string>()}:{resourceKey["resource_name"]!.GetValue<string>()}"
+            )
+            .ToArray();
 
         Directory.CreateDirectory(Path.GetDirectoryName(actualPath)!);
         File.WriteAllText(actualPath, manifest);
@@ -367,6 +374,27 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaManifest
         {
             Assert.Fail(_diffOutput);
         }
+    }
+
+    /// <summary>
+    /// It should exclude Sample resource-extension entries from resource keys.
+    /// </summary>
+    [Test]
+    public void It_should_exclude_resource_extensions_from_resource_keys()
+    {
+        _resourceKeys
+            .Should()
+            .NotContain([
+                "Sample:Contact",
+                "Sample:School",
+                "Sample:Staff",
+                "Sample:Student",
+                "Sample:StudentCTEProgramAssociation",
+                "Sample:StudentContactAssociation",
+                "Sample:StudentEducationOrganizationAssociation",
+                "Sample:StudentSchoolAssociation",
+                "Sample:StudentSectionAssociation",
+            ]);
     }
 }
 

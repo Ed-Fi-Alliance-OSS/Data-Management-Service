@@ -15466,7 +15466,7 @@
       ]
     },
     {
-      "name": "IX_ReportCardGrade_Grade_DocumentId_Grade_GradeTypeD_26a5e520b2",
+      "name": "IX_ReportCardGrade_Grade_DocumentId_Grade_GradeTypeD_f2eb38e041",
       "table": {
         "schema": "edfi",
         "name": "ReportCardGrade"
@@ -15478,7 +15478,7 @@
         "Grade_GradeTypeDescriptor_DescriptorId",
         "Grade_GradingPeriodDescriptor_DescriptorId",
         "Grade_GradingPeriodName",
-        "Grade_GradingPeriodReferenceSchoolId",
+        "SchoolId_Unified",
         "Grade_GradingPeriodSchoolYear",
         "Grade_BeginDate",
         "Grade_LocalCourseCode",
@@ -16408,7 +16408,7 @@
       ]
     },
     {
-      "name": "IX_Section_CourseOffering_DocumentId_CourseOffering__b7cec3dde3",
+      "name": "IX_Section_CourseOffering_DocumentId_CourseOffering__8f086abe11",
       "table": {
         "schema": "edfi",
         "name": "Section"
@@ -16418,7 +16418,7 @@
       "key_columns": [
         "CourseOffering_DocumentId",
         "CourseOffering_LocalCourseCode",
-        "CourseOffering_SchoolReferenceSchoolId",
+        "SchoolId_Unified",
         "CourseOffering_SchoolYear",
         "CourseOffering_SessionName"
       ]
@@ -16448,7 +16448,7 @@
       ]
     },
     {
-      "name": "IX_Section_LocationLocation_DocumentId_LocationLocat_40553ed1a9",
+      "name": "IX_Section_LocationLocation_DocumentId_LocationLocat_121f7333ea",
       "table": {
         "schema": "edfi",
         "name": "Section"
@@ -16458,11 +16458,11 @@
       "key_columns": [
         "LocationLocation_DocumentId",
         "LocationLocation_ClassroomIdentificationCode",
-        "SchoolId_Unified"
+        "SchoolId_U35501e03_Unified"
       ]
     },
     {
-      "name": "IX_Section_LocationSchool_DocumentId_SchoolId_Unified",
+      "name": "IX_Section_LocationSchool_DocumentId_SchoolId_U35501e03_Unified",
       "table": {
         "schema": "edfi",
         "name": "Section"
@@ -16471,7 +16471,7 @@
       "is_unique": false,
       "key_columns": [
         "LocationSchool_DocumentId",
-        "SchoolId_Unified"
+        "SchoolId_U35501e03_Unified"
       ]
     },
     {
@@ -16546,7 +16546,7 @@
       "key_columns": [
         "DocumentId",
         "CourseOffering_LocalCourseCode",
-        "CourseOffering_SchoolReferenceSchoolId",
+        "SchoolId_Unified",
         "CourseOffering_SchoolYear",
         "CourseOffering_SessionName",
         "SectionIdentifier"
@@ -27420,7 +27420,7 @@
       ]
     },
     {
-      "name": "IX_SurveySectionResponseEducationOrganizationTargetA_75b62d2e13",
+      "name": "IX_SurveySectionResponseEducationOrganizationTargetA_38d6ca658a",
       "table": {
         "schema": "edfi",
         "name": "SurveySectionResponseEducationOrganizationTargetAssociation"
@@ -27429,8 +27429,8 @@
       "is_unique": false,
       "key_columns": [
         "SurveySectionResponse_DocumentId",
-        "SurveySectionResponse_SurveyResponseReferenceNamespace",
-        "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier",
+        "Namespace_Unified",
+        "SurveyIdentifier_Unified",
         "SurveySectionResponse_SurveyResponseIdentifier",
         "SurveySectionResponse_SurveySectionTitle"
       ]
@@ -27487,7 +27487,7 @@
       ]
     },
     {
-      "name": "IX_SurveySectionResponseStaffTargetAssociation_Surve_431135bea0",
+      "name": "IX_SurveySectionResponseStaffTargetAssociation_Surve_da71b9acbc",
       "table": {
         "schema": "edfi",
         "name": "SurveySectionResponseStaffTargetAssociation"
@@ -27496,8 +27496,8 @@
       "is_unique": false,
       "key_columns": [
         "SurveySectionResponse_DocumentId",
-        "SurveySectionResponse_SurveyResponseReferenceNamespace",
-        "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier",
+        "Namespace_Unified",
+        "SurveyIdentifier_Unified",
         "SurveySectionResponse_SurveyResponseIdentifier",
         "SurveySectionResponse_SurveySectionTitle"
       ]
@@ -35578,8 +35578,7 @@
       ],
       "identity_projection_columns": [
         "CourseOffering_LocalCourseCode",
-        "CourseOffering_SchoolReferenceSchoolId",
-        "CourseOffering_SessionReferenceSchoolId",
+        "SchoolId_Unified",
         "CourseOffering_SchoolYear",
         "CourseOffering_SessionName",
         "SectionIdentifier"
@@ -35626,8 +35625,7 @@
       ],
       "identity_projection_columns": [
         "CourseOffering_LocalCourseCode",
-        "CourseOffering_SchoolReferenceSchoolId",
-        "CourseOffering_SessionReferenceSchoolId",
+        "SchoolId_Unified",
         "CourseOffering_SchoolYear",
         "CourseOffering_SessionName",
         "SectionIdentifier"
@@ -41623,10 +41621,8 @@
       ],
       "identity_projection_columns": [
         "EducationOrganization_EducationOrganizationId",
-        "SurveySectionResponse_SurveyResponseReferenceNamespace",
-        "SurveySectionResponse_SurveySectionReferenceNamespace",
-        "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier",
-        "SurveySectionResponse_SurveySectionReferenceSurveyIdentifier",
+        "Namespace_Unified",
+        "SurveyIdentifier_Unified",
         "SurveySectionResponse_SurveyResponseIdentifier",
         "SurveySectionResponse_SurveySectionTitle"
       ]
@@ -41643,10 +41639,8 @@
       ],
       "identity_projection_columns": [
         "EducationOrganization_EducationOrganizationId",
-        "SurveySectionResponse_SurveyResponseReferenceNamespace",
-        "SurveySectionResponse_SurveySectionReferenceNamespace",
-        "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier",
-        "SurveySectionResponse_SurveySectionReferenceSurveyIdentifier",
+        "Namespace_Unified",
+        "SurveyIdentifier_Unified",
         "SurveySectionResponse_SurveyResponseIdentifier",
         "SurveySectionResponse_SurveySectionTitle"
       ],
@@ -41696,10 +41690,8 @@
       ],
       "identity_projection_columns": [
         "Staff_StaffUniqueId",
-        "SurveySectionResponse_SurveyResponseReferenceNamespace",
-        "SurveySectionResponse_SurveySectionReferenceNamespace",
-        "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier",
-        "SurveySectionResponse_SurveySectionReferenceSurveyIdentifier",
+        "Namespace_Unified",
+        "SurveyIdentifier_Unified",
         "SurveySectionResponse_SurveyResponseIdentifier",
         "SurveySectionResponse_SurveySectionTitle"
       ],
@@ -41749,10 +41741,8 @@
       ],
       "identity_projection_columns": [
         "Staff_StaffUniqueId",
-        "SurveySectionResponse_SurveyResponseReferenceNamespace",
-        "SurveySectionResponse_SurveySectionReferenceNamespace",
-        "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier",
-        "SurveySectionResponse_SurveySectionReferenceSurveyIdentifier",
+        "Namespace_Unified",
+        "SurveyIdentifier_Unified",
         "SurveySectionResponse_SurveyResponseIdentifier",
         "SurveySectionResponse_SurveySectionTitle"
       ]
@@ -42121,7 +42111,7 @@
         "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
         "Student_StudentUniqueId"
       ],
-      "resource_key_id": 361,
+      "resource_key_id": 357,
       "project_name": "Sample",
       "resource_name": "StudentArtProgramAssociation",
       "identity_elements": [
@@ -42505,7 +42495,7 @@
         "GraduationPlan_GraduationSchoolYear",
         "Student_StudentUniqueId"
       ],
-      "resource_key_id": 365,
+      "resource_key_id": 358,
       "project_name": "Sample",
       "resource_name": "StudentGraduationPlanAssociation",
       "identity_elements": [

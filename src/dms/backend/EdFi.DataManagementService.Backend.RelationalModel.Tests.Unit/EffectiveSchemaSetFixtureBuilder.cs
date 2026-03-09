@@ -241,14 +241,14 @@ internal static class EffectiveSchemaSetFixtureBuilder
             }
 
             var resourceName = GetResourceName(resourceSchemaEntry.Key, resourceSchema);
+            var resource = new QualifiedResourceName(projectName, resourceName);
 
-            seeds.Add(
-                new ResourceKeySeed(
-                    new QualifiedResourceName(projectName, resourceName),
-                    projectVersion,
-                    isAbstractResource
-                )
-            );
+            if (!isAbstractResource && IsResourceExtension(resourceSchema, resource))
+            {
+                continue;
+            }
+
+            seeds.Add(new ResourceKeySeed(resource, projectVersion, isAbstractResource));
         }
     }
 
