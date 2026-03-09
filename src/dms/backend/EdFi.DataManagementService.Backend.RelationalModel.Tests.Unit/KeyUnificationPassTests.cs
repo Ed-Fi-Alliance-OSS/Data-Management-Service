@@ -194,6 +194,118 @@ public class Given_Key_Unification_With_Grouped_Reference_Endpoints
 }
 
 /// <summary>
+/// Test fixture for implicit grouped same-site reference-field unification.
+/// </summary>
+[TestFixture]
+public class Given_Key_Unification_With_Implicit_Same_Site_Reference_Field_Edges
+{
+    private RelationalResourceModel _resourceModel = default!;
+    private DbTableModel _rootTable = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema =
+            KeyUnificationPassTestSchemaBuilder.BuildImplicitSameSiteReferenceUnificationProjectSchema();
+        var result = KeyUnificationPassTestSchemaBuilder.BuildDerivedSet(projectSchema);
+        _resourceModel = result
+            .ConcreteResourcesInNameOrder.Single(resource =>
+                resource.ResourceKey.Resource.ResourceName == "Enrollment"
+            )
+            .RelationalModel;
+        _rootTable = _resourceModel.Root;
+    }
+
+    /// <summary>
+    /// It should key-unify grouped reference members even when no equality constraint mentions the field.
+    /// </summary>
+    [Test]
+    public void It_should_key_unify_grouped_reference_members_without_an_explicit_constraint()
+    {
+        var keyUnificationClass = _rootTable.KeyUnificationClasses.Should().ContainSingle().Subject;
+
+        keyUnificationClass
+            .MemberPathColumns.Select(column => column.Value)
+            .Should()
+            .Equal("School_LocalEducationAgencyId", "School_SchoolId");
+
+        _resourceModel.KeyUnificationEqualityConstraints.Applied.Should().BeEmpty();
+        _resourceModel.KeyUnificationEqualityConstraints.Redundant.Should().BeEmpty();
+        _resourceModel.KeyUnificationEqualityConstraints.Ignored.Should().BeEmpty();
+        _resourceModel.KeyUnificationEqualityConstraints.Skipped.Should().BeEmpty();
+    }
+}
+
+/// <summary>
+/// Test fixture for invalid implicit grouped same-site reference-field mixed kinds.
+/// </summary>
+[TestFixture]
+public class Given_Key_Unification_With_Implicit_Same_Site_Mixed_Kind_Reference_Field
+{
+    private Action _act = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = KeyUnificationPassTestSchemaBuilder.BuildImplicitSameSiteMixedKindProjectSchema();
+        _act = () => KeyUnificationPassTestSchemaBuilder.BuildDerivedSet(projectSchema);
+    }
+
+    /// <summary>
+    /// It should fail fast when one grouped logical reference field mixes scalar and descriptor members.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_a_grouped_reference_field_mixes_scalar_and_descriptor_members()
+    {
+        var exception = _act.Should().Throw<InvalidOperationException>().Which;
+
+        exception.Message.Should().Contain("cannot mix scalar and descriptor members");
+        exception.Message.Should().Contain("resource 'Ed-Fi:MixedKindExample'");
+        exception.Message.Should().Contain("table 'edfi.MixedKindExample'");
+    }
+}
+
+/// <summary>
+/// Test fixture for invalid implicit grouped same-site descriptor target mismatches.
+/// </summary>
+[TestFixture]
+public class Given_Key_Unification_With_Implicit_Same_Site_Descriptor_Target_Mismatch
+{
+    private Action _act = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema =
+            KeyUnificationPassTestSchemaBuilder.BuildImplicitSameSiteDescriptorMismatchProjectSchema();
+        _act = () => KeyUnificationPassTestSchemaBuilder.BuildDerivedSet(projectSchema);
+    }
+
+    /// <summary>
+    /// It should fail fast when one grouped logical reference field resolves to different descriptor targets.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_a_grouped_reference_field_has_mismatched_descriptor_targets()
+    {
+        var exception = _act.Should().Throw<InvalidOperationException>().Which;
+
+        exception.Message.Should().Contain("Descriptor path '$.descriptorReference.value'");
+        exception.Message.Should().Contain("conflicting descriptor resources");
+        exception.Message.Should().Contain("Ed-Fi:ProgramDescriptor");
+        exception.Message.Should().Contain("Ed-Fi:SchoolTypeDescriptor");
+    }
+}
+
+/// <summary>
 /// Test fixture for optional non-reference scalar key-unification behavior.
 /// </summary>
 [TestFixture]
@@ -1426,6 +1538,63 @@ file static class KeyUnificationPassTestSchemaBuilder
     }
 
     /// <summary>
+    /// Build project schema for implicit same-site grouped reference-field unification.
+    /// </summary>
+    internal static JsonObject BuildImplicitSameSiteReferenceUnificationProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["enrollments"] = BuildEnrollmentImplicitSameSiteReferenceSchema(),
+                ["schools"] = BuildGroupedReferenceEndpointSchoolSchema(),
+            },
+        };
+    }
+
+    /// <summary>
+    /// Build project schema for invalid implicit same-site mixed-kind grouped reference fields.
+    /// </summary>
+    internal static JsonObject BuildImplicitSameSiteMixedKindProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["mixedKindExamples"] = BuildMixedKindReferenceExampleSchema(),
+                ["mixedKindTargets"] = BuildMixedKindReferenceTargetSchema(),
+                ["schoolTypeDescriptors"] = BuildDescriptorSchema("SchoolTypeDescriptor"),
+            },
+        };
+    }
+
+    /// <summary>
+    /// Build project schema for invalid implicit same-site descriptor-target mismatches.
+    /// </summary>
+    internal static JsonObject BuildImplicitSameSiteDescriptorMismatchProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["descriptorMismatchExamples"] = BuildDescriptorMismatchReferenceExampleSchema(),
+                ["descriptorMismatchTargets"] = BuildDescriptorMismatchReferenceTargetSchema(),
+                ["schoolTypeDescriptors"] = BuildDescriptorSchema("SchoolTypeDescriptor"),
+                ["programDescriptors"] = BuildDescriptorSchema("ProgramDescriptor"),
+            },
+        };
+    }
+
+    /// <summary>
     /// Build project schema for optional non-reference scalar unification.
     /// </summary>
     internal static JsonObject BuildOptionalScalarUnificationProjectSchema()
@@ -1732,6 +1901,248 @@ file static class KeyUnificationPassTestSchemaBuilder
                 },
             },
             ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    /// <summary>
+    /// Build enrollment schema with one duplicated logical reference field and no equality constraints.
+    /// </summary>
+    private static JsonObject BuildEnrollmentImplicitSameSiteReferenceSchema()
+    {
+        var schema = BuildEnrollmentGroupedReferenceEndpointSchema();
+        schema["documentPathsMapping"] = new JsonObject
+        {
+            ["School"] = new JsonObject
+            {
+                ["isReference"] = true,
+                ["isDescriptor"] = false,
+                ["isRequired"] = false,
+                ["projectName"] = "Ed-Fi",
+                ["resourceName"] = "School",
+                ["referenceJsonPaths"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["identityJsonPath"] = "$.schoolId",
+                        ["referenceJsonPath"] = "$.schoolReference.schoolId",
+                    },
+                    new JsonObject
+                    {
+                        ["identityJsonPath"] = "$.localEducationAgencyId",
+                        ["referenceJsonPath"] = "$.schoolReference.schoolId",
+                    },
+                },
+            },
+        };
+        schema["equalityConstraints"] = new JsonArray();
+
+        return schema;
+    }
+
+    /// <summary>
+    /// Build source schema for implicit same-site grouped mixed-kind validation.
+    /// </summary>
+    private static JsonObject BuildMixedKindReferenceExampleSchema()
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = "MixedKindExample",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray(),
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["MixedKindTarget"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = false,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "MixedKindTarget",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.codeValue",
+                            ["referenceJsonPath"] = "$.mixedReference.value",
+                        },
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.schoolTypeDescriptor",
+                            ["referenceJsonPath"] = "$.mixedReference.value",
+                        },
+                    },
+                },
+            },
+            ["equalityConstraints"] = new JsonArray(),
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["mixedReference"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["value"] = new JsonObject { ["type"] = "string", ["maxLength"] = 50 },
+                        },
+                    },
+                },
+            },
+        };
+    }
+
+    /// <summary>
+    /// Build target schema for implicit same-site grouped mixed-kind validation.
+    /// </summary>
+    private static JsonObject BuildMixedKindReferenceTargetSchema()
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = "MixedKindTarget",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = true,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.codeValue", "$.schoolTypeDescriptor" },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["CodeValue"] = new JsonObject { ["isReference"] = false, ["path"] = "$.codeValue" },
+                ["SchoolTypeDescriptor"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = true,
+                    ["isPartOfIdentity"] = true,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "SchoolTypeDescriptor",
+                    ["path"] = "$.schoolTypeDescriptor",
+                },
+            },
+            ["equalityConstraints"] = new JsonArray(),
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["codeValue"] = new JsonObject { ["type"] = "string", ["maxLength"] = 50 },
+                    ["schoolTypeDescriptor"] = new JsonObject { ["type"] = "string", ["maxLength"] = 50 },
+                },
+                ["required"] = new JsonArray("codeValue", "schoolTypeDescriptor"),
+            },
+        };
+    }
+
+    /// <summary>
+    /// Build source schema for implicit same-site grouped descriptor-target mismatch validation.
+    /// </summary>
+    private static JsonObject BuildDescriptorMismatchReferenceExampleSchema()
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = "DescriptorMismatchExample",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray(),
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["DescriptorMismatchTarget"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = false,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "DescriptorMismatchTarget",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.schoolTypeDescriptor",
+                            ["referenceJsonPath"] = "$.descriptorReference.value",
+                        },
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.programDescriptor",
+                            ["referenceJsonPath"] = "$.descriptorReference.value",
+                        },
+                    },
+                },
+            },
+            ["equalityConstraints"] = new JsonArray(),
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["descriptorReference"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["value"] = new JsonObject { ["type"] = "string", ["maxLength"] = 50 },
+                        },
+                    },
+                },
+            },
+        };
+    }
+
+    /// <summary>
+    /// Build target schema for implicit same-site grouped descriptor-target mismatch validation.
+    /// </summary>
+    private static JsonObject BuildDescriptorMismatchReferenceTargetSchema()
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = "DescriptorMismatchTarget",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = true,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.schoolTypeDescriptor", "$.programDescriptor" },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["SchoolTypeDescriptor"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = true,
+                    ["isPartOfIdentity"] = true,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "SchoolTypeDescriptor",
+                    ["path"] = "$.schoolTypeDescriptor",
+                },
+                ["ProgramDescriptor"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = true,
+                    ["isPartOfIdentity"] = true,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "ProgramDescriptor",
+                    ["path"] = "$.programDescriptor",
+                },
+            },
+            ["equalityConstraints"] = new JsonArray(),
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["schoolTypeDescriptor"] = new JsonObject { ["type"] = "string", ["maxLength"] = 50 },
+                    ["programDescriptor"] = new JsonObject { ["type"] = "string", ["maxLength"] = 50 },
+                },
+                ["required"] = new JsonArray("schoolTypeDescriptor", "programDescriptor"),
+            },
         };
     }
 

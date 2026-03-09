@@ -46,18 +46,22 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
                 resourceContext.ResourceName
             );
             var equalityConstraints = ReadEqualityConstraints(resourceContext.ResourceSchema);
-
-            if (equalityConstraints.Count == 0)
-            {
-                continue;
-            }
-
             var concreteResourceIndex = ResolveConcreteResourceIndex(
                 resourceContext,
                 resource,
                 baseResourcesByName,
                 resourceIndexByKey
             );
+
+            if (
+                equalityConstraints.Count == 0
+                && !HasImplicitSameSiteUnificationCandidate(
+                    context.ConcreteResourcesInNameOrder[concreteResourceIndex].RelationalModel
+                )
+            )
+            {
+                continue;
+            }
 
             if (!constraintsByResourceIndex.TryGetValue(concreteResourceIndex, out var combinedConstraints))
             {
@@ -83,6 +87,17 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
                 RelationalModel = updatedModel,
             };
         }
+    }
+
+    /// <summary>
+    /// Returns true when one resource contains a duplicated logical reference field that needs implicit
+    /// same-site unification.
+    /// </summary>
+    private static bool HasImplicitSameSiteUnificationCandidate(RelationalResourceModel resourceModel)
+    {
+        return resourceModel
+            .DocumentReferenceBindings.GetLogicalFieldGroups()
+            .Any(group => group.MemberColumns.Count > 1);
     }
 
     /// <summary>
@@ -225,17 +240,20 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
         IReadOnlyList<EqualityConstraintInput> constraints
     )
     {
-        if (constraints.Count == 0)
+        var tables = resourceModel.TablesInDependencyOrder.ToArray();
+        var bindingsByPath = BuildSourcePathBindingsByTable(tables);
+        var logicalReferenceFieldGroups = resourceModel.DocumentReferenceBindings.GetLogicalFieldGroups();
+        var logicalReferenceFieldGroupsByPath = BuildLogicalReferenceFieldGroupsByPath(
+            logicalReferenceFieldGroups
+        );
+        Dictionary<int, List<(TableBoundColumn Left, TableBoundColumn Right)>> appliedEdgesByTable =
+            BuildImplicitSameSiteEdgesByTable(tables, logicalReferenceFieldGroups, resource);
+
+        if (constraints.Count == 0 && appliedEdgesByTable.Count == 0)
         {
             return resourceModel;
         }
 
-        var tables = resourceModel.TablesInDependencyOrder.ToArray();
-        var bindingsByPath = BuildSourcePathBindingsByTable(tables);
-        var logicalReferenceFieldGroupsByPath = BuildLogicalReferenceFieldGroupsByPath(
-            resourceModel.DocumentReferenceBindings
-        );
-        Dictionary<int, List<(TableBoundColumn Left, TableBoundColumn Right)>> appliedEdgesByTable = [];
         List<AppliedConstraintCandidate> appliedConstraints = [];
         List<KeyUnificationRedundantConstraint> redundantConstraints = [];
         List<KeyUnificationIgnoredConstraint> ignoredConstraints = [];
@@ -468,12 +486,12 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
         string,
         IReadOnlyList<DocumentReferenceFieldGroup>
     > BuildLogicalReferenceFieldGroupsByPath(
-        IReadOnlyList<DocumentReferenceBinding> documentReferenceBindings
+        IReadOnlyList<DocumentReferenceFieldGroup> logicalReferenceFieldGroups
     )
     {
         Dictionary<string, List<DocumentReferenceFieldGroup>> lookup = new(StringComparer.Ordinal);
 
-        foreach (var logicalFieldGroup in documentReferenceBindings.GetLogicalFieldGroups())
+        foreach (var logicalFieldGroup in logicalReferenceFieldGroups)
         {
             if (!lookup.TryGetValue(logicalFieldGroup.ReferenceJsonPath.Canonical, out var groupedFields))
             {
@@ -495,6 +513,99 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
                         .ThenBy(group => group.FkColumn.Value, StringComparer.Ordinal)
                         .ToArray(),
             StringComparer.Ordinal
+        );
+    }
+
+    /// <summary>
+    /// Builds implicit same-site edges so duplicate logical reference fields unify even without explicit
+    /// equality constraints.
+    /// </summary>
+    private static Dictionary<
+        int,
+        List<(TableBoundColumn Left, TableBoundColumn Right)>
+    > BuildImplicitSameSiteEdgesByTable(
+        IReadOnlyList<DbTableModel> tables,
+        IReadOnlyList<DocumentReferenceFieldGroup> logicalReferenceFieldGroups,
+        QualifiedResourceName resource
+    )
+    {
+        Dictionary<int, List<(TableBoundColumn Left, TableBoundColumn Right)>> edgesByTable = [];
+        var indexedTables = tables
+            .Select((table, tableIndex) => new IndexedTable(tableIndex, table))
+            .ToArray();
+
+        foreach (var logicalFieldGroup in logicalReferenceFieldGroups)
+        {
+            if (logicalFieldGroup.MemberColumns.Count < 2)
+            {
+                continue;
+            }
+
+            var indexedTable = ReferenceObjectPathScopeResolver.ResolveOwningTableScope(
+                logicalFieldGroup.ReferenceObjectPath,
+                indexedTables,
+                static candidate => candidate.Table.JsonScope,
+                resource,
+                logicalFieldGroup.Table.Name
+            );
+            var memberBindings = logicalFieldGroup
+                .MemberColumns.Distinct()
+                .Select(memberColumn => new TableBoundColumn(
+                    indexedTable.TableIndex,
+                    indexedTable.Table,
+                    ResolveImplicitGroupMemberColumn(
+                        indexedTable.Table,
+                        logicalFieldGroup,
+                        memberColumn,
+                        resource
+                    )
+                ))
+                .ToArray();
+
+            if (memberBindings.Length < 2)
+            {
+                continue;
+            }
+
+            if (!edgesByTable.TryGetValue(indexedTable.TableIndex, out var tableEdges))
+            {
+                tableEdges = [];
+                edgesByTable.Add(indexedTable.TableIndex, tableEdges);
+            }
+
+            var firstMember = memberBindings[0];
+
+            foreach (var memberBinding in memberBindings.Skip(1))
+            {
+                tableEdges.Add((firstMember, memberBinding));
+            }
+        }
+
+        return edgesByTable;
+    }
+
+    /// <summary>
+    /// Resolves one implicit grouped-reference member column from the owning table.
+    /// </summary>
+    private static DbColumnModel ResolveImplicitGroupMemberColumn(
+        DbTableModel table,
+        DocumentReferenceFieldGroup logicalFieldGroup,
+        DbColumnName memberColumn,
+        QualifiedResourceName resource
+    )
+    {
+        var column = table.Columns.SingleOrDefault(candidate => candidate.ColumnName.Equals(memberColumn));
+
+        if (column is not null)
+        {
+            return column;
+        }
+
+        throw new InvalidOperationException(
+            $"Logical reference field '{logicalFieldGroup.ReferenceJsonPath.Canonical}' under "
+                + $"'{logicalFieldGroup.ReferenceObjectPath.Canonical}' on resource "
+                + $"'{FormatResource(resource)}' expected member column '{memberColumn.Value}' on table "
+                + $"'{table.Table}', but it was not found."
         );
     }
 
@@ -1646,6 +1757,11 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
     /// One source-path column binding with table context.
     /// </summary>
     private sealed record TableBoundColumn(int TableIndex, DbTableModel Table, DbColumnModel Column);
+
+    /// <summary>
+    /// One indexed table candidate for scope-based reference-site resolution.
+    /// </summary>
+    private sealed record IndexedTable(int TableIndex, DbTableModel Table);
 
     /// <summary>
     /// Canonicalized endpoint ordering for one equality constraint.

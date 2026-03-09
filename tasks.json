@@ -27,7 +27,7 @@
       "Add a negative test proving a duplicated logical field that mixes scalar and descriptor members, or mismatched descriptor targets, still fails deterministically.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_Key_Unification|FullyQualifiedName~ConstraintDerivation\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Abstract Identity Root Resolution",
