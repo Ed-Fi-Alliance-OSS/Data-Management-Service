@@ -16,7 +16,7 @@
       "Add a negative unit test proving a missing non-extension resource key or an extra unknown resource key still fails with the expected deterministic message.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"FullyQualifiedName~EffectiveSchema|FullyQualifiedName~RelationalModelSetValidation\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Fixture Builder And Golden Alignment",
