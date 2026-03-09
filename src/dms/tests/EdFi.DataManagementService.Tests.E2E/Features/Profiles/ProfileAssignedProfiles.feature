@@ -269,10 +269,10 @@ Feature: Profile Assigned Profiles
             Then the profile response status is 200
              And the response body should contain fields "id, studentUniqueId, firstName, lastSurname"
 
-        Scenario: 04 Not-covered resource with unassigned profile fails
+        Scenario: 04 Not-covered resource with unassigned profile succeeds
             When a GET request is made to "/ed-fi/students/{id}" with profile "Test-Profile-StudentOnly-Resource-IncludeAll" for resource "Student"
-            Then the profile response status is 403
-             And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
+            Then the profile response status is 200
+             And the response body should contain fields "id, studentUniqueId, firstName, lastSurname"
 
         Scenario: 05 Not-covered resource write with standard content type succeeds
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-Resource-IncludeAll" and namespacePrefixes "uri://ed-fi.org"
@@ -287,7 +287,7 @@ Feature: Profile Assigned Profiles
                   """
             Then the profile response status is 201
 
-        Scenario: 06 Not-covered resource write with unassigned profile fails
+        Scenario: 06 Not-covered resource write with unassigned profile succeeds
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-Resource-IncludeAll" and namespacePrefixes "uri://ed-fi.org"
             When a POST request is made to "/ed-fi/students" with profile "Test-Profile-StudentOnly-Resource-IncludeAll" for resource "Student" with body
                   """
@@ -298,8 +298,7 @@ Feature: Profile Assigned Profiles
                       "lastSurname": "Unassigned"
                   }
                   """
-            Then the profile response status is 403
-             And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
+            Then the profile response status is 201
 
         Scenario: 07 Not-covered resource update with standard content type succeeds
             When a PUT request is made to "/ed-fi/students/{id}" without profile header with body

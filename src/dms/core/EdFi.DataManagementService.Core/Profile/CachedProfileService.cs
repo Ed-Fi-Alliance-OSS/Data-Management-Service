@@ -143,7 +143,14 @@ internal class CachedProfileService(
             // No profiles assigned - if header was provided, validate the profile exists
             if (parsedHeader != null)
             {
-                return await ValidateExplicitProfileWithoutAssignment(parsedHeader, method);
+                CachedProfileStore unassignedProfileStore = await GetOrFetchProfileStoreAsync(tenantId);
+                return ValidateExplicitProfile(
+                    parsedHeader,
+                    method,
+                    resourceName,
+                    cachedProfiles: null,
+                    unassignedProfileStore
+                );
             }
 
             // No profiles assigned and no header - no profile applies
@@ -233,59 +240,18 @@ internal class CachedProfileService(
             ) ?? CachedApplicationProfiles.Empty;
     }
 
-    private Task<ProfileResolutionResult> ValidateExplicitProfileWithoutAssignment(
-        ParsedProfileHeader parsedHeader,
-        RequestMethod method
-    )
-    {
-        // Client specified a profile header but has no profiles assigned
-        // We need to check if the profile exists at all and if it covers the resource
-        // For now, we'll just honor the profile if it exists (no assignment enforcement)
-
-        // This is a temporary implementation - in the future we might want to
-        // fetch the profile from CMS to validate it exists
-        // For now, return an error since we can't validate without profile data
-
-        logger.LogDebug(
-            "Profile header specified but no profiles assigned to application. Profile: {ProfileName}",
-            LoggingSanitizer.SanitizeForLogging(parsedHeader.ProfileName)
-        );
-
-        // According to the design: "When a client's application has no profiles assigned,
-        // no implicit profile selection or assignment enforcement is applied.
-        // If a profile header is provided, it is honored after normal header validation."
-        // This means we need to fetch the profile directly
-
-        // For the N+1 approach, we don't have an efficient way to look up a profile by name
-        // So we'll return an error for now - this should be refined when we add the dedicated endpoint
-        return Task.FromResult(CreateProfileNotFoundError(parsedHeader.ProfileName, method));
-    }
-
     private static ProfileResolutionResult ValidateExplicitProfile(
         ParsedProfileHeader parsedHeader,
         RequestMethod method,
         string resourceName,
-        CachedApplicationProfiles cachedProfiles,
+        CachedApplicationProfiles? cachedProfiles,
         CachedProfileStore profileStore
     )
     {
-        IReadOnlyList<string> availableProfiles = GetAvailableProfileContentTypes(
-            cachedProfiles,
-            profileStore,
-            resourceName,
-            method
-        );
-
-        // Check if the profile is assigned to this application
-        if (
-            !cachedProfiles.AssignedProfileNames.Contains(
-                parsedHeader.ProfileName,
-                StringComparer.OrdinalIgnoreCase
-            )
-        )
-        {
-            return CreateIncorrectUsageFailure(availableProfiles);
-        }
+        IReadOnlyList<string> availableProfiles = cachedProfiles is not null
+            ? GetAvailableProfileContentTypes(cachedProfiles, profileStore, resourceName, method)
+            : [];
+        bool enforceAssignment = cachedProfiles is not null && availableProfiles.Count > 0;
 
         if (
             !profileStore.TryGetByName(parsedHeader.ProfileName, out ProfileDefinition? profileDefinition)
@@ -293,6 +259,17 @@ internal class CachedProfileService(
         )
         {
             return CreateProfileNotFoundError(parsedHeader.ProfileName, method);
+        }
+
+        if (
+            enforceAssignment
+            && !cachedProfiles!.AssignedProfileNames.Contains(
+                parsedHeader.ProfileName,
+                StringComparer.OrdinalIgnoreCase
+            )
+        )
+        {
+            return CreateIncorrectUsageFailure(availableProfiles);
         }
 
         // Validate resource name in header matches the requested resource
@@ -326,7 +303,7 @@ internal class CachedProfileService(
 
         if (resourceProfile == null)
         {
-            if (cachedProfiles.AssignedProfileNames.Count() > 1)
+            if (enforceAssignment)
             {
                 return CreateIncorrectUsageFailure(availableProfiles);
             }
@@ -382,6 +359,23 @@ internal class CachedProfileService(
             resourceName,
             method
         );
+        bool isReadOperation = method == RequestMethod.GET;
+        List<(ProfileDefinition Definition, ResourceProfile ResourceProfile)> applicableProfiles = cachedProfiles
+            .AssignedProfileNames.Select(profileName =>
+                profileStore.TryGetByName(profileName, out ProfileDefinition? definition) ? definition : null
+            )
+            .Where(definition => definition is not null)
+            .Select(definition => new
+            {
+                Definition = definition!,
+                ResourceProfile = definition!.Resources.FirstOrDefault(r =>
+                    r.ResourceName.Equals(resourceName, StringComparison.OrdinalIgnoreCase)
+                ),
+            })
+            .Where(x => x.ResourceProfile is not null)
+            .Where(x => isReadOperation ? x.ResourceProfile!.ReadContentType is not null : x.ResourceProfile!.WriteContentType is not null)
+            .Select(x => (x.Definition, x.ResourceProfile!))
+            .ToList();
 
         if (availableProfiles.Count == 0)
         {
@@ -389,7 +383,35 @@ internal class CachedProfileService(
             return ProfileResolutionResult.NoProfileApplies();
         }
 
-        // One or more profiles cover this resource - client must specify which one
+        if (availableProfiles.Count == 1)
+        {
+            (ProfileDefinition profileDefinition, ResourceProfile resourceProfile) = applicableProfiles[0];
+
+            ProfileResolutionResult? contentTypeValidation = ValidateResourceContentType(
+                resourceProfile,
+                method,
+                profileDefinition.ProfileName
+            );
+
+            if (contentTypeValidation is not null)
+            {
+                return contentTypeValidation;
+            }
+
+            ProfileContentType contentType =
+                method == RequestMethod.GET ? ProfileContentType.Read : ProfileContentType.Write;
+
+            return ProfileResolutionResult.Success(
+                new ProfileContext(
+                    ProfileName: profileDefinition.ProfileName,
+                    ContentType: contentType,
+                    ResourceProfile: resourceProfile,
+                    WasExplicitlySpecified: false
+                )
+            );
+        }
+
+        // More than one profile covers this resource - client must specify which one
         return CreateIncorrectUsageFailure(availableProfiles);
     }
 
