@@ -69,5 +69,55 @@
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~PostgresqlRuntimeMappingInitialization`"
     ],
     "completed": true
+  },
+  {
+    "category": "CI Readiness Failure Log Surfacing",
+    "description": "Update `.github/workflows/on-dms-pullrequest.yml` so the `build-and-start-dms` job exports Docker logs on failure and writes the `dms-local-dms` container log directly into the workflow output when readiness polling or OpenAPI download fails. Acceptance: a failed readiness timeout produces a `logs/` artifact for this job, includes inline DMS container logs in the failing job output, and leaves successful runs unchanged because the new log steps are guarded by `if: failure()`.",
+    "steps-to-verify": [
+      "Force `build-and-start-dms` to fail after `Start DMS Docker` and confirm the job uploads a logs artifact that contains the DMS and companion container logs from the local stack.",
+      "Confirm the failing GitHub Actions log shows the `dms-local-dms` log inline without requiring artifact download to see the startup exception.",
+      "Run a successful `build-and-start-dms` path and confirm the failure-only log export steps are skipped."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Schema Compile Preflight In CI",
+    "description": "Add a preflight CI step that runs `dms-schema ddl emit` against the same schema set packaged into DMS startup before Docker is launched. Acceptance: schema-to-relational compile failures fail the workflow before `Start DMS Docker`, the step does not require database connectivity, and the workflow logs clearly identify the schema inputs and dialect being compiled.",
+    "steps-to-verify": [
+      "Run the new preflight step locally or in CI with the normal schema inputs and confirm it completes successfully without starting Docker or opening a database connection.",
+      "Introduce or replay an extension-resource compile failure and confirm the workflow fails in the preflight `dms-schema ddl emit` step before the readiness loop is reached.",
+      "Confirm the generated output is deterministic enough for CI use by rerunning the command with the same inputs and verifying it does not produce inconsistent manifests or SQL."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Extension Schema Startup Coverage",
+    "description": "Extend PostgreSQL startup mapping tests to exercise real extension-bearing schemas instead of only the current minimal core-only fixture. Acceptance: `PostgresqlRuntimeMappingInitializationTests` covers at least one startup-success path and one startup-failure path using schema inputs that include extension resources, and failures surface the compile-time exception details rather than collapsing into a generic readiness symptom.",
+    "steps-to-verify": [
+      "Add a positive startup initialization test that loads a core schema plus at least one extension schema and asserts `DmsStartupOrchestrator` completes backend mapping initialization.",
+      "Add a negative startup initialization test with an intentionally invalid extension-bearing schema and assert the thrown exception includes the relevant resource or invariant failure detail.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~PostgresqlRuntimeMappingInitialization`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Relational Fixture Contract Alignment",
+    "description": "Align relational-model fixtures and goldens with the production resource-key contract by excluding `isResourceExtension=true` resources from synthesized resource keys. Acceptance: `EffectiveSchemaSetFixtureBuilder` no longer invents keys for extension resources, authoritative expected manifests are regenerated accordingly, and Sample extension entries such as `Sample:Contact`, `Sample:School`, `Sample:Staff`, and `Sample:Student` no longer appear in `authoritative-effective-schema.manifest.json` resource keys unless the production contract changes first.",
+    "steps-to-verify": [
+      "Add or update unit coverage proving fixture-generated resource key entries skip extension resources the same way `ResourceKeySeedProvider` does.",
+      "Regenerate the affected authoritative manifests and confirm extension resources are removed from the expected resource-key list while non-extension resources remain stable.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Startup Failure Status Surfacing",
+    "description": "Design and, if justified, implement a startup-status surfacing mechanism so pre-bind startup failures are externally diagnosable without relying only on connection-refused symptoms. Acceptance: the chosen approach is documented and preserves fatal startup semantics while surfacing the failing startup phase and error summary through a stable signal usable by CI or local troubleshooting, such as a status artifact, structured log contract, or lightweight startup-state endpoint.",
+    "steps-to-verify": [
+      "Document the selected approach, rejected alternatives, and interaction with the current `Environment.Exit(-1)` startup failure path.",
+      "Validate the design with a failing startup scenario and confirm CI or local tooling can report the startup phase and summarized failure reason without manually inspecting every container log.",
+      "If code is added, run the relevant DMS startup and health/readiness test coverage or add new coverage that proves the status signal is emitted when startup fails before route binding."
+    ],
+    "completed": false
   }
 ]
