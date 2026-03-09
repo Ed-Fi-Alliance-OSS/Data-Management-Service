@@ -2027,11 +2027,12 @@ are specified elsewhere in this document.
          and every right member in that table’s unification graph).
 
 3. Build candidate unification classes (per table):
-   - For each table that has one or more applied edges:
+   - For each table:
      - Build an undirected graph whose nodes are binding columns and whose edges are:
        - implicit same-site logical endpoint-group edges, and
        - applied equality-constraint edges.
-     - Connected components are candidate unification classes.
+     - If the graph has no edges, no unification class is produced for that table.
+     - Otherwise, connected components are candidate unification classes.
      - For each connected component:
        - `MemberPathColumns` are the distinct binding columns in the component.
        - Order `MemberPathColumns` deterministically by `Member.SourceJsonPath.Canonical` ordinal.
