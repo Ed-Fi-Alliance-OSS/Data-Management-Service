@@ -5,7 +5,7 @@
     {
       "dialect": "mssql",
       "normalized_sql_sha256": "210d1661bbb67a6eff7f814c1f28f26b0c36e499880cd0a73640097c2ddb9b72",
-      "statement_count": 16
+      "statement_count": 78
     },
     {
       "dialect": "pgsql",

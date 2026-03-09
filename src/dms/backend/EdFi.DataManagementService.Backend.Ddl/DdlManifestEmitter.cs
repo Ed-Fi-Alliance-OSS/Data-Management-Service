@@ -124,9 +124,9 @@ public static class DdlManifestEmitter
     /// Counts top-level SQL statements using dialect-aware rules.
     /// </summary>
     /// <remarks>
-    /// <para><b>MSSQL:</b> Splits by standalone <c>GO</c> lines. The first segment (plain DDL)
-    /// counts lines ending with <c>;</c>. Each subsequent non-empty segment (trigger batch)
-    /// counts as 1.</para>
+    /// <para><b>MSSQL:</b> Splits by standalone <c>GO</c> lines into batches. Compound batches
+    /// (starting with <c>CREATE OR ALTER</c>) count as 1. Plain DDL/DML batches count lines
+    /// ending with <c>;</c>.</para>
     /// <para><b>PostgreSQL:</b> Tracks dollar-quote state using tag-aware matching for all tags
     /// matching <c>$[A-Za-z0-9_]*$</c> (e.g. <c>$$</c>, <c>$func$</c>, <c>$uuidv5$</c>).
     /// Only tags at line boundaries toggle state. Counts lines ending with <c>;</c>
@@ -145,16 +145,17 @@ public static class DdlManifestEmitter
     }
 
     /// <summary>
-    /// Counts MSSQL statements by scanning for standalone GO lines.
-    /// Before the first GO: counts lines ending with semicolons (plain DDL/DML).
-    /// After each GO: counts the batch as one statement (trigger definition).
+    /// Counts MSSQL statements by splitting on standalone GO lines into batches.
+    /// Compound batches (CREATE [OR ALTER] FUNCTION/TRIGGER/PROCEDURE) count as 1.
+    /// Plain DDL/DML batches count lines ending with semicolons individually.
     /// Uses span-based line enumeration to avoid per-line string allocations.
     /// </summary>
     private static int CountMssqlStatements(string sqlText)
     {
         int count = 0;
-        bool pastFirstGo = false;
+        bool isCompoundBatch = false;
         bool currentBatchHasContent = false;
+        int semicolonCount = 0;
 
         foreach (var rawLine in sqlText.AsSpan().EnumerateLines())
         {
@@ -162,38 +163,79 @@ public static class DdlManifestEmitter
 
             if (trimmed.Equals("GO", StringComparison.OrdinalIgnoreCase))
             {
-                if (pastFirstGo && currentBatchHasContent)
+                // Flush the completed batch.
+                if (isCompoundBatch && currentBatchHasContent)
                 {
                     count++;
                 }
+                else
+                {
+                    count += semicolonCount;
+                }
 
-                pastFirstGo = true;
+                isCompoundBatch = false;
                 currentBatchHasContent = false;
+                semicolonCount = 0;
                 continue;
             }
 
-            if (!pastFirstGo)
+            if (!trimmed.IsEmpty)
             {
-                if (trimmed.Length > 0 && trimmed[^1] == ';')
+                if (!currentBatchHasContent)
                 {
-                    count++;
+                    isCompoundBatch = IsCompoundBatchStart(trimmed);
                 }
+                currentBatchHasContent = true;
             }
-            else
+
+            if (!isCompoundBatch && trimmed.Length > 0 && trimmed[^1] == ';')
             {
-                if (!trimmed.IsEmpty)
-                {
-                    currentBatchHasContent = true;
-                }
+                semicolonCount++;
             }
         }
 
-        if (pastFirstGo && currentBatchHasContent)
+        // Flush the final batch (content after the last GO, or all content if no GO).
+        if (isCompoundBatch && currentBatchHasContent)
         {
             count++;
         }
+        else
+        {
+            count += semicolonCount;
+        }
 
         return count;
+    }
+
+    /// <summary>
+    /// Determines whether a trimmed line starts a compound T-SQL batch
+    /// (CREATE [OR ALTER] FUNCTION | TRIGGER | PROCEDURE) that should be
+    /// counted as a single statement regardless of internal semicolons.
+    /// </summary>
+    private static bool IsCompoundBatchStart(ReadOnlySpan<char> trimmedLine)
+    {
+        if (!trimmedLine.StartsWith("CREATE", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var rest = trimmedLine[6..].TrimStart();
+
+        // Skip optional OR ALTER
+        if (rest.StartsWith("OR", StringComparison.OrdinalIgnoreCase) && rest.Length > 2 && rest[2] == ' ')
+        {
+            rest = rest[2..].TrimStart();
+            if (
+                rest.StartsWith("ALTER", StringComparison.OrdinalIgnoreCase)
+                && rest.Length > 5
+                && rest[5] == ' '
+            )
+            {
+                rest = rest[5..].TrimStart();
+            }
+        }
+
+        return rest.StartsWith("FUNCTION", StringComparison.OrdinalIgnoreCase)
+            || rest.StartsWith("TRIGGER", StringComparison.OrdinalIgnoreCase)
+            || rest.StartsWith("PROCEDURE", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
