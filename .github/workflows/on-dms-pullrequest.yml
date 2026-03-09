@@ -475,29 +475,43 @@ jobs:
           $diagnosticsDir = "${{ github.workspace }}/logs"
           New-Item -ItemType Directory -Path $diagnosticsDir -Force | Out-Null
 
-          $dmsContainer = docker ps -a --format "{{.Names}}" | Where-Object {
-            $_ -eq "dms-local-dms" -or $_ -like "dms-local-dms*"
-          } | Select-Object -First 1
+          $containers = docker ps -a --format "{{.Names}}" | Where-Object {
+            $_ -like "dms-local-*"
+          } | Sort-Object
 
-          if ($null -eq $dmsContainer) {
-            Write-Host "No DMS container was found for startup diagnostics."
+          if (@($containers).Count -eq 0) {
+            Write-Host "No dms-local containers were found for startup diagnostics."
             exit 0
           }
 
-          $statusArtifactPath = Join-Path $diagnosticsDir "dms-startup-status.json"
-          docker cp "${dmsContainer}:/tmp/dms-startup-status.json" $statusArtifactPath 2>$null
+          $dmsContainer = @($containers) | Where-Object {
+            $_ -eq "dms-local-dms" -or $_ -like "dms-local-dms*"
+          } | Select-Object -First 1
 
-          if (Test-Path $statusArtifactPath) {
-            Write-Host "`n========== DMS Startup Status =========="
-            Get-Content $statusArtifactPath
-            Write-Host "=======================================`n"
-          }
-          else {
-            Write-Host "DMS startup status file was not present in container $dmsContainer."
+          if ($null -ne $dmsContainer) {
+            $statusArtifactPath = Join-Path $diagnosticsDir "dms-startup-status.json"
+            docker cp "${dmsContainer}:/tmp/dms-startup-status.json" $statusArtifactPath 2>$null
+
+            if (Test-Path $statusArtifactPath) {
+              Write-Host "`n========== DMS Startup Status =========="
+              Get-Content $statusArtifactPath
+              Write-Host "=======================================`n"
+            }
+            else {
+              Write-Host "DMS startup status file was not present in container $dmsContainer."
+            }
           }
 
-          $dmsLogPath = Join-Path $diagnosticsDir "$dmsContainer.log"
-          docker logs $dmsContainer > $dmsLogPath 2>&1
+          foreach ($container in $containers) {
+            $logPath = Join-Path $diagnosticsDir "$container.log"
+            docker logs $container > $logPath 2>&1
+
+            if ($container -eq $dmsContainer) {
+              Write-Host "`n========== ${container} logs =========="
+              Get-Content $logPath
+              Write-Host "======================================`n"
+            }
+          }
 
       - name: Upload DMS Startup Diagnostics
         if: failure()

@@ -57,6 +57,6 @@
       "Confirm the failing job uploads the DMS and companion container logs as artifacts and that successful runs skip the failure-only diagnostics steps.",
       "Validate the edited workflow YAML in CI or with the repo's normal workflow review process before merge."
     ],
-    "completed": false
+    "completed": true
   }
 ]
