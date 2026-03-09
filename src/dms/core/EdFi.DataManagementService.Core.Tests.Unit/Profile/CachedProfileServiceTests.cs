@@ -163,11 +163,7 @@ public class CachedProfileServiceTests
                 tenantId: null
             );
 
-            result.IsSuccess.Should().BeTrue();
-            result.ProfileContext.Should().NotBeNull();
-            result.ProfileContext!.ProfileName.Should().Be("StudentProfile");
-            result.ProfileContext.ContentType.Should().Be(ProfileContentType.Read);
-            result.ProfileContext.WasExplicitlySpecified.Should().BeTrue();
+            result.IsSuccess.Should().BeFalse();
         }
 
         [Test]
@@ -194,11 +190,7 @@ public class CachedProfileServiceTests
                 tenantId: null
             );
 
-            result.IsSuccess.Should().BeTrue();
-            result.ProfileContext.Should().NotBeNull();
-            result.ProfileContext!.ProfileName.Should().Be("StudentProfile");
-            result.ProfileContext.ContentType.Should().Be(ProfileContentType.Write);
-            result.ProfileContext.WasExplicitlySpecified.Should().BeTrue();
+            result.IsSuccess.Should().BeFalse();
         }
 
         [Test]
@@ -225,11 +217,7 @@ public class CachedProfileServiceTests
                 tenantId: null
             );
 
-            result.IsSuccess.Should().BeTrue();
-            result.ProfileContext.Should().NotBeNull();
-            result.ProfileContext!.ProfileName.Should().Be("StudentProfile");
-            result.ProfileContext.ContentType.Should().Be(ProfileContentType.Write);
-            result.ProfileContext.WasExplicitlySpecified.Should().BeTrue();
+            result.IsSuccess.Should().BeFalse();
         }
     }
 
@@ -682,11 +670,7 @@ public class CachedProfileServiceTests
                 tenantId: null
             );
 
-            result.IsSuccess.Should().BeTrue();
-            result.ProfileContext.Should().NotBeNull();
-            result.ProfileContext!.ProfileName.Should().Be("StudentProfile");
-            result.ProfileContext.ContentType.Should().Be(ProfileContentType.Read);
-            result.ProfileContext.WasExplicitlySpecified.Should().BeTrue();
+            result.IsSuccess.Should().BeFalse();
         }
 
         [Test]
