@@ -1461,7 +1461,12 @@ internal class ProfileWriteValidationMiddleware(
         {
             string filterPropertyName = collectionRule.ItemFilter.PropertyName;
             if (
-                requestItem.TryGetPropertyValue(filterPropertyName, out JsonNode? requestValue)
+                TryGetPropertyValueCaseInsensitive(
+                    requestItem,
+                    filterPropertyName,
+                    out _,
+                    out JsonNode? requestValue
+                )
                 && requestValue != null
             )
             {
@@ -1470,7 +1475,12 @@ internal class ProfileWriteValidationMiddleware(
                 {
                     if (
                         existingItemNode is JsonObject existingItem
-                        && existingItem.TryGetPropertyValue(filterPropertyName, out JsonNode? existingValue)
+                        && TryGetPropertyValueCaseInsensitive(
+                            existingItem,
+                            filterPropertyName,
+                            out _,
+                            out JsonNode? existingValue
+                        )
                         && existingValue != null
                         && existingValue.GetValue<string>() == requestValueStr
                     )
@@ -1502,7 +1512,14 @@ internal class ProfileWriteValidationMiddleware(
             bool allMatch = true;
             foreach (var kvp in item)
             {
-                if (!arrayItem.TryGetPropertyValue(kvp.Key, out JsonNode? arrayValue))
+                if (
+                    !TryGetPropertyValueCaseInsensitive(
+                        arrayItem,
+                        kvp.Key,
+                        out _,
+                        out JsonNode? arrayValue
+                    )
+                )
                 {
                     allMatch = false;
                     break;
@@ -1556,7 +1573,14 @@ internal class ProfileWriteValidationMiddleware(
             foreach (var kvp in requestItem)
             {
                 totalProps++;
-                if (!existingItem.TryGetPropertyValue(kvp.Key, out JsonNode? existingValue))
+                if (
+                    !TryGetPropertyValueCaseInsensitive(
+                        existingItem,
+                        kvp.Key,
+                        out _,
+                        out JsonNode? existingValue
+                    )
+                )
                 {
                     continue;
                 }

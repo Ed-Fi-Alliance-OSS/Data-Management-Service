@@ -258,6 +258,11 @@ Feature: The Discovery API provides information about the application version, s
                       "prefix": "Profiles"
                     },
                     {
+                      "name": "Assessment-Writable-Excludes-Embedded-Object",
+                      "endpointUri": "{BASE_URL}/metadata/specifications/profiles/Assessment-Writable-Excludes-Embedded-Object/resources-spec.json",
+                      "prefix": "Profiles"
+                    },
+                    {
                       "name": "StudentSpecialEducationProgramAssociation-Derived-Association-ExcludeOnly",
                       "endpointUri": "{BASE_URL}/metadata/specifications/profiles/StudentSpecialEducationProgramAssociation-Derived-Association-ExcludeOnly/resources-spec.json",
                       "prefix": "Profiles"
