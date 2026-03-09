@@ -3,7 +3,7 @@ Feature: Profile Undefined and Misconfigured Usage
     I want undefined and misconfigured profiles to be rejected on read and write
     So that invalid profile usage is surfaced consistently
 
-    Rule: Undefined profile usage returns an authorization/policy failure
+    Rule: Undefined profile usage returns invalid profile usage failures
 
         Background:
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized without profiles and namespacePrefixes "uri://ed-fi.org"
@@ -30,13 +30,13 @@ Feature: Profile Undefined and Misconfigured Usage
                   """
               And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-School-IncludeAll" and namespacePrefixes "uri://ed-fi.org"
 
-        Scenario: 01 GET with undefined profile returns 403
+        Scenario: 01 GET with undefined profile returns 406
             When a GET request is made to "/ed-fi/schools/{id}" with Accept header "application/vnd.ed-fi.school.profile-does-not-exist.readable+json"
-            Then the profile response status is 403
-             And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
+            Then the profile response status is 406
+             And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
              And the response body status should equal the response status code
 
-        Scenario: 02 POST with undefined profile returns 403
+        Scenario: 02 POST with undefined profile returns 415
             When a POST request is made to "/ed-fi/schools" with profile "Profile-Does-Not-Exist" for resource "School" with body
                   """
                   {
@@ -54,11 +54,11 @@ Feature: Profile Undefined and Misconfigured Usage
                       ]
                   }
                   """
-            Then the profile response status is 403
-             And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
+            Then the profile response status is 415
+             And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
              And the response body status should equal the response status code
 
-        Scenario: 03 PUT with undefined profile returns 403
+        Scenario: 03 PUT with undefined profile returns 415
             When a PUT request is made to "/ed-fi/schools/{id}" with profile "Profile-Does-Not-Exist" for resource "School" with body
                   """
                   {
@@ -77,8 +77,8 @@ Feature: Profile Undefined and Misconfigured Usage
                       ]
                   }
                   """
-            Then the profile response status is 403
-             And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
+            Then the profile response status is 415
+             And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
              And the response body status should equal the response status code
 
     Rule: Misconfigured profile usage returns invalid profile usage failures

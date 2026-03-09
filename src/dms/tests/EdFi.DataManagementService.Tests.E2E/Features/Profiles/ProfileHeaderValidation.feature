@@ -162,7 +162,7 @@ Feature: Profile Header Validation
               And the response body should have detail "The request construction was invalid with respect to usage of a data policy."
               And the response body errors should match regex "(?i)A profile-based content type that is readable cannot be used with PUT requests\."
 
-    Rule: Profile header on app with no profiles returns 406 Not Acceptable
+    Rule: Profile header on app with no profiles is honored after normal validation
 
         Background:
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized without profiles and namespacePrefixes "uri://ed-fi.org"
@@ -190,16 +190,13 @@ Feature: Profile Header Validation
                   }
                   """
 
-        # When app has no profiles, using any profile header returns 406 (Not Acceptable)
-        Scenario: 08 Using profile header on app without profiles returns 406
+        Scenario: 08 Using profile header on app without profiles succeeds
              When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly" for resource "School"
-             Then the profile response status is 406
-              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
-              And the response body status should equal the response status code
-              And the response body should have detail "The request construction was invalid with respect to usage of a data policy."
-              And the response body errors should match regex "(?i)The profile 'e2e-test-school-includeonly' specified by the content type in the 'Accept' header is not supported by this host\."
+             Then the profile response status is 200
+              And the response body should only contain fields "id, schoolId, nameOfInstitution, webSite"
+              And the response body should not contain fields "shortNameOfInstitution"
 
-    Rule: Non-existent profile returns 403
+    Rule: Non-existent profile returns invalid profile usage
 
         Background:
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-School-IncludeOnly" and namespacePrefixes "uri://ed-fi.org"
@@ -227,13 +224,13 @@ Feature: Profile Header Validation
                   }
                   """
 
-        Scenario: 09 Using nonexistent profile returns 403
+        Scenario: 09 Using nonexistent profile returns 406
              When a GET request is made to "/ed-fi/schools/{id}" with Accept header "application/vnd.ed-fi.school.nonexistent-profile.readable+json"
-             Then the profile response status is 403
-              And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
+             Then the profile response status is 406
+              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
               And the response body status should equal the response status code
-              And the response body should have detail "A data policy failure was encountered. The request was not constructed correctly for the data policy that has been applied to this data for the caller."
-              And the response body errors should match regex "(?i)Based on profile assignments, one of the following profile-specific content types is required when requesting this resource: 'application/vnd\.ed-fi\.school\.e2e-test-school-includeonly\.readable\+json'"
+              And the response body should have detail "The request construction was invalid with respect to usage of a data policy."
+              And the response body errors should match regex "(?i)The profile 'nonexistent-profile' specified by the content type in the 'Accept' header is not supported by this host\."
 
 
     Rule: Valid profile header succeeds
