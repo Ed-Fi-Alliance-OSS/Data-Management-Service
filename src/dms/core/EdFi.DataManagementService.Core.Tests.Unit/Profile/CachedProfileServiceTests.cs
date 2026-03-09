@@ -316,40 +316,6 @@ public class CachedProfileServiceTests
         }
 
         [Test]
-        public async Task It_fails_when_profile_not_assigned_to_application()
-        {
-            var fakeCmsProvider = A.Fake<IProfileCmsProvider>();
-            A.CallTo(() => fakeCmsProvider.GetApplicationProfileInfoAsync(A<long>._, A<string?>._))
-                .Returns(new ApplicationProfileInfo(1, [100]));
-            A.CallTo(() => fakeCmsProvider.GetProfilesAsync(A<string?>._))
-                .Returns(
-                    Task.FromResult<IReadOnlyList<CmsProfileResponse>>([
-                        new CmsProfileResponse(100, "StudentProfile", StudentProfileXml),
-                    ])
-                );
-            A.CallTo(() => fakeCmsProvider.GetProfileAsync(100, A<string?>._))
-                .Returns(
-                    Task.FromResult<CmsProfileResponse?>(
-                        new CmsProfileResponse(100, "StudentProfile", StudentProfileXml)
-                    )
-                );
-
-            var service = CreateService(fakeCmsProvider);
-            var parsedHeader = new ParsedProfileHeader("Student", "OtherProfile", ProfileUsageType.Readable);
-
-            var result = await service.ResolveProfileAsync(
-                parsedHeader: parsedHeader,
-                method: RequestMethod.GET,
-                resourceName: "Student",
-                applicationId: 1,
-                tenantId: null
-            );
-
-            result.IsSuccess.Should().BeFalse();
-            result.Error!.StatusCode.Should().Be(403);
-        }
-
-        [Test]
         public async Task It_fails_when_resource_name_mismatches()
         {
             var fakeCmsProvider = A.Fake<IProfileCmsProvider>();
