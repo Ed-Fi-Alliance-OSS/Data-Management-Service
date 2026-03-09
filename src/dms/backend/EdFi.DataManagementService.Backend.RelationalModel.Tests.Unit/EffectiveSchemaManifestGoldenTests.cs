@@ -278,6 +278,7 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaManifest
 {
     private string _diffOutput = default!;
     private string[] _resourceKeys = default!;
+    private string _resourceKeySeedHashHex = default!;
 
     /// <summary>
     /// Sets up the test fixture.
@@ -339,7 +340,9 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaManifest
             effectiveSchemaSet.EffectiveSchema,
             includeResourceKeys: true
         );
-        _resourceKeys = JsonNode.Parse(manifest)!["resource_keys"]!
+        var manifestRoot = JsonNode.Parse(manifest)!.AsObject();
+        _resourceKeySeedHashHex = manifestRoot["resource_key_seed_hash"]!.GetValue<string>();
+        _resourceKeys = manifestRoot["resource_keys"]!
             .AsArray()
             .Select(resourceKey =>
                 $"{resourceKey!["project_name"]!.GetValue<string>()}:{resourceKey["resource_name"]!.GetValue<string>()}"
@@ -395,6 +398,34 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaManifest
                 "Sample:StudentSchoolAssociation",
                 "Sample:StudentSectionAssociation",
             ]);
+    }
+
+    /// <summary>
+    /// It should retain true extension-project resources in resource keys.
+    /// </summary>
+    [Test]
+    public void It_should_keep_true_extension_project_resources_in_resource_keys()
+    {
+        _resourceKeys
+            .Should()
+            .Contain([
+                "Sample:ArtMediumDescriptor",
+                "Sample:Bus",
+                "Sample:BusRoute",
+                "Sample:FavoriteBookCategoryDescriptor",
+                "Sample:MembershipTypeDescriptor",
+                "Sample:StudentArtProgramAssociation",
+                "Sample:StudentGraduationPlanAssociation",
+            ]);
+    }
+
+    /// <summary>
+    /// It should emit a runtime-style SHA-256 resource key seed hash.
+    /// </summary>
+    [Test]
+    public void It_should_emit_a_runtime_style_sha256_seed_hash()
+    {
+        _resourceKeySeedHashHex.Should().MatchRegex("^[0-9a-f]{64}$");
     }
 }
 

@@ -58,4 +58,10 @@ public class Given_EffectiveSchemaSetFixtureBuilder_With_Resource_Extensions
             .EffectiveSchema.ResourceKeysInIdOrder.Should()
             .ContainSingle(entry => entry.Resource == new QualifiedResourceName("Sample", "BusRoute"));
     }
+
+    [Test]
+    public void It_computes_a_full_sha256_resource_key_seed_hash()
+    {
+        _effectiveSchemaSet.EffectiveSchema.ResourceKeySeedHash.Should().HaveCount(32);
+    }
 }

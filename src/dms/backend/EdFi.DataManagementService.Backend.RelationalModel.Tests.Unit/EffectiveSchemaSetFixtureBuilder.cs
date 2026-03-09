@@ -5,6 +5,9 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.RelationalModel;
+using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.Startup;
+using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Backend.RelationalModel.Schema.RelationalModelSetSchemaHelpers;
 
@@ -18,7 +21,6 @@ internal static class EffectiveSchemaSetFixtureBuilder
     private const string DefaultApiSchemaFormatVersion = "1.0.0";
     private const string DefaultRelationalMappingVersion = "1.0.0";
     private const string DefaultEffectiveSchemaHash = "edf1edf1";
-    private static readonly byte[] DefaultResourceKeySeedHash = { 0x01 };
 
     /// <summary>
     /// Create hand authored effective schema set.
@@ -106,14 +108,14 @@ internal static class EffectiveSchemaSetFixtureBuilder
             ))
             .ToArray();
 
-        var resourceKeys = BuildResourceKeyEntries(projects);
+        var (resourceKeys, resourceKeySeedHash) = BuildResourceKeyMetadata(projects);
 
         var effectiveSchemaInfo = new EffectiveSchemaInfo(
             DefaultApiSchemaFormatVersion,
             DefaultRelationalMappingVersion,
             DefaultEffectiveSchemaHash,
             EffectiveSchemaFingerprintContract.CreateResourceKeyCountOrThrow(resourceKeys.Count),
-            DefaultResourceKeySeedHash,
+            resourceKeySeedHash,
             schemaComponents,
             resourceKeys
         );
@@ -152,104 +154,77 @@ internal static class EffectiveSchemaSetFixtureBuilder
     /// <summary>
     /// Build resource key entries.
     /// </summary>
-    private static IReadOnlyList<ResourceKeyEntry> BuildResourceKeyEntries(
+    private static (IReadOnlyList<ResourceKeyEntry> ResourceKeys, byte[] SeedHash) BuildResourceKeyMetadata(
         IReadOnlyList<EffectiveProjectSchema> projects
     )
     {
-        List<ResourceKeySeed> seeds = [];
-
-        foreach (var project in projects)
+        if (projects.Count == 0)
         {
-            var projectSchema =
-                project.ProjectSchema
-                ?? throw new InvalidOperationException("ProjectSchema must be provided.");
-
-            AddResourceKeySeeds(
-                seeds,
-                RequireObject(projectSchema["resourceSchemas"], "projectSchema.resourceSchemas"),
-                project.ProjectName,
-                project.ProjectVersion,
-                false,
-                "projectSchema.resourceSchemas"
-            );
-
-            if (projectSchema["abstractResources"] is JsonObject abstractResources)
-            {
-                AddResourceKeySeeds(
-                    seeds,
-                    abstractResources,
-                    project.ProjectName,
-                    project.ProjectVersion,
-                    true,
-                    "projectSchema.abstractResources"
-                );
-            }
+            throw new InvalidOperationException("At least one project schema must be provided.");
         }
 
-        var orderedSeeds = seeds
-            .OrderBy(seed => seed.Resource.ProjectName, StringComparer.Ordinal)
-            .ThenBy(seed => seed.Resource.ResourceName, StringComparer.Ordinal)
+        var seedProvider = new ResourceKeySeedProvider(NullLogger<ResourceKeySeedProvider>.Instance);
+        var apiSchemaNodes = BuildApiSchemaDocumentNodes(projects);
+        var seeds = seedProvider.GetSeeds(apiSchemaNodes);
+        var seedHash = seedProvider.ComputeSeedHash(seeds);
+
+        var resourceKeys = seeds
+            .Select(seed => new ResourceKeyEntry(
+                seed.ResourceKeyId,
+                new QualifiedResourceName(seed.ProjectName, seed.ResourceName),
+                seed.ResourceVersion,
+                seed.IsAbstract
+            ))
             .ToArray();
 
-        List<ResourceKeyEntry> entries = new(orderedSeeds.Length);
-        short nextId = 1;
-
-        foreach (var seed in orderedSeeds)
-        {
-            entries.Add(
-                new ResourceKeyEntry(nextId, seed.Resource, seed.ResourceVersion, seed.IsAbstractResource)
-            );
-            nextId++;
-        }
-
-        return entries;
+        return (resourceKeys, seedHash);
     }
 
     /// <summary>
-    /// Add resource key seeds.
+    /// Build API schema document nodes for the runtime resource-key seed provider.
     /// </summary>
-    private static void AddResourceKeySeeds(
-        ICollection<ResourceKeySeed> seeds,
-        JsonObject resourceSchemas,
-        string projectName,
-        string projectVersion,
-        bool isAbstractResource,
-        string resourceSchemasPath
+    private static ApiSchemaDocumentNodes BuildApiSchemaDocumentNodes(
+        IReadOnlyList<EffectiveProjectSchema> projects
     )
     {
-        foreach (var resourceSchemaEntry in resourceSchemas)
+        var orderedProjects = projects
+            .OrderBy(project => project.IsExtensionProject)
+            .ThenBy(project => project.ProjectEndpointName, StringComparer.Ordinal)
+            .ToArray();
+
+        var coreRoot = WrapProjectSchemaInApiSchemaRoot(orderedProjects[0]);
+        var extensionRoots = orderedProjects.Skip(1).Select(WrapProjectSchemaInApiSchemaRoot).ToArray();
+
+        return new ApiSchemaDocumentNodes(coreRoot, extensionRoots);
+    }
+
+    /// <summary>
+    /// Wrap project schema content in a minimal ApiSchema root object.
+    /// </summary>
+    private static JsonObject WrapProjectSchemaInApiSchemaRoot(EffectiveProjectSchema project)
+    {
+        if (project.ProjectSchema is null)
         {
-            if (resourceSchemaEntry.Value is null)
-            {
-                throw new InvalidOperationException(
-                    $"Expected {resourceSchemasPath} entries to be non-null, invalid ApiSchema."
-                );
-            }
-
-            if (resourceSchemaEntry.Value is not JsonObject resourceSchema)
-            {
-                throw new InvalidOperationException(
-                    $"Expected {resourceSchemasPath} entries to be objects, invalid ApiSchema."
-                );
-            }
-
-            if (string.IsNullOrWhiteSpace(resourceSchemaEntry.Key))
-            {
-                throw new InvalidOperationException(
-                    "Expected resource schema entry key to be non-empty, invalid ApiSchema."
-                );
-            }
-
-            var resourceName = GetResourceName(resourceSchemaEntry.Key, resourceSchema);
-            var resource = new QualifiedResourceName(projectName, resourceName);
-
-            if (!isAbstractResource && IsResourceExtension(resourceSchema, resource))
-            {
-                continue;
-            }
-
-            seeds.Add(new ResourceKeySeed(resource, projectVersion, isAbstractResource));
+            throw new InvalidOperationException("ProjectSchema must be provided.");
         }
+
+        if (project.ProjectSchema.DeepClone() is not JsonObject projectSchema)
+        {
+            throw new InvalidOperationException("ProjectSchema must be an object.");
+        }
+
+        projectSchema["projectName"] ??= project.ProjectName;
+        projectSchema["projectEndpointName"] ??= project.ProjectEndpointName;
+        projectSchema["projectVersion"] ??= project.ProjectVersion;
+        projectSchema["abstractResources"] ??= new JsonObject();
+        projectSchema["resourceSchemas"] ??= new JsonObject();
+        projectSchema["isExtensionProject"] ??= project.IsExtensionProject;
+
+        return new JsonObject
+        {
+            ["apiSchemaVersion"] = DefaultApiSchemaFormatVersion,
+            ["projectSchema"] = projectSchema,
+        };
     }
 
     /// <summary>
@@ -311,13 +286,4 @@ internal static class EffectiveSchemaSetFixtureBuilder
 
         return projectSchema;
     }
-
-    /// <summary>
-    /// Test type resource key seed.
-    /// </summary>
-    private sealed record ResourceKeySeed(
-        QualifiedResourceName Resource,
-        string ResourceVersion,
-        bool IsAbstractResource
-    );
 }

@@ -3,7 +3,7 @@
   "relational_mapping_version": "1.0.0",
   "effective_schema_hash": "edf1edf1",
   "resource_key_count": 351,
-  "resource_key_seed_hash": "01",
+  "resource_key_seed_hash": "fae376b7b81722efe1878226a49200d74ae68febac7d21f5121a0824236e981b",
   "schema_components": [
     {
       "project_endpoint_name": "ed-fi",
