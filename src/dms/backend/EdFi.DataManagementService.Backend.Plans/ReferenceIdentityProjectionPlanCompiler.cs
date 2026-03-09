@@ -31,15 +31,31 @@ internal sealed class ReferenceIdentityProjectionPlanCompiler
 
         foreach (var tableModel in resourceModel.TablesInDependencyOrder)
         {
-            var bindingsInOrder = resourceModel
+            var documentReferenceBindings = resourceModel
                 .DocumentReferenceBindings.Where(binding => binding.Table.Equals(tableModel.Table))
+                .ToArray();
+
+            if (documentReferenceBindings.Length == 0)
+            {
+                continue;
+            }
+
+            var columnOrdinals = ProjectionMetadataResolver.ResolveHydrationColumnOrdinalsOrThrow(
+                tableModel.Table,
+                columnOrdinalsByTable,
+                missingTable => new InvalidOperationException(
+                    $"Cannot compile reference identity projection plan for '{missingTable}': owning table is not present in TablesInDependencyOrder."
+                )
+            );
+
+            var bindingsInOrder = documentReferenceBindings
                 .Select(binding =>
                 {
-                    var columnOrdinals = ProjectionMetadataResolver.ResolveHydrationColumnOrdinalsOrThrow(
-                        binding.Table,
-                        columnOrdinalsByTable,
-                        missingTable => new InvalidOperationException(
-                            $"Cannot compile reference identity projection plan for '{missingTable}': owning table is not present in TablesInDependencyOrder."
+                    var logicalFieldsInOrder = ReferenceIdentityProjectionLogicalFieldResolver.ResolveOrThrow(
+                        tableModel,
+                        binding,
+                        reason => new InvalidOperationException(
+                            $"Cannot compile reference identity projection plan for '{binding.Table}': {reason}."
                         )
                     );
 
@@ -54,14 +70,14 @@ internal sealed class ReferenceIdentityProjectionPlanCompiler
                                 $"Cannot compile reference identity projection plan for '{binding.Table}': document-reference binding '{binding.ReferenceObjectPath.Canonical}' FK column '{missingColumn.Value}' does not exist in hydration select-list columns."
                             )
                         ),
-                        IdentityFieldOrdinalsInOrder: binding.IdentityBindings.Select(
-                            identityBinding => new ReferenceIdentityProjectionFieldOrdinal(
-                                ReferenceJsonPath: identityBinding.ReferenceJsonPath,
+                        IdentityFieldOrdinalsInOrder: logicalFieldsInOrder.Select(
+                            logicalField => new ReferenceIdentityProjectionFieldOrdinal(
+                                ReferenceJsonPath: logicalField.ReferenceJsonPath,
                                 ColumnOrdinal: ProjectionMetadataResolver.ResolveHydrationColumnOrdinalOrThrow(
                                     columnOrdinals,
-                                    identityBinding.Column,
+                                    logicalField.RepresentativeBindingColumn,
                                     missingColumn => new InvalidOperationException(
-                                        $"Cannot compile reference identity projection plan for '{binding.Table}': reference-identity binding '{identityBinding.ReferenceJsonPath.Canonical}' for reference '{binding.ReferenceObjectPath.Canonical}' column '{missingColumn.Value}' does not exist in hydration select-list columns."
+                                        $"Cannot compile reference identity projection plan for '{binding.Table}': grouped reference-identity binding '{logicalField.ReferenceJsonPath.Canonical}' for reference '{binding.ReferenceObjectPath.Canonical}' representative column '{missingColumn.Value}' does not exist in hydration select-list columns."
                                     )
                                 )
                             )
@@ -69,11 +85,6 @@ internal sealed class ReferenceIdentityProjectionPlanCompiler
                     );
                 })
                 .ToArray();
-
-            if (bindingsInOrder.Length == 0)
-            {
-                continue;
-            }
 
             plans.Add(
                 new ReferenceIdentityProjectionTablePlan(

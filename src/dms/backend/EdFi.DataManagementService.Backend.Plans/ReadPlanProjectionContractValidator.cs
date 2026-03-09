@@ -205,11 +205,45 @@ internal static class ReadPlanProjectionContractValidator
                     createException
                 );
 
-                if (binding.IdentityFieldOrdinalsInOrder.Length != modelBinding.IdentityBindings.Count)
+                var authoritativeLogicalFields =
+                    ReferenceIdentityProjectionLogicalFieldResolver.ResolveOrThrow(
+                        hydrationTablePlan.TableModel,
+                        modelBinding,
+                        createException
+                    );
+
+                ThrowIfReferenceProjectionBindingContainsDuplicateLogicalFields(
+                    projectionTablePlan.Table,
+                    binding,
+                    createException
+                );
+
+                if (binding.IdentityFieldOrdinalsInOrder.Length != authoritativeLogicalFields.Count)
                 {
+                    var compiledReferenceJsonPathsInOrder = binding
+                        .IdentityFieldOrdinalsInOrder.Select(static field =>
+                            field.ReferenceJsonPath.Canonical
+                        )
+                        .ToArray();
+                    var authoritativeReferenceJsonPathsInOrder = authoritativeLogicalFields
+                        .Select(static logicalField => logicalField.ReferenceJsonPath.Canonical)
+                        .ToArray();
+                    var missingLogicalFields = authoritativeReferenceJsonPathsInOrder
+                        .Except(compiledReferenceJsonPathsInOrder, StringComparer.Ordinal)
+                        .Select(path => $"'{path}'")
+                        .ToArray();
+                    var unexpectedLogicalFields = compiledReferenceJsonPathsInOrder
+                        .Except(authoritativeReferenceJsonPathsInOrder, StringComparer.Ordinal)
+                        .Select(path => $"'{path}'")
+                        .ToArray();
+
                     throw createException(
                         $"reference identity projection binding '{modelBinding.ReferenceObjectPath.Canonical}' on table '{projectionTablePlan.Table}' field count "
-                            + $"'{binding.IdentityFieldOrdinalsInOrder.Length}' does not match model identity binding count '{modelBinding.IdentityBindings.Count}'"
+                            + $"'{binding.IdentityFieldOrdinalsInOrder.Length}' does not match authoritative grouped logical field count '{authoritativeLogicalFields.Count}' "
+                            + $"for ordered logical fields {FormatReferenceFieldOrder(authoritativeReferenceJsonPathsInOrder)}; "
+                            + $"compiled order was {FormatReferenceFieldOrder(compiledReferenceJsonPathsInOrder)}; "
+                            + $"missing logical field(s): {FormatOptionalPathList(missingLogicalFields)}; "
+                            + $"unexpected logical field(s): {FormatOptionalPathList(unexpectedLogicalFields)}"
                     );
                 }
 
@@ -229,15 +263,15 @@ internal static class ReadPlanProjectionContractValidator
                     );
 
                     var fieldColumnModel = hydrationTablePlan.TableModel.Columns[fieldOrdinal.ColumnOrdinal];
-                    var modelIdentityBinding = modelBinding.IdentityBindings[fieldIndex];
+                    var authoritativeLogicalField = authoritativeLogicalFields[fieldIndex];
 
                     ValidateReferenceProjectionFieldContractOrThrow(
                         projectionTablePlan.Table,
+                        binding.ReferenceObjectPath,
                         fieldOrdinal,
                         fieldIndex,
                         fieldColumnModel,
-                        modelBinding,
-                        modelIdentityBinding,
+                        authoritativeLogicalField,
                         createException
                     );
                 }
@@ -532,36 +566,30 @@ internal static class ReadPlanProjectionContractValidator
 
     private static void ValidateReferenceProjectionFieldContractOrThrow(
         DbTableName table,
+        JsonPathExpression referenceObjectPath,
         ReferenceIdentityProjectionFieldOrdinal fieldOrdinal,
         int fieldIndex,
         DbColumnModel fieldColumnModel,
-        DocumentReferenceBinding modelBinding,
-        ReferenceIdentityBinding modelIdentityBinding,
+        ResolvedReferenceIdentityProjectionLogicalField authoritativeLogicalField,
         Func<string, Exception> createException
     )
     {
-        if (fieldOrdinal.ReferenceJsonPath.Canonical != modelIdentityBinding.ReferenceJsonPath.Canonical)
+        if (fieldOrdinal.ReferenceJsonPath.Canonical != authoritativeLogicalField.ReferenceJsonPath.Canonical)
         {
             throw createException(
-                $"reference identity projection field at index '{fieldIndex}' for reference '{modelBinding.ReferenceObjectPath.Canonical}' on table '{table}' has ReferenceJsonPath "
-                    + $"'{fieldOrdinal.ReferenceJsonPath.Canonical}', but model binding requires '{modelIdentityBinding.ReferenceJsonPath.Canonical}'"
+                $"reference identity projection field at index '{fieldIndex}' for reference '{referenceObjectPath.Canonical}' on table '{table}' has ReferenceJsonPath "
+                    + $"'{fieldOrdinal.ReferenceJsonPath.Canonical}', but grouped model binding requires '{authoritativeLogicalField.ReferenceJsonPath.Canonical}'"
             );
         }
 
-        if (fieldColumnModel.ColumnName != modelIdentityBinding.Column)
+        if (authoritativeLogicalField.MemberColumnsInOrder.Contains(fieldColumnModel.ColumnName))
         {
-            throw createException(
-                $"reference identity projection field '{fieldOrdinal.ReferenceJsonPath.Canonical}' at index '{fieldIndex}' on table '{table}' targets column "
-                    + $"'{fieldColumnModel.ColumnName.Value}', but model binding requires '{modelIdentityBinding.Column.Value}'"
-            );
+            return;
         }
 
-        ValidateReferenceIdentityBindingPathOrThrow(
-            table,
-            fieldColumnModel,
-            modelBinding,
-            modelIdentityBinding,
-            createException
+        throw createException(
+            $"reference identity projection field '{fieldOrdinal.ReferenceJsonPath.Canonical}' at index '{fieldIndex}' for reference '{referenceObjectPath.Canonical}' on table '{table}' targets column "
+                + $"'{fieldColumnModel.ColumnName.Value}', but grouped model binding allows only {FormatColumnOrder(authoritativeLogicalField.MemberColumnsInOrder)}"
         );
     }
 
@@ -692,6 +720,43 @@ internal static class ReadPlanProjectionContractValidator
                 bindings.Select(static binding => $"'{binding.ReferenceObjectPath.Canonical}'")
             )
             + "]";
+    }
+
+    private static void ThrowIfReferenceProjectionBindingContainsDuplicateLogicalFields(
+        DbTableName table,
+        ReferenceIdentityProjectionBinding binding,
+        Func<string, Exception> createException
+    )
+    {
+        HashSet<string> seenReferenceJsonPaths = new(StringComparer.Ordinal);
+
+        foreach (var fieldOrdinal in binding.IdentityFieldOrdinalsInOrder)
+        {
+            if (seenReferenceJsonPaths.Add(fieldOrdinal.ReferenceJsonPath.Canonical))
+            {
+                continue;
+            }
+
+            throw createException(
+                $"reference identity projection binding '{binding.ReferenceObjectPath.Canonical}' on table '{table}' contains duplicate logical field '{fieldOrdinal.ReferenceJsonPath.Canonical}'"
+            );
+        }
+    }
+
+    private static string FormatReferenceFieldOrder(IEnumerable<string> referenceJsonPaths)
+    {
+        return "[" + string.Join(", ", referenceJsonPaths.Select(path => $"'{path}'")) + "]";
+    }
+
+    private static string FormatColumnOrder(IEnumerable<DbColumnName> columns)
+    {
+        return "[" + string.Join(", ", columns.Select(static column => $"'{column.Value}'")) + "]";
+    }
+
+    private static string FormatOptionalPathList(IEnumerable<string> formattedPaths)
+    {
+        var paths = formattedPaths.ToArray();
+        return paths.Length == 0 ? "<none>" : string.Join(", ", paths);
     }
 
     private static bool DescriptorSourcesMatch(DescriptorEdgeSource actual, DescriptorEdgeSource expected)

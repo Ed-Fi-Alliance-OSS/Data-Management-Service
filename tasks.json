@@ -48,7 +48,7 @@
       "Retain or add a positive regression test proving a normal reference projection without duplicate logical fields still compiles to the same ordinals as before.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~Given_ReadPlanCompiler`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Normalized Grouped Projection Decode",

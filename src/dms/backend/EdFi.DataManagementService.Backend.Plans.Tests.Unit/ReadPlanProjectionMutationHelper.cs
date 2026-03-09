@@ -77,6 +77,95 @@ internal static class ReadPlanProjectionMutationHelper
         };
     }
 
+    public static ResourceReadPlan CreateReadPlanWithDuplicatedReferenceProjectionField(
+        ResourceReadPlan readPlan,
+        int sourceIndex,
+        int targetIndex
+    )
+    {
+        var projectionTablePlan = readPlan.ReferenceIdentityProjectionPlansInDependencyOrder.Single();
+        var binding = projectionTablePlan.BindingsInOrder.Single();
+        var identityFieldOrdinals = binding.IdentityFieldOrdinalsInOrder.ToArray();
+
+        identityFieldOrdinals[targetIndex] = identityFieldOrdinals[sourceIndex];
+
+        return readPlan with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder =
+            [
+                projectionTablePlan with
+                {
+                    BindingsInOrder =
+                    [
+                        binding with
+                        {
+                            IdentityFieldOrdinalsInOrder = [.. identityFieldOrdinals],
+                        },
+                    ],
+                },
+            ],
+        };
+    }
+
+    public static ResourceReadPlan CreateReadPlanWithOmittedReferenceProjectionField(
+        ResourceReadPlan readPlan,
+        int omittedFieldIndex
+    )
+    {
+        var projectionTablePlan = readPlan.ReferenceIdentityProjectionPlansInDependencyOrder.Single();
+        var binding = projectionTablePlan.BindingsInOrder.Single();
+        var identityFieldOrdinals = binding
+            .IdentityFieldOrdinalsInOrder.Where((_, index) => index != omittedFieldIndex)
+            .ToArray();
+
+        return readPlan with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder =
+            [
+                projectionTablePlan with
+                {
+                    BindingsInOrder =
+                    [
+                        binding with
+                        {
+                            IdentityFieldOrdinalsInOrder = [.. identityFieldOrdinals],
+                        },
+                    ],
+                },
+            ],
+        };
+    }
+
+    public static ResourceReadPlan CreateReadPlanWithSwappedReferenceProjectionFields(
+        ResourceReadPlan readPlan
+    )
+    {
+        var projectionTablePlan = readPlan.ReferenceIdentityProjectionPlansInDependencyOrder.Single();
+        var binding = projectionTablePlan.BindingsInOrder.Single();
+        var identityFieldOrdinals = binding.IdentityFieldOrdinalsInOrder.ToArray();
+        var firstField = identityFieldOrdinals[0];
+
+        identityFieldOrdinals[0] = identityFieldOrdinals[1];
+        identityFieldOrdinals[1] = firstField;
+
+        return readPlan with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder =
+            [
+                projectionTablePlan with
+                {
+                    BindingsInOrder =
+                    [
+                        binding with
+                        {
+                            IdentityFieldOrdinalsInOrder = [.. identityFieldOrdinals],
+                        },
+                    ],
+                },
+            ],
+        };
+    }
+
     public static ResourceReadPlan CreateReadPlanWithSwappedReferenceProjectionTablePlans(
         ResourceReadPlan readPlan
     )
