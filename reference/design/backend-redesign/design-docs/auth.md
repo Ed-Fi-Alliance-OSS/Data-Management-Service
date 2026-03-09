@@ -956,6 +956,7 @@ There are a few SQL queries that must filter based on a list:
 2. Filter the resource's Namespace based on the prefixes defined in the token
 3. In the GET-many scenario, filter the page by the authorized DocumentIds
 4. When retrieving the referenced resources DocumentIds using the `dms.ReferentialIdentity` table, we need to filter by a list of ReferentialIds
+5. Filter the resource's `CreatedByOwnershipTokenId` by the ownership tokens configured in the token
 
 PostgreSQL allows sending arrays as parameters (as shown in the POC above); the equivalent in SQL Server is Table-Valued Parameters (TVPs). Note that TVPs seem to degrade performance as reported [here](https://dba.stackexchange.com/a/344923).
 
@@ -977,6 +978,8 @@ CREATE TYPE dms.UniqueIdentifierTable AS TABLE(
  Id uniqueidentifier NOT NULL
 );
 ```
+
+Note that for Namespace prefixes and Ownership tokens, we won't use TVPs; we will throw an error whenever the token has 2,000 or more prefixes/ownership tokens.
 
 #### What is missing from the POC
 
@@ -1026,7 +1029,7 @@ There are performance optimizations that we could implement for specific scenari
 
 ### SQL generation and AOT
 
-The resource-specific SQL checks should be lazily generated on first request and cached by the EffectiveSchemaHash.
+The resource-specific SQL checks should be lazily generated on first request and cached by (EffectiveSchemaHash, resource, securableElement).
 
 The [aot-compilation.md](aot-compilation.md) document says that SQL should be pre-computed and stored in .mpac files. This is out of scope for now. If we want to precompute the authorization statements, note that view-based statements cannot be pre-computed because they can be defined and configured after the ApiSchema.json has been generated.
 
