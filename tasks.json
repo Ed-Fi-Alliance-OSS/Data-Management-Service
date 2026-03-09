@@ -58,7 +58,7 @@
       "Add or update a positive normalized round-trip test proving a valid grouped projection survives encode/decode without changing logical field order or ordinals.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_ReadPlanCompiler|FullyQualifiedName~Given_NormalizedPlanContractCodec\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "PostgreSQL Startup Regression",

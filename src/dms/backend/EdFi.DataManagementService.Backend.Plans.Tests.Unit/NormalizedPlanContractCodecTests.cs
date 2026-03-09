@@ -252,6 +252,42 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_roundtrip_grouped_reference_projection_fields_through_normalized_dto_without_losing_logical_field_order_or_ordinals()
+    {
+        var groupedModel = CreateGroupedReferenceProjectionResourceModel();
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(groupedModel);
+        var encoded = NormalizedPlanContractCodec.Encode(readPlan);
+        var decoded = NormalizedPlanContractCodec.Decode(encoded, groupedModel);
+        var reEncoded = NormalizedPlanContractCodec.Encode(decoded);
+
+        NormalizedPlanDtoJson
+            .ComputeCanonicalSha256(reEncoded)
+            .Should()
+            .Be(NormalizedPlanDtoJson.ComputeCanonicalSha256(encoded));
+
+        var sourceBinding = readPlan
+            .ReferenceIdentityProjectionPlansInDependencyOrder.Single()
+            .BindingsInOrder.Single();
+        var decodedBinding = decoded
+            .ReferenceIdentityProjectionPlansInDependencyOrder.Single()
+            .BindingsInOrder.Single();
+
+        decodedBinding.ReferenceObjectPath.Canonical.Should().Be("$.schoolReference");
+        decodedBinding
+            .IdentityFieldOrdinalsInOrder.Select(static field => field.ReferenceJsonPath.Canonical)
+            .Should()
+            .Equal(
+                sourceBinding.IdentityFieldOrdinalsInOrder.Select(static field =>
+                    field.ReferenceJsonPath.Canonical
+                )
+            );
+        decodedBinding
+            .IdentityFieldOrdinalsInOrder.Select(static field => field.ColumnOrdinal)
+            .Should()
+            .Equal(sourceBinding.IdentityFieldOrdinalsInOrder.Select(static field => field.ColumnOrdinal));
+    }
+
+    [Test]
     public void It_should_roundtrip_multi_table_resource_read_plan_through_normalized_dto_without_collapsing_story_05_shape()
     {
         var multiTableModel = CreateSupportedMultiTableModel();
@@ -1030,6 +1066,77 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_fail_with_the_same_projection_contract_reason_as_direct_validation_when_a_grouped_reference_projection_field_is_duplicated()
+    {
+        var model = CreateGroupedReferenceProjectionResourceModel();
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(model);
+        var mutatedReadPlan = CreateReadPlanWithDuplicatedReferenceProjectionField(
+            readPlan,
+            sourceIndex: 0,
+            targetIndex: 1
+        );
+        var expectedReason = GetProjectionValidationFailureReason(mutatedReadPlan);
+        var mutated = CreateEncodedReadPlanWithMutatedSingleReferenceProjectionFields(
+            readPlan,
+            identityFieldOrdinals =>
+            {
+                identityFieldOrdinals[1] = identityFieldOrdinals[0];
+                return identityFieldOrdinals;
+            }
+        );
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, model);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        GetDecodedProjectionValidationFailureReason(exception.Message).Should().Be(expectedReason);
+    }
+
+    [Test]
+    public void It_should_fail_with_the_same_projection_contract_reason_as_direct_validation_when_a_grouped_reference_projection_field_is_omitted()
+    {
+        var model = CreateGroupedReferenceProjectionResourceModel();
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(model);
+        var mutatedReadPlan = CreateReadPlanWithOmittedReferenceProjectionField(
+            readPlan,
+            omittedFieldIndex: 1
+        );
+        var expectedReason = GetProjectionValidationFailureReason(mutatedReadPlan);
+        var mutated = CreateEncodedReadPlanWithMutatedSingleReferenceProjectionFields(
+            readPlan,
+            identityFieldOrdinals => [identityFieldOrdinals[0]]
+        );
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, model);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        GetDecodedProjectionValidationFailureReason(exception.Message).Should().Be(expectedReason);
+    }
+
+    [Test]
+    public void It_should_fail_with_the_same_projection_contract_reason_as_direct_validation_when_grouped_reference_projection_field_order_is_reordered()
+    {
+        var model = CreateGroupedReferenceProjectionResourceModel();
+        var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(model);
+        var mutatedReadPlan = CreateReadPlanWithSwappedReferenceProjectionFields(readPlan);
+        var expectedReason = GetProjectionValidationFailureReason(mutatedReadPlan);
+        var mutated = CreateEncodedReadPlanWithMutatedSingleReferenceProjectionFields(
+            readPlan,
+            identityFieldOrdinals =>
+            {
+                var firstField = identityFieldOrdinals[0];
+                identityFieldOrdinals[0] = identityFieldOrdinals[1];
+                identityFieldOrdinals[1] = firstField;
+                return identityFieldOrdinals;
+            }
+        );
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, model);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        GetDecodedProjectionValidationFailureReason(exception.Message).Should().Be(expectedReason);
+    }
+
+    [Test]
     public void It_should_fail_fast_when_query_parameters_are_missing_offset_role()
     {
         var encoded = NormalizedPlanContractCodec.Encode(_queryPlan);
@@ -1768,6 +1875,160 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     private static JsonPathExpression Path(string value)
     {
         return JsonPathExpressionCompiler.Compile(value);
+    }
+
+    private static ResourceReadPlanDto CreateEncodedReadPlanWithMutatedSingleReferenceProjectionFields(
+        ResourceReadPlan readPlan,
+        Func<
+            ReferenceIdentityProjectionFieldOrdinalDto[],
+            ReferenceIdentityProjectionFieldOrdinalDto[]
+        > mutate
+    )
+    {
+        var encoded = NormalizedPlanContractCodec.Encode(readPlan);
+        var projectionTablePlan = encoded.ReferenceIdentityProjectionPlansInDependencyOrder.Single();
+        var binding = projectionTablePlan.BindingsInOrder.Single();
+        var mutatedFieldOrdinals = mutate(binding.IdentityFieldOrdinalsInOrder.ToArray());
+
+        return encoded with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder =
+            [
+                projectionTablePlan with
+                {
+                    BindingsInOrder =
+                    [
+                        binding with
+                        {
+                            IdentityFieldOrdinalsInOrder = [.. mutatedFieldOrdinals],
+                        },
+                    ],
+                },
+            ],
+        };
+    }
+
+    private static RelationalResourceModel CreateGroupedReferenceProjectionResourceModel()
+    {
+        var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
+        var schoolReferencePath = Path("$.schoolReference");
+        var schoolIdPath = Path("$.schoolReference.schoolId");
+        var schoolYearPath = Path("$.schoolReference.schoolYear");
+        var rootTable = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), "StudentGroupedReferenceProjection"),
+            JsonScope: Path("$"),
+            Key: new TableKey(
+                ConstraintName: "PK_StudentGroupedReferenceProjection",
+                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("DocumentId"),
+                    Kind: ColumnKind.ParentKeyPart,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_DocumentId"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: schoolReferencePath,
+                    TargetResource: schoolResource
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("SchoolIdCanonical"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: true,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_RefSchoolIdSecondary"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: true,
+                    SourceJsonPath: schoolIdPath,
+                    TargetResource: null,
+                    Storage: new ColumnStorage.UnifiedAlias(
+                        CanonicalColumn: new DbColumnName("SchoolIdCanonical"),
+                        PresenceColumn: new DbColumnName("School_DocumentId")
+                    )
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_RefSchoolYear"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: true,
+                    SourceJsonPath: schoolYearPath,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_RefSchoolIdPrimary"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: true,
+                    SourceJsonPath: schoolIdPath,
+                    TargetResource: null,
+                    Storage: new ColumnStorage.UnifiedAlias(
+                        CanonicalColumn: new DbColumnName("SchoolIdCanonical"),
+                        PresenceColumn: new DbColumnName("School_DocumentId")
+                    )
+                ),
+            ],
+            Constraints: []
+        )
+        {
+            KeyUnificationClasses =
+            [
+                new KeyUnificationClass(
+                    CanonicalColumn: new DbColumnName("SchoolIdCanonical"),
+                    MemberPathColumns:
+                    [
+                        new DbColumnName("School_RefSchoolIdSecondary"),
+                        new DbColumnName("School_RefSchoolIdPrimary"),
+                    ]
+                ),
+            ],
+        };
+
+        return new RelationalResourceModel(
+            Resource: new QualifiedResourceName("Ed-Fi", "StudentGroupedReferenceProjection"),
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: ResourceStorageKind.RelationalTables,
+            Root: rootTable,
+            TablesInDependencyOrder: [rootTable],
+            DocumentReferenceBindings:
+            [
+                new DocumentReferenceBinding(
+                    IsIdentityComponent: true,
+                    ReferenceObjectPath: schoolReferencePath,
+                    Table: rootTable.Table,
+                    FkColumn: new DbColumnName("School_DocumentId"),
+                    TargetResource: schoolResource,
+                    IdentityBindings:
+                    [
+                        new ReferenceIdentityBinding(
+                            ReferenceJsonPath: schoolIdPath,
+                            Column: new DbColumnName("School_RefSchoolIdSecondary")
+                        ),
+                        new ReferenceIdentityBinding(
+                            ReferenceJsonPath: schoolYearPath,
+                            Column: new DbColumnName("School_RefSchoolYear")
+                        ),
+                        new ReferenceIdentityBinding(
+                            ReferenceJsonPath: schoolIdPath,
+                            Column: new DbColumnName("School_RefSchoolIdPrimary")
+                        ),
+                    ]
+                ),
+            ],
+            DescriptorEdgeSources: []
+        );
     }
 
     private static RelationalResourceModel CreateModelWithPermutedDocumentReferenceBindings(
