@@ -267,3 +267,46 @@ Feature: Profile Header Validation
         Scenario: 10 Valid profile header for correct resource succeeds
              When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly" for resource "School"
              Then the profile response status is 200
+
+        Scenario: 11 Valid profile Content-Type with media-type parameters for POST succeeds
+             When a POST request is made to "/ed-fi/schools" with Content-Type header "application/vnd.ed-fi.school.e2e-test-school-includeonly.writable+json; charset=utf-8" and body
+                 """
+                 {
+                     "schoolId": 99000314,
+                     "nameOfInstitution": "Valid Content-Type Header POST",
+                     "educationOrganizationCategories": [
+                         {
+                             "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                         }
+                     ],
+                     "gradeLevels": [
+                         {
+                             "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+                         }
+                     ]
+                 }
+                 """
+             Then the profile response status is 201
+
+        Scenario: 12 Valid profile Content-Type with media-type parameters for PUT succeeds
+             When a PUT request is made to "/ed-fi/schools/{id}" with Content-Type header "application/vnd.ed-fi.school.e2e-test-school-includeonly.writable+json; charset=utf-8" and body
+                 """
+                 {
+                     "id": "{id}",
+                     "schoolId": 99000304,
+                     "nameOfInstitution": "Valid Content-Type Header PUT",
+                     "shortNameOfInstitution": "RCTS",
+                     "webSite": "https://coverage.example.com",
+                     "educationOrganizationCategories": [
+                         {
+                             "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                         }
+                     ],
+                     "gradeLevels": [
+                         {
+                             "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+                         }
+                     ]
+                 }
+                 """
+             Then the profile response status is 204
