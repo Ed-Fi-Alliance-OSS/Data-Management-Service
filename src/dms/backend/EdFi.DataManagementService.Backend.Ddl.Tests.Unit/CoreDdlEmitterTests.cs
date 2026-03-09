@@ -626,6 +626,20 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     }
 
     [Test]
+    public void It_should_emit_go_batch_separator_before_function()
+    {
+        // CREATE OR ALTER FUNCTION must be the first statement in a T-SQL batch
+        var functionIndex = _ddl.IndexOf("CREATE OR ALTER FUNCTION");
+        var goIndex = _ddl.LastIndexOf("GO\n", functionIndex);
+
+        goIndex.Should().BeGreaterOrEqualTo(0, "expected GO batch separator in DDL");
+        functionIndex.Should().BeGreaterThan(goIndex);
+        // The GO should be immediately before the function (only whitespace between)
+        var between = _ddl.Substring(goIndex + 3, functionIndex - goIndex - 3);
+        between.Trim().Should().BeEmpty("GO should immediately precede CREATE OR ALTER FUNCTION");
+    }
+
+    [Test]
     public void It_should_emit_uuidv5_before_triggers()
     {
         var funcPos = _ddl.IndexOf("[dms].[uuidv5]", StringComparison.Ordinal);
