@@ -108,7 +108,7 @@
       "Regenerate the affected authoritative manifests and confirm extension resources are removed from the expected resource-key list while non-extension resources remain stable.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Startup Failure Status Surfacing",
@@ -118,6 +118,6 @@
       "Validate the design with a failing startup scenario and confirm CI or local tooling can report the startup phase and summarized failure reason without manually inspecting every container log.",
       "If code is added, run the relevant DMS startup and health/readiness test coverage or add new coverage that proves the status signal is emitted when startup fails before route binding."
     ],
-    "completed": false
+    "completed": true
   }
 ]

@@ -469,6 +469,45 @@ jobs:
           name: discovery-spec
           path: specs/discovery-spec.json
 
+      - name: Export DMS Startup Diagnostics
+        if: failure()
+        run: |
+          $diagnosticsDir = "${{ github.workspace }}/logs"
+          New-Item -ItemType Directory -Path $diagnosticsDir -Force | Out-Null
+
+          $dmsContainer = docker ps -a --format "{{.Names}}" | Where-Object {
+            $_ -eq "dms-local-dms" -or $_ -like "dms-local-dms*"
+          } | Select-Object -First 1
+
+          if ($null -eq $dmsContainer) {
+            Write-Host "No DMS container was found for startup diagnostics."
+            exit 0
+          }
+
+          $statusArtifactPath = Join-Path $diagnosticsDir "dms-startup-status.json"
+          docker cp "${dmsContainer}:/tmp/dms-startup-status.json" $statusArtifactPath 2>$null
+
+          if (Test-Path $statusArtifactPath) {
+            Write-Host "`n========== DMS Startup Status =========="
+            Get-Content $statusArtifactPath
+            Write-Host "=======================================`n"
+          }
+          else {
+            Write-Host "DMS startup status file was not present in container $dmsContainer."
+          }
+
+          $dmsLogPath = Join-Path $diagnosticsDir "$dmsContainer.log"
+          docker logs $dmsContainer > $dmsLogPath 2>&1
+
+      - name: Upload DMS Startup Diagnostics
+        if: failure()
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
+        with:
+          name: build-and-start-dms-diagnostics
+          path: |
+            ${{ github.workspace }}/logs
+          retention-days: 10
+
   validate-resources-spec:
     name: Validate Resources Spec
     runs-on: ubuntu-latest

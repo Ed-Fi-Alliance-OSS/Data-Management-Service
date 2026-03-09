@@ -29,79 +29,105 @@ using ResponseCompressionDefaults = Microsoft.AspNetCore.ResponseCompression.Res
 Environment.SetEnvironmentVariable("DOTNET_hostBuilder:reloadConfigOnChange", "false");
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddHttpClient();
-builder.AddServices();
+var bootstrapStartupStatusSignal = new FileStartupStatusSignal(
+    builder.Configuration.GetValue<string>("AppSettings:StartupStatusFilePath")
+);
+bool enableAspNetCompression = false;
+bool useReverseProxyHeaders = false;
 
-builder.Services.ConfigureHttpJsonOptions(options =>
-{
-    options.SerializerOptions.Encoder = EdFi.DataManagementService
-        .Frontend
-        .AspNetCore
-        .AspNetCoreFrontend
-        .SharedSerializerOptions
-        .Encoder;
-    options.SerializerOptions.DefaultIgnoreCondition = EdFi.DataManagementService
-        .Frontend
-        .AspNetCore
-        .AspNetCoreFrontend
-        .SharedSerializerOptions
-        .DefaultIgnoreCondition;
-});
-
-bool enableAspNetCompression = builder.Configuration.GetValue<bool>("AppSettings:EnableAspNetCompression");
-
-if (enableAspNetCompression)
-{
-    builder.Services.AddResponseCompression(options =>
+RunBootstrapPhase(
+    DmsStartupPhases.ConfigureServices,
+    "Configured DMS services.",
+    "Configuring DMS services failed before the application host was built.",
+    () =>
     {
-        options.EnableForHttps = true;
-        options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(new[] { "application/json" });
-    });
-}
-
-// Configure request size limits for schema upload
-builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
-{
-    options.ValueLengthLimit = 10 * 1024 * 1024; // 10MB
-    options.MultipartBodyLengthLimit = 10 * 1024 * 1024; // 10MB
-});
-
-builder.Services.Configure<KestrelServerOptions>(options =>
-{
-    options.Limits.MaxRequestBodySize = 10 * 1024 * 1024; // 10MB
-});
-
-var useReverseProxyHeaders = builder.Configuration.GetValue<bool>("AppSettings:UseReverseProxyHeaders");
-if (useReverseProxyHeaders)
-{
-    builder.Services.Configure<ForwardedHeadersOptions>(options =>
-    {
-        options.ForwardedHeaders =
-            ForwardedHeaders.XForwardedFor
-            | ForwardedHeaders.XForwardedHost
-            | ForwardedHeaders.XForwardedProto;
-
-        // Accept forwarded headers from any network and proxy
-        options.KnownIPNetworks.Clear();
-        options.KnownProxies.Clear();
-    });
-}
-
-// Add CORS policy to allow Swagger UI to access the API
-string swaggerUiOrigin =
-    builder.Configuration.GetValue<string>("Cors:SwaggerUIOrigin") ?? "http://localhost:8082";
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy(
-        "AllowSwaggerUI",
-        policy =>
+        builder.Services.AddHttpClient();
+        builder.AddServices();
+        builder.Services.ConfigureHttpJsonOptions(options =>
         {
-            policy.WithOrigins(swaggerUiOrigin).AllowAnyHeader().AllowAnyMethod();
-        }
-    );
-});
+            options.SerializerOptions.Encoder = EdFi.DataManagementService
+                .Frontend
+                .AspNetCore
+                .AspNetCoreFrontend
+                .SharedSerializerOptions
+                .Encoder;
+            options.SerializerOptions.DefaultIgnoreCondition = EdFi.DataManagementService
+                .Frontend
+                .AspNetCore
+                .AspNetCoreFrontend
+                .SharedSerializerOptions
+                .DefaultIgnoreCondition;
+        });
 
-var app = builder.Build();
+        enableAspNetCompression = builder.Configuration.GetValue<bool>("AppSettings:EnableAspNetCompression");
+
+        if (enableAspNetCompression)
+        {
+            builder.Services.AddResponseCompression(options =>
+            {
+                options.EnableForHttps = true;
+                options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(
+                    new[] { "application/json" }
+                );
+            });
+        }
+
+        // Configure request size limits for schema upload
+        builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+        {
+            options.ValueLengthLimit = 10 * 1024 * 1024; // 10MB
+            options.MultipartBodyLengthLimit = 10 * 1024 * 1024; // 10MB
+        });
+
+        builder.Services.Configure<KestrelServerOptions>(options =>
+        {
+            options.Limits.MaxRequestBodySize = 10 * 1024 * 1024; // 10MB
+        });
+
+        useReverseProxyHeaders = builder.Configuration.GetValue<bool>("AppSettings:UseReverseProxyHeaders");
+
+        if (useReverseProxyHeaders)
+        {
+            builder.Services.Configure<ForwardedHeadersOptions>(options =>
+            {
+                options.ForwardedHeaders =
+                    ForwardedHeaders.XForwardedFor
+                    | ForwardedHeaders.XForwardedHost
+                    | ForwardedHeaders.XForwardedProto;
+
+                // Accept forwarded headers from any network and proxy
+                options.KnownIPNetworks.Clear();
+                options.KnownProxies.Clear();
+            });
+        }
+
+        // Add CORS policy to allow Swagger UI to access the API
+        string swaggerUiOrigin =
+            builder.Configuration.GetValue<string>("Cors:SwaggerUIOrigin") ?? "http://localhost:8082";
+        builder.Services.AddCors(options =>
+        {
+            options.AddPolicy(
+                "AllowSwaggerUI",
+                policy =>
+                {
+                    policy.WithOrigins(swaggerUiOrigin).AllowAnyHeader().AllowAnyMethod();
+                }
+            );
+        });
+    }
+);
+
+var app = RunBootstrapPhaseWithResult(
+    DmsStartupPhases.BuildApplication,
+    "Built DMS web application host.",
+    "Building the DMS web application host failed before HTTP binding.",
+    builder.Build
+);
+var startupPhaseExecutor = app.Services.GetRequiredService<StartupPhaseExecutor>();
+app.Logger.LogInformation(
+    "DMS startup status file path: {StartupStatusFilePath}",
+    startupPhaseExecutor.StatusFilePath
+);
 
 var pathBase = app.Configuration.GetValue<string>("AppSettings:PathBase");
 if (!string.IsNullOrEmpty(pathBase))
@@ -119,16 +145,47 @@ app.UseMiddleware<LoggingMiddleware>();
 if (!ReportInvalidConfiguration(app))
 {
     // Initialize DMS instances first to ensure connection strings are available
-    await InitializeDmsInstances(app);
-    InitializeDatabase(app);
-    await InitializeApiSchemas(app);
+    await startupPhaseExecutor.RunFatalAsync(
+        DmsStartupPhases.LoadDmsInstances,
+        "Loaded DMS instances from Configuration Service.",
+        "Unable to load DMS instances from Configuration Service. DMS cannot start without proper instance configuration.",
+        () => InitializeDmsInstances(app)
+    );
+    await startupPhaseExecutor.RunFatalAsync(
+        DmsStartupPhases.InitializeDatabase,
+        "Database startup deployment completed or was skipped.",
+        "Database deploy failed during DMS startup.",
+        () =>
+        {
+            InitializeDatabase(app);
+            return Task.CompletedTask;
+        }
+    );
+    await startupPhaseExecutor.RunFatalAsync(
+        DmsStartupPhases.InitializeApiSchemas,
+        "API schema initialization completed successfully.",
+        "API schema initialization failed. DMS cannot start with invalid schemas.",
+        () => InitializeApiSchemas(app)
+    );
     await RetrieveAndCacheClaimSets(app);
-    await WarmUpOidcMetadataCache(app);
+    await startupPhaseExecutor.RunFatalAsync(
+        DmsStartupPhases.WarmUpOidcMetadataCache,
+        "OIDC metadata cache warm-up completed or was skipped.",
+        "Unable to retrieve OIDC metadata from identity provider. JWT authentication will not function correctly.",
+        () => WarmUpOidcMetadataCache(app),
+        exitCode: 1
+    );
 
     if (enableAspNetCompression)
     {
         app.UseResponseCompression();
     }
+
+    startupPhaseExecutor.WriteStarting(
+        DmsStartupPhases.ConfigureEndpoints,
+        "Configuring DMS middleware and endpoints."
+    );
+
     app.UseRouting();
 
     if (app.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
@@ -161,6 +218,15 @@ if (!ReportInvalidConfiguration(app))
         );
         return context.Response.WriteAsJsonAsync(response);
     });
+
+    startupPhaseExecutor.WriteReady("DMS startup completed successfully and HTTP endpoints are configured.");
+}
+else
+{
+    startupPhaseExecutor.WriteCompleted(
+        DmsStartupPhases.ConfigureEndpoints,
+        "Configuration validation failed; requests are being short-circuited by invalid-configuration middleware."
+    );
 }
 
 await app.RunAsync();
@@ -192,105 +258,82 @@ void InitializeDatabase(WebApplication app)
     if (appSettings.DeployDatabaseOnStartup)
     {
         app.Logger.LogInformation("Running initial database deploy on all DMS instances");
-        try
+        var dmsInstanceProvider = app.Services.GetRequiredService<IDmsInstanceProvider>();
+        var connectionStringProvider = app.Services.GetRequiredService<IConnectionStringProvider>();
+        var databaseDeploy = app.Services.GetRequiredService<IDatabaseDeploy>();
+
+        // Get all loaded tenant keys and deploy to instances for each tenant
+        var loadedTenantKeys = dmsInstanceProvider.GetLoadedTenantKeys();
+        int totalInstancesDeployed = 0;
+
+        foreach (var tenantKey in loadedTenantKeys)
         {
-            var dmsInstanceProvider = app.Services.GetRequiredService<IDmsInstanceProvider>();
-            var connectionStringProvider = app.Services.GetRequiredService<IConnectionStringProvider>();
-            var databaseDeploy = app.Services.GetRequiredService<IDatabaseDeploy>();
+            // Convert empty string back to null for API calls
+            string? tenant = string.IsNullOrEmpty(tenantKey) ? null : tenantKey;
+            var instances = dmsInstanceProvider.GetAll(tenant);
 
-            // Get all loaded tenant keys and deploy to instances for each tenant
-            var loadedTenantKeys = dmsInstanceProvider.GetLoadedTenantKeys();
-            int totalInstancesDeployed = 0;
-
-            foreach (var tenantKey in loadedTenantKeys)
+            if (instances.Count == 0)
             {
-                // Convert empty string back to null for API calls
-                string? tenant = string.IsNullOrEmpty(tenantKey) ? null : tenantKey;
-                var instances = dmsInstanceProvider.GetAll(tenant);
-
-                if (instances.Count == 0)
-                {
-                    app.Logger.LogDebug(
-                        "No instances found for tenant '{Tenant}', skipping",
-                        tenant ?? "(default)"
-                    );
-                    continue;
-                }
-
-                app.Logger.LogInformation(
-                    "Deploying database schema to {InstanceCount} instances for tenant '{Tenant}'",
-                    instances.Count,
+                app.Logger.LogDebug(
+                    "No instances found for tenant '{Tenant}', skipping",
                     tenant ?? "(default)"
                 );
-
-                foreach (var instance in instances)
-                {
-                    app.Logger.LogInformation(
-                        "Deploying database schema to DMS instance '{InstanceName}' (ID: {InstanceId}) for tenant '{Tenant}'",
-                        instance.InstanceName,
-                        instance.Id,
-                        tenant ?? "(default)"
-                    );
-
-                    string connectionString =
-                        connectionStringProvider.GetConnectionString(instance.Id, tenant) ?? string.Empty;
-
-                    var result = databaseDeploy.DeployDatabase(connectionString);
-
-                    if (result is DatabaseDeployResult.DatabaseDeployFailure failure)
-                    {
-                        app.Logger.LogCritical(
-                            failure.Error,
-                            "Database Deploy Failure for instance '{InstanceName}' (ID: {InstanceId}) tenant '{Tenant}'",
-                            instance.InstanceName,
-                            instance.Id,
-                            tenant ?? "(default)"
-                        );
-                        Environment.Exit(-1);
-                    }
-
-                    app.Logger.LogInformation(
-                        "Successfully deployed database schema to DMS instance '{InstanceName}' (ID: {InstanceId})",
-                        instance.InstanceName,
-                        instance.Id
-                    );
-
-                    totalInstancesDeployed++;
-                }
+                continue;
             }
 
             app.Logger.LogInformation(
-                "Database deploy completed for {TotalInstanceCount} DMS instances across {TenantCount} tenants",
-                totalInstancesDeployed,
-                loadedTenantKeys.Count
+                "Deploying database schema to {InstanceCount} instances for tenant '{Tenant}'",
+                instances.Count,
+                tenant ?? "(default)"
             );
+
+            foreach (var instance in instances)
+            {
+                app.Logger.LogInformation(
+                    "Deploying database schema to DMS instance '{InstanceName}' (ID: {InstanceId}) for tenant '{Tenant}'",
+                    instance.InstanceName,
+                    instance.Id,
+                    tenant ?? "(default)"
+                );
+
+                string connectionString =
+                    connectionStringProvider.GetConnectionString(instance.Id, tenant) ?? string.Empty;
+
+                var result = databaseDeploy.DeployDatabase(connectionString);
+
+                if (result is DatabaseDeployResult.DatabaseDeployFailure failure)
+                {
+                    throw new InvalidOperationException(
+                        $"Database deploy failed for instance '{instance.InstanceName}' (ID: {instance.Id}) tenant '{tenant ?? "(default)"}'.",
+                        failure.Error
+                    );
+                }
+
+                app.Logger.LogInformation(
+                    "Successfully deployed database schema to DMS instance '{InstanceName}' (ID: {InstanceId})",
+                    instance.InstanceName,
+                    instance.Id
+                );
+
+                totalInstancesDeployed++;
+            }
         }
-        catch (Exception ex)
-        {
-            app.Logger.LogCritical(ex, "Database Deploy Failure");
-            Environment.Exit(-1);
-        }
+
+        app.Logger.LogInformation(
+            "Database deploy completed for {TotalInstanceCount} DMS instances across {TenantCount} tenants",
+            totalInstancesDeployed,
+            loadedTenantKeys.Count
+        );
     }
 }
 
 async Task InitializeApiSchemas(WebApplication app)
 {
     app.Logger.LogInformation("Initializing API schemas at startup");
-    try
-    {
-        var orchestrator = app.Services.GetRequiredService<DmsStartupOrchestrator>();
-        // Intentionally not cancellable - initialization must complete or fail entirely
-        await orchestrator.RunAllAsync(CancellationToken.None);
-        app.Logger.LogInformation("API schema initialization completed successfully");
-    }
-    catch (Exception ex)
-    {
-        app.Logger.LogCritical(
-            ex,
-            "API schema initialization failed. DMS cannot start with invalid schemas."
-        );
-        Environment.Exit(-1);
-    }
+    var orchestrator = app.Services.GetRequiredService<DmsStartupOrchestrator>();
+    // Intentionally not cancellable - initialization must complete or fail entirely
+    await orchestrator.RunAllAsync(CancellationToken.None);
+    app.Logger.LogInformation("API schema initialization completed successfully");
 }
 
 async Task RetrieveAndCacheClaimSets(WebApplication app)
@@ -334,27 +377,16 @@ async Task RetrieveAndCacheClaimSets(WebApplication app)
 async Task InitializeDmsInstances(WebApplication app)
 {
     app.Logger.LogInformation("Loading DMS instances from Configuration Service");
-    try
-    {
-        var dmsInstanceProvider = app.Services.GetRequiredService<IDmsInstanceProvider>();
-        var multiTenancyEnabled = app.Configuration.GetValue<bool>("AppSettings:MultiTenancy");
+    var dmsInstanceProvider = app.Services.GetRequiredService<IDmsInstanceProvider>();
+    var multiTenancyEnabled = app.Configuration.GetValue<bool>("AppSettings:MultiTenancy");
 
-        if (multiTenancyEnabled)
-        {
-            await InitializeDmsInstancesForMultiTenancy(app, dmsInstanceProvider);
-        }
-        else
-        {
-            await InitializeDmsInstancesForSingleTenancy(app, dmsInstanceProvider);
-        }
-    }
-    catch (Exception ex)
+    if (multiTenancyEnabled)
     {
-        app.Logger.LogCritical(
-            ex,
-            "Critical failure: Unable to load DMS instances from Configuration Service. DMS cannot start without proper instance configuration."
-        );
-        Environment.Exit(-1);
+        await InitializeDmsInstancesForMultiTenancy(app, dmsInstanceProvider);
+    }
+    else
+    {
+        await InitializeDmsInstancesForSingleTenancy(app, dmsInstanceProvider);
     }
 }
 
@@ -415,10 +447,9 @@ async Task InitializeDmsInstancesForSingleTenancy(
 
     if (instances.Count == 0)
     {
-        app.Logger.LogCritical(
+        throw new InvalidOperationException(
             "No DMS instances were loaded from Configuration Service. DMS cannot start without instance configuration."
         );
-        Environment.Exit(-1);
     }
 
     app.Logger.LogInformation("Successfully loaded {InstanceCount} DMS instances", instances.Count);
@@ -450,25 +481,45 @@ async Task WarmUpOidcMetadataCache(WebApplication app)
     }
 
     app.Logger.LogInformation("Warming up OIDC metadata cache");
+    var configManager = app.Services.GetRequiredService<IConfigurationManager<OpenIdConnectConfiguration>>();
+    var config = await configManager.GetConfigurationAsync(CancellationToken.None);
+    app.Logger.LogInformation(
+        "OIDC metadata cache warmed up successfully. Issuer: {Issuer}, SigningKeys: {SigningKeyCount}",
+        config.Issuer,
+        config.SigningKeys.Count
+    );
+}
+
+void RunBootstrapPhase(string phase, string successSummary, string failureSummary, Action action)
+{
+    bootstrapStartupStatusSignal.WriteStarting(phase, $"Starting {phase}.");
+
     try
     {
-        var configManager = app.Services.GetRequiredService<
-            IConfigurationManager<OpenIdConnectConfiguration>
-        >();
-        var config = await configManager.GetConfigurationAsync(CancellationToken.None);
-        app.Logger.LogInformation(
-            "OIDC metadata cache warmed up successfully. Issuer: {Issuer}, SigningKeys: {SigningKeyCount}",
-            config.Issuer,
-            config.SigningKeys.Count
-        );
+        action();
+        bootstrapStartupStatusSignal.WriteCompleted(phase, successSummary);
     }
     catch (Exception ex)
     {
-        app.Logger.LogCritical(
-            ex,
-            "Critical failure: Unable to retrieve OIDC metadata from identity provider. JWT authentication will not function correctly."
-        );
-        Environment.Exit(1);
+        bootstrapStartupStatusSignal.WriteFailed(phase, failureSummary, ex);
+        throw;
+    }
+}
+
+T RunBootstrapPhaseWithResult<T>(string phase, string successSummary, string failureSummary, Func<T> action)
+{
+    bootstrapStartupStatusSignal.WriteStarting(phase, $"Starting {phase}.");
+
+    try
+    {
+        T result = action();
+        bootstrapStartupStatusSignal.WriteCompleted(phase, successSummary);
+        return result;
+    }
+    catch (Exception ex)
+    {
+        bootstrapStartupStatusSignal.WriteFailed(phase, failureSummary, ex);
+        throw;
     }
 }
 

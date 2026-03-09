@@ -23,6 +23,7 @@ services:
       # Segment of the url to use as base for all request. The default path base is deliberately blank on the following line
       AppSettings__PathBase: ${PATH_BASE:-}
       AppSettings__UseReverseProxyHeaders: ${USE_REVERSE_PROXY_HEADERS:-false}
+      AppSettings__StartupStatusFilePath: ${DMS_STARTUP_STATUS_FILE_PATH:-/tmp/dms-startup-status.json}
       # The default correlation id header is deliberately blank on the following line
       AppSettings__CorrelationIdHeader: ${CORRELATION_ID_HEADER:-}
       AppSettings__Datastore: ${DMS_DATASTORE:-postgresql}
