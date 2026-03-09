@@ -2417,4 +2417,86 @@ public class OpenApiDocumentExtensionTests
             projectResult.Matches.Should().HaveCount(0);
         }
     }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Non_Resource_Extension_With_CommonExtensionOverrides
+        : OpenApiDocumentExtensionTests
+    {
+        private JsonNode? _resourceSpec;
+
+        private static JsonNode NonResourceExtensionWithCommonOverrides()
+        {
+            JsonArray commonOverrides =
+            [
+                new JsonObject
+                {
+                    ["insertionLocations"] = new JsonArray("$.properties.addresses.items"),
+                    ["schemaFragment"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["sample"] = new JsonObject
+                            {
+                                ["type"] = "object",
+                                ["properties"] = new JsonObject
+                                {
+                                    ["onBusRoute"] = new JsonObject { ["type"] = "boolean" },
+                                },
+                            },
+                        },
+                    },
+                },
+            ];
+
+            var builder = new ApiSchemaBuilder().WithStartProject("sample", "1.0.0");
+
+            builder
+                .WithStartResource("Contact", isResourceExtension: false)
+                .WithCommonExtensionOverrides(commonOverrides)
+                .WithEndResource();
+
+            return builder.WithEndProject().AsSingleApiSchemaRootNode();
+        }
+
+        [SetUp]
+        public void Setup()
+        {
+            JsonNode coreSchemaRootNode = CoreSchemaWithContactAndAddress();
+            JsonNode[] extensionSchemaRootNodes = [NonResourceExtensionWithCommonOverrides()];
+
+            OpenApiDocument openApiDocument = new(NullLogger.Instance);
+
+            _resourceSpec = openApiDocument.CreateDocument(
+                new(coreSchemaRootNode, extensionSchemaRootNodes),
+                OpenApiDocument.OpenApiDocumentType.Resource
+            );
+        }
+
+        [Test]
+        public void It_should_not_add_ext_to_target_component()
+        {
+            JsonPath jsonPath = JsonPath.Parse("$.components.schemas.EdFi_Contact_Address.properties._ext");
+            PathResult pathResult = jsonPath.Evaluate(_resourceSpec!);
+
+            pathResult.Matches.Should().HaveCount(0);
+        }
+
+        [Test]
+        public void It_should_not_create_extension_schemas()
+        {
+            JsonPath extensionSchemaPath = JsonPath.Parse(
+                "$.components.schemas.EdFi_Contact_AddressExtension"
+            );
+            PathResult extensionResult = extensionSchemaPath.Evaluate(_resourceSpec!);
+            extensionResult.Matches.Should().HaveCount(0);
+
+            JsonPath projectSchemaPath = JsonPath.Parse(
+                "$.components.schemas.sample_EdFi_Contact_AddressExtension"
+            );
+            PathResult projectResult = projectSchemaPath.Evaluate(_resourceSpec!);
+            projectResult.Matches.Should().HaveCount(0);
+        }
+    }
 }

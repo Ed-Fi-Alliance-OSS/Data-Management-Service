@@ -1845,9 +1845,12 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
                     }
                 }
 
-                // 2) Process commonExtensionOverrides — INDEPENDENT of fragments
+                // 2) Process commonExtensionOverrides — INDEPENDENT of fragments,
+                //    but only for resource extensions (aligned with EffectiveApiSchemaProvider filtering)
                 if (
-                    resourceSchemaNode["commonExtensionOverrides"] is JsonArray { Count: > 0 } commonOverrides
+                    resourceSchema.IsResourceExtension
+                    && resourceSchemaNode["commonExtensionOverrides"]
+                        is JsonArray { Count: > 0 } commonOverrides
                 )
                 {
                     var componentsSchemas =
