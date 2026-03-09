@@ -341,7 +341,11 @@ For any `DbTableModel`:
 
 Derived models MUST preserve the global “endpoint binding” invariant:
 
-- Every API JsonPath endpoint MUST resolve to exactly one binding column via `SourceJsonPath`.
+- Most API JsonPath endpoints MUST resolve to exactly one binding column via `SourceJsonPath`.
+- Supported exception: within one `DocumentReferenceBinding` on one table, multiple
+  `IdentityBindings[*]` MAY share the same `ReferenceJsonPath` when a flattened reference object reuses one logical
+  API field for multiple upstream identity bindings. These duplicates form one **same-site logical endpoint group**.
+- Same-site logical endpoint groups MUST NOT cross `DocumentReferenceBinding.ReferenceObjectPath` or table boundaries.
 - Canonical columns MUST be storage-only (`SourceJsonPath = null`) and MUST NOT participate in endpoint resolution.
 
 ##### Required consumer mapping rules
@@ -382,11 +386,19 @@ satisfy:
     group.
 - `IdentityBindings[*].Column`: the binding column for a specific `IdentityBindings[*].ReferenceJsonPath`.
   - Under key unification, this binding column MAY be a `UnifiedAlias` and therefore read-only.
+  - Multiple `IdentityBindings[*]` MAY share the same `ReferenceJsonPath` only when they belong to the same
+    `DocumentReferenceBinding` and same table. This represents one flattened reference field that fans out to multiple
+    upstream identity bindings.
 
 Required interpretation rules:
 
 1. **Endpoint binding / reconstitution**:
-   - `IdentityBindings[*].Column` is the authoritative binding column for that identity endpoint’s `SourceJsonPath`.
+   - `IdentityBindings` is the authoritative binding inventory for that reference endpoint’s `SourceJsonPath` values.
+   - When multiple `IdentityBindings[*]` share the same `ReferenceJsonPath` inside one `DocumentReferenceBinding`,
+     they form one same-site logical endpoint group.
+   - Read/reconstitution consumers MUST NOT pick an arbitrary member from that group. They MUST either:
+     - treat the full group as the endpoint-resolution result, or
+     - group by `ReferenceJsonPath` after storage resolution and emit one logical JSON field for that path.
 2. **Composite reference FK derivation**:
    - When deriving the local/target identity-part column list for a composite reference FK, each identity-part column
      MUST be mapped to its storage column via `DbColumnModel.Storage` before emitting the FK.
@@ -770,16 +782,17 @@ This report is a descriptor-FK emission diagnostic only; it is not part of the p
 #### Equality-constraint diagnostics surface (required)
 
 Key unification is derived from ApiSchema `resourceSchema.equalityConstraints`, but Option 3 intentionally applies only
-to a subset of those constraints (row-local, unambiguous bindings, same-table). Any remaining constraints are enforced
+to a subset of those constraints (row-local, supported endpoint groups, same-table). Any remaining constraints are enforced
 by Core only.
 
 This design treats `equalityConstraints` as a **schema-derived invariant** for endpoints that are expected to be
 represented in the derived relational model. Therefore:
 
-- `unresolved_endpoint` and `unsupported_endpoint_kind` are **fail-fast errors** during derived-model compilation.
+- `unresolved_endpoint`, unsupported ambiguous endpoint binding, and `unsupported_endpoint_kind` are **fail-fast
+  errors** during derived-model compilation.
 - `cross_table` constraints are **ignored** by key unification (they remain Core-only).
-- Constraints whose endpoints resolve to the same binding (`(table, column)`) are **redundant** (no-op) and are ignored
-  by key unification, but are still reported for diagnostics.
+- Constraints whose endpoints resolve to the same binding (`(table, column)`) or to the same same-site logical
+  endpoint group are **redundant** (no-op) and are ignored by key unification, but are still reported for diagnostics.
 
 To avoid silent “Core-only vs DB-unified” drift, any relational-model manifest output used for diagnostics and/or
 golden tests MUST include a deterministic per-resource report that classifies every equality constraint as:
@@ -985,27 +998,34 @@ Out of scope for Option 3 (Core-only unless a trigger-based design is added):
 ### Applicability (in-scope constraints)
 
 This pass applies when both sides of an equality constraint resolve to value bindings on the **same physical table**
-and both endpoints resolve to supported endpoint kinds (`Scalar` or `DescriptorFk`).
+and both endpoints resolve to supported endpoint kinds (`Scalar` or `DescriptorFk`). Endpoint resolution may produce
+either:
+
+- one physical binding `(table, column)`, or
+- one same-site logical endpoint group (multiple physical bindings on one table, all explained by one flattened
+  reference site and one `ReferenceJsonPath`).
 
 Constraints are handled as follows:
 
-- If either endpoint is **unresolved** (does not map to exactly one binding column via `SourceJsonPath`), the derived
-  model build MUST fail fast.
+- If either endpoint is **unresolved** (does not map to any binding column or supported same-site logical endpoint
+  group via `SourceJsonPath`), the derived model build MUST fail fast.
 - If either endpoint resolves but is an **unsupported endpoint kind**, the derived model build MUST fail fast.
 - If both endpoints resolve but bind to **different tables**, the constraint is ignored by key unification (Core-only).
-- If both endpoints resolve to the **same binding** (`(table, column)`), the constraint is redundant (no-op) and is
-  ignored by key unification (but must be reported for diagnostics).
+- If both endpoints resolve to the **same binding** (`(table, column)`) or same same-site logical endpoint group, the
+  constraint is redundant (no-op) and is ignored by key unification (but must be reported for diagnostics).
 
 ### Endpoint resolution (authoritative mapping)
 
-Equality constraint endpoints are resolved to a physical column using `DbColumnModel.SourceJsonPath` as the single
-authoritative “API JsonPath → stored column” mapping.
+Equality constraint endpoints are resolved using `DbColumnModel.SourceJsonPath` as the single authoritative API-path
+inventory. Resolution yields either one physical column binding or one same-site logical endpoint group.
 
 Key rules:
 
 - Only `DbColumnModel` entries with a non-null `SourceJsonPath` participate in endpoint resolution.
 - `DocumentReferenceBinding.IdentityBindings` and `DescriptorEdgeSource` are **not** used as additional endpoint binding
   sources; they are derived metadata over the same `DbColumnModel` set.
+  - `DocumentReferenceBinding.IdentityBindings` MAY be consulted only to explain why multiple
+    `SourceJsonPath` matches are a supported same-site logical endpoint group rather than an arbitrary ambiguity.
 - Under key unification:
   - per-path/per-site alias columns retain the original `SourceJsonPath` so queries and reconstitution continue to bind
     by API-path semantics, and
@@ -1022,23 +1042,46 @@ Resolution algorithm (per endpoint path):
 4. If there is **more than one** match:
    - If all matches refer to the same physical column name on the same table, treat as a duplicate inventory and
      de-duplicate.
-   - Otherwise, fail fast: the derived model has become ambiguous for a single API JsonPath endpoint, and any automatic
-     “pick one” behavior risks unifying the wrong columns silently.
+   - Otherwise, attempt to explain the matches as one same-site logical endpoint group:
+     - every match MUST belong to `DocumentReferenceBinding.IdentityBindings[*]` for the same
+       `DocumentReferenceBinding.ReferenceObjectPath`,
+     - all matches MUST be owned by the same table, and
+     - every matched `IdentityBindings[*].ReferenceJsonPath` MUST equal the endpoint path.
+   - If those conditions hold, resolve the endpoint to that same-site logical endpoint group.
+   - Otherwise, fail fast: the derived model has become ambiguous for a single API JsonPath endpoint, and any
+     automatic “pick one” behavior risks unifying the wrong columns silently.
 
 After endpoint resolution:
 
 - If the two endpoints resolve to different tables, the constraint is ignored by key unification (Core-only).
-- If the two endpoints resolve to the same `(table, column)`, the constraint is redundant (no-op) and is ignored by
-  key unification.
-- If either resolved endpoint is not `ColumnKind.Scalar` or `ColumnKind.DescriptorFk`, fail fast.
+- If the two endpoints resolve to the same `(table, column)` or same same-site logical endpoint group, the constraint
+  is redundant (no-op) and is ignored by key unification.
+- If either resolved endpoint contains any member that is not `ColumnKind.Scalar` or `ColumnKind.DescriptorFk`, fail
+  fast.
+
+### Same-site logical endpoint groups
+
+When one `DocumentReferenceBinding` contains repeated `IdentityBindings[*].ReferenceJsonPath` values, those bindings
+represent one flattened reference field and MUST be treated as one logical endpoint group.
+
+Required behavior:
+
+- Key unification MUST add implicit same-table edges between all members of the group, even when no explicit
+  `equalityConstraint` mentions that path against itself.
+- When an `equalityConstraint` endpoint resolves to such a group, the pass MUST add edges between every member of that
+  group and every member of the opposite resolved endpoint/group.
+- This grouping rule applies only within one `DocumentReferenceBinding.ReferenceObjectPath` on one table. Duplicate
+  `SourceJsonPath` matches that span different reference sites or different tables remain fail-fast ambiguities.
 
 ### Class construction
 
 Within a given table:
 
-1. Treat each resolved endpoint binding as a node.
-2. Each equality constraint adds an undirected edge between its two endpoint nodes.
-3. Connected components define unification classes.
+1. Treat each physical binding column as a node.
+2. For every same-site logical endpoint group, add implicit undirected edges between all members of the group.
+3. Each equality constraint adds undirected edges between every member selected by the left resolved endpoint/group and
+   every member selected by the right resolved endpoint/group.
+4. Connected components define unification classes.
 
 ### Type compatibility
 
@@ -1162,6 +1205,8 @@ For each member path column in a `KeyUnificationClass`, derive a logical base-na
      - the member’s relative path is the reference-relative field path under the reference object.
      - Detection rule (required): locate the unique `DocumentReferenceBinding` whose `IdentityBindings[*].ReferenceJsonPath`
        equals the member’s `SourceJsonPath`. If none exists, the member is not a reference-identity binding.
+       Duplicate `IdentityBindings[*]` entries with that path inside the same binding are part of one same-site logical
+       endpoint group and do not make the binding ambiguous.
    - Otherwise, the binding-site prefix MUST be the owning table’s `DbTableModel.JsonScope`.
 
 2. Stripping the prefix segments from the member `SourceJsonPath` segments to produce a **relative segment list**.
@@ -1246,7 +1291,9 @@ Detection rule (required):
 - For a member path column `M` with `DbColumnModel.SourceJsonPath = MemberPath`:
   - Locate the unique `DocumentReferenceBinding` whose `IdentityBindings[*].ReferenceJsonPath` equals `MemberPath`.
     - If none exists, `M` is not a reference-identity binding.
-    - If more than one exists, fail fast (ambiguous binding; derived model bug).
+    - If more than one exists, fail fast (ambiguous binding across reference sites; derived model bug).
+    - Duplicate `IdentityBindings[*]` entries with `ReferenceJsonPath = MemberPath` inside that one binding remain a
+      supported same-site logical endpoint group.
   - If such a binding exists, `M` is a reference-identity member and its `UnifiedAlias.PresenceColumn` MUST be that
     binding’s `FkColumn` (`{RefBaseName}_DocumentId`).
 
@@ -1958,28 +2005,32 @@ are specified elsewhere in this document.
 
 2. Resolve and classify ApiSchema `equalityConstraints` (per resource):
    - For each `equalityConstraint (pathA, pathB)`:
-     - Resolve each endpoint path to exactly one binding column using `DbColumnModel.SourceJsonPath` as the sole
-       authoritative mapping:
+     - Resolve each endpoint path to one binding column or one same-site logical endpoint group using
+       `DbColumnModel.SourceJsonPath` as the sole authoritative path inventory:
        - Find all columns whose `SourceJsonPath.Canonical` equals the endpoint path string exactly.
        - Fail fast if zero matches (unresolved endpoint).
        - If multiple matches:
          - If every match is the same physical binding `(table, column)` (duplicate inventory), de-duplicate.
+         - Else if every match is explained by one `DocumentReferenceBinding.ReferenceObjectPath` on one table and one
+           repeated `ReferenceJsonPath`, resolve that same-site logical endpoint group.
          - Otherwise fail fast (ambiguous endpoint binding).
-     - Fail fast if either resolved endpoint is not `ColumnKind.Scalar` or `ColumnKind.DescriptorFk` (unsupported
-       endpoint kind).
+     - Fail fast if either resolved endpoint contains any member that is not `ColumnKind.Scalar` or
+       `ColumnKind.DescriptorFk` (unsupported endpoint kind).
      - Canonicalize endpoint ordering for determinism:
        - `endpoint_a_path` is the ordinal-min path; `endpoint_b_path` is the ordinal-max path.
      - Classify:
        - If endpoints bind to different tables: `ignored` with reason `cross_table` (record both endpoint bindings for
          diagnostics; do not build a unification edge).
-       - Else if endpoints bind to the same `(table, column)`: `redundant` (record the binding for diagnostics; do not
-         build a unification edge).
-       - Else: `applied` (record a provisional applied entry and add an undirected edge between the two binding
-         columns in that table’s unification graph).
+       - Else if endpoints resolve to the same `(table, column)` or same same-site logical endpoint group:
+         `redundant` (record the resolved binding/group for diagnostics; do not build an explicit equality edge).
+       - Else: `applied` (record provisional applied entry/entries and add undirected edges between every left member
+         and every right member in that table’s unification graph).
 
 3. Build candidate unification classes (per table):
    - For each table that has one or more applied edges:
-     - Build an undirected graph whose nodes are binding columns and whose edges are the applied constraints.
+     - Build an undirected graph whose nodes are binding columns and whose edges are:
+       - implicit same-site logical endpoint-group edges, and
+       - applied equality-constraint edges.
      - Connected components are candidate unification classes.
      - For each connected component:
        - `MemberPathColumns` are the distinct binding columns in the component.
@@ -2118,11 +2169,17 @@ semantics, or cascade correctness.
 
 ### Derived-model build (E01)
 
-- `SourceJsonPath` endpoint resolution remains unambiguous:
-  - each API JsonPath binds to exactly one `DbColumnModel` (binding column), and
+- `SourceJsonPath` endpoint resolution remains deterministic:
+  - each API JsonPath binds to exactly one `DbColumnModel` (binding column) or one supported same-site logical
+    endpoint group, and
   - canonical columns (`SourceJsonPath = null`) never introduce endpoint ambiguity.
+- Same-site logical endpoint groups are supported only when:
+  - all duplicate matches belong to one `DocumentReferenceBinding.ReferenceObjectPath`,
+  - all matches are on one table, and
+  - all grouped members share the same `ReferenceJsonPath`.
 - Unification class construction is correct and deterministic:
-  - edges are built only for endpoints that resolve to the same physical table, and
+  - implicit edges are created for supported same-site logical endpoint groups,
+  - explicit edges are built only for endpoints that resolve to the same physical table, and
   - connected components produce stable classes with deterministic member ordering.
 - Equality-constraint diagnostics surface is emitted and deterministic:
   - every `equalityConstraint` is classified as `applied`, `redundant`, or `ignored` (`cross_table`), and
@@ -2206,6 +2263,11 @@ semantics, or cascade correctness.
     site.
 - Optional non-reference path absence remains correct:
   - per-path alias reads as `NULL` when `..._Present` is `NULL` (no cross-path leakage).
+- Reference reconstitution preserves one logical JSON field per reference path:
+  - when one `DocumentReferenceBinding` contains duplicate `IdentityBindings[*].ReferenceJsonPath` values, read
+    projection groups them by `ReferenceJsonPath` after storage resolution and emits one logical field entry for that
+    path,
+  - arbitrary duplicate projected fields remain invalid.
 - Query binding preserves presence semantics:
   - predicates on binding columns continue to imply the path/site was present.
 
@@ -2246,6 +2308,10 @@ DMS treats ApiSchema `resourceSchema.equalityConstraints` as the authoritative c
 derived-model key unification. Legacy Ed-Fi ODS physical schema choices (including cases where two equality-constrained
 values are stored as separate writable columns) are not authoritative for DMS and do not change key-unification
 behavior.
+
+DMS also treats same-site duplicate `DocumentReferenceBinding.IdentityBindings[*].ReferenceJsonPath` values as a
+supported ApiSchema flattening pattern when all duplicates stay within one reference site and one table. This pattern
+does not disable key unification; it expands the set of supported row-local inputs that the pass must normalize.
 
 Therefore:
 

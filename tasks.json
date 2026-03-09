@@ -1,164 +1,72 @@
 [
   {
+    "category": "Reference Field Grouping",
+    "description": "Add one authoritative helper or metadata shape that derives logical reference-field groups from `DocumentReferenceBinding.IdentityBindings` by grouping repeated `ReferenceJsonPath` values within a single `DocumentReferenceBinding`. Acceptance: grouping is limited to one reference site (`ReferenceObjectPath` + owning table), preserves first-seen field order, exposes all physical member columns for each logical field, and does not legitimize the existing arbitrary duplicate-source-path case where the same JSON path is duplicated outside one reference binding.",
+    "steps-to-verify": [
+      "Add unit tests that build a `DocumentReferenceBinding` with repeated `ReferenceJsonPath` values and assert the grouped output preserves first-seen logical field order while keeping all physical member columns for the duplicated field.",
+      "Add a negative unit test proving the grouping helper does not merge bindings from different `ReferenceObjectPath` values or unrelated duplicate source-path columns.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter FullyQualifiedName~KeyUnification`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Key Unification Endpoint Resolution",
+    "description": "Update `KeyUnificationPass` so explicit equality-constraint endpoint resolution accepts one same-site grouped reference field when repeated bindings come from a single flattened reference site, instead of failing any time multiple physical bindings exist. Acceptance: equality constraints on grouped reference fields add unification edges for every physical member in the logical field group; existing cross-table and unsupported-kind behavior is unchanged; the current arbitrary ambiguous-endpoint scenario still fails fast with the existing diagnostic.",
+    "steps-to-verify": [
+      "Add a TPDM-like minimal relational-model test where one equality-constraint endpoint resolves to two physical columns from one flattened reference site and assert key unification succeeds.",
+      "Retain the existing ambiguous-endpoint negative test and assert it still throws `resolved to multiple distinct bindings` for an arbitrary duplicated scalar path.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter FullyQualifiedName~Given_Key_Unification`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Implicit Same-Site Unification",
+    "description": "Teach key unification to synthesize implicit edges for duplicate logical reference fields inside one flattened reference site even when no explicit `equalityConstraints` mention those fields. Acceptance: repeated `ReferenceJsonPath` members within one grouped reference field are unified to one canonical storage class without TPDM-specific branching; deterministic ordering of classes and diagnostics is preserved; invalid mixed-kind or descriptor-target-mismatch groups still fail with actionable errors.",
+    "steps-to-verify": [
+      "Add a minimal schema test with duplicate reference-field bindings but no explicit equality constraint for one of the duplicated fields, and assert the field still converges to one key-unification class.",
+      "Add a negative test proving a duplicated logical field that mixes scalar and descriptor members, or mismatched descriptor targets, still fails deterministically.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_Key_Unification|FullyQualifiedName~ConstraintDerivation\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Abstract Identity Root Resolution",
+    "description": "Relax abstract-identity root-column lookup so duplicate root `SourceJsonPath` values are allowed only when same-kind columns converge to one stored column after key unification. Acceptance: abstract identity derivation succeeds for unified flattened-reference duplicates, still fails for arbitrary duplicate root columns that do not converge to one stored column, and does not weaken the existing fail-fast path for conflicting kinds.",
+    "steps-to-verify": [
+      "Split the current duplicate-root negative coverage into two tests: one that still fails for artificial non-unified duplicates and one that succeeds for a key-unified flattened-reference case.",
+      "Add or update tests that assert conflicting column kinds on the same root `SourceJsonPath` still fail with an actionable diagnostic.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"FullyQualifiedName~Abstract_Identity|FullyQualifiedName~Key_Unification\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Reference Projection Compilation",
+    "description": "Update `ReferenceIdentityProjectionPlanCompiler` to emit one logical reference field per grouped `ReferenceJsonPath` instead of mirroring raw `IdentityBindings` 1:1. Acceptance: compiled projection metadata contains unique logical field paths per reference object, preserves deterministic field ordering, still uses the stored `DocumentFk` column for `FkColumnOrdinal`, and leaves non-duplicated reference projections unchanged.",
+    "steps-to-verify": [
+      "Add a read-plan compiler test for a flattened reference binding with duplicate `ReferenceJsonPath` values and assert the compiled projection contains one entry for the logical field rather than duplicate field ordinals.",
+      "Retain or add a positive regression test proving a normal reference projection without duplicate logical fields still compiles to the same ordinals as before.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~Given_ReadPlanCompiler`"
+    ],
+    "completed": false
+  },
+  {
     "category": "Reference Projection Validation",
-    "description": "Harden reference-identity projection compilation so `DocumentReferenceBinding.FkColumn` is validated as the actual stored reference-site presence column. Acceptance: read-plan compilation fails deterministically when a binding FK column is missing, is not `ColumnKind.DocumentFk`, or is not backed by `ColumnStorage.Stored`; successful compilation only allows the stored `..._DocumentId` column to drive `FkColumnOrdinal`, which preserves the design invariant that reference-object presence is determined by the real FK column rather than a scalar or unified alias.",
+    "description": "Update read-plan projection validation to compare grouped logical reference fields instead of raw `DocumentReferenceBinding.IdentityBindings` count and index. Acceptance: `ReadPlanProjectionContractValidator` and any normalized decode path use the same grouping rule as compilation; valid grouped projections pass; duplicated, missing, or reordered logical reference fields fail with deterministic messages that name the offending `ReferenceObjectPath` and `ReferenceJsonPath`.",
     "steps-to-verify": [
-      "Add unit tests that mutate a `DocumentReferenceBinding` to point at a scalar column, a unified alias column, and a missing column, and assert `ReadPlanCompiler` fails with actionable messages for each case.",
-      "Retain or add a positive test proving a valid stored `DocumentFk` column still compiles to the expected `FkColumnOrdinal`.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~Given_ReadPlanCompiler`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Projection Path Binding Integrity",
-    "description": "Validate that compiled reference and descriptor projection bindings still target the API-bound columns for their declared JSON paths. Acceptance: for every `DocumentReferenceBinding`, the FK column resolves to `SourceJsonPath == ReferenceObjectPath` and each `ReferenceIdentityBinding.Column` resolves to `SourceJsonPath == ReferenceJsonPath`; for every `DescriptorEdgeSource`, the binding/path column resolves to `SourceJsonPath == DescriptorValuePath`; compilation fails deterministically if a storage-only canonical column, unrelated alias, or mismatched path column is wired into projection metadata, especially in key-unification scenarios where path columns and storage columns differ.",
-    "steps-to-verify": [
-      "Add negative unit tests for mismatched `SourceJsonPath` on reference FK columns, reference identity columns, and descriptor binding columns, including at least one key-unified model that incorrectly points at a canonical storage column.",
-      "Add a positive key-unification test proving projection compilation still accepts valid per-path unified aliases while descriptor SQL deduplicates by storage column.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~Given_ReadPlanCompiler`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Projection Validation Consolidation",
-    "description": "Consolidate projection-contract validation into one authoritative implementation shared by runtime compilation and normalized DTO decode. Acceptance: compile-time and decode-time validation enforce the same rules for projection table membership, binding/source counts, ordinals, result shapes, path/resource identity, and `IsIdentityComponent`; duplicated validation logic is removed or reduced to thin adapters; malformed projection metadata fails deterministically at the chosen validation boundary instead of relying on partially overlapping checks in multiple places.",
-    "steps-to-verify": [
-      "Refactor the current projection validation flow so one shared validator is used by both `ReadPlanCompiler` and normalized read-plan decode paths.",
-      "Add or update tests proving the same malformed projection payload fails identically whether it is compiled directly or reconstructed through `NormalizedPlanContractCodec`.",
+      "Add validator negative tests for duplicated logical reference fields, omitted logical reference fields, and reordered logical reference fields within one projection binding.",
+      "Add or update normalized-plan decode coverage proving the same malformed grouped projection fails through decode-time validation with the same deterministic rule.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_ReadPlanCompiler|FullyQualifiedName~Given_NormalizedPlanContractCodec\"`"
     ],
-    "completed": true
+    "completed": false
   },
   {
-    "category": "Reference Projection Coverage Validation",
-    "description": "Harden read-plan projection validation so reference-identity projection plans must cover each modeled `DocumentReferenceBinding` exactly once instead of only matching the total binding count. Acceptance: `ReadPlanProjectionContractValidator` rejects a plan when one compiled binding is duplicated, when one modeled binding is omitted, or when projection bindings appear in an order that does not match the authoritative `DocumentReferenceBindings` order for the owning table; valid plans compiled by `ReadPlanCompiler` still pass without changing the expected ordinals or SQL.",
+    "category": "PostgreSQL Startup Regression",
+    "description": "Add startup regression coverage proving PostgreSQL runtime mapping initialization no longer dies on a flattened-reference schema that previously triggered ambiguous endpoint failure. Acceptance: a minimal TPDM-like schema with duplicate `ReferenceJsonPath` groups compiles through `PostgresqlRuntimeMappingSetCompiler` and allows startup cache priming to complete; a deliberately arbitrary duplicate-source-path schema still fails so startup does not silently accept unsupported ambiguity.",
     "steps-to-verify": [
-      "Add negative tests that construct a `ResourceReadPlan` or decoded DTO with the same reference projection binding repeated twice while another modeled binding is missing, and assert validation fails with an actionable message that identifies the missing or duplicate binding.",
-      "Add a negative test that swaps two modeled reference projection bindings for the same table and assert validation fails because the authoritative projection order was not preserved.",
-      "Retain or add a positive test proving a valid compiled plan for a resource with multiple reference bindings still passes validation unchanged.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_ReadPlanCompiler|FullyQualifiedName~Given_NormalizedPlanContractCodec\"`"
+      "Add a startup unit test that wires a minimal flattened-reference schema through `DmsStartupOrchestrator` or `PostgresqlRuntimeMappingSetCompiler` and asserts runtime mapping cache initialization succeeds.",
+      "Add a negative startup or compiler-path test proving an arbitrary duplicated scalar path still fails during runtime mapping compilation.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~PostgresqlRuntimeMappingInitialization`"
     ],
-    "completed": true
-  },
-  {
-    "category": "Descriptor Projection Coverage Validation",
-    "description": "Harden read-plan projection validation so descriptor projection plans must cover each modeled `DescriptorEdgeSource` exactly once instead of only matching the total source count. Acceptance: `ReadPlanProjectionContractValidator` rejects a plan when one descriptor source is duplicated, when one modeled descriptor source is omitted, or when `SourcesInOrder` no longer preserves the deterministic execution order required by the model; valid descriptor projection plans, including key-unified storage deduplication scenarios, still pass with the current canonical SQL.",
-    "steps-to-verify": [
-      "Add negative tests that construct a `ResourceReadPlan` or decoded DTO with the same descriptor source repeated twice while another modeled source is missing, and assert validation fails with an actionable message that identifies the missing or duplicate source.",
-      "Add a negative test that reverses two descriptor projection sources and assert validation fails because the authoritative descriptor source order was not preserved.",
-      "Retain or add a positive key-unification test proving logical descriptor sources remain distinct while SQL input deduplicates by storage column.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_ReadPlanCompiler|FullyQualifiedName~Given_NormalizedPlanContractCodec\"`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Projection Ordering In Pack Decode",
-    "description": "Restore deterministic projection-order guarantees in normalized read-plan decode so AOT and manifest consumers cannot accept reordered projection metadata that still happens to be individually valid. Acceptance: `NormalizedPlanContractCodec.Decode` and the shared projection validator reject decoded read plans whose `ReferenceIdentityProjectionPlansInDependencyOrder`, per-table `BindingsInOrder`, `DescriptorProjectionPlansInOrder`, or per-plan `SourcesInOrder` differ from the authoritative model order; round-trip encode/decode remains stable for valid plans and continues to preserve the exact projection ordering required by the design documents.",
-    "steps-to-verify": [
-      "Add decode-path negative tests that reorder reference projection table plans, per-table reference bindings, descriptor projection plans, and descriptor sources, and assert `NormalizedPlanContractCodec.Decode` fails with deterministic validation messages.",
-      "Add or update round-trip tests proving a valid encoded read plan still re-encodes to the same canonical JSON and preserves projection collection ordering byte-for-byte.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~Given_NormalizedPlanContractCodec`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Descriptor Projection Compiler Decoupling",
-    "description": "Remove the descriptor projection compiler's incidental dependency on hydration select-list ordinals for storage-only canonical descriptor columns. Acceptance: descriptor projection SQL ordering is derived from authoritative table-model column order rather than `columnOrdinalsByTable`; compilation continues to deduplicate descriptor SQL by `(table, storage column)` for key-unified models; valid models compile even if a future hydration plan no longer selects storage-only canonical descriptor columns, while invalid descriptor bindings still fail deterministically with actionable messages.",
-    "steps-to-verify": [
-      "Refactor `DescriptorProjectionPlanCompiler` so the ordering for deduplicated SQL sources comes from `DbTableModel.Columns` or equivalent table-model metadata instead of hydration projection ordinals for the storage column.",
-      "Add a regression test covering a key-unified descriptor model where the binding/path columns remain hydrated but the canonical storage column is treated as storage-only for descriptor SQL ordering, and assert compilation still succeeds with deterministic SQL and source ordering.",
-      "Retain or add negative tests proving missing tables, missing binding columns, or non-`DescriptorFk` bindings still fail with deterministic compiler errors.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~Given_ReadPlanCompiler`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Descriptor Projection Plan Shape Validation",
-    "description": "Tighten descriptor projection contract validation so each compiled `DescriptorProjectionPlan` is structurally valid on its own instead of only participating in a flattened source-count check. Acceptance: validation rejects any read plan that contains an empty descriptor projection plan, a plan whose sources do not form a valid contiguous slice of the authoritative `DescriptorEdgeSources`, or extra descriptor result sets that runtime would otherwise execute without consuming useful sources; valid split-plan and single-plan descriptor projections continue to round-trip through normalized DTO decode and compile successfully.",
-    "steps-to-verify": [
-      "Update `ReadPlanProjectionContractValidator` so each descriptor projection plan must contain at least one source and preserve deterministic source coverage without allowing trailing empty plans or other structurally empty result sets.",
-      "Add negative tests for `[plan-with-all-sources, empty-plan]`, `[]` sources within a non-empty descriptor plan, and any equivalent malformed DTO decode case, and assert validation fails with deterministic messages.",
-      "Retain or add positive tests proving both the compiler-generated single-plan case and an intentional multi-plan split case still validate successfully.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_ReadPlanCompiler|FullyQualifiedName~Given_NormalizedPlanContractCodec\"`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Projection Test Helper Consolidation",
-    "description": "Eliminate duplicated projection-plan mutation helpers across the plans unit-test suites so projection-contract tests are maintained from one shared set of utilities. Acceptance: helper methods for duplicating, swapping, and mutating reference-identity and descriptor projection plans are defined once in a shared test utility or base type; `Given_ReadPlanCompiler` and `Given_NormalizedPlanContractCodec` reuse the shared helpers without changing existing test intent; the refactor reduces copy-pasted helper code while keeping all current projection validation scenarios intact.",
-    "steps-to-verify": [
-      "Extract the duplicated read-plan mutation helpers from `ReadPlanCompilerTests.cs` and `NormalizedPlanContractCodecTests.cs` into a shared test helper or test base and update both suites to use it.",
-      "Confirm the refactor preserves the existing projection validation assertions for duplicated bindings, reordered bindings, duplicated descriptor sources, reordered descriptor sources, and reordered descriptor plans.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_ReadPlanCompiler|FullyQualifiedName~Given_NormalizedPlanContractCodec\"`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Read Plan Lookup Validation",
-    "description": "Restore a deterministic validation boundary for read plans returned from `MappingSet.GetReadPlanOrThrow` so lookup never hands malformed projection metadata to downstream execution. Acceptance: every `ResourceReadPlan` returned from the mapping-set lookup path is guaranteed to satisfy `ReadPlanProjectionContractValidator`, regardless of whether it came from runtime compilation, normalized DTO decode, or a future AOT mapping-pack decode path; malformed projection metadata fails with an actionable exception before runtime execution starts; valid runtime-compiled plans still return without behavior changes.",
-    "steps-to-verify": [
-      "Choose and implement one authoritative validation boundary for cached read plans, either at lookup or at all mapping-set population/decode entry points, and remove the current gap where an invalid cached `ResourceReadPlan` can be returned unchanged.",
-      "Add a negative unit test that injects an invalid read plan into a `MappingSet` and assert the chosen boundary throws a deterministic message instead of returning the malformed plan.",
-      "Add or update positive tests proving a valid runtime-compiled read plan and a valid normalized decoded read plan still pass through the chosen boundary unchanged.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_MappingSetLookupExtensions|FullyQualifiedName~Given_NormalizedPlanContractCodec|FullyQualifiedName~Given_ReadPlanCompiler\"`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Projection Validator Bounds Safety",
-    "description": "Harden `ReadPlanProjectionContractValidator` so malformed projection metadata always fails through the validator's deterministic exception path instead of leaking raw indexing errors. Acceptance: when reference-identity projection table plans exceed the authoritative dependency-order subset, validation throws the supplied `createException` with a message that identifies the extra or out-of-order projection table; no `IndexOutOfRangeException` or similar runtime exception escapes from validator internals; existing valid and already-covered invalid plans continue to report deterministic diagnostics.",
-    "steps-to-verify": [
-      "Update the reference projection validation flow to check compiled projection table counts before indexing into the authoritative table list, and make the failure message identify the extra table or count mismatch.",
-      "Add a negative unit test that appends an extra reference-identity projection table plan and assert `ReadPlanProjectionContractValidator.ValidateOrThrow` fails with the expected deterministic error message rather than a raw indexing exception.",
-      "Add or update a decode-path regression test proving the same malformed shape also fails deterministically when reconstructed through `NormalizedPlanContractCodec`.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_ReadPlanCompiler|FullyQualifiedName~Given_NormalizedPlanContractCodec\"`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Projection Metadata Helper Simplification",
-    "description": "Reduce duplication in projection metadata compilation and validation by consolidating repeated table and column resolution logic across `ReadPlanCompiler`, `ReferenceIdentityProjectionPlanCompiler`, `DescriptorProjectionPlanCompiler`, and `ReadPlanProjectionContractValidator`. Acceptance: shared resolution behavior for table lookup, hydration ordinal lookup, and projection-column lookup lives in one authoritative helper or a small cohesive set of helpers; duplicate ad hoc implementations are removed; the refactor preserves current validation semantics and deterministic error messages while making future projection changes less error-prone.",
-    "steps-to-verify": [
-      "Extract the repeated table and column resolution routines into shared helper code used by projection compilation and validation paths, and remove the now-redundant local implementations.",
-      "Retain or update unit tests that cover missing tables, missing columns, invalid column kinds, and invalid projection paths so the refactor proves behavior stayed intact.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Runtime Mapping Initialization Wiring",
-    "description": "Replace the startup-time `NoOpBackendMappingInitializer` with a backend-specific initializer that compiles and caches runtime mapping sets without changing legacy request execution. Acceptance: application startup invokes a concrete `IBackendMappingInitializer` from the PostgreSQL backend instead of the Core no-op; the initializer builds a `DerivedRelationalModelSet` and compiled `MappingSet` for the running effective schema and configured dialect, stores the result in a process-wide cache keyed by `(EffectiveSchemaHash, Dialect, RelationalMappingVersion)`, and logs whether startup used runtime compilation or reused a cached mapping set; existing legacy repository registrations remain the request-time execution path, so POST/PUT/GET/query behavior does not cut over to compiled-plan execution yet.",
-    "steps-to-verify": [
-      "Register a concrete backend initializer from `src/dms/backend/EdFi.DataManagementService.Old.Postgresql` or another runtime backend assembly so `IBackendMappingInitializer` no longer resolves to `NoOpBackendMappingInitializer` after datastore services are added.",
-      "Add unit tests proving `DmsStartupOrchestrator` runs the concrete initializer at startup and that concurrent initialization requests for the same `(EffectiveSchemaHash, Dialect, RelationalMappingVersion)` share the same cached compile result instead of recompiling.",
-      "Add or update a composition test proving legacy datastore/query-handler registrations are unchanged after the initializer is added, so runtime requests still resolve the current PostgreSQL repositories.",
-      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~Startup`",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~MappingSetCache`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Runtime Effective Schema Set Builder Sharing",
-    "description": "Move or extract the `EffectiveSchemaSetBuilder` logic into a runtime-usable assembly so startup mapping initialization can build an `EffectiveSchemaSet` from normalized schema inputs without depending on the CLI project. Acceptance: host/runtime code can construct the same `EffectiveSchemaSet` that the DDL CLI currently builds, including identical `EffectiveSchemaHash`, `RelationalMappingVersion`, `SchemaComponentsInEndpointOrder`, `ResourceKeysInIdOrder`, and `ResourceKeySeedHash`; the builder no longer requires referencing `EdFi.DataManagementService.SchemaTools` from production startup code; runtime and CLI callers share one authoritative implementation so schema-hash or seed derivation cannot drift between startup compilation and DDL/provisioning workflows.",
-    "steps-to-verify": [
-      "Extract `EffectiveSchemaSetBuilder` and any minimal supporting types into a runtime-referenced project, or add an equivalent shared service in an existing runtime assembly, and update the CLI to consume that shared implementation instead of its private bridge copy.",
-      "Add unit tests that build an `EffectiveSchemaSet` from the same normalized schema inputs through both the CLI path and the runtime path and assert all effective-schema metadata fields match byte-for-byte, including the seed hash.",
-      "Add or update a startup-path unit test proving the concrete backend initializer can obtain an `EffectiveSchemaSet` without referencing the CLI assembly.",
-      "Run: `dotnet test --no-restore ./src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/EdFi.DataManagementService.SchemaTools.Tests.Unit.csproj --filter FullyQualifiedName~EffectiveSchemaSetBuilder`",
-      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~Startup`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Startup Database Fingerprint And Resource Key Validation",
-    "description": "Add per-instance startup validation that binds compiled mapping sets to configured DMS databases and caches resource-key maps for later runtime selection work. Acceptance: for every loaded DMS instance, startup reads the database fingerprint from `dms.EffectiveSchema`, validates `EffectiveSchemaHash`, `ResourceKeyCount`, and `ResourceKeySeedHash` against the compiled mapping set, falls back to diffing `dms.ResourceKey` when the fast-path fingerprint mismatches, and caches validated `QualifiedResourceName -> ResourceKeyId` and reverse lookup data per database instance; failures are deterministic and identify the instance, expected hash/version/dialect, and whether the mismatch was fingerprint-level or full `dms.ResourceKey` drift; successful validation does not alter legacy request routing but makes the runtime-compiled mapping set usable as a future fallback.",
-    "steps-to-verify": [
-      "Implement a startup validation component used by the concrete backend initializer that enumerates all loaded DMS instances, opens each configured database connection, reads `dms.EffectiveSchema`, and validates the expected schema hash and resource-key seed fingerprint before startup completes.",
-      "Add unit tests for success, effective-schema hash mismatch, resource-key seed mismatch with `dms.ResourceKey` diff fallback, and missing provisioning tables/rows, asserting each failure message includes the DMS instance identity and expected mapping key details.",
-      "Add an integration or E2E-style startup test against a provisioned local PostgreSQL database showing startup succeeds when fingerprints match and fails fast when the seeded `dms.EffectiveSchema` or `dms.ResourceKey` rows are intentionally corrupted.",
-      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~Startup`",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Old.Postgresql.Tests.Integration/EdFi.DataManagementService.Old.Postgresql.Tests.Integration.csproj`"
-    ],
-    "completed": true
+    "completed": false
   }
 ]
