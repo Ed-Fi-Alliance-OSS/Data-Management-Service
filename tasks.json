@@ -7,7 +7,7 @@
       "Add a negative unit test proving the grouping helper does not merge bindings from different `ReferenceObjectPath` values or unrelated duplicate source-path columns.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter FullyQualifiedName~KeyUnification`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Key Unification Endpoint Resolution",
@@ -40,21 +40,22 @@
     "completed": false
   },
   {
-    "category": "Reference Projection Compilation",
-    "description": "Update `ReferenceIdentityProjectionPlanCompiler` to emit one logical reference field per grouped `ReferenceJsonPath` instead of mirroring raw `IdentityBindings` 1:1. Acceptance: compiled projection metadata contains unique logical field paths per reference object, preserves deterministic field ordering, still uses the stored `DocumentFk` column for `FkColumnOrdinal`, and leaves non-duplicated reference projections unchanged.",
+    "category": "Reference Projection Compiler And Validator Switch",
+    "description": "Update `ReferenceIdentityProjectionPlanCompiler` and `ReadPlanProjectionContractValidator` together so compile-time read-plan generation works on grouped logical reference fields instead of raw `DocumentReferenceBinding.IdentityBindings` count and index. Acceptance: compiled projection metadata contains unique logical field paths per reference object, preserves deterministic field ordering, still uses the stored `DocumentFk` column for `FkColumnOrdinal`, and valid grouped projections pass compile-time validation while duplicated, missing, or reordered logical reference fields fail with deterministic messages that name the offending `ReferenceObjectPath` and `ReferenceJsonPath`.",
     "steps-to-verify": [
       "Add a read-plan compiler test for a flattened reference binding with duplicate `ReferenceJsonPath` values and assert the compiled projection contains one entry for the logical field rather than duplicate field ordinals.",
+      "Add validator negative tests for duplicated logical reference fields, omitted logical reference fields, and reordered logical reference fields within one projection binding.",
       "Retain or add a positive regression test proving a normal reference projection without duplicate logical fields still compiles to the same ordinals as before.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~Given_ReadPlanCompiler`"
     ],
     "completed": false
   },
   {
-    "category": "Reference Projection Validation",
-    "description": "Update read-plan projection validation to compare grouped logical reference fields instead of raw `DocumentReferenceBinding.IdentityBindings` count and index. Acceptance: `ReadPlanProjectionContractValidator` and any normalized decode path use the same grouping rule as compilation; valid grouped projections pass; duplicated, missing, or reordered logical reference fields fail with deterministic messages that name the offending `ReferenceObjectPath` and `ReferenceJsonPath`.",
+    "category": "Normalized Grouped Projection Decode",
+    "description": "Update the normalized read-plan decode path so grouped logical reference-field validation matches the compile-time rule after the compiler and validator switch. Acceptance: normalized-plan decode uses the same grouped logical reference-field contract as compile-time validation; valid grouped projections round-trip unchanged; malformed grouped projections fail through decode-time validation with deterministic messages instead of relying on raw `IdentityBindings` count or index assumptions.",
     "steps-to-verify": [
-      "Add validator negative tests for duplicated logical reference fields, omitted logical reference fields, and reordered logical reference fields within one projection binding.",
-      "Add or update normalized-plan decode coverage proving the same malformed grouped projection fails through decode-time validation with the same deterministic rule.",
+      "Add or update normalized-plan decode coverage proving duplicated, omitted, or reordered grouped logical reference fields fail through decode-time validation with the same deterministic rule used at compile time.",
+      "Add or update a positive normalized round-trip test proving a valid grouped projection survives encode/decode without changing logical field order or ordinals.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_ReadPlanCompiler|FullyQualifiedName~Given_NormalizedPlanContractCodec\"`"
     ],
     "completed": false
