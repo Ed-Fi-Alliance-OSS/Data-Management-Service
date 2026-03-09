@@ -24,8 +24,8 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
         var resourcesByKey = context
             .ConcreteResourcesInNameOrder.Select((model, index) => new ResourceEntry(index, model))
             .ToDictionary(entry => entry.Model.ResourceKey.Resource, entry => entry);
-        var baseResourcesByName = BuildBaseResourceLookup(
-            context.ConcreteResourcesInNameOrder,
+        var baseResourcesByName = SetPassHelpers.BuildExtensionBaseResourceLookup(
+            context,
             static (index, model) => new ResourceEntry(index, model)
         );
         var abstractIdentityTablesByResource = context.AbstractIdentityTablesInNameOrder.ToDictionary(table =>

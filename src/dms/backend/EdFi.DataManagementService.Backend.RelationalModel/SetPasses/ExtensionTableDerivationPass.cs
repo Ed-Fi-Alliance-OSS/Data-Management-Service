@@ -44,17 +44,14 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var baseResourcesByName = BuildBaseResourceLookup(
-            context.ConcreteResourcesInNameOrder,
+        var concreteResourceSchemas = context.EnumerateConcreteResourceSchemasInNameOrder().ToArray();
+        var baseResourcesByName = SetPassHelpers.BuildExtensionBaseResourceLookup(
+            context,
             static (index, model) => new BaseResourceEntry(index, model)
         );
-        var baseSchemasByName = context
-            .EnumerateConcreteResourceSchemasInNameOrder()
-            .Where(resourceContext => !IsResourceExtension(resourceContext))
-            .ToDictionary(resourceContext => resourceContext.ResourceName, StringComparer.Ordinal);
         Dictionary<string, JsonObject> apiSchemaRootsByProjectEndpoint = new(StringComparer.Ordinal);
 
-        foreach (var resourceContext in context.EnumerateConcreteResourceSchemasInNameOrder())
+        foreach (var resourceContext in concreteResourceSchemas)
         {
             if (!IsResourceExtension(resourceContext))
             {
@@ -81,12 +78,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
                 static entry => entry.Model.ResourceKey.Resource
             );
             var baseModel = context.ConcreteResourcesInNameOrder[baseEntry.Index];
-            if (!baseSchemasByName.TryGetValue(resourceContext.ResourceName, out var baseSchemaContext))
-            {
-                throw new InvalidOperationException(
-                    $"Base resource schema not found for extension '{FormatResource(resource)}'."
-                );
-            }
+            var baseSchemaContext = concreteResourceSchemas[baseEntry.Index];
 
             var baseOverrideContext = context.GetOrCreateResourceBuilderContext(baseSchemaContext);
             var extensionOverrideContext = context.GetOrCreateResourceBuilderContext(resourceContext);
@@ -152,9 +144,20 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
         };
 
         new ExtractInputsStep().Execute(builderContext);
+        ClearInheritedBaseContracts(builderContext);
         new ValidateJsonSchemaStep().Execute(builderContext);
 
         return builderContext;
+    }
+
+    /// <summary>
+    /// Extension-table derivation walks only the extension payload under <c>jsonSchemaForInsert</c>, so
+    /// inherited base identity and array-uniqueness contracts are not applicable in this context.
+    /// </summary>
+    private static void ClearInheritedBaseContracts(RelationalModelBuilderContext builderContext)
+    {
+        builderContext.IdentityJsonPaths = Array.Empty<JsonPathExpression>();
+        builderContext.ArrayUniquenessConstraints = Array.Empty<ArrayUniquenessConstraintInput>();
     }
 
     /// <summary>
@@ -921,7 +924,8 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Strips the leading <c>_ext.{project}</c> prefix from a scope segment list.
+    /// Strips the leading <c>_ext.{project}</c> prefix from a scope segment list when present.
+    /// Nested extension sites already arrive rooted at the owning base scope and should pass through unchanged.
     /// </summary>
     private static IReadOnlyList<JsonPathSegment> StripExtensionRootPrefix(
         IReadOnlyList<JsonPathSegment> segments,
@@ -943,9 +947,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
             return segments;
         }
 
-        throw new InvalidOperationException(
-            $"Expected extension scope to start with '{ExtensionPropertyName}.{projectKey}'."
-        );
+        return segments;
     }
 
     /// <summary>

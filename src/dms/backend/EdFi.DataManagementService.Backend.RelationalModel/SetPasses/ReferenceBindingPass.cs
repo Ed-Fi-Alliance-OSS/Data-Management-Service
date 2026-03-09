@@ -21,8 +21,8 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var baseResourcesByName = BuildBaseResourceLookup(
-            context.ConcreteResourcesInNameOrder,
+        var baseResourcesByName = SetPassHelpers.BuildExtensionBaseResourceLookup(
+            context,
             static (index, model) => new BaseResourceEntry(index, model)
         );
         var resourceIndexByKey = context

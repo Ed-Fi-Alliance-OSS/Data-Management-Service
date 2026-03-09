@@ -88,7 +88,7 @@
       "Introduce or replay an extension-resource compile failure and confirm the workflow fails in the preflight `dms-schema ddl emit` step before the readiness loop is reached.",
       "Confirm the generated output is deterministic enough for CI use by rerunning the command with the same inputs and verifying it does not produce inconsistent manifests or SQL."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Extension Schema Startup Coverage",
