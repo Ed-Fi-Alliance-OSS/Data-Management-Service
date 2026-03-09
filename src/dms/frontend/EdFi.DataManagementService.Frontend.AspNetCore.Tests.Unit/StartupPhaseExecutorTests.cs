@@ -174,4 +174,69 @@ public class StartupStatusTests
         private StartupStatusDocument ReadStartupStatus() =>
             JsonSerializer.Deserialize<StartupStatusDocument>(File.ReadAllText(_statusFilePath))!;
     }
+
+    [TestFixture]
+    public class Given_Backend_Mapping_Initialization_Is_Canceled : StartupStatusTests
+    {
+        private StartupPhaseExecutor _startupPhaseExecutor = null!;
+        private RecordingStartupProcessExit _startupProcessExit = null!;
+        private string _statusDirectory = null!;
+        private string _statusFilePath = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _statusDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            _statusFilePath = Path.Combine(_statusDirectory, "dms-startup-status.json");
+            _startupProcessExit = new RecordingStartupProcessExit();
+
+            _startupPhaseExecutor = new StartupPhaseExecutor(
+                new FileStartupStatusSignal(_statusFilePath),
+                _startupProcessExit,
+                NullLogger<StartupPhaseExecutor>.Instance
+            );
+
+            _startupPhaseExecutor.WriteCompleted(
+                DmsStartupPhases.InitializeApiSchemas,
+                "API schema initialization completed successfully."
+            );
+        }
+
+        [TearDown]
+        public void Teardown()
+        {
+            if (Directory.Exists(_statusDirectory))
+            {
+                Directory.Delete(_statusDirectory, recursive: true);
+            }
+        }
+
+        [Test]
+        public async Task It_preserves_the_previous_non_failure_status_and_does_not_request_exit()
+        {
+            // Act
+            Func<Task> act = async () =>
+                await _startupPhaseExecutor.RunFatalAsync(
+                    DmsStartupPhases.InitializeBackendMappings,
+                    "Backend mapping initialization completed successfully.",
+                    "Backend mapping initialization failed. DMS cannot start without compiled backend mappings.",
+                    () => throw new OperationCanceledException("Startup canceled.")
+                );
+
+            // Assert
+            await act.Should().ThrowAsync<OperationCanceledException>().WithMessage("Startup canceled.");
+            _startupProcessExit.ExitCallCount.Should().Be(0);
+            _startupProcessExit.ExitCode.Should().BeNull();
+
+            var startupStatus = ReadStartupStatus();
+            startupStatus.State.Should().Be("Completed");
+            startupStatus.Phase.Should().Be(DmsStartupPhases.InitializeApiSchemas);
+            startupStatus.Summary.Should().Be("API schema initialization completed successfully.");
+            startupStatus.ErrorType.Should().BeNull();
+            startupStatus.ErrorMessage.Should().BeNull();
+        }
+
+        private StartupStatusDocument ReadStartupStatus() =>
+            JsonSerializer.Deserialize<StartupStatusDocument>(File.ReadAllText(_statusFilePath))!;
+    }
 }

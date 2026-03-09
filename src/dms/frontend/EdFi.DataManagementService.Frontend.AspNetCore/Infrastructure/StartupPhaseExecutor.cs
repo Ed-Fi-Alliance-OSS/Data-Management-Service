@@ -61,12 +61,18 @@ internal sealed class StartupPhaseExecutor(
         int exitCode = -1
     )
     {
+        StartupStatusSnapshot startupStatusSnapshot = CaptureStartupStatusSnapshot();
         _startupStatusSignal.WriteStarting(phase, $"Starting {phase}.");
 
         try
         {
             await action();
             _startupStatusSignal.WriteCompleted(phase, successSummary);
+        }
+        catch (OperationCanceledException)
+        {
+            RestoreStartupStatusSnapshot(startupStatusSnapshot);
+            throw;
         }
         catch (Exception ex)
         {
@@ -93,4 +99,70 @@ internal sealed class StartupPhaseExecutor(
 
         _startupProcessExit.Exit(exitCode);
     }
+
+    private StartupStatusSnapshot CaptureStartupStatusSnapshot()
+    {
+        try
+        {
+            if (!File.Exists(StatusFilePath))
+            {
+                return new StartupStatusSnapshot(IsCaptured: true, Existed: false, Contents: string.Empty);
+            }
+
+            return new StartupStatusSnapshot(
+                IsCaptured: true,
+                Existed: true,
+                Contents: File.ReadAllText(StatusFilePath)
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Unable to snapshot DMS startup status file at {FilePath}",
+                StatusFilePath
+            );
+            return new StartupStatusSnapshot(IsCaptured: false, Existed: false, Contents: string.Empty);
+        }
+    }
+
+    private void RestoreStartupStatusSnapshot(StartupStatusSnapshot startupStatusSnapshot)
+    {
+        if (!startupStatusSnapshot.IsCaptured)
+        {
+            return;
+        }
+
+        try
+        {
+            if (!startupStatusSnapshot.Existed)
+            {
+                if (File.Exists(StatusFilePath))
+                {
+                    File.Delete(StatusFilePath);
+                }
+
+                return;
+            }
+
+            string? directory = Path.GetDirectoryName(StatusFilePath);
+
+            if (directory is not null && directory.Length > 0)
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            File.WriteAllText(StatusFilePath, startupStatusSnapshot.Contents);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Unable to restore DMS startup status file at {FilePath} after cancellation",
+                StatusFilePath
+            );
+        }
+    }
+
+    private readonly record struct StartupStatusSnapshot(bool IsCaptured, bool Existed, string Contents);
 }
