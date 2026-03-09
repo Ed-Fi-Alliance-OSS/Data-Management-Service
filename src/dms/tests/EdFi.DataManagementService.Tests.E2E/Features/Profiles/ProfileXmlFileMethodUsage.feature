@@ -3,6 +3,62 @@ Feature: Profile XML File Method Usage
               I want method access to respect profile read/write definitions
     So that read-only and write-only profiles enforce correct HTTP methods
 
+    Rule: Assigned profiles that do not support the method fall back to standard behavior
+
+        Scenario: Read-only assigned profile does not block standard POST without profile header
+            Given a profile "Test-Profile-Resource-ReadOnly" is created from XML file "Profiles/TestXmls/Profiles.xml"
+              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-Resource-ReadOnly" and namespacePrefixes "uri://ed-fi.org"
+              And the system has these descriptors
+                  | descriptorValue                                                |
+                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
+                  | uri://ed-fi.org/GradeLevelDescriptor#Ninth grade               |
+             When a POST request is made to "/ed-fi/schools" without profile header with body
+                  """
+                  {
+                      "schoolId": 99000910,
+                      "nameOfInstitution": "ReadOnly Assigned Profile Standard POST",
+                      "educationOrganizationCategories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                          }
+                      ],
+                      "gradeLevels": [
+                          {
+                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+                          }
+                      ]
+                  }
+                  """
+             Then the profile response status is 201
+
+        Scenario: Write-only assigned profile does not block standard GET without profile header
+            Given a profile "Test-Profile-Resource-WriteOnly" is created from XML file "Profiles/TestXmls/Profiles.xml"
+              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized without profiles and namespacePrefixes "uri://ed-fi.org"
+              And the system has these descriptors
+                  | descriptorValue                                                |
+                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
+                  | uri://ed-fi.org/GradeLevelDescriptor#Ninth grade               |
+              And a profile test POST request is made to "/ed-fi/schools" with
+                  """
+                  {
+                      "schoolId": 99000915,
+                      "nameOfInstitution": "WriteOnly Assigned Profile Standard GET",
+                      "educationOrganizationCategories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                          }
+                      ],
+                      "gradeLevels": [
+                          {
+                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+                          }
+                      ]
+                  }
+                  """
+              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-Resource-WriteOnly" and namespacePrefixes "uri://ed-fi.org"
+             When a GET request is made to "/ed-fi/schools/{id}" without profile header
+             Then the profile response status is 200
+
     Rule: Read-only profile allows GET and rejects POST
 
         Scenario: 01 Read-only profile allows GET and rejects POST
