@@ -37,7 +37,7 @@
       "Add or update tests that assert conflicting column kinds on the same root `SourceJsonPath` still fail with an actionable diagnostic.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"FullyQualifiedName~Abstract_Identity|FullyQualifiedName~Key_Unification\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Reference Projection Compiler And Validator Switch",
