@@ -72,7 +72,7 @@ The new lifecycle splits startup into explicit phases:
      - fail fast on mismatch.
 5. **Initialize authentication/authorization metadata caches** (startup-time, best-effort warmup):
    - warm OIDC discovery/JWKS metadata (if configured),
-   - retrieve and cache claim-set/strategy metadata used by request authorization (see `auth-redesign.md`),
+   - retrieve and cache claim-set/strategy metadata used by request authorization (see `auth.md`),
    - fail fast only when configured as required for the deployment.
 
 After these phases, request processing becomes purely “consume cached schema + cached mapping”.
@@ -86,7 +86,7 @@ becomes:
 2. Optional DB deploy (`InitializeDatabase(app)`; already present)
 3. **New**: `InitializeApiSchemas(app)` (Core)
 4. **New**: `InitializeBackendMappings(app)` (backend-specific)
-5. Other warmups (`RetrieveAndCacheClaimSets`, OIDC/JWKS metadata warmup, etc.; see `auth-redesign.md`)
+5. Other warmups (`RetrieveAndCacheClaimSets`, OIDC/JWKS metadata warmup, etc.; see `auth.md`)
 6. Start request routing
 
 ApiSchema loading can occur before or after DB deploy. Mapping initialization must occur after instances are
@@ -195,7 +195,7 @@ Example tasks:
 - `LoadAndValidateApiSchemaTask` (Core)
 - `BuildEffectiveApiSchemaTask` (Core)
 - `InitializeRelationalMappingsTask` (backend-specific)
-- `WarmupAuthMetadataTask` (frontend/Core; OIDC metadata + claim-set/strategy caches; see `auth-redesign.md`)
+- `WarmupAuthMetadataTask` (frontend/Core; OIDC metadata + claim-set/strategy caches; see `auth.md`)
 
 The orchestrator can live in Core so the host only needs one call at startup.
 

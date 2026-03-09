@@ -13,7 +13,7 @@ This document is the transactions/concurrency deep dive for `overview.md`, focus
 - Overview: [overview.md](overview.md)
 - Update tracking: [update-tracking.md](update-tracking.md)
 - Data model: [data-model.md](data-model.md)
-- Authentication & authorization: [auth-redesign.md](auth-redesign.md)
+- Authentication & authorization: [auth.md](auth.md)
 - Flattening & reconstitution deep dive: [flattening-reconstitution.md](flattening-reconstitution.md)
 - Key unification (canonical columns + generated aliases): [key-unification.md](key-unification.md)
 - Extensions: [extensions.md](extensions.md)
@@ -227,14 +227,14 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
 
 ### Authorization (CRUD checks)
 
-Authorization is enforced for all writes and MUST be applied before executing any data-modifying statements that would materialize unauthorized state. The baseline redesign follows the ODS strategy model (relationship-based, namespace-based, ownership-based, custom view-based) but adapts it to `DocumentId`-centric storage; see [auth-redesign.md](auth-redesign.md).
+Authorization is enforced for all writes and MUST be applied before executing any data-modifying statements that would materialize unauthorized state. The baseline redesign follows the ODS strategy model (relationship-based, namespace-based, ownership-based, custom view-based) but adapts it to `DocumentId`-centric storage; see [auth.md](auth.md).
 
 Integration points:
 - Authentication occurs before the write path begins and produces a token-derived authorization context (EdOrgIds, namespace prefixes, ownership tokens, and any claim-set-derived strategy configuration).
 - Authorization checks run after reference resolution (so checks can use already-resolved `DocumentId`s) and before inserts/updates/deletes.
 - For update operations, authorization is evaluated against:
   - **stored values** (to authorize the current state), and
-  - **new values** (to authorize the requested state) when identifying values change (see [auth-redesign.md](auth-redesign.md) for the execution order and error semantics).
+  - **new values** (to authorize the requested state) when identifying values change (see [auth.md](auth.md) for the execution order and error semantics).
 - On create, `dms.Document.CreatedByOwnershipTokenId` is stamped from the authenticated client context (not from the request body) and is used by the ownership-based authorization strategy.
 
 ### Identity propagation and derived maintenance (DB-driven)
@@ -332,7 +332,7 @@ Deep dive on reconstitution execution and read-planning: [flattening-reconstitut
 ### GET by id
 
 1. Resolve `DocumentUuid` → `DocumentId` via `dms.Document`.
-2. Authorize the request against stored values (namespace/ownership/relationship/custom-view strategies as configured); see [auth-redesign.md](auth-redesign.md).
+2. Authorize the request against stored values (namespace/ownership/relationship/custom-view strategies as configured); see [auth.md](auth.md).
 3. Reconstitute JSON from relational tables and return it.
 
 The returned JSON representation must preserve:
@@ -347,7 +347,7 @@ local per-site binding columns (stored or alias).
 
 Authorization integration:
 - Authorization MUST be applied at the SQL layer during page selection so only authorized `DocumentId`s enter the page keyset (avoid reconstituting unauthorized rows).
-- The authorization filter shape depends on the configured strategies and the token-derived authorization context; see [auth-redesign.md](auth-redesign.md) for the query patterns and batching guidance.
+- The authorization filter shape depends on the configured strategies and the token-derived authorization context; see [auth.md](auth.md) for the query patterns and batching guidance.
 
 Contract/clarification:
 - `queryFieldMapping` is constrained in ApiSchema to **root-table** paths (no JSON paths that cross an array boundary like `[*]`). This constraint is enforced by **MetaEd**, so query compilation does not need child-table `EXISTS (...)` / join predicate support.

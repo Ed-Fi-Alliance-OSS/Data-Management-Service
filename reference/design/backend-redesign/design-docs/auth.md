@@ -2,7 +2,7 @@
 
 ## Why not use `dms.DocumentSubject`
 
-See the original authorization redesign draft in [auth.draft.md](auth.draft.md). This updated redesign does not use the proposed `dms.DocumentSubject` table for the following reasons:
+An earlier authorization redesign draft proposed a `dms.DocumentSubject` table that would map each document to its subject documents (Student, Staff, Contact, EdOrg). Combined with a materialized `dms.SubjectEdOrg` membership table, this approach aimed to precompute EdOrg membership during document insert/update (refer to the draft [here](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/8a69f58d6b05a1daa7754ce081070f27e283fd91/reference/design/backend-redesign/design-docs/auth.md)). This updated redesign does not use it for the following reasons:
 
 - The `dms.DocumentSubject` table could grow very large if the EdOrg hierarchy is deep, potentially requiring partitioning.
 - Avoiding *phantoms* when the hierarchy is updated requires special consideration (such as a locking table). For example, if a `StudentSchoolAssociation.SchoolId` changes, we need to remove the old School authorization from the related Contacts and grant them the new School authorization. If a StudentContactAssociation is created concurrently during this process, the Contact might not receive the new School authorization.
@@ -20,7 +20,7 @@ PrimaryAssociations are modified frequently. Determining whether a Contact is ac
 
 ### What are SecurableElements
 
-SecurableElements are the resource's fields that can participate in an authorization decision, more specifically, the EducationOrganization and Student/Contact/Staff IDs that are not role-named.
+SecurableElements are the resource's fields that can participate in an authorization decision, such as the EducationOrganization and Student/Contact/Staff IDs.
 
 Note that DMS already makes these fields available in the ApiSchema.json. Consider `CourseTranscript`:
 
@@ -199,7 +199,22 @@ Non-primary key and role-named columns are allowed for the target resource ([mor
 
 When searching for the *basis resource*, we prioritize resources from the standard over resources from extensions (for example `edfi.Student` gets selected instead of `homograph.Student`).
 
-These strategies are view-based (like relationship-based strategies) but are combined using AND semantics. As such, they serve as a means for applying **additional** filter criteria rather than defining new ways to associate Education Organizations and People. These strategies can be defined without requiring code changes, compilation, or deployment.
+These strategies are view-based (like the relationship-based strategies) but are combined using AND semantics. As such, they serve as a means for applying **additional** filter criteria rather than defining new ways to associate Education Organizations and People. 
+
+These strategies can be defined without requiring code changes, compilation, or deployment; ODS refreshes the Claim Set metadata cache on a configured TTL to detect when a new custom view-based strategy is configured.
+
+When the view that backs the custom strategy doesn't exist, or returns invalid columns, ODS logs the error details and returns HTTP 500:
+```json
+{
+  "detail": "An unexpected problem has occurred.",
+  "type": "urn:ed-fi:api:system",
+  "title": "System Error",
+  "status": 500,
+  "correlationId": "07690240-0391-49aa-9388-168da6e62df3"
+}
+```
+
+As of now, no validation is done during startup; it could be implemented but such validation would also need to be executed whenever the Claim Set cache is refreshed.
 
 ### Ownership-based authorization strategy
 
@@ -276,9 +291,17 @@ Strategies that get combined with `AND` are executed first, which are:
 
 Within this list, ODS states that Ownership-based must be executed last. Namespace-based and Custom view-based are executed in the order they were set up in the Admin DB.
 
-Strategies that are combined with `OR` (Relationship-based) execute afterward. The order in which each gets executed doesn't matter because, for Relationship-based strategies, we combine and return the error hints of all of them, regardless of whether only one failed.
+Strategies that are combined with `OR` (Relationship-based) execute afterward. The order in which each `OR` strategy gets executed doesn't matter because, we combine (concatenate) and return the error hints of all of them, regardless of whether only one failed.
 
-When updating a resource, we first authorize against the values that are currently stored in the DB, and then authorize against the new values (the ones that come in the request body).
+When updating a resource, we first authorize against the values that are currently stored in the DB, and then authorize against the new values (the ones that come in the request body, also known as the proposed values).
+
+### Securable elements must be initialized
+
+As of today, all fields that are securable elements must be part of the resource's identity (except for the custom view-based strategy, more info below), meaning that if a resource is POSTed with an uninitialized securable element it will fail validation as it's a required field.
+
+However, we also have a validation in the authorization layer to ensure that these fields are initialized when creating and retrieving a resource, this validation might seem redundant but it's a guardrail in case securable elements become nullable one day. 
+
+The view-based strategy allows using nullable fields as securable element, so the validation is not redundant in that senario.
 
 ## What needs to be done in DMS
 
@@ -294,9 +317,7 @@ Storing the `CreatedByOwnershipTokenId` in `dms.Document` also means that we mus
 
 In DMS we aim to apply joins using the DocumentId surrogate key instead of natural keys, meaning that the custom authorization views used by this strategy must output the DocumentId/DescriptorId of the basis resource instead of the natural keys.
 
-In the example above, the `auth.StudentWithCTECourseEnrollments` view will return the Student's DocumentId instead of the StudentUsi.
-
-See the `Resolving the DB columns used for authorization` section below for more information.
+In the example above, the `auth.StudentWithCTECourseEnrollments` view will return the Student's DocumentId instead of the StudentUsi. See the `Resolving the DB columns used for authorization` section below for more information.
 
 ### Performance improvements over ODS
 
@@ -962,12 +983,7 @@ CREATE TYPE dms.UniqueIdentifierTable AS TABLE(
 );
 ```
 
-### SQL caching and AOT
-The resource-specific auth SQL should be lazily generated on first request and cached by the EffectiveSchemaHash.
-
-The [aot-compilation.md](aot-compilation.md) document says that SQL should be pre-computed and stored in .mpac files. This is out of scope for now. If we want to precompute the authorization statements, consider that View-based statements cannot be pre-computed because it can be defined and configured after the ApiSchema.json has been generated.
-
-### What is missing from the POC
+#### What is missing from the POC
 
 The DELETE operation isn't shown in the POC as it would be very similar to the `GetGradeBookEntryById` example, but it deletes the entry instead of reconstituting it.
 
@@ -1012,6 +1028,12 @@ There are performance optimizations that we could implement for specific scenari
 - If the resource's EducationOrganizationId appears directly in the client's token, we can grant access without generating the SQL check
 - Update the bulk reference resolution logic to also resolve people's DocumentIds that are referenced either directly or transitively, this would avoid the joins on the POST/PUT `Authorize request body values` step
 - Convert the authorization views from *normal* views to Indexed Views (only applicable for SQL Server)
+
+### SQL generation and AOT
+
+The resource-specific SQL checks should be lazily generated on first request and cached by the EffectiveSchemaHash.
+
+The [aot-compilation.md](aot-compilation.md) document says that SQL should be pre-computed and stored in .mpac files. This is out of scope for now. If we want to precompute the authorization statements, consider that View-based statements cannot be pre-computed because it can be defined and configured after the ApiSchema.json has been generated.
 
 ### Database Model
 
@@ -1095,7 +1117,266 @@ Indexing in ODS was relatively simple because it uses natural keys so all the co
 
 One option is to create a tool that analyzes the current authorization metadata and outputs the necessary indexes, this is out of the scope of this design.
 
+#### Fingerprinting
+These database objects should be fingerprinted as part of the full emitted SQL text that gets fingerprinted as a unit by the `DdlManifestEmitter`.
+
+### ProblemDetails
+
+DMS must return the same ProblemDetails structure as ODS when authorization fails. This section sumarizes authorization-related ProblemDetails, its expected error messages, and hints.
+
+The response implements the [Problem Details RFC 9457](https://www.rfc-editor.org/rfc/rfc9457.html), an explanation of each field is:
+
+- `type`: Uniquely identifies the error type as specified in RFC 9457. `type` is defined as a URI where each segment represents a level in the hierarchy into which the errors types are organized. For example, `urn:ed-fi:api:security:authorization:access-denied:resource` and `urn:ed-fi:api:security:authorization:access-denied:action` identify specific issue types within the context of an authorization error.
+- `title`: A user-friendly representation of the `type`.
+- `detail`: A user-friendly description of the encountered issue.
+- `errors`: Sometimes additional details are provided in the `errors` extension member. This allows for supplementary descriptions aimed at API client developers and API hosts to facilitate the identification and resolution of errors.
+- `correlationId`: This field allows traceability of the specific occurrence of the error and connects error response to entries in the API errors logs.  
+
+Many of the errors below show the securable element to the end user. In order to make it user-friendly the securable element path has to be split by `.`, then take the last element, and uppercase its first letter (known below as the `ReadableSecurableElement`). For example the `StudentSchoolAssociationResource` has the next securable elements:
+
+```json
+{
+  "securableElements": {
+    "EducationOrganization": [
+      {
+        "jsonPath": "$.schoolReference.schoolId",
+        "metaEdName": "SchoolId"
+      }
+    ],
+    "Student": [
+      "$.studentReference.studentUniqueId"
+    ]
+  }
+}
+```
+
+Which results in the next example ProblemDetail:
+
+```json
+{
+  "detail": "Access to the requested data could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
+  "type": "urn:ed-fi:api:security:authorization",
+  "title": "Authorization Denied",
+  "status": 403,
+  "correlationId": "9770a449-0bf0-4104-8c23-40fba4fe9326",
+  "errors": [
+    "No relationships have been established between the caller's education organization id claims (none) and one or more of the following properties of the resource item: 'SchoolId', 'StudentUniqueId'."
+  ]
+}
+```
+
+Notice how the securable element paths got translated:
+
+- `$.schoolReference.schoolId` became `SchoolId`
+- `$.studentReference.studentUniqueId` became `StudentUniqueId`
+
+#### 1. Authentication Failures (401 Unauthorized)
+
+**Type**: `urn:ed-fi:api:security:authentication`
+
+**Title**: `Authentication Failed`
+
+**Status**: `401`
+
+**Detail**: `The caller could not be authenticated.`
+
+| Scenario | Error |
+|---|---|
+| No `Authorization` header provided | `Authorization header is missing.` |
+| Unrecognized authentication scheme (not `Bearer`) | `Unknown Authorization header scheme.` |
+| `Bearer` scheme present but token value is empty | `Missing Authorization header bearer token value.` |
+| Malformed or unparseable `Authorization` header | `Invalid Authorization header.` |
+| Token not found or expired | `Invalid token` |
+
+#### 2. Authorization Denied (403 Forbidden)
+
+**Type**: `urn:ed-fi:api:security:authorization` (with additional sub-type parts appended per scenario)
+
+**Title**: `Authorization Denied`
+
+**Status**: `403`
+
+**Default Detail**: `Access to the requested data could not be authorized.`
+
+##### 2.3. Relationship-based — No relationships established (with EdOrg claims)
+
+The view-based authorization check found no relationship between the caller's education organization IDs and the resource item's securable elements.
+
+**Type**: `urn:ed-fi:api:security:authorization`
+
+When a **single** securable element is involved:
+
+**Detail**: `Access to the requested data could not be authorized.` (with optional `Hint: ...` appended, see hints table below)
+
+**Error**: `No relationships have been established between the caller's education organization id {claim/claims} ({edOrgId1}, {edOrgId2}, ...) and the resource item's '{ReadableSecurableElement}' value.`
+
+When **multiple** securable elements are involved:
+
+**Error**: `No relationships have been established between the caller's education organization id {claim/claims} ({edOrgId1}, {edOrgId2}, ...) and one or more of the following properties of the resource item: '{ReadableSecurableElement1}', '{ReadableSecurableElement2}'.`
+
+> Note: If there are more than 5 EdOrg claim values, only the first 5 are shown followed by `...`.
+
+##### 2.4. Relationship-based / Custom view — No relationships established (without EdOrg claims)
+
+Custom view-based authorization checks may not involve EdOrg claims. In this case the error message uses a different format.
+
+**Type**: `urn:ed-fi:api:security:authorization`
+
+When a **single** securable element is involved:
+
+**Detail**: `Access to the requested data could not be authorized.` (with optional `Hint: ...` appended)
+
+**Error**: `The caller is not authorized to perform the requested operation on the item based on the {existing/proposed} value of the '{ReadableSecurableElement}' property of the item.`
+
+When **multiple** securable elements are involved:
+
+**Error**: `The caller is not authorized to perform the requested operation on the item based on the {existing/proposed} values of one or more of the following properties of the item: '{ReadableSecurableElement1}', '{ReadableSecurableElement2}'.`
+
+##### Authorization Failure Hints
+
+When a view-based authorization check fails, ODS appends a hint to the `detail` field based on the authorization views that were used. DMS should produce the same hints.
+
+| Authorization View | Hint |
+|---|---|
+| `EducationOrganizationIdToStudentDocumentId` | `You may need to create a corresponding 'StudentSchoolAssociation' item.` |
+| `EducationOrganizationIdToContactDocumentId` | `You may need to create corresponding 'StudentSchoolAssociation' and 'StudentContactAssociation' items.` |
+| `EducationOrganizationIdToStaffDocumentId` | `You may need to create corresponding 'StaffEducationOrganizationEmploymentAssociation' or 'StaffEducationOrganizationAssignmentAssociation' items.` |
+| `EducationOrganizationIdToStudentDocumentIdThroughResponsibility` | `You may need to create a corresponding 'StudentEducationOrganizationResponsibilityAssociation' item.` |
+| Custom view (e.g. `StudentWithCTECourseEnrollments`) | `You may need {a/an} {Display Text}.` (e.g., `You may need a Student with CTE Course Enrollments.`) |
+
+The hint is formatted as: 
+
+**Detail**: `Access to the requested data could not be authorized. Hint: {hint text}`
+
+If multiple distinct hints apply, they are concatenated using a space as separator. For example: 
+```
+Access to the requested data could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item. You may need to create a corresponding 'StudentEducationOrganizationResponsibilityAssociation' item.
+```
+
+##### 2.5. Relationship-based — Required element uninitialized (existing data)
+
+The resource item already stored in the DB has a null value for a field that is required for authorization, making it inaccessible.
+
+**Type**: `urn:ed-fi:api:security:authorization:relationships:invalid-data:element-uninitialized`
+
+**Detail**: `Access to the requested data could not be authorized. The existing '{ReadableSecurableElement}' value is required for authorization purposes.`
+
+**Error**: `The existing resource item is inaccessible to clients using the '{authorizationStrategyName}' authorization strategy.`
+
+##### 2.6. Relationship-based — Required element missing (proposed data)
+
+The request body is missing a value for a field that is required for authorization.
+
+**Type**: `urn:ed-fi:api:security:authorization:relationships:access-denied:element-required`
+
+**Detail**: `Access to the requested data could not be authorized. The '{ReadableSecurableElement}' value is required for authorization purposes.`
+
+**Error**: *(empty)*
+
+##### 2.7. Custom view — Required element uninitialized (existing data)
+
+Same as 2.5 but for custom view-based authorization.
+
+**Type**: `urn:ed-fi:api:security:authorization:custom-view:invalid-data:element-uninitialized`
+
+**Detail**: `Access to the requested data could not be authorized. The existing '{ReadableSecurableElement}' value is required for authorization purposes.`
+
+**Error**: `The existing resource item is inaccessible to clients using the '{authorizationStrategyName}' authorization strategy.`
+
+##### 2.8. Custom view — Required element missing (proposed data)
+
+Same as 2.6 but for custom view-based authorization.
+
+**Type**: `urn:ed-fi:api:security:authorization:custom-view:access-denied:element-required`
+
+**Detail**: `Access to the requested data could not be authorized. The '{ReadableSecurableElement}' value is required for authorization purposes.`
+
+**Error**: *(empty)*
+
+##### 2.9. Namespace-based — No namespace prefixes configured on the API client
+
+The API client has been assigned a resource that uses namespace-based authorization, but the client has no namespace prefixes assigned.
+
+**Type**: `urn:ed-fi:api:security:authorization:namespace:invalid-client:no-namespaces`
+
+**Detail**: `There was a problem authorizing the request. The caller has not been configured correctly for accessing resources authorized by Namespace.`
+
+**Error**: `The API client has been given permissions on a resource that uses the '{authorizationStrategyName}' authorization strategy but the client doesn't have any namespace prefixes assigned.`
+
+##### 2.10. Namespace-based — Namespace value uninitialized (existing data)
+
+The stored resource has a null or empty `Namespace` value.
+
+**Type**: `urn:ed-fi:api:security:authorization:namespace:invalid-data:namespace-uninitialized`
+
+**Detail**: `Access to the requested data could not be authorized. The existing 'Namespace' value has not been assigned but is required for authorization purposes.`
+
+**Error**: `The existing resource item is inaccessible to clients using the '{authorizationStrategyName}' authorization strategy because the 'Namespace' value has not been assigned.`
+
+##### 2.11. Namespace-based — Namespace value missing (proposed data)
+
+The request body has a null or empty `Namespace` value.
+
+**Type**: `urn:ed-fi:api:security:authorization:namespace:access-denied:namespace-required`
+
+**Detail**: `Access to the requested data could not be authorized. The 'Namespace' value has not been assigned but is required for authorization purposes.`
+
+**Error**: *(empty)*
+
+##### 2.12. Namespace-based — Namespace mismatch
+
+The resource's namespace does not start with any of the caller's assigned namespace prefixes.
+
+**Type**: `urn:ed-fi:api:security:authorization:namespace:access-denied:namespace-mismatch`
+
+**Detail**: `Access to the requested data could not be authorized. The {existing }'Namespace' value of the data does not start with any of the caller's associated namespace prefixes ('{prefix1}', '{prefix2}').`
+
+**Error**: *(empty)*
+
+> Note: The word `existing` is included in the detail only when authorizing against stored (existing) data, not when authorizing proposed (request body) data.
+
+##### 2.13. Ownership-based — Ownership token mismatch
+
+The resource's `CreatedByOwnershipTokenId` does not match any of the caller's ownership tokens.
+
+**Type**: `urn:ed-fi:api:security:authorization:ownership:access-denied:ownership-mismatch`
+
+**Detail**: `Access to the requested data could not be authorized. The item is not owned by the caller.`
+
+**Error**: *(empty)*
+
+##### 2.14. Ownership-based — Ownership token uninitialized
+
+The stored resource has a null `CreatedByOwnershipTokenId`, making it permanently inaccessible via ownership-based authorization.
+
+**Type**: `urn:ed-fi:api:security:authorization:ownership:invalid-data:ownership-uninitialized`
+
+**Detail**: `Access to the requested data could not be authorized. The item is not owned by the caller.`
+
+**Error**: `The existing resource item has no 'CreatedByOwnershipTokenId' value assigned and thus will never be accessible to clients using the '{authorizationStrategyName}' authorization strategy.`
+
+#### 4. Security Configuration Errors (500 Internal Server Error)
+
+These indicate a misconfiguration in the security metadata and should not occur under normal conditions. DMS should return these when the authorization metadata is inconsistent or incomplete.
+
+**Type**: `urn:ed-fi:api:system-configuration:security`
+
+**Title**: `Security Configuration Error`
+
+**Status**: `500`
+
+**Detail**: `A security configuration problem was detected. The request cannot be authorized.`
+
+| Scenario | Error |
+|---|---|
+| Resource has no security metadata | `No security metadata has been configured for this resource.` |
+| Ambiguous security metadata for multiple resource claims | `Authorization metadata was found for more than one of the supplied resource claims ('{claim1}', '{claim2}') resulting in an ambiguous basis for authorization.` |
+| No authorization strategies defined for the matching claim | `No authorization strategies were defined for the requested action '{action}' against resource URIs ['{uri1}', '{uri2}'] matched by the caller's claim '{claimName}'.` |
+| Authorization strategy implementation not found | `Could not find authorization strategy implementations for the following strategy names: '{strategyName1}', '{strategyName2}'.` |
+| Custom view basis entity property not found on the target entity | `Unable to find a property on the authorization subject entity type '{targetEntityName}' corresponding to the '{propertyName}' property on the custom authorization view's basis entity type '{basisEntityName}' in order to perform authorization. Should a different authorization strategy be used?` |
+
 ### Extensions
+
 Resources that are created in extensions (such as `tpdm.Candidate`) are authorized in the same way as core resources; MetaEd already identifies them and initializes the corresponding securableElements in their ApiSchema.json.
 
 Authorization cannot be applied on fields added to core resources (such as `edfi.Credential._ext.tpdm.certificationRouteDescriptor`) as these fields do not qualify as securableElements.
@@ -1106,6 +1387,23 @@ The POC above builds a single (large) command composed of many statements, Postg
 
 The likelihood that another command is exactly the same is not as high because of the authorization queries that can vary between tokens. To improve plan reusability we could use [NpgsqlBatch](https://www.npgsql.org/doc/api/Npgsql.NpgsqlBatch.html), which allows breaking the large command into multiple, smaller commands, each would be cached independently.
 
+### Authentication
+
+DMS uses JWT Bearer tokens validated against an OpenID Connect (OIDC) identity provider. The identity provider is either the Configuration Service (via OpenIddict) or Keycloak. 
+
+Token Flow
+
+1. A client authenticates with the identity provider using client credentials (client ID + secret) and receives a JWT access token.
+2. The client sends requests to DMS with Authorization: Bearer <token>.
+3. DMS validates the token and extracts claims (client ID, roles, claim set name, education organizations, etc.).
+
+The next auth metadata is stored in the Configuration Service (CMS) and retrieved and cached during DMS startup:
+- Claim Sets (i.e. what strategies have to be applied for a given request)
+- The execution order for AND strategies
+- The token-derived EdOrgIds and namespace prefixes
+
+DMS's current authentication implementation is mostly unafected by this redesign.
+
 ### Row-level security
 
 Both SQL Server and PostgreSQL support row-level security; however, the recommendation is to not use it for DMS v1.0 given the short development timeline and the uncertainty surrounding the feature. If we adopt it and it turns out to have show-stopping limitations or unacceptable performance, it could jeopardize the release.
@@ -1114,4 +1412,4 @@ Both SQL Server and PostgreSQL support row-level security; however, the recommen
 
 - ChangeQueries and the related `*IncludingDeletes` authorization strategies are out of scope, they will be covered in a future spike.
 - Automatically discovering new person types in extensions is out of scope given that it is an unlikely scenario.
-- Supporting DS4 requires additional logic because it uses `Parent` instead of `Contact`, this is out of scope.
+- DS 5.2 switched from `Parent` to `Contact`, meaning that supporting DS4 and below requires additional logic, which is out of scope.

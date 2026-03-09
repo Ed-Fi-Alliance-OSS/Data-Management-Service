@@ -78,7 +78,7 @@ CREATE TABLE dms.Document (
     DocumentUuid uuid NOT NULL,
     ResourceKeyId smallint NOT NULL REFERENCES dms.ResourceKey (ResourceKeyId),
 
-    -- Ownership-based authorization stamp (see reference/design/backend-redesign/design-docs/auth-redesign.md)
+    -- Ownership-based authorization stamp (see reference/design/backend-redesign/design-docs/auth.md)
     CreatedByOwnershipTokenId smallint NULL,
 
     -- Update tracking tokens (see reference/design/backend-redesign/design-docs/update-tracking.md)
@@ -111,7 +111,7 @@ CREATE TABLE dms.Document (
 
     ResourceKeyId smallint NOT NULL,
 
-    -- Ownership-based authorization stamp (see reference/design/backend-redesign/design-docs/auth-redesign.md)
+    -- Ownership-based authorization stamp (see reference/design/backend-redesign/design-docs/auth.md)
     CreatedByOwnershipTokenId smallint NULL,
 
     -- Update tracking tokens (see reference/design/backend-redesign/design-docs/update-tracking.md)
@@ -138,13 +138,13 @@ CREATE INDEX IX_Document_CreatedByOwnershipTokenId
 Notes:
 - `DocumentUuid` remains stable across identity updates; identity-based upserts map to it via `dms.ReferentialIdentity` for **all** identities (self-contained, reference-bearing, and abstract/superclass aliases), because `dms.ReferentialIdentity` is maintained transactionally (including cascades) on identity changes.
 - `ResourceKeyId` identifies the document’s concrete resource type; use `dms.ResourceKey` for `(ProjectName, ResourceName)` when needed (diagnostics, CDC metadata).
-- `CreatedByOwnershipTokenId` is stamped from the authenticated client context on create and is used by the ownership-based authorization strategy; it is not client-writable (see [auth-redesign.md](auth-redesign.md)).
+- `CreatedByOwnershipTokenId` is stamped from the authenticated client context on create and is used by the ownership-based authorization strategy; it is not client-writable (see [auth.md](auth.md)).
 - Update tracking columns (brief semantics; see `reference/design/backend-redesign/design-docs/update-tracking.md` for the normative rules):
   - `ContentVersion` / `ContentLastModifiedAt`: bump when the document’s served representation changes (local write, or cascaded update to reference-identity storage columns and any dependent generated aliases).
   - `IdentityVersion` / `IdentityLastModifiedAt`: bump when the document’s identity/URI projection changes (directly or via cascaded updates to identity-component reference identity columns).
   - API `_etag`, `_lastModifiedDate`, and per-item `ChangeVersion` are served from these stored stamps (no read-time dependency derivation).
 - Time semantics: store timestamps as UTC instants. In PostgreSQL, use `timestamp with time zone` and format response values as UTC (e.g., `...Z`). In SQL Server, use `datetime2` with UTC writers (e.g., `sysutcdatetime()`).
-- Authorization is addressed separately in [auth-redesign.md](auth-redesign.md).
+- Authorization is addressed separately in [auth.md](auth.md).
 
 ##### 1a) `dms.ChangeVersionSequence`
 
@@ -542,7 +542,7 @@ Uses:
 
 ### Authorization companion objects (schema: `auth`)
 
-DMS authorization is enforced using a small set of companion tables/views, aligned with the ODS authorization strategy model and adapted for a relational primary store. See [auth-redesign.md](auth-redesign.md) for the normative behavior and query patterns.
+DMS authorization is enforced using a small set of companion tables/views, aligned with the ODS authorization strategy model and adapted for a relational primary store. See [auth.md](auth.md) for the normative behavior and query patterns.
 
 Baseline objects:
 
@@ -553,7 +553,7 @@ Baseline objects:
   - `auth.EducationOrganizationIdToStaffDocumentId`
   - `auth.EducationOrganizationIdToStudentDocumentIdThroughResponsibility`
 
-Custom, implementer-defined authorization views (for `{BasisResource}With{SomeDescription}` strategies) are also in the `auth` schema, but are not derived from `ApiSchema.json` and are not listed exhaustively here. In DMS, these custom views should output the basis resource’s `DocumentId` rather than natural keys (see [auth-redesign.md](auth-redesign.md)).
+Custom, implementer-defined authorization views (for `{BasisResource}With{SomeDescription}` strategies) are also in the `auth` schema, but are not derived from `ApiSchema.json` and are not listed exhaustively here. In DMS, these custom views should output the basis resource’s `DocumentId` rather than natural keys (see [auth.md](auth.md)).
 
 ### Resource tables (schema per project)
 
@@ -830,7 +830,7 @@ To keep schema management tractable and avoid rename cascades, physical names mu
 
 - Fixed schemas:
   - `dms` (core tables)
-  - `auth` (authorization companion objects; see [auth-redesign.md](auth-redesign.md))
+  - `auth` (authorization companion objects; see [auth.md](auth.md))
 - Project schemas (core + extensions): derived from `projectSchema.projectEndpointName`:
   - `lowercase`
   - remove all non-alphanumerics

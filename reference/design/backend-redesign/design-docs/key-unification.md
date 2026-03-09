@@ -1730,7 +1730,7 @@ Notes:
     `..._DocumentId` column (stable key) rather than propagated identity part columns.
 
 Authorization note:
-- Authorization checks and authorization-required indexes SHOULD target canonical/storage columns when available (aliases are read-only and may not be indexable/usable efficiently for access-control predicates). When resolving which physical columns participate in an authorization decision (e.g., mapping `securableElements` to DB columns/joins), prefer canonical storage columns over unified aliases where the API does not require per-path presence semantics. See [auth-redesign.md](auth-redesign.md).
+- Authorization checks and authorization-required indexes SHOULD target canonical/storage columns when available (aliases are read-only and may not be indexable/usable efficiently for access-control predicates). When resolving which physical columns participate in an authorization decision (e.g., mapping `securableElements` to DB columns/joins), prefer canonical storage columns over unified aliases where the API does not require per-path presence semantics. See [auth.md](auth.md).
 
 #### 2) FK-supporting “referenced-key” UNIQUE constraints MUST use canonical/storage columns
 

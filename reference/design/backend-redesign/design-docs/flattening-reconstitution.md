@@ -8,7 +8,7 @@ This document is the flattening/reconstitution deep dive for `overview.md`.
 
 - Overview: [overview.md](overview.md)
 - Data model: [data-model.md](data-model.md)
-- Authentication & authorization: [auth-redesign.md](auth-redesign.md)
+- Authentication & authorization: [auth.md](auth.md)
 - Extensions: [extensions.md](extensions.md)
 - Transactions, concurrency, and cascades: [transactions-and-concurrency.md](transactions-and-concurrency.md)
 - DDL Generation: [ddl-generation.md](ddl-generation.md)
@@ -367,7 +367,7 @@ During row materialization, the flattener already knows the current row’s `Ord
 
 ### 5.2.2 Authorization integration (pre-write checks)
 
-Authorization is enforced before any write statements that would materialize unauthorized state. The authorization design (strategies, SQL patterns, batching, and required `auth.*` companion objects) is defined in [auth-redesign.md](auth-redesign.md).
+Authorization is enforced before any write statements that would materialize unauthorized state. The authorization design (strategies, SQL patterns, batching, and required `auth.*` companion objects) is defined in [auth.md](auth.md).
 
 Write-path ordering (high level):
 1. Resolve references/descriptors to `DocumentId`s (this section), so authorization checks can use surrogate keys (especially for people-based checks and custom view-based strategies).
@@ -378,7 +378,7 @@ Write-path ordering (high level):
 3. Proceed with write materialization and execution.
 
 Ownership-based authorization integration:
-- On create, stamp `dms.Document.CreatedByOwnershipTokenId` from the authenticated client context (not from request JSON) as described in `auth-redesign.md`.
+- On create, stamp `dms.Document.CreatedByOwnershipTokenId` from the authenticated client context (not from request JSON) as described in `auth.md`.
 
 ### 5.3 Row materialization (in-memory)
 
@@ -550,7 +550,7 @@ The page case must not become “GET by id repeated N times”.
 Authorization integration:
 - Authorization MUST be applied before hydration/reconstitution, and should be applied at the keyset-selection step so only authorized `DocumentId`s enter the page (avoid reconstituting unauthorized rows).
 - For **GET by id**, authorize against stored values after `DocumentUuid → DocumentId` resolution and before hydration.
-- For **GET by query**, incorporate authorization filters into `<PageDocumentIdSql>` (or use an authorization-prefiltered `DocumentId` set) using the strategy patterns defined in [auth-redesign.md](auth-redesign.md). Ownership-based checks typically require joining the root table to `dms.Document` to filter on `CreatedByOwnershipTokenId`.
+- For **GET by query**, incorporate authorization filters into `<PageDocumentIdSql>` (or use an authorization-prefiltered `DocumentId` set) using the strategy patterns defined in [auth.md](auth.md). Ownership-based checks typically require joining the root table to `dms.Document` to filter on `CreatedByOwnershipTokenId`.
 
 Example (sketch): query + authorization combined in `<PageDocumentIdSql>` for `Course`
 

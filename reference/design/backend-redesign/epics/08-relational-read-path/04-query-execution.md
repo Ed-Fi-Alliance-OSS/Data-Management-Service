@@ -28,7 +28,7 @@ Note: applies to non-descriptor resources; descriptor endpoint query behavior is
 
 ## Authorization Batching Consideration
 
-Authorization is out of scope for this story, but the query execution SQL should be designed to allow authorization filtering to be integrated into the same query (as additional WHERE clauses or JOINs). For GET-many, authorization filtering is embedded directly in the page selection query rather than executed as a separate roundtrip. See `reference/design/backend-redesign/design-docs/auth-redesign.md` §"Performance improvements over ODS" (GET-many roundtrip #2).
+Authorization is out of scope for this story, but the query execution SQL should be designed to allow authorization filtering to be integrated into the same query (as additional WHERE clauses or JOINs). For GET-many, authorization filtering is embedded directly in the page selection query rather than executed as a separate roundtrip. See `reference/design/backend-redesign/design-docs/auth.md` §"Performance improvements over ODS" (GET-many roundtrip #2).
 
 ## Tasks
 

@@ -41,7 +41,7 @@ Each persisted document maintains a **representation stamp** on `dms.Document`:
 - `ContentVersion` (`bigint`, globally monotonic)
 - `ContentLastModifiedAt` (UTC timestamp)
 
-Note: `dms.Document` also carries non-stamp metadata used by other subsystems (e.g., `CreatedByOwnershipTokenId` for ownership-based authorization; see `auth-redesign.md`). Stamping rules defined in this document are unchanged by those additional columns.
+Note: `dms.Document` also carries non-stamp metadata used by other subsystems (e.g., `CreatedByOwnershipTokenId` for ownership-based authorization; see `auth.md`). Stamping rules defined in this document are unchanged by those additional columns.
 
 These are the source of truth for:
 - API `_etag`

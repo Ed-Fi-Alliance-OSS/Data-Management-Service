@@ -15,7 +15,7 @@ Define an end-to-end verification harness for the new relational-primary-store D
 Authorization-related objects are part of the end-to-end contract and MUST be covered by this harness, including:
 - `dms.Document.CreatedByOwnershipTokenId`,
 - `auth.*` companion objects and their required indexes/triggers, and
-- representative authorization query execution against provisioned fixtures (see [auth-redesign.md](auth-redesign.md)).
+- representative authorization query execution against provisioned fixtures (see [auth.md](auth.md)).
 
 ## Design principles
 

@@ -7,7 +7,7 @@ This redesign replaces the current three-table JSON document store (`Document`/`
 Source documents:
 - Overview: `reference/design/backend-redesign/design-docs/overview.md`
 - Data model: `reference/design/backend-redesign/design-docs/data-model.md`
-- Authentication & authorization: `reference/design/backend-redesign/design-docs/auth-redesign.md`
+- Authentication & authorization: `reference/design/backend-redesign/design-docs/auth.md`
 - Key unification (canonical columns + generated aliases; presence-gated when optional): `reference/design/backend-redesign/design-docs/key-unification.md`
 - Flattening & reconstitution: `reference/design/backend-redesign/design-docs/flattening-reconstitution.md`
 - Unified mapping models (in-memory shape): `reference/design/backend-redesign/design-docs/compiled-mapping-set.md`
@@ -29,7 +29,7 @@ Source documents:
 - Relationships are stored as stable `DocumentId` foreign keys, with referenced identity natural-key fields available locally for query/reconstitution and kept consistent via dialect-specific propagation rules (no FK rewrites): PostgreSQL uses `ON UPDATE CASCADE` for abstract targets and concrete targets with `allowIdentityUpdates=true` (`ON UPDATE NO ACTION` otherwise), while SQL Server uses `ON UPDATE NO ACTION` for all reference composite FKs and `DbTriggerKind.IdentityPropagationFallback` triggers for eligible propagation targets (abstract targets and concrete targets with `allowIdentityUpdates=true`). Under key unification, equality-constrained per-site/per-path bindings may be generated/persisted, presence-gated aliases of canonical stored columns (see `key-unification.md`).
 - Keep `ReferentialId` (UUIDv5 of `(ProjectName, ResourceName, DocumentIdentity)`) as the uniform natural-identity key for resolution and upserts.
 - SQL Server + PostgreSQL parity is required.
-- Authentication & authorization are addressed in [auth-redesign.md](auth-redesign.md), including:
+- Authentication & authorization are addressed in [auth.md](auth.md), including:
   - token-derived authorization context (EdOrgIds, namespace prefixes, ownership tokens),
   - `auth.*` companion objects, and
   - how authorization is applied to CRUD and paging queries.
@@ -56,7 +56,7 @@ Source documents:
 - `dms.Document`
   - One row per persisted resource instance.
   - Holds `DocumentId`, `DocumentUuid`, `ResourceKeyId` (resource type), and update-tracking token columns (see below).
-  - Stores ownership-based authorization stamping (`CreatedByOwnershipTokenId`; see `auth-redesign.md`).
+  - Stores ownership-based authorization stamping (`CreatedByOwnershipTokenId`; see `auth.md`).
   - `DocumentUuid` is unique and stable across identity updates.
 
 - `dms.ReferentialIdentity`
@@ -182,12 +182,12 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
 
 - **GET by id**
   1. Resolve `DocumentUuid → DocumentId`.
-  2. Authorize the request against stored values (namespace/ownership/relationship/custom-view strategies as configured) using token-derived authorization context; see `auth-redesign.md`.
+  2. Authorize the request against stored values (namespace/ownership/relationship/custom-view strategies as configured) using token-derived authorization context; see `auth.md`.
   3. Hydrate relational tables and reconstitute JSON; serve `_etag/_lastModifiedDate/ChangeVersion` from `dms.Document` and reference identity fields from local reference-identity binding columns (which may be presence-gated aliases under key unification).
 
 - **Query**
   - Query compilation is constrained to root-table paths (`queryFieldMapping` does not cross array boundaries).
-  - Page selection is done over the resource root table, ordered by `DocumentId` (ascending), and MUST apply authorization filters at the SQL layer so only authorized `DocumentId`s enter the page keyset; see `auth-redesign.md`.
+  - Page selection is done over the resource root table, ordered by `DocumentId` (ascending), and MUST apply authorization filters at the SQL layer so only authorized `DocumentId`s enter the page keyset; see `auth.md`.
   - Reconstitution is page-based (not “GET by id N times”):
     - materialize a page keyset of `DocumentId`s,
     - hydrate root + child + extension tables by joining each table to the page keyset in one command (multiple result sets),
@@ -204,7 +204,7 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
   - derives the same relational model as runtime,
   - emits (and optionally provisions) deterministic DDL for PostgreSQL and SQL Server for:
     - core `dms.*` tables,
-    - core `auth.*` authorization companion objects and required supporting indexes (see `auth-redesign.md`),
+    - core `auth.*` authorization companion objects and required supporting indexes (see `auth.md`),
     - per-project schemas and per-resource tables,
     - extension schemas/tables,
     - abstract identity tables (and optional union views),

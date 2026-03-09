@@ -8,7 +8,7 @@ This document is the DDL Generation deep dive for `overview.md`:
 
 - Overview: [overview.md](overview.md)
 - Data model: [data-model.md](data-model.md)
-- Authentication & authorization: [auth-redesign.md](auth-redesign.md)
+- Authentication & authorization: [auth.md](auth.md)
 - Flattening & reconstitution deep dive: [flattening-reconstitution.md](flattening-reconstitution.md)
 - Unified mapping models (derived model set + mapping set): [compiled-mapping-set.md](compiled-mapping-set.md)
 - Extensions: [extensions.md](extensions.md)
@@ -43,7 +43,7 @@ The DDL generation utility is responsible for database objects derived from the 
     - update tracking stamping (see [update-tracking.md](update-tracking.md))
 - Optional projection objects (performance / integrations):
   - `dms.DocumentCache` (materialized JSON projection; see [data-model.md](data-model.md))
-- Authorization companion objects required for API authorization (see [auth-redesign.md](auth-redesign.md)):
+- Authorization companion objects required for API authorization (see [auth.md](auth.md)):
   - `auth` schema
   - `auth.EducationOrganizationIdToEducationOrganizationId` (table) and its maintenance triggers/functions
   - baseline relationship-based authorization views that map EdOrgIds → person `DocumentId`s
@@ -127,7 +127,7 @@ This inventory is the explicit “what exists in the database” contract that t
 ### 1) Schemas
 
 - `dms` (core tables shared across all projects/resources)
-- `auth` (authorization companion objects; see [auth-redesign.md](auth-redesign.md))
+- `auth` (authorization companion objects; see [auth.md](auth.md))
 - One physical schema per project, derived from `projectSchema.projectEndpointName`:
   - e.g., `ed-fi` → `edfi`
   - extension projects (e.g., `tpdm`, `sample`) each have their own physical schema
@@ -161,7 +161,7 @@ This inventory is the explicit “what exists in the database” contract that t
 
 ### 2b) Authorization objects (`auth` schema)
 
-Authorization is enforced at the SQL layer using companion tables/views in the `auth` schema (see [auth-redesign.md](auth-redesign.md)).
+Authorization is enforced at the SQL layer using companion tables/views in the `auth` schema (see [auth.md](auth.md)).
 
 **Schema + tables/views**
 - `auth.EducationOrganizationIdToEducationOrganizationId` (table)
@@ -175,14 +175,14 @@ Authorization is enforced at the SQL layer using companion tables/views in the `
 - Provision the indexes required for authorization query performance, including:
   - `dms.Document.CreatedByOwnershipTokenId`,
   - `auth.EducationOrganizationIdToEducationOrganizationId` source/target lookup indexes, and
-  - per-resource indexes on `Namespace`, EducationOrganizationId columns, and join columns used to reach person `DocumentId`s (see `auth-redesign.md`).
+  - per-resource indexes on `Namespace`, EducationOrganizationId columns, and join columns used to reach person `DocumentId`s (see `auth.md`).
 
 **Triggers / functions**
 - EdOrg hierarchy maintenance is provisioned as database logic (initially triggers, aligned with ODS) to keep `auth.EducationOrganizationIdToEducationOrganizationId` current.
 - Dialect-specific helper constructs used by batched authorization checks (e.g., a PostgreSQL `throw_error` function) are provisioned as part of schema setup.
 
 **SQL Server user-defined table types (TVPs)**
-The authorization design relies on filtering by caller-provided lists (EdOrgIds, namespace prefixes, referential ids, etc.). To avoid SQL Server parameter-count limits, the DDL generator provisions user-defined table types used by authorization queries (see `auth-redesign.md` for the rules/thresholds).
+The authorization design relies on filtering by caller-provided lists (EdOrgIds, namespace prefixes, referential ids, etc.). To avoid SQL Server parameter-count limits, the DDL generator provisions user-defined table types used by authorization queries (see `auth.md` for the rules/thresholds).
 
 ### 3) Project objects (per project schema)
 
@@ -250,7 +250,7 @@ In addition to `dms.Document` journal triggers, emit per-table triggers derived 
 **Indexes**
 - All PK/UK indexes implied by constraints
 - Supporting indexes for all FKs (no query indexes derived from `queryFieldMapping`)
-- Authorization-required indexes derived from `securableElements` and hard-coded authorization companion objects (see [auth-redesign.md](auth-redesign.md))
+- Authorization-required indexes derived from `securableElements` and hard-coded authorization companion objects (see [auth.md](auth.md))
 
 ### 4) Seed data (required deterministic inserts)
 

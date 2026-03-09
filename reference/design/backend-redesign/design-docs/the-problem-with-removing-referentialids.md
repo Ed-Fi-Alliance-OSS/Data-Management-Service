@@ -11,7 +11,7 @@ The baseline backend redesign keeps a deterministic UUIDv5 `ReferentialId` and p
 - `dms.ReferentialIdentity(ReferentialId → DocumentId)` (see `reference/design/backend-redesign/design-docs/data-model.md`), and
 - a metadata-driven write path that resolves *all* references in a request by bulk looking up `ReferentialId`s (see `reference/design/backend-redesign/design-docs/transactions-and-concurrency.md`).
 
-Authorization note: the authorization design for the relational primary store performs many checks using `DocumentId`-centric joins (including custom view-based strategies and person relationship views). Keeping `ReferentialId → DocumentId` bulk resolution makes it practical to resolve the referenced `DocumentId`s needed for those checks without per-resource SQL and without extra passes; see `reference/design/backend-redesign/design-docs/auth-redesign.md`.
+Authorization note: the authorization design for the relational primary store performs many checks using `DocumentId`-centric joins (including custom view-based strategies and person relationship views). Keeping `ReferentialId → DocumentId` bulk resolution makes it practical to resolve the referenced `DocumentId`s needed for those checks without per-resource SQL and without extra passes; see `reference/design/backend-redesign/design-docs/auth.md`.
 
 The question explored here is: what happens if we make a radical change and remove `ReferentialId`s entirely?
 

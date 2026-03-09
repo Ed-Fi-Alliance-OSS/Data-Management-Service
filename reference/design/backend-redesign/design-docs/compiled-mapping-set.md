@@ -8,7 +8,7 @@ It exists to prevent drift between:
 - DDL generation (`ddl-generation.md`)
 - runtime compilation and execution (`flattening-reconstitution.md`)
 - mapping packs (optional AOT mode: `aot-compilation.md`, wire format: `mpack-format-v1.md`)
-- authorization companion objects, required indexes, and schema-derived authorization metadata used to build SQL authorization checks (`auth-redesign.md`)
+- authorization companion objects, required indexes, and schema-derived authorization metadata used to build SQL authorization checks (`auth.md`)
 
 The key idea is to centralize “what was derived/compiled” into a single shape that all producers/consumers use.
 
@@ -171,7 +171,7 @@ public enum DbIndexKind
     // Non-unique index required by the FK index policy (see `ddl-generation.md`).
     ForeignKeySupport,
 
-    // Index required for authorization query performance (see `auth-redesign.md`).
+    // Index required for authorization query performance (see `auth.md`).
     Authorization,
 
     // Explicit non-query indexes called out in the design (rare outside core `dms.*` tables).
@@ -248,7 +248,7 @@ Notes:
 - `TableConstraint` here refers to the model-level constraint inventory used by DDL emission. The mapping-pack/runtime subset may not need to serialize every constraint kind.
 - Index/trigger inventories are dialect-aware (“SQL-free DDL intent”), derived deterministically from the derived tables/constraints plus the policies in `ddl-generation.md`.
  - `IdentityProjectionColumns` is a null-safe value-diff compare set, not an `UPDATE(column)` gate list.
-  - Scope: schema-derived project objects only (resource/extension/abstract-identity tables). This includes authorization-required indexes on resource tables derived from `securableElements` (see `auth-redesign.md`). Core `dms.*` / `auth.*` objects (and their indexes/triggers) are owned by core DDL emission.
+  - Scope: schema-derived project objects only (resource/extension/abstract-identity tables). This includes authorization-required indexes on resource tables derived from `securableElements` (see `auth.md`). Core `dms.*` / `auth.*` objects (and their indexes/triggers) are owned by core DDL emission.
 - `IndexesInCreateOrder` / `TriggersInCreateOrder` are stored in canonical deterministic order (schema, table, name), not a dependency-aware DDL execution order; DDL emission chooses any required creation sequence.
 
 ### 2.3 Mapping set (dialect-specific)
@@ -429,7 +429,7 @@ For a read request targeting resource `R`:
 
 ### 4.4 Authorization usage (read + write)
 
-Authorization is applied using token-derived authorization context and ODS-style strategy semantics, but adapted for `DocumentId`-centric relational storage; see [auth-redesign.md](auth-redesign.md).
+Authorization is applied using token-derived authorization context and ODS-style strategy semantics, but adapted for `DocumentId`-centric relational storage; see [auth.md](auth.md).
 
 Mapping-set integration points:
 - **Physical column resolution**: authorization checks need to reference the correct physical columns for `Namespace`, EdOrg ids, and person/document relationships. These column names come from the same derived relational model used for reads/writes.

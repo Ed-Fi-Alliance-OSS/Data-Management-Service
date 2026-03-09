@@ -23,7 +23,7 @@ Align with `reference/design/backend-redesign/design-docs/transactions-and-concu
 
 ## Authorization Batching Consideration
 
-Authorization is out of scope for this story, but the delete transaction should be designed to allow authorization check statements to be prepended within the same roundtrip. For DELETE, the authorization check against stored values is batched alongside the delete statement in a single roundtrip. See `reference/design/backend-redesign/design-docs/auth-redesign.md` §"Performance improvements over ODS" (DELETE roundtrip #2).
+Authorization is out of scope for this story, but the delete transaction should be designed to allow authorization check statements to be prepended within the same roundtrip. For DELETE, the authorization check against stored values is batched alongside the delete statement in a single roundtrip. See `reference/design/backend-redesign/design-docs/auth.md` §"Performance improvements over ODS" (DELETE roundtrip #2).
 
 ## Tasks
 

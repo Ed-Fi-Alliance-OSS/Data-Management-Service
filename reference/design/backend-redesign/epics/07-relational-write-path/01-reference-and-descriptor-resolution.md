@@ -25,7 +25,7 @@ Align with `reference/design/backend-redesign/design-docs/transactions-and-concu
 
 ## Authorization Batching Consideration
 
-Authorization is out of scope for this story, but the bulk resolution roundtrip should be designed to allow additional SQL statements to be batched into the same DB command. For PUT, the authorization design batches auth checks against both stored and request-body values alongside reference resolution in the same roundtrip. See `reference/design/backend-redesign/design-docs/auth-redesign.md` §"Performance improvements over ODS" (PUT roundtrip #2).
+Authorization is out of scope for this story, but the bulk resolution roundtrip should be designed to allow additional SQL statements to be batched into the same DB command. For PUT, the authorization design batches auth checks against both stored and request-body values alongside reference resolution in the same roundtrip. See `reference/design/backend-redesign/design-docs/auth.md` §"Performance improvements over ODS" (PUT roundtrip #2).
 
 ## Tasks
 

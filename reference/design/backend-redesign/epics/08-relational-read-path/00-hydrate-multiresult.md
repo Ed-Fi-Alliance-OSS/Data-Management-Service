@@ -24,7 +24,7 @@ Align with the “one command / multiple result sets” approach in `reference/d
 
 ## Authorization Batching Consideration
 
-Authorization is out of scope for this story, but the hydration DB command should be designed to allow authorization check statements to be prepended within the same roundtrip. For GET-by-id, the authorization check against stored values is batched alongside reconstitution in a single roundtrip. See `reference/design/backend-redesign/design-docs/auth-redesign.md` §"Performance improvements over ODS" (GET-by-id roundtrip #2).
+Authorization is out of scope for this story, but the hydration DB command should be designed to allow authorization check statements to be prepended within the same roundtrip. For GET-by-id, the authorization check against stored values is batched alongside reconstitution in a single roundtrip. See `reference/design/backend-redesign/design-docs/auth.md` §"Performance improvements over ODS" (GET-by-id roundtrip #2).
 
 ## Tasks
 

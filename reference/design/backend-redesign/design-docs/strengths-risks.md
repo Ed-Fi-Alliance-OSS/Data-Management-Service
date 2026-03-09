@@ -139,7 +139,7 @@ Mitigations:
 
 ### Authorization correctness and performance (Security Risk)
 
-The redesign enforces authorization at the SQL layer using `auth.*` companion objects and token-derived authorization context (see `auth-redesign.md`). Failure modes include:
+The redesign enforces authorization at the SQL layer using `auth.*` companion objects and token-derived authorization context (see `auth.md`). Failure modes include:
 - **Incorrect authorization** (data exposure or denial): wrong securable-element→column resolution, missing joins to `dms.Document` for ownership checks, or incorrect `auth.*` view/table maintenance.
 - **Unbounded latency**: missing/incorrect indexes on `auth.*` objects or on resource columns used in authorization predicates/joins can turn authorization into table scans on hot paths (GET-many, PUT).
 - **Stale security metadata**: caching token-derived authorization context (claim sets, namespace prefixes, ownership tokens, EdOrgIds) without appropriate TTL/eviction can apply outdated policy after configuration changes.
