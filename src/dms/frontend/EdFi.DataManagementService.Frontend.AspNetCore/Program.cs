@@ -163,9 +163,15 @@ if (!ReportInvalidConfiguration(app))
     );
     await startupPhaseExecutor.RunFatalAsync(
         DmsStartupPhases.InitializeApiSchemas,
-        "API schema initialization completed successfully.",
+        "API schema loading and effective-schema initialization completed successfully.",
         "API schema initialization failed. DMS cannot start with invalid schemas.",
         () => InitializeApiSchemas(app)
+    );
+    await startupPhaseExecutor.RunFatalAsync(
+        DmsStartupPhases.InitializeBackendMappings,
+        "Backend mapping initialization completed successfully.",
+        "Backend mapping initialization failed. DMS cannot start without compiled backend mappings.",
+        () => InitializeBackendMappings(app)
     );
     await RetrieveAndCacheClaimSets(app);
     await startupPhaseExecutor.RunFatalAsync(
@@ -331,9 +337,26 @@ async Task InitializeApiSchemas(WebApplication app)
 {
     app.Logger.LogInformation("Initializing API schemas at startup");
     var orchestrator = app.Services.GetRequiredService<DmsStartupOrchestrator>();
-    // Intentionally not cancellable - initialization must complete or fail entirely
-    await orchestrator.RunAllAsync(CancellationToken.None);
-    app.Logger.LogInformation("API schema initialization completed successfully");
+    await orchestrator.RunByOrderRangeAsync(
+        0,
+        DmsStartupTaskOrderRanges.ApiSchemaInitializationMaximum,
+        CancellationToken.None
+    );
+    app.Logger.LogInformation(
+        "API schema loading and effective schema initialization completed successfully"
+    );
+}
+
+async Task InitializeBackendMappings(WebApplication app)
+{
+    app.Logger.LogInformation("Initializing backend mappings at startup");
+    var orchestrator = app.Services.GetRequiredService<DmsStartupOrchestrator>();
+    await orchestrator.RunByOrderRangeAsync(
+        DmsStartupTaskOrderRanges.BackendMappingMinimum,
+        DmsStartupTaskOrderRanges.BackendMappingMaximum,
+        CancellationToken.None
+    );
+    app.Logger.LogInformation("Backend mapping initialization completed successfully");
 }
 
 async Task RetrieveAndCacheClaimSets(WebApplication app)

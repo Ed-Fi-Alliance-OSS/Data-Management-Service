@@ -79,6 +79,16 @@ public class DmsStartupOrchestratorTests
             // Assert
             _executionOrder.Should().Equal(100, 200, 300);
         }
+
+        [Test]
+        public async Task It_can_run_only_tasks_within_a_requested_order_range()
+        {
+            // Act
+            await _orchestrator.RunByOrderRangeAsync(0, 299, CancellationToken.None);
+
+            // Assert
+            _executionOrder.Should().Equal(100, 200);
+        }
     }
 
     [TestFixture]

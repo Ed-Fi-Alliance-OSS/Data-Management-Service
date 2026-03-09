@@ -25,6 +25,7 @@ internal static class DmsStartupPhases
     public const string LoadDmsInstances = "LoadDmsInstances";
     public const string InitializeDatabase = "InitializeDatabase";
     public const string InitializeApiSchemas = "InitializeApiSchemas";
+    public const string InitializeBackendMappings = "InitializeBackendMappings";
     public const string WarmUpOidcMetadataCache = "WarmUpOidcMetadataCache";
     public const string ConfigureEndpoints = "ConfigureEndpoints";
     public const string Ready = "Ready";

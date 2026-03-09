@@ -36,7 +36,7 @@
       "Add a negative startup or compiler-path test proving a missing key for a true non-extension resource still fails with an actionable error message.",
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~PostgresqlRuntimeMappingInitialization`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Backend Startup Status Signal Integration",
@@ -47,7 +47,7 @@
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~DmsStartupOrchestrator|FullyQualifiedName~PostgresqlRuntimeMappingInitialization\"`",
       "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter FullyQualifiedName~StartupStatus`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "GitHub Actions Readiness Failure Diagnostics",

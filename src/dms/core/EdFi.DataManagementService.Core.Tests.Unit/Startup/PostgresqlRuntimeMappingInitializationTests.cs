@@ -201,6 +201,25 @@ public class PostgresqlRuntimeMappingInitializationTests
         );
     }
 
+    private static async Task RunStartupInitializationPhasesAsync(
+        IServiceProvider serviceProvider,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var orchestrator = serviceProvider.GetRequiredService<DmsStartupOrchestrator>();
+
+        await orchestrator.RunByOrderRangeAsync(
+            0,
+            DmsStartupTaskOrderRanges.ApiSchemaInitializationMaximum,
+            cancellationToken
+        );
+        await orchestrator.RunByOrderRangeAsync(
+            DmsStartupTaskOrderRanges.BackendMappingMinimum,
+            DmsStartupTaskOrderRanges.BackendMappingMaximum,
+            cancellationToken
+        );
+    }
+
     private static PostgresqlDatabaseFingerprint CreateMatchingFingerprint(
         EffectiveSchemaSet effectiveSchemaSet
     )
@@ -444,9 +463,7 @@ public class PostgresqlRuntimeMappingInitializationTests
         [Test]
         public async Task It_primes_the_runtime_mapping_cache_before_requests_begin()
         {
-            await _serviceProvider
-                .GetRequiredService<DmsStartupOrchestrator>()
-                .RunAllAsync(CancellationToken.None);
+            await RunStartupInitializationPhasesAsync(_serviceProvider, CancellationToken.None);
 
             var mappingSetKey = CreateMappingSetKey(BuildEffectiveSchemaSet(_schemaNodes));
 
@@ -652,9 +669,7 @@ public class PostgresqlRuntimeMappingInitializationTests
         [Test]
         public async Task It_primes_the_runtime_mapping_cache_for_grouped_reference_schemas()
         {
-            await _serviceProvider
-                .GetRequiredService<DmsStartupOrchestrator>()
-                .RunAllAsync(CancellationToken.None);
+            await RunStartupInitializationPhasesAsync(_serviceProvider, CancellationToken.None);
 
             var mappingSetKey = CreateMappingSetKey(BuildEffectiveSchemaSet(_schemaNodes));
             var cache = _serviceProvider.GetRequiredService<MappingSetCache>();
@@ -761,9 +776,7 @@ public class PostgresqlRuntimeMappingInitializationTests
         [Test]
         public async Task It_primes_the_runtime_mapping_cache_for_extension_bearing_schemas()
         {
-            await _serviceProvider
-                .GetRequiredService<DmsStartupOrchestrator>()
-                .RunAllAsync(CancellationToken.None);
+            await RunStartupInitializationPhasesAsync(_serviceProvider, CancellationToken.None);
 
             var mappingSetKey = CreateMappingSetKey(BuildEffectiveSchemaSet(_schemaNodes));
             var cache = _serviceProvider.GetRequiredService<MappingSetCache>();
@@ -853,10 +866,20 @@ public class PostgresqlRuntimeMappingInitializationTests
         [Test]
         public async Task It_surfaces_the_extension_compile_failure_details()
         {
+            var orchestrator = _serviceProvider.GetRequiredService<DmsStartupOrchestrator>();
+
+            await orchestrator.RunByOrderRangeAsync(
+                0,
+                DmsStartupTaskOrderRanges.ApiSchemaInitializationMaximum,
+                CancellationToken.None
+            );
+
             Func<Task> act = () =>
-                _serviceProvider
-                    .GetRequiredService<DmsStartupOrchestrator>()
-                    .RunAllAsync(CancellationToken.None);
+                orchestrator.RunByOrderRangeAsync(
+                    DmsStartupTaskOrderRanges.BackendMappingMinimum,
+                    DmsStartupTaskOrderRanges.BackendMappingMaximum,
+                    CancellationToken.None
+                );
 
             var exception = (await act.Should().ThrowAsync<InvalidOperationException>()).Which;
 
