@@ -214,3 +214,9 @@ Story: reference/design/backend-redesign/epics/15-plan-compilation/06-projection
 Decisions: added a minimal Ed-Fi+Sample startup fixture so runtime mapping priming proves `_ext.sample` compiles into `sample.ContactExtension` during orchestrated startup; paired it with an invalid Sample extension fixture using unsupported `relational.rootTableNameOverride` so startup still surfaces the underlying `Sample:Contact` compile diagnostic through the `Backend Mapping Initialization` wrapper.
 Files changed: src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Startup/PostgresqlRuntimeMappingInitializationTests.cs; progress.txt; tasks.json
 Notes: `dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Startup/PostgresqlRuntimeMappingInitializationTests.cs`; `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~PostgresqlRuntimeMappingInitialization` green (7 tests); full core unit suite green (1223 tests). All tasks complete.
+2026-03-09
+Task completed: Design Contract Clarification
+Story: reference/design/backend-redesign/epics/15-plan-compilation/06-projection-plan-compilers.md
+Decisions: aligned resource-key seeding contract across the seed story, DDL design, and mpack format: include abstract resources plus concrete non-extension resources, but exclude `isResourceExtension=true` overlays because they compile into `_ext` tables on owning base resources.
+Files changed: reference/design/backend-redesign/epics/00-effective-schema-hash/03-resourcekey-seed.md; reference/design/backend-redesign/design-docs/ddl-generation.md; reference/design/backend-redesign/design-docs/mpack-format-v1.md; progress.txt; tasks.json
+Notes: verify with targeted `rg` against updated design docs; remaining tasks in current `tasks.json` left untouched for later iterations.

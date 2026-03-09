@@ -1,123 +1,62 @@
 [
   {
-    "category": "Reference Field Grouping",
-    "description": "Add one authoritative helper or metadata shape that derives logical reference-field groups from `DocumentReferenceBinding.IdentityBindings` by grouping repeated `ReferenceJsonPath` values within a single `DocumentReferenceBinding`. Acceptance: grouping is limited to one reference site (`ReferenceObjectPath` + owning table), preserves first-seen field order, exposes all physical member columns for each logical field, and does not legitimize the existing arbitrary duplicate-source-path case where the same JSON path is duplicated outside one reference binding.",
+    "category": "Design Contract Clarification",
+    "description": "Update the backend redesign references that currently conflict on resource-key seeding so this story has one explicit contract: `dms.ResourceKey` and `EffectiveSchemaInfo.ResourceKeysInIdOrder` include abstract resources and concrete non-extension resources, but exclude `isResourceExtension=true` overlay schemas because those compile into `_ext` tables on the owning base resource. Acceptance: `reference/design/backend-redesign/epics/00-effective-schema-hash/03-resourcekey-seed.md` no longer says every concrete `resourceSchema` is seeded without the overlay exception, and any directly conflicting manifest/testing guidance is updated to match the relational-model design.",
     "steps-to-verify": [
-      "Add unit tests that build a `DocumentReferenceBinding` with repeated `ReferenceJsonPath` values and assert the grouped output preserves first-seen logical field order while keeping all physical member columns for the duplicated field.",
-      "Add a negative unit test proving the grouping helper does not merge bindings from different `ReferenceObjectPath` values or unrelated duplicate source-path columns.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter FullyQualifiedName~KeyUnification`"
+      "Review the updated wording in `reference/design/backend-redesign/epics/00-effective-schema-hash/03-resourcekey-seed.md` and any touched companion design docs to confirm the exclusion of `isResourceExtension=true` overlays is explicit.",
+      "Run: `rg -n \"resource key|isResourceExtension|concrete `resourceSchema`\" reference/design/backend-redesign/epics/00-effective-schema-hash/03-resourcekey-seed.md reference/design/backend-redesign/design-docs/ddl-generator-testing.md reference/design/backend-redesign/epics/01-relational-model/08-derived-relational-model-set-builder.md`"
     ],
     "completed": true
   },
   {
-    "category": "Key Unification Endpoint Resolution",
-    "description": "Update `KeyUnificationPass` so explicit equality-constraint endpoint resolution accepts one same-site grouped reference field when repeated bindings come from a single flattened reference site, instead of failing any time multiple physical bindings exist. Acceptance: when a grouped reference field participates in a non-redundant equality constraint, key unification adds edges for every physical member selected by that grouped endpoint; when both endpoints resolve to the same same-site logical endpoint group, the constraint remains redundant and intra-group unification comes from the implicit same-site edge rule; existing cross-table and unsupported-kind behavior is unchanged; the current arbitrary ambiguous-endpoint scenario still fails fast with the existing diagnostic.",
+    "category": "Relational Resource-Key Validation Alignment",
+    "description": "Update relational-model startup validation so the completeness universe matches the production seed contract instead of every `projectSchema.resourceSchemas` entry. Acceptance: `RelationalModelSetValidation` excludes only `isResourceExtension=true` resources from the missing-resource-key check, still includes non-extension resources from extension projects and all abstract resources, and preserves the existing duplicate-id, duplicate-resource, extra-resource, and abstractness diagnostics.",
     "steps-to-verify": [
-      "Add a TPDM-like minimal relational-model test where one equality-constraint endpoint resolves to two physical columns from one flattened reference site, the opposite endpoint resolves to a different binding or grouped endpoint on the same table, and assert key unification succeeds.",
-      "Retain the existing ambiguous-endpoint negative test and assert it still throws `resolved to multiple distinct bindings` for an arbitrary duplicated scalar path.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter FullyQualifiedName~Given_Key_Unification`"
+      "Add unit coverage for an effective schema set that contains a real extension-project resource and an `isResourceExtension=true` overlay, then assert validation requires the real resource key but does not require the overlay key.",
+      "Add a negative unit test proving a missing non-extension resource key or an extra unknown resource key still fails with the expected deterministic message.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"FullyQualifiedName~EffectiveSchema|FullyQualifiedName~RelationalModelSetValidation\"`"
     ],
-    "completed": true
+    "completed": false
   },
   {
-    "category": "Implicit Same-Site Unification",
-    "description": "Teach key unification to synthesize implicit edges for duplicate logical reference fields inside one flattened reference site even when no explicit `equalityConstraints` mention those fields. Acceptance: repeated `ReferenceJsonPath` members within one grouped reference field are unified to one canonical storage class without TPDM-specific branching; deterministic ordering of classes and diagnostics is preserved; invalid mixed-kind or descriptor-target-mismatch groups still fail with actionable errors.",
+    "category": "Fixture Builder And Golden Alignment",
+    "description": "Align fixture-generated `EffectiveSchemaInfo` and authoritative expected manifests with the same resource-key contract used at runtime. Acceptance: `EffectiveSchemaSetFixtureBuilder` stops synthesizing keys for `isResourceExtension=true` overlays, authoritative `effective-schema` outputs regenerate with matching `resource_key_count`, `resource_key_seed_hash`, and `resource_keys[]`, overlay entries such as `Sample:Contact`, `Sample:School`, `Sample:Staff`, `Sample:Student`, and similar TPDM overlays disappear, and true extension-project resources remain present.",
     "steps-to-verify": [
-      "Add a minimal schema test with duplicate reference-field bindings but no explicit equality constraint for one of the duplicated fields, and assert the field still converges to one key-unification class.",
-      "Add a negative test proving a duplicated logical field that mixes scalar and descriptor members, or mismatched descriptor targets, still fails deterministically.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_Key_Unification|FullyQualifiedName~ConstraintDerivation\"`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Abstract Identity Root Resolution",
-    "description": "Relax abstract-identity root-column lookup so duplicate root `SourceJsonPath` values are allowed only when same-kind columns converge to one stored column after key unification. Acceptance: abstract identity derivation succeeds for unified flattened-reference duplicates, still fails for arbitrary duplicate root columns that do not converge to one stored column, and does not weaken the existing fail-fast path for conflicting kinds.",
-    "steps-to-verify": [
-      "Split the current duplicate-root negative coverage into two tests: one that still fails for artificial non-unified duplicates and one that succeeds for a key-unified flattened-reference case.",
-      "Add or update tests that assert conflicting column kinds on the same root `SourceJsonPath` still fail with an actionable diagnostic.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"FullyQualifiedName~Abstract_Identity|FullyQualifiedName~Key_Unification\"`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Reference Projection Compiler And Validator Switch",
-    "description": "Update `ReferenceIdentityProjectionPlanCompiler` and `ReadPlanProjectionContractValidator` together so compile-time read-plan generation works on grouped logical reference fields instead of raw `DocumentReferenceBinding.IdentityBindings` count and index. Acceptance: compiled projection metadata contains unique logical field paths per reference object, preserves deterministic field ordering, still uses the stored `DocumentFk` column for `FkColumnOrdinal`, and valid grouped projections pass compile-time validation while duplicated, missing, or reordered logical reference fields fail with deterministic messages that name the offending `ReferenceObjectPath` and `ReferenceJsonPath`.",
-    "steps-to-verify": [
-      "Add a read-plan compiler test for a flattened reference binding with duplicate `ReferenceJsonPath` values and assert the compiled projection contains one entry for the logical field rather than duplicate field ordinals.",
-      "Add validator negative tests for duplicated logical reference fields, omitted logical reference fields, and reordered logical reference fields within one projection binding.",
-      "Retain or add a positive regression test proving a normal reference projection without duplicate logical fields still compiles to the same ordinals as before.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter FullyQualifiedName~Given_ReadPlanCompiler`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Normalized Grouped Projection Decode",
-    "description": "Update the normalized read-plan decode path so grouped logical reference-field validation matches the compile-time rule after the compiler and validator switch. Acceptance: normalized-plan decode uses the same grouped logical reference-field contract as compile-time validation; valid grouped projections round-trip unchanged; malformed grouped projections fail through decode-time validation with deterministic messages instead of relying on raw `IdentityBindings` count or index assumptions.",
-    "steps-to-verify": [
-      "Add or update normalized-plan decode coverage proving duplicated, omitted, or reordered grouped logical reference fields fail through decode-time validation with the same deterministic rule used at compile time.",
-      "Add or update a positive normalized round-trip test proving a valid grouped projection survives encode/decode without changing logical field order or ordinals.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_ReadPlanCompiler|FullyQualifiedName~Given_NormalizedPlanContractCodec\"`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "PostgreSQL Startup Regression",
-    "description": "Add startup regression coverage proving PostgreSQL runtime mapping initialization no longer dies on a flattened-reference schema that previously triggered ambiguous endpoint failure. Acceptance: a minimal TPDM-like schema with duplicate `ReferenceJsonPath` groups compiles through `PostgresqlRuntimeMappingSetCompiler` and allows startup cache priming to complete; a deliberately arbitrary duplicate-source-path schema still fails so startup does not silently accept unsupported ambiguity.",
-    "steps-to-verify": [
-      "Add a startup unit test that wires a minimal flattened-reference schema through `DmsStartupOrchestrator` or `PostgresqlRuntimeMappingSetCompiler` and asserts runtime mapping cache initialization succeeds.",
-      "Add a negative startup or compiler-path test proving an arbitrary duplicated scalar path still fails during runtime mapping compilation.",
-      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~PostgresqlRuntimeMappingInitialization`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "CI Readiness Failure Log Surfacing",
-    "description": "Update `.github/workflows/on-dms-pullrequest.yml` so the `build-and-start-dms` job exports Docker logs on failure and writes the `dms-local-dms` container log directly into the workflow output when readiness polling or OpenAPI download fails. Acceptance: a failed readiness timeout produces a `logs/` artifact for this job, includes inline DMS container logs in the failing job output, and leaves successful runs unchanged because the new log steps are guarded by `if: failure()`.",
-    "steps-to-verify": [
-      "Force `build-and-start-dms` to fail after `Start DMS Docker` and confirm the job uploads a logs artifact that contains the DMS and companion container logs from the local stack.",
-      "Confirm the failing GitHub Actions log shows the `dms-local-dms` log inline without requiring artifact download to see the startup exception.",
-      "Run a successful `build-and-start-dms` path and confirm the failure-only log export steps are skipped."
-    ],
-    "completed": true
-  },
-  {
-    "category": "Schema Compile Preflight In CI",
-    "description": "Add a preflight CI step that runs `dms-schema ddl emit` against the same schema set packaged into DMS startup before Docker is launched. Acceptance: schema-to-relational compile failures fail the workflow before `Start DMS Docker`, the step does not require database connectivity, and the workflow logs clearly identify the schema inputs and dialect being compiled.",
-    "steps-to-verify": [
-      "Run the new preflight step locally or in CI with the normal schema inputs and confirm it completes successfully without starting Docker or opening a database connection.",
-      "Introduce or replay an extension-resource compile failure and confirm the workflow fails in the preflight `dms-schema ddl emit` step before the readiness loop is reached.",
-      "Confirm the generated output is deterministic enough for CI use by rerunning the command with the same inputs and verifying it does not produce inconsistent manifests or SQL."
-    ],
-    "completed": true
-  },
-  {
-    "category": "Extension Schema Startup Coverage",
-    "description": "Extend PostgreSQL startup mapping tests to exercise real extension-bearing schemas instead of only the current minimal core-only fixture. Acceptance: `PostgresqlRuntimeMappingInitializationTests` covers at least one startup-success path and one startup-failure path using schema inputs that include extension resources, and failures surface the compile-time exception details rather than collapsing into a generic readiness symptom.",
-    "steps-to-verify": [
-      "Add a positive startup initialization test that loads a core schema plus at least one extension schema and asserts `DmsStartupOrchestrator` completes backend mapping initialization.",
-      "Add a negative startup initialization test with an intentionally invalid extension-bearing schema and assert the thrown exception includes the relevant resource or invariant failure detail.",
-      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~PostgresqlRuntimeMappingInitialization`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Relational Fixture Contract Alignment",
-    "description": "Align relational-model fixtures and goldens with the production resource-key contract by excluding `isResourceExtension=true` resources from synthesized resource keys. Acceptance: `EffectiveSchemaSetFixtureBuilder` no longer invents keys for extension resources, authoritative expected manifests are regenerated accordingly, and Sample extension entries such as `Sample:Contact`, `Sample:School`, `Sample:Staff`, and `Sample:Student` no longer appear in `authoritative-effective-schema.manifest.json` resource keys unless the production contract changes first.",
-    "steps-to-verify": [
-      "Add or update unit coverage proving fixture-generated resource key entries skip extension resources the same way `ResourceKeySeedProvider` does.",
-      "Regenerate the affected authoritative manifests and confirm extension resources are removed from the expected resource-key list while non-extension resources remain stable.",
+      "Add or update fixture-builder tests proving synthetic `ResourceKeysInIdOrder` excludes overlay resources while keeping non-extension extension-project resources.",
+      "Regenerate the affected authoritative manifests and inspect the diff to confirm only overlay resource-key entries, counts, ids, and derived hashes changed.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": true
+    "completed": false
   },
   {
-    "category": "Startup Failure Status Surfacing",
-    "description": "Design and, if justified, implement a startup-status surfacing mechanism so pre-bind startup failures are externally diagnosable without relying only on connection-refused symptoms. Acceptance: the chosen approach is documented and preserves fatal startup semantics while surfacing the failing startup phase and error summary through a stable signal usable by CI or local troubleshooting, such as a status artifact, structured log contract, or lightweight startup-state endpoint.",
+    "category": "Extension-Aware Startup Mapping Regression Coverage",
+    "description": "Extend PostgreSQL startup/runtime mapping tests so this bug is covered by an extension-bearing schema instead of only a core-only fixture. Acceptance: `PostgresqlRuntimeMappingInitializationTests` or equivalent covers one success path where extension overlays are present and startup mapping initialization completes, plus one negative path where a real resource-key mismatch still fails fast with the underlying compile-time exception rather than a generic readiness symptom.",
     "steps-to-verify": [
-      "Document the selected approach, rejected alternatives, and interaction with the current `Environment.Exit(-1)` startup failure path.",
-      "Validate the design with a failing startup scenario and confirm CI or local tooling can report the startup phase and summarized failure reason without manually inspecting every container log.",
-      "If code is added, run the relevant DMS startup and health/readiness test coverage or add new coverage that proves the status signal is emitted when startup fails before route binding."
+      "Add a startup or runtime-compiler test that loads a core schema plus extension schemas containing `isResourceExtension=true` overlays and asserts backend mapping initialization succeeds.",
+      "Add a negative startup or compiler-path test proving a missing key for a true non-extension resource still fails with an actionable error message.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~PostgresqlRuntimeMappingInitialization`"
     ],
-    "completed": true
+    "completed": false
+  },
+  {
+    "category": "Backend Startup Status Signal Integration",
+    "description": "Wire the backend mapping phase into the existing startup-status signal so pre-bind compile failures record the real failing phase and summarized error before process exit. Acceptance: the status file transitions through `Starting` and `Completed` for `InitializeBackendMappings` on success, records `Failed` with the backend mapping exception summary on compile failure, and preserves existing fatal-startup behavior and ready-state reporting.",
+    "steps-to-verify": [
+      "Add or update unit coverage around the startup orchestrator and startup-status signal proving a backend mapping failure writes `Failed` for `InitializeBackendMappings` before the host exits.",
+      "Add or update a success-path test proving the status signal still reaches `Ready` after backend mapping initialization completes.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~DmsStartupOrchestrator|FullyQualifiedName~PostgresqlRuntimeMappingInitialization\"`",
+      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter FullyQualifiedName~StartupStatus`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "GitHub Actions Readiness Failure Diagnostics",
+    "description": "Update `.github/workflows/on-dms-pullrequest.yml` so readiness or OpenAPI-download failures surface the startup-status file and DMS container logs inline instead of only timing out on `localhost:8080`. Acceptance: when `Wait for DMS to be ready` fails, the workflow prints `/tmp/dms-startup-status.json` if present, emits the `dms-local-dms` log inline, uploads the relevant container logs as an artifact, and leaves successful runs unchanged through `if: failure()` guards.",
+    "steps-to-verify": [
+      "Force a failing startup after `Start DMS Docker` and confirm the workflow log shows the startup phase and summarized backend error before the readiness timeout context.",
+      "Confirm the failing job uploads the DMS and companion container logs as artifacts and that successful runs skip the failure-only diagnostics steps.",
+      "Validate the edited workflow YAML in CI or with the repo's normal workflow review process before merge."
+    ],
+    "completed": false
   }
 ]

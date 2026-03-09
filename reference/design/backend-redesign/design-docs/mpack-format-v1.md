@@ -190,7 +190,8 @@ Every pack payload includes the deterministic `dms.ResourceKey` seed mapping for
 
 The payload MUST include the complete set of `ResourceKeyEntry` rows for:
 
-- every concrete `resourceSchema` in the effective schema (including descriptors), and
+- every concrete `resourceSchema` in the effective schema where `isResourceExtension` is not `true` (including descriptors and non-extension resources from extension projects),
+- excluding `isResourceExtension: true` resource-extension overlays because they compile into `_ext` extension tables on the owning base resource rather than standalone document/resource-key rows, and
 - every `abstractResources[*]` name (used for polymorphic/superclass alias behavior).
 
 `resource_key_id` MUST fit in SQL `smallint` (≤ 32767).
