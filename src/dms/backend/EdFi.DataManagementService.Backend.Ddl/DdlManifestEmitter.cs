@@ -209,17 +209,19 @@ public static class DdlManifestEmitter
 
     /// <summary>
     /// Determines whether a trimmed line starts a compound T-SQL batch
-    /// (CREATE [OR ALTER] FUNCTION | TRIGGER | PROCEDURE) that should be
+    /// (CREATE [OR ALTER | OR REPLACE] FUNCTION | TRIGGER | PROCEDURE) that should be
     /// counted as a single statement regardless of internal semicolons.
     /// </summary>
     private static bool IsCompoundBatchStart(ReadOnlySpan<char> trimmedLine)
     {
         if (!trimmedLine.StartsWith("CREATE", StringComparison.OrdinalIgnoreCase))
+        {
             return false;
+        }
 
         var rest = trimmedLine[6..].TrimStart();
 
-        // Skip optional OR ALTER
+        // Skip optional OR ALTER / OR REPLACE
         if (rest.StartsWith("OR", StringComparison.OrdinalIgnoreCase) && rest.Length > 2 && rest[2] == ' ')
         {
             rest = rest[2..].TrimStart();
@@ -230,6 +232,14 @@ public static class DdlManifestEmitter
             )
             {
                 rest = rest[5..].TrimStart();
+            }
+            else if (
+                rest.StartsWith("REPLACE", StringComparison.OrdinalIgnoreCase)
+                && rest.Length > 7
+                && rest[7] == ' '
+            )
+            {
+                rest = rest[7..].TrimStart();
             }
         }
 

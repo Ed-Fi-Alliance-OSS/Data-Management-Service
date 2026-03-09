@@ -630,6 +630,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     {
         // CREATE OR ALTER FUNCTION must be the first statement in a T-SQL batch
         var functionIndex = _ddl.IndexOf("CREATE OR ALTER FUNCTION");
+        functionIndex.Should().BeGreaterOrEqualTo(0, "expected CREATE OR ALTER FUNCTION in DDL");
         var goIndex = _ddl.LastIndexOf("GO\n", functionIndex);
 
         goIndex.Should().BeGreaterOrEqualTo(0, "expected GO batch separator in DDL");
