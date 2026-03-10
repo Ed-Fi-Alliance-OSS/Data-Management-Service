@@ -6,6 +6,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
@@ -146,6 +147,16 @@ public class InvalidResourceSchemasTests
                 NullLogger<ProfileFilteringMiddleware>.Instance
             );
 
+            // Register ValidateDatabaseFingerprintMiddleware and its dependencies
+            var appSettingsOptions = Options.Create(new AppSettings { AllowIdentityUpdateOverrides = "" });
+            services.AddSingleton(appSettingsOptions);
+            services.AddSingleton<IDatabaseFingerprintReader, NullDatabaseFingerprintReader>();
+            services.AddSingleton<DatabaseFingerprintProvider>();
+            services.AddTransient<ValidateDatabaseFingerprintMiddleware>();
+            services.AddTransient<ILogger<ValidateDatabaseFingerprintMiddleware>>(_ =>
+                NullLogger<ValidateDatabaseFingerprintMiddleware>.Instance
+            );
+
             var serviceProvider = services.BuildServiceProvider();
 
             return new ApiService(
@@ -157,11 +168,12 @@ public class InvalidResourceSchemasTests
                 new EqualityConstraintValidator(),
                 new DecimalValidator(),
                 NullLogger<ApiService>.Instance,
-                Options.Create(new AppSettings { AllowIdentityUpdateOverrides = "" }),
-                new NamedAuthorizationServiceFactory(serviceProvider),
+                appSettingsOptions,
+                new NamedAuthorizationServiceFactory(),
                 ResiliencePipeline.Empty,
                 new ResourceLoadOrderCalculator([], A.Fake<IResourceDependencyGraphFactory>()),
                 serviceProvider,
+                A.Fake<IServiceScopeFactory>(),
                 A.Fake<CachedClaimSetProvider>(),
                 A.Fake<IResourceDependencyGraphMLFactory>(),
                 A.Fake<IProfileService>()

@@ -191,6 +191,13 @@ ALTER TABLE [dms].[EffectiveSchema]
 ADD CONSTRAINT [CK_EffectiveSchema_Singleton] CHECK ([EffectiveSchemaSingletonId] = 1);
 
 IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE name = N'CK_EffectiveSchema_ApiSchemaFormatVersion_NotBlank' AND parent_object_id = OBJECT_ID(N'dms.EffectiveSchema')
+)
+ALTER TABLE [dms].[EffectiveSchema]
+ADD CONSTRAINT [CK_EffectiveSchema_ApiSchemaFormatVersion_NotBlank] CHECK (LEN(LTRIM(RTRIM([ApiSchemaFormatVersion]))) > 0);
+
+IF NOT EXISTS (
     SELECT 1 FROM sys.key_constraints
     WHERE name = N'UX_EffectiveSchema_EffectiveSchemaHash' AND type = 'UQ' AND parent_object_id = OBJECT_ID(N'dms.EffectiveSchema')
 )
@@ -534,15 +541,20 @@ IF NOT EXISTS (SELECT 1 FROM [dms].[EffectiveSchema] WHERE [EffectiveSchemaSingl
     INSERT INTO [dms].[EffectiveSchema] ([EffectiveSchemaSingletonId], [ApiSchemaFormatVersion], [EffectiveSchemaHash], [ResourceKeyCount], [ResourceKeySeedHash])
     VALUES (1, N'1.0.0', N'e68eb06e75b829edd10633e1077b04a29f02c23dba8cf704aaefbbb08706d4fe', 1, 0xCBA2C51987BF6B657F9C898F28F22A073C0EDA05B26EB5A33497AF52CE1DD492);
 
--- EffectiveSchema validation (ResourceKeyCount + ResourceKeySeedHash)
+-- EffectiveSchema validation (ApiSchemaFormatVersion + ResourceKeyCount + ResourceKeySeedHash)
+DECLARE @es_stored_api_schema_format_version nvarchar(255);
 DECLARE @es_stored_count smallint;
 DECLARE @es_stored_hash varbinary(32);
 
-SELECT @es_stored_count = [ResourceKeyCount], @es_stored_hash = [ResourceKeySeedHash]
+SELECT @es_stored_api_schema_format_version = [ApiSchemaFormatVersion], @es_stored_count = [ResourceKeyCount], @es_stored_hash = [ResourceKeySeedHash]
 FROM [dms].[EffectiveSchema]
 WHERE [EffectiveSchemaSingletonId] = 1;
 IF @es_stored_count IS NOT NULL
 BEGIN
+    IF @es_stored_api_schema_format_version IS NULL OR LEN(LTRIM(RTRIM(@es_stored_api_schema_format_version))) = 0
+    BEGIN
+        THROW 50000, N'dms.EffectiveSchema.ApiSchemaFormatVersion must not be empty.', 1;
+    END
     IF @es_stored_count <> 1
     BEGIN
         DECLARE @es_count_msg nvarchar(200) = CONCAT(N'dms.EffectiveSchema ResourceKeyCount mismatch: expected 1, found ', CAST(@es_stored_count AS nvarchar(10)));

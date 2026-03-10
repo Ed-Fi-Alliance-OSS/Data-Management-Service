@@ -192,7 +192,7 @@ The payload MUST include the complete set of `ResourceKeyEntry` rows for:
 
 The payload MUST include `resource_key_seed_hash` and `resource_key_count`, computed as:
 
-- `resource_key_count = number of entries`
+- `resource_key_count = number of entries` and MUST fit the same `smallint`-bounded contract as `dms.EffectiveSchema.ResourceKeyCount` (maximum 32,767)
 - `resource_key_seed_hash = SHA-256(UTF8(manifest))`
 
 Where `manifest` is:

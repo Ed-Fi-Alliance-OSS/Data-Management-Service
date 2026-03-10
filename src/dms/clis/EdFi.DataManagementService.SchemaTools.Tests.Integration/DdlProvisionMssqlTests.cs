@@ -500,7 +500,12 @@ public class Given_Mssql_Schema_Hash_Mismatch_On_Provisioning
     [Test]
     public void It_reports_schema_hash_mismatch_in_stderr()
     {
-        _secondError.Should().Contain("Schema hash mismatch");
+        _secondError
+            .Should()
+            .Contain(
+                "EffectiveSchemaHash: stored=",
+                "stderr should report the stored and expected EffectiveSchemaHash values"
+            );
     }
 
     [Test]
@@ -515,7 +520,12 @@ public class Given_Mssql_Schema_Hash_Mismatch_On_Provisioning
     [Test]
     public void It_includes_the_expected_hash_in_error_output()
     {
-        _secondError.Should().Contain("but the current schema produces hash");
+        var hashB = ProvisionTestHelper.ExtractHashFromOutput(_secondError);
+        hashB.Should().NotBeNullOrEmpty("should be able to extract hash from second run output");
+
+        _secondError
+            .Should()
+            .Contain($"expected={hashB!}", "stderr should include the hash produced by the current schema");
     }
 
     [Test]

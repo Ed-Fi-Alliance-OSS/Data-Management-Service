@@ -938,6 +938,12 @@ public class Given_MssqlDialect_Create_Uuidv5_Function
     }
 
     [Test]
+    public void It_should_apply_utf8_collation_before_casting_name_text_to_varchar()
+    {
+        _ddl.Should().Contain("CAST(@name_text COLLATE Latin1_General_100_CI_AS_SC_UTF8 AS varchar(max))");
+    }
+
+    [Test]
     public void It_should_convert_namespace_to_big_endian_by_swapping_bytes()
     {
         // Verifies the mixed-endian to big-endian byte swap for the namespace

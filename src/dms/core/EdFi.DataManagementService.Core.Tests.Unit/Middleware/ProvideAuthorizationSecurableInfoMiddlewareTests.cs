@@ -63,7 +63,8 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                     TraceId: new TraceId("123"),
                     RouteQualifiers: []
                 ),
-                RequestMethod.POST
+                RequestMethod.POST,
+                No.ServiceProvider
             )
             {
                 ResourceSchema = resourceSchema,
@@ -121,7 +122,8 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                     TraceId: new TraceId("123"),
                     RouteQualifiers: []
                 ),
-                RequestMethod.POST
+                RequestMethod.POST,
+                No.ServiceProvider
             )
             {
                 ResourceSchema = resourceSchema,
@@ -192,7 +194,8 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                     TraceId: new TraceId("123"),
                     RouteQualifiers: []
                 ),
-                RequestMethod.POST
+                RequestMethod.POST,
+                No.ServiceProvider
             )
             {
                 ResourceSchema = resourceSchema,
@@ -254,7 +257,8 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                     TraceId: new TraceId("123"),
                     RouteQualifiers: []
                 ),
-                RequestMethod.POST
+                RequestMethod.POST,
+                No.ServiceProvider
             )
             {
                 ResourceSchema = resourceSchema,
@@ -312,7 +316,8 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                     TraceId: new TraceId("123"),
                     RouteQualifiers: []
                 ),
-                RequestMethod.POST
+                RequestMethod.POST,
+                No.ServiceProvider
             )
             {
                 ResourceSchema = resourceSchema,
@@ -366,7 +371,8 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                     TraceId: new TraceId("123"),
                     RouteQualifiers: []
                 ),
-                RequestMethod.POST
+                RequestMethod.POST,
+                No.ServiceProvider
             )
             {
                 ResourceSchema = resourceSchema,
@@ -424,7 +430,8 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                     TraceId: new TraceId("123"),
                     RouteQualifiers: []
                 ),
-                RequestMethod.POST
+                RequestMethod.POST,
+                No.ServiceProvider
             )
             {
                 ResourceSchema = resourceSchema,
@@ -494,7 +501,8 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                     TraceId: new TraceId("123"),
                     RouteQualifiers: []
                 ),
-                RequestMethod.POST
+                RequestMethod.POST,
+                No.ServiceProvider
             )
             {
                 ResourceSchema = resourceSchema,

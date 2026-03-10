@@ -5,7 +5,6 @@
 
 using System.Diagnostics;
 using System.Net;
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
@@ -99,11 +98,10 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
             );
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 500,
-                Body: new JsonObject
-                {
-                    ["message"] = "Error while authorizing the request.",
-                    ["traceId"] = requestInfo.FrontendRequest.TraceId.Value,
-                },
+                Body: FailureResponse.ForServerErrorMessageBody(
+                    "Error while authorizing the request.",
+                    requestInfo.FrontendRequest.TraceId
+                ),
                 Headers: []
             );
 

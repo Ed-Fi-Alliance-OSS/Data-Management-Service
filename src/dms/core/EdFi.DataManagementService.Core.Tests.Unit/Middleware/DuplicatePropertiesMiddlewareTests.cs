@@ -61,7 +61,7 @@ public class DuplicatePropertiesMiddlewareTest
                 TraceId: new TraceId("traceId"),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
                 ParsedBody = JsonNode.Parse(jsonBody)!,
             };
@@ -130,7 +130,7 @@ public class DuplicatePropertiesMiddlewareTest
                 TraceId: new TraceId("traceId"),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
                 ParsedBody = JsonNode.Parse(jsonBody)!,
             };
@@ -201,7 +201,7 @@ public class DuplicatePropertiesMiddlewareTest
                 TraceId: new TraceId("traceId"),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
                 ParsedBody = JsonNode.Parse(jsonBody)!,
             };
@@ -270,7 +270,7 @@ public class DuplicatePropertiesMiddlewareTest
                 TraceId: new TraceId("traceId"),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
                 ParsedBody = JsonNode.Parse(jsonBody)!,
             };
@@ -339,7 +339,7 @@ public class DuplicatePropertiesMiddlewareTest
                 TraceId: new TraceId("traceId"),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
                 ParsedBody = JsonNode.Parse(jsonBody)!,
             };
@@ -398,7 +398,10 @@ public class DuplicatePropertiesMiddlewareTest
                 TraceId: new TraceId("traceId"),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontEndRequest, RequestMethod.PUT) { ParsedBody = JsonNode.Parse(jsonBody)! };
+            _requestInfo = new(frontEndRequest, RequestMethod.PUT, No.ServiceProvider)
+            {
+                ParsedBody = JsonNode.Parse(jsonBody)!,
+            };
             await Middleware().Execute(_requestInfo, NullNext);
         }
 
@@ -467,7 +470,10 @@ public class DuplicatePropertiesMiddlewareTest
                 TraceId: new TraceId("traceId"),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontEndRequest, RequestMethod.PUT) { ParsedBody = JsonNode.Parse(jsonBody)! };
+            _requestInfo = new(frontEndRequest, RequestMethod.PUT, No.ServiceProvider)
+            {
+                ParsedBody = JsonNode.Parse(jsonBody)!,
+            };
             await Middleware().Execute(_requestInfo, NullNext);
         }
 

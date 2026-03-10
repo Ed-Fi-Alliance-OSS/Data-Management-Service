@@ -5,6 +5,7 @@
 
 using System.Data.Common;
 using System.Text.RegularExpressions;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
@@ -21,7 +22,9 @@ public partial class MssqlDatabaseProvisioner(ILogger logger) : DatabaseProvisio
         EffectiveSchemaTableExistsSql: "SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dms' AND TABLE_NAME = 'EffectiveSchema'",
         EffectiveSchemaHashSql: """SELECT [EffectiveSchemaHash] FROM [dms].[EffectiveSchema] WHERE [EffectiveSchemaSingletonId] = 1""",
         SeedTableCheckSql: "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'dms' AND TABLE_NAME IN ('ResourceKey', 'SchemaComponent')",
-        EffectiveSchemaCountAndHashSql: @"SELECT [ResourceKeyCount], [ResourceKeySeedHash] FROM [dms].[EffectiveSchema] WHERE [EffectiveSchemaSingletonId] = 1",
+        EffectiveSchemaFingerprintSql: EffectiveSchemaTableDefinition.RenderReadFingerprintCommandText(
+            SqlDialect.Mssql
+        ),
         ResourceKeySelectSql: @"SELECT [ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion] FROM [dms].[ResourceKey] ORDER BY [ResourceKeyId]",
         SchemaComponentSelectSql: @"SELECT [ProjectEndpointName], [ProjectName], [ProjectVersion], [IsExtensionProject] FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = @hash ORDER BY [ProjectEndpointName]",
         MissingTableResourceKey: "[dms].[ResourceKey]",

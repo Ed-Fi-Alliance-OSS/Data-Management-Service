@@ -42,7 +42,7 @@ public class ArrayUniquenessValidationMiddlewareTests
             RouteQualifiers: []
         );
 
-        RequestInfo requestInfo = new(frontEndRequest, RequestMethod.POST)
+        RequestInfo requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
         {
             ApiSchemaDocuments = apiSchema,
             PathComponents = new(

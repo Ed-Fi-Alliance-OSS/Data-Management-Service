@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
@@ -47,12 +46,10 @@ internal class CoreExceptionLoggingMiddleware(ILogger _logger) : IPipelineStep
             // Replace the frontend response (if any) with a 500 error
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 500,
-                Body: new JsonObject
-                {
-                    ["message"] =
-                        "The server encountered an unexpected condition that prevented it from fulfilling the request.",
-                    ["traceId"] = requestInfo.FrontendRequest.TraceId.Value,
-                },
+                Body: FailureResponse.ForServerErrorMessageBody(
+                    "The server encountered an unexpected condition that prevented it from fulfilling the request.",
+                    requestInfo.FrontendRequest.TraceId
+                ),
                 Headers: []
             );
         }

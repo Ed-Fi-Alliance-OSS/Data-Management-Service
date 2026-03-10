@@ -96,6 +96,13 @@ public abstract class DatabaseTest : DatabaseTestBase
     protected NpgsqlTransaction? Transaction { get; set; }
     private NpgsqlDataSourceCache? _dataSourceCache; // Lazily instantiated cache reused for per-test providers
 
+    private sealed class NoOpServiceProvider : IServiceProvider
+    {
+        public object? GetService(Type serviceType) => null;
+    }
+
+    private static readonly IServiceProvider _noOpServiceProvider = new NoOpServiceProvider();
+
     private static readonly JsonNode _apiSchemaRootNode =
         JsonNode.Parse(
             """
@@ -568,6 +575,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                     [],
                     [],
                     new NoAuthorizationServiceFactory(),
+                    _noOpServiceProvider,
                     NullLogger.Instance
                 ),
             }
@@ -645,6 +653,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                     [],
                     [],
                     new NoAuthorizationServiceFactory(),
+                    _noOpServiceProvider,
                     NullLogger.Instance
                 ),
             }
@@ -672,6 +681,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                     [],
                     [],
                     new NoAuthorizationServiceFactory(),
+                    _noOpServiceProvider,
                     NullLogger.Instance
                 ),
             }
@@ -723,6 +733,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                     [],
                     [],
                     new NoAuthorizationServiceFactory(),
+                    _noOpServiceProvider,
                     NullLogger.Instance
                 ),
                 DeleteInEdOrgHierarchy = deleteInEdOrgHierarchy,

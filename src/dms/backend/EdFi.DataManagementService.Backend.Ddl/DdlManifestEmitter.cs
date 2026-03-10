@@ -124,9 +124,9 @@ public static class DdlManifestEmitter
     /// Counts top-level SQL statements using dialect-aware rules.
     /// </summary>
     /// <remarks>
-    /// <para><b>MSSQL:</b> Splits by standalone <c>GO</c> lines into batches. Compound batches
-    /// (starting with <c>CREATE OR ALTER</c>) count as 1. Plain DDL/DML batches count lines
-    /// ending with <c>;</c>.</para>
+    /// <para><b>MSSQL:</b> Splits by standalone <c>GO</c> lines. Batches that start with
+    /// <c>CREATE</c>/<c>ALTER FUNCTION</c> or <c>CREATE</c>/<c>ALTER TRIGGER</c> count as a
+    /// single statement; all other batches count semicolon-terminated statements.</para>
     /// <para><b>PostgreSQL:</b> Tracks dollar-quote state using tag-aware matching for all tags
     /// matching <c>$[A-Za-z0-9_]*$</c> (e.g. <c>$$</c>, <c>$func$</c>, <c>$uuidv5$</c>).
     /// Only tags at line boundaries toggle state. Counts lines ending with <c>;</c>
@@ -145,108 +145,64 @@ public static class DdlManifestEmitter
     }
 
     /// <summary>
-    /// Counts MSSQL statements by splitting on standalone GO lines into batches.
-    /// Compound batches (CREATE [OR ALTER] FUNCTION/TRIGGER/PROCEDURE) count as 1.
-    /// Plain DDL/DML batches count lines ending with semicolons individually.
-    /// Uses span-based line enumeration to avoid per-line string allocations.
+    /// Counts MSSQL statements by scanning standalone GO lines and classifying each batch.
+    /// Function and trigger definition batches count as 1 because their inner semicolons
+    /// are part of the definition body, while plain DDL/DML batches count semicolon-terminated
+    /// statements line-by-line.
     /// </summary>
     private static int CountMssqlStatements(string sqlText)
     {
         int count = 0;
-        bool isCompoundBatch = false;
-        bool currentBatchHasContent = false;
-        int semicolonCount = 0;
+        List<string> batchLines = [];
 
         foreach (var rawLine in sqlText.AsSpan().EnumerateLines())
         {
-            var trimmed = rawLine.TrimEnd('\r').Trim();
+            var line = rawLine.TrimEnd('\r').ToString();
+            var trimmed = line.AsSpan().Trim();
 
             if (trimmed.Equals("GO", StringComparison.OrdinalIgnoreCase))
             {
-                // Flush the completed batch.
-                if (isCompoundBatch && currentBatchHasContent)
-                {
-                    count++;
-                }
-                else
-                {
-                    count += semicolonCount;
-                }
-
-                isCompoundBatch = false;
-                currentBatchHasContent = false;
-                semicolonCount = 0;
+                count += CountMssqlBatchStatements(batchLines);
+                batchLines.Clear();
                 continue;
             }
 
-            if (!trimmed.IsEmpty)
-            {
-                if (!currentBatchHasContent)
-                {
-                    isCompoundBatch = IsCompoundBatchStart(trimmed);
-                }
-                currentBatchHasContent = true;
-            }
-
-            if (!isCompoundBatch && trimmed.Length > 0 && trimmed[^1] == ';')
-            {
-                semicolonCount++;
-            }
+            batchLines.Add(line);
         }
 
-        // Flush the final batch (content after the last GO, or all content if no GO).
-        if (isCompoundBatch && currentBatchHasContent)
-        {
-            count++;
-        }
-        else
-        {
-            count += semicolonCount;
-        }
-
-        return count;
+        return count + CountMssqlBatchStatements(batchLines);
     }
 
-    /// <summary>
-    /// Determines whether a trimmed line starts a compound T-SQL batch
-    /// (CREATE [OR ALTER | OR REPLACE] FUNCTION | TRIGGER | PROCEDURE) that should be
-    /// counted as a single statement regardless of internal semicolons.
-    /// </summary>
-    private static bool IsCompoundBatchStart(ReadOnlySpan<char> trimmedLine)
+    private static int CountMssqlBatchStatements(IReadOnlyList<string> batchLines)
     {
-        if (!trimmedLine.StartsWith("CREATE", StringComparison.OrdinalIgnoreCase))
+        var statementLines = batchLines
+            .Select(line => line.Trim())
+            .Where(line => line.Length > 0 && !line.StartsWith("--", StringComparison.Ordinal))
+            .ToArray();
+
+        if (statementLines.Length == 0)
         {
-            return false;
+            return 0;
         }
 
-        var rest = trimmedLine[6..].TrimStart();
-
-        // Skip optional OR ALTER / OR REPLACE
-        if (rest.StartsWith("OR", StringComparison.OrdinalIgnoreCase) && rest.Length > 2 && rest[2] == ' ')
+        if (IsSingleStatementMssqlBatch(statementLines[0]))
         {
-            rest = rest[2..].TrimStart();
-            if (
-                rest.StartsWith("ALTER", StringComparison.OrdinalIgnoreCase)
-                && rest.Length > 5
-                && rest[5] == ' '
-            )
-            {
-                rest = rest[5..].TrimStart();
-            }
-            else if (
-                rest.StartsWith("REPLACE", StringComparison.OrdinalIgnoreCase)
-                && rest.Length > 7
-                && rest[7] == ' '
-            )
-            {
-                rest = rest[7..].TrimStart();
-            }
+            return 1;
         }
 
-        return rest.StartsWith("FUNCTION", StringComparison.OrdinalIgnoreCase)
-            || rest.StartsWith("TRIGGER", StringComparison.OrdinalIgnoreCase)
-            || rest.StartsWith("PROCEDURE", StringComparison.OrdinalIgnoreCase);
+        return statementLines.Count(static line => line.EndsWith(';'));
     }
+
+    private static bool IsSingleStatementMssqlBatch(string firstStatementLine) =>
+        firstStatementLine.StartsWith("CREATE OR ALTER FUNCTION", StringComparison.OrdinalIgnoreCase)
+        || firstStatementLine.StartsWith("CREATE FUNCTION", StringComparison.OrdinalIgnoreCase)
+        || firstStatementLine.StartsWith("ALTER FUNCTION", StringComparison.OrdinalIgnoreCase)
+        || firstStatementLine.StartsWith("CREATE OR ALTER TRIGGER", StringComparison.OrdinalIgnoreCase)
+        || firstStatementLine.StartsWith("CREATE TRIGGER", StringComparison.OrdinalIgnoreCase)
+        || firstStatementLine.StartsWith("ALTER TRIGGER", StringComparison.OrdinalIgnoreCase)
+        || firstStatementLine.StartsWith("CREATE OR ALTER PROCEDURE", StringComparison.OrdinalIgnoreCase)
+        || firstStatementLine.StartsWith("CREATE PROCEDURE", StringComparison.OrdinalIgnoreCase)
+        || firstStatementLine.StartsWith("ALTER PROCEDURE", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Counts PostgreSQL statements by tracking dollar-quote state with tag-aware matching.

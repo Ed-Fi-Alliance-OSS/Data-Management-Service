@@ -141,9 +141,23 @@ internal static class No
     /// <summary>
     /// A constructor of a RequestInfo initialized with null objects
     /// </summary>
-    public static RequestInfo RequestInfo(string traceId = "")
+    public static RequestInfo RequestInfo(string traceId = "", IServiceProvider? serviceProvider = null)
     {
-        return new RequestInfo(CreateFrontendRequest(traceId), RequestMethod.GET);
+        return new RequestInfo(
+            CreateFrontendRequest(traceId),
+            RequestMethod.GET,
+            serviceProvider ?? new NoServiceProvider()
+        );
+    }
+
+    /// <summary>
+    /// A no-op service provider that returns null for all service requests.
+    /// </summary>
+    public static readonly IServiceProvider ServiceProvider = new NoServiceProvider();
+
+    private sealed class NoServiceProvider : IServiceProvider
+    {
+        public object? GetService(Type serviceType) => null;
     }
 
     /// <summary>

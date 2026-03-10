@@ -309,6 +309,7 @@ Tracks which **effective schema** (core `ApiSchema.json` + extension `ApiSchema.
 Design decision for this redesign:
 - `dms.EffectiveSchema` is a **single-row current-state** table (not an append-only history table).
 - `dms.SchemaComponent` rows are keyed by `EffectiveSchemaHash` to allow deterministic inserts without needing to look up a surrogate `EffectiveSchemaId`.
+- `ResourceKeyCount` uses `smallint` for the same reason `ResourceKeyId` does: the supported effective-schema resource inventory is intentionally capped well below 32k. Provisioning/runtime validation should fail fast if the derived seed list would exceed 32,767 rows instead of relying on a later CLR narrowing conversion.
 
 **PostgreSQL**
 

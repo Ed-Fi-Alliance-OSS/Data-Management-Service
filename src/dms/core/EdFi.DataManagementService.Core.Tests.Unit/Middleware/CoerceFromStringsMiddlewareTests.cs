@@ -80,7 +80,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
 
         internal RequestInfo Context(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestInfo _requestInfo = new(frontendRequest, method)
+            RequestInfo _requestInfo = new(frontendRequest, method, No.ServiceProvider)
             {
                 ApiSchemaDocuments = SchemaDocuments(),
                 PathComponents = new(

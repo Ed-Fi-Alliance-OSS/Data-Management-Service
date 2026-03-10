@@ -749,7 +749,7 @@ internal static class ExtensionProjectKeyFixture
             "1.0.0",
             "1.0.0",
             "edf1edf1",
-            resourceKeys.Count,
+            EffectiveSchemaFingerprintContract.CreateResourceKeyCountOrThrow(resourceKeys.Count),
             new byte[] { 0x01 },
             schemaComponents,
             resourceKeys

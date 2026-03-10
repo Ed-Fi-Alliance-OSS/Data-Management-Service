@@ -58,15 +58,17 @@ public class NamedAuthorizationServiceFactoryTests
 
             serviceProvider = services.BuildServiceProvider();
 
-            handlerProvider = new NamedAuthorizationServiceFactory(serviceProvider);
+            handlerProvider = new NamedAuthorizationServiceFactory();
         }
 
         [Test]
         public void Should_Return_NoFurtherAuthorizationRequiredValidator()
         {
             var handler =
-                handlerProvider!.GetByName<IAuthorizationValidator>("NoFurtherAuthorizationRequired")
-                as NoFurtherAuthorizationRequiredValidator;
+                handlerProvider!.GetByName<IAuthorizationValidator>(
+                    "NoFurtherAuthorizationRequired",
+                    serviceProvider!
+                ) as NoFurtherAuthorizationRequiredValidator;
             handler.Should().NotBeNull();
             var authResult = handler!
                 .ValidateAuthorization(
@@ -84,7 +86,7 @@ public class NamedAuthorizationServiceFactoryTests
         public void Should_Return_NamespaceBasedValidator()
         {
             var handler =
-                handlerProvider!.GetByName<IAuthorizationValidator>("NamespaceBased")
+                handlerProvider!.GetByName<IAuthorizationValidator>("NamespaceBased", serviceProvider!)
                 as NamespaceBasedValidator;
             handler.Should().NotBeNull();
             var authResult = handler!
@@ -102,8 +104,10 @@ public class NamedAuthorizationServiceFactoryTests
         public void Should_Return_RelationshipsWithEdOrgsOnlyValidator()
         {
             var handler =
-                handlerProvider!.GetByName<IAuthorizationValidator>("RelationshipsWithEdOrgsOnly")
-                as RelationshipsWithEdOrgsOnlyValidator;
+                handlerProvider!.GetByName<IAuthorizationValidator>(
+                    "RelationshipsWithEdOrgsOnly",
+                    serviceProvider!
+                ) as RelationshipsWithEdOrgsOnlyValidator;
             handler.Should().NotBeNull();
             var authResult = handler!
                 .ValidateAuthorization(
@@ -131,8 +135,10 @@ public class NamedAuthorizationServiceFactoryTests
         public void Should_Return_RelationshipsWithEdOrgsAndPeopleValidator()
         {
             var handler =
-                handlerProvider!.GetByName<IAuthorizationValidator>("RelationshipsWithEdOrgsAndPeople")
-                as RelationshipsWithEdOrgsAndPeopleValidator;
+                handlerProvider!.GetByName<IAuthorizationValidator>(
+                    "RelationshipsWithEdOrgsAndPeople",
+                    serviceProvider!
+                ) as RelationshipsWithEdOrgsAndPeopleValidator;
             handler.Should().NotBeNull();
         }
 
@@ -140,8 +146,10 @@ public class NamedAuthorizationServiceFactoryTests
         public void Should_Return_RelationshipsWithStudentsOnlyValidator()
         {
             var handler =
-                handlerProvider!.GetByName<IAuthorizationValidator>("RelationshipsWithStudentsOnly")
-                as RelationshipsWithStudentsOnlyValidator;
+                handlerProvider!.GetByName<IAuthorizationValidator>(
+                    "RelationshipsWithStudentsOnly",
+                    serviceProvider!
+                ) as RelationshipsWithStudentsOnlyValidator;
             handler.Should().NotBeNull();
         }
 
@@ -150,7 +158,8 @@ public class NamedAuthorizationServiceFactoryTests
         {
             var handler =
                 handlerProvider!.GetByName<IAuthorizationValidator>(
-                    "RelationshipsWithStudentsOnlyThroughResponsibility"
+                    "RelationshipsWithStudentsOnlyThroughResponsibility",
+                    serviceProvider!
                 ) as RelationshipsWithStudentsOnlyThroughResponsibilityValidator;
             handler.Should().NotBeNull();
             var authResult = handler!
@@ -169,7 +178,8 @@ public class NamedAuthorizationServiceFactoryTests
         {
             var handler =
                 handlerProvider!.GetByName<IAuthorizationFiltersProvider>(
-                    "RelationshipsWithStudentsOnlyThroughResponsibility"
+                    "RelationshipsWithStudentsOnlyThroughResponsibility",
+                    serviceProvider!
                 ) as RelationshipsWithStudentsOnlyThroughResponsibilityFiltersProvider;
             handler.Should().NotBeNull();
             var filters = handler!.GetFilters(
@@ -198,13 +208,16 @@ public class NamedAuthorizationServiceFactoryTests
 
             serviceProvider = services.BuildServiceProvider();
 
-            handlerProvider = new NamedAuthorizationServiceFactory(serviceProvider);
+            handlerProvider = new NamedAuthorizationServiceFactory();
         }
 
         [Test]
         public void Should_Return_Null()
         {
-            var handler = handlerProvider!.GetByName<IAuthorizationValidator>("NotMatchingHandler");
+            var handler = handlerProvider!.GetByName<IAuthorizationValidator>(
+                "NotMatchingHandler",
+                serviceProvider!
+            );
             handler.Should().BeNull();
         }
     }
@@ -227,15 +240,17 @@ public class NamedAuthorizationServiceFactoryTests
 
             serviceProvider = services.BuildServiceProvider();
 
-            handlerProvider = new NamedAuthorizationServiceFactory(serviceProvider);
+            handlerProvider = new NamedAuthorizationServiceFactory();
         }
 
         [Test]
         public void Should_Return_NoFurtherAuthorizationRequiredFiltersProvider()
         {
             var handler =
-                handlerProvider!.GetByName<IAuthorizationFiltersProvider>("NoFurtherAuthorizationRequired")
-                as NoFurtherAuthorizationRequiredFiltersProvider;
+                handlerProvider!.GetByName<IAuthorizationFiltersProvider>(
+                    "NoFurtherAuthorizationRequired",
+                    serviceProvider!
+                ) as NoFurtherAuthorizationRequiredFiltersProvider;
             handler.Should().NotBeNull();
             var filters = handler!.GetFilters(new ClientAuthorizations("", "", "", [], [], []));
             filters.Should().NotBeNull();
@@ -246,7 +261,7 @@ public class NamedAuthorizationServiceFactoryTests
         public void Should_Return_NamespaceBasedFiltersProvider()
         {
             var handler =
-                handlerProvider!.GetByName<IAuthorizationFiltersProvider>("NamespaceBased")
+                handlerProvider!.GetByName<IAuthorizationFiltersProvider>("NamespaceBased", serviceProvider!)
                 as NamespaceBasedFiltersProvider;
             handler.Should().NotBeNull();
             var filters = handler!.GetFilters(
@@ -263,8 +278,10 @@ public class NamedAuthorizationServiceFactoryTests
         public void Should_Return_RelationshipsWithEdOrgsOnlyFiltersProvider()
         {
             var handler =
-                handlerProvider!.GetByName<IAuthorizationFiltersProvider>("RelationshipsWithEdOrgsOnly")
-                as RelationshipsWithEdOrgsOnlyFiltersProvider;
+                handlerProvider!.GetByName<IAuthorizationFiltersProvider>(
+                    "RelationshipsWithEdOrgsOnly",
+                    serviceProvider!
+                ) as RelationshipsWithEdOrgsOnlyFiltersProvider;
             handler.Should().NotBeNull();
             var filters = handler!.GetFilters(
                 new ClientAuthorizations("", "", "", [new EducationOrganizationId(255901)], [], [])
@@ -292,20 +309,26 @@ public class NamedAuthorizationServiceFactoryTests
 
             serviceProvider = services.BuildServiceProvider();
 
-            handlerProvider = new NamedAuthorizationServiceFactory(serviceProvider);
+            handlerProvider = new NamedAuthorizationServiceFactory();
         }
 
         [Test]
         public void Should_Return_Null_Authorization_Validator()
         {
-            var handler = handlerProvider!.GetByName<IAuthorizationValidator>("NotMatchingHandler");
+            var handler = handlerProvider!.GetByName<IAuthorizationValidator>(
+                "NotMatchingHandler",
+                serviceProvider!
+            );
             handler.Should().BeNull();
         }
 
         [Test]
         public void Should_Return_Null_Authorization_Filters()
         {
-            var handler = handlerProvider!.GetByName<IAuthorizationFiltersProvider>("NotMatchingHandler");
+            var handler = handlerProvider!.GetByName<IAuthorizationFiltersProvider>(
+                "NotMatchingHandler",
+                serviceProvider!
+            );
             handler.Should().BeNull();
         }
     }

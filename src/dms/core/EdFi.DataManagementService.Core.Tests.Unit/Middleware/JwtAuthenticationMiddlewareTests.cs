@@ -57,7 +57,7 @@ public class JwtAuthenticationMiddlewareTests
                 TraceId: new TraceId("123"),
                 RouteQualifiers: []
             );
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET);
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, No.ServiceProvider);
 
             var expectedPrincipal = new ClaimsPrincipal();
             _expectedAuthorizations = new ClientAuthorizations(
@@ -134,7 +134,7 @@ public class JwtAuthenticationMiddlewareTests
                 TraceId: new TraceId("123"),
                 RouteQualifiers: []
             );
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET);
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, No.ServiceProvider);
 
             var (middleware, jwtValidationService) = CreateMiddleware();
 
@@ -217,7 +217,7 @@ public class JwtAuthenticationMiddlewareTests
                 TraceId: new TraceId("123"),
                 RouteQualifiers: []
             );
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET);
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, No.ServiceProvider);
 
             var (middleware, _) = CreateMiddleware();
 
@@ -272,7 +272,7 @@ public class JwtAuthenticationMiddlewareTests
                 TraceId: new TraceId("123"),
                 RouteQualifiers: []
             );
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET);
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, No.ServiceProvider);
 
             var (middleware, _) = CreateMiddleware();
 
@@ -328,7 +328,7 @@ public class JwtAuthenticationMiddlewareTests
                 TraceId: new TraceId("123"),
                 RouteQualifiers: []
             );
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET);
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, No.ServiceProvider);
 
             var expectedPrincipal = new ClaimsPrincipal();
             _expectedAuthorizations = new ClientAuthorizations(

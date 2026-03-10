@@ -95,6 +95,7 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
             ResiliencePipeline.Empty,
             resourceLoadOrderCalculator,
             serviceProvider,
+            A.Fake<IServiceScopeFactory>(),
             cachedClaimSetProvider, // Use as CachedClaimSetProvider
             fakeResourceDependencyGraphMLFactory,
             A.Fake<IProfileService>()
@@ -255,6 +256,7 @@ public class Given_ClaimsetReloadIsDisabled_When_ReloadClaimsetsAsyncIsCalled
             ResiliencePipeline.Empty,
             resourceLoadOrderCalculator,
             serviceProvider,
+            A.Fake<IServiceScopeFactory>(),
             cachedClaimSetProvider,
             fakeResourceDependencyGraphMLFactory,
             A.Fake<IProfileService>()

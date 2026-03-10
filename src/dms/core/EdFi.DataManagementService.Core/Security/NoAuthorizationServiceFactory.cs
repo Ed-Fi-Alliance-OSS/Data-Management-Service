@@ -10,9 +10,9 @@ namespace EdFi.DataManagementService.Core.Security;
 /// </summary>
 public class NoAuthorizationServiceFactory : IAuthorizationServiceFactory
 {
-    public T? GetByName<T>(string authorizationStrategyName)
+    public T? GetByName<T>(string authorizationStrategyName, IServiceProvider serviceProvider)
         where T : class
     {
-        throw new NotImplementedException();
+        return null;
     }
 }

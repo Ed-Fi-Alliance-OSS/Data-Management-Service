@@ -37,7 +37,18 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     private static readonly DbTableName _documentTable = DmsTableNames.Document;
     private static readonly DbTableName _documentCacheTable = DmsTableNames.DocumentCache;
     private static readonly DbTableName _documentChangeEventTable = DmsTableNames.DocumentChangeEvent;
-    private static readonly DbTableName _effectiveSchemaTable = DmsTableNames.EffectiveSchema;
+    private static readonly DbTableName _effectiveSchemaTable = EffectiveSchemaTableDefinition.Table;
+    private static readonly DbColumnName _effectiveSchemaSingletonIdColumn =
+        EffectiveSchemaTableDefinition.EffectiveSchemaSingletonId;
+    private static readonly DbColumnName _apiSchemaFormatVersionColumn =
+        EffectiveSchemaTableDefinition.ApiSchemaFormatVersion;
+    private static readonly DbColumnName _effectiveSchemaHashColumn =
+        EffectiveSchemaTableDefinition.EffectiveSchemaHash;
+    private static readonly DbColumnName _resourceKeyCountColumn =
+        EffectiveSchemaTableDefinition.ResourceKeyCount;
+    private static readonly DbColumnName _resourceKeySeedHashColumn =
+        EffectiveSchemaTableDefinition.ResourceKeySeedHash;
+    private static readonly DbColumnName _appliedAtColumn = EffectiveSchemaTableDefinition.AppliedAt;
     private static readonly DbTableName _referentialIdentityTable = DmsTableNames.ReferentialIdentity;
     private static readonly DbTableName _resourceKeyTable = DmsTableNames.ResourceKey;
     private static readonly DbTableName _schemaComponentTable = DmsTableNames.SchemaComponent;
@@ -175,20 +186,17 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         writer.AppendLine("-- ==========================================================");
         writer.AppendLine();
 
-        // CREATE OR ALTER FUNCTION must be the first statement in a T-SQL batch.
-        bool isMssql = _dialect.Rules.Dialect == SqlDialect.Mssql;
-        if (isMssql)
+        if (_dialect.Rules.Dialect == SqlDialect.Mssql)
         {
+            // CREATE OR ALTER FUNCTION must be the first and only statement in a T-SQL batch.
             writer.AppendLine("GO");
+            writer.AppendLine(_dialect.CreateUuidv5Function(DmsTableNames.DmsSchema));
+            writer.AppendLine("GO");
+            writer.AppendLine();
+            return;
         }
 
         writer.AppendLine(_dialect.CreateUuidv5Function(DmsTableNames.DmsSchema));
-
-        if (isMssql)
-        {
-            writer.AppendLine("GO");
-        }
-
         writer.AppendLine();
     }
 
@@ -415,27 +423,27 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         using (writer.Indent())
         {
             writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("EffectiveSchemaSingletonId"), _dialect.SmallintColumnType, false)},"
+                $"{_dialect.RenderColumnDefinition(_effectiveSchemaSingletonIdColumn, _dialect.SmallintColumnType, false)},"
             );
             writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("ApiSchemaFormatVersion"), StringType(64), false)},"
+                $"{_dialect.RenderColumnDefinition(_apiSchemaFormatVersionColumn, StringType(64), false)},"
             );
             writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("EffectiveSchemaHash"), StringType(64), false)},"
+                $"{_dialect.RenderColumnDefinition(_effectiveSchemaHashColumn, StringType(64), false)},"
             );
             writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("ResourceKeyCount"), _dialect.SmallintColumnType, false)},"
+                $"{_dialect.RenderColumnDefinition(_resourceKeyCountColumn, _dialect.SmallintColumnType, false)},"
             );
             writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("ResourceKeySeedHash"), _dialect.RenderBinaryColumnType(32), false)},"
+                $"{_dialect.RenderColumnDefinition(_resourceKeySeedHashColumn, _dialect.RenderBinaryColumnType(32), false)},"
             );
             writer.AppendLine(
-                $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("AppliedAt"), DateTimeType, false, "DF_EffectiveSchema_AppliedAt", _dialect.CurrentTimestampDefaultExpression)},"
+                $"{_dialect.RenderColumnDefinitionWithNamedDefault(_appliedAtColumn, DateTimeType, false, "DF_EffectiveSchema_AppliedAt", _dialect.CurrentTimestampDefaultExpression)},"
             );
             writer.AppendLine(
                 _dialect.RenderNamedPrimaryKeyClause(
                     "PK_EffectiveSchema",
-                    [Col("EffectiveSchemaSingletonId")]
+                    [_effectiveSchemaSingletonIdColumn]
                 )
             );
         }
@@ -446,7 +454,21 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
             _dialect.AddCheckConstraint(
                 _effectiveSchemaTable,
                 "CK_EffectiveSchema_Singleton",
-                $"{_dialect.QuoteIdentifier("EffectiveSchemaSingletonId")} = 1"
+                $"{_dialect.QuoteIdentifier(_effectiveSchemaSingletonIdColumn.Value)} = 1"
+            )
+        );
+        writer.AppendLine();
+
+        var apiSchemaFormatVersionCheck =
+            _dialect.Rules.Dialect == SqlDialect.Pgsql
+                ? $"btrim({_dialect.QuoteIdentifier(_apiSchemaFormatVersionColumn.Value)}) <> ''"
+                : $"LEN(LTRIM(RTRIM({_dialect.QuoteIdentifier(_apiSchemaFormatVersionColumn.Value)}))) > 0";
+
+        writer.AppendLine(
+            _dialect.AddCheckConstraint(
+                _effectiveSchemaTable,
+                "CK_EffectiveSchema_ApiSchemaFormatVersion_NotBlank",
+                apiSchemaFormatVersionCheck
             )
         );
         writer.AppendLine();
@@ -457,7 +479,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
                 _dialect.AddCheckConstraint(
                     _effectiveSchemaTable,
                     "CK_EffectiveSchema_ResourceKeySeedHash_Length",
-                    $"octet_length({_dialect.QuoteIdentifier("ResourceKeySeedHash")}) = 32"
+                    $"octet_length({_dialect.QuoteIdentifier(_resourceKeySeedHashColumn.Value)}) = 32"
                 )
             );
             writer.AppendLine();
@@ -467,7 +489,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
             _dialect.AddUniqueConstraint(
                 _effectiveSchemaTable,
                 "UX_EffectiveSchema_EffectiveSchemaHash",
-                [Col("EffectiveSchemaHash")]
+                [_effectiveSchemaHashColumn]
             )
         );
         writer.AppendLine();

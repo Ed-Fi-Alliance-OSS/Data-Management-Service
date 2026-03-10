@@ -22,6 +22,8 @@ public class ResourceAuthorizationHandlerTests
     private readonly IAuthorizationServiceFactory _authorizationServiceFactory =
         A.Fake<IAuthorizationServiceFactory>();
 
+    private readonly IServiceProvider _serviceProvider = A.Fake<IServiceProvider>();
+
     public class Given_An_EdFi_Doc_With_Matching_ClientAuthorization_Namespace
         : ResourceAuthorizationHandlerTests
     {
@@ -50,13 +52,19 @@ public class ResourceAuthorizationHandlerTests
                 )
                 .Returns(new ResourceAuthorizationResult.Authorized());
 
-            A.CallTo(() => _authorizationServiceFactory.GetByName<IAuthorizationValidator>("NamespaceBased"))
+            A.CallTo(() =>
+                    _authorizationServiceFactory.GetByName<IAuthorizationValidator>(
+                        "NamespaceBased",
+                        A<IServiceProvider>._
+                    )
+                )
                 .Returns(validator);
 
             var handler = new ResourceAuthorizationHandler(
                 [evaluator],
                 authorizationSecurableInfo,
                 _authorizationServiceFactory,
+                _serviceProvider,
                 NullLogger.Instance
             );
             _resourceAuthorizationResult = await handler.Authorize(
@@ -107,13 +115,19 @@ public class ResourceAuthorizationHandlerTests
                 )
                 .Returns(new ResourceAuthorizationResult.NotAuthorized(["Not authorized"]));
 
-            A.CallTo(() => _authorizationServiceFactory.GetByName<IAuthorizationValidator>("NamespaceBased"))
+            A.CallTo(() =>
+                    _authorizationServiceFactory.GetByName<IAuthorizationValidator>(
+                        "NamespaceBased",
+                        A<IServiceProvider>._
+                    )
+                )
                 .Returns(validator);
 
             var handler = new ResourceAuthorizationHandler(
                 [evaluator],
                 authorizationSecurableInfo,
                 _authorizationServiceFactory,
+                _serviceProvider,
                 NullLogger.Instance
             );
 
@@ -157,6 +171,7 @@ public class ResourceAuthorizationHandlerTests
                 [],
                 [],
                 _authorizationServiceFactory,
+                _serviceProvider,
                 NullLogger.Instance
             );
             _resourceAuthorizationResult = await handler.Authorize(
@@ -213,7 +228,8 @@ public class ResourceAuthorizationHandlerTests
                 .Returns(new ResourceAuthorizationResult.Authorized());
             A.CallTo(() =>
                     _authorizationServiceFactory.GetByName<IAuthorizationValidator>(
-                        "RelationshipsWithEdOrgsOnly"
+                        "RelationshipsWithEdOrgsOnly",
+                        A<IServiceProvider>._
                     )
                 )
                 .Returns(validator);
@@ -222,6 +238,7 @@ public class ResourceAuthorizationHandlerTests
                 [authStrategyEvaluators],
                 authorizationSecurableInfo,
                 _authorizationServiceFactory,
+                _serviceProvider,
                 NullLogger.Instance
             );
             _resourceAuthorizationResult = await handler.Authorize(
@@ -278,7 +295,8 @@ public class ResourceAuthorizationHandlerTests
                 .Returns(new ResourceAuthorizationResult.NotAuthorized(["Not authorized"]));
             A.CallTo(() =>
                     _authorizationServiceFactory.GetByName<IAuthorizationValidator>(
-                        "RelationshipsWithEdOrgsOnly"
+                        "RelationshipsWithEdOrgsOnly",
+                        A<IServiceProvider>._
                     )
                 )
                 .Returns(validator);
@@ -287,6 +305,7 @@ public class ResourceAuthorizationHandlerTests
                 [authStrategyEvaluators],
                 authorizationSecurableInfo,
                 _authorizationServiceFactory,
+                _serviceProvider,
                 NullLogger.Instance
             );
             _resourceAuthorizationResult = await handler.Authorize(
@@ -356,7 +375,8 @@ public class ResourceAuthorizationHandlerTests
                 .Returns(new ResourceAuthorizationResult.Authorized());
             A.CallTo(() =>
                     _authorizationServiceFactory.GetByName<IAuthorizationValidator>(
-                        "RelationshipsWithEdOrgsOnly"
+                        "RelationshipsWithEdOrgsOnly",
+                        A<IServiceProvider>._
                     )
                 )
                 .Returns(validatorForEdOrg);
@@ -373,7 +393,8 @@ public class ResourceAuthorizationHandlerTests
                 .Returns(new ResourceAuthorizationResult.Authorized());
             A.CallTo(() =>
                     _authorizationServiceFactory.GetByName<IAuthorizationValidator>(
-                        "RelationshipsWithPeopleOnly"
+                        "RelationshipsWithPeopleOnly",
+                        A<IServiceProvider>._
                     )
                 )
                 .Returns(validatorForStudent);
@@ -382,6 +403,7 @@ public class ResourceAuthorizationHandlerTests
                 authStrategyEvaluators,
                 authorizationSecurableInfo,
                 _authorizationServiceFactory,
+                _serviceProvider,
                 NullLogger.Instance
             );
             _resourceAuthorizationResult = await handler.Authorize(

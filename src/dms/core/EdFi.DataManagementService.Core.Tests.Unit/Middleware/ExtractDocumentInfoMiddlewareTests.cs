@@ -65,7 +65,8 @@ public class ExtractDocumentInfoMiddlewareTests
                     TraceId: new TraceId("123"),
                     RouteQualifiers: []
                 ),
-                RequestMethod.POST
+                RequestMethod.POST,
+                No.ServiceProvider
             )
             {
                 ResourceSchema = resourceSchema,

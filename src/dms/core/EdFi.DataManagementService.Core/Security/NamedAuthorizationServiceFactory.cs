@@ -13,11 +13,11 @@ namespace EdFi.DataManagementService.Core.Security;
 /// </summary>
 public interface IAuthorizationServiceFactory
 {
-    T? GetByName<T>(string authorizationStrategyName)
+    T? GetByName<T>(string authorizationStrategyName, IServiceProvider serviceProvider)
         where T : class;
 }
 
-public class NamedAuthorizationServiceFactory(IServiceProvider serviceProvider) : IAuthorizationServiceFactory
+public class NamedAuthorizationServiceFactory : IAuthorizationServiceFactory
 {
     private readonly Dictionary<(Type, string), Type> _authorizationValidatorTypes =
         RegisterAuthorizationValidators();
@@ -43,7 +43,7 @@ public class NamedAuthorizationServiceFactory(IServiceProvider serviceProvider) 
         return authorizationValidatorTypes;
     }
 
-    public T? GetByName<T>(string authorizationStrategyName)
+    public T? GetByName<T>(string authorizationStrategyName, IServiceProvider serviceProvider)
         where T : class
     {
         var key = (typeof(T), authorizationStrategyName);

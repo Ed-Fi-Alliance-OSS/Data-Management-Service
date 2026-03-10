@@ -12,8 +12,8 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Utilities;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using static EdFi.DataManagementService.Core.UtilityService;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
@@ -22,7 +22,6 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// </summary>
 internal class ProfileResolutionMiddleware(
     IProfileService profileService,
-    IApplicationContextProvider applicationContextProvider,
     ILogger<ProfileResolutionMiddleware> logger
 ) : IPipelineStep
 {
@@ -58,6 +57,8 @@ internal class ProfileResolutionMiddleware(
         }
 
         // Get application context to find ApplicationId
+        var applicationContextProvider =
+            requestInfo.ScopedServiceProvider.GetRequiredService<IApplicationContextProvider>();
         ApplicationContext? appContext = await applicationContextProvider.GetApplicationByClientIdAsync(
             requestInfo.ClientAuthorizations.ClientId
         );
@@ -183,14 +184,14 @@ internal class ProfileResolutionMiddleware(
         TraceId traceId
     )
     {
-        var responseBody = new JsonObject
+        JsonObject responseBody = new()
         {
             ["detail"] = detail,
             ["type"] = errorType,
             ["title"] = title,
             ["status"] = statusCode,
             ["correlationId"] = traceId.Value,
-            ["errors"] = JsonSerializer.SerializeToNode(errors, SerializerOptions),
+            ["errors"] = JsonSerializer.SerializeToNode(errors, UtilityService.SerializerOptions),
         };
 
         return new FrontendResponse(
