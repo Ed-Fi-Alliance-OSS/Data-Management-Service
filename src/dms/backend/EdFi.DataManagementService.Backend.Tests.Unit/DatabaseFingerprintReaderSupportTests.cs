@@ -267,6 +267,64 @@ public class DatabaseFingerprintReaderSupportTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_The_Fingerprint_Row_Has_Multiple_Contract_Issues
+        : DatabaseFingerprintReaderSupportTests
+    {
+        private DatabaseFingerprintValidationException _exception = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var act = async () =>
+            {
+                await using var reader = CreateReader(
+                    CreateValidRow() with
+                    {
+                        EffectiveSchemaSingletonId = 2,
+                        ApiSchemaFormatVersion = " ",
+                        EffectiveSchemaHash = "invalid-hash",
+                        ResourceKeyCount = -1,
+                        ResourceKeySeedHash = new byte[31],
+                    }
+                );
+
+                await DatabaseFingerprintReaderSupport.ReadValidatedFingerprintAsync(
+                    reader,
+                    _columnNames,
+                    TableDisplayName
+                );
+            };
+
+            _exception = (await act.Should().ThrowAsync<DatabaseFingerprintValidationException>()).Which;
+        }
+
+        [Test]
+        public void It_preserves_the_ordered_contract_validation_issues()
+        {
+            _exception
+                .ValidationIssues.Should()
+                .Equal(
+                    "dms.EffectiveSchema must contain a singleton row with EffectiveSchemaSingletonId = 1, but found 2.",
+                    "dms.EffectiveSchema.ApiSchemaFormatVersion must not be empty.",
+                    "dms.EffectiveSchema.EffectiveSchemaHash must be 64 lowercase hex characters.",
+                    "dms.EffectiveSchema.ResourceKeyCount must be non-negative, but found -1.",
+                    "dms.EffectiveSchema.ResourceKeySeedHash must be exactly 32 bytes, but found 31."
+                );
+        }
+
+        [Test]
+        public void It_uses_the_first_issue_as_the_exception_message()
+        {
+            _exception
+                .Message.Should()
+                .Be(
+                    "dms.EffectiveSchema must contain a singleton row with EffectiveSchemaSingletonId = 1, but found 2."
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Well_Formed_Fingerprint_Row : DatabaseFingerprintReaderSupportTests
     {
         private DatabaseFingerprint? _result;
@@ -519,6 +577,19 @@ public class DatabaseFingerprintReaderSupportTests
             await _act.Should()
                 .ThrowAsync<DatabaseFingerprintValidationException>()
                 .WithMessage("dms.EffectiveSchema.ResourceKeyCount must be non-negative, but found -1.");
+        }
+
+        [Test]
+        public async Task It_preserves_the_single_issue_without_changing_the_message_contract()
+        {
+            var exception = (await _act.Should().ThrowAsync<DatabaseFingerprintValidationException>()).Which;
+
+            exception
+                .ValidationIssues.Should()
+                .Equal("dms.EffectiveSchema.ResourceKeyCount must be non-negative, but found -1.");
+            exception
+                .Message.Should()
+                .Be("dms.EffectiveSchema.ResourceKeyCount must be non-negative, but found -1.");
         }
     }
 

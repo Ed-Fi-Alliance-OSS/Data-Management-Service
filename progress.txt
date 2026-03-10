@@ -1,0 +1,5 @@
+2026-03-10 DMS-975 story reference/design/backend-redesign/epics/06-runtime-mapping-selection/00-read-effective-schema.md
+Task completed: Backend Validation - preserve all dms.EffectiveSchema contract issues from runtime reader
+Decisions: add ValidationIssues to DatabaseFingerprintValidationException; keep Message pinned to first issue for single-issue compatibility; reader now throws full ordered contract issue set from EffectiveSchemaFingerprintContract
+Files changed: src/dms/core/EdFi.DataManagementService.Core.External/Backend/DatabaseFingerprintValidationException.cs; src/dms/backend/EdFi.DataManagementService.Backend/DatabaseFingerprintReaderSupport.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DatabaseFingerprintReaderSupportTests.cs; tasks.json; progress.txt
+Notes next iteration: middleware can now surface multi-issue errors from ex.ValidationIssues without changing non-contract validation paths

@@ -161,7 +161,7 @@ internal static class DatabaseFingerprintReaderSupport
 
         if (validationIssues.Count > 0)
         {
-            throw new DatabaseFingerprintValidationException(validationIssues[0]);
+            throw new DatabaseFingerprintValidationException(validationIssues);
         }
 
         return new DatabaseFingerprint(

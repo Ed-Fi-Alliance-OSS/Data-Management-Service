@@ -1,0 +1,47 @@
+[
+  {
+    "category": "Backend Validation",
+    "description": "Update malformed `dms.EffectiveSchema` runtime validation so `DatabaseFingerprintReaderSupport` preserves every contract issue returned by `EffectiveSchemaFingerprintContract.GetStoredValidationIssues(...)` instead of discarding all but the first one. Acceptance: a malformed fingerprint row with multiple invalid fields produces a deterministic ordered set of issues, single-issue failures still behave the same, and existing projection/null/type/multiple-row validation paths continue to throw `DatabaseFingerprintValidationException` without regression.",
+    "steps-to-verify": [
+      "Add or update backend unit tests covering a malformed fingerprint row with multiple validation issues and a single-issue regression case.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter DatabaseFingerprintReaderSupportTests`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Middleware Diagnostics",
+    "description": "Update `ValidateDatabaseFingerprintMiddleware` to surface every malformed fingerprint issue in the `errors` array of the 503 problem response, while keeping the existing remediation guidance in `detail`. Acceptance: the response contains each validation issue in order plus the restart/remediation guidance, existing malformed-fingerprint logging remains intact, and current single-issue responses keep their existing shape apart from the expanded `errors` payload.",
+    "steps-to-verify": [
+      "Add or update middleware unit tests for a cached `DatabaseFingerprintValidationException` containing multiple issues and verify the 503 problem details payload.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter ValidateDatabaseFingerprintMiddlewareValidationErrorTests`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Testing Infrastructure",
+    "description": "Introduce SQL Server integration-test coverage infrastructure for backend fingerprint reader tests. Acceptance: there is a dedicated MSSQL integration test project or equivalent test harness in the backend area, it is added to the DMS solution, it can obtain SQL Server test configuration using repository conventions, and it can provision the core `dms.*` DDL needed for `dms.EffectiveSchema` reader tests.",
+    "steps-to-verify": [
+      "Create the MSSQL integration test project/harness and confirm it builds under the DMS solution.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter FullyQualifiedName~MssqlDatabaseFingerprintReaderTests`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Integration Testing",
+    "description": "Add `MssqlDatabaseFingerprintReader` runtime integration tests against a real SQL Server database. Acceptance: the test provisions core DDL, inserts a valid `dms.EffectiveSchema` singleton row, reads it through `MssqlDatabaseFingerprintReader`, and asserts all four cached fingerprint fields (`ApiSchemaFormatVersion`, `EffectiveSchemaHash`, `ResourceKeyCount`, `ResourceKeySeedHash`) match the inserted values.",
+    "steps-to-verify": [
+      "Mirror the existing PostgreSQL runtime reader scenario for MSSQL using actual `SqlConnection`/`SqlDataReader` behavior.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter FullyQualifiedName~MssqlDatabaseFingerprintReaderTests`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Pipeline Testing",
+    "description": "Extend pipeline ordering coverage to include `CreateGetTokenInfoPipeline`. Acceptance: unit tests assert that `ValidateDatabaseFingerprintMiddleware` is present in the token-info pipeline and executes before both `ApiSchemaValidationMiddleware` and `GetTokenInfoHandler`, while still allowing the token-info pipeline to omit `ParsePathMiddleware` by design.",
+    "steps-to-verify": [
+      "Add or extend pipeline ordering tests to inspect the private token-info pipeline in `ApiService` using the same approach already used for the query pipeline.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter PipelineOrderingTests`"
+    ],
+    "completed": false
+  }
+]

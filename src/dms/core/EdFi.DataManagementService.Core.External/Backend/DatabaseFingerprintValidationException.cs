@@ -12,8 +12,48 @@ namespace EdFi.DataManagementService.Core.External.Backend;
 public sealed class DatabaseFingerprintValidationException : InvalidOperationException
 {
     public DatabaseFingerprintValidationException(string message)
-        : base(message) { }
+        : this(CreateSingleValidationIssue(message), null) { }
 
     public DatabaseFingerprintValidationException(string message, Exception innerException)
-        : base(message, innerException) { }
+        : this(CreateSingleValidationIssue(message), innerException) { }
+
+    public DatabaseFingerprintValidationException(IEnumerable<string> validationIssues)
+        : this(CreateValidationIssues(validationIssues), null) { }
+
+    public IReadOnlyList<string> ValidationIssues { get; }
+
+    private DatabaseFingerprintValidationException(string[] validationIssues, Exception? innerException)
+        : base(validationIssues[0], innerException)
+    {
+        ValidationIssues = validationIssues;
+    }
+
+    private static string[] CreateSingleValidationIssue(string message)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(message);
+        return [message];
+    }
+
+    private static string[] CreateValidationIssues(IEnumerable<string> validationIssues)
+    {
+        ArgumentNullException.ThrowIfNull(validationIssues);
+
+        string[] issues = [.. validationIssues.Select(ValidateIssue)];
+
+        if (issues.Length == 0)
+        {
+            throw new ArgumentException(
+                "At least one validation issue is required.",
+                nameof(validationIssues)
+            );
+        }
+
+        return issues;
+    }
+
+    private static string ValidateIssue(string issue)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(issue);
+        return issue;
+    }
 }
