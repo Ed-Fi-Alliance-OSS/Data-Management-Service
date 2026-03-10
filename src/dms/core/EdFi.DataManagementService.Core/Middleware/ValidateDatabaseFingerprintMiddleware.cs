@@ -37,12 +37,34 @@ internal class ValidateDatabaseFingerprintMiddleware(
             return;
         }
 
-        // ResolveDmsInstanceMiddleware runs earlier in the common pipeline and
-        // IDmsInstanceSelection rejects empty connection strings when populated.
+        // ResolveDmsInstanceMiddleware should already enforce this invariant, but
+        // guard here so fingerprint validation returns a clear configuration
+        // error even if upstream selection behavior changes.
         var selectedInstance = requestInfo
             .ScopedServiceProvider.GetRequiredService<IDmsInstanceSelection>()
             .GetSelectedDmsInstance();
-        var connectionString = selectedInstance.ConnectionString!;
+        var connectionString = selectedInstance.ConnectionString;
+
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            logger.LogError(
+                "Selected DMS instance {InstanceId} ({InstanceName}) has no connection string configured during database fingerprint validation. TraceId: {TraceId}",
+                selectedInstance.Id,
+                LoggingSanitizer.SanitizeForLogging(selectedInstance.InstanceName),
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+
+            requestInfo.FrontendResponse = ProblemDetailsResponse.Create(
+                503,
+                ProblemDetailsResponse.ServiceConfigurationError,
+                "Service Configuration Error",
+                "Database connection not configured for the matched instance",
+                requestInfo.FrontendRequest.TraceId
+            );
+
+            return;
+        }
+
         DatabaseFingerprint? fingerprint;
 
         try

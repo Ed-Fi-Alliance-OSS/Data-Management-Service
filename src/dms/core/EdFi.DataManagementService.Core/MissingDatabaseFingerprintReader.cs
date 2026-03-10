@@ -16,7 +16,7 @@ internal sealed class MissingDatabaseFingerprintReader(IOptions<AppSettings> app
     : IDatabaseFingerprintReader
 {
     internal const string ConfigurationErrorMessage =
-        "UseRelationalBackend is enabled, but no dialect-specific IDatabaseFingerprintReader is registered. Register the PostgreSQL or MSSQL fingerprint reader in the host composition.";
+        "UseRelationalBackend is enabled, but no dialect-specific IDatabaseFingerprintReader is registered. Register the PostgreSQL or MSSQL fingerprint reader in the host composition root (see WebApplicationBuilderExtensions.ConfigureDatastore for an example).";
 
     public Task<DatabaseFingerprint?> ReadFingerprintAsync(string connectionString)
     {

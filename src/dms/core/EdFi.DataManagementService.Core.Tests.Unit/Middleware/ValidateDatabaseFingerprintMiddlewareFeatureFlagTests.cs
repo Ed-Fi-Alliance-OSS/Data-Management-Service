@@ -281,6 +281,81 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_Feature_Flag_Is_Enabled_And_Selected_Instance_Has_No_Connection_String
+        : ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private bool _nextCalled;
+        private IDatabaseFingerprintReader _fingerprintReader = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (middleware, fingerprintReader, dmsInstanceSelection, serviceProvider) = CreateMiddleware(
+                enableFingerprintValidation: true
+            );
+            _fingerprintReader = fingerprintReader;
+            _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
+
+            A.CallTo(() => dmsInstanceSelection.IsSet).Returns(true);
+            A.CallTo(() => dmsInstanceSelection.GetSelectedDmsInstance())
+                .Returns(
+                    new DmsInstance(
+                        Id: 1,
+                        InstanceType: "Test",
+                        InstanceName: "Test Instance",
+                        ConnectionString: null,
+                        RouteContext: []
+                    )
+                );
+
+            await middleware.Execute(
+                _requestInfo,
+                () =>
+                {
+                    _nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_does_not_call_next()
+        {
+            _nextCalled.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_does_not_interact_with_the_fingerprint_reader()
+        {
+            A.CallTo(() => _fingerprintReader.ReadFingerprintAsync(A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        [Test]
+        public void It_returns_503_service_unavailable()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(503);
+        }
+
+        [Test]
+        public void It_returns_a_service_configuration_error()
+        {
+            _requestInfo.FrontendResponse.Body!.ToString().Should().Contain("Service Configuration Error");
+            _requestInfo
+                .FrontendResponse.Body!.ToString()
+                .Should()
+                .Contain("Database connection not configured");
+        }
+
+        [Test]
+        public void It_does_not_set_database_fingerprint()
+        {
+            _requestInfo.DatabaseFingerprint.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_Feature_Flag_Is_Enabled_And_No_Dialect_Fingerprint_Reader_Is_Registered
         : ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
     {
