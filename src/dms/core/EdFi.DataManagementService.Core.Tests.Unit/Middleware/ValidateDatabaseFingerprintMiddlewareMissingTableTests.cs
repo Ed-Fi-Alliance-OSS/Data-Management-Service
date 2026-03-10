@@ -165,10 +165,10 @@ public class ValidateDatabaseFingerprintMiddlewareMissingTableTests
         }
 
         [Test]
-        public void It_returns_problem_json_content_type()
+        public void It_returns_json_content_type()
         {
             var response = (FrontendResponse)_requestInfo.FrontendResponse;
-            response.ContentType.Should().Be("application/problem+json");
+            response.ContentType.Should().Be("application/json");
         }
 
         [Test]

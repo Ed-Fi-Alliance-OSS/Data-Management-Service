@@ -26,6 +26,13 @@ public static class FailureResponse
         $"{_badRequestTypePrefix}:data-validation-failed:key-change-not-supported";
     private static readonly string _methodNotAllowed = $"{_typePrefix}:method-not-allowed";
     private static readonly string _forbiddenType = $"{_typePrefix}:security:authorization";
+    private static readonly string _authorizationDeniedType = $"{_typePrefix}:authorization-denied";
+    private static readonly string _routeResolutionErrorType = $"{_typePrefix}:route-resolution-error";
+    private static readonly string _serviceConfigurationErrorType =
+        $"{_typePrefix}:service-configuration-error";
+    private static readonly string _databaseNotProvisionedType = $"{_typePrefix}:database-not-provisioned";
+    private static readonly string _databaseFingerprintValidationErrorType =
+        $"{_typePrefix}:database-fingerprint-validation-error";
     private static readonly string _tagMismatchRequestTypePrefix = $"{_typePrefix}:optimistic-lock-failed";
     private static readonly string _dataPolicyEnforcedType = $"{_typePrefix}:data-policy-enforced";
 
@@ -200,6 +207,77 @@ public static class FailureResponse
             errors: errors
         );
     }
+
+    public static JsonNode ForAuthorizationDenied(string detail, TraceId traceId) =>
+        CreateBaseJsonObject(
+            detail: detail,
+            type: _authorizationDeniedType,
+            title: "Authorization Denied",
+            status: 403,
+            correlationId: traceId.Value,
+            validationErrors: [],
+            errors: [detail]
+        );
+
+    public static JsonNode ForRouteResolutionError(string detail, TraceId traceId) =>
+        CreateBaseJsonObject(
+            detail: detail,
+            type: _routeResolutionErrorType,
+            title: "Route Resolution Error",
+            status: 404,
+            correlationId: traceId.Value,
+            validationErrors: [],
+            errors: [detail]
+        );
+
+    public static JsonNode ForAmbiguousRouteResolution(string detail, TraceId traceId) =>
+        CreateBaseJsonObject(
+            detail: detail,
+            type: _routeResolutionErrorType,
+            title: "Route Resolution Error",
+            status: 400,
+            correlationId: traceId.Value,
+            validationErrors: [],
+            errors: [detail]
+        );
+
+    public static JsonNode ForServiceConfigurationError(string detail, TraceId traceId) =>
+        CreateBaseJsonObject(
+            detail: detail,
+            type: _serviceConfigurationErrorType,
+            title: "Service Configuration Error",
+            status: 503,
+            correlationId: traceId.Value,
+            validationErrors: [],
+            errors: [detail]
+        );
+
+    public static JsonNode ForDatabaseNotProvisioned(string detail, TraceId traceId) =>
+        CreateBaseJsonObject(
+            detail: detail,
+            type: _databaseNotProvisionedType,
+            title: "Database Not Provisioned",
+            status: 503,
+            correlationId: traceId.Value,
+            validationErrors: [],
+            errors: [detail]
+        );
+
+    public static JsonNode ForDatabaseFingerprintValidationError(
+        string title,
+        string detail,
+        string[] errors,
+        TraceId traceId
+    ) =>
+        CreateBaseJsonObject(
+            detail: detail,
+            type: _databaseFingerprintValidationErrorType,
+            title: title,
+            status: 503,
+            correlationId: traceId.Value,
+            validationErrors: [],
+            errors: errors
+        );
 
     public static JsonNode ForGatewayError(TraceId traceId, string detail = "") =>
         CreateBaseJsonObject(

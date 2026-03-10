@@ -23,6 +23,9 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 [Parallelizable]
 public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
 {
+    private const string DatabaseFingerprintValidationErrorType =
+        "urn:ed-fi:api:database-fingerprint-validation-error";
+
     private const string MalformedFingerprintDetail =
         "The target database contains malformed dms.EffectiveSchema provisioning metadata. Repair the database by re-running 'ddl provision' against an empty database. If provisioning was partial or the database was modified after provisioning, drop and recreate the database before reprovisioning. Restart DMS after the database has been repaired to clear the cached fingerprint validation failure.";
 
@@ -203,20 +206,15 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         }
 
         [Test]
-        public void It_returns_problem_json_content_type()
+        public void It_returns_json_content_type()
         {
-            ((FrontendResponse)_requestInfo.FrontendResponse)
-                .ContentType.Should()
-                .Be("application/problem+json");
+            ((FrontendResponse)_requestInfo.FrontendResponse).ContentType.Should().Be("application/json");
         }
 
         [Test]
         public void It_returns_the_database_fingerprint_validation_problem_type()
         {
-            _body["type"]
-                ?.GetValue<string>()
-                .Should()
-                .Be(ProblemDetailsResponse.DatabaseFingerprintValidationError);
+            _body["type"]?.GetValue<string>().Should().Be(DatabaseFingerprintValidationErrorType);
         }
 
         [Test]
@@ -346,10 +344,7 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         [Test]
         public void It_returns_the_database_fingerprint_validation_problem_type()
         {
-            _body["type"]
-                ?.GetValue<string>()
-                .Should()
-                .Be(ProblemDetailsResponse.DatabaseFingerprintValidationError);
+            _body["type"]?.GetValue<string>().Should().Be(DatabaseFingerprintValidationErrorType);
         }
 
         [Test]
@@ -565,10 +560,7 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         [Test]
         public void It_returns_the_database_fingerprint_validation_problem_type()
         {
-            _body["type"]
-                ?.GetValue<string>()
-                .Should()
-                .Be(ProblemDetailsResponse.DatabaseFingerprintValidationError);
+            _body["type"]?.GetValue<string>().Should().Be(DatabaseFingerprintValidationErrorType);
         }
 
         [Test]

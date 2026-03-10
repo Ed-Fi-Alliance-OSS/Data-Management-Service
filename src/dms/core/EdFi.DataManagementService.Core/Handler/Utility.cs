@@ -70,9 +70,8 @@ public static class Utility
 
     /// <summary>
     /// Formats an error result from the given error information and traceId.
-    /// This returns only a JSON body, unlike <see cref="ProblemDetailsResponse" />,
-    /// which creates the full middleware <see cref="FrontendResponse" /> with
-    /// <c>application/problem+json</c> content type.
+    /// This returns only a JSON body rather than a complete middleware
+    /// <see cref="FrontendResponse" />.
     /// </summary>
     public static JsonNode? ToJsonError(string errorInfo, TraceId traceId)
     {

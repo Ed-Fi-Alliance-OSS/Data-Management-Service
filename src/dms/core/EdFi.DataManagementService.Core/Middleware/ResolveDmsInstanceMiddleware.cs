@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -41,12 +42,13 @@ internal class ResolveDmsInstanceMiddleware(
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
-            requestInfo.FrontendResponse = ProblemDetailsResponse.Create(
-                403,
-                ProblemDetailsResponse.AuthorizationDenied,
-                "Authorization Denied",
-                "No database instances are authorized for this client",
-                requestInfo.FrontendRequest.TraceId
+            requestInfo.FrontendResponse = new FrontendResponse(
+                StatusCode: 403,
+                Body: FailureResponse.ForAuthorizationDenied(
+                    "No database instances are authorized for this client",
+                    requestInfo.FrontendRequest.TraceId
+                ),
+                Headers: []
             );
             return;
         }
@@ -138,12 +140,13 @@ internal class ResolveDmsInstanceMiddleware(
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
-            requestInfo.FrontendResponse = ProblemDetailsResponse.Create(
-                404,
-                ProblemDetailsResponse.RouteResolutionError,
-                "Route Resolution Error",
-                "No database instance found matching the request route qualifiers",
-                requestInfo.FrontendRequest.TraceId
+            requestInfo.FrontendResponse = new FrontendResponse(
+                StatusCode: 404,
+                Body: FailureResponse.ForRouteResolutionError(
+                    "No database instance found matching the request route qualifiers",
+                    requestInfo.FrontendRequest.TraceId
+                ),
+                Headers: []
             );
             return;
         }
@@ -158,12 +161,13 @@ internal class ResolveDmsInstanceMiddleware(
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
-            requestInfo.FrontendResponse = ProblemDetailsResponse.Create(
-                503,
-                ProblemDetailsResponse.ServiceConfigurationError,
-                "Service Configuration Error",
-                "Database connection not configured for the matched instance",
-                requestInfo.FrontendRequest.TraceId
+            requestInfo.FrontendResponse = new FrontendResponse(
+                StatusCode: 503,
+                Body: FailureResponse.ForServiceConfigurationError(
+                    "Database connection not configured for the matched instance",
+                    requestInfo.FrontendRequest.TraceId
+                ),
+                Headers: []
             );
             return;
         }
@@ -231,12 +235,13 @@ internal class ResolveDmsInstanceMiddleware(
                         requestInfo.FrontendRequest.TraceId.Value
                     );
 
-                    requestInfo.FrontendResponse = ProblemDetailsResponse.Create(
-                        400,
-                        ProblemDetailsResponse.AmbiguousRouteResolution,
-                        "Route Resolution Error",
-                        "Multiple database instances match the request route qualifiers - ambiguous routing not supported",
-                        requestInfo.FrontendRequest.TraceId
+                    requestInfo.FrontendResponse = new FrontendResponse(
+                        StatusCode: 400,
+                        Body: FailureResponse.ForAmbiguousRouteResolution(
+                            "Multiple database instances match the request route qualifiers - ambiguous routing not supported",
+                            requestInfo.FrontendRequest.TraceId
+                        ),
+                        Headers: []
                     );
                     return Task.FromResult<DmsInstance?>(null);
                 }

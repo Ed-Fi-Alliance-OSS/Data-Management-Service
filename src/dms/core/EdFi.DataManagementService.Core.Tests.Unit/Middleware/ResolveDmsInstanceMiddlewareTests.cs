@@ -21,7 +21,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 [Parallelizable]
 public class ResolveDmsInstanceMiddlewareTests
 {
-    private static void AssertExpectedProblemDetailsResponse(
+    private static void AssertExpectedFailureResponse(
         IFrontendResponse response,
         int expectedStatusCode,
         string expectedType,
@@ -31,20 +31,28 @@ public class ResolveDmsInstanceMiddlewareTests
     )
     {
         response.StatusCode.Should().Be(expectedStatusCode);
-        response.ContentType.Should().Be("application/problem+json");
+        response.ContentType.Should().Be("application/json");
 
         JsonObject body = response.Body!.AsObject();
 
         body.Select(property => property.Key)
             .Should()
-            .BeEquivalentTo("detail", "type", "title", "status", "correlationId", "errors");
+            .BeEquivalentTo(
+                "detail",
+                "type",
+                "title",
+                "status",
+                "correlationId",
+                "validationErrors",
+                "errors"
+            );
 
         body["detail"]?.GetValue<string>().Should().Be(expectedDetail);
         body["type"]?.GetValue<string>().Should().Be(expectedType);
         body["title"]?.GetValue<string>().Should().Be(expectedTitle);
         body["status"]?.GetValue<int>().Should().Be(expectedStatusCode);
         body["correlationId"]?.GetValue<string>().Should().Be(expectedCorrelationId);
-        body["validationErrors"].Should().BeNull();
+        body["validationErrors"]!.AsObject().Count.Should().Be(0);
 
         body["errors"]!.AsArray().Select(error => error!.GetValue<string>()).Should().Equal(expectedDetail);
     }
@@ -133,9 +141,9 @@ public class ResolveDmsInstanceMiddlewareTests
         }
 
         [Test]
-        public void It_returns_the_expected_authorization_denied_problem_details_contract()
+        public void It_returns_the_expected_authorization_denied_failure_response_contract()
         {
-            AssertExpectedProblemDetailsResponse(
+            AssertExpectedFailureResponse(
                 _requestInfo.FrontendResponse,
                 403,
                 "urn:ed-fi:api:authorization-denied",
@@ -549,9 +557,9 @@ public class ResolveDmsInstanceMiddlewareTests
         }
 
         [Test]
-        public void It_returns_the_expected_route_resolution_problem_details_contract()
+        public void It_returns_the_expected_route_resolution_failure_response_contract()
         {
-            AssertExpectedProblemDetailsResponse(
+            AssertExpectedFailureResponse(
                 _requestInfo.FrontendResponse,
                 400,
                 "urn:ed-fi:api:route-resolution-error",
@@ -648,9 +656,9 @@ public class ResolveDmsInstanceMiddlewareTests
         }
 
         [Test]
-        public void It_returns_the_expected_route_resolution_problem_details_contract()
+        public void It_returns_the_expected_route_resolution_failure_response_contract()
         {
-            AssertExpectedProblemDetailsResponse(
+            AssertExpectedFailureResponse(
                 _requestInfo.FrontendResponse,
                 404,
                 "urn:ed-fi:api:route-resolution-error",
@@ -736,9 +744,9 @@ public class ResolveDmsInstanceMiddlewareTests
         }
 
         [Test]
-        public void It_returns_the_expected_service_configuration_problem_details_contract()
+        public void It_returns_the_expected_service_configuration_failure_response_contract()
         {
-            AssertExpectedProblemDetailsResponse(
+            AssertExpectedFailureResponse(
                 _requestInfo.FrontendResponse,
                 503,
                 "urn:ed-fi:api:service-configuration-error",

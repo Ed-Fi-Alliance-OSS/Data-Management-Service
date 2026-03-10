@@ -6,7 +6,9 @@
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -54,12 +56,13 @@ internal class ValidateDatabaseFingerprintMiddleware(
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
-            requestInfo.FrontendResponse = ProblemDetailsResponse.Create(
-                503,
-                ProblemDetailsResponse.ServiceConfigurationError,
-                "Service Configuration Error",
-                "Database connection not configured for the matched instance",
-                requestInfo.FrontendRequest.TraceId
+            requestInfo.FrontendResponse = new FrontendResponse(
+                StatusCode: 503,
+                Body: FailureResponse.ForServiceConfigurationError(
+                    "Database connection not configured for the matched instance",
+                    requestInfo.FrontendRequest.TraceId
+                ),
+                Headers: []
             );
 
             return;
@@ -81,14 +84,15 @@ internal class ValidateDatabaseFingerprintMiddleware(
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
-            requestInfo.FrontendResponse = ProblemDetailsResponse.Create(
-                503,
-                ProblemDetailsResponse.DatabaseFingerprintValidationError,
-                MalformedFingerprintTitle,
-                MalformedFingerprintDetail,
-                [.. ex.ValidationIssues, MalformedFingerprintDetail],
-                requestInfo.FrontendRequest.TraceId,
-                includeValidationErrors: true
+            requestInfo.FrontendResponse = new FrontendResponse(
+                StatusCode: 503,
+                Body: FailureResponse.ForDatabaseFingerprintValidationError(
+                    MalformedFingerprintTitle,
+                    MalformedFingerprintDetail,
+                    [.. ex.ValidationIssues, MalformedFingerprintDetail],
+                    requestInfo.FrontendRequest.TraceId
+                ),
+                Headers: []
             );
 
             return;
@@ -101,13 +105,13 @@ internal class ValidateDatabaseFingerprintMiddleware(
                 LoggingSanitizer.SanitizeForLogging(selectedInstance.InstanceName),
                 requestInfo.FrontendRequest.TraceId.Value
             );
-            requestInfo.FrontendResponse = ProblemDetailsResponse.Create(
-                503,
-                ProblemDetailsResponse.DatabaseNotProvisioned,
-                "Database Not Provisioned",
-                "The target database has not been provisioned. Run 'ddl provision' to initialize the database schema. If this database was provisioned after DMS first tried to use it, restart DMS to clear the cached provisioning state.",
-                requestInfo.FrontendRequest.TraceId,
-                includeValidationErrors: true
+            requestInfo.FrontendResponse = new FrontendResponse(
+                StatusCode: 503,
+                Body: FailureResponse.ForDatabaseNotProvisioned(
+                    "The target database has not been provisioned. Run 'ddl provision' to initialize the database schema. If this database was provisioned after DMS first tried to use it, restart DMS to clear the cached provisioning state.",
+                    requestInfo.FrontendRequest.TraceId
+                ),
+                Headers: []
             );
             return;
         }
