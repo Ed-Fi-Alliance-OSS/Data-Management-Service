@@ -552,6 +552,35 @@ public class Given_DdlManifestEmitter_CountStatements_For_Mssql
         // 1 semicolon before first Go + 1 trigger batch = 2
         DdlManifestEmitter.CountStatements(SqlDialect.Mssql, sql).Should().Be(2);
     }
+
+    [Test]
+    public void It_should_count_function_and_trigger_batches_with_interleaved_plain_ddl()
+    {
+        var sql = string.Join(
+            "\n",
+            "CREATE TABLE foo (id INT);",
+            "GO",
+            "CREATE OR ALTER FUNCTION dms.uuidv5(@ns uniqueidentifier, @name nvarchar(max))",
+            "RETURNS uniqueidentifier",
+            "AS",
+            "BEGIN",
+            "    RETURN @ns;",
+            "END;",
+            "GO",
+            "CREATE TABLE bar (id INT);",
+            "GO",
+            "CREATE TRIGGER trg ON foo",
+            "AFTER INSERT AS",
+            "BEGIN",
+            "    RETURN;",
+            "END;",
+            "GO",
+            ""
+        );
+
+        // 1 (table) + 1 (function) + 1 (table) + 1 (trigger) = 4
+        DdlManifestEmitter.CountStatements(SqlDialect.Mssql, sql).Should().Be(4);
+    }
 }
 
 [TestFixture]

@@ -984,7 +984,7 @@ public class Given_MssqlDialect_Create_Uuidv5_Function
     {
         _ddl.Should()
             .Contain(
-                "CAST(CAST(@name_text AS varchar(max) COLLATE Latin1_General_100_CI_AS_SC_UTF8) AS varbinary(max))"
+                "CAST(CAST(@name_text COLLATE Latin1_General_100_CI_AS_SC_UTF8 AS varchar(max)) AS varbinary(max))"
             );
     }
 }

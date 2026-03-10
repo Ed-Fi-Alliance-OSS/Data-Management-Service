@@ -155,7 +155,7 @@ Minimum required fields:
     - `normalized_sql_sha256`
     - `statement_count` — dialect-aware count of top-level SQL statements:
       - **PostgreSQL**: Lines ending with `;` outside dollar-quoted blocks (`$tag$...$tag$`). Each dollar-quoted function/trigger body counts as one statement (the closing `;` after the block). Supports all tags matching `$[A-Za-z0-9_]*$`.
-      - **MSSQL**: Before the first `GO` batch separator, lines ending with `;` (plain DDL/DML). After each `GO`, each non-empty batch counts as one statement. This matches how the provisioner splits and executes `GO`-delimited batches.
+      - **MSSQL**: Splits by standalone `GO` lines into batches. Compound batches (`CREATE [OR ALTER] FUNCTION`, `TRIGGER`, `PROCEDURE`) count as one statement regardless of internal semicolons. Plain DDL/DML batches count lines ending with `;`. Content before the first `GO` (if any) is treated as a plain batch.
 
 ### Artifact emitter (required component)
 
