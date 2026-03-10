@@ -6,7 +6,7 @@
       "Add or update unit tests in `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Middleware/ResolveDmsInstanceMiddlewareTests.cs` to assert the exact `type` values for the 403, 400, 404, and 503 paths and to assert that `validationErrors` is absent from the serialized body.",
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ResolveDmsInstanceMiddlewareTests\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Response Compatibility",

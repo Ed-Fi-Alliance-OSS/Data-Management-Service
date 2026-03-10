@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -20,6 +21,34 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 [Parallelizable]
 public class ResolveDmsInstanceMiddlewareTests
 {
+    private static void AssertLegacyProblemDetailsResponse(
+        IFrontendResponse response,
+        int expectedStatusCode,
+        string expectedType,
+        string expectedTitle,
+        string expectedDetail,
+        string expectedCorrelationId
+    )
+    {
+        response.StatusCode.Should().Be(expectedStatusCode);
+        response.ContentType.Should().Be("application/problem+json");
+
+        JsonObject body = response.Body!.AsObject();
+
+        body.Select(property => property.Key)
+            .Should()
+            .BeEquivalentTo("detail", "type", "title", "status", "correlationId", "errors");
+
+        body["detail"]?.GetValue<string>().Should().Be(expectedDetail);
+        body["type"]?.GetValue<string>().Should().Be(expectedType);
+        body["title"]?.GetValue<string>().Should().Be(expectedTitle);
+        body["status"]?.GetValue<int>().Should().Be(expectedStatusCode);
+        body["correlationId"]?.GetValue<string>().Should().Be(expectedCorrelationId);
+        body["validationErrors"].Should().BeNull();
+
+        body["errors"]!.AsArray().Select(error => error!.GetValue<string>()).Should().Equal(expectedDetail);
+    }
+
     internal static (
         ResolveDmsInstanceMiddleware middleware,
         IDmsInstanceProvider dmsInstanceProvider,
@@ -104,9 +133,16 @@ public class ResolveDmsInstanceMiddlewareTests
         }
 
         [Test]
-        public void It_does_not_include_validation_errors()
+        public void It_returns_the_legacy_authorization_denied_problem_details_contract()
         {
-            _requestInfo.FrontendResponse.Body!["validationErrors"].Should().BeNull();
+            AssertLegacyProblemDetailsResponse(
+                _requestInfo.FrontendResponse,
+                403,
+                "urn:ed-fi:api:authorization-denied",
+                "Authorization Denied",
+                "No database instances are authorized for this client",
+                "123"
+            );
         }
     }
 
@@ -513,9 +549,16 @@ public class ResolveDmsInstanceMiddlewareTests
         }
 
         [Test]
-        public void It_does_not_include_validation_errors()
+        public void It_returns_the_legacy_route_resolution_problem_details_contract()
         {
-            _requestInfo.FrontendResponse.Body!["validationErrors"].Should().BeNull();
+            AssertLegacyProblemDetailsResponse(
+                _requestInfo.FrontendResponse,
+                400,
+                "urn:ed-fi:api:route-resolution-error",
+                "Route Resolution Error",
+                "Multiple database instances match the request route qualifiers - ambiguous routing not supported",
+                "123"
+            );
         }
     }
 
@@ -603,6 +646,19 @@ public class ResolveDmsInstanceMiddlewareTests
                 .Should()
                 .Contain("No database instance found matching");
         }
+
+        [Test]
+        public void It_returns_the_legacy_route_resolution_problem_details_contract()
+        {
+            AssertLegacyProblemDetailsResponse(
+                _requestInfo.FrontendResponse,
+                404,
+                "urn:ed-fi:api:route-resolution-error",
+                "Route Resolution Error",
+                "No database instance found matching the request route qualifiers",
+                "123"
+            );
+        }
     }
 
     [TestFixture]
@@ -677,6 +733,19 @@ public class ResolveDmsInstanceMiddlewareTests
         public void It_includes_configuration_error()
         {
             _requestInfo.FrontendResponse.Body?.ToString().Should().Contain("Database connection not");
+        }
+
+        [Test]
+        public void It_returns_the_legacy_service_configuration_problem_details_contract()
+        {
+            AssertLegacyProblemDetailsResponse(
+                _requestInfo.FrontendResponse,
+                503,
+                "urn:ed-fi:api:service-configuration-error",
+                "Service Configuration Error",
+                "Database connection not configured for the matched instance",
+                "123"
+            );
         }
     }
 

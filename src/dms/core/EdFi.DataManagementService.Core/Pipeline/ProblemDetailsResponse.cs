@@ -35,14 +35,13 @@ internal static class ProblemDetailsResponse
         $"{_typePrefix}:database-fingerprint-validation-error";
 
     /// <summary>403 - client has no authorized database instances</summary>
-    public static readonly string AuthorizationDenied = $"{_typePrefix}:security:authorization-denied";
+    public static readonly string AuthorizationDenied = $"{_typePrefix}:authorization-denied";
 
     /// <summary>404 - route qualifiers do not match any DMS instance</summary>
     public static readonly string RouteResolutionError = $"{_typePrefix}:route-resolution-error";
 
-    /// <summary>400 - ambiguous routing (multiple instances match)</summary>
-    public static readonly string AmbiguousRouteResolution =
-        $"{_typePrefix}:route-resolution-error:ambiguous";
+    /// <summary>400 - ambiguous routing (multiple instances match) shares the legacy route-resolution type</summary>
+    public static readonly string AmbiguousRouteResolution = RouteResolutionError;
 
     public static FrontendResponse Create(
         int statusCode,
