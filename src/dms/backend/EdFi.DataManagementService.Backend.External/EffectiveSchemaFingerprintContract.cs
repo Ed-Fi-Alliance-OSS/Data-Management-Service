@@ -19,7 +19,7 @@ public static class EffectiveSchemaFingerprintContract
         short effectiveSchemaSingletonId,
         string apiSchemaFormatVersion,
         string effectiveSchemaHash,
-        int resourceKeyCount,
+        short resourceKeyCount,
         byte[] resourceKeySeedHash
     )
     {
@@ -73,7 +73,7 @@ public static class EffectiveSchemaFingerprintContract
         ICollection<string> issues,
         string apiSchemaFormatVersion,
         string effectiveSchemaHash,
-        int resourceKeyCount,
+        short resourceKeyCount,
         byte[] resourceKeySeedHash
     )
     {

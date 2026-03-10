@@ -405,7 +405,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             _dialect.RenderSmallintLiteral(1),
             _dialect.RenderStringLiteral(effectiveSchema.ApiSchemaFormatVersion),
             _dialect.RenderStringLiteral(effectiveSchema.EffectiveSchemaHash),
-            _dialect.RenderSmallintLiteral(checked((short)effectiveSchema.ResourceKeyCount)),
+            _dialect.RenderSmallintLiteral(effectiveSchema.ResourceKeyCount),
             _dialect.RenderBinaryLiteral(effectiveSchema.ResourceKeySeedHash)
         );
 
@@ -439,7 +439,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
     private void EmitEffectiveSchemaValidation(SqlWriter writer, EffectiveSchemaInfo effectiveSchema)
     {
         var table = _dialect.QualifyTable(_effectiveSchemaTable);
-        var expectedCount = _dialect.RenderSmallintLiteral(checked((short)effectiveSchema.ResourceKeyCount));
+        var expectedCount = _dialect.RenderSmallintLiteral(effectiveSchema.ResourceKeyCount);
         var expectedHash = _dialect.RenderBinaryLiteral(effectiveSchema.ResourceKeySeedHash);
 
         writer.AppendLine(

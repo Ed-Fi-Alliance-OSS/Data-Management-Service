@@ -885,7 +885,7 @@ public class Given_SeedDmlEmitter_EmitPreflightOnly_With_MssqlDialect
 
 internal static class ChunkingTestData
 {
-    internal static EffectiveSchemaInfo BuildLargeResourceKeySchema(int resourceKeyCount) =>
+    internal static EffectiveSchemaInfo BuildLargeResourceKeySchema(short resourceKeyCount) =>
         new(
             ApiSchemaFormatVersion: "1.0.0",
             RelationalMappingVersion: "1.0.0",

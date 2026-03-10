@@ -71,7 +71,7 @@ public sealed class EffectiveSchemaSetBuilder(
             apiSchemaFormatVersion,
             SchemaHashConstants.RelationalMappingVersion,
             effectiveSchemaHash,
-            resourceKeys.Length,
+            checked((short)resourceKeys.Length),
             seedHash,
             componentsInEndpointOrder,
             resourceKeys

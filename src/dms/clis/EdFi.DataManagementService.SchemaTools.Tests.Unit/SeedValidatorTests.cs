@@ -275,7 +275,7 @@ public class Given_ValidateEffectiveSchemaOrThrow_With_Matching_Values
             1,
             expectedSchema.ApiSchemaFormatVersion,
             expectedSchema.EffectiveSchemaHash,
-            checked((short)expectedSchema.ResourceKeyCount),
+            expectedSchema.ResourceKeyCount,
             expectedSchema.ResourceKeySeedHash,
             expectedSchema,
             logger
@@ -306,7 +306,7 @@ public class Given_ValidateEffectiveSchemaOrThrow_With_Mismatched_ResourceKeyCou
                 1,
                 expectedSchema.ApiSchemaFormatVersion,
                 expectedSchema.EffectiveSchemaHash,
-                checked((short)expectedSchema.ResourceKeyCount),
+                expectedSchema.ResourceKeyCount,
                 expectedSchema.ResourceKeySeedHash,
                 expectedSchema with
                 {
@@ -350,7 +350,7 @@ public class Given_ValidateEffectiveSchemaOrThrow_With_Mismatched_ResourceKeySee
                 1,
                 expectedSchema.ApiSchemaFormatVersion,
                 expectedSchema.EffectiveSchemaHash,
-                checked((short)expectedSchema.ResourceKeyCount),
+                expectedSchema.ResourceKeyCount,
                 _storedHash,
                 expectedSchema with
                 {
@@ -394,7 +394,7 @@ public class Given_ValidateEffectiveSchemaOrThrow_With_Both_Mismatched
                 1,
                 expectedSchema.ApiSchemaFormatVersion,
                 expectedSchema.EffectiveSchemaHash,
-                checked((short)expectedSchema.ResourceKeyCount),
+                expectedSchema.ResourceKeyCount,
                 expectedSchema.ResourceKeySeedHash,
                 expectedSchema with
                 {
@@ -435,7 +435,7 @@ public class Given_ValidateEffectiveSchemaOrThrow_With_An_Empty_Stored_ApiSchema
                 1,
                 " ",
                 expectedSchema.EffectiveSchemaHash,
-                checked((short)expectedSchema.ResourceKeyCount),
+                expectedSchema.ResourceKeyCount,
                 expectedSchema.ResourceKeySeedHash,
                 expectedSchema,
                 logger
@@ -466,7 +466,7 @@ public class Given_ValidateEffectiveSchemaOrThrow_With_An_Invalid_Expected_Effec
                 1,
                 expectedSchema.ApiSchemaFormatVersion,
                 expectedSchema.EffectiveSchemaHash,
-                checked((short)expectedSchema.ResourceKeyCount),
+                expectedSchema.ResourceKeyCount,
                 expectedSchema.ResourceKeySeedHash,
                 expectedSchema with
                 {

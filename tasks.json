@@ -43,5 +43,43 @@
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter PipelineOrderingTests`"
     ],
     "completed": true
+  },
+  {
+    "category": "Backend Contract Alignment",
+    "description": "Align `ResourceKeyCount` to the authoritative `smallint`/`short` effective-schema contract across runtime and provisioning by changing `EffectiveSchemaInfo.ResourceKeyCount` and dependent builders, fixtures, and tests to match `DatabaseFingerprint` and the provisioned `dms.EffectiveSchema` table. Acceptance: `EffectiveSchemaInfo`, runtime fingerprint handling, provisioning helpers, and DDL seed emission no longer rely on an `int` to `short` narrowing for `ResourceKeyCount`, and affected backend/test projects build and execute against the aligned contract without regression.",
+    "steps-to-verify": [
+      "Update the compile-time contracts, builders, fixtures, and tests so the effective-schema model no longer exposes `int ResourceKeyCount` in the backend external contract.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter DatabaseFingerprintReaderSupportTests`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter SeedDmlEmitterTests`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Backend Validation",
+    "description": "Add explicit shared validation and regression coverage for the `ResourceKeyCount` `smallint` ceiling so malformed effective-schema metadata fails with a deterministic contract message before overflow or provider-specific cast behavior. Acceptance: counts above `short.MaxValue` are rejected by shared validation, invalid expected metadata no longer first fails at `checked((short)...)`, boundary-valid values still succeed, and new tests cover both over-limit and boundary-success cases.",
+    "steps-to-verify": [
+      "Add unit tests for over-limit and boundary `ResourceKeyCount` values in the shared effective-schema validation/emission paths.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter SeedDmlEmitterTests`",
+      "Run: `dotnet test --no-restore ./src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/EdFi.DataManagementService.SchemaTools.Tests.Unit.csproj --filter SeedValidatorTests`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Design Documentation",
+    "description": "Align backend redesign documentation for `ResourceKeyCount` with the implemented `dms.EffectiveSchema` contract. Acceptance: `compiled-mapping-set.md` and any related runtime-mapping-selection documentation no longer describe `ResourceKeyCount` as an unconstrained `int` when the authoritative storage/runtime contract is `smallint`-bounded, and the capacity rationale is stated explicitly so reviewers can see why the runtime model uses the tighter limit.",
+    "steps-to-verify": [
+      "Update the affected design docs so `ResourceKeyCount` uses consistent type/capacity language everywhere it is described.",
+      "Run: `rg -n \"ResourceKeyCount\" reference/design/backend-redesign/design-docs reference/design/backend-redesign/epics/06-runtime-mapping-selection` and confirm the updated docs are internally consistent."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Pipeline Documentation",
+    "description": "Add a usage comment clarifying when middleware should use `ProblemDetailsResponse` versus `FailureResponse`. Acceptance: `ProblemDetailsResponse` documents that it is the middleware-oriented factory for complete typed `FrontendResponse` problem responses, the comment distinguishes it from the legacy JSON-body `FailureResponse` helper, any related note in handler utilities is updated to avoid implying the helpers are interchangeable, and no runtime behavior changes.",
+    "steps-to-verify": [
+      "Update the summary or remarks in `ProblemDetailsResponse.cs` and adjust nearby explanatory comments if needed so the distinction is explicit in code review.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter ProblemDetailsResponseTests`"
+    ],
+    "completed": false
   }
 ]

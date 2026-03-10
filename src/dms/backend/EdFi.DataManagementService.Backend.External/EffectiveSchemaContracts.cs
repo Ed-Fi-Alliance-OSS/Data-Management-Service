@@ -65,7 +65,7 @@ public sealed record EffectiveSchemaInfo(
     string ApiSchemaFormatVersion,
     string RelationalMappingVersion,
     string EffectiveSchemaHash,
-    int ResourceKeyCount,
+    short ResourceKeyCount,
     byte[] ResourceKeySeedHash,
     IReadOnlyList<SchemaComponentInfo> SchemaComponentsInEndpointOrder,
     IReadOnlyList<ResourceKeyEntry> ResourceKeysInIdOrder
