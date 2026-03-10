@@ -15,7 +15,7 @@
       "Add or update unit tests in `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Middleware/ProfileResolutionMiddlewareTests.cs` to assert the exact field set and confirm `validationErrors` is absent for representative 400, 406/415, and profile-resolution-error responses.",
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~ProfileResolutionMiddlewareTests\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Response Compatibility",

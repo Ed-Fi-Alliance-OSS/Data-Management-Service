@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -43,9 +45,9 @@ internal class ProfileResolutionMiddleware(
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
-            requestInfo.FrontendResponse = ProblemDetailsResponse.Create(
+            requestInfo.FrontendResponse = CreateProfileError(
                 statusCode: 400,
-                type: "urn:ed-fi:api:profile:invalid-profile-usage",
+                errorType: "urn:ed-fi:api:profile:invalid-profile-usage",
                 title: "Invalid Profile Usage",
                 detail: "The request construction was invalid with respect to usage of a data policy.",
                 errors: [parseResult.ErrorMessage ?? "Invalid profile header format."],
@@ -77,9 +79,9 @@ internal class ProfileResolutionMiddleware(
             }
 
             // If profile header was specified but we can't find app context, return error
-            requestInfo.FrontendResponse = ProblemDetailsResponse.Create(
+            requestInfo.FrontendResponse = CreateProfileError(
                 statusCode: GetNotFoundStatusCode(requestInfo.Method),
-                type: "urn:ed-fi:api:profile:invalid-profile-usage",
+                errorType: "urn:ed-fi:api:profile:invalid-profile-usage",
                 title: "Invalid Profile Usage",
                 detail: "The request construction was invalid with respect to usage of a data policy.",
                 errors: ["Unable to resolve application context for profile validation."],
@@ -109,9 +111,9 @@ internal class ProfileResolutionMiddleware(
             );
 
             ProfileResolutionError error = resolutionResult.Error!;
-            requestInfo.FrontendResponse = ProblemDetailsResponse.Create(
+            requestInfo.FrontendResponse = CreateProfileError(
                 statusCode: error.StatusCode,
-                type: error.ErrorType,
+                errorType: error.ErrorType,
                 title: error.Title,
                 detail: error.Detail,
                 errors: error.Errors,
@@ -171,5 +173,32 @@ internal class ProfileResolutionMiddleware(
             RequestMethod.PUT => 415,
             _ => throw new InvalidOperationException($"Unexpected method for profile resolution: {method}"),
         };
+    }
+
+    private static FrontendResponse CreateProfileError(
+        int statusCode,
+        string errorType,
+        string title,
+        string detail,
+        string[] errors,
+        TraceId traceId
+    )
+    {
+        JsonObject responseBody = new()
+        {
+            ["detail"] = detail,
+            ["type"] = errorType,
+            ["title"] = title,
+            ["status"] = statusCode,
+            ["correlationId"] = traceId.Value,
+            ["errors"] = JsonSerializer.SerializeToNode(errors, UtilityService.SerializerOptions),
+        };
+
+        return new FrontendResponse(
+            StatusCode: statusCode,
+            Body: responseBody,
+            Headers: [],
+            ContentType: "application/problem+json"
+        );
     }
 }

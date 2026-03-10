@@ -22,6 +22,34 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 [TestFixture]
 public class ProfileResolutionMiddlewareTests
 {
+    private static void AssertLegacyProblemDetailsResponse(
+        IFrontendResponse response,
+        int expectedStatusCode,
+        string expectedType,
+        string expectedTitle,
+        string expectedDetail,
+        string expectedCorrelationId,
+        params string[] expectedErrors
+    )
+    {
+        response.StatusCode.Should().Be(expectedStatusCode);
+        response.ContentType.Should().Be("application/problem+json");
+
+        JsonObject body = response.Body!.AsObject();
+
+        body.Select(property => property.Key)
+            .Should()
+            .BeEquivalentTo("detail", "type", "title", "status", "correlationId", "errors");
+
+        body["detail"]?.GetValue<string>().Should().Be(expectedDetail);
+        body["type"]?.GetValue<string>().Should().Be(expectedType);
+        body["title"]?.GetValue<string>().Should().Be(expectedTitle);
+        body["status"]?.GetValue<int>().Should().Be(expectedStatusCode);
+        body["correlationId"]?.GetValue<string>().Should().Be(expectedCorrelationId);
+        body["validationErrors"].Should().BeNull();
+        body["errors"]!.AsArray().Select(error => error!.GetValue<string>()).Should().Equal(expectedErrors);
+    }
+
     private static ProfileResolutionMiddleware CreateMiddleware(IProfileService? profileService = null)
     {
         return new ProfileResolutionMiddleware(
@@ -146,9 +174,17 @@ public class ProfileResolutionMiddlewareTests
         }
 
         [Test]
-        public void It_does_not_include_validation_errors()
+        public void It_returns_the_legacy_problem_details_payload()
         {
-            _requestInfo.FrontendResponse!.Body!["validationErrors"].Should().BeNull();
+            AssertLegacyProblemDetailsResponse(
+                _requestInfo.FrontendResponse!,
+                expectedStatusCode: 400,
+                expectedType: "urn:ed-fi:api:profile:invalid-profile-usage",
+                expectedTitle: "Invalid Profile Usage",
+                expectedDetail: "The request construction was invalid with respect to usage of a data policy.",
+                expectedCorrelationId: "test-trace-id",
+                "The format of the profile-based content type header was invalid."
+            );
         }
     }
 
@@ -240,9 +276,17 @@ public class ProfileResolutionMiddlewareTests
         }
 
         [Test]
-        public void It_does_not_include_validation_errors()
+        public void It_returns_the_legacy_problem_details_payload()
         {
-            _requestInfo.FrontendResponse!.Body!["validationErrors"].Should().BeNull();
+            AssertLegacyProblemDetailsResponse(
+                _requestInfo.FrontendResponse!,
+                expectedStatusCode: 406,
+                expectedType: "urn:ed-fi:api:profile:invalid-profile-usage",
+                expectedTitle: "Invalid Profile Usage",
+                expectedDetail: "The request construction was invalid with respect to usage of a data policy.",
+                expectedCorrelationId: "test-trace-id",
+                "Unable to resolve application context for profile validation."
+            );
         }
     }
 
@@ -278,6 +322,20 @@ public class ProfileResolutionMiddlewareTests
         public void It_returns_415_for_POST()
         {
             _requestInfo.FrontendResponse!.StatusCode.Should().Be(415);
+        }
+
+        [Test]
+        public void It_returns_the_legacy_problem_details_payload()
+        {
+            AssertLegacyProblemDetailsResponse(
+                _requestInfo.FrontendResponse!,
+                expectedStatusCode: 415,
+                expectedType: "urn:ed-fi:api:profile:invalid-profile-usage",
+                expectedTitle: "Invalid Profile Usage",
+                expectedDetail: "The request construction was invalid with respect to usage of a data policy.",
+                expectedCorrelationId: "test-trace-id",
+                "Unable to resolve application context for profile validation."
+            );
         }
     }
 
@@ -391,6 +449,20 @@ public class ProfileResolutionMiddlewareTests
         public void It_returns_problem_json()
         {
             _requestInfo.FrontendResponse!.ContentType.Should().Be("application/problem+json");
+        }
+
+        [Test]
+        public void It_returns_the_legacy_problem_details_payload()
+        {
+            AssertLegacyProblemDetailsResponse(
+                _requestInfo.FrontendResponse!,
+                expectedStatusCode: 403,
+                expectedType: "urn:ed-fi:api:security:data-policy:incorrect-usage",
+                expectedTitle: "Data Policy Failure",
+                expectedDetail: "Profile not assigned to application",
+                expectedCorrelationId: "test-trace-id",
+                "Profile 'testprofile' is not assigned to this application."
+            );
         }
     }
 
