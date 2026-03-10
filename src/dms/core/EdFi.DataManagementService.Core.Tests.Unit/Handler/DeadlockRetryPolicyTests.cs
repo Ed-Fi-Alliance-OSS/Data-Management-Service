@@ -26,6 +26,8 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 [TestFixture]
 public class DeadlockRetryPolicyTests
 {
+    private static readonly Lock _retryPipelineBuildLock = new();
+
     /// <summary>
     /// Builds a resilience pipeline that mirrors the retry configuration
     /// used in DmsCoreServiceExtensions, without the circuit breaker or telemetry layers.
@@ -37,23 +39,26 @@ public class DeadlockRetryPolicyTests
         bool useJitter = false
     )
     {
-        var builder = new ResiliencePipelineBuilder<object>();
-
-        if (maxRetryAttempts > 0)
+        lock (_retryPipelineBuildLock)
         {
-            builder.AddRetry(
-                new RetryStrategyOptions<object>
-                {
-                    BackoffType = DelayBackoffType.Exponential,
-                    MaxRetryAttempts = maxRetryAttempts,
-                    Delay = TimeSpan.FromMilliseconds(baseDelayMs),
-                    UseJitter = useJitter,
-                    ShouldHandle = new PredicateBuilder<object>().HandleResult(Utility.IsRetryableResult),
-                }
-            );
-        }
+            var builder = new ResiliencePipelineBuilder<object>();
 
-        return builder.Build();
+            if (maxRetryAttempts > 0)
+            {
+                builder.AddRetry(
+                    new RetryStrategyOptions<object>
+                    {
+                        BackoffType = DelayBackoffType.Exponential,
+                        MaxRetryAttempts = maxRetryAttempts,
+                        Delay = TimeSpan.FromMilliseconds(baseDelayMs),
+                        UseJitter = useJitter,
+                        ShouldHandle = new PredicateBuilder<object>().HandleResult(Utility.IsRetryableResult),
+                    }
+                );
+            }
+
+            return builder.Build();
+        }
     }
 
     [TestFixture]
@@ -350,23 +355,26 @@ public class DeadlockRetryPolicyTests
     /// </summary>
     private static ResiliencePipeline BuildHandlerPipeline(int maxRetryAttempts)
     {
-        var builder = new ResiliencePipelineBuilder();
-
-        if (maxRetryAttempts > 0)
+        lock (_retryPipelineBuildLock)
         {
-            builder.AddRetry(
-                new RetryStrategyOptions
-                {
-                    BackoffType = DelayBackoffType.Exponential,
-                    MaxRetryAttempts = maxRetryAttempts,
-                    Delay = TimeSpan.FromMilliseconds(1),
-                    UseJitter = false,
-                    ShouldHandle = new PredicateBuilder().HandleResult(Utility.IsRetryableResult),
-                }
-            );
-        }
+            var builder = new ResiliencePipelineBuilder();
 
-        return builder.Build();
+            if (maxRetryAttempts > 0)
+            {
+                builder.AddRetry(
+                    new RetryStrategyOptions
+                    {
+                        BackoffType = DelayBackoffType.Exponential,
+                        MaxRetryAttempts = maxRetryAttempts,
+                        Delay = TimeSpan.FromMilliseconds(1),
+                        UseJitter = false,
+                        ShouldHandle = new PredicateBuilder().HandleResult(Utility.IsRetryableResult),
+                    }
+                );
+            }
+
+            return builder.Build();
+        }
     }
 
     private static (IPipelineStep handler, IServiceProvider serviceProvider) CreateGetByIdHandler(
