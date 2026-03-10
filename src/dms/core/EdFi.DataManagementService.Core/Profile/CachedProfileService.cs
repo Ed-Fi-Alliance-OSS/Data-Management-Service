@@ -144,6 +144,9 @@ internal class CachedProfileService(
             if (parsedHeader != null)
             {
                 CachedProfileStore unassignedProfileStore = await GetOrFetchProfileStoreAsync(tenantId);
+                // An app without profile assignments can still use a valid explicit profile.
+                // Passing null skips assignment enforcement while preserving normal profile
+                // validation for existence, resource matching, and method/content-type rules.
                 return ValidateExplicitProfile(
                     parsedHeader,
                     method,
@@ -251,6 +254,9 @@ internal class CachedProfileService(
         IReadOnlyList<string> availableProfiles = cachedProfiles is not null
             ? GetAvailableProfileContentTypes(cachedProfiles, profileStore, resourceName, method)
             : [];
+        // Assignment enforcement applies only when at least one assigned profile covers the
+        // requested resource and verb. If none apply, the profiles design treats the request
+        // as standard behavior rather than blocking an otherwise valid explicit profile.
         bool enforceAssignment = cachedProfiles is not null && availableProfiles.Count > 0;
 
         if (
@@ -385,6 +391,9 @@ internal class CachedProfileService(
 
         if (availableProfiles.Count == 1)
         {
+            // Aligns with the profiles design in reference/design/profiles-DMS-877:
+            // if exactly one assigned profile applies to the requested resource and verb,
+            // the service implicitly selects it even when other assigned profiles exist.
             (ProfileDefinition profileDefinition, ResourceProfile resourceProfile) = applicableProfiles[0];
 
             ProfileResolutionResult? contentTypeValidation = ValidateResourceContentType(

@@ -151,6 +151,12 @@ public class CachedProfileServiceTests
                         new CmsProfileResponse(100, "StudentProfile", StudentProfileXml),
                     ])
                 );
+            A.CallTo(() => fakeCmsProvider.GetProfileAsync(100, A<string?>._))
+                .Returns(
+                    Task.FromResult<CmsProfileResponse?>(
+                        new CmsProfileResponse(100, "StudentProfile", StudentProfileXml)
+                    )
+                );
 
             var service = CreateService(fakeCmsProvider);
             var parsedHeader = new ParsedProfileHeader("student", "StudentProfile", ProfileUsageType.Readable);
@@ -163,7 +169,11 @@ public class CachedProfileServiceTests
                 tenantId: null
             );
 
-            result.IsSuccess.Should().BeFalse();
+            result.IsSuccess.Should().BeTrue();
+            result.ProfileContext.Should().NotBeNull();
+            result.ProfileContext!.ProfileName.Should().Be("StudentProfile");
+            result.ProfileContext.ContentType.Should().Be(ProfileContentType.Read);
+            result.ProfileContext.WasExplicitlySpecified.Should().BeTrue();
         }
 
         [Test]
@@ -178,6 +188,12 @@ public class CachedProfileServiceTests
                         new CmsProfileResponse(100, "StudentProfile", StudentProfileXml),
                     ])
                 );
+            A.CallTo(() => fakeCmsProvider.GetProfileAsync(100, A<string?>._))
+                .Returns(
+                    Task.FromResult<CmsProfileResponse?>(
+                        new CmsProfileResponse(100, "StudentProfile", StudentProfileXml)
+                    )
+                );
 
             var service = CreateService(fakeCmsProvider);
             var parsedHeader = new ParsedProfileHeader("student", "StudentProfile", ProfileUsageType.Writable);
@@ -190,7 +206,11 @@ public class CachedProfileServiceTests
                 tenantId: null
             );
 
-            result.IsSuccess.Should().BeFalse();
+            result.IsSuccess.Should().BeTrue();
+            result.ProfileContext.Should().NotBeNull();
+            result.ProfileContext!.ProfileName.Should().Be("StudentProfile");
+            result.ProfileContext.ContentType.Should().Be(ProfileContentType.Write);
+            result.ProfileContext.WasExplicitlySpecified.Should().BeTrue();
         }
 
         [Test]
@@ -205,6 +225,12 @@ public class CachedProfileServiceTests
                         new CmsProfileResponse(100, "StudentProfile", StudentProfileXml),
                     ])
                 );
+            A.CallTo(() => fakeCmsProvider.GetProfileAsync(100, A<string?>._))
+                .Returns(
+                    Task.FromResult<CmsProfileResponse?>(
+                        new CmsProfileResponse(100, "StudentProfile", StudentProfileXml)
+                    )
+                );
 
             var service = CreateService(fakeCmsProvider);
             var parsedHeader = new ParsedProfileHeader("student", "StudentProfile", ProfileUsageType.Writable);
@@ -217,7 +243,11 @@ public class CachedProfileServiceTests
                 tenantId: null
             );
 
-            result.IsSuccess.Should().BeFalse();
+            result.IsSuccess.Should().BeTrue();
+            result.ProfileContext.Should().NotBeNull();
+            result.ProfileContext!.ProfileName.Should().Be("StudentProfile");
+            result.ProfileContext.ContentType.Should().Be(ProfileContentType.Write);
+            result.ProfileContext.WasExplicitlySpecified.Should().BeTrue();
         }
     }
 
@@ -609,6 +639,49 @@ public class CachedProfileServiceTests
         }
 
         [Test]
+        public async Task It_returns_implicit_profile_when_multiple_profiles_are_assigned_but_only_one_applies()
+        {
+            var fakeCmsProvider = A.Fake<IProfileCmsProvider>();
+            A.CallTo(() => fakeCmsProvider.GetApplicationProfileInfoAsync(A<long>._, A<string?>._))
+                .Returns(new ApplicationProfileInfo(1, [100, 101]));
+            A.CallTo(() => fakeCmsProvider.GetProfilesAsync(A<string?>._))
+                .Returns(
+                    Task.FromResult<IReadOnlyList<CmsProfileResponse>>([
+                        new CmsProfileResponse(100, "SchoolProfile", SchoolProfileXml),
+                        new CmsProfileResponse(101, "StudentProfile", StudentProfileXml),
+                    ])
+                );
+            A.CallTo(() => fakeCmsProvider.GetProfileAsync(100, A<string?>._))
+                .Returns(
+                    Task.FromResult<CmsProfileResponse?>(
+                        new CmsProfileResponse(100, "SchoolProfile", SchoolProfileXml)
+                    )
+                );
+            A.CallTo(() => fakeCmsProvider.GetProfileAsync(101, A<string?>._))
+                .Returns(
+                    Task.FromResult<CmsProfileResponse?>(
+                        new CmsProfileResponse(101, "StudentProfile", StudentProfileXml)
+                    )
+                );
+
+            var service = CreateService(fakeCmsProvider);
+
+            var result = await service.ResolveProfileAsync(
+                parsedHeader: null,
+                method: RequestMethod.GET,
+                resourceName: "School",
+                applicationId: 1,
+                tenantId: null
+            );
+
+            result.IsSuccess.Should().BeTrue();
+            result.ProfileContext.Should().NotBeNull();
+            result.ProfileContext!.ProfileName.Should().Be("SchoolProfile");
+            result.ProfileContext.ContentType.Should().Be(ProfileContentType.Read);
+            result.ProfileContext.WasExplicitlySpecified.Should().BeFalse();
+        }
+
+        [Test]
         public async Task It_returns_no_profile_when_assigned_profiles_do_not_support_the_method()
         {
             var fakeCmsProvider = A.Fake<IProfileCmsProvider>();
@@ -658,6 +731,18 @@ public class CachedProfileServiceTests
                         new CmsProfileResponse(101, "SchoolProfile", SchoolProfileXml),
                     ])
                 );
+            A.CallTo(() => fakeCmsProvider.GetProfileAsync(100, A<string?>._))
+                .Returns(
+                    Task.FromResult<CmsProfileResponse?>(
+                        new CmsProfileResponse(100, "StudentProfile", StudentProfileXml)
+                    )
+                );
+            A.CallTo(() => fakeCmsProvider.GetProfileAsync(101, A<string?>._))
+                .Returns(
+                    Task.FromResult<CmsProfileResponse?>(
+                        new CmsProfileResponse(101, "SchoolProfile", SchoolProfileXml)
+                    )
+                );
 
             var service = CreateService(fakeCmsProvider);
             var parsedHeader = new ParsedProfileHeader("Student", "StudentProfile", ProfileUsageType.Readable);
@@ -670,7 +755,11 @@ public class CachedProfileServiceTests
                 tenantId: null
             );
 
-            result.IsSuccess.Should().BeFalse();
+            result.IsSuccess.Should().BeTrue();
+            result.ProfileContext.Should().NotBeNull();
+            result.ProfileContext!.ProfileName.Should().Be("StudentProfile");
+            result.ProfileContext.ContentType.Should().Be(ProfileContentType.Read);
+            result.ProfileContext.WasExplicitlySpecified.Should().BeTrue();
         }
 
         [Test]
