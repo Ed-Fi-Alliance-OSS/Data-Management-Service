@@ -144,6 +144,12 @@ public class ProfileResolutionMiddlewareTests
         {
             _requestInfo.FrontendResponse!.ContentType.Should().Be("application/problem+json");
         }
+
+        [Test]
+        public void It_does_not_include_validation_errors()
+        {
+            _requestInfo.FrontendResponse!.Body!["validationErrors"].Should().BeNull();
+        }
     }
 
     [TestFixture]
@@ -231,6 +237,12 @@ public class ProfileResolutionMiddlewareTests
         public void It_returns_406_for_GET()
         {
             _requestInfo.FrontendResponse!.StatusCode.Should().Be(406);
+        }
+
+        [Test]
+        public void It_does_not_include_validation_errors()
+        {
+            _requestInfo.FrontendResponse!.Body!["validationErrors"].Should().BeNull();
         }
     }
 

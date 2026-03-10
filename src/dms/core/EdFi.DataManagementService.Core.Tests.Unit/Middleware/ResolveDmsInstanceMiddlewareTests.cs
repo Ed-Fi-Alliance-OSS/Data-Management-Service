@@ -102,6 +102,12 @@ public class ResolveDmsInstanceMiddlewareTests
         {
             _requestInfo.FrontendResponse.Body?.ToString().Should().Contain("No database instances");
         }
+
+        [Test]
+        public void It_does_not_include_validation_errors()
+        {
+            _requestInfo.FrontendResponse.Body!["validationErrors"].Should().BeNull();
+        }
     }
 
     [TestFixture]
@@ -504,6 +510,12 @@ public class ResolveDmsInstanceMiddlewareTests
         public void It_includes_ambiguous_routing_error()
         {
             _requestInfo.FrontendResponse.Body?.ToString().Should().Contain("Multiple database instances");
+        }
+
+        [Test]
+        public void It_does_not_include_validation_errors()
+        {
+            _requestInfo.FrontendResponse.Body!["validationErrors"].Should().BeNull();
         }
     }
 

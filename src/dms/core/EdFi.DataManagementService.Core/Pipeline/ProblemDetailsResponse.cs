@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 
@@ -48,10 +49,11 @@ internal static class ProblemDetailsResponse
         string type,
         string title,
         string errorDetail,
-        TraceId traceId
+        TraceId traceId,
+        bool includeValidationErrors = false
     )
     {
-        return Create(statusCode, type, title, errorDetail, [errorDetail], traceId);
+        return Create(statusCode, type, title, errorDetail, [errorDetail], traceId, includeValidationErrors);
     }
 
     public static FrontendResponse Create(
@@ -60,23 +62,30 @@ internal static class ProblemDetailsResponse
         string title,
         string detail,
         string[] errors,
-        TraceId traceId
+        TraceId traceId,
+        bool includeValidationErrors = false
     )
     {
-        var problemDetails = new
+        JsonObject problemDetails = new()
         {
-            detail,
-            type,
-            title,
-            status = statusCode,
-            correlationId = traceId.Value,
-            validationErrors = new Dictionary<string, string[]>(),
-            errors,
+            ["detail"] = detail,
+            ["type"] = type,
+            ["title"] = title,
+            ["status"] = statusCode,
+            ["correlationId"] = traceId.Value,
+            ["errors"] = JsonSerializer.SerializeToNode(errors),
         };
+
+        if (includeValidationErrors)
+        {
+            problemDetails["validationErrors"] = JsonSerializer.SerializeToNode(
+                new Dictionary<string, string[]>()
+            );
+        }
 
         return new FrontendResponse(
             StatusCode: statusCode,
-            Body: JsonSerializer.SerializeToNode(problemDetails),
+            Body: problemDetails,
             Headers: [],
             LocationHeaderPath: null,
             ContentType: "application/problem+json"

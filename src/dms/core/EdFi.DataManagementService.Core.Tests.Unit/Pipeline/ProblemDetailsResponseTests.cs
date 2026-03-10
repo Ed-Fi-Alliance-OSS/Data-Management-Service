@@ -74,10 +74,9 @@ public class Given_a_problem_details_response_is_created
     }
 
     [Test]
-    public void It_includes_empty_validationErrors_object()
+    public void It_omits_validationErrors_by_default()
     {
-        _body["validationErrors"].Should().NotBeNull();
-        _body["validationErrors"]!.AsObject().Count.Should().Be(0);
+        _body["validationErrors"].Should().BeNull();
     }
 }
 
@@ -117,7 +116,69 @@ public class Given_a_problem_details_response_is_created_with_multiple_errors
     }
 
     [Test]
-    public void It_includes_empty_validationErrors_object()
+    public void It_omits_validationErrors_by_default()
+    {
+        _body["validationErrors"].Should().BeNull();
+    }
+}
+
+[TestFixture]
+public class Given_a_problem_details_response_is_created_with_validation_errors_enabled
+{
+    private FrontendResponse _response = default!;
+    private JsonNode _body = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _response = ProblemDetailsResponse.Create(
+            503,
+            "urn:ed-fi:api:test-type",
+            "Test Title",
+            "Something went wrong",
+            new TraceId("trace-789"),
+            includeValidationErrors: true
+        );
+        _body = _response.Body!;
+    }
+
+    [Test]
+    public void It_includes_an_empty_validationErrors_object()
+    {
+        _body["validationErrors"].Should().NotBeNull();
+        _body["validationErrors"]!.AsObject().Count.Should().Be(0);
+    }
+
+    [Test]
+    public void It_still_returns_problem_json_content_type()
+    {
+        _response.ContentType.Should().Be("application/problem+json");
+    }
+}
+
+[TestFixture]
+public class Given_a_problem_details_response_with_multiple_errors_is_created_with_validation_errors_enabled
+{
+    private JsonNode _body = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var response = ProblemDetailsResponse.Create(
+            400,
+            "urn:ed-fi:api:test-type",
+            "Test Title",
+            "Multiple issues found",
+            ["Error one", "Error two"],
+            new TraceId("trace-999"),
+            includeValidationErrors: true
+        );
+
+        _body = response.Body!;
+    }
+
+    [Test]
+    public void It_includes_an_empty_validationErrors_object()
     {
         _body["validationErrors"].Should().NotBeNull();
         _body["validationErrors"]!.AsObject().Count.Should().Be(0);

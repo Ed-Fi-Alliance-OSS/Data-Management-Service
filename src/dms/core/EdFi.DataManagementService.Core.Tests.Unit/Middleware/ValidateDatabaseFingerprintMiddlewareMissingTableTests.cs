@@ -199,6 +199,12 @@ public class ValidateDatabaseFingerprintMiddlewareMissingTableTests
         }
 
         [Test]
+        public void It_includes_empty_validation_errors()
+        {
+            _requestInfo.FrontendResponse.Body!["validationErrors"]!.AsObject().Count.Should().Be(0);
+        }
+
+        [Test]
         public void It_does_not_set_database_fingerprint()
         {
             _requestInfo.DatabaseFingerprint.Should().BeNull();
