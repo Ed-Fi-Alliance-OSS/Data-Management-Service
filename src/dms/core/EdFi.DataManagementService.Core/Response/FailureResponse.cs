@@ -212,7 +212,7 @@ public static class FailureResponse
             errors: []
         );
 
-    public static JsonNode ForLegacyServerError(string message, TraceId traceId) =>
+    public static JsonNode ForServerErrorMessageBody(string message, TraceId traceId) =>
         new JsonObject { ["message"] = message, ["traceId"] = traceId.Value };
 
     public static JsonNode ForSystemError(TraceId traceId) =>

@@ -21,7 +21,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 [Parallelizable]
 public class ResolveDmsInstanceMiddlewareTests
 {
-    private static void AssertLegacyProblemDetailsResponse(
+    private static void AssertExpectedProblemDetailsResponse(
         IFrontendResponse response,
         int expectedStatusCode,
         string expectedType,
@@ -133,9 +133,9 @@ public class ResolveDmsInstanceMiddlewareTests
         }
 
         [Test]
-        public void It_returns_the_legacy_authorization_denied_problem_details_contract()
+        public void It_returns_the_expected_authorization_denied_problem_details_contract()
         {
-            AssertLegacyProblemDetailsResponse(
+            AssertExpectedProblemDetailsResponse(
                 _requestInfo.FrontendResponse,
                 403,
                 "urn:ed-fi:api:authorization-denied",
@@ -549,9 +549,9 @@ public class ResolveDmsInstanceMiddlewareTests
         }
 
         [Test]
-        public void It_returns_the_legacy_route_resolution_problem_details_contract()
+        public void It_returns_the_expected_route_resolution_problem_details_contract()
         {
-            AssertLegacyProblemDetailsResponse(
+            AssertExpectedProblemDetailsResponse(
                 _requestInfo.FrontendResponse,
                 400,
                 "urn:ed-fi:api:route-resolution-error",
@@ -648,9 +648,9 @@ public class ResolveDmsInstanceMiddlewareTests
         }
 
         [Test]
-        public void It_returns_the_legacy_route_resolution_problem_details_contract()
+        public void It_returns_the_expected_route_resolution_problem_details_contract()
         {
-            AssertLegacyProblemDetailsResponse(
+            AssertExpectedProblemDetailsResponse(
                 _requestInfo.FrontendResponse,
                 404,
                 "urn:ed-fi:api:route-resolution-error",
@@ -736,9 +736,9 @@ public class ResolveDmsInstanceMiddlewareTests
         }
 
         [Test]
-        public void It_returns_the_legacy_service_configuration_problem_details_contract()
+        public void It_returns_the_expected_service_configuration_problem_details_contract()
         {
-            AssertLegacyProblemDetailsResponse(
+            AssertExpectedProblemDetailsResponse(
                 _requestInfo.FrontendResponse,
                 503,
                 "urn:ed-fi:api:service-configuration-error",

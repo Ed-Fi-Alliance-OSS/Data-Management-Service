@@ -16,7 +16,7 @@ namespace EdFi.DataManagementService.Core.Pipeline;
 /// </summary>
 /// <remarks>
 /// Use this when middleware owns the entire response and must set both the body and
-/// <c>application/problem+json</c> content type. This differs from the legacy
+/// <c>application/problem+json</c> content type. This differs from the
 /// <see cref="Response.FailureResponse" /> helper, which only creates JSON error bodies
 /// for callers that wrap them in their own <see cref="FrontendResponse" />.
 /// </remarks>
@@ -40,7 +40,7 @@ internal static class ProblemDetailsResponse
     /// <summary>404 - route qualifiers do not match any DMS instance</summary>
     public static readonly string RouteResolutionError = $"{_typePrefix}:route-resolution-error";
 
-    /// <summary>400 - ambiguous routing (multiple instances match) shares the legacy route-resolution type</summary>
+    /// <summary>400 - ambiguous routing (multiple instances match) shares the route-resolution type</summary>
     public static readonly string AmbiguousRouteResolution = RouteResolutionError;
 
     public static FrontendResponse Create(

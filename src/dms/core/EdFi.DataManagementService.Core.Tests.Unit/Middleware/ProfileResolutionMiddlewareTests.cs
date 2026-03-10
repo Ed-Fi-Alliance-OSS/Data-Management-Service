@@ -22,7 +22,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 [TestFixture]
 public class ProfileResolutionMiddlewareTests
 {
-    private static void AssertLegacyProblemDetailsResponse(
+    private static void AssertExpectedProblemDetailsResponse(
         IFrontendResponse response,
         int expectedStatusCode,
         string expectedType,
@@ -174,9 +174,9 @@ public class ProfileResolutionMiddlewareTests
         }
 
         [Test]
-        public void It_returns_the_legacy_problem_details_payload()
+        public void It_returns_the_expected_problem_details_payload()
         {
-            AssertLegacyProblemDetailsResponse(
+            AssertExpectedProblemDetailsResponse(
                 _requestInfo.FrontendResponse!,
                 expectedStatusCode: 400,
                 expectedType: "urn:ed-fi:api:profile:invalid-profile-usage",
@@ -276,9 +276,9 @@ public class ProfileResolutionMiddlewareTests
         }
 
         [Test]
-        public void It_returns_the_legacy_problem_details_payload()
+        public void It_returns_the_expected_problem_details_payload()
         {
-            AssertLegacyProblemDetailsResponse(
+            AssertExpectedProblemDetailsResponse(
                 _requestInfo.FrontendResponse!,
                 expectedStatusCode: 406,
                 expectedType: "urn:ed-fi:api:profile:invalid-profile-usage",
@@ -325,9 +325,9 @@ public class ProfileResolutionMiddlewareTests
         }
 
         [Test]
-        public void It_returns_the_legacy_problem_details_payload()
+        public void It_returns_the_expected_problem_details_payload()
         {
-            AssertLegacyProblemDetailsResponse(
+            AssertExpectedProblemDetailsResponse(
                 _requestInfo.FrontendResponse!,
                 expectedStatusCode: 415,
                 expectedType: "urn:ed-fi:api:profile:invalid-profile-usage",
@@ -452,9 +452,9 @@ public class ProfileResolutionMiddlewareTests
         }
 
         [Test]
-        public void It_returns_the_legacy_problem_details_payload()
+        public void It_returns_the_expected_problem_details_payload()
         {
-            AssertLegacyProblemDetailsResponse(
+            AssertExpectedProblemDetailsResponse(
                 _requestInfo.FrontendResponse!,
                 expectedStatusCode: 403,
                 expectedType: "urn:ed-fi:api:security:data-policy:incorrect-usage",

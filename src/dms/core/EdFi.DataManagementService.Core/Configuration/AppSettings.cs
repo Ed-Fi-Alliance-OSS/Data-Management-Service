@@ -67,7 +67,7 @@ public class AppSettings
     /// <summary>
     /// If true, activates the redesigned relational backend pipeline including
     /// database fingerprint validation, effective-schema caching, and runtime
-    /// mapping selection. When false (default), the legacy backend path is used.
+    /// mapping selection. When false (default), the existing backend path is used.
     /// </summary>
     public bool UseRelationalBackend { get; set; }
 }

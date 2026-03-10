@@ -27,7 +27,7 @@ public class ProvideAuthorizationFiltersMiddlewareTests
     {
         private FrontendResponse _response = null!;
 
-        private static void AssertLegacyServerErrorResponse(
+        private static void AssertExpectedServerErrorResponse(
             IFrontendResponse response,
             string expectedMessage,
             string expectedTraceId
@@ -86,9 +86,9 @@ public class ProvideAuthorizationFiltersMiddlewareTests
         }
 
         [Test]
-        public void It_returns_legacy_500_body()
+        public void It_returns_the_expected_500_body()
         {
-            AssertLegacyServerErrorResponse(
+            AssertExpectedServerErrorResponse(
                 _response,
                 "Error while authorizing the request.simulated failure",
                 "traceId"

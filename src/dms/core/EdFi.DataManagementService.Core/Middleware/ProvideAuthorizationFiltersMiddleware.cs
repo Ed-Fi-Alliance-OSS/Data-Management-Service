@@ -106,7 +106,7 @@ internal class ProvideAuthorizationFiltersMiddleware(
             );
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 500,
-                Body: FailureResponse.ForLegacyServerError(
+                Body: FailureResponse.ForServerErrorMessageBody(
                     $"Error while authorizing the request.{ex.Message}",
                     requestInfo.FrontendRequest.TraceId
                 ),

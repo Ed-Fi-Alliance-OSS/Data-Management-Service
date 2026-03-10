@@ -61,7 +61,7 @@ public class ResourceActionAuthorizationMiddlewareTests
         return apiSchemaDocument;
     }
 
-    internal static void AssertLegacyServerErrorResponse(
+    internal static void AssertExpectedServerErrorResponse(
         IFrontendResponse response,
         string expectedMessage,
         string expectedTraceId
@@ -549,9 +549,9 @@ public class ResourceActionAuthorizationMiddlewareTests
         }
 
         [Test]
-        public void It_returns_legacy_500_body()
+        public void It_returns_the_expected_500_body()
         {
-            AssertLegacyServerErrorResponse(_response, "Error while authorizing the request.", "traceId");
+            AssertExpectedServerErrorResponse(_response, "Error while authorizing the request.", "traceId");
         }
     }
 }
