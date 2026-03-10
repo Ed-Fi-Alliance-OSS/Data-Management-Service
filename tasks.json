@@ -101,6 +101,6 @@
       "Add or update frontend startup-status unit tests to assert that while a `RunFatalAsync` phase is blocked/in progress, the status file contains `State = \"Starting\"`, the expected phase name, and the configured descriptive summary for that phase.",
       "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter FullyQualifiedName~StartupStatus`"
     ],
-    "completed": false
+    "completed": true
   }
 ]

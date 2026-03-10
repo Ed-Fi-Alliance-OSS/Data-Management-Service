@@ -64,6 +64,7 @@ public class StartupStatusTests
             Func<Task> act = async () =>
                 await _startupPhaseExecutor.RunFatalAsync(
                     DmsStartupPhases.InitializeBackendMappings,
+                    "Compiling backend mappings from initialized effective schemas.",
                     "Backend mapping initialization completed successfully.",
                     "Backend mapping initialization failed. DMS cannot start without compiled backend mappings.",
                     () =>
@@ -132,6 +133,7 @@ public class StartupStatusTests
             // Act
             await _startupPhaseExecutor.RunFatalAsync(
                 DmsStartupPhases.InitializeBackendMappings,
+                "Compiling backend mappings from initialized effective schemas.",
                 "Backend mapping initialization completed successfully.",
                 "Backend mapping initialization failed. DMS cannot start without compiled backend mappings.",
                 () => Task.CompletedTask
@@ -152,6 +154,7 @@ public class StartupStatusTests
             // Act
             await _startupPhaseExecutor.RunFatalAsync(
                 DmsStartupPhases.InitializeBackendMappings,
+                "Compiling backend mappings from initialized effective schemas.",
                 "Backend mapping initialization completed successfully.",
                 "Backend mapping initialization failed. DMS cannot start without compiled backend mappings.",
                 () => Task.CompletedTask
@@ -218,6 +221,7 @@ public class StartupStatusTests
             Func<Task> act = async () =>
                 await _startupPhaseExecutor.RunFatalAsync(
                     DmsStartupPhases.InitializeBackendMappings,
+                    "Compiling backend mappings from initialized effective schemas.",
                     "Backend mapping initialization completed successfully.",
                     "Backend mapping initialization failed. DMS cannot start without compiled backend mappings.",
                     () => throw new OperationCanceledException("Startup canceled.")
@@ -234,6 +238,77 @@ public class StartupStatusTests
             startupStatus.Summary.Should().Be("API schema initialization completed successfully.");
             startupStatus.ErrorType.Should().BeNull();
             startupStatus.ErrorMessage.Should().BeNull();
+        }
+
+        private StartupStatusDocument ReadStartupStatus() =>
+            JsonSerializer.Deserialize<StartupStatusDocument>(File.ReadAllText(_statusFilePath))!;
+    }
+
+    [TestFixture]
+    public class Given_Backend_Mapping_Initialization_Is_In_Progress : StartupStatusTests
+    {
+        private StartupPhaseExecutor _startupPhaseExecutor = null!;
+        private string _statusDirectory = null!;
+        private string _statusFilePath = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _statusDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+            _statusFilePath = Path.Combine(_statusDirectory, "dms-startup-status.json");
+
+            _startupPhaseExecutor = new StartupPhaseExecutor(
+                new FileStartupStatusSignal(_statusFilePath),
+                new RecordingStartupProcessExit(),
+                NullLogger<StartupPhaseExecutor>.Instance
+            );
+        }
+
+        [TearDown]
+        public void Teardown()
+        {
+            if (Directory.Exists(_statusDirectory))
+            {
+                Directory.Delete(_statusDirectory, recursive: true);
+            }
+        }
+
+        [Test]
+        public async Task It_writes_the_configured_starting_summary_while_the_phase_is_running()
+        {
+            // Arrange
+            var phaseStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var allowCompletion = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+
+            // Act
+            Task runTask = _startupPhaseExecutor.RunFatalAsync(
+                DmsStartupPhases.InitializeBackendMappings,
+                "Compiling backend mappings from initialized effective schemas.",
+                "Backend mapping initialization completed successfully.",
+                "Backend mapping initialization failed. DMS cannot start without compiled backend mappings.",
+                async () =>
+                {
+                    phaseStarted.SetResult();
+                    await allowCompletion.Task;
+                }
+            );
+
+            await phaseStarted.Task;
+
+            // Assert
+            var startupStatus = ReadStartupStatus();
+            startupStatus.State.Should().Be("Starting");
+            startupStatus.Phase.Should().Be(DmsStartupPhases.InitializeBackendMappings);
+            startupStatus
+                .Summary.Should()
+                .Be("Compiling backend mappings from initialized effective schemas.");
+            startupStatus.ErrorType.Should().BeNull();
+            startupStatus.ErrorMessage.Should().BeNull();
+
+            allowCompletion.SetResult();
+            await runTask;
         }
 
         private StartupStatusDocument ReadStartupStatus() =>

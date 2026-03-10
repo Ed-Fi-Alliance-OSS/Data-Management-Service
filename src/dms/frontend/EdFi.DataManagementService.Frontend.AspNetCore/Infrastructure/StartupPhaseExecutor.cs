@@ -55,6 +55,7 @@ internal sealed class StartupPhaseExecutor(
 
     public async Task RunFatalAsync(
         string phase,
+        string startingSummary,
         string successSummary,
         string failureSummary,
         Func<Task> action,
@@ -62,7 +63,7 @@ internal sealed class StartupPhaseExecutor(
     )
     {
         StartupStatusSnapshot startupStatusSnapshot = CaptureStartupStatusSnapshot();
-        _startupStatusSignal.WriteStarting(phase, $"Starting {phase}.");
+        _startupStatusSignal.WriteStarting(phase, startingSummary);
 
         try
         {

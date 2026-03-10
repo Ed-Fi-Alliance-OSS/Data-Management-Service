@@ -37,6 +37,7 @@ bool useReverseProxyHeaders = false;
 
 RunBootstrapPhase(
     DmsStartupPhases.ConfigureServices,
+    "Configuring DMS services and shared HTTP infrastructure.",
     "Configured DMS services.",
     "Configuring DMS services failed before the application host was built.",
     () =>
@@ -119,6 +120,7 @@ RunBootstrapPhase(
 
 var app = RunBootstrapPhaseWithResult(
     DmsStartupPhases.BuildApplication,
+    "Building the DMS web application host.",
     "Built DMS web application host.",
     "Building the DMS web application host failed before HTTP binding.",
     builder.Build
@@ -147,12 +149,14 @@ if (!ReportInvalidConfiguration(app))
     // Initialize DMS instances first to ensure connection strings are available
     await startupPhaseExecutor.RunFatalAsync(
         DmsStartupPhases.LoadDmsInstances,
+        "Loading DMS instances from Configuration Service.",
         "Loaded DMS instances from Configuration Service.",
         "Unable to load DMS instances from Configuration Service. DMS cannot start without proper instance configuration.",
         () => InitializeDmsInstances(app)
     );
     await startupPhaseExecutor.RunFatalAsync(
         DmsStartupPhases.InitializeDatabase,
+        "Running database startup deployment when enabled.",
         "Database startup deployment completed or was skipped.",
         "Database deploy failed during DMS startup.",
         () =>
@@ -163,12 +167,14 @@ if (!ReportInvalidConfiguration(app))
     );
     await startupPhaseExecutor.RunFatalAsync(
         DmsStartupPhases.InitializeApiSchemas,
+        "Loading API schemas and initializing effective schema metadata.",
         "API schema loading and effective-schema initialization completed successfully.",
         "API schema initialization failed. DMS cannot start with invalid schemas.",
         () => InitializeApiSchemas(app)
     );
     await startupPhaseExecutor.RunFatalAsync(
         DmsStartupPhases.InitializeBackendMappings,
+        "Compiling backend mappings from initialized effective schemas.",
         "Backend mapping initialization completed successfully.",
         "Backend mapping initialization failed. DMS cannot start without compiled backend mappings.",
         () => InitializeBackendMappings(app)
@@ -176,6 +182,7 @@ if (!ReportInvalidConfiguration(app))
     await RetrieveAndCacheClaimSets(app);
     await startupPhaseExecutor.RunFatalAsync(
         DmsStartupPhases.WarmUpOidcMetadataCache,
+        "Retrieving OIDC metadata for the startup cache.",
         "OIDC metadata cache warm-up completed or was skipped.",
         "Unable to retrieve OIDC metadata from identity provider. JWT authentication will not function correctly.",
         () => WarmUpOidcMetadataCache(app),
@@ -513,9 +520,15 @@ async Task WarmUpOidcMetadataCache(WebApplication app)
     );
 }
 
-void RunBootstrapPhase(string phase, string successSummary, string failureSummary, Action action)
+void RunBootstrapPhase(
+    string phase,
+    string startingSummary,
+    string successSummary,
+    string failureSummary,
+    Action action
+)
 {
-    bootstrapStartupStatusSignal.WriteStarting(phase, $"Starting {phase}.");
+    bootstrapStartupStatusSignal.WriteStarting(phase, startingSummary);
 
     try
     {
@@ -529,9 +542,15 @@ void RunBootstrapPhase(string phase, string successSummary, string failureSummar
     }
 }
 
-T RunBootstrapPhaseWithResult<T>(string phase, string successSummary, string failureSummary, Func<T> action)
+T RunBootstrapPhaseWithResult<T>(
+    string phase,
+    string startingSummary,
+    string successSummary,
+    string failureSummary,
+    Func<T> action
+)
 {
-    bootstrapStartupStatusSignal.WriteStarting(phase, $"Starting {phase}.");
+    bootstrapStartupStatusSignal.WriteStarting(phase, startingSummary);
 
     try
     {
