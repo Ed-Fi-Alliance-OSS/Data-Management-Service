@@ -173,7 +173,9 @@ internal static class RelationalModelSetValidationFixture
             ApiSchemaFormatVersion: "1.0.0",
             RelationalMappingVersion: "1.0.0",
             EffectiveSchemaHash: "edf1edf1",
-            ResourceKeyCount: resourceKeys.Count,
+            ResourceKeyCount: EffectiveSchemaFingerprintContract.CreateResourceKeyCountOrThrow(
+                resourceKeys.Count
+            ),
             ResourceKeySeedHash: [0x01],
             SchemaComponentsInEndpointOrder: SchemaComponents,
             ResourceKeysInIdOrder: resourceKeys

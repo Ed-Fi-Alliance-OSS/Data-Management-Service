@@ -125,7 +125,9 @@ public class Given_An_EffectiveSchemaInfo_That_Omits_Resource_Extension_Keys
             ApiSchemaFormatVersion: "1.0.0",
             RelationalMappingVersion: "1.0.0",
             EffectiveSchemaHash: "edf1edf1",
-            ResourceKeyCount: resourceKeys.Length,
+            ResourceKeyCount: EffectiveSchemaFingerprintContract.CreateResourceKeyCountOrThrow(
+                resourceKeys.Length
+            ),
             ResourceKeySeedHash: [0x01],
             SchemaComponentsInEndpointOrder:
             [
