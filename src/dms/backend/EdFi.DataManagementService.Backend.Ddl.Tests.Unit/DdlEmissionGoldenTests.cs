@@ -1547,7 +1547,7 @@ internal static class ExtensionMappingFixture
 
         return new DerivedRelationalModelSet(
             GoldenEffectiveSchemaFixtureData.Create(
-                "identity-propagation",
+                "extension-mapping",
                 [
                     new SchemaComponentInfo(
                         "ed-fi",
@@ -1833,7 +1833,7 @@ internal static class IdentityPropagationFixture
 
         return new DerivedRelationalModelSet(
             GoldenEffectiveSchemaFixtureData.Create(
-                "extension-mapping",
+                "identity-propagation",
                 [
                     new SchemaComponentInfo(
                         "ed-fi",
@@ -2011,7 +2011,7 @@ internal static class FkSupportIndexFixture
 
         return new DerivedRelationalModelSet(
             GoldenEffectiveSchemaFixtureData.Create(
-                "key-unification",
+                "fk-support-index",
                 [
                     new SchemaComponentInfo(
                         "ed-fi",
@@ -2356,7 +2356,7 @@ internal static class KeyUnificationFixture
 
         return new DerivedRelationalModelSet(
             GoldenEffectiveSchemaFixtureData.Create(
-                "fk-support-index",
+                "key-unification",
                 [
                     new SchemaComponentInfo(
                         "ed-fi",
