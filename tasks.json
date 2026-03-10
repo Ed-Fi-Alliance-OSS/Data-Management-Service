@@ -24,7 +24,7 @@
       "Add dedicated NUnit coverage under `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Middleware/` for exception paths in `CoreExceptionLoggingMiddleware`, `ResourceActionAuthorizationMiddleware`, and `ProvideAuthorizationFiltersMiddleware`, asserting exact JSON field names, message text, and content type behavior.",
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"FullyQualifiedName~CoreExceptionLoggingMiddlewareTests|FullyQualifiedName~ResourceActionAuthorizationMiddlewareTests|FullyQualifiedName~ProvideAuthorizationFiltersMiddlewareTests\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Problem Details Boundary",

@@ -98,9 +98,11 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
             );
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 500,
-                Body: FailureResponse.ForSystemError(requestInfo.FrontendRequest.TraceId),
-                Headers: [],
-                ContentType: "application/problem+json"
+                Body: FailureResponse.ForLegacyServerError(
+                    "Error while authorizing the request.",
+                    requestInfo.FrontendRequest.TraceId
+                ),
+                Headers: []
             );
 
             return;

@@ -46,9 +46,11 @@ internal class CoreExceptionLoggingMiddleware(ILogger _logger) : IPipelineStep
             // Replace the frontend response (if any) with a 500 error
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 500,
-                Body: FailureResponse.ForSystemError(requestInfo.FrontendRequest.TraceId),
-                Headers: [],
-                ContentType: "application/problem+json"
+                Body: FailureResponse.ForLegacyServerError(
+                    "The server encountered an unexpected condition that prevented it from fulfilling the request.",
+                    requestInfo.FrontendRequest.TraceId
+                ),
+                Headers: []
             );
         }
     }
