@@ -10,9 +10,15 @@ using EdFi.DataManagementService.Core.Model;
 namespace EdFi.DataManagementService.Core.Pipeline;
 
 /// <summary>
-/// Shared helper for creating standardized problem+json error responses
-/// used by pipeline middlewares.
+/// Middleware-oriented factory for complete typed <see cref="FrontendResponse" />
+/// problem+json responses.
 /// </summary>
+/// <remarks>
+/// Use this when middleware owns the entire response and must set both the body and
+/// <c>application/problem+json</c> content type. This differs from the legacy
+/// <see cref="Response.FailureResponse" /> helper, which only creates JSON error bodies
+/// for callers that wrap them in their own <see cref="FrontendResponse" />.
+/// </remarks>
 internal static class ProblemDetailsResponse
 {
     private static readonly string _typePrefix = "urn:ed-fi:api";

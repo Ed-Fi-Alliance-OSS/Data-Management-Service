@@ -70,8 +70,9 @@ public static class Utility
 
     /// <summary>
     /// Formats an error result from the given error information and traceId.
-    /// This intentionally differs from the problem+json shape (FailureResponse/ProblemDetailsResponse)
-    /// because handler-level unknown failures do not set ContentType to application/problem+json.
+    /// This returns only a JSON body, unlike <see cref="ProblemDetailsResponse" />,
+    /// which creates the full middleware <see cref="FrontendResponse" /> with
+    /// <c>application/problem+json</c> content type.
     /// </summary>
     public static JsonNode? ToJsonError(string errorInfo, TraceId traceId)
     {

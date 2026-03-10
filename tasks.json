@@ -80,6 +80,6 @@
       "Update the summary or remarks in `ProblemDetailsResponse.cs` and adjust nearby explanatory comments if needed so the distinction is explicit in code review.",
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter ProblemDetailsResponseTests`"
     ],
-    "completed": false
+    "completed": true
   }
 ]

@@ -12,7 +12,8 @@ using static EdFi.DataManagementService.Core.UtilityService;
 namespace EdFi.DataManagementService.Core.Response;
 
 /// <summary>
-/// Failure response with error lists
+/// Legacy JSON error-body factory used by handlers and other callers that supply
+/// their own outer HTTP response metadata.
 /// </summary>
 public static class FailureResponse
 {
