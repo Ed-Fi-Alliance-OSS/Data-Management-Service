@@ -240,7 +240,7 @@ public class PostgresqlRuntimeMappingInitializationTests
         return new PostgresqlDatabaseFingerprint(
             effectiveSchemaSet.EffectiveSchema.ApiSchemaFormatVersion,
             effectiveSchemaSet.EffectiveSchema.EffectiveSchemaHash,
-            checked((short)effectiveSchemaSet.EffectiveSchema.ResourceKeyCount),
+            effectiveSchemaSet.EffectiveSchema.ResourceKeyCount,
             effectiveSchemaSet.EffectiveSchema.ResourceKeySeedHash
         );
     }

@@ -121,7 +121,7 @@ public abstract class PostgresqlRuntimeInstanceMappingValidatorTests
         return new PostgresqlDatabaseFingerprint(
             effectiveSchema.ApiSchemaFormatVersion,
             effectiveSchema.EffectiveSchemaHash,
-            checked((short)effectiveSchema.ResourceKeyCount),
+            effectiveSchema.ResourceKeyCount,
             effectiveSchema.ResourceKeySeedHash.ToArray()
         );
     }

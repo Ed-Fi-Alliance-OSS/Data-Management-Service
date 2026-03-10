@@ -158,7 +158,7 @@ public class Given_PostgresqlRuntimeInstanceMappingValidator_Against_A_Provision
             );
             effectiveSchemaCommand.Parameters.AddWithValue(
                 "@resourceKeyCount",
-                checked((short)effectiveSchema.ResourceKeyCount)
+                effectiveSchema.ResourceKeyCount
             );
             effectiveSchemaCommand.Parameters.AddWithValue(
                 "@resourceKeySeedHash",

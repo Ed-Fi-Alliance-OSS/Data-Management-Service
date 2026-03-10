@@ -125,7 +125,7 @@ internal sealed class PostgresqlRuntimeInstanceMappingValidator(
         ValidateEffectiveSchemaHashOrThrow(fingerprint, mappingSet.Key, instance, tenant);
 
         var expectedEffectiveSchema = mappingSet.Model.EffectiveSchema;
-        var expectedResourceKeyCount = checked((short)expectedEffectiveSchema.ResourceKeyCount);
+        var expectedResourceKeyCount = expectedEffectiveSchema.ResourceKeyCount;
         var expectedResourceKeySeedHash = expectedEffectiveSchema.ResourceKeySeedHash;
 
         if (
@@ -296,7 +296,7 @@ internal sealed class PostgresqlRuntimeInstanceMappingValidator(
     )
     {
         var issues = new List<string>();
-        var expectedResourceKeyCount = checked((short)expectedEffectiveSchema.ResourceKeyCount);
+        var expectedResourceKeyCount = expectedEffectiveSchema.ResourceKeyCount;
 
         if (fingerprint.ResourceKeyCount != expectedResourceKeyCount)
         {
