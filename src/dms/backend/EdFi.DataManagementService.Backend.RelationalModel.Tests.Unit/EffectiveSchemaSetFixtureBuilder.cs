@@ -112,7 +112,7 @@ internal static class EffectiveSchemaSetFixtureBuilder
             DefaultApiSchemaFormatVersion,
             DefaultRelationalMappingVersion,
             DefaultEffectiveSchemaHash,
-            checked((short)resourceKeys.Count),
+            EffectiveSchemaFingerprintContract.CreateResourceKeyCountOrThrow(resourceKeys.Count),
             DefaultResourceKeySeedHash,
             schemaComponents,
             resourceKeys

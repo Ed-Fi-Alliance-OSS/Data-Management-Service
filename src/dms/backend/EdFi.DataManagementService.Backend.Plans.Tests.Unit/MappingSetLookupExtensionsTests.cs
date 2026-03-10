@@ -249,7 +249,9 @@ public class Given_MappingSetLookupExtensions
             ApiSchemaFormatVersion: "5.2",
             RelationalMappingVersion: "v1",
             EffectiveSchemaHash: new string('f', 64),
-            ResourceKeyCount: checked((short)resourceKeysInIdOrder.Length),
+            ResourceKeyCount: EffectiveSchemaFingerprintContract.CreateResourceKeyCountOrThrow(
+                resourceKeysInIdOrder.Length
+            ),
             ResourceKeySeedHash: CreateResourceKeySeedHash(),
             SchemaComponentsInEndpointOrder:
             [

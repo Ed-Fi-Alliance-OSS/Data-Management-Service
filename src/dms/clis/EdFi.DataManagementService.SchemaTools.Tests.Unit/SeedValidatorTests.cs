@@ -260,6 +260,17 @@ internal static class EffectiveSchemaValidationTestData
                 new ResourceKeyEntry(1, new QualifiedResourceName("Ed-Fi", "Student"), "5.1.0", false),
             ]
         );
+
+    internal static IReadOnlyList<ResourceKeyEntry> BuildResourceKeys(int count) =>
+        Enumerable
+            .Range(0, count)
+            .Select(i => new ResourceKeyEntry(
+                ResourceKeyId: (short)((i % EffectiveSchemaFingerprintContract.MaxResourceKeyCount) + 1),
+                Resource: new QualifiedResourceName("Ed-Fi", $"Resource{i}"),
+                ResourceVersion: "5.1.0",
+                IsAbstractResource: false
+            ))
+            .ToArray();
 }
 
 [TestFixture]
@@ -485,6 +496,68 @@ public class Given_ValidateEffectiveSchemaOrThrow_With_An_Invalid_Expected_Effec
             .Contain(
                 "Expected provisioning metadata invalid: dms.EffectiveSchema.EffectiveSchemaHash must be 64 lowercase hex characters."
             );
+    }
+}
+
+[TestFixture]
+public class Given_ValidateEffectiveSchemaOrThrow_With_Expected_ResourceKeyCount_Above_The_Smallint_Ceiling
+{
+    private InvalidOperationException? _exception;
+
+    [SetUp]
+    public void SetUp()
+    {
+        var logger = A.Fake<ILogger>();
+        var expectedSchema = EffectiveSchemaValidationTestData.BuildExpectedSchema();
+        var overLimitCount = EffectiveSchemaFingerprintContract.MaxResourceKeyCount + 1;
+
+        _exception = Assert.Catch<InvalidOperationException>(() =>
+            SeedValidator.ValidateEffectiveSchemaOrThrow(
+                1,
+                expectedSchema.ApiSchemaFormatVersion,
+                expectedSchema.EffectiveSchemaHash,
+                expectedSchema.ResourceKeyCount,
+                expectedSchema.ResourceKeySeedHash,
+                expectedSchema with
+                {
+                    ResourceKeyCount = EffectiveSchemaFingerprintContract.MaxResourceKeyCount,
+                    ResourceKeysInIdOrder = EffectiveSchemaValidationTestData.BuildResourceKeys(
+                        overLimitCount
+                    ),
+                },
+                logger
+            )
+        );
+    }
+
+    [Test]
+    public void It_rejects_runtime_invalid_expected_metadata_with_an_explicit_ceiling_message()
+    {
+        _exception!
+            .Message.Should()
+            .Contain(
+                $"Expected provisioning metadata invalid: dms.EffectiveSchema.ResourceKeyCount must be less than or equal to {EffectiveSchemaFingerprintContract.MaxResourceKeyCount}, but found {EffectiveSchemaFingerprintContract.MaxResourceKeyCount + 1}."
+            );
+    }
+}
+
+[TestFixture]
+public class Given_CreateResourceKeyCountOrThrow_With_The_Smallint_Ceiling
+{
+    private short _resourceKeyCount;
+
+    [SetUp]
+    public void SetUp()
+    {
+        _resourceKeyCount = EffectiveSchemaFingerprintContract.CreateResourceKeyCountOrThrow(
+            EffectiveSchemaFingerprintContract.MaxResourceKeyCount
+        );
+    }
+
+    [Test]
+    public void It_returns_short_max_value_without_overflow()
+    {
+        _resourceKeyCount.Should().Be(short.MaxValue);
     }
 }
 

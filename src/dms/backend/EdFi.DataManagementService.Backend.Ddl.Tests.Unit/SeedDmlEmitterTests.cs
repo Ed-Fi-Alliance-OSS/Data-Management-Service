@@ -171,6 +171,17 @@ internal static class SeedTestData
                 new ResourceKeyEntry(1, new QualifiedResourceName("Ed-Fi", "Student"), "5.1.0", false),
             ]
         );
+
+    internal static IReadOnlyList<ResourceKeyEntry> BuildResourceKeys(int count) =>
+        Enumerable
+            .Range(0, count)
+            .Select(i => new ResourceKeyEntry(
+                ResourceKeyId: (short)((i % EffectiveSchemaFingerprintContract.MaxResourceKeyCount) + 1),
+                Resource: new QualifiedResourceName("Ed-Fi", $"Resource{i}"),
+                ResourceVersion: "5.1.0",
+                IsAbstractResource: false
+            ))
+            .ToArray();
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -301,6 +312,37 @@ public class Given_SeedDmlEmitter_With_A_Negative_ResourceKeyCount
     public void It_rejects_runtime_invalid_effective_schema_metadata()
     {
         _exception!.Message.Should().Contain("ResourceKeyCount must be non-negative, but found -1.");
+    }
+}
+
+[TestFixture]
+public class Given_SeedDmlEmitter_With_A_ResourceKeyCount_Above_The_Smallint_Ceiling
+{
+    private InvalidOperationException? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        var emitter = new SeedDmlEmitter(new PgsqlDialect(new PgsqlDialectRules()));
+        var overLimitCount = EffectiveSchemaFingerprintContract.MaxResourceKeyCount + 1;
+
+        var effectiveSchema = SeedTestData.BuildEffectiveSchema() with
+        {
+            ResourceKeyCount = EffectiveSchemaFingerprintContract.MaxResourceKeyCount,
+            ResourceKeysInIdOrder = SeedTestData.BuildResourceKeys(overLimitCount),
+        };
+
+        _exception = Assert.Catch<InvalidOperationException>(() => emitter.Emit(effectiveSchema));
+    }
+
+    [Test]
+    public void It_rejects_runtime_invalid_effective_schema_metadata_with_an_explicit_ceiling_message()
+    {
+        _exception!
+            .Message.Should()
+            .Contain(
+                $"ResourceKeyCount must be less than or equal to {EffectiveSchemaFingerprintContract.MaxResourceKeyCount}, but found {EffectiveSchemaFingerprintContract.MaxResourceKeyCount + 1}."
+            );
     }
 }
 

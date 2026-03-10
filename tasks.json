@@ -62,7 +62,7 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter SeedDmlEmitterTests`",
       "Run: `dotnet test --no-restore ./src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/EdFi.DataManagementService.SchemaTools.Tests.Unit.csproj --filter SeedValidatorTests`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Design Documentation",

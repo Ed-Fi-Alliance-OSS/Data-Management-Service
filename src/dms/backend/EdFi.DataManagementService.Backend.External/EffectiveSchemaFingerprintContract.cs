@@ -12,6 +12,7 @@ namespace EdFi.DataManagementService.Backend.External;
 public static class EffectiveSchemaFingerprintContract
 {
     public const short ExpectedSingletonId = 1;
+    public const short MaxResourceKeyCount = short.MaxValue;
     public const int EffectiveSchemaHashLength = 64;
     public const int ResourceKeySeedHashLength = 32;
 
@@ -63,7 +64,28 @@ public static class EffectiveSchemaFingerprintContract
             effectiveSchema.ResourceKeySeedHash
         );
 
+        var resourceKeyCountIssue = GetResourceKeyCountValidationIssue(
+            effectiveSchema.ResourceKeysInIdOrder.Count
+        );
+
+        if (resourceKeyCountIssue is not null)
+        {
+            issues.Add(resourceKeyCountIssue);
+        }
+
         return issues;
+    }
+
+    public static short CreateResourceKeyCountOrThrow(int resourceKeyCount)
+    {
+        var resourceKeyCountIssue = GetResourceKeyCountValidationIssue(resourceKeyCount);
+
+        if (resourceKeyCountIssue is not null)
+        {
+            throw new InvalidOperationException(resourceKeyCountIssue);
+        }
+
+        return checked((short)resourceKeyCount);
     }
 
     public static string CreateMultipleRowsMessage() =>
@@ -73,7 +95,7 @@ public static class EffectiveSchemaFingerprintContract
         ICollection<string> issues,
         string apiSchemaFormatVersion,
         string effectiveSchemaHash,
-        short resourceKeyCount,
+        int resourceKeyCount,
         byte[] resourceKeySeedHash
     )
     {
@@ -91,11 +113,11 @@ public static class EffectiveSchemaFingerprintContract
             );
         }
 
-        if (resourceKeyCount < 0)
+        var resourceKeyCountIssue = GetResourceKeyCountValidationIssue(resourceKeyCount);
+
+        if (resourceKeyCountIssue is not null)
         {
-            issues.Add(
-                $"{EffectiveSchemaTableDefinition.TableDisplayName}.{EffectiveSchemaTableDefinition.ResourceKeyCount.Value} must be non-negative, but found {resourceKeyCount}."
-            );
+            issues.Add(resourceKeyCountIssue);
         }
 
         if (resourceKeySeedHash.Length != ResourceKeySeedHashLength)
@@ -122,5 +144,20 @@ public static class EffectiveSchemaFingerprintContract
         }
 
         return true;
+    }
+
+    private static string? GetResourceKeyCountValidationIssue(int resourceKeyCount)
+    {
+        if (resourceKeyCount < 0)
+        {
+            return $"{EffectiveSchemaTableDefinition.TableDisplayName}.{EffectiveSchemaTableDefinition.ResourceKeyCount.Value} must be non-negative, but found {resourceKeyCount}.";
+        }
+
+        if (resourceKeyCount > MaxResourceKeyCount)
+        {
+            return $"{EffectiveSchemaTableDefinition.TableDisplayName}.{EffectiveSchemaTableDefinition.ResourceKeyCount.Value} must be less than or equal to {MaxResourceKeyCount}, but found {resourceKeyCount}.";
+        }
+
+        return null;
     }
 }

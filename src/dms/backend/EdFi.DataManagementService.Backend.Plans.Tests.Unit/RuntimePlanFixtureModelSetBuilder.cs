@@ -175,7 +175,9 @@ internal static class RuntimePlanFixtureModelSetBuilder
             ApiSchemaFormatVersion: apiSchemaVersion,
             RelationalMappingVersion: RelationalMappingVersion,
             EffectiveSchemaHash: effectiveSchemaHash,
-            ResourceKeyCount: checked((short)resourceKeysInIdOrder.Count),
+            ResourceKeyCount: EffectiveSchemaFingerprintContract.CreateResourceKeyCountOrThrow(
+                resourceKeysInIdOrder.Count
+            ),
             ResourceKeySeedHash: seedHash,
             SchemaComponentsInEndpointOrder: projectsInEndpointOrder
                 .Select(project => new SchemaComponentInfo(

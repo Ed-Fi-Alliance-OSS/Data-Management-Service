@@ -521,7 +521,7 @@ public class Given_An_EffectiveSchemaInfo_With_Out_Of_Order_SchemaComponents
             "1.0.0",
             "1.0.0",
             "edf1edf1",
-            checked((short)resourceKeys.Length),
+            EffectiveSchemaFingerprintContract.CreateResourceKeyCountOrThrow(resourceKeys.Length),
             new byte[] { 0x01 },
             schemaComponents,
             resourceKeys
@@ -774,7 +774,8 @@ internal static class EffectiveSchemaFixture
             ApiSchemaFormatVersion: "1.0.0",
             RelationalMappingVersion: "1.0.0",
             EffectiveSchemaHash: "edf1edf1",
-            ResourceKeyCount: resourceKeyCountOverride ?? checked((short)resourceKeys.Count),
+            ResourceKeyCount: resourceKeyCountOverride
+                ?? EffectiveSchemaFingerprintContract.CreateResourceKeyCountOrThrow(resourceKeys.Count),
             ResourceKeySeedHash: new byte[] { 0x01 },
             SchemaComponentsInEndpointOrder: schemaComponents,
             ResourceKeysInIdOrder: resourceKeys

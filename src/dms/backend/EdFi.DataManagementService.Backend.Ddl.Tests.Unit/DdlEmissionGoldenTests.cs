@@ -251,7 +251,7 @@ internal static class GoldenEffectiveSchemaFixtureData
             "1.0.0",
             "1.0.0",
             CreateEffectiveSchemaHash(fixtureKey),
-            checked((short)resourceKeysInIdOrder.Count),
+            EffectiveSchemaFingerprintContract.CreateResourceKeyCountOrThrow(resourceKeysInIdOrder.Count),
             CreateResourceKeySeedHash(fixtureKey),
             schemaComponentsInEndpointOrder,
             resourceKeysInIdOrder
