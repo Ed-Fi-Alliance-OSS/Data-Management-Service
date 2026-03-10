@@ -92,13 +92,14 @@ public static class FixtureComparer
         }
 
         // Check for unexpected extra files in actual/ that aren't in expected/
+        // Use case-sensitive (Ordinal) comparison so files differing only by case are detected
         var actualFiles = Directory
             .GetFiles(actualDir, "*", SearchOption.AllDirectories)
             .Select(f => Path.GetRelativePath(actualDir, f))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            .ToHashSet(StringComparer.Ordinal);
 
-        var expectedSet = new HashSet<string>(expectedFiles, StringComparer.OrdinalIgnoreCase);
-        var extraFiles = actualFiles.Except(expectedSet, StringComparer.OrdinalIgnoreCase).Order().ToList();
+        var expectedSet = new HashSet<string>(expectedFiles, StringComparer.Ordinal);
+        var extraFiles = actualFiles.Except(expectedSet, StringComparer.Ordinal).Order().ToList();
 
         if (extraFiles.Count > 0)
         {
