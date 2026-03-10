@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Linq;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -373,6 +374,120 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         public void It_does_not_set_the_database_fingerprint_on_the_request()
         {
             _requestInfo.DatabaseFingerprint.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Cached_Database_Fingerprint_Validation_Error_Has_Multiple_Issues
+        : ValidateDatabaseFingerprintMiddlewareValidationErrorTests
+    {
+        private static readonly string[] ValidationIssues =
+        [
+            "dms.EffectiveSchema.ApiSchemaFormatVersion must not be null or empty.",
+            "dms.EffectiveSchema.ResourceKeySeedHash must be exactly 32 bytes, but found 31.",
+        ];
+
+        private RequestInfo _firstRequestInfo = No.RequestInfo();
+        private RequestInfo _secondRequestInfo = No.RequestInfo();
+        private JsonNode _firstBody = default!;
+        private JsonNode _secondBody = default!;
+        private int _nextCallCount;
+        private IDatabaseFingerprintReader _fingerprintReader = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (middleware, fingerprintReader, dmsInstanceSelection, _, serviceProvider) =
+                CreateMiddleware();
+
+            _fingerprintReader = fingerprintReader;
+            _firstRequestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
+            _secondRequestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
+
+            A.CallTo(() => dmsInstanceSelection.IsSet).Returns(true);
+            A.CallTo(() => dmsInstanceSelection.GetSelectedDmsInstance())
+                .Returns(
+                    new DmsInstance(
+                        Id: 1,
+                        InstanceType: "Test",
+                        InstanceName: "Test Instance",
+                        ConnectionString: "Server=test;Database=multi-issue",
+                        RouteContext: []
+                    )
+                );
+
+            A.CallTo(() => fingerprintReader.ReadFingerprintAsync("Server=test;Database=multi-issue"))
+                .Returns(
+                    Task.FromException<DatabaseFingerprint?>(
+                        new DatabaseFingerprintValidationException(ValidationIssues)
+                    )
+                );
+
+            await middleware.Execute(
+                _firstRequestInfo,
+                () =>
+                {
+                    _nextCallCount++;
+                    return Task.CompletedTask;
+                }
+            );
+
+            await middleware.Execute(
+                _secondRequestInfo,
+                () =>
+                {
+                    _nextCallCount++;
+                    return Task.CompletedTask;
+                }
+            );
+
+            _firstBody = ((FrontendResponse)_firstRequestInfo.FrontendResponse).Body!;
+            _secondBody = ((FrontendResponse)_secondRequestInfo.FrontendResponse).Body!;
+        }
+
+        [Test]
+        public void It_does_not_call_next()
+        {
+            _nextCallCount.Should().Be(0);
+        }
+
+        [Test]
+        public void It_returns_503_for_each_request()
+        {
+            _firstRequestInfo.FrontendResponse.StatusCode.Should().Be(503);
+            _secondRequestInfo.FrontendResponse.StatusCode.Should().Be(503);
+        }
+
+        [Test]
+        public void It_returns_all_validation_issues_in_order_plus_remediation_for_each_request()
+        {
+            string[] expectedErrors = [ValidationIssues[0], ValidationIssues[1], MalformedFingerprintDetail];
+
+            _firstBody["errors"]!
+                .AsArray()
+                .Select(error => error!.GetValue<string>())
+                .Should()
+                .Equal(expectedErrors);
+
+            _secondBody["errors"]!
+                .AsArray()
+                .Select(error => error!.GetValue<string>())
+                .Should()
+                .Equal(expectedErrors);
+        }
+
+        [Test]
+        public void It_keeps_the_shared_detail_message()
+        {
+            _secondBody["detail"]?.GetValue<string>().Should().Be(MalformedFingerprintDetail);
+        }
+
+        [Test]
+        public void It_uses_the_cached_validation_failure_without_retrying_the_reader()
+        {
+            A.CallTo(() => _fingerprintReader.ReadFingerprintAsync("Server=test;Database=multi-issue"))
+                .MustHaveHappenedOnceExactly();
         }
     }
 

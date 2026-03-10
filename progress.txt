@@ -3,3 +3,8 @@ Task completed: Backend Validation - preserve all dms.EffectiveSchema contract i
 Decisions: add ValidationIssues to DatabaseFingerprintValidationException; keep Message pinned to first issue for single-issue compatibility; reader now throws full ordered contract issue set from EffectiveSchemaFingerprintContract
 Files changed: src/dms/core/EdFi.DataManagementService.Core.External/Backend/DatabaseFingerprintValidationException.cs; src/dms/backend/EdFi.DataManagementService.Backend/DatabaseFingerprintReaderSupport.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DatabaseFingerprintReaderSupportTests.cs; tasks.json; progress.txt
 Notes next iteration: middleware can now surface multi-issue errors from ex.ValidationIssues without changing non-contract validation paths
+2026-03-10 DMS-975 story reference/design/backend-redesign/epics/06-runtime-mapping-selection/00-read-effective-schema.md
+Task completed: Middleware Diagnostics - surface all malformed dms.EffectiveSchema issues in 503 errors payload
+Decisions: keep 503 title/detail/logging unchanged; build errors from ordered ex.ValidationIssues plus shared remediation; cover cached provider exception path so permanent failures stay single-read
+Files changed: src/dms/core/EdFi.DataManagementService.Core/Middleware/ValidateDatabaseFingerprintMiddleware.cs; src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Middleware/ValidateDatabaseFingerprintMiddlewareValidationErrorTests.cs; tasks.json; progress.txt
+Notes next iteration: MSSQL integration harness still open; pipeline ordering task can stay separate from diagnostics behavior

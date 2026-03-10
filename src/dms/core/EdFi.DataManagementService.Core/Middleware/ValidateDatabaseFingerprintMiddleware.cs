@@ -64,7 +64,7 @@ internal class ValidateDatabaseFingerprintMiddleware(
                 ProblemDetailsResponse.DatabaseFingerprintValidationError,
                 MalformedFingerprintTitle,
                 MalformedFingerprintDetail,
-                [ex.Message, MalformedFingerprintDetail],
+                [.. ex.ValidationIssues, MalformedFingerprintDetail],
                 requestInfo.FrontendRequest.TraceId
             );
 
