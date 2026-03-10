@@ -30,6 +30,8 @@ internal static class ReferenceIdentityProjectionLogicalFieldResolver
             List<DbColumnName> memberColumnsInOrder = [];
             DbColumnName? representativeBindingColumn = null;
             DbColumnName? storageColumn = null;
+            DbColumnName? presenceColumn = null;
+            var containsUnifiedAlias = false;
 
             foreach (var memberColumnName in logicalFieldGroup.MemberColumns)
             {
@@ -50,7 +52,7 @@ internal static class ReferenceIdentityProjectionLogicalFieldResolver
                     createException
                 );
 
-                var resolvedStorageColumn = ResolveStorageColumnOrThrow(
+                var resolvedBindingColumn = ResolveBindingColumnMetadataOrThrow(
                     tableModel,
                     memberColumn,
                     binding.ReferenceObjectPath,
@@ -63,26 +65,54 @@ internal static class ReferenceIdentityProjectionLogicalFieldResolver
 
                 if (storageColumn is null)
                 {
-                    storageColumn = resolvedStorageColumn;
+                    storageColumn = resolvedBindingColumn.StorageColumn;
+                    presenceColumn = resolvedBindingColumn.PresenceColumn;
+                    containsUnifiedAlias = resolvedBindingColumn.UsesUnifiedAlias;
                     continue;
                 }
 
-                if (storageColumn == resolvedStorageColumn)
+                if (!storageColumn.Equals(resolvedBindingColumn.StorageColumn))
                 {
-                    continue;
+                    var representativeBindingColumnName = representativeBindingColumn.GetValueOrDefault();
+                    var storageColumnName = storageColumn.GetValueOrDefault();
+
+                    throw createException(
+                        $"reference identity projection binding '{binding.ReferenceObjectPath.Canonical}' on table '{tableModel.Table}' grouped logical field '{logicalFieldGroup.ReferenceJsonPath.Canonical}' resolves to multiple storage columns: "
+                            + $"'{representativeBindingColumnName.Value}' -> '{storageColumnName.Value}', "
+                            + $"'{memberColumnName.Value}' -> '{resolvedBindingColumn.StorageColumn.Value}'"
+                    );
                 }
 
-                throw createException(
-                    $"reference identity projection binding '{binding.ReferenceObjectPath.Canonical}' on table '{tableModel.Table}' grouped logical field '{logicalFieldGroup.ReferenceJsonPath.Canonical}' resolves to multiple storage columns: "
-                        + $"'{representativeBindingColumn.Value}' -> '{storageColumn.Value}', "
-                        + $"'{memberColumnName.Value}' -> '{resolvedStorageColumn.Value}'"
-                );
+                if (!Equals(presenceColumn, resolvedBindingColumn.PresenceColumn))
+                {
+                    var representativeBindingColumnName = representativeBindingColumn.GetValueOrDefault();
+
+                    throw createException(
+                        $"reference identity projection binding '{binding.ReferenceObjectPath.Canonical}' on table '{tableModel.Table}' grouped logical field '{logicalFieldGroup.ReferenceJsonPath.Canonical}' resolves to multiple presence columns: "
+                            + $"'{representativeBindingColumnName.Value}' -> '{FormatPresenceColumn(presenceColumn)}', "
+                            + $"'{memberColumnName.Value}' -> '{FormatPresenceColumn(resolvedBindingColumn.PresenceColumn)}'"
+                    );
+                }
+
+                containsUnifiedAlias |= resolvedBindingColumn.UsesUnifiedAlias;
             }
 
             if (representativeBindingColumn is null || storageColumn is null)
             {
                 throw createException(
                     $"reference identity projection binding '{binding.ReferenceObjectPath.Canonical}' on table '{tableModel.Table}' grouped logical field '{logicalFieldGroup.ReferenceJsonPath.Canonical}' does not contain any member columns"
+                );
+            }
+
+            if (
+                containsUnifiedAlias
+                && logicalFieldGroup.MemberColumns.Count > 1
+                && !Equals(presenceColumn, binding.FkColumn)
+            )
+            {
+                throw createException(
+                    $"reference identity projection binding '{binding.ReferenceObjectPath.Canonical}' on table '{tableModel.Table}' grouped logical field '{logicalFieldGroup.ReferenceJsonPath.Canonical}' resolves alias presence column '{FormatPresenceColumn(presenceColumn)}', "
+                        + $"but owning reference FK column is '{binding.FkColumn.Value}'"
                 );
             }
 
@@ -121,7 +151,7 @@ internal static class ReferenceIdentityProjectionLogicalFieldResolver
         );
     }
 
-    private static DbColumnName ResolveStorageColumnOrThrow(
+    private static ResolvedReferenceIdentityProjectionBindingColumn ResolveBindingColumnMetadataOrThrow(
         DbTableModel tableModel,
         DbColumnModel bindingColumn,
         JsonPathExpression referenceObjectPath,
@@ -134,12 +164,20 @@ internal static class ReferenceIdentityProjectionLogicalFieldResolver
 
         return bindingColumn.Storage switch
         {
-            ColumnStorage.Stored => bindingColumn.ColumnName,
-            ColumnStorage.UnifiedAlias unifiedAlias => ResolveStoredCanonicalColumnOrThrow(
-                tableModel,
-                unifiedAlias.CanonicalColumn,
-                contextDescription,
-                createException
+            ColumnStorage.Stored => new ResolvedReferenceIdentityProjectionBindingColumn(
+                StorageColumn: bindingColumn.ColumnName,
+                PresenceColumn: null,
+                UsesUnifiedAlias: false
+            ),
+            ColumnStorage.UnifiedAlias unifiedAlias => new ResolvedReferenceIdentityProjectionBindingColumn(
+                StorageColumn: ResolveStoredCanonicalColumnOrThrow(
+                    tableModel,
+                    unifiedAlias.CanonicalColumn,
+                    contextDescription,
+                    createException
+                ),
+                PresenceColumn: unifiedAlias.PresenceColumn,
+                UsesUnifiedAlias: true
             ),
             _ => throw createException(
                 $"{contextDescription} uses unsupported storage metadata '{bindingColumn.Storage.GetType().Name}'"
@@ -172,6 +210,9 @@ internal static class ReferenceIdentityProjectionLogicalFieldResolver
             $"{contextDescription} resolves to canonical storage column '{canonicalColumnName.Value}', but that column is not stored"
         );
     }
+
+    private static string FormatPresenceColumn(DbColumnName? presenceColumn) =>
+        presenceColumn?.Value ?? "<none>";
 }
 
 internal sealed record ResolvedReferenceIdentityProjectionLogicalField(
@@ -179,4 +220,10 @@ internal sealed record ResolvedReferenceIdentityProjectionLogicalField(
     DbColumnName RepresentativeBindingColumn,
     IReadOnlyList<DbColumnName> MemberColumnsInOrder,
     DbColumnName StorageColumn
+);
+
+internal sealed record ResolvedReferenceIdentityProjectionBindingColumn(
+    DbColumnName StorageColumn,
+    DbColumnName? PresenceColumn,
+    bool UsesUnifiedAlias
 );

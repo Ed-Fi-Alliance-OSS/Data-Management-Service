@@ -325,6 +325,36 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_reject_grouped_reference_identity_projection_fields_when_duplicate_members_use_conflicting_presence_gates()
+    {
+        var act = () =>
+            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+                CreateGroupedReferenceProjectionResourceModelWithConflictingPresenceGates()
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile reference identity projection plan for 'edfi.StudentGroupedReferenceProjection': reference identity projection binding '$.schoolReference' on table 'edfi.StudentGroupedReferenceProjection' grouped logical field '$.schoolReference.schoolId' resolves to multiple presence columns: 'School_RefSchoolIdSecondary' -> 'School_DocumentId', 'School_RefSchoolIdPrimary' -> 'SchoolIdAlternate_Present'."
+            );
+    }
+
+    [Test]
+    public void It_should_reject_grouped_reference_identity_projection_fields_when_alias_presence_gate_does_not_match_the_reference_fk()
+    {
+        var act = () =>
+            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+                CreateGroupedReferenceProjectionResourceModelWithNonFkPresenceGate()
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile reference identity projection plan for 'edfi.StudentGroupedReferenceProjection': reference identity projection binding '$.schoolReference' on table 'edfi.StudentGroupedReferenceProjection' grouped logical field '$.schoolReference.schoolId' resolves alias presence column 'SchoolIdAlternate_Present', but owning reference FK column is 'School_DocumentId'."
+            );
+    }
+
+    [Test]
     public void It_should_reject_reference_identity_projection_bindings_that_duplicate_a_grouped_logical_field()
     {
         var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
@@ -2244,9 +2274,31 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         };
     }
 
-    private static RelationalResourceModel CreateGroupedReferenceProjectionResourceModel()
+    private static RelationalResourceModel CreateGroupedReferenceProjectionResourceModel() =>
+        CreateGroupedReferenceProjectionResourceModel(
+            secondaryAliasPresenceColumn: new DbColumnName("School_DocumentId"),
+            primaryAliasPresenceColumn: new DbColumnName("School_DocumentId")
+        );
+
+    private static RelationalResourceModel CreateGroupedReferenceProjectionResourceModelWithConflictingPresenceGates() =>
+        CreateGroupedReferenceProjectionResourceModel(
+            secondaryAliasPresenceColumn: new DbColumnName("School_DocumentId"),
+            primaryAliasPresenceColumn: new DbColumnName("SchoolIdAlternate_Present")
+        );
+
+    private static RelationalResourceModel CreateGroupedReferenceProjectionResourceModelWithNonFkPresenceGate() =>
+        CreateGroupedReferenceProjectionResourceModel(
+            secondaryAliasPresenceColumn: new DbColumnName("SchoolIdAlternate_Present"),
+            primaryAliasPresenceColumn: new DbColumnName("SchoolIdAlternate_Present")
+        );
+
+    private static RelationalResourceModel CreateGroupedReferenceProjectionResourceModel(
+        DbColumnName secondaryAliasPresenceColumn,
+        DbColumnName primaryAliasPresenceColumn
+    )
     {
         var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
+        var schoolDocumentIdColumn = new DbColumnName("School_DocumentId");
         var schoolReferencePath = CreatePath(
             "$.schoolReference",
             new JsonPathSegment.Property("schoolReference")
@@ -2279,7 +2331,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                     TargetResource: null
                 ),
                 new DbColumnModel(
-                    ColumnName: new DbColumnName("School_DocumentId"),
+                    ColumnName: schoolDocumentIdColumn,
                     Kind: ColumnKind.DocumentFk,
                     ScalarType: new RelationalScalarType(ScalarKind.Int64),
                     IsNullable: true,
@@ -2303,7 +2355,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                     TargetResource: null,
                     Storage: new ColumnStorage.UnifiedAlias(
                         CanonicalColumn: new DbColumnName("SchoolIdCanonical"),
-                        PresenceColumn: new DbColumnName("School_DocumentId")
+                        PresenceColumn: secondaryAliasPresenceColumn
                     )
                 ),
                 new DbColumnModel(
@@ -2323,8 +2375,17 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                     TargetResource: null,
                     Storage: new ColumnStorage.UnifiedAlias(
                         CanonicalColumn: new DbColumnName("SchoolIdCanonical"),
-                        PresenceColumn: new DbColumnName("School_DocumentId")
+                        PresenceColumn: primaryAliasPresenceColumn
                     )
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("SchoolIdAlternate_Present"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Boolean),
+                    IsNullable: true,
+                    SourceJsonPath: null,
+                    TargetResource: null,
+                    Storage: new ColumnStorage.Stored()
                 ),
             ],
             Constraints: []
@@ -2355,7 +2416,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                     IsIdentityComponent: true,
                     ReferenceObjectPath: schoolReferencePath,
                     Table: rootTable.Table,
-                    FkColumn: new DbColumnName("School_DocumentId"),
+                    FkColumn: schoolDocumentIdColumn,
                     TargetResource: schoolResource,
                     IdentityBindings:
                     [
