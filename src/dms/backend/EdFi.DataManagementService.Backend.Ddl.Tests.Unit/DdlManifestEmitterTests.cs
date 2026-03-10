@@ -516,6 +516,37 @@ public class Given_DdlManifestEmitter_CountStatements_For_Mssql
     }
 
     [Test]
+    public void It_should_count_go_isolated_function_batch_as_one_statement_and_resume_semicolon_counting()
+    {
+        var sql = string.Join(
+            "\n",
+            "CREATE TABLE foo (id INT);",
+            "GO",
+            "CREATE OR ALTER FUNCTION [dbo].[f]()",
+            "RETURNS int",
+            "AS",
+            "BEGIN",
+            "    RETURN 1;",
+            "END;",
+            "GO",
+            "CREATE TABLE bar (id INT);",
+            "CREATE TABLE baz (id INT);",
+            "GO",
+            "CREATE OR ALTER TRIGGER [dbo].[trg] ON [dbo].[bar]",
+            "AFTER INSERT",
+            "AS",
+            "BEGIN",
+            "    RETURN;",
+            "END;",
+            "GO",
+            ""
+        );
+
+        // 1 table before function + 1 function batch + 2 plain DDL statements + 1 trigger batch = 5
+        DdlManifestEmitter.CountStatements(SqlDialect.Mssql, sql).Should().Be(5);
+    }
+
+    [Test]
     public void It_should_recognize_lowercase_go_batch_separator()
     {
         var sql = string.Join(

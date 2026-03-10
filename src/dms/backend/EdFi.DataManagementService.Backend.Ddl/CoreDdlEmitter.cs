@@ -186,20 +186,17 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         writer.AppendLine("-- ==========================================================");
         writer.AppendLine();
 
-        // CREATE OR ALTER FUNCTION must be the first statement in a T-SQL batch.
-        bool isMssql = _dialect.Rules.Dialect == SqlDialect.Mssql;
-        if (isMssql)
+        if (_dialect.Rules.Dialect == SqlDialect.Mssql)
         {
+            // CREATE OR ALTER FUNCTION must be the first and only statement in a T-SQL batch.
             writer.AppendLine("GO");
+            writer.AppendLine(_dialect.CreateUuidv5Function(DmsTableNames.DmsSchema));
+            writer.AppendLine("GO");
+            writer.AppendLine();
+            return;
         }
 
         writer.AppendLine(_dialect.CreateUuidv5Function(DmsTableNames.DmsSchema));
-
-        if (isMssql)
-        {
-            writer.AppendLine("GO");
-        }
-
         writer.AppendLine();
     }
 
