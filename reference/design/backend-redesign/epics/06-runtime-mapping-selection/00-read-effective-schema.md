@@ -20,7 +20,7 @@ This follows `reference/design/backend-redesign/design-docs/transactions-and-con
 - On the first request for a given connection string, DMS reads `dms.EffectiveSchema` and caches:
   - `ApiSchemaFormatVersion`
   - `EffectiveSchemaHash`
-  - `ResourceKeyCount`
+  - `ResourceKeyCount` (smallint-bounded count of seeded `dms.ResourceKey` rows)
   - `ResourceKeySeedHash`
 - Subsequent requests for the same connection string do not repeat the DB read (cache hit).
 - If `dms.EffectiveSchema` is missing or the singleton row is absent, requests fail fast with an actionable error indicating the DB must be provisioned.
@@ -41,4 +41,3 @@ This follows `reference/design/backend-redesign/design-docs/transactions-and-con
    1. cache behavior,
    2. missing table/row behavior,
    3. “no schema-dependent work before fingerprint” guard (pipeline ordering test).
-

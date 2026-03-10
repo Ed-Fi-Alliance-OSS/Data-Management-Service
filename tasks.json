@@ -71,7 +71,7 @@
       "Update the affected design docs so `ResourceKeyCount` uses consistent type/capacity language everywhere it is described.",
       "Run: `rg -n \"ResourceKeyCount\" reference/design/backend-redesign/design-docs reference/design/backend-redesign/epics/06-runtime-mapping-selection` and confirm the updated docs are internally consistent."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Pipeline Documentation",
