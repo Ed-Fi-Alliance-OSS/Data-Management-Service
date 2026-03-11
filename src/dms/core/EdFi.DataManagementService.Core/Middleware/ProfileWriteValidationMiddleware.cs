@@ -34,7 +34,6 @@ internal class ProfileWriteValidationMiddleware(
     IProfileResponseFilter profileFilter,
     IProfileCreatabilityValidator creatabilityValidator,
     ICompiledSchemaCache schemaCache,
-    IServiceProvider serviceProvider,
     ILogger<ProfileWriteValidationMiddleware> logger
 ) : IPipelineStep
 {
@@ -987,8 +986,10 @@ internal class ProfileWriteValidationMiddleware(
 
     private async Task<JsonObject?> GetExistingDocument(RequestInfo requestInfo)
     {
-        // Get repository from service provider
-        var documentStoreRepository = serviceProvider.GetRequiredService<IDocumentStoreRepository>();
+        // Resolve from the request scope so tenant/instance-specific services are used consistently.
+        var documentStoreRepository = requestInfo
+            .ScopedServiceProvider
+            .GetRequiredService<IDocumentStoreRepository>();
 
         // Create a bypass authorization handler for internal document fetch
         // The actual authorization will be performed later by the update handler.
