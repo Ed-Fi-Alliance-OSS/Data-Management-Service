@@ -5,10 +5,9 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
-using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Utilities;
 
-namespace EdFi.DataManagementService.Backend.RelationalModel.Schema;
+namespace EdFi.DataManagementService.Core.Startup;
 
 /// <summary>
 /// Bridges normalized <see cref="ApiSchemaDocumentNodes" /> input to the backend-facing

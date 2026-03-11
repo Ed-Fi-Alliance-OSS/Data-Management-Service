@@ -6,7 +6,6 @@
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     </PropertyGroup>
     <ItemGroup>
-        <ProjectReference Include="..\..\core\EdFi.DataManagementService.Core\EdFi.DataManagementService.Core.csproj" />
         <ProjectReference Include="..\EdFi.DataManagementService.Backend\EdFi.DataManagementService.Backend.csproj" />
     </ItemGroup>
 </Project>

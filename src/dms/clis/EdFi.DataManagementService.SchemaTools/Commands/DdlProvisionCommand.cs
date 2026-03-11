@@ -5,7 +5,6 @@
 
 using System.CommandLine;
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Backend.RelationalModel.Schema;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Utilities;
 using EdFi.DataManagementService.SchemaTools.Provisioning;

@@ -5,7 +5,6 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Backend.RelationalModel.Schema;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Startup;
 using FakeItEasy;

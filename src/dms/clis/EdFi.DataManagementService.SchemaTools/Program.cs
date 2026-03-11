@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.CommandLine;
-using EdFi.DataManagementService.Backend.RelationalModel.Schema;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.SchemaTools.Commands;
 using Microsoft.Extensions.DependencyInjection;

@@ -1,0 +1,68 @@
+[
+  {
+    "category": "Dependency Hygiene",
+    "description": "Remove the unused `EdFi.DataManagementService.Core` project reference from `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/EdFi.DataManagementService.Backend.RelationalModel.csproj`. Acceptance: `Backend.RelationalModel` no longer references `Core` unless a source file in that project has a concrete compile-time dependency on a `Core` type, the project still builds cleanly, and downstream projects that consume `Backend.RelationalModel` continue to compile without relying on a transitive `Core` reference from this project.",
+    "steps-to-verify": [
+      "Confirm the unnecessary `<ProjectReference Include=\"..\\..\\core\\EdFi.DataManagementService.Core\\EdFi.DataManagementService.Core.csproj\" />` entry is removed from `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/EdFi.DataManagementService.Backend.RelationalModel.csproj` unless a new code dependency was intentionally introduced.",
+      "Run: `dotnet build --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/EdFi.DataManagementService.Backend.RelationalModel.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/backend/EdFi.DataManagementService.Old.Postgresql/EdFi.DataManagementService.Old.Postgresql.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Configuration",
+    "description": "Synchronize the DMS Docker environment templates for the new startup validation and startup status settings. Add `DMS_VALIDATE_PROVISIONED_MAPPINGS_ON_STARTUP=false` to `eng/docker-compose/.env.e2e` and add `DMS_STARTUP_STATUS_FILE_PATH=/tmp/dms-startup-status.json` to `eng/docker-compose/.env.example`. Acceptance: both `.env` files explicitly define both variables, and every variable referenced by `eng/docker-compose/local-dms.yml` and `eng/docker-compose/published-dms.yml` has a matching declaration in both environment templates.",
+    "steps-to-verify": [
+      "Confirm `eng/docker-compose/.env.e2e` and `eng/docker-compose/.env.example` both contain `DMS_VALIDATE_PROVISIONED_MAPPINGS_ON_STARTUP` and `DMS_STARTUP_STATUS_FILE_PATH` with the intended default values.",
+      "Run: `rg -n \"DMS_VALIDATE_PROVISIONED_MAPPINGS_ON_STARTUP|DMS_STARTUP_STATUS_FILE_PATH\" eng/docker-compose/.env.e2e eng/docker-compose/.env.example eng/docker-compose/local-dms.yml eng/docker-compose/published-dms.yml`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Documentation",
+    "description": "Update `reference/design/backend-redesign/epics/15-plan-compilation/startup-failure-status-surfacing.md` so the documented startup status contract matches the phases currently written by the application. Acceptance: the document either explicitly lists all emitted phase names (`ConfigureServices`, `BuildApplication`, `LoadDmsInstances`, `InitializeDatabase`, `InitializeApiSchemas`, `InitializeBackendMappings`, `WarmUpOidcMetadataCache`, `ConfigureEndpoints`, and `Ready`) or clearly states that the phase list is illustrative and includes the currently implemented additional phases.",
+    "steps-to-verify": [
+      "Confirm the design document reflects the phase names defined in `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Infrastructure/StartupPhaseExecutor.cs` and used in `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Program.cs`.",
+      "Run: `rg -n \"ConfigureServices|BuildApplication|LoadDmsInstances|InitializeDatabase|InitializeApiSchemas|InitializeBackendMappings|WarmUpOidcMetadataCache|ConfigureEndpoints|Ready\" reference/design/backend-redesign/epics/15-plan-compilation/startup-failure-status-surfacing.md src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Infrastructure/StartupPhaseExecutor.cs src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Program.cs`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Architecture",
+    "description": "Resolve the assembly ownership mismatch for `EffectiveSchemaSetBuilder`. Acceptance: Move it into the `Core`-owned namespace and update all consumers. Remove any compensating project references that were only added to support the mismatch.",
+    "steps-to-verify": [
+      "Confirm `src/dms/core/EdFi.DataManagementService.Core/Startup/EffectiveSchemaSetBuilder.cs` uses a namespace and assembly placement that make ownership obvious, and that all consuming files import the updated namespace.",
+      "Run: `rg -n \"EffectiveSchemaSetBuilder|namespace EdFi.DataManagementService.Backend.RelationalModel.Schema|using EdFi.DataManagementService.Backend.RelationalModel.Schema|using EdFi.DataManagementService.Core.Startup\" src/dms/core src/dms/clis src/dms/backend -g '!**/bin/**' -g '!**/obj/**'`",
+      "Run: `dotnet build --no-restore ./src/dms/core/EdFi.DataManagementService.Core/EdFi.DataManagementService.Core.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Test Coverage",
+    "description": "Add unit coverage for `PostgresqlRuntimeMappingSetCompiler.CompileAsync` when the authoritative effective schema key changes between key derivation and compilation. Acceptance: a unit test in an existing test project with access to `Old.Postgresql` internals configures `IEffectiveSchemaSetProvider` to return different effective schema data across calls, invokes the mismatch path, and asserts that `CompileAsync` throws `InvalidOperationException` with a message that identifies both the expected and actual mapping set keys.",
+    "steps-to-verify": [
+      "Add a test named in the existing NUnit style for the mismatch scenario and verify it fails before the implementation is correct and passes afterward.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter \"PostgresqlRuntimeMappingInitializationTests|PostgresqlRuntimeMappingSetCompiler\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Testability",
+    "description": "Document the intentional rethrow after fatal startup exit handling in `StartupPhaseExecutor.RunFatalAsync`. Acceptance: the catch block or `HandleFatalFailure` call path includes a concise comment explaining that the rethrow exists for testability because production `IStartupProcessExit` terminates the process before control returns, and existing unit tests still validate the behavior.",
+    "steps-to-verify": [
+      "Confirm the comment appears adjacent to the `throw;` statement in `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Infrastructure/StartupPhaseExecutor.cs` and accurately describes the production-versus-test control flow.",
+      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter StartupStatusTests`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Observability",
+    "description": "Improve diagnostics for bootstrap-stage startup status file write failures before DI logging is available. Acceptance: the pre-host `FileStartupStatusSignal` path used by `Program.cs` no longer swallows write failures silently when the status file cannot be created or updated. Bootstrap failures should emit a visible diagnostic through a bootstrap logger or a targeted `Console.Error` fallback while preserving the existing runtime logger-based behavior after DI is built.",
+    "steps-to-verify": [
+      "Confirm the bootstrap code path in `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Program.cs` and `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Infrastructure/StartupStatusSignal.cs` emits a visible warning when the configured startup status file path is invalid or unwritable before the app host is built.",
+      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  }
+]

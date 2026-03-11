@@ -8,7 +8,6 @@ using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.RelationalModel.Build;
-using EdFi.DataManagementService.Backend.RelationalModel.Schema;
 using EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.ApiSchema;
