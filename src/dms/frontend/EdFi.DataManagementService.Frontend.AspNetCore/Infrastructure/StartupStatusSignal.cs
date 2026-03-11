@@ -17,22 +17,36 @@ internal interface IStartupStatusSignal
     void WriteReady(string summary);
 }
 
-internal sealed class FileStartupStatusSignal(string filePath, ILogger<FileStartupStatusSignal> logger)
-    : IStartupStatusSignal
+internal sealed class FileStartupStatusSignal(
+    string filePath,
+    ILogger<FileStartupStatusSignal> logger,
+    TextWriter? bootstrapDiagnosticWriter
+) : IStartupStatusSignal
 {
     private const string DefaultFileName = "dms-startup-status.json";
 
     private static readonly JsonSerializerOptions SerializerOptions = new() { WriteIndented = true };
 
     public FileStartupStatusSignal(IConfiguration configuration, ILogger<FileStartupStatusSignal> logger)
-        : this(ResolveFilePath(configuration.GetValue<string>("AppSettings:StartupStatusFilePath")), logger)
-    { }
+        : this(
+            ResolveFilePath(configuration.GetValue<string>("AppSettings:StartupStatusFilePath")),
+            logger,
+            null
+        ) { }
 
     public FileStartupStatusSignal(string? configuredFilePath)
-        : this(ResolveFilePath(configuredFilePath), NullLogger<FileStartupStatusSignal>.Instance) { }
+        : this(ResolveFilePath(configuredFilePath), NullLogger<FileStartupStatusSignal>.Instance, null) { }
+
+    internal FileStartupStatusSignal(string? configuredFilePath, TextWriter bootstrapDiagnosticWriter)
+        : this(
+            ResolveFilePath(configuredFilePath),
+            NullLogger<FileStartupStatusSignal>.Instance,
+            bootstrapDiagnosticWriter
+        ) { }
 
     private readonly string _filePath = filePath;
     private readonly ILogger<FileStartupStatusSignal> _logger = logger;
+    private readonly TextWriter? _bootstrapDiagnosticWriter = bootstrapDiagnosticWriter;
 
     public string FilePath => _filePath;
 
@@ -87,6 +101,27 @@ internal sealed class FileStartupStatusSignal(string filePath, ILogger<FileStart
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Unable to write DMS startup status file at {FilePath}", _filePath);
+            WriteBootstrapDiagnostic(ex);
+        }
+    }
+
+    private void WriteBootstrapDiagnostic(Exception exception)
+    {
+        if (_bootstrapDiagnosticWriter is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _bootstrapDiagnosticWriter.WriteLine(
+                $"Unable to write DMS startup status file at '{_filePath}'. {exception.GetType().Name}: {exception.Message}"
+            );
+            _bootstrapDiagnosticWriter.Flush();
+        }
+        catch
+        {
+            // Preserve existing startup behavior if the bootstrap fallback cannot write either.
         }
     }
 }

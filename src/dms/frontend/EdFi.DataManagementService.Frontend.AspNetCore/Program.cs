@@ -30,7 +30,8 @@ Environment.SetEnvironmentVariable("DOTNET_hostBuilder:reloadConfigOnChange", "f
 
 var builder = WebApplication.CreateBuilder(args);
 var bootstrapStartupStatusSignal = new FileStartupStatusSignal(
-    builder.Configuration.GetValue<string>("AppSettings:StartupStatusFilePath")
+    builder.Configuration.GetValue<string>("AppSettings:StartupStatusFilePath"),
+    Console.Error
 );
 bool enableAspNetCompression = false;
 bool useReverseProxyHeaders = false;
