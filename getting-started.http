@@ -3,7 +3,7 @@
 @configPort=8081
 
 @sysAdminId=DmsConfigurationService
-@sysAdminSecret=s3creT@09
+@sysAdminSecret=ValidClientSecret1234567890!Abcd
 
 #########
 # Working with the Ed-Fi Management API, as hosted by the DMS Configuration Service.

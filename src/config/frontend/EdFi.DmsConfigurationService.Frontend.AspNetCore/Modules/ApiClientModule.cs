@@ -3,8 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel.Configuration;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ApiClient;
@@ -41,6 +41,7 @@ public class ApiClientModule : IEndpointModule
         IDmsInstanceRepository dmsInstanceRepository,
         IIdentityProviderRepository clientRepository,
         IOptions<IdentitySettings> identitySettings,
+        IOptions<ClientSecretValidationOptions> clientSecretValidationOptionsAccessor,
         ILogger<ApiClientModule> logger
     )
     {
@@ -106,9 +107,8 @@ public class ApiClientModule : IEndpointModule
         }
 
         var clientId = Guid.NewGuid().ToString();
-        var clientSecret = RandomNumberGenerator.GetString(
-            "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
-            32
+        var clientSecret = ClientSecretValidation.GenerateSecretWithMinimumLength(
+            clientSecretValidationOptionsAccessor.Value
         );
 
         // Create client in identity provider FIRST (will rollback on database failure)

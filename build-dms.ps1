@@ -375,7 +375,7 @@ function Wait-ForConfigServiceAndClients {
             $tokenEndpoint = "http://localhost:8081/connect/token"
             $body = @{
                 client_id = "CMSAuthMetadataReadOnlyAccess"
-                client_secret = "s3creT@09"
+                client_secret = "ValidClientSecret1234567890!Abcd"
                 grant_type = "client_credentials"
                 scope = "edfi_admin_api/authMetadata_readonly_access"
             }

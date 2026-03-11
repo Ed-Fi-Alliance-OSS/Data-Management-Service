@@ -38,9 +38,9 @@ param (
     $NewClientName = "DMS Configuration Service",
 
     # Client Secret -Client secret must contain at least one lowercase letter, one uppercase letter,
-    # one number, and one special character, and must be 8 to 12 characters long.
+    # one number, and one special character, and must be 32 to 128 characters long.
     [string]
-    $NewClientSecret = "s3creT@09",
+    $NewClientSecret = "ValidClientSecret1234567890!Abcd",
 
     # DMS specific client role
     [string]

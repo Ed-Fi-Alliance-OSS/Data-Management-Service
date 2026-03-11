@@ -6,7 +6,9 @@
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel.Configuration;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
@@ -29,7 +31,7 @@ public class ApplicationModuleTests
     private readonly IIdentityProviderRepository _clientRepository = A.Fake<IIdentityProviderRepository>();
     private readonly IVendorRepository _vendorRepository = A.Fake<IVendorRepository>();
 
-    private HttpClient SetUpClient()
+    private HttpClient SetUpClient(int? clientSecretMinimumLength = null)
     {
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -42,6 +44,24 @@ public class ApplicationModuleTests
                 {
                     options.EnableApplicationResetEndpoint = true;
                 });
+                if (clientSecretMinimumLength is not null)
+                {
+                    collection.Configure<ClientSecretValidationOptions>(options =>
+                    {
+                        options.MinimumLength = clientSecretMinimumLength.Value;
+                        options.MaximumLength = clientSecretMinimumLength.Value + 96;
+                    });
+                    collection.Configure<IdentitySettings>(options =>
+                    {
+                        options.ClientSecret = ClientSecretValidation.GenerateSecretWithMinimumLength(
+                            new ClientSecretValidationOptions
+                            {
+                                MinimumLength = clientSecretMinimumLength.Value,
+                                MaximumLength = clientSecretMinimumLength.Value + 96,
+                            }
+                        );
+                    });
+                }
                 collection
                     .AddTransient((_) => _applicationRepository)
                     .AddTransient((_) => _clientRepository)
@@ -207,6 +227,75 @@ public class ApplicationModuleTests
             updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
             resetCredentialsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public async Task Should_generate_application_secret_using_the_configured_minimum_length()
+        {
+            // Arrange
+            var configuredMinimumLength = 40;
+            string generatedSecret = string.Empty;
+
+            A.CallTo(() =>
+                    _clientRepository.CreateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored
+                    )
+                )
+                .Invokes(call =>
+                    generatedSecret =
+                        call.GetArgument<string>(1)
+                        ?? throw new InvalidOperationException("Generated secret should not be null.")
+                )
+                .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
+
+            using var client = SetUpClient(configuredMinimumLength);
+
+            // Act
+            var addResponse = await client.PostAsync(
+                "/v2/applications",
+                new StringContent(
+                    """
+                    {
+                      "ApplicationName": "Application 11",
+                      "ClaimSetName": "Test",
+                      "VendorId": 1,
+                      "EducationOrganizationIds": [1],
+                      "DmsInstanceIds": [1]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            // Assert
+            addResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+            generatedSecret.Should().HaveLength(configuredMinimumLength);
+            Regex
+                .IsMatch(
+                    generatedSecret,
+                    ClientSecretValidation.BuildComplexityPattern(
+                        new ClientSecretValidationOptions
+                        {
+                            MinimumLength = configuredMinimumLength,
+                            MaximumLength = configuredMinimumLength + 96,
+                        }
+                    )
+                )
+                .Should()
+                .BeTrue();
+
+            var responseBody = await addResponse.Content.ReadAsStringAsync();
+            var actualResponse = JsonNode.Parse(responseBody);
+            actualResponse!["secret"]!.GetValue<string>().Should().HaveLength(configuredMinimumLength);
+            actualResponse!["secret"]!.GetValue<string>().Should().Be(generatedSecret);
         }
     }
 

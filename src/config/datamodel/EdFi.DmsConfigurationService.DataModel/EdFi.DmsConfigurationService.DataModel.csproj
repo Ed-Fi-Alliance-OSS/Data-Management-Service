@@ -6,6 +6,7 @@
     </PropertyGroup>
     <ItemGroup>
         <PackageReference Include="FluentValidation" />
+        <PackageReference Include="Microsoft.Extensions.Options" />
     </ItemGroup>
     <ItemGroup>
         <None Update="Schema\Ed-Fi-ODS-API-Profile.xsd">
