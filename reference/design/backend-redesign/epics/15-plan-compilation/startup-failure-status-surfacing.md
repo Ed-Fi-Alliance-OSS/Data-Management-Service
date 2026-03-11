@@ -9,7 +9,7 @@ Use a file-backed startup status signal that is written before HTTP route bindin
 Contract:
 
 - `State`: `Starting`, `Completed`, `Failed`, or `Ready`
-- `Phase`: stable phase name such as `ConfigureServices`, `BuildApplication`, `LoadDmsInstances`, `InitializeDatabase`, `InitializeApiSchemas`, `WarmUpOidcMetadataCache`, or `Ready`
+- `Phase`: one of `ConfigureServices`, `BuildApplication`, `LoadDmsInstances`, `InitializeDatabase`, `InitializeApiSchemas`, `InitializeBackendMappings`, `WarmUpOidcMetadataCache`, `ConfigureEndpoints`, or `Ready`
 - `Summary`: short human-readable phase summary
 - `ErrorType` / `ErrorMessage`: populated only for failures
 - `UpdatedAtUtc`: last write timestamp
@@ -31,7 +31,9 @@ This keeps fatal startup semantics unchanged: fatal phases still terminate the p
 3. On success, overwrite the file with `Completed`.
 4. On failure, overwrite the file with `Failed`, then invoke the existing process-exit behavior.
 
-Bootstrap phases before the app host exists (`ConfigureServices`, `BuildApplication`) use the same status contract, but rethrow after writing the failure because the process has not yet built the DI graph used by the runtime exit hook.
+The current startup sequence writes these phase names in order: `ConfigureServices`, `BuildApplication`, `LoadDmsInstances`, `InitializeDatabase`, `InitializeApiSchemas`, `InitializeBackendMappings`, `WarmUpOidcMetadataCache`, `ConfigureEndpoints`, and `Ready`.
+
+Bootstrap phases before the app host exists (`ConfigureServices`, `BuildApplication`) use the same status contract, but rethrow after writing the failure because the process has not yet built the DI graph used by the runtime exit hook. After the host exists, `ConfigureEndpoints` is written immediately before routing and endpoint registration, and `Ready` is written after middleware and endpoint mapping complete successfully.
 
 ## CI and local usage
 

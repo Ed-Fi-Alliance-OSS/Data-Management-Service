@@ -39,3 +39,10 @@ Decisions: keep runtime behavior unchanged; add comment at rethrow site because 
 Files changed: src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Infrastructure/StartupPhaseExecutor.cs; tasks.json; progress.txt
 Feedback loops: dotnet csharpier format src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Infrastructure/StartupPhaseExecutor.cs; dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter StartupStatusTests
 Notes next: only Documentation task remains in tasks.json.
+
+2026-03-11
+Task complete: Documentation - startup status phase contract. Story: reference/design/backend-redesign/epics/15-plan-compilation/06-projection-plan-compilers.md
+Decisions: document the exact emitted phase list instead of illustrative examples; call out ConfigureEndpoints and Ready timing so the contract matches Program.cs bootstrap/runtime flow.
+Files changed: reference/design/backend-redesign/epics/15-plan-compilation/startup-failure-status-surfacing.md; tasks.json; progress.txt
+Feedback loops: rg -n "ConfigureServices|BuildApplication|LoadDmsInstances|InitializeDatabase|InitializeApiSchemas|InitializeBackendMappings|WarmUpOidcMetadataCache|ConfigureEndpoints|Ready" reference/design/backend-redesign/epics/15-plan-compilation/startup-failure-status-surfacing.md src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Infrastructure/StartupPhaseExecutor.cs src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Program.cs
+Notes next: tasks.json shows all story tasks complete.

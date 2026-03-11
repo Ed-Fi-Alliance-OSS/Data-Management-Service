@@ -25,7 +25,7 @@
       "Confirm the design document reflects the phase names defined in `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Infrastructure/StartupPhaseExecutor.cs` and used in `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Program.cs`.",
       "Run: `rg -n \"ConfigureServices|BuildApplication|LoadDmsInstances|InitializeDatabase|InitializeApiSchemas|InitializeBackendMappings|WarmUpOidcMetadataCache|ConfigureEndpoints|Ready\" reference/design/backend-redesign/epics/15-plan-compilation/startup-failure-status-surfacing.md src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Infrastructure/StartupPhaseExecutor.cs src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Program.cs`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Architecture",
