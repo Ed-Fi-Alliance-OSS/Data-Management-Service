@@ -30,8 +30,7 @@ public class ProfileWriteValidationMiddlewareTests
     private static ProfileWriteValidationMiddleware CreateMiddleware(
         IProfileResponseFilter? filter = null,
         IProfileCreatabilityValidator? creatabilityValidator = null,
-        ICompiledSchemaCache? schemaCache = null,
-        IDocumentStoreRepository? documentStoreRepository = null
+        ICompiledSchemaCache? schemaCache = null
     )
     {
         return new ProfileWriteValidationMiddleware(
@@ -42,7 +41,7 @@ public class ProfileWriteValidationMiddlewareTests
         );
     }
 
-    private static IServiceProvider CreateScopedServiceProvider(
+    private static IServiceProvider BuildScopedServiceProvider(
         IDocumentStoreRepository? documentStoreRepository = null
     )
     {
@@ -123,7 +122,11 @@ public class ProfileWriteValidationMiddlewareTests
             NullLogger<ProjectSchema>.Instance
         );
 
-        return new RequestInfo(frontendRequest, method, scopedServiceProvider ?? No.ServiceProvider)
+        return new RequestInfo(
+            frontendRequest,
+            method,
+            scopedServiceProvider ?? BuildScopedServiceProvider()
+        )
         {
             ProjectSchema = projectSchema,
             ResourceSchema = resourceSchema,
@@ -627,13 +630,7 @@ public class ProfileWriteValidationMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            var documentStoreRepository = new TelephoneRepository();
-            var scopedServiceProvider = CreateScopedServiceProvider(documentStoreRepository);
-
-            _requestInfo = CreateRequestInfo(
-                method: RequestMethod.PUT,
-                scopedServiceProvider: scopedServiceProvider
-            );
+            _requestInfo = CreateRequestInfo(method: RequestMethod.PUT);
             _requestInfo.ProfileContext = CreateWriteProfileContext(
                 MemberSelection.IncludeOnly,
                 [new PropertyRule("firstName")]
@@ -1018,14 +1015,7 @@ public class ProfileWriteValidationMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            var documentStoreRepository = new AssessmentWithoutContentStandardRepository();
-            var scopedServiceProvider = CreateScopedServiceProvider(documentStoreRepository);
-
-            _requestInfo = CreateRequestInfo(
-                method: RequestMethod.PUT,
-                resourceName: "Assessment",
-                scopedServiceProvider: scopedServiceProvider
-            );
+            _requestInfo = CreateRequestInfo(method: RequestMethod.PUT, resourceName: "Assessment");
             _requestInfo.PathComponents = new PathComponents(
                 ProjectEndpointName: new CoreApiSchemaModel.ProjectEndpointName("ed-fi"),
                 EndpointName: new CoreApiSchemaModel.EndpointName("assessments"),
@@ -1076,7 +1066,10 @@ public class ProfileWriteValidationMiddlewareTests
             };
 
             _nextCalled = false;
-            var middleware = CreateMiddleware(documentStoreRepository: documentStoreRepository);
+            _requestInfo.ScopedServiceProvider = BuildScopedServiceProvider(
+                new AssessmentWithoutContentStandardRepository()
+            );
+            var middleware = CreateMiddleware();
 
             await middleware.Execute(
                 _requestInfo,
@@ -1138,14 +1131,7 @@ public class ProfileWriteValidationMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            var documentStoreRepository = new AssessmentWithContentStandardRepository();
-            var scopedServiceProvider = CreateScopedServiceProvider(documentStoreRepository);
-
-            _requestInfo = CreateRequestInfo(
-                method: RequestMethod.PUT,
-                resourceName: "Assessment",
-                scopedServiceProvider: scopedServiceProvider
-            );
+            _requestInfo = CreateRequestInfo(method: RequestMethod.PUT, resourceName: "Assessment");
             _requestInfo.PathComponents = new PathComponents(
                 ProjectEndpointName: new CoreApiSchemaModel.ProjectEndpointName("ed-fi"),
                 EndpointName: new CoreApiSchemaModel.EndpointName("assessments"),
@@ -1196,7 +1182,10 @@ public class ProfileWriteValidationMiddlewareTests
             };
 
             _nextCalled = false;
-            var middleware = CreateMiddleware(documentStoreRepository: documentStoreRepository);
+            _requestInfo.ScopedServiceProvider = BuildScopedServiceProvider(
+                new AssessmentWithContentStandardRepository()
+            );
+            var middleware = CreateMiddleware();
 
             await middleware.Execute(
                 _requestInfo,
@@ -1318,9 +1307,10 @@ public class ProfileWriteValidationMiddlewareTests
             };
 
             _nextCalled = false;
-            var middleware = CreateMiddleware(
-                documentStoreRepository: new SchoolWithoutInternationalAddressRepository()
+            _requestInfo.ScopedServiceProvider = BuildScopedServiceProvider(
+                new SchoolWithoutInternationalAddressRepository()
             );
+            var middleware = CreateMiddleware();
 
             await middleware.Execute(
                 _requestInfo,
@@ -1445,9 +1435,10 @@ public class ProfileWriteValidationMiddlewareTests
             };
 
             _nextCalled = false;
-            var middleware = CreateMiddleware(
-                documentStoreRepository: new SchoolWithInternationalAddressRepository()
+            _requestInfo.ScopedServiceProvider = BuildScopedServiceProvider(
+                new SchoolWithInternationalAddressRepository()
             );
+            var middleware = CreateMiddleware();
 
             await middleware.Execute(
                 _requestInfo,
@@ -1679,13 +1670,7 @@ public class ProfileWriteValidationMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            var documentStoreRepository = new AddressRepository();
-            var scopedServiceProvider = CreateScopedServiceProvider(documentStoreRepository);
-
-            _requestInfo = CreateRequestInfo(
-                method: RequestMethod.PUT,
-                scopedServiceProvider: scopedServiceProvider
-            );
+            _requestInfo = CreateRequestInfo(method: RequestMethod.PUT);
             _requestInfo.PathComponents = new PathComponents(
                 ProjectEndpointName: new CoreApiSchemaModel.ProjectEndpointName("ed-fi"),
                 EndpointName: new CoreApiSchemaModel.EndpointName("students"),
@@ -1733,7 +1718,8 @@ public class ProfileWriteValidationMiddlewareTests
             };
 
             _nextCalled = false;
-            var middleware = CreateMiddleware(documentStoreRepository: documentStoreRepository);
+            _requestInfo.ScopedServiceProvider = BuildScopedServiceProvider(new AddressRepository());
+            var middleware = CreateMiddleware();
 
             await middleware.Execute(
                 _requestInfo,
@@ -1882,7 +1868,8 @@ public class ProfileWriteValidationMiddlewareTests
             };
 
             _nextCalled = false;
-            var middleware = CreateMiddleware(documentStoreRepository: documentStoreRepository);
+            _requestInfo.ScopedServiceProvider = BuildScopedServiceProvider(new TelephoneRepository());
+            var middleware = CreateMiddleware();
 
             await middleware.Execute(
                 _requestInfo,
@@ -1980,14 +1967,7 @@ public class ProfileWriteValidationMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            var documentStoreRepository = new GradeLevelRepository();
-            var scopedServiceProvider = CreateScopedServiceProvider(documentStoreRepository);
-
-            _requestInfo = CreateRequestInfo(
-                method: RequestMethod.PUT,
-                resourceName: "School",
-                scopedServiceProvider: scopedServiceProvider
-            );
+            _requestInfo = CreateRequestInfo(method: RequestMethod.PUT, resourceName: "School");
             _requestInfo.PathComponents = new PathComponents(
                 ProjectEndpointName: new CoreApiSchemaModel.ProjectEndpointName("ed-fi"),
                 EndpointName: new CoreApiSchemaModel.EndpointName("schools"),
@@ -2056,7 +2036,8 @@ public class ProfileWriteValidationMiddlewareTests
             };
 
             _nextCalled = false;
-            var middleware = CreateMiddleware(documentStoreRepository: documentStoreRepository);
+            _requestInfo.ScopedServiceProvider = BuildScopedServiceProvider(new GradeLevelRepository());
+            var middleware = CreateMiddleware();
 
             await middleware.Execute(
                 _requestInfo,
@@ -2185,13 +2166,7 @@ public class ProfileWriteValidationMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            var documentStoreRepository = new DeepNestedRepository();
-            var scopedServiceProvider = CreateScopedServiceProvider(documentStoreRepository);
-
-            _requestInfo = CreateRequestInfo(
-                method: RequestMethod.PUT,
-                scopedServiceProvider: scopedServiceProvider
-            );
+            _requestInfo = CreateRequestInfo(method: RequestMethod.PUT);
             _requestInfo.PathComponents = new PathComponents(
                 ProjectEndpointName: new CoreApiSchemaModel.ProjectEndpointName("ed-fi"),
                 EndpointName: new CoreApiSchemaModel.EndpointName("students"),
@@ -2268,7 +2243,8 @@ public class ProfileWriteValidationMiddlewareTests
             };
 
             _nextCalled = false;
-            var middleware = CreateMiddleware(documentStoreRepository: documentStoreRepository);
+            _requestInfo.ScopedServiceProvider = BuildScopedServiceProvider(new DeepNestedRepository());
+            var middleware = CreateMiddleware();
 
             await middleware.Execute(
                 _requestInfo,
