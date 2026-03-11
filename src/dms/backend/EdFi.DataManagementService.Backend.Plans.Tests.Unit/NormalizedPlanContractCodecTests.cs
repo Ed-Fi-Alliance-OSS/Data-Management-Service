@@ -666,6 +666,26 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_fail_fast_when_descriptor_projection_result_shape_is_null()
+    {
+        var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
+        var descriptorPlan = encoded.DescriptorProjectionPlansInOrder[0];
+        var mutated = encoded with
+        {
+            DescriptorProjectionPlansInOrder = [descriptorPlan with { ResultShape = null! }],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
+
+        var exception = act.Should().Throw<ArgumentNullException>().Which;
+        exception
+            .ParamName.Should()
+            .Be(
+                $"{nameof(ResourceReadPlanDto.DescriptorProjectionPlansInOrder)}[0].{nameof(DescriptorProjectionPlanDto.ResultShape)}"
+            );
+    }
+
+    [Test]
     public void It_should_fail_fast_when_reference_identity_projection_binding_count_does_not_match_model()
     {
         var encoded = NormalizedPlanContractCodec.Encode(_readPlan);

@@ -18,3 +18,8 @@
 - Decision: enforce owning FK presence gate for every unified-alias reference logical field, including single-member groups; updated the key-unified valid fixture to gate both aliases on `School_DocumentId` so compile coverage matches the stricter contract. Resolver remains shared by compile + projection-contract validation.
 - Files: src/dms/backend/EdFi.DataManagementService.Backend.Plans/ReferenceIdentityProjectionLogicalFieldResolver.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReadPlanCompilerTests.cs; progress.txt; tasks.json
 - Notes: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter "FullyQualifiedName~Given_ReadPlanCompiler"` passed. Remaining task: descriptor projection `ResultShape` null decode guard.
+2026-03-11 DMS-1047 06-projection-plan-compilers.md
+- Completed: Plan Decode Validation
+- Decision: guard `DescriptorProjectionPlanDto.ResultShape` at normalized decode boundary with deterministic `ArgumentNullException` on the DTO path; keep non-null ordinal-shape failures in projection-contract validation so existing invalid-ordinal message stays unchanged.
+- Files: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodec.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodecTests.cs; progress.txt; tasks.json
+- Notes: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter "FullyQualifiedName~Given_NormalizedPlanContractCodec"` passed. All tasks complete.

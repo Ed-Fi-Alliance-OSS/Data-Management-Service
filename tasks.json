@@ -47,6 +47,6 @@
       "Re-run the existing descriptor projection decode tests to confirm valid plans still round-trip and ordinal-shape validation behavior is unchanged.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_NormalizedPlanContractCodec\"`"
     ],
-    "completed": false
+    "completed": true
   }
 ]

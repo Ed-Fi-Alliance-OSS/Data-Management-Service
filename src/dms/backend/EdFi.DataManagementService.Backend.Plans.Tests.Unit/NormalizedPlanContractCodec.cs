@@ -503,14 +503,23 @@ internal static class NormalizedPlanContractCodec
         {
             var planDto = dto.DescriptorProjectionPlansInOrder[planIndex];
             var planArgument = $"{nameof(ResourceReadPlanDto.DescriptorProjectionPlansInOrder)}[{planIndex}]";
+            var resultShapeDto = planDto.ResultShape;
+
+            if (resultShapeDto is null)
+            {
+                throw new ArgumentNullException(
+                    $"{planArgument}.{nameof(DescriptorProjectionPlanDto.ResultShape)}"
+                );
+            }
+
             var resultShape = new ExternalPlans.DescriptorProjectionResultShape(
                 DescriptorIdOrdinal: ValidateNonNegative(
-                    planDto.ResultShape.DescriptorIdOrdinal,
+                    resultShapeDto.DescriptorIdOrdinal,
                     $"{planArgument}.{nameof(DescriptorProjectionPlanDto.ResultShape)}.{nameof(DescriptorProjectionResultShapeDto.DescriptorIdOrdinal)}",
                     "descriptor result-shape descriptor-id ordinal"
                 ),
                 UriOrdinal: ValidateNonNegative(
-                    planDto.ResultShape.UriOrdinal,
+                    resultShapeDto.UriOrdinal,
                     $"{planArgument}.{nameof(DescriptorProjectionPlanDto.ResultShape)}.{nameof(DescriptorProjectionResultShapeDto.UriOrdinal)}",
                     "descriptor result-shape URI ordinal"
                 )
