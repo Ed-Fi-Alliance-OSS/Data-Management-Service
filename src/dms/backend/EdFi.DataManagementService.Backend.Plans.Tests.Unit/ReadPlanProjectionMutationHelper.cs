@@ -25,6 +25,25 @@ internal static class ReadPlanProjectionMutationHelper
         };
     }
 
+    public static RelationalResourceModel CreateModelWithDescriptorEdgeSourceDescriptorResource(
+        RelationalResourceModel model,
+        QualifiedResourceName descriptorResource,
+        int edgeSourceIndex = 0
+    )
+    {
+        var edgeSources = model.DescriptorEdgeSources.ToArray();
+
+        edgeSources[edgeSourceIndex] = edgeSources[edgeSourceIndex] with
+        {
+            DescriptorResource = descriptorResource,
+        };
+
+        return model with
+        {
+            DescriptorEdgeSources = [.. edgeSources],
+        };
+    }
+
     public static ResourceReadPlan CreateReadPlanWithReferenceIdentityComponent(
         ResourceReadPlan readPlan,
         bool isIdentityComponent
@@ -66,6 +85,29 @@ internal static class ReadPlanProjectionMutationHelper
                     BindingsInOrder = [.. bindings],
                 },
             ],
+        };
+    }
+
+    public static ResourceReadPlan CreateReadPlanWithDescriptorProjectionSourceDescriptorResource(
+        ResourceReadPlan readPlan,
+        QualifiedResourceName descriptorResource,
+        int sourceIndex,
+        int planIndex = 0
+    )
+    {
+        var descriptorProjectionPlans = readPlan.DescriptorProjectionPlansInOrder.ToArray();
+        var descriptorProjectionPlan = descriptorProjectionPlans[planIndex];
+        var sources = descriptorProjectionPlan.SourcesInOrder.ToArray();
+
+        sources[sourceIndex] = sources[sourceIndex] with { DescriptorResource = descriptorResource };
+        descriptorProjectionPlans[planIndex] = descriptorProjectionPlan with
+        {
+            SourcesInOrder = [.. sources],
+        };
+
+        return readPlan with
+        {
+            DescriptorProjectionPlansInOrder = [.. descriptorProjectionPlans],
         };
     }
 

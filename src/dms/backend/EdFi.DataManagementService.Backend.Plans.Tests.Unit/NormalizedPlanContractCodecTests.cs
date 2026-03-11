@@ -1098,6 +1098,36 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_fail_with_the_same_projection_contract_reason_as_direct_validation_when_descriptor_projection_source_target_resource_is_mismatched()
+    {
+        var mutatedReadPlan = CreateReadPlanWithDescriptorProjectionSourceDescriptorResource(
+            _readPlan,
+            new QualifiedResourceName("Ed-Fi", "ProgramTypeDescriptor"),
+            sourceIndex: 0
+        );
+        var expectedReason = GetProjectionValidationFailureReason(mutatedReadPlan);
+
+        var encoded = NormalizedPlanContractCodec.Encode(_readPlan);
+        var descriptorPlan = encoded.DescriptorProjectionPlansInOrder[0];
+        var sources = descriptorPlan.SourcesInOrder.ToArray();
+
+        sources[0] = sources[0] with
+        {
+            DescriptorResource = new QualifiedResourceNameDto("Ed-Fi", "ProgramTypeDescriptor"),
+        };
+
+        var mutated = encoded with
+        {
+            DescriptorProjectionPlansInOrder = [descriptorPlan with { SourcesInOrder = [.. sources] }],
+        };
+
+        var act = () => NormalizedPlanContractCodec.Decode(mutated, _model);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        GetDecodedProjectionValidationFailureReason(exception.Message).Should().Be(expectedReason);
+    }
+
+    [Test]
     public void It_should_fail_with_the_same_projection_contract_reason_as_direct_validation_when_reference_identity_projection_binding_resolves_to_zero_logical_fields()
     {
         var model = CreateModelWithEmptySchoolReferenceIdentityBindings();

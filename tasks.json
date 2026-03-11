@@ -27,6 +27,6 @@
       "Add a regression test that covers normalized decode or mapping-set lookup validation for the same mismatch, plus a key-unified descriptor case to confirm storage-column resolution still validates the correct target resource.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_ReadPlanCompiler|FullyQualifiedName~Given_NormalizedPlanContractCodec|FullyQualifiedName~Given_MappingSetLookupExtensions\"`"
     ],
-    "completed": false
+    "completed": true
   }
 ]

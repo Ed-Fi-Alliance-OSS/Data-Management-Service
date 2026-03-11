@@ -300,6 +300,14 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
                 $"Cannot compile read plan for '{tableModel.Table}': {reason}."
             )
         );
+        ReadPlanProjectionContractValidator.ValidateDescriptorEdgeSourceTargetResourceOrThrow(
+            tableModel.Table,
+            fkColumn,
+            edgeSource,
+            reason => new InvalidOperationException(
+                $"Cannot compile read plan for '{tableModel.Table}': {reason}."
+            )
+        );
     }
 
     /// <summary>

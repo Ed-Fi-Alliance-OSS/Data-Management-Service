@@ -1333,6 +1333,42 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_fail_fast_when_descriptor_edge_source_descriptor_resource_does_not_match_fk_column_target_resource()
+    {
+        var act = () =>
+            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+                CreateModelWithDescriptorEdgeSourceDescriptorResource(
+                    CreateProjectionMetadataResourceModel(),
+                    new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor")
+                )
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile read plan for 'edfi.StudentProjection': descriptor edge source '$.academicSubjectDescriptor' on table 'edfi.StudentProjection' FK column 'AcademicSubjectDescriptorId' targets 'Ed-Fi.GradeLevelDescriptor', but FK column DbColumnModel.TargetResource is 'Ed-Fi.AcademicSubjectDescriptor'."
+            );
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_key_unified_descriptor_edge_source_descriptor_resource_does_not_match_fk_column_target_resource()
+    {
+        var act = () =>
+            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+                CreateModelWithDescriptorEdgeSourceDescriptorResource(
+                    CreateKeyUnifiedDescriptorProjectionResourceModel(),
+                    new QualifiedResourceName("Ed-Fi", "ProgramTypeDescriptor")
+                )
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile read plan for 'edfi.Student': descriptor edge source '$.localSchoolYearTypeDescriptor' on table 'edfi.Student' FK column 'SchoolYearTypeDescriptorSecondary' targets 'Ed-Fi.ProgramTypeDescriptor', but FK column DbColumnModel.TargetResource is 'Ed-Fi.SchoolYearTypeDescriptor'."
+            );
+    }
+
+    [Test]
     public void It_should_fail_fast_when_descriptor_edge_source_fk_column_is_not_a_descriptor_fk()
     {
         var act = () =>

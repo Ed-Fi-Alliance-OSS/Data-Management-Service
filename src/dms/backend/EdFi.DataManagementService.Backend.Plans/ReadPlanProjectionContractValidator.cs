@@ -466,7 +466,7 @@ internal static class ReadPlanProjectionContractValidator
         );
         ValidateStoredColumnOrThrow(columnModel, contextDescription, createException);
         ValidateDocumentReferenceBindingPathOrThrow(table, columnModel, binding, createException);
-        ValidateReferenceTargetResourceOrThrow(
+        ValidateProjectionTargetResourceOrThrow(
             table,
             columnModel,
             binding.ReferenceObjectPath,
@@ -528,6 +528,23 @@ internal static class ReadPlanProjectionContractValidator
         );
     }
 
+    internal static void ValidateDescriptorEdgeSourceTargetResourceOrThrow(
+        DbTableName table,
+        DbColumnModel columnModel,
+        DescriptorEdgeSource edgeSource,
+        Func<string, Exception> createException
+    )
+    {
+        ValidateProjectionTargetResourceOrThrow(
+            table,
+            columnModel,
+            edgeSource.DescriptorValuePath,
+            edgeSource.DescriptorResource,
+            "descriptor edge source",
+            createException
+        );
+    }
+
     private static void ValidateReferenceProjectionBindingContractOrThrow(
         DbTableName table,
         ReferenceIdentityProjectionBinding binding,
@@ -554,7 +571,7 @@ internal static class ReadPlanProjectionContractValidator
         }
 
         ValidateDocumentReferenceFkColumnOrThrow(table, fkColumnModel, modelBinding, createException);
-        ValidateReferenceTargetResourceOrThrow(
+        ValidateProjectionTargetResourceOrThrow(
             table,
             fkColumnModel,
             binding.ReferenceObjectPath,
@@ -620,6 +637,14 @@ internal static class ReadPlanProjectionContractValidator
             source.Table,
             descriptorColumnModel,
             modelSource,
+            createException
+        );
+        ValidateProjectionTargetResourceOrThrow(
+            source.Table,
+            descriptorColumnModel,
+            source.DescriptorValuePath,
+            source.DescriptorResource,
+            "descriptor projection source",
             createException
         );
 
@@ -723,10 +748,10 @@ internal static class ReadPlanProjectionContractValidator
         throw createException($"{contextDescription} '{columnModel.ColumnName.Value}' is not stored");
     }
 
-    private static void ValidateReferenceTargetResourceOrThrow(
+    private static void ValidateProjectionTargetResourceOrThrow(
         DbTableName table,
         DbColumnModel columnModel,
-        JsonPathExpression referenceObjectPath,
+        JsonPathExpression projectionPath,
         QualifiedResourceName actualTargetResource,
         string bindingDescription,
         Func<string, Exception> createException
@@ -738,7 +763,7 @@ internal static class ReadPlanProjectionContractValidator
         }
 
         throw createException(
-            $"{bindingDescription} '{referenceObjectPath.Canonical}' on table '{table}' FK column '{columnModel.ColumnName.Value}' targets "
+            $"{bindingDescription} '{projectionPath.Canonical}' on table '{table}' FK column '{columnModel.ColumnName.Value}' targets "
                 + $"'{FormatResource(actualTargetResource)}', but FK column DbColumnModel.TargetResource is '{FormatOptionalResource(columnModel.TargetResource)}'"
         );
     }

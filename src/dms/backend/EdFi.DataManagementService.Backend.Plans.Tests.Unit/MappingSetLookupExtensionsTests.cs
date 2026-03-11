@@ -242,6 +242,29 @@ public class Given_MappingSetLookupExtensions
     }
 
     [Test]
+    public void It_should_throw_deterministic_error_when_cached_descriptor_projection_source_target_resource_does_not_match_fk_column_target_resource()
+    {
+        var readPlan = _mappingSet.ReadPlansByResource[_descriptorEdgeResource];
+        var invalidReadPlan =
+            ReadPlanProjectionMutationHelper.CreateReadPlanWithDescriptorProjectionSourceDescriptorResource(
+                readPlan,
+                new QualifiedResourceName("Ed-Fi", "ProgramTypeDescriptor"),
+                sourceIndex: 0
+            );
+        var mappingSet = ReplaceReadPlan(_mappingSet, _descriptorEdgeResource, invalidReadPlan);
+
+        var act = () => mappingSet.GetReadPlanOrThrow(_descriptorEdgeResource);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                $"Read plan lookup failed for resource '{FormatResource(_descriptorEdgeResource)}' in mapping set "
+                    + $"'{FormatMappingSetKey(mappingSet.Key)}': compiled relational-table read plan has invalid projection metadata. "
+                    + "descriptor projection source '$.academicSubjectDescriptor' on table 'edfi.StudentDescriptorEdge' FK column 'AcademicSubjectDescriptorId' targets 'Ed-Fi.ProgramTypeDescriptor', but FK column DbColumnModel.TargetResource is 'Ed-Fi.AcademicSubjectDescriptor'. This indicates an internal compilation/selection bug."
+            );
+    }
+
+    [Test]
     public void It_should_treat_missing_key_unification_relational_write_plan_as_internal_bug()
     {
         var act = () => _mappingSet.GetWritePlanOrThrow(_keyUnificationResource);
