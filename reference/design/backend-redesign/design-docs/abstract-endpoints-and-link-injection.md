@@ -26,6 +26,7 @@ This document is a design deep dive for adding abstract resource endpoints and l
 - [Implementation Design](#implementation-design)
 - [Extension Considerations](#extension-considerations)
 - [Risks / Open Questions](#risks--open-questions)
+- [Testing Strategy](#testing-strategy)
 - [Level of Effort](#level-of-effort)
 
 ---
@@ -45,7 +46,8 @@ This document is a design deep dive for adding abstract resource endpoints and l
 - Link enrichment for concrete references (e.g., `schoolReference`) — the design focuses on abstract type disambiguation only.
 - Links in streamed/CDC data — API-side concern only.
 - Write operations (POST/PUT/DELETE) on abstract endpoints.
-- Abstract endpoint discoverability in the base API discovery response.
+- Abstract endpoint discoverability in the base API discovery response (note: abstract endpoints *are* documented in the OpenAPI specification — see [OpenAPI Schema Generation](#5-openapi-schema-generation) — but are not listed in the base discovery endpoint).
+- ETag and conditional GET (`If-None-Match`) support on abstract endpoints — abstract endpoints are lookup/disambiguation tools, not resources that clients cache and poll for changes.
 - Profile filtering interaction with link injection — deferred until profiles affect reference identity fields.
 - OpenSearch support — OpenSearch is deprecated in DMS.
 
@@ -108,7 +110,7 @@ The endpoint is **read-only** — no POST, PUT, or DELETE operations. Consumers 
 
 GET-by-id is the **sole lookup mechanism** for EducationOrganization. There is no general-purpose list or pagination endpoint. The abstract endpoint exists to resolve a specific natural key to its concrete resource, not to provide a browsable collection.
 
-If no education organization with the given `educationOrganizationId` exists, the endpoint returns 404. Standard DMS error handling applies (404 for not found, 403 for unauthorized). Existing DMS authorization filters the result by the client's concrete-type grants — a client authorized only for Schools will receive 403 if the matched resource is a LocalEducationAgency.
+If the `educationOrganizationId` path parameter is not a valid integer, the endpoint returns 400 with a message indicating the expected type. If no education organization with the given `educationOrganizationId` exists, the endpoint returns 404. Standard DMS error handling applies (404 for not found, 403 for unauthorized). Existing DMS authorization filters the result by the client's concrete-type grants — a client authorized only for Schools will receive 403 if the matched resource is a LocalEducationAgency.
 
 ### GeneralStudentProgramAssociation
 
@@ -125,6 +127,8 @@ Links pointing to GSPA resources use query-parameter-style hrefs: `/ed-fi/genera
 Abstract endpoint responses use a flat JSON format with a `_type` discriminator field at the top level, alongside the resource fields. The `_type` field contains the simple resource name of the concrete subclass (e.g., `"School"`, `"StudentArtProgramAssociation"`), not the fully qualified internal discriminator format (e.g., `"Ed-Fi:School"`). The backend maps from internal format to consumer-facing format by stripping the `ProjectName:` prefix. Simple resource names are assumed unique across projects for a given abstract type — if two extension projects register concrete subclasses with the same `ResourceName` under the same abstract type, the implementation fails fast at startup (see R4 in Risks).
 
 The response body contains the **full concrete resource** as stored — all fields of the concrete subclass, not just the fields defined on the abstract superclass. The discriminator (`_type`) identifies the concrete type.
+
+**`_type` property ordering**: The `_type` field is inserted as the **first property** of the response JSON object. While JSON objects are formally unordered, many consumers and code generators for discriminated unions expect the discriminator to appear first. The implementation uses `JsonObject.Insert(0, "_type", ...)` to guarantee first-position insertion. Note: `JsonObject.Insert` was introduced in .NET 10; if targeting an earlier runtime, reconstruct the `JsonObject` with `_type` as the first property.
 
 **EducationOrganization single-item response example:**
 
@@ -151,7 +155,7 @@ The response body contains the **full concrete resource** as stored — all fiel
 }
 ```
 
-List responses (applicable only to GSPA, since EducationOrganization has no list endpoint) use the same per-item format: a standard JSON array of objects, each with its own `_type` discriminator. Items are not grouped by concrete type.
+Both abstract endpoints return a single item, not a list. EducationOrganization requires the natural key as a path parameter; GSPA requires all six identity fields as query parameters. In both cases, the identity is fully specified and matches at most one resource. There is no paginated list endpoint for either abstract type.
 
 ---
 
@@ -212,14 +216,14 @@ For GeneralStudentProgramAssociation references, the identity is a 6-field compo
   "educationOrganizationId": 255901,
   "beginDate": "2023-08-15",
   "link": {
-    "href": "/ed-fi/generalStudentProgramAssociations?studentUniqueId=604822&programName=Art&programTypeDescriptor=uri://ed-fi.org/ProgramTypeDescriptor%23Art&programEducationOrganizationId=255901&educationOrganizationId=255901&beginDate=2023-08-15"
+    "href": "/ed-fi/generalStudentProgramAssociations?studentUniqueId=604822&programName=Art&programTypeDescriptor=uri%3A%2F%2Fed-fi.org%2FProgramTypeDescriptor%23Art&programEducationOrganizationId=255901&educationOrganizationId=255901&beginDate=2023-08-15"
   }
 }
 ```
 
 Construction rule: `/{namespace}/{abstractEndpointPath}?{key1}={value1}&{key2}={value2}&...`
 
-All identity fields of the abstract type are included as query parameters. Values are URL-encoded where necessary (e.g., `#` becomes `%23`). Parameter order follows the canonical identity field order defined in the schema.
+All identity fields of the abstract type are included as query parameters. Values are URL-encoded using `Uri.EscapeDataString()`, which encodes all characters except unreserved ones (e.g., `://` becomes `%3A%2F%2F`, `#` becomes `%23`). Parameter order in the constructed href follows the canonical identity field order defined in the schema for deterministic href generation. The abstract endpoint itself accepts query parameters in any order — the canonical ordering applies only to outbound href construction.
 
 ### Zero Performance Overhead (Link Injection)
 
@@ -252,7 +256,7 @@ This section describes the component-level implementation targeting the planned 
 
 **Location**: New class in `src/dms/core/EdFi.DataManagementService.Core/Handler/`
 
-A new handler class implements `IPipelineStep` following the same pattern as `GetByIdHandler`. This handler is the terminal step in a new abstract-resource GET pipeline defined in `ApiService`. It accepts abstract resource GET requests and delegates to the abstract resource repository (component 2) for backend lookup.
+A new handler class implements `IPipelineStep` following the same pattern as `GetByIdHandler`. This handler is the terminal step in a new abstract-resource GET pipeline defined in `ApiService`. It accepts abstract resource GET requests and delegates to the [Abstract Resource Repository](#2-abstract-resource-repository) for backend lookup.
 
 #### C# shape: AbstractGetHandler
 
@@ -317,7 +321,7 @@ internal class AbstractGetHandler(
 
 For EducationOrganization requests, the handler extracts the natural key value from the path parameter and passes it to the repository as a single-field lookup. For GeneralStudentProgramAssociation requests, the handler extracts all six identity field values from query parameters and passes them as a composite-key lookup. The handler validates that all required identity fields are present — for GSPA, if any of the six fields are missing, it returns 400 with a message listing the missing required parameters.
 
-The handler maps the repository result to the appropriate `FrontendResponse`: 200 with the concrete document body (including the `_type` discriminator injected at the top level) on success, 404 when no matching resource exists, 403 when authorization denies access, 400 when required identity params are missing, and 500 on unexpected failures.
+The handler maps the repository result to the appropriate `FrontendResponse`: 200 with the concrete document body (including the `_type` discriminator injected at the top level via the `InjectType` helper method, which uses `JsonObject.Insert(0, "_type", ...)` as described in the response format section) on success, 404 when no matching resource exists, 403 when authorization denies access, 400 when required identity params are missing or malformed (e.g., non-integer `educationOrganizationId`), and 500 on unexpected failures.
 
 #### Pipeline steps
 
@@ -330,13 +334,13 @@ The abstract GET pipeline in `ApiService` follows the established pattern. The s
 5. `ResolveDmsInstanceMiddleware`
 6. `ApiSchemaValidationMiddleware`
 7. `ProvideApiSchemaMiddleware`
-8. `ParsePathMiddleware` (or variant for abstract routes — see routing, component 6)
+8. `ParseAbstractPathMiddleware` (new — see [Routing](#6-routing))
 9. `ValidateEndpointMiddleware` (adapted for abstract endpoints)
 10. `BuildResourceInfoMiddleware`
 11. `ResourceActionAuthorizationMiddleware`
 12. `ProvideAuthorizationFiltersMiddleware`
 13. `ProvideAuthorizationSecurableInfoMiddleware`
-14. **Link injection middleware** (component 3)
+14. **[Link Injection Middleware](#3-link-injection-middleware)** — registered here but post-processes *after* step 15 due to `await next()` recursion
 15. `ProfileFilteringMiddleware`
 16. **AbstractGetHandler** (terminal step)
 
@@ -378,11 +382,13 @@ public async Task<IFrontendResponse> Get(FrontendRequest frontendRequest)
 
 The abstract path check must come BEFORE the UUID check because numeric natural key values (e.g., `255901`) do not match the UUID regex, but the path structure must still be discriminated before falling through to the query pipeline.
 
+Note: `_abstractTypeMetadata` and `_abstractGetSteps` are new fields on `ApiService`, injected via constructor DI following the existing pattern for `_getByIdSteps` and `_querySteps`.
+
 ### 2. Abstract Resource Repository
 
 **Location**: New interface in `src/dms/core/EdFi.DataManagementService.Core.External/Interface/`; PostgreSQL implementation in `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/`; SQL Server implementation in `src/dms/backend/EdFi.DataManagementService.Backend.Mssql/` (when available).
 
-#### C# shapes
+#### C# shapes: Repository
 
 **Request contract** (`IAbstractGetRequest`):
 
@@ -474,7 +480,7 @@ INNER JOIN dms.DocumentCache dc ON dc.DocumentId = eid.DocumentId
 WHERE eid.EducationOrganizationId = @educationOrganizationId;
 ```
 
-The `Discriminator` column provides the concrete type in `ProjectName:ResourceName` format (e.g., `Ed-Fi:School`). The implementation maps it to the simple resource name (e.g., `School`) by stripping the `ProjectName:` prefix. The query is identical across engines — only type annotations differ (PostgreSQL uses `$1` parameter placeholders with typed parameters; SQL Server uses `@param` named parameters).
+The `Discriminator` column provides the concrete type in `ProjectName:ResourceName` format (e.g., `Ed-Fi:School`). The implementation maps it to the simple resource name (e.g., `School`) by splitting on the first `:` character (`IndexOf(':')` + substring) — this handles project names that might themselves contain special characters. The query is identical across engines — Npgsql and SQL Server both accept `@param` named parameters in practice, so no engine-specific parameter syntax is needed.
 
 **GeneralStudentProgramAssociation query** — composite identity lookup:
 
@@ -506,20 +512,32 @@ WHERE ReferentialId = @descriptorReferentialId;
 
 Where `@descriptorReferentialId` is the UUIDv5 hash of the *descriptor's own* `(ProjectName, ResourceName, DocumentIdentity)` — i.e., `("Ed-Fi", "ProgramTypeDescriptor", ...)`, not the GSPA's project/resource. This adds one database lookup specific to GSPA queries.
 
+**Important**: All query parameters (both EducationOrganization and GSPA) must always be passed as parameterized query values — never string-interpolated into SQL. This is especially critical for GSPA, where descriptor URIs contain special characters (e.g., `://`, `#`).
+
 #### DocumentCache miss fallback
 
 `dms.DocumentCache` is an optional, eventually consistent projection — the abstract endpoint must handle cache misses gracefully. When `DocumentCache` is not available (row missing or feature disabled), the repository falls back to reconstitution from relational per-resource tables via the standard reconstitution pipeline (see [flattening-reconstitution.md](flattening-reconstitution.md)).
 
 The fallback path:
+
 1. Use `Discriminator` from the identity table to determine the concrete resource type (e.g., `Ed-Fi:School` → `edfi.School` root table).
-2. Invoke the standard reconstitution pipeline for that resource type using the `DocumentId`.
-3. The reconstitution pipeline reads root + child tables in dependency order, assembles JSON via `Utf8JsonWriter` using the compiled mapping set plans for that resource (see [compiled-mapping-set.md](compiled-mapping-set.md) and [flattening-reconstitution.md](flattening-reconstitution.md)).
+2. Look up the compiled read plan for the concrete resource type (same plan lookup used by standard GET-by-id) using `(ProjectName, ResourceName)` derived from the discriminator.
+3. Invoke the standard reconstitution pipeline for that resource type using the `DocumentId` and compiled read plan.
+4. The reconstitution pipeline reads root + child tables in dependency order, assembles JSON via `Utf8JsonWriter` using the compiled mapping set plans for that resource (see [compiled-mapping-set.md](compiled-mapping-set.md) and [flattening-reconstitution.md](flattening-reconstitution.md)).
 
 The identity table is preferred over the union view for single-row lookups because it is a physical table with indexes on the identity columns.
 
-#### Authorization
+#### Authorization model for abstract endpoints
 
-Post-query authorization, matching the `GetByIdHandler` pattern. The repository retrieves the document and its `DocumentSecurityElements`, then invokes `ResourceAuthorizationHandler.Authorize()` within the repository method. If authorization fails, the repository returns `AbstractGetFailureNotAuthorized`. This ensures the concrete type discriminator is available for authorization decisions — a client authorized only for Schools receives 403 if the matched resource is a LocalEducationAgency.
+Abstract types do not have their own authorization configuration — authorization strategies are defined on concrete resource types only. This creates a challenge: `BuildResourceInfoMiddleware` normally populates `ResourceInfo` from the concrete resource schema, but for abstract endpoint requests the concrete type is unknown until the database query returns the `Discriminator`.
+
+The solution uses **two-phase authorization**:
+
+1. **Pre-query phase** (pipeline middleware): `BuildResourceInfoMiddleware` populates `ResourceInfo` with the abstract type's project and resource name. `ResourceActionAuthorizationMiddleware` and `ProvideAuthorizationFiltersMiddleware` run but use the abstract type's metadata only to confirm the client has *any* authorization grants within the abstract type's namespace. This is a coarse-grained check — it does not evaluate concrete-type-specific strategies. If the client has zero grants for any concrete subclass of this abstract type, the request is rejected early with 403.
+
+2. **Post-query phase** (repository): After the identity table query returns the `Discriminator` (e.g., `Ed-Fi:School`), the repository resolves the concrete resource's authorization strategies and security elements. It invokes `ResourceAuthorizationHandler.Authorize()` against the concrete type's configuration. If authorization fails (e.g., client is authorized for Schools but the matched resource is a LocalEducationAgency), the repository returns `AbstractGetFailureNotAuthorized`.
+
+This matches the `GetByIdHandler` pattern for post-query authorization while adding the pre-query coarse filter to avoid unnecessary database lookups for fully unauthorized clients.
 
 ### 3. Link Injection Middleware
 
@@ -586,7 +604,7 @@ For each `AbstractReferenceLocation` returned by `GetAbstractReferenceLocations(
 
 Example walk for a resource with an abstract reference nested in an array:
 
-```
+```text
 Input path: ["staffEducationOrganizationAssignmentAssociations", "[*]", "educationOrganizationReference"]
 
 Document:
@@ -623,7 +641,7 @@ Non-200 responses pass through unmodified.
 
 **Location**: Enhancement to existing schema infrastructure in `src/dms/core/EdFi.DataManagementService.Core/ApiSchema/`
 
-#### C# shapes
+#### C# shapes: Metadata
 
 **Interface**:
 
@@ -688,6 +706,7 @@ Built once at startup from `IEffectiveApiSchemaProvider.Documents`, registered a
 **Step 1 — Build abstract type set**:
 
 Iterate `ProjectSchema.AbstractResources` across all projects. For each abstract resource:
+
 - Record `(ProjectName, ResourceName)` as an abstract type key.
 - Compute endpoint path: `/{ProjectEndpointName}/{pluralizedResourceName}` using `ProjectSchema.GetEndpointNameFromResourceName()` or equivalent.
 - Extract identity field names from `IdentityJsonPaths` (strip leading `$.` and extract the terminal field name).
@@ -697,9 +716,12 @@ Iterate `ProjectSchema.AbstractResources` across all projects. For each abstract
 
 Collect all computed endpoint paths into a `HashSet<string>` for O(1) `IsAbstractEndpointPath()` checks. The stored paths use the prefix-stripped form (e.g., `/ed-fi/educationOrganizations`) since `frontendRequest.Path` arrives with the `/data/` prefix already stripped.
 
+`IsAbstractEndpointPath(string path)` checks the path against the abstract endpoint HashSet using a two-step strategy: (1) try the full path (handles GSPA query-parameter-style paths with no trailing segment), then (2) if no match, extract the base path up to the last `/` and check again (handles EducationOrganization path-parameter-style paths like `/ed-fi/educationOrganizations/255901` → `/ed-fi/educationOrganizations`). This ordering ensures that a concrete resource endpoint whose pluralized name happens to match an abstract endpoint base path is not misrouted — the full path is checked first, and the stripped form only matches if it is a registered abstract endpoint. Conflict with concrete resource endpoints is structurally prevented because abstract resource names are defined in the Ed-Fi data standard and do not collide with concrete resource plural names.
+
 **Step 3 — Build per-resource reference locations**:
 
 For each concrete resource in the schema, iterate its `ResourceSchema.DocumentPaths`. For each `DocumentPath` where `IsReference == true && !IsDescriptor`:
+
 - Check if `(DocumentPath.ProjectName, DocumentPath.ResourceName)` is in the abstract type set.
 - If yes, extract the JSON path prefix from `DocumentPath.ReferenceJsonPathsElements` (the path leading to the reference object, including `[*]` wildcards from array nesting).
 - Record an `AbstractReferenceLocation` with the path segments, abstract endpoint path, identity field names, and single-key flag.
@@ -718,6 +740,7 @@ For each abstract type, collect all concrete subclasses by iterating all `Resour
 ```
 
 Construction happens after the effective API schema is loaded. Options:
+
 - **Startup task**: A new `IDmsStartupTask` (e.g., `BuildAbstractTypeMetadataTask`) that runs after `LoadAndBuildEffectiveSchemaTask`.
 - **Lazy initialization**: `AbstractTypeMetadata` constructor accepts `IEffectiveApiSchemaProvider` and builds on first access via `Lazy<T>`.
 
@@ -747,6 +770,60 @@ Additionally, existing concrete resource reference schemas that target abstract 
 
 Only abstract reference schemas (identified via `IAbstractTypeMetadata`) receive the `link` property. Concrete reference schemas (e.g., `schoolReference`) remain unchanged.
 
+#### Abstract endpoint response schema example (EducationOrganization)
+
+The response schema uses `oneOf` to enumerate concrete subtypes, each extended with the `_type` discriminator:
+
+```yaml
+/ed-fi/educationOrganizations/{educationOrganizationId}:
+  get:
+    summary: Retrieves a specific education organization by its natural key.
+    parameters:
+      - name: educationOrganizationId
+        in: path
+        required: true
+        schema:
+          type: integer
+    responses:
+      "200":
+        description: The requested resource.
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: "#/components/schemas/edFi_school_abstract"
+                - $ref: "#/components/schemas/edFi_localEducationAgency_abstract"
+                - $ref: "#/components/schemas/edFi_stateEducationAgency_abstract"
+                # ... remaining concrete subtypes
+              discriminator:
+                propertyName: _type
+                mapping:
+                  School: "#/components/schemas/edFi_school_abstract"
+                  LocalEducationAgency: "#/components/schemas/edFi_localEducationAgency_abstract"
+                  StateEducationAgency: "#/components/schemas/edFi_stateEducationAgency_abstract"
+      "404":
+        description: Not found.
+      "403":
+        description: Not authorized.
+```
+
+Each `_abstract` schema wraps the existing concrete resource schema with the added `_type` property:
+
+```yaml
+edFi_school_abstract:
+  allOf:
+    - type: object
+      required: [_type]
+      properties:
+        _type:
+          type: string
+          enum: [School]
+          readOnly: true
+    - $ref: "#/components/schemas/edFi_school"
+```
+
+This gives consumers full schema validation including the discriminator, and tools like code generators can produce typed union representations from the `oneOf` + `discriminator`.
+
 ### 6. Routing
 
 **Location**: Existing routing infrastructure in `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Modules/` and `src/dms/core/EdFi.DataManagementService.Core/ApiService.cs`
@@ -755,7 +832,7 @@ Abstract endpoint routes coexist with the existing catch-all `{**dmsPath}` route
 
 **Preferred approach: schema-driven discrimination within the existing catch-all**. The catch-all route continues to capture all requests. `ApiService.Get()` inspects the parsed path against the precomputed set of abstract resource endpoint paths from `IAbstractTypeMetadata.IsAbstractEndpointPath()`. If the path matches an abstract endpoint, the request is dispatched to the `_abstractGetSteps` pipeline; otherwise, it proceeds through the existing concrete GetById/Query pipelines. This approach is consistent with the metadata-driven routing philosophy of DMS and avoids route-priority conflicts.
 
-**Path parsing for abstract endpoints**: `ParsePathMiddleware` (or a variant) must extract the project endpoint name, abstract resource endpoint name, and natural key value(s) from the path. For EducationOrganization, the path parameter is the trailing segment after the endpoint name (e.g., `/ed-fi/educationOrganizations/255901` → `educationOrganizationId = 255901`). For GSPA, identity values come from query parameters.
+**Path parsing for abstract endpoints**: A new `ParseAbstractPathMiddleware` class (not modifications to the existing `ParsePathMiddleware`) extracts the project endpoint name, abstract resource endpoint name, and natural key value(s) from the path. The existing `ParsePathMiddleware` is tightly coupled to concrete resource schema lookups for populating `ResourceInfo` — adapting it for abstract types would require invasive conditional branching. A separate middleware keeps concerns clean and is used only in the `_abstractGetSteps` pipeline. For EducationOrganization, the path parameter is the trailing segment after the endpoint name (e.g., `/ed-fi/educationOrganizations/255901` → `educationOrganizationId = 255901`). For GSPA, identity values come from query parameters.
 
 Route registration is driven by the abstract resource definitions in `ProjectSchema.AbstractResources` at startup — if the effective schema includes additional abstract resources from extensions, they are automatically registered.
 
@@ -826,6 +903,32 @@ Link injection walks the JSON response body for each abstract reference location
 ### R8: Compiled plan integration
 
 Abstract endpoint queries are simple single-row lookups (identity table + DocumentCache join) that do not benefit from the full compiled plan machinery used by the reconstitution pipeline. However, the reconstitution fallback path (DocumentCache miss) does use compiled plans. The abstract resource repository should obtain the compiled plan for the concrete resource type (determined by the `Discriminator`) when falling back to reconstitution. This is the same plan lookup used by standard GET-by-id.
+
+---
+
+## Testing Strategy
+
+Testing follows the project's existing conventions: NUnit with FluentAssertions for assertions and FakeItEasy for mocking. Test fixture classes use `Given_` prefix, `Setup` method for arrange+act, and test methods use `It_` prefix.
+
+### Unit tests
+
+- **AbstractTypeMetadata construction**: Verify correct discovery of abstract types, reference locations, endpoint paths, and identity fields from schema metadata. Verify discriminator collision detection fails fast with a clear error message.
+- **Link injection walk algorithm**: Cover nested arrays (`[*]` wildcards), missing reference fields (silent skip), mixed abstract and concrete references on the same resource, empty arrays, and null nodes.
+- **Href construction**: Single-key path-style (EducationOrganization), composite-key query-parameter-style (GeneralStudentProgramAssociation), URL encoding of special characters in descriptor URIs.
+- **AbstractGetHandler**: Verify correct mapping of repository results to FrontendResponse status codes (200, 400, 403, 404, 500). Verify 400 for missing GSPA identity fields and malformed EducationOrganization path parameter.
+- **IsAbstractEndpointPath**: Verify two-step matching (full path first, then stripped), non-matching concrete paths, and edge cases.
+
+### Integration tests
+
+- **PostgreSQL abstract resource repository**: EducationOrganization single-key lookup, GSPA composite-key lookup with descriptor resolution, DocumentCache hit and miss (reconstitution fallback), not-found cases, authorization filtering (concrete-type grants).
+- **SQL Server abstract resource repository**: Same test matrix as PostgreSQL (when SQL Server backend is available).
+
+### E2E tests
+
+- **Full abstract endpoint request/response cycle**: POST a concrete resource (e.g., School), GET via the abstract endpoint (`/ed-fi/educationOrganizations/{id}`), verify `_type` discriminator and full concrete resource body in response.
+- **Link injection in concrete GET responses**: POST resources with abstract references, GET the referencing resource, verify `link` objects are present in abstract reference elements with correct hrefs.
+- **Authorization**: Verify 403 when client lacks authorization for the matched concrete type.
+- **Profile filtering interaction**: Verify link injection operates correctly on profile-filtered responses.
 
 ---
 
