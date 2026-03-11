@@ -28,21 +28,13 @@ internal sealed class FileStartupStatusSignal(
     private static readonly JsonSerializerOptions SerializerOptions = new() { WriteIndented = true };
 
     public FileStartupStatusSignal(IConfiguration configuration, ILogger<FileStartupStatusSignal> logger)
-        : this(
-            ResolveFilePath(configuration.GetValue<string>("AppSettings:StartupStatusFilePath")),
-            logger,
-            null
-        ) { }
+        : this(GetConfiguredFilePath(configuration), logger, null) { }
 
     public FileStartupStatusSignal(string? configuredFilePath)
-        : this(ResolveFilePath(configuredFilePath), NullLogger<FileStartupStatusSignal>.Instance, null) { }
+        : this(ResolveFilePath(configuredFilePath), GetBootstrapLogger(), null) { }
 
     internal FileStartupStatusSignal(string? configuredFilePath, TextWriter bootstrapDiagnosticWriter)
-        : this(
-            ResolveFilePath(configuredFilePath),
-            NullLogger<FileStartupStatusSignal>.Instance,
-            bootstrapDiagnosticWriter
-        ) { }
+        : this(ResolveFilePath(configuredFilePath), GetBootstrapLogger(), bootstrapDiagnosticWriter) { }
 
     private readonly string _filePath = filePath;
     private readonly ILogger<FileStartupStatusSignal> _logger = logger;
@@ -84,6 +76,12 @@ internal sealed class FileStartupStatusSignal(
         string.IsNullOrWhiteSpace(configuredFilePath)
             ? Path.Combine(Path.GetTempPath(), DefaultFileName)
             : configuredFilePath;
+
+    private static string GetConfiguredFilePath(IConfiguration configuration) =>
+        ResolveFilePath(configuration.GetValue<string>("AppSettings:StartupStatusFilePath"));
+
+    private static ILogger<FileStartupStatusSignal> GetBootstrapLogger() =>
+        NullLogger<FileStartupStatusSignal>.Instance;
 
     private void Write(StartupStatusDocument startupStatus)
     {
