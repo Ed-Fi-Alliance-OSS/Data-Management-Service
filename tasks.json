@@ -16,7 +16,7 @@
       "Confirm `eng/docker-compose/.env.e2e` and `eng/docker-compose/.env.example` both contain `DMS_VALIDATE_PROVISIONED_MAPPINGS_ON_STARTUP` and `DMS_STARTUP_STATUS_FILE_PATH` with the intended default values.",
       "Run: `rg -n \"DMS_VALIDATE_PROVISIONED_MAPPINGS_ON_STARTUP|DMS_STARTUP_STATUS_FILE_PATH\" eng/docker-compose/.env.e2e eng/docker-compose/.env.example eng/docker-compose/local-dms.yml eng/docker-compose/published-dms.yml`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Documentation",

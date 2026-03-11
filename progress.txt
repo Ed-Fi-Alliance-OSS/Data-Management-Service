@@ -18,3 +18,10 @@ Decisions: treat as closeout/verification task because prior iteration already r
 Files changed: tasks.json; progress.txt
 Feedback loops: dotnet build --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/EdFi.DataManagementService.Backend.RelationalModel.csproj; dotnet build --no-restore ./src/dms/backend/EdFi.DataManagementService.Old.Postgresql/EdFi.DataManagementService.Old.Postgresql.csproj
 Notes next: remaining incomplete work is config/docs/tests polish; reassess task priority from current backlog, not prior order.
+
+2026-03-11
+Task complete: Configuration - sync Docker env templates for startup validation/status settings. Story: reference/design/backend-redesign/epics/15-plan-compilation/06-projection-plan-compilers.md
+Decisions: use compose defaults as template values; close wider env-template drift required by acceptance so every var referenced by local-dms/published-dms is declared in both templates; keep route qualifiers explicitly blank instead of commented-out to satisfy parity.
+Files changed: eng/docker-compose/.env.e2e; eng/docker-compose/.env.example; tasks.json; progress.txt
+Feedback loops: rg -n "DMS_VALIDATE_PROVISIONED_MAPPINGS_ON_STARTUP|DMS_STARTUP_STATUS_FILE_PATH" eng/docker-compose/.env.e2e eng/docker-compose/.env.example eng/docker-compose/local-dms.yml eng/docker-compose/published-dms.yml; bash -lc 'refs=$(perl -ne '\''while(/\$\{([A-Z0-9_]+)/g){print "$1\n"}'\'' eng/docker-compose/local-dms.yml eng/docker-compose/published-dms.yml | sort -u); for env in eng/docker-compose/.env.e2e eng/docker-compose/.env.example; do echo "$env"; missing=0; while IFS= read -r var; do [ -z "$var" ] && continue; if ! grep -q "^${var}=" "$env"; then echo "missing:$var"; missing=1; fi; done <<< "$refs"; if [ "$missing" -eq 0 ]; then echo "missing:none"; fi; done'
+Notes next: next highest-value remaining work is likely mismatch-path test coverage or startup-status doc/testability cleanup.
