@@ -83,6 +83,7 @@ internal sealed class StartupPhaseExecutor(
         catch (Exception ex)
         {
             HandleFatalFailure(phase, failureSummary, exitCode, ex);
+            // Production exit handling terminates the process before control returns; tests use the rethrow to assert fatal-path behavior.
             throw;
         }
     }

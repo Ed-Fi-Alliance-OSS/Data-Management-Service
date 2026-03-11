@@ -32,3 +32,10 @@ Decisions: add direct unit test against PostgresqlRuntimeMappingSetCompiler in e
 Files changed: src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Startup/PostgresqlRuntimeMappingInitializationTests.cs; tasks.json; progress.txt
 Feedback loops: dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Startup/PostgresqlRuntimeMappingInitializationTests.cs; dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter "PostgresqlRuntimeMappingInitializationTests|PostgresqlRuntimeMappingSetCompiler"
 Notes next: remaining backlog is Documentation and Testability; both lower priority than completed coverage gap.
+
+2026-03-11
+Task complete: Testability - document fatal startup rethrow. Story: reference/design/backend-redesign/epics/15-plan-compilation/06-projection-plan-compilers.md
+Decisions: keep runtime behavior unchanged; add comment at rethrow site because production IStartupProcessExit terminates before control returns while unit tests still need the exception to escape for assertions.
+Files changed: src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Infrastructure/StartupPhaseExecutor.cs; tasks.json; progress.txt
+Feedback loops: dotnet csharpier format src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Infrastructure/StartupPhaseExecutor.cs; dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj --filter StartupStatusTests
+Notes next: only Documentation task remains in tasks.json.
