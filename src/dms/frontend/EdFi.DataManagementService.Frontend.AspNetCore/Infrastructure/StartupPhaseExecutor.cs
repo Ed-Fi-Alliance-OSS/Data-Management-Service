@@ -53,6 +53,11 @@ internal sealed class StartupPhaseExecutor(
         _startupStatusSignal.WriteCompleted(phase, summary);
     }
 
+    public void WriteFailed(string phase, string summary, Exception exception)
+    {
+        _startupStatusSignal.WriteFailed(phase, summary, exception);
+    }
+
     public async Task RunFatalAsync(
         string phase,
         string startingSummary,

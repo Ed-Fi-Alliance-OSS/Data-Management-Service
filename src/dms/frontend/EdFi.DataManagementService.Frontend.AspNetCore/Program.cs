@@ -144,7 +144,9 @@ if (useReverseProxyHeaders)
 
 app.UseMiddleware<LoggingMiddleware>();
 
-if (!ReportInvalidConfiguration(app))
+var invalidConfigurationException = ReportInvalidConfiguration(app);
+
+if (invalidConfigurationException is null)
 {
     // Initialize DMS instances first to ensure connection strings are available
     await startupPhaseExecutor.RunFatalAsync(
@@ -236,9 +238,10 @@ if (!ReportInvalidConfiguration(app))
 }
 else
 {
-    startupPhaseExecutor.WriteCompleted(
+    startupPhaseExecutor.WriteFailed(
         DmsStartupPhases.ConfigureEndpoints,
-        "Configuration validation failed; requests are being short-circuited by invalid-configuration middleware."
+        "Configuration validation failed; requests are being short-circuited by invalid-configuration middleware.",
+        invalidConfigurationException
     );
 }
 
@@ -248,7 +251,7 @@ await app.RunAsync();
 /// Triggers configuration validation. If configuration is invalid, injects a short-circuit middleware to report.
 /// Returns true if the middleware was injected.
 /// </summary>
-bool ReportInvalidConfiguration(WebApplication app)
+OptionsValidationException? ReportInvalidConfiguration(WebApplication app)
 {
     try
     {
@@ -259,9 +262,9 @@ bool ReportInvalidConfiguration(WebApplication app)
     catch (OptionsValidationException ex)
     {
         app.UseMiddleware<ReportInvalidConfigurationMiddleware>(ex.Failures);
-        return true;
+        return ex;
     }
-    return false;
+    return null;
 }
 
 void InitializeDatabase(WebApplication app)
