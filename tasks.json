@@ -1,0 +1,49 @@
+[
+  {
+    "category": "Startup Configuration",
+    "description": "Add a dedicated startup-only boolean setting for PostgreSQL runtime mapping validation `ValidateProvisionedMappingsOnStartup` under `AppSettings` and bind it from `AppSettings__ValidateProvisionedMappingsOnStartup`. Acceptance: the setting defaults to `false` for the temporary rollout so unprovisioned Docker-based startup paths continue to work; `UseRelationalBackend` keeps its existing request-pipeline meaning; the setting is available through normal options binding to the startup services without ad-hoc environment reads; configuration binding and validation continue to pass in unit tests.",
+    "steps-to-verify": [
+      "Add or update unit tests that bind `AppSettings` with and without `ValidateProvisionedMappingsOnStartup` and assert the default and explicit override behavior.",
+      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Backend Mapping Startup",
+    "description": "Update `PostgresqlBackendMappingInitializer` so it always calls `PostgresqlRuntimeMappingSetAccessor.GetCurrentAsync()` to compile and cache the current mapping set, but conditionally skips `PostgresqlRuntimeInstanceMappingValidator.ValidateLoadedInstancesAsync()` when the new startup-only flag `ValidateProvisionedMappingsOnStartup` under `AppSettings` is `false`. Acceptance: with the default flag value disabled, `InitializeBackendMappings` no longer fails solely because `dms.\"EffectiveSchema\"` or related provisioning metadata tables are missing; with the flag enabled, the current validation path and failure messages remain unchanged; the skip emits a warning log that makes the temporary bypass obvious in startup diagnostics.",
+    "steps-to-verify": [
+      "Add or extend unit tests in the PostgreSQL runtime mapping startup test suite to cover both enabled and disabled startup-validation paths, including proof that compilation still occurs when validation is skipped.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter PostgresqlRuntimeMappingInitializationTests`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "CI and Docker Wiring",
+    "description": "Plumb `AppSettings__ValidateProvisionedMappingsOnStartup` through the DMS docker-compose environment and set the temporary default to `false` anywhere `start-local-dms.ps1` is used, including the OpenAPI-spec workflow and both Docker-backed E2E bootstrap paths. Acceptance: the DMS container can reach `Ready` and serve `/metadata/specifications/resources-spec.json` against an unprovisioned database; standard DMS E2E and instance-management E2E environment setup no longer fail during startup for missing `dms.EffectiveSchema`; the override is centralized in the shared startup configuration rather than being hard-coded only in one workflow step; startup diagnostics still record the warning when the bypass is active; an explicit opt-in path remains available for future provisioning-ready environments.",
+    "steps-to-verify": [
+      "Run a local equivalent of the workflow with the startup-validation flag disabled and verify: `curl -f http://localhost:8080/metadata/specifications/resources-spec.json` returns HTTP 200.",
+      "Run the DMS E2E environment bootstrap and verify startup succeeds without `dms.\"EffectiveSchema\"` errors: `pwsh ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1`.",
+      "Run the instance-management E2E environment bootstrap and verify startup succeeds without `dms.\"EffectiveSchema\"` errors: `pwsh ./src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1`.",
+      "If the workflow step is updated, rerun `Build and Start DMS, Download OpenAPI Specs` in GitHub Actions and confirm that the three spec artifacts upload successfully."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Regression Safety",
+    "description": "Add regression coverage proving the temporary bypass is startup-only and does not disable request-path database fingerprint enforcement. Acceptance: metadata/OpenAPI generation remains reachable after startup when the startup-validation flag is `false`, but routed data requests that still flow through `ValidateDatabaseFingerprintMiddleware` continue to return the existing provisioning or fingerprint 503 responses when `UseRelationalBackend` is enabled and the target database is unprovisioned.",
+    "steps-to-verify": [
+      "Add or update `ValidateDatabaseFingerprintMiddleware` tests to show request-path behavior is unchanged by the new startup-only flag.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter ValidateDatabaseFingerprintMiddleware`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Tracking - Do this last",
+    "description": "Create a follow-up Jira story with the Jira CLI to re-enable strict `dms.EffectiveSchema` startup validation once database provisioning emits the fingerprint metadata correctly. Acceptance: the new issue is created in project `DMS`; issue type and priority match `DMS-1047` (`Story`, `Medium`); labels match `DMS-1047` (`backend-redesign`); Epic is unset; and the description explicitly states that the temporary startup bypass `ValidateProvisionedMappingsOnStartup` under `AppSettings` must be removed entirely after provisioning is ready, both in code and in startup scripts like `start-local-dms.ps1`.",
+    "steps-to-verify": [
+      "Run: `jira issue view DMS-1047 --plain` and capture the issue type, priority, and labels to mirror.",
+      "Run `jira issue create` to create the follow-up story with no Epic, then verify with `jira issue view <NEW-KEY> --plain` that the fields match `DMS-1047` except for the Epic link remaining empty."
+    ],
+    "completed": false
+  }
+]

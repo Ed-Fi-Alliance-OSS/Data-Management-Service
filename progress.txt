@@ -1,0 +1,6 @@
+2026-03-10
+- Completed: Startup Configuration task in tasks.json. Story ref from loop prompt: reference/design/backend-redesign/epics/15-plan-compilation/06-projection-plan-compilers.md. tasks.json currently tracks startup-validation rollout work.
+- Decisions: added startup-only `ValidateProvisionedMappingsOnStartup` to core `AppSettings`; default false in code + appsettings for rollout safety; kept existing `UseRelationalBackend` semantics; reused normal `Configure<CoreAppSettings>(AppSettings)` binding, no ad-hoc env reads.
+- Files: src/dms/core/EdFi.DataManagementService.Core/Configuration/AppSettings.cs; src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/appsettings.json; src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/WebApplicationBuilderExtensionsTests.cs
+- Verify: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj` passed (55). `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter PostgresqlRuntimeMappingInitializationTests` passed (9).
+- Notes: running those two test commands in parallel hit static-web-assets / pdb file locks in `obj`/`bin`; rerun serially.
