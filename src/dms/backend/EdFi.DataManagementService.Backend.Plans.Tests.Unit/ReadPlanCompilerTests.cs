@@ -325,6 +325,21 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_fail_fast_when_document_reference_binding_has_no_identity_bindings()
+    {
+        var act = () =>
+            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+                CreateProjectionMetadataResourceModelWithNoIdentityBindings()
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile reference identity projection plan for 'edfi.StudentProjection': reference identity projection binding '$.schoolReference' on table 'edfi.StudentProjection' does not contain any identity bindings."
+            );
+    }
+
+    [Test]
     public void It_should_reject_grouped_reference_identity_projection_fields_when_duplicate_members_use_conflicting_presence_gates()
     {
         var act = () =>
@@ -2811,6 +2826,17 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         {
             Root = rootTable,
             TablesInDependencyOrder = [rootTable],
+        };
+    }
+
+    private static RelationalResourceModel CreateProjectionMetadataResourceModelWithNoIdentityBindings()
+    {
+        var model = CreateProjectionMetadataResourceModel();
+        var binding = model.DocumentReferenceBindings.Single() with { IdentityBindings = [] };
+
+        return model with
+        {
+            DocumentReferenceBindings = [binding],
         };
     }
 

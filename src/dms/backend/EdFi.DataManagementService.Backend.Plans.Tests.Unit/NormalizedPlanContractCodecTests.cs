@@ -1066,6 +1066,35 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_fail_with_the_same_projection_contract_reason_as_direct_validation_when_reference_identity_projection_binding_resolves_to_zero_logical_fields()
+    {
+        var model = CreateModelWithEmptySchoolReferenceIdentityBindings();
+        var readPlan = CreateReadPlan(model);
+        var projectionTablePlan = readPlan.ReferenceIdentityProjectionPlansInDependencyOrder.Single();
+        var bindings = projectionTablePlan.BindingsInOrder.ToArray();
+
+        bindings[0] = bindings[0] with { IdentityFieldOrdinalsInOrder = [] };
+
+        var mutatedReadPlan = readPlan with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder =
+            [
+                projectionTablePlan with
+                {
+                    BindingsInOrder = [.. bindings],
+                },
+            ],
+        };
+        var expectedReason = GetProjectionValidationFailureReason(mutatedReadPlan);
+        var encoded = NormalizedPlanContractCodec.Encode(mutatedReadPlan);
+
+        var act = () => NormalizedPlanContractCodec.Decode(encoded, model);
+
+        var exception = act.Should().Throw<InvalidOperationException>().Which;
+        GetDecodedProjectionValidationFailureReason(exception.Message).Should().Be(expectedReason);
+    }
+
+    [Test]
     public void It_should_fail_with_the_same_projection_contract_reason_as_direct_validation_when_a_grouped_reference_projection_field_is_duplicated()
     {
         var model = CreateGroupedReferenceProjectionResourceModel();
@@ -1502,6 +1531,19 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
                 ),
             ]
         );
+    }
+
+    private static RelationalResourceModel CreateModelWithEmptySchoolReferenceIdentityBindings()
+    {
+        var model = CreateModel();
+        var bindings = model.DocumentReferenceBindings.ToArray();
+
+        bindings[0] = bindings[0] with { IdentityBindings = [] };
+
+        return model with
+        {
+            DocumentReferenceBindings = [.. bindings],
+        };
     }
 
     private static ResourceWritePlan CreateWritePlan(RelationalResourceModel model)

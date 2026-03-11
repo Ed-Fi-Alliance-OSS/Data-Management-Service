@@ -25,6 +25,13 @@ internal static class ReferenceIdentityProjectionLogicalFieldResolver
 
         List<ResolvedReferenceIdentityProjectionLogicalField> logicalFields = [];
 
+        if (binding.IdentityBindings.Count == 0)
+        {
+            throw createException(
+                $"reference identity projection binding '{binding.ReferenceObjectPath.Canonical}' on table '{tableModel.Table}' does not contain any identity bindings"
+            );
+        }
+
         foreach (var logicalFieldGroup in binding.GetLogicalFieldGroups())
         {
             List<DbColumnName> memberColumnsInOrder = [];
@@ -126,6 +133,13 @@ internal static class ReferenceIdentityProjectionLogicalFieldResolver
                     MemberColumnsInOrder: memberColumnsInOrder,
                     StorageColumn: storageColumnValue
                 )
+            );
+        }
+
+        if (logicalFields.Count == 0)
+        {
+            throw createException(
+                $"reference identity projection binding '{binding.ReferenceObjectPath.Canonical}' on table '{tableModel.Table}' resolves to zero logical fields after grouping identity bindings"
             );
         }
 

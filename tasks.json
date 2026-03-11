@@ -1,0 +1,32 @@
+[
+  {
+    "category": "Projection Validation",
+    "description": "Reject reference-identity projection bindings that resolve to zero logical identity fields. Acceptance: read-plan compilation must fail deterministically when a `DocumentReferenceBinding` has no `IdentityBindings` or when grouped logical-field resolution yields an empty field set; the failure message must identify the offending reference object path/table; valid reference bindings must continue to compile unchanged.",
+    "steps-to-verify": [
+      "Add a unit test that mutates the existing projection fixture so `DocumentReferenceBinding.IdentityBindings = []` and assert `ReadPlanCompiler.Compile(...)` throws the expected deterministic exception.",
+      "Add a normalization/round-trip regression test, if needed, so an empty-field reference projection cannot survive decode/lookup validation.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_ReadPlanCompiler|FullyQualifiedName~Given_NormalizedPlanContractCodec|FullyQualifiedName~Given_MappingSetLookupExtensions\"`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Reference Projection Integrity",
+    "description": "Validate that `DocumentReferenceBinding.TargetResource` matches the owning FK column's `DbColumnModel.TargetResource` before emitting `ReferenceIdentityProjectionBinding` metadata. Acceptance: a target-resource mismatch must fail deterministically during read-plan compilation and during decoded-plan validation, with the error naming the reference object path, table, compiled target resource, and expected target resource; matching bindings must still compile and decode successfully.",
+    "steps-to-verify": [
+      "Add a unit test that mutates the projection fixture so the document-reference binding targets a different resource than the FK column and assert `ReadPlanCompiler.Compile(...)` throws the expected deterministic exception.",
+      "Add a regression test that feeds the same mismatch through normalized plan decode or mapping-set lookup validation and assert it is rejected there as well.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_ReadPlanCompiler|FullyQualifiedName~Given_NormalizedPlanContractCodec|FullyQualifiedName~Given_MappingSetLookupExtensions\"`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Descriptor Projection Integrity",
+    "description": "Validate that each `DescriptorEdgeSource.DescriptorResource` matches the descriptor FK column's `DbColumnModel.TargetResource`, including key-unified/storage-resolved descriptor sources. Acceptance: a descriptor-resource mismatch must fail deterministically during descriptor projection compilation and during decoded-plan validation; the failure must identify the descriptor value path, table, compiled descriptor resource, and expected descriptor resource; valid descriptor sources, including deduplicated key-unified cases, must continue to compile unchanged.",
+    "steps-to-verify": [
+      "Add a unit test that mutates the projection fixture so a descriptor edge source advertises a different descriptor resource than its FK column and assert `ReadPlanCompiler.Compile(...)` throws the expected deterministic exception.",
+      "Add a regression test that covers normalized decode or mapping-set lookup validation for the same mismatch, plus a key-unified descriptor case to confirm storage-column resolution still validates the correct target resource.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_ReadPlanCompiler|FullyQualifiedName~Given_NormalizedPlanContractCodec|FullyQualifiedName~Given_MappingSetLookupExtensions\"`"
+    ],
+    "completed": false
+  }
+]

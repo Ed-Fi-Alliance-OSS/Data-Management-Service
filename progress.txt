@@ -1,0 +1,5 @@
+2026-03-11 DMS-1047 06-projection-plan-compilers.md
+- Completed: Projection Validation
+- Decision: reject empty `DocumentReferenceBinding.IdentityBindings` in `ReferenceIdentityProjectionLogicalFieldResolver`; keeps compile-time and decode/lookup validation on one guard. Added zero-logical-field defensive check too.
+- Files: src/dms/backend/EdFi.DataManagementService.Backend.Plans/ReferenceIdentityProjectionLogicalFieldResolver.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReadPlanCompilerTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/NormalizedPlanContractCodecTests.cs; tasks.json
+- Notes: targeted plans tests green. Next likely task: target-resource integrity for reference projections.
