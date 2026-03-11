@@ -39,11 +39,11 @@
   },
   {
     "category": "Tracking - Do this last",
-    "description": "Create a follow-up Jira story with the Jira CLI to re-enable strict `dms.EffectiveSchema` startup validation once database provisioning emits the fingerprint metadata correctly. Acceptance: the new issue is created in project `DMS`; issue type and priority match `DMS-1047` (`Story`, `Medium`); labels match `DMS-1047` (`backend-redesign`); Epic is unset; and the description explicitly states that the temporary startup bypass `ValidateProvisionedMappingsOnStartup` under `AppSettings` must be removed entirely after provisioning is ready, both in code and in startup scripts like `start-local-dms.ps1`.",
+    "description": "Create a follow-up Jira story with the Jira CLI to re-enable strict `dms.EffectiveSchema` startup validation once database provisioning emits the fingerprint metadata correctly. Acceptance: the new issue is created in project `DMS`; issue type and priority match `DMS-1047` (`Story`, `Medium`); labels match `DMS-1047` (`backend-redesign`); Epic is unset; and the description explicitly states that the temporary startup bypass `ValidateProvisionedMappingsOnStartup` under `AppSettings` must be removed entirely after provisioning is ready, both in code and in startup scripts like `start-local-dms.ps1`. Created issue: `DMS-1097`.",
     "steps-to-verify": [
       "Run: `jira issue view DMS-1047 --plain` and capture the issue type, priority, and labels to mirror.",
-      "Run `jira issue create` to create the follow-up story with no Epic, then verify with `jira issue view <NEW-KEY> --plain` that the fields match `DMS-1047` except for the Epic link remaining empty."
+      "Verify with `jira issue view DMS-1097 --plain` that the fields match `DMS-1047` except for the Epic link remaining empty."
     ],
-    "completed": false
+    "completed": true
   }
 ]
