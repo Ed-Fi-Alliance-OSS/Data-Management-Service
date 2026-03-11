@@ -15,7 +15,7 @@
       "Add or extend unit tests in the PostgreSQL runtime mapping startup test suite to cover both enabled and disabled startup-validation paths, including proof that compilation still occurs when validation is skipped.",
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter PostgresqlRuntimeMappingInitializationTests`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "CI and Docker Wiring",

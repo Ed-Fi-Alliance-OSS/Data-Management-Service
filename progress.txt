@@ -4,3 +4,9 @@
 - Files: src/dms/core/EdFi.DataManagementService.Core/Configuration/AppSettings.cs; src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/appsettings.json; src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/WebApplicationBuilderExtensionsTests.cs
 - Verify: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj` passed (55). `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter PostgresqlRuntimeMappingInitializationTests` passed (9).
 - Notes: running those two test commands in parallel hit static-web-assets / pdb file locks in `obj`/`bin`; rerun serially.
+2026-03-10
+- Completed: Backend Mapping Startup task in tasks.json. Story ref from loop prompt: reference/design/backend-redesign/epics/15-plan-compilation/06-projection-plan-compilers.md.
+- Decisions: `PostgresqlBackendMappingInitializer` now always compiles/caches via `GetCurrentAsync`; injected normal `IOptions<AppSettings>`; skip `ValidateLoadedInstancesAsync` only when `ValidateProvisionedMappingsOnStartup` is false; warning log makes temporary bypass explicit; enabled path keeps prior validation/info summary.
+- Files: src/dms/backend/EdFi.DataManagementService.Old.Postgresql/Startup/PostgresqlBackendMappingInitializer.cs; src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Startup/PostgresqlRuntimeMappingInitializationTests.cs
+- Verify: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter PostgresqlRuntimeMappingInitializationTests` passed (11).
+- Notes: disabled startup validation intentionally leaves `PostgresqlValidatedResourceKeyMapCache` empty until request-path validation runs; tests now cover both disabled bypass + explicit enabled validation.

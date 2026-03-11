@@ -24,7 +24,9 @@ using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NUnit.Framework;
 using Serilog;
 
@@ -147,25 +149,45 @@ public class PostgresqlRuntimeMappingInitializationTests
         return apiSchemaProvider;
     }
 
+    private static AppSettings CreateAppSettings(bool validateProvisionedMappingsOnStartup = false) =>
+        new()
+        {
+            AllowIdentityUpdateOverrides = "",
+            ValidateProvisionedMappingsOnStartup = validateProvisionedMappingsOnStartup,
+        };
+
     private static ServiceProvider CreateStartupServiceProvider(
         ApiSchemaDocumentNodes schemaNodes,
         IDmsInstanceProvider dmsInstanceProvider,
-        IPostgresqlRuntimeDatabaseMetadataReader databaseMetadataReader
+        IPostgresqlRuntimeDatabaseMetadataReader databaseMetadataReader,
+        AppSettings? appSettings = null,
+        ILogger<PostgresqlBackendMappingInitializer>? backendMappingInitializerLogger = null
     ) =>
         CreateStartupServiceProvider(
             CreateApiSchemaProvider(schemaNodes),
             dmsInstanceProvider,
-            databaseMetadataReader
+            databaseMetadataReader,
+            appSettings,
+            backendMappingInitializerLogger
         );
 
     private static ServiceProvider CreateStartupServiceProvider(
         IApiSchemaProvider apiSchemaProvider,
         IDmsInstanceProvider dmsInstanceProvider,
-        IPostgresqlRuntimeDatabaseMetadataReader databaseMetadataReader
+        IPostgresqlRuntimeDatabaseMetadataReader databaseMetadataReader,
+        AppSettings? appSettings = null,
+        ILogger<PostgresqlBackendMappingInitializer>? backendMappingInitializerLogger = null
     )
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddSingleton(Options.Create(appSettings ?? CreateAppSettings()));
+
+        if (backendMappingInitializerLogger is not null)
+        {
+            services.AddSingleton(backendMappingInitializerLogger);
+        }
+
         services.AddSingleton(apiSchemaProvider);
         services.AddSingleton<ICompiledSchemaCache, CompiledSchemaCache>();
         services.AddSingleton<EffectiveApiSchemaProvider>();
@@ -185,6 +207,27 @@ public class PostgresqlRuntimeMappingInitializationTests
         services.AddSingleton(databaseMetadataReader);
 
         return services.BuildServiceProvider();
+    }
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            Entries.Add((logLevel, formatter(state, exception)));
+        }
     }
 
     private static EffectiveSchemaSet BuildEffectiveSchemaSet(ApiSchemaDocumentNodes schemaNodes)
@@ -420,6 +463,107 @@ public class PostgresqlRuntimeMappingInitializationTests
     }
 
     [TestFixture]
+    public class Given_Dms_Startup_Runs_With_Postgresql_Runtime_Mapping_Initialization_And_Startup_Validation_Disabled
+        : PostgresqlRuntimeMappingInitializationTests
+    {
+        private const string ConnectionString =
+            "Host=localhost;Database=startup-instance-with-validation-disabled;Username=test;Password=test";
+
+        private ServiceProvider _serviceProvider = null!;
+        private ApiSchemaDocumentNodes _schemaNodes = null!;
+        private IPostgresqlRuntimeDatabaseMetadataReader _databaseMetadataReader = null!;
+        private CapturingLogger<PostgresqlBackendMappingInitializer> _initializerLogger = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _schemaNodes = CreateSchemaNodes();
+            var dmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
+            _databaseMetadataReader = A.Fake<IPostgresqlRuntimeDatabaseMetadataReader>();
+            _initializerLogger = new CapturingLogger<PostgresqlBackendMappingInitializer>();
+            _serviceProvider = CreateStartupServiceProvider(
+                _schemaNodes,
+                dmsInstanceProvider,
+                _databaseMetadataReader,
+                CreateAppSettings(validateProvisionedMappingsOnStartup: false),
+                _initializerLogger
+            );
+
+            A.CallTo(() => dmsInstanceProvider.GetLoadedTenantKeys()).Returns([""]);
+            A.CallTo(() => dmsInstanceProvider.GetAll(null))
+                .Returns([
+                    new DmsInstance(
+                        Id: 1,
+                        InstanceType: "test",
+                        InstanceName: "StartupInstanceValidationDisabled",
+                        ConnectionString: ConnectionString,
+                        RouteContext: new Dictionary<RouteQualifierName, RouteQualifierValue>()
+                    ),
+                ]);
+
+            await RunStartupInitializationPhasesAsync(_serviceProvider, CancellationToken.None);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _serviceProvider.Dispose();
+        }
+
+        [Test]
+        public async Task It_compiles_and_caches_the_runtime_mapping_set_without_validating_loaded_instances()
+        {
+            var mappingSetKey = CreateMappingSetKey(BuildEffectiveSchemaSet(_schemaNodes));
+
+            var cache = _serviceProvider.GetRequiredService<MappingSetCache>();
+            var cacheResult = await cache.GetOrCreateWithCacheStatusAsync(
+                mappingSetKey,
+                CancellationToken.None
+            );
+
+            cacheResult.WasCacheHit.Should().BeTrue();
+            cacheResult.MappingSet.Key.Should().Be(mappingSetKey);
+            _serviceProvider
+                .GetRequiredService<PostgresqlValidatedResourceKeyMapCache>()
+                .TryGet(ConnectionString, out _)
+                .Should()
+                .BeFalse();
+            A.CallTo(() =>
+                    _databaseMetadataReader.ReadFingerprintAsync(
+                        ConnectionString,
+                        A<CancellationToken>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+            A.CallTo(() =>
+                    _databaseMetadataReader.ReadResourceKeysAsync(
+                        ConnectionString,
+                        A<CancellationToken>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+        }
+
+        [Test]
+        public void It_logs_a_warning_that_the_temporary_startup_validation_bypass_is_active()
+        {
+            _initializerLogger
+                .Entries.Should()
+                .Contain(entry =>
+                    entry.Level == LogLevel.Warning
+                    && entry.Message.Contains(
+                        "temporary startup validation bypass is active",
+                        StringComparison.Ordinal
+                    )
+                    && entry.Message.Contains(
+                        "ValidateProvisionedMappingsOnStartup is false",
+                        StringComparison.Ordinal
+                    )
+                );
+        }
+    }
+
+    [TestFixture]
     public class Given_Dms_Startup_Runs_With_Postgresql_Runtime_Mapping_Initialization
         : PostgresqlRuntimeMappingInitializationTests
     {
@@ -439,7 +583,8 @@ public class PostgresqlRuntimeMappingInitializationTests
             _serviceProvider = CreateStartupServiceProvider(
                 _schemaNodes,
                 _dmsInstanceProvider,
-                _databaseMetadataReader
+                _databaseMetadataReader,
+                CreateAppSettings(validateProvisionedMappingsOnStartup: true)
             );
             var effectiveSchemaSet = BuildEffectiveSchemaSet(_schemaNodes);
 
@@ -494,6 +639,13 @@ public class PostgresqlRuntimeMappingInitializationTests
                 .Should()
                 .BeTrue();
             validatedMaps.MappingSetKey.Should().Be(mappingSetKey);
+            A.CallTo(() =>
+                    _databaseMetadataReader.ReadFingerprintAsync(
+                        ConnectionString,
+                        A<CancellationToken>.Ignored
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
             A.CallTo(() =>
                     _databaseMetadataReader.ReadResourceKeysAsync(
                         ConnectionString,
@@ -644,7 +796,8 @@ public class PostgresqlRuntimeMappingInitializationTests
             _serviceProvider = CreateStartupServiceProvider(
                 _schemaNodes,
                 _dmsInstanceProvider,
-                _databaseMetadataReader
+                _databaseMetadataReader,
+                CreateAppSettings(validateProvisionedMappingsOnStartup: true)
             );
 
             var effectiveSchemaSet = BuildEffectiveSchemaSet(_schemaNodes);
@@ -751,7 +904,8 @@ public class PostgresqlRuntimeMappingInitializationTests
             _serviceProvider = CreateStartupServiceProvider(
                 _schemaNodes,
                 _dmsInstanceProvider,
-                _databaseMetadataReader
+                _databaseMetadataReader,
+                CreateAppSettings(validateProvisionedMappingsOnStartup: true)
             );
 
             var effectiveSchemaSet = BuildEffectiveSchemaSet(_schemaNodes);
@@ -928,7 +1082,8 @@ public class PostgresqlRuntimeMappingInitializationTests
             _serviceProvider = CreateStartupServiceProvider(
                 _apiSchemaProvider,
                 _dmsInstanceProvider,
-                _databaseMetadataReader
+                _databaseMetadataReader,
+                CreateAppSettings(validateProvisionedMappingsOnStartup: true)
             );
 
             A.CallTo(() => _apiSchemaProvider.GetApiSchemaNodes()).Returns(_startupSchemaNodes);
