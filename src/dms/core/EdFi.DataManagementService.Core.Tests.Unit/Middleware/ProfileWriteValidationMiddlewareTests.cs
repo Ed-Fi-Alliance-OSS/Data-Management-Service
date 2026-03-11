@@ -116,7 +116,7 @@ public class ProfileWriteValidationMiddlewareTests
             NullLogger<ProjectSchema>.Instance
         );
 
-        return new RequestInfo(frontendRequest, method)
+        return new RequestInfo(frontendRequest, method, No.ServiceProvider)
         {
             ProjectSchema = projectSchema,
             ResourceSchema = resourceSchema,
