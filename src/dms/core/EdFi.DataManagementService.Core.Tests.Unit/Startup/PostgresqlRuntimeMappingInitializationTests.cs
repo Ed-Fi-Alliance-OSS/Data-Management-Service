@@ -1211,6 +1211,61 @@ public class PostgresqlRuntimeMappingInitializationTests
     }
 
     [TestFixture]
+    public class Given_Postgresql_Runtime_Mapping_Compilation_When_The_Authoritative_Effective_Schema_Key_Changes
+        : PostgresqlRuntimeMappingInitializationTests
+    {
+        private Func<Task> _act = null!;
+        private MappingSetKey _expectedKey;
+        private MappingSetKey _actualKey;
+
+        private static string FormatMappingSetKey(MappingSetKey key)
+        {
+            return $"{key.EffectiveSchemaHash}/{key.Dialect}/{key.RelationalMappingVersion}";
+        }
+
+        [SetUp]
+        public void Setup()
+        {
+            var initialEffectiveSchemaSet = BuildEffectiveSchemaSet(CreateSchemaNodes());
+            var changedEffectiveSchemaSet = BuildEffectiveSchemaSet(
+                CreateSchemaNodes(
+                    BuildExtensionBearingStartupCoreProjectSchema(),
+                    BuildExtensionBearingStartupExtensionProjectSchema()
+                )
+            );
+            var effectiveSchemaSetProvider = A.Fake<IEffectiveSchemaSetProvider>();
+            var compiler = new PostgresqlRuntimeMappingSetCompiler(
+                effectiveSchemaSetProvider,
+                new MappingSetCompiler()
+            );
+            var accessCount = 0;
+
+            A.CallTo(() => effectiveSchemaSetProvider.EffectiveSchemaSet)
+                .ReturnsLazily(() =>
+                    accessCount++ switch
+                    {
+                        0 => initialEffectiveSchemaSet,
+                        _ => changedEffectiveSchemaSet,
+                    }
+                );
+
+            _expectedKey = compiler.GetCurrentKey();
+            _actualKey = CreateMappingSetKey(changedEffectiveSchemaSet);
+            _act = async () => await compiler.CompileAsync(_expectedKey);
+        }
+
+        [Test]
+        public async Task It_throws_with_the_expected_and_actual_mapping_set_keys()
+        {
+            var exception = (await _act.Should().ThrowAsync<InvalidOperationException>()).Which;
+
+            exception.Message.Should().Contain(FormatMappingSetKey(_expectedKey));
+            exception.Message.Should().Contain(FormatMappingSetKey(_actualKey));
+            exception.Message.Should().Contain("current schema resolved");
+        }
+    }
+
+    [TestFixture]
     public class Given_Postgresql_Runtime_Mapping_Compilation_With_An_Arbitrary_Duplicate_Scalar_Path
         : PostgresqlRuntimeMappingInitializationTests
     {

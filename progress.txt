@@ -25,3 +25,10 @@ Decisions: use compose defaults as template values; close wider env-template dri
 Files changed: eng/docker-compose/.env.e2e; eng/docker-compose/.env.example; tasks.json; progress.txt
 Feedback loops: rg -n "DMS_VALIDATE_PROVISIONED_MAPPINGS_ON_STARTUP|DMS_STARTUP_STATUS_FILE_PATH" eng/docker-compose/.env.e2e eng/docker-compose/.env.example eng/docker-compose/local-dms.yml eng/docker-compose/published-dms.yml; bash -lc 'refs=$(perl -ne '\''while(/\$\{([A-Z0-9_]+)/g){print "$1\n"}'\'' eng/docker-compose/local-dms.yml eng/docker-compose/published-dms.yml | sort -u); for env in eng/docker-compose/.env.e2e eng/docker-compose/.env.example; do echo "$env"; missing=0; while IFS= read -r var; do [ -z "$var" ] && continue; if ! grep -q "^${var}=" "$env"; then echo "missing:$var"; missing=1; fi; done <<< "$refs"; if [ "$missing" -eq 0 ]; then echo "missing:none"; fi; done'
 Notes next: next highest-value remaining work is likely mismatch-path test coverage or startup-status doc/testability cleanup.
+
+2026-03-11
+Task complete: Test Coverage - runtime mapping compiler mismatch-path coverage. Story: reference/design/backend-redesign/epics/15-plan-compilation/06-projection-plan-compilers.md
+Decisions: add direct unit test against PostgresqlRuntimeMappingSetCompiler in existing startup suite; fake IEffectiveSchemaSetProvider to return different EffectiveSchemaSet values across key derivation vs compilation; keep production code unchanged because mismatch guard/message already satisfied acceptance.
+Files changed: src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Startup/PostgresqlRuntimeMappingInitializationTests.cs; tasks.json; progress.txt
+Feedback loops: dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Startup/PostgresqlRuntimeMappingInitializationTests.cs; dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter "PostgresqlRuntimeMappingInitializationTests|PostgresqlRuntimeMappingSetCompiler"
+Notes next: remaining backlog is Documentation and Testability; both lower priority than completed coverage gap.
