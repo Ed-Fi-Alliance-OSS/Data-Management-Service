@@ -3,12 +3,28 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 
 namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
 internal static class ReadPlanProjectionMutationHelper
 {
+    public static RelationalResourceModel CreateModelWithDocumentReferenceBindingTargetResource(
+        RelationalResourceModel model,
+        QualifiedResourceName targetResource
+    )
+    {
+        var bindings = model.DocumentReferenceBindings.ToArray();
+
+        bindings[0] = bindings[0] with { TargetResource = targetResource };
+
+        return model with
+        {
+            DocumentReferenceBindings = [.. bindings],
+        };
+    }
+
     public static ResourceReadPlan CreateReadPlanWithReferenceIdentityComponent(
         ResourceReadPlan readPlan,
         bool isIdentityComponent
@@ -18,6 +34,28 @@ internal static class ReadPlanProjectionMutationHelper
         var bindings = projectionTablePlan.BindingsInOrder.ToArray();
 
         bindings[0] = bindings[0] with { IsIdentityComponent = isIdentityComponent };
+
+        return readPlan with
+        {
+            ReferenceIdentityProjectionPlansInDependencyOrder =
+            [
+                projectionTablePlan with
+                {
+                    BindingsInOrder = [.. bindings],
+                },
+            ],
+        };
+    }
+
+    public static ResourceReadPlan CreateReadPlanWithReferenceTargetResource(
+        ResourceReadPlan readPlan,
+        QualifiedResourceName targetResource
+    )
+    {
+        var projectionTablePlan = readPlan.ReferenceIdentityProjectionPlansInDependencyOrder[0];
+        var bindings = projectionTablePlan.BindingsInOrder.ToArray();
+
+        bindings[0] = bindings[0] with { TargetResource = targetResource };
 
         return readPlan with
         {

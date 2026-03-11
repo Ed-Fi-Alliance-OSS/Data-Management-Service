@@ -1262,6 +1262,21 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_fail_fast_when_document_reference_binding_target_resource_does_not_match_fk_column_target_resource()
+    {
+        var act = () =>
+            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+                CreateProjectionMetadataResourceModelWithMismatchedDocumentReferenceTargetResource()
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile read plan for 'edfi.StudentProjection': document-reference binding '$.schoolReference' on table 'edfi.StudentProjection' FK column 'School_DocumentId' targets 'Ed-Fi.Calendar', but FK column DbColumnModel.TargetResource is 'Ed-Fi.School'."
+            );
+    }
+
+    [Test]
     public void It_should_fail_fast_when_key_unified_reference_identity_binding_points_at_canonical_storage_column()
     {
         var act = () =>
@@ -2838,6 +2853,14 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         {
             DocumentReferenceBindings = [binding],
         };
+    }
+
+    private static RelationalResourceModel CreateProjectionMetadataResourceModelWithMismatchedDocumentReferenceTargetResource()
+    {
+        return CreateModelWithDocumentReferenceBindingTargetResource(
+            CreateProjectionMetadataResourceModel(),
+            new QualifiedResourceName("Ed-Fi", "Calendar")
+        );
     }
 
     private static RelationalResourceModel CreateModelWithMissingDescriptorEdgeFkColumn()

@@ -221,6 +221,27 @@ public class Given_MappingSetLookupExtensions
     }
 
     [Test]
+    public void It_should_throw_deterministic_error_when_cached_read_plan_reference_target_resource_does_not_match_fk_column_target_resource()
+    {
+        var readPlan = _mappingSet.ReadPlansByResource[_projectionMetadataResource];
+        var invalidReadPlan = ReadPlanProjectionMutationHelper.CreateReadPlanWithReferenceTargetResource(
+            readPlan,
+            new QualifiedResourceName("Ed-Fi", "Calendar")
+        );
+        var mappingSet = ReplaceReadPlan(_mappingSet, _projectionMetadataResource, invalidReadPlan);
+
+        var act = () => mappingSet.GetReadPlanOrThrow(_projectionMetadataResource);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                $"Read plan lookup failed for resource '{FormatResource(_projectionMetadataResource)}' in mapping set "
+                    + $"'{FormatMappingSetKey(mappingSet.Key)}': compiled relational-table read plan has invalid projection metadata. "
+                    + "reference identity projection binding '$.schoolReference' on table 'edfi.StudentProjection' FK column 'School_DocumentId' targets 'Ed-Fi.Calendar', but FK column DbColumnModel.TargetResource is 'Ed-Fi.School'. This indicates an internal compilation/selection bug."
+            );
+    }
+
+    [Test]
     public void It_should_treat_missing_key_unification_relational_write_plan_as_internal_bug()
     {
         var act = () => _mappingSet.GetWritePlanOrThrow(_keyUnificationResource);

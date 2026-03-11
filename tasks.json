@@ -17,7 +17,7 @@
       "Add a regression test that feeds the same mismatch through normalized plan decode or mapping-set lookup validation and assert it is rejected there as well.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_ReadPlanCompiler|FullyQualifiedName~Given_NormalizedPlanContractCodec|FullyQualifiedName~Given_MappingSetLookupExtensions\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Descriptor Projection Integrity",

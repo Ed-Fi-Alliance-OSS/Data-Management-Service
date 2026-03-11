@@ -466,6 +466,14 @@ internal static class ReadPlanProjectionContractValidator
         );
         ValidateStoredColumnOrThrow(columnModel, contextDescription, createException);
         ValidateDocumentReferenceBindingPathOrThrow(table, columnModel, binding, createException);
+        ValidateReferenceTargetResourceOrThrow(
+            table,
+            columnModel,
+            binding.ReferenceObjectPath,
+            binding.TargetResource,
+            "document-reference binding",
+            createException
+        );
     }
 
     internal static void ValidateDocumentReferenceBindingPathOrThrow(
@@ -546,6 +554,14 @@ internal static class ReadPlanProjectionContractValidator
         }
 
         ValidateDocumentReferenceFkColumnOrThrow(table, fkColumnModel, modelBinding, createException);
+        ValidateReferenceTargetResourceOrThrow(
+            table,
+            fkColumnModel,
+            binding.ReferenceObjectPath,
+            binding.TargetResource,
+            "reference identity projection binding",
+            createException
+        );
 
         if (binding.TargetResource != modelBinding.TargetResource)
         {
@@ -707,9 +723,34 @@ internal static class ReadPlanProjectionContractValidator
         throw createException($"{contextDescription} '{columnModel.ColumnName.Value}' is not stored");
     }
 
+    private static void ValidateReferenceTargetResourceOrThrow(
+        DbTableName table,
+        DbColumnModel columnModel,
+        JsonPathExpression referenceObjectPath,
+        QualifiedResourceName actualTargetResource,
+        string bindingDescription,
+        Func<string, Exception> createException
+    )
+    {
+        if (columnModel.TargetResource == actualTargetResource)
+        {
+            return;
+        }
+
+        throw createException(
+            $"{bindingDescription} '{referenceObjectPath.Canonical}' on table '{table}' FK column '{columnModel.ColumnName.Value}' targets "
+                + $"'{FormatResource(actualTargetResource)}', but FK column DbColumnModel.TargetResource is '{FormatOptionalResource(columnModel.TargetResource)}'"
+        );
+    }
+
     private static string FormatResource(QualifiedResourceName resource)
     {
         return $"{resource.ProjectName}.{resource.ResourceName}";
+    }
+
+    private static string FormatOptionalResource(QualifiedResourceName? resource)
+    {
+        return resource is { } targetResource ? FormatResource(targetResource) : "<null>";
     }
 
     private static string FormatReferenceBindingOrder(IEnumerable<DocumentReferenceBinding> bindings)
