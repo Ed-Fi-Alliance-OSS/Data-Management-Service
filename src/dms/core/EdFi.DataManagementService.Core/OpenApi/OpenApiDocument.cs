@@ -1367,6 +1367,7 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
     )
     {
         var suffix = $"_{resourceName}";
+        var expectedPrefix = coreProjectName.Replace("-", "");
 
         var matches = componentsSchemas
             .Select(kvp => kvp.Key)
@@ -1381,16 +1382,30 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
             return null;
         }
 
-        var matched = matches.Count switch
+        var prefixMatches = matches
+            .Where(match =>
+            {
+                var actualPrefix = match[..match.IndexOf('_')];
+                return string.Equals(actualPrefix, expectedPrefix, StringComparison.OrdinalIgnoreCase);
+            })
+            .ToList();
+
+        var matched = prefixMatches.Count switch
         {
-            1 => matches[0],
-            _ => throw new InvalidOperationException(
-                $"Resource '{resourceName}' has commonExtensionOverrides but matched multiple core schemas: [{string.Join(", ", matches)}]."
+            1 => prefixMatches[0],
+            > 1 => throw new InvalidOperationException(
+                $"Resource '{resourceName}' has commonExtensionOverrides and matched multiple core schemas with expected prefix '{expectedPrefix}': [{string.Join(", ", prefixMatches)}]."
             ),
+            _ => matches.Count switch
+            {
+                1 => matches[0],
+                _ => throw new InvalidOperationException(
+                    $"Resource '{resourceName}' has commonExtensionOverrides but matched multiple core schemas: [{string.Join(", ", matches)}]."
+                ),
+            },
         };
 
         var actualPrefix = matched[..matched.IndexOf('_')];
-        var expectedPrefix = coreProjectName.Replace("-", "");
 
         if (!string.Equals(actualPrefix, expectedPrefix, StringComparison.OrdinalIgnoreCase))
         {

@@ -26,7 +26,7 @@
       "Run the instance-management E2E environment bootstrap and verify startup succeeds without `dms.\"EffectiveSchema\"` errors: `pwsh ./src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1`.",
       "If the workflow step is updated, rerun `Build and Start DMS, Download OpenAPI Specs` in GitHub Actions and confirm that the three spec artifacts upload successfully."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Regression Safety",

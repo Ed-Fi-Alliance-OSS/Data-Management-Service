@@ -6,6 +6,7 @@
 using System.Reflection;
 using System.Runtime.ExceptionServices;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.RelationalModel;
 using EdFi.DataManagementService.Backend.RelationalModel.Schema;
 using FluentAssertions;
@@ -190,6 +191,76 @@ public class Given_Key_Unification_With_Grouped_Reference_Endpoints
         _resourceModel.KeyUnificationEqualityConstraints.Redundant.Should().BeEmpty();
         _resourceModel.KeyUnificationEqualityConstraints.Ignored.Should().BeEmpty();
         _resourceModel.KeyUnificationEqualityConstraints.Skipped.Should().BeEmpty();
+    }
+}
+
+/// <summary>
+/// Test fixture for grouped reference endpoints when equivalent binding metadata is duplicated.
+/// </summary>
+[TestFixture]
+public class Given_Key_Unification_With_Duplicate_Equivalent_Grouped_Reference_Metadata
+{
+    private RelationalResourceModel _resourceModel = default!;
+    private DbTableModel _rootTable = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = KeyUnificationPassTestSchemaBuilder.BuildGroupedReferenceEndpointProjectSchema();
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([project]);
+        IRelationalModelSetPass[] passes =
+        [
+            new BaseTraversalAndDescriptorBindingPass(),
+            new DescriptorResourceMappingPass(),
+            new ExtensionTableDerivationPass(),
+            new ReferenceBindingPass(),
+            new DuplicateDocumentReferenceBindingPass("Enrollment", "$.schoolReference"),
+            new KeyUnificationPass(),
+        ];
+        var builder = new DerivedRelationalModelSetBuilder(passes);
+
+        _resourceModel = builder
+            .Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules())
+            .ConcreteResourcesInNameOrder.Single(resource =>
+                resource.ResourceKey.Resource.ResourceName == "Enrollment"
+            )
+            .RelationalModel;
+        _rootTable = _resourceModel.Root;
+    }
+
+    /// <summary>
+    /// It should collapse duplicate equivalent grouped-reference metadata instead of treating it as ambiguous.
+    /// </summary>
+    [Test]
+    public void It_should_collapse_duplicate_equivalent_grouped_reference_metadata()
+    {
+        var keyUnificationClass = _rootTable.KeyUnificationClasses.Should().ContainSingle().Subject;
+        var appliedConstraints = _resourceModel.KeyUnificationEqualityConstraints.Applied;
+
+        keyUnificationClass
+            .MemberPathColumns.Select(column => column.Value)
+            .Should()
+            .Equal(
+                "LocalEducationAgency_LocalEducationAgencyId",
+                "School_LocalEducationAgencyId",
+                "School_SchoolId"
+            );
+
+        appliedConstraints.Should().HaveCount(2);
+        appliedConstraints
+            .Select(constraint => $"{constraint.EndpointAColumn.Value}->{constraint.EndpointBColumn.Value}")
+            .Should()
+            .Equal(
+                "LocalEducationAgency_LocalEducationAgencyId->School_LocalEducationAgencyId",
+                "LocalEducationAgency_LocalEducationAgencyId->School_SchoolId"
+            );
     }
 }
 
@@ -1303,6 +1374,62 @@ file sealed class DuplicateSourcePathBindingPass(string resourceName, string sou
             }
 
             suffix++;
+        }
+    }
+}
+
+/// <summary>
+/// Test-only set pass that appends an equivalent document-reference binding to mimic duplicate metadata.
+/// </summary>
+file sealed class DuplicateDocumentReferenceBindingPass(string resourceName, string referenceObjectPath)
+    : IRelationalModelSetPass
+{
+    /// <summary>
+    /// Execute pass.
+    /// </summary>
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        for (var index = 0; index < context.ConcreteResourcesInNameOrder.Count; index++)
+        {
+            var concreteResource = context.ConcreteResourcesInNameOrder[index];
+
+            if (
+                !string.Equals(
+                    concreteResource.ResourceKey.Resource.ResourceName,
+                    resourceName,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                continue;
+            }
+
+            var bindingToDuplicate =
+                concreteResource.RelationalModel.DocumentReferenceBindings.SingleOrDefault(binding =>
+                    string.Equals(
+                        binding.ReferenceObjectPath.Canonical,
+                        referenceObjectPath,
+                        StringComparison.Ordinal
+                    )
+                );
+
+            if (bindingToDuplicate is null)
+            {
+                continue;
+            }
+
+            var updatedBindings = concreteResource
+                .RelationalModel.DocumentReferenceBindings.Concat([bindingToDuplicate])
+                .ToArray();
+            var updatedModel = concreteResource.RelationalModel with
+            {
+                DocumentReferenceBindings = updatedBindings,
+            };
+
+            context.ConcreteResourcesInNameOrder[index] = concreteResource with
+            {
+                RelationalModel = updatedModel,
+            };
         }
     }
 }

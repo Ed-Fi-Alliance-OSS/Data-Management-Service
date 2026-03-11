@@ -666,9 +666,33 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
 
         var matches = groupedFields
             .Where(groupedField => DoesGroupedReferenceFieldMatch(groupedField, physicalBindings))
+            .DistinctBy(CreateLogicalReferenceFieldGroupIdentity)
             .ToArray();
 
         return matches.Length == 1 ? matches[0] : null;
+    }
+
+    /// <summary>
+    /// Builds a deterministic identity so duplicate equivalent grouped reference metadata does not surface as a
+    /// false ambiguity.
+    /// </summary>
+    private static LogicalReferenceFieldGroupIdentity CreateLogicalReferenceFieldGroupIdentity(
+        DocumentReferenceFieldGroup groupedField
+    )
+    {
+        var memberColumnsKey = string.Join(
+            "\u001f",
+            groupedField.MemberColumns.OrderBy(column => column.Value, StringComparer.Ordinal)
+        );
+
+        return new LogicalReferenceFieldGroupIdentity(
+            groupedField.ReferenceObjectPath.Canonical,
+            groupedField.Table,
+            groupedField.FkColumn,
+            groupedField.TargetResource,
+            groupedField.ReferenceJsonPath.Canonical,
+            memberColumnsKey
+        );
     }
 
     /// <summary>
@@ -1708,6 +1732,18 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
     {
         public TableBoundColumn RepresentativeBinding => PhysicalBindings[0];
     }
+
+    /// <summary>
+    /// Stable grouped-reference identity used to collapse duplicate equivalent logical metadata.
+    /// </summary>
+    private readonly record struct LogicalReferenceFieldGroupIdentity(
+        string ReferenceObjectPath,
+        DbTableName Table,
+        DbColumnName FkColumn,
+        QualifiedResourceName TargetResource,
+        string ReferenceJsonPath,
+        string MemberColumnsKey
+    );
 
     /// <summary>
     /// Stable binding identity used for endpoint equivalence and edge de-duplication.
