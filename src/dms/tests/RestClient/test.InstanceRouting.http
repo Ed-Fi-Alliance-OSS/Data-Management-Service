@@ -7,7 +7,7 @@
 
 # Config Service credentials (for creating API clients)
 @configClientId = DmsConfigurationService
-@configClientSecret = s3creT@09
+@configClientSecret = ValidClientSecret1234567890!Abcd
 
 ###############################################################################
 # STEP 1: Get Config Service Token

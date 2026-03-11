@@ -15,7 +15,9 @@ param (
     [string] $DbUser = "postgres",
     [string] $NewClientId = "DmsConfigurationService",
     [string] $NewClientName = "DMS Configuration Service",
-    [string] $NewClientSecret = "s3creT@09",
+    [string] $NewClientSecret = "ValidClientSecret1234567890!Abcd",
+    [int] $ClientSecretMinimumLength = 32,
+    [int] $ClientSecretMaximumLength = 128,
     [string] $DmsClientRole = "dms-client",
     [string] $ConfigServiceRole = "cms-client",
     [string] $ClientScopeName = "edfi_admin_api/full_access",
@@ -68,6 +70,14 @@ function New-OpenIddictApplication {
     $sqlSelect = "SELECT Id FROM dmscs.OpenIddictApplication WHERE ClientId = '$ClientId';"
     $existing = Invoke-DbQuery $sqlSelect
     return $existing[2]
+}
+
+function Test-ClientSecretLength {
+    param([string]$ClientSecret)
+
+    if ($ClientSecret.Length -lt $ClientSecretMinimumLength -or $ClientSecret.Length -gt $ClientSecretMaximumLength) {
+        throw "NewClientSecret must be between $ClientSecretMinimumLength and $ClientSecretMaximumLength characters long."
+    }
 }
 
 function Add-OpenIddictClientRole {
@@ -277,17 +287,18 @@ if ($InitDb) {
 }
 
 if ($InsertData) {
+    Test-ClientSecretLength -ClientSecret $NewClientSecret
     $appId = New-OpenIddictApplication -ClientId $NewClientId -ClientName $NewClientName -ClientSecret $NewClientSecret
-    
+
     $dmsRoleId = New-OpenIddictRole -RoleName $DmsClientRole
     Add-OpenIddictClientRole -AppId $appId.Trim() -RoleId $dmsRoleId.Trim()
     $configRoleId = New-OpenIddictRole -RoleName $ConfigServiceRole
     Add-OpenIddictClientRole -AppId $appId.Trim() -RoleId $configRoleId.Trim()
-        
+
     $scopeId = New-OpenIddictScope -ScopeName $ClientScopeName -Description $ClientScopeName
     Add-OpenIddictApplicationScope -AppId $appId.Trim() -ScopeId $scopeId.Trim()
     Update-OpenIddictApplicationPermissions -AppId $appId.Trim() -Scope  $ClientScopeName
     Add-OpenIddictCustomClaim -AppId $appId.Trim() -ClaimName $ClaimName -ClaimValue $ClaimValue
-    
+
     Write-Output "OpenIddict client, roles, scope, and claim created successfully."
 }

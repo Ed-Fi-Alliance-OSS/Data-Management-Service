@@ -3,8 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.DataModel.Configuration;
 using EdFi.DmsConfigurationService.DataModel.Model.Register;
 using FluentAssertions;
+using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.Model.Register;
 
@@ -16,7 +18,15 @@ public class RegisterRequestTests
     [SetUp]
     public void SetUp()
     {
-        _validator = new RegisterRequest.Validator();
+        _validator = new RegisterRequest.Validator(
+            Options.Create(
+                new ClientSecretValidationOptions
+                {
+                    MinimumLength = 8,
+                    MaximumLength = 12,
+                }
+            )
+        );
     }
 
     [Test]
@@ -90,6 +100,22 @@ public class RegisterRequestTests
         var result = _validator.Validate(request);
 
         // Assert
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "ClientSecret");
+    }
+
+    [Test]
+    public void Validate_WithClientSecretLongerThanConfiguredMaximum_ShouldFailValidation()
+    {
+        var request = new RegisterRequest
+        {
+            ClientId = "ValidClientId",
+            ClientSecret = "ValidSecret123!",
+            DisplayName = "ValidDisplayName",
+        };
+
+        var result = _validator.Validate(request);
+
         result.IsValid.Should().BeFalse();
         result.Errors.Should().Contain(e => e.PropertyName == "ClientSecret");
     }

@@ -21,6 +21,7 @@ using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.DataModel.Configuration;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
@@ -67,6 +68,13 @@ public static class WebApplicationBuilderExtensions
             .AddSingleton<IValidateOptions<AppSettings>, AppSettingsValidator>()
             .Configure<DatabaseOptions>(webApplicationBuilder.Configuration.GetSection("DatabaseSettings"))
             .AddSingleton<IValidateOptions<DatabaseOptions>, DatabaseOptionsValidator>()
+            .Configure<ClientSecretValidationOptions>(
+                webApplicationBuilder.Configuration.GetSection(ClientSecretValidationOptions.SectionName)
+            )
+            .AddSingleton<
+                IValidateOptions<ClientSecretValidationOptions>,
+                ClientSecretValidationOptionsValidator
+            >()
             .Configure<ClaimsOptions>(webApplicationBuilder.Configuration.GetSection("ClaimsOptions"))
             .AddSingleton<IValidateOptions<ClaimsOptions>, ClaimsOptionsValidator>();
         ConfigureDatastore(webApplicationBuilder, logger);

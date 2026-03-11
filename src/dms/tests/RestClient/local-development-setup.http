@@ -20,7 +20,7 @@
 #        "Authority": "http://localhost:8045/realms/edfi",
 #        "Audience": "account",
 #        "ClientId": "DmsConfigurationService",
-#        "ClientSecret": "s3creT@09",
+#        "ClientSecret": "ValidClientSecret1234567890!Abcd",
 #        "RequireHttpsMetadata": "false",
 #        "RoleClaimType": "http://schemas.microsoft.com/ws/2008/06/identity/claims/role",
 #        "Scope": "edfi_admin_api/full_access"
@@ -43,7 +43,7 @@
 #    "ConfigurationServiceSettings": {
 #        "BaseUrl": "http://localhost:5126",
 #        "ClientId": "DmsConfigurationService",
-#        "ClientSecret": "s3creT@09",
+#        "ClientSecret": "ValidClientSecret1234567890!Abcd",
 #        "Scope": "edfi_admin_api/full_access",
 #        "CacheExpirationMinutes": 10
 #    },

@@ -182,7 +182,7 @@ VALUES ('$encodedKey', decode('$($keyPair.PublicKey)', 'base64'), pgp_sym_encryp
     The plain text secret to hash and store.
 
 .EXAMPLE
-    $sql = New-ClientSecretUpdateSql -ClientId "DmsConfigurationService" -PlainTextSecret "s3creT@09"
+    $sql = New-ClientSecretUpdateSql -ClientId "DmsConfigurationService" -PlainTextSecret "ValidClientSecret1234567890!Abcd"
     Invoke-DbQuery $sql
 
 .OUTPUTS
