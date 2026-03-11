@@ -521,7 +521,7 @@ public class PostgresqlRuntimeMappingInitializationTests
                 CancellationToken.None
             );
 
-            cacheResult.WasCacheHit.Should().BeTrue();
+            cacheResult.CacheStatus.Should().Be(MappingSetCacheStatus.ReusedCompleted);
             cacheResult.MappingSet.Key.Should().Be(mappingSetKey);
             _serviceProvider
                 .GetRequiredService<PostgresqlValidatedResourceKeyMapCache>()
@@ -551,6 +551,10 @@ public class PostgresqlRuntimeMappingInitializationTests
                 .Entries.Should()
                 .Contain(entry =>
                     entry.Level == LogLevel.Warning
+                    && entry.Message.Contains(
+                        "Compiled PostgreSQL runtime mapping set",
+                        StringComparison.Ordinal
+                    )
                     && entry.Message.Contains(
                         "temporary startup validation bypass is active",
                         StringComparison.Ordinal
@@ -631,7 +635,7 @@ public class PostgresqlRuntimeMappingInitializationTests
                 CancellationToken.None
             );
 
-            cacheResult.WasCacheHit.Should().BeTrue();
+            cacheResult.CacheStatus.Should().Be(MappingSetCacheStatus.ReusedCompleted);
             cacheResult.MappingSet.Key.Should().Be(mappingSetKey);
             _serviceProvider
                 .GetRequiredService<PostgresqlValidatedResourceKeyMapCache>()
@@ -844,7 +848,7 @@ public class PostgresqlRuntimeMappingInitializationTests
                 CancellationToken.None
             );
 
-            cacheResult.WasCacheHit.Should().BeTrue();
+            cacheResult.CacheStatus.Should().Be(MappingSetCacheStatus.ReusedCompleted);
             cacheResult.MappingSet.Key.Should().Be(mappingSetKey);
             cacheResult
                 .MappingSet.ReadPlansByResource.Should()
@@ -952,7 +956,7 @@ public class PostgresqlRuntimeMappingInitializationTests
                 CancellationToken.None
             );
 
-            cacheResult.WasCacheHit.Should().BeTrue();
+            cacheResult.CacheStatus.Should().Be(MappingSetCacheStatus.ReusedCompleted);
             cacheResult.MappingSet.Key.Should().Be(mappingSetKey);
 
             var contactReadPlan = cacheResult.MappingSet.ReadPlansByResource[
@@ -1153,7 +1157,7 @@ public class PostgresqlRuntimeMappingInitializationTests
                 CancellationToken.None
             );
 
-            cacheResult.WasCacheHit.Should().BeTrue();
+            cacheResult.CacheStatus.Should().Be(MappingSetCacheStatus.ReusedCompleted);
             cacheResult.MappingSet.Key.Should().Be(mappingSetKey);
             A.CallTo(() => _apiSchemaProvider.GetApiSchemaNodes()).MustHaveHappenedOnceExactly();
         }

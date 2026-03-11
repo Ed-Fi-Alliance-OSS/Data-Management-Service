@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Startup;
 using Microsoft.Extensions.Logging;
@@ -24,7 +25,7 @@ internal sealed class PostgresqlBackendMappingInitializer(
             .ConfigureAwait(false);
 
         var mappingSetKey = cacheResult.MappingSet.Key;
-        var initializationMode = cacheResult.WasCacheHit ? "Reused cached" : "Compiled";
+        var initializationMode = GetInitializationMode(cacheResult.CacheStatus);
 
         if (!appSettings.Value.ValidateProvisionedMappingsOnStartup)
         {
@@ -53,5 +54,16 @@ internal sealed class PostgresqlBackendMappingInitializer(
             validationSummary.InstanceCount,
             validationSummary.ReusedValidationCount
         );
+    }
+
+    private static string GetInitializationMode(MappingSetCacheStatus cacheStatus)
+    {
+        return cacheStatus switch
+        {
+            MappingSetCacheStatus.Compiled => "Compiled",
+            MappingSetCacheStatus.JoinedInFlight => "Joined in-flight",
+            MappingSetCacheStatus.ReusedCompleted => "Reused completed",
+            _ => throw new ArgumentOutOfRangeException(nameof(cacheStatus), cacheStatus, null),
+        };
     }
 }
