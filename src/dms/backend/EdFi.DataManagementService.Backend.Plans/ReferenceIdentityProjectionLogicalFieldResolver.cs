@@ -111,11 +111,7 @@ internal static class ReferenceIdentityProjectionLogicalFieldResolver
                 );
             }
 
-            if (
-                containsUnifiedAlias
-                && logicalFieldGroup.MemberColumns.Count > 1
-                && !Equals(presenceColumn, binding.FkColumn)
-            )
+            if (containsUnifiedAlias && !Equals(presenceColumn, binding.FkColumn))
             {
                 throw createException(
                     $"reference identity projection binding '{binding.ReferenceObjectPath.Canonical}' on table '{tableModel.Table}' grouped logical field '{logicalFieldGroup.ReferenceJsonPath.Canonical}' resolves alias presence column '{FormatPresenceColumn(presenceColumn)}', "

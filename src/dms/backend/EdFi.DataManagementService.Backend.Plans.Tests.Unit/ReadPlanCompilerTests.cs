@@ -291,13 +291,38 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             .Be(new DbColumnName("SchoolYearSecondary"));
         tableColumns[binding.IdentityFieldOrdinalsInOrder[0].ColumnOrdinal]
             .Storage.Should()
-            .BeOfType<ColumnStorage.UnifiedAlias>();
+            .Be(
+                new ColumnStorage.UnifiedAlias(
+                    CanonicalColumn: new DbColumnName("SchoolYearCanonical"),
+                    PresenceColumn: new DbColumnName("School_DocumentId")
+                )
+            );
         tableColumns[binding.IdentityFieldOrdinalsInOrder[1].ColumnOrdinal]
             .ColumnName.Should()
             .Be(new DbColumnName("SchoolYearPrimary"));
         tableColumns[binding.IdentityFieldOrdinalsInOrder[1].ColumnOrdinal]
             .Storage.Should()
-            .BeOfType<ColumnStorage.UnifiedAlias>();
+            .Be(
+                new ColumnStorage.UnifiedAlias(
+                    CanonicalColumn: new DbColumnName("SchoolYearCanonical"),
+                    PresenceColumn: new DbColumnName("School_DocumentId")
+                )
+            );
+    }
+
+    [Test]
+    public void It_should_reject_single_member_key_unified_reference_identity_projection_fields_when_alias_presence_gate_does_not_match_the_reference_fk()
+    {
+        var act = () =>
+            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+                CreateKeyUnifiedReferenceProjectionResourceModelWithNonFkPresenceGate()
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile reference identity projection plan for 'edfi.Student': reference identity projection binding '$.schoolReference' on table 'edfi.Student' grouped logical field '$.schoolReference.localSchoolYear' resolves alias presence column 'SchoolIdAlternate_Present', but owning reference FK column is 'School_DocumentId'."
+            );
     }
 
     [Test]
@@ -2263,16 +2288,39 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         );
     }
 
-    private static RelationalResourceModel CreateKeyUnifiedReferenceProjectionResourceModel()
+    private static RelationalResourceModel CreateKeyUnifiedReferenceProjectionResourceModel() =>
+        CreateKeyUnifiedReferenceProjectionResourceModel(
+            secondaryAliasPresenceColumn: new DbColumnName("School_DocumentId"),
+            primaryAliasPresenceColumn: new DbColumnName("School_DocumentId"),
+            includeAlternatePresenceColumn: false
+        );
+
+    private static RelationalResourceModel CreateKeyUnifiedReferenceProjectionResourceModelWithNonFkPresenceGate() =>
+        CreateKeyUnifiedReferenceProjectionResourceModel(
+            secondaryAliasPresenceColumn: new DbColumnName("SchoolIdAlternate_Present"),
+            primaryAliasPresenceColumn: new DbColumnName("School_DocumentId"),
+            includeAlternatePresenceColumn: true
+        );
+
+    private static RelationalResourceModel CreateKeyUnifiedReferenceProjectionResourceModel(
+        DbColumnName secondaryAliasPresenceColumn,
+        DbColumnName primaryAliasPresenceColumn,
+        bool includeAlternatePresenceColumn
+    )
     {
         var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
         var model = CreateRootOnlyModelWithReferenceGroupDocumentFkPresence(false);
+        var schoolDocumentIdColumn = new DbColumnName("School_DocumentId");
         var primaryColumnName = new DbColumnName("SchoolYearPrimary");
         var secondaryColumnName = new DbColumnName("SchoolYearSecondary");
+        var alternatePresenceColumn = new DbColumnName("SchoolIdAlternate_Present");
 
         DbColumnModel MapColumn(DbColumnModel column)
         {
-            if (column.ColumnName.Equals(primaryColumnName))
+            if (
+                column.ColumnName.Equals(primaryColumnName)
+                && column.Storage is ColumnStorage.UnifiedAlias primaryAlias
+            )
             {
                 return column with
                 {
@@ -2281,10 +2329,14 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                         new JsonPathSegment.Property("schoolReference"),
                         new JsonPathSegment.Property("schoolYear")
                     ),
+                    Storage = primaryAlias with { PresenceColumn = primaryAliasPresenceColumn },
                 };
             }
 
-            if (column.ColumnName.Equals(secondaryColumnName))
+            if (
+                column.ColumnName.Equals(secondaryColumnName)
+                && column.Storage is ColumnStorage.UnifiedAlias secondaryAlias
+            )
             {
                 return column with
                 {
@@ -2293,13 +2345,29 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                         new JsonPathSegment.Property("schoolReference"),
                         new JsonPathSegment.Property("localSchoolYear")
                     ),
+                    Storage = secondaryAlias with { PresenceColumn = secondaryAliasPresenceColumn },
                 };
             }
 
             return column;
         }
 
-        var rootTable = model.Root with { Columns = model.Root.Columns.Select(MapColumn).ToArray() };
+        DbColumnModel[] rootColumns = includeAlternatePresenceColumn
+            ?
+            [
+                .. model.Root.Columns.Select(MapColumn),
+                new DbColumnModel(
+                    ColumnName: alternatePresenceColumn,
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Boolean),
+                    IsNullable: true,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ]
+            : [.. model.Root.Columns.Select(MapColumn)];
+
+        var rootTable = model.Root with { Columns = rootColumns };
 
         return model with
         {
@@ -2314,7 +2382,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                         new JsonPathSegment.Property("schoolReference")
                     ),
                     Table: rootTable.Table,
-                    FkColumn: new DbColumnName("School_DocumentId"),
+                    FkColumn: schoolDocumentIdColumn,
                     TargetResource: schoolResource,
                     IdentityBindings:
                     [

@@ -28,5 +28,25 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_ReadPlanCompiler|FullyQualifiedName~Given_NormalizedPlanContractCodec|FullyQualifiedName~Given_MappingSetLookupExtensions\"`"
     ],
     "completed": true
+  },
+  {
+    "category": "Reference Projection Integrity",
+    "description": "Enforce that every key-unified reference-identity alias uses the owning `DocumentReferenceBinding.FkColumn` as its presence gate, including single-member logical-field groups. Acceptance: read-plan compilation must fail deterministically when a grouped reference field resolves through `ColumnStorage.UnifiedAlias` with any other `PresenceColumn`; the failure must identify the reference object path, grouped logical field path, resolved presence column, and expected FK column; valid single-member and multi-member key-unified reference projections must continue to compile unchanged.",
+    "steps-to-verify": [
+      "Add a unit test that mutates the existing key-unified reference projection fixture so a single-member logical field points at a `UnifiedAlias` whose `PresenceColumn` is not the owning reference FK, and assert `ReadPlanCompiler.Compile(...)` throws the expected deterministic exception.",
+      "Keep the existing grouped multi-member presence-gate tests green to confirm the stricter check does not regress valid grouped-reference behavior.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_ReadPlanCompiler\"`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Plan Decode Validation",
+    "description": "Reject descriptor projection plans with a null `ResultShape` during normalized read-plan decode instead of allowing a null dereference. Acceptance: `NormalizedPlanContractCodec.Decode(...)` must throw a deterministic argument/validation exception that names `DescriptorProjectionPlanDto.ResultShape` when the DTO omits it; the decoder must still accept valid descriptor projection plans and preserve the existing projection-contract validation messages for non-null but invalid ordinal values.",
+    "steps-to-verify": [
+      "Add a unit test that mutates an encoded read plan so one `DescriptorProjectionPlanDto.ResultShape` is null and assert decode fails with a deterministic exception that identifies the missing `ResultShape` field.",
+      "Re-run the existing descriptor projection decode tests to confirm valid plans still round-trip and ordinal-shape validation behavior is unchanged.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter \"FullyQualifiedName~Given_NormalizedPlanContractCodec\"`"
+    ],
+    "completed": false
   }
 ]
