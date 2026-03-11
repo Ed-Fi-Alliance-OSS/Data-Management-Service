@@ -29,7 +29,7 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
         IDatabaseFingerprintReader fingerprintReader,
         IDmsInstanceSelection dmsInstanceSelection,
         IServiceProvider serviceProvider
-    ) CreateMiddleware(bool enableFingerprintValidation)
+    ) CreateMiddleware(bool enableFingerprintValidation, bool validateProvisionedMappingsOnStartup = false)
     {
         var fingerprintReader = A.Fake<IDatabaseFingerprintReader>();
         var dmsInstanceSelection = A.Fake<IDmsInstanceSelection>();
@@ -40,6 +40,7 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
             {
                 AllowIdentityUpdateOverrides = "",
                 UseRelationalBackend = enableFingerprintValidation,
+                ValidateProvisionedMappingsOnStartup = validateProvisionedMappingsOnStartup,
             }
         );
 

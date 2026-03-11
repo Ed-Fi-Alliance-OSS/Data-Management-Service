@@ -35,7 +35,7 @@
       "Add or update `ValidateDatabaseFingerprintMiddleware` tests to show request-path behavior is unchanged by the new startup-only flag.",
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter ValidateDatabaseFingerprintMiddleware`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Tracking - Do this last",
