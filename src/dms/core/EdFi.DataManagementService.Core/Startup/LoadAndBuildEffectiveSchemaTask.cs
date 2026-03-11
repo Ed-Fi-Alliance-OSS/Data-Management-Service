@@ -118,10 +118,11 @@ internal class LoadAndBuildEffectiveSchemaTask(
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Step 4: Build the effective API schema documents and cache the authoritative schema set.
+        // Step 4: Cache the authoritative schema set before building the effective API schema so a
+        // later initialization failure does not leave the API schema provider partially initialized.
         _logger.LogInformation("Building effective schema and priming caches");
-        _effectiveApiSchemaProvider.Initialize(normalizedNodes);
         _effectiveSchemaSetProvider.Initialize(effectiveSchemaSet);
+        _effectiveApiSchemaProvider.Initialize(normalizedNodes);
 
         _logger.LogInformation(
             "Effective API schema initialization complete. SchemaId: {SchemaId}",

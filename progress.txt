@@ -46,3 +46,10 @@ Decisions: document the exact emitted phase list instead of illustrative example
 Files changed: reference/design/backend-redesign/epics/15-plan-compilation/startup-failure-status-surfacing.md; tasks.json; progress.txt
 Feedback loops: rg -n "ConfigureServices|BuildApplication|LoadDmsInstances|InitializeDatabase|InitializeApiSchemas|InitializeBackendMappings|WarmUpOidcMetadataCache|ConfigureEndpoints|Ready" reference/design/backend-redesign/epics/15-plan-compilation/startup-failure-status-surfacing.md src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Infrastructure/StartupPhaseExecutor.cs src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Program.cs
 Notes next: tasks.json shows all story tasks complete.
+
+2026-03-11
+Task complete: Startup Reliability - effective schema provider init ordering. Story: reference/design/backend-redesign/epics/15-plan-compilation/06-projection-plan-compilers.md
+Decisions: reorder startup provider initialization instead of adding rollback API; safer failure mode is schema-set init first so schema-set exceptions leave both providers uninitialized; add explicit unit coverage for init order and schema-set failure passthrough.
+Files changed: src/dms/core/EdFi.DataManagementService.Core/Startup/LoadAndBuildEffectiveSchemaTask.cs; src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Startup/LoadAndBuildEffectiveSchemaTaskTests.cs; tasks.json; progress.txt
+Feedback loops: dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core/Startup/LoadAndBuildEffectiveSchemaTask.cs src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Startup/LoadAndBuildEffectiveSchemaTaskTests.cs; dotnet build --no-restore ./src/dms/core/EdFi.DataManagementService.Core/EdFi.DataManagementService.Core.csproj; dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter LoadAndBuildEffectiveSchemaTaskTests
+Notes next: Diagnostics task remains; prior progress note claiming all tasks complete is stale now that backlog includes two follow-on tasks.

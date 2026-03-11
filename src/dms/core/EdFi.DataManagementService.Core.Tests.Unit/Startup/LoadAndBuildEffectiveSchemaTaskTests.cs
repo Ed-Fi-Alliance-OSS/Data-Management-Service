@@ -232,6 +232,129 @@ public class LoadAndBuildEffectiveSchemaTaskTests
                 )
                 .MustHaveHappenedOnceExactly();
         }
+
+        [Test]
+        public async Task It_initializes_the_effective_schema_set_provider_before_the_effective_api_schema_provider()
+        {
+            // Arrange
+            List<string> initializationOrder = [];
+
+            A.CallTo(() => _mockEffectiveSchemaSetProvider.Initialize(A<EffectiveSchemaSet>._))
+                .Invokes(() => initializationOrder.Add("schema-set"));
+
+            A.CallTo(() => _mockEffectiveProvider.Initialize(A<ApiSchemaDocumentNodes>._))
+                .Invokes(() => initializationOrder.Add("effective-api"));
+
+            // Act
+            await _task.ExecuteAsync(CancellationToken.None);
+
+            // Assert
+            initializationOrder.Should().Equal("schema-set", "effective-api");
+        }
+    }
+
+    [TestFixture]
+    public class Given_Effective_Schema_Set_Initialization_Fails : LoadAndBuildEffectiveSchemaTaskTests
+    {
+        private IApiSchemaProvider _mockSchemaProvider = null!;
+        private IEffectiveApiSchemaProvider _mockEffectiveProvider = null!;
+        private IEffectiveSchemaSetProvider _mockEffectiveSchemaSetProvider = null!;
+        private IApiSchemaInputNormalizer _mockNormalizer = null!;
+        private IEffectiveSchemaHashProvider _mockHashProvider = null!;
+        private IResourceKeySeedProvider _mockSeedProvider = null!;
+        private LoadAndBuildEffectiveSchemaTask _task = null!;
+        private InvalidOperationException _expectedException = null!;
+        private bool _effectiveApiSchemaProviderIsInitialized;
+
+        [SetUp]
+        public void Setup()
+        {
+            var schemaNodes = CreateValidSchemaNodes();
+
+            _mockSchemaProvider = A.Fake<IApiSchemaProvider>();
+            A.CallTo(() => _mockSchemaProvider.GetApiSchemaNodes()).Returns(schemaNodes);
+            A.CallTo(() => _mockSchemaProvider.IsSchemaValid).Returns(true);
+            A.CallTo(() => _mockSchemaProvider.ApiSchemaFailures).Returns([]);
+
+            _mockEffectiveProvider = A.Fake<IEffectiveApiSchemaProvider>();
+            A.CallTo(() => _mockEffectiveProvider.Initialize(A<ApiSchemaDocumentNodes>._))
+                .Invokes(() => _effectiveApiSchemaProviderIsInitialized = true);
+            A.CallTo(() => _mockEffectiveProvider.IsInitialized)
+                .ReturnsLazily(() => _effectiveApiSchemaProviderIsInitialized);
+
+            _mockEffectiveSchemaSetProvider = A.Fake<IEffectiveSchemaSetProvider>();
+            _expectedException = new InvalidOperationException("Schema-set initialization failed");
+            A.CallTo(() => _mockEffectiveSchemaSetProvider.Initialize(A<EffectiveSchemaSet>._))
+                .Throws(_expectedException);
+            A.CallTo(() => _mockEffectiveSchemaSetProvider.IsInitialized).Returns(false);
+
+            _mockNormalizer = A.Fake<IApiSchemaInputNormalizer>();
+            A.CallTo(() => _mockNormalizer.Normalize(A<ApiSchemaDocumentNodes>._))
+                .ReturnsLazily(
+                    (ApiSchemaDocumentNodes nodes) => new ApiSchemaNormalizationResult.SuccessResult(nodes)
+                );
+
+            _mockHashProvider = A.Fake<IEffectiveSchemaHashProvider>();
+            A.CallTo(() =>
+                    _mockHashProvider.ComputeHash(A<string>._, A<IReadOnlyList<ProjectSchemaMetadata>>._)
+                )
+                .Returns("expected-schema-hash");
+
+            _mockSeedProvider = A.Fake<IResourceKeySeedProvider>();
+            IReadOnlyList<ResourceKeySeed> seeds =
+            [
+                new ResourceKeySeed(
+                    ResourceKeyId: 1,
+                    ProjectName: "Ed-Fi",
+                    ResourceName: "Student",
+                    ResourceVersion: "5.0.0",
+                    IsAbstract: false
+                ),
+            ];
+            A.CallTo(() => _mockSeedProvider.GetSeeds(schemaNodes)).Returns(seeds);
+            A.CallTo(() => _mockSeedProvider.ComputeSeedHash(seeds)).Returns([0x12, 0x34]);
+
+            _task = new LoadAndBuildEffectiveSchemaTask(
+                _mockSchemaProvider,
+                _mockEffectiveProvider,
+                _mockEffectiveSchemaSetProvider,
+                _mockNormalizer,
+                CreateBuilder(_mockHashProvider, _mockSeedProvider),
+                NullLogger<LoadAndBuildEffectiveSchemaTask>.Instance
+            );
+        }
+
+        [Test]
+        public async Task It_surfaces_the_original_exception()
+        {
+            // Act
+            Func<Task> act = async () => await _task.ExecuteAsync(CancellationToken.None);
+
+            // Assert
+            await act.Should()
+                .ThrowAsync<InvalidOperationException>()
+                .Where(ex => ReferenceEquals(ex, _expectedException));
+        }
+
+        [Test]
+        public async Task It_does_not_leave_the_providers_partially_initialized()
+        {
+            // Act
+            try
+            {
+                await _task.ExecuteAsync(CancellationToken.None);
+            }
+            catch (InvalidOperationException)
+            {
+                // Expected
+            }
+
+            // Assert
+            _mockEffectiveSchemaSetProvider.IsInitialized.Should().BeFalse();
+            _mockEffectiveProvider.IsInitialized.Should().BeFalse();
+            A.CallTo(() => _mockEffectiveProvider.Initialize(A<ApiSchemaDocumentNodes>._))
+                .MustNotHaveHappened();
+        }
     }
 
     [TestFixture]

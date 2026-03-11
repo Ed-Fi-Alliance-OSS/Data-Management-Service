@@ -64,5 +64,25 @@
       "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj`"
     ],
     "completed": true
+  },
+  {
+    "category": "Startup Reliability",
+    "description": "Make `LoadAndBuildEffectiveSchemaTask` leave a cleaner failure state if provider initialization fails partway through. Acceptance: initialization no longer leaves `IEffectiveApiSchemaProvider` initialized while `IEffectiveSchemaSetProvider` remains uninitialized when the second provider initialization throws. The implementation must either initialize the schema-set provider before the effective API schema provider or explicitly roll back the first initialization on failure. Add unit coverage for the partial-failure scenario and verify the task surfaces the original exception.",
+    "steps-to-verify": [
+      "Confirm `src/dms/core/EdFi.DataManagementService.Core/Startup/LoadAndBuildEffectiveSchemaTask.cs` no longer initializes the effective API schema provider first without compensating cleanup when `IEffectiveSchemaSetProvider.Initialize(...)` fails.",
+      "Add or update unit tests in `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Startup/LoadAndBuildEffectiveSchemaTaskTests.cs` to simulate a failure during schema-set provider initialization and assert the final provider state is not partially initialized.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter LoadAndBuildEffectiveSchemaTaskTests`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Diagnostics",
+    "description": "Clarify the failure message for unsupported transitive `UnifiedAlias` resolution in `ReferenceIdentityProjectionLogicalFieldResolver`. Acceptance: when a grouped reference identity binding resolves to a canonical column whose storage is itself `ColumnStorage.UnifiedAlias`, the thrown exception explicitly states that transitive `UnifiedAlias` resolution is not supported, identifies both alias columns involved, and preserves the existing context about the reference object path, table, and logical field.",
+    "steps-to-verify": [
+      "Confirm `src/dms/backend/EdFi.DataManagementService.Backend.Plans/ReferenceIdentityProjectionLogicalFieldResolver.cs` emits a targeted error message for alias-of-alias resolution instead of the generic \"column is not stored\" message.",
+      "Add or update a unit test in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/` that constructs a transitive alias scenario and asserts the thrown message mentions unsupported transitive `UnifiedAlias` resolution and both column names.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter ReferenceIdentityProjection`"
+    ],
+    "completed": false
   }
 ]
