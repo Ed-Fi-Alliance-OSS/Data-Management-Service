@@ -7,7 +7,7 @@
       "Run: `dotnet build --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/EdFi.DataManagementService.Backend.RelationalModel.csproj`",
       "Run: `dotnet build --no-restore ./src/dms/backend/EdFi.DataManagementService.Old.Postgresql/EdFi.DataManagementService.Old.Postgresql.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Configuration",

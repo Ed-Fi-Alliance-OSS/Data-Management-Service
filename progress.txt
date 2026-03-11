@@ -11,3 +11,10 @@ Decisions: keep runtime DI path logger-only; add bootstrap-only fallback writer 
 Files changed: src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Infrastructure/StartupStatusSignal.cs; src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Program.cs; src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/StartupStatusSignalTests.cs; tasks.json
 Feedback loops: dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj
 Notes next: csharpier reformatted ctor initializers into a shape rejected by IDE0055; kept Roslyn-approved layout in StartupStatusSignal.cs.
+
+2026-03-11
+Task complete: Dependency Hygiene - remove unused Core project reference. Story: reference/design/backend-redesign/epics/15-plan-compilation/06-projection-plan-compilers.md
+Decisions: treat as closeout/verification task because prior iteration already removed Backend.RelationalModel -> Core reference; confirm no remaining source dependency before marking complete.
+Files changed: tasks.json; progress.txt
+Feedback loops: dotnet build --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/EdFi.DataManagementService.Backend.RelationalModel.csproj; dotnet build --no-restore ./src/dms/backend/EdFi.DataManagementService.Old.Postgresql/EdFi.DataManagementService.Old.Postgresql.csproj
+Notes next: remaining incomplete work is config/docs/tests polish; reassess task priority from current backlog, not prior order.
