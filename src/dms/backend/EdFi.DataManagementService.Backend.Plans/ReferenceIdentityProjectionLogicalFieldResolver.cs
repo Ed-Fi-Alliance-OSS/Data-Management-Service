@@ -182,6 +182,7 @@ internal static class ReferenceIdentityProjectionLogicalFieldResolver
             ColumnStorage.UnifiedAlias unifiedAlias => new ResolvedReferenceIdentityProjectionBindingColumn(
                 StorageColumn: ResolveStoredCanonicalColumnOrThrow(
                     tableModel,
+                    bindingColumn.ColumnName,
                     unifiedAlias.CanonicalColumn,
                     contextDescription,
                     createException
@@ -197,6 +198,7 @@ internal static class ReferenceIdentityProjectionLogicalFieldResolver
 
     private static DbColumnName ResolveStoredCanonicalColumnOrThrow(
         DbTableModel tableModel,
+        DbColumnName aliasColumnName,
         DbColumnName canonicalColumnName,
         string contextDescription,
         Func<string, Exception> createException
@@ -214,6 +216,14 @@ internal static class ReferenceIdentityProjectionLogicalFieldResolver
         if (canonicalColumn.Storage is ColumnStorage.Stored)
         {
             return canonicalColumnName;
+        }
+
+        if (canonicalColumn.Storage is ColumnStorage.UnifiedAlias)
+        {
+            throw createException(
+                $"{contextDescription} resolves to canonical alias column '{canonicalColumnName.Value}'. "
+                    + $"Transitive {nameof(ColumnStorage.UnifiedAlias)} resolution is not supported for alias column '{aliasColumnName.Value}' -> '{canonicalColumnName.Value}'"
+            );
         }
 
         throw createException(

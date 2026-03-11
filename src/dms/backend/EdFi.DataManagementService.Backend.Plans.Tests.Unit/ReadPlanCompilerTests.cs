@@ -326,6 +326,21 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_reject_grouped_reference_identity_projection_fields_when_unified_alias_resolution_is_transitive()
+    {
+        var act = () =>
+            new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
+                CreateGroupedReferenceProjectionResourceModelWithTransitiveUnifiedAlias()
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot compile reference identity projection plan for 'edfi.StudentGroupedReferenceProjection': reference identity projection binding '$.schoolReference' on table 'edfi.StudentGroupedReferenceProjection' grouped logical field '$.schoolReference.schoolId' member column 'School_RefSchoolIdSecondary' resolves to canonical alias column 'School_RefSchoolIdPrimary'. Transitive UnifiedAlias resolution is not supported for alias column 'School_RefSchoolIdSecondary' -> 'School_RefSchoolIdPrimary'."
+            );
+    }
+
+    [Test]
     public void It_should_compile_grouped_reference_identity_projection_fields_once_per_logical_reference_path()
     {
         var readPlan = new ReadPlanCompiler(SqlDialect.Pgsql).Compile(
@@ -2419,6 +2434,33 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             secondaryAliasPresenceColumn: new DbColumnName("School_DocumentId"),
             primaryAliasPresenceColumn: new DbColumnName("SchoolIdAlternate_Present")
         );
+
+    private static RelationalResourceModel CreateGroupedReferenceProjectionResourceModelWithTransitiveUnifiedAlias()
+    {
+        var model = CreateGroupedReferenceProjectionResourceModel();
+        var secondaryAliasColumn = new DbColumnName("School_RefSchoolIdSecondary");
+        var primaryAliasColumn = new DbColumnName("School_RefSchoolIdPrimary");
+        var rootTable = model.Root with
+        {
+            Columns = model
+                .Root.Columns.Select(column =>
+                    column.ColumnName.Equals(secondaryAliasColumn)
+                    && column.Storage is ColumnStorage.UnifiedAlias secondaryAlias
+                        ? column with
+                        {
+                            Storage = secondaryAlias with { CanonicalColumn = primaryAliasColumn },
+                        }
+                        : column
+                )
+                .ToArray(),
+        };
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
+        };
+    }
 
     private static RelationalResourceModel CreateGroupedReferenceProjectionResourceModelWithNonFkPresenceGate() =>
         CreateGroupedReferenceProjectionResourceModel(

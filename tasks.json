@@ -83,6 +83,6 @@
       "Add or update a unit test in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/` that constructs a transitive alias scenario and asserts the thrown message mentions unsupported transitive `UnifiedAlias` resolution and both column names.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj --filter ReferenceIdentityProjection`"
     ],
-    "completed": false
+    "completed": true
   }
 ]
