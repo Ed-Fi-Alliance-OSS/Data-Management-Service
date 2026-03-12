@@ -140,7 +140,7 @@ function Add-CmsClient {
         [string]$ClientId = "sys-admin",
 
         [ValidateNotNullOrEmpty()]
-        [string]$ClientSecret = "SdfH)98&Jk",
+        [string]$ClientSecret = "SdfH)98&JkSdfH)98&JkSdfH)98&JkSdfH)9",
 
         [ValidateNotNullOrEmpty()]
         [string]$DisplayName = "System Administrator"
@@ -209,7 +209,7 @@ function Get-CmsToken {
         [string]$ClientId = "sys-admin",
 
         [ValidateNotNullOrEmpty()]
-        [string]$ClientSecret = "SdfH)98&Jk",
+        [string]$ClientSecret = "SdfH)98&JkSdfH)98&JkSdfH)98&JkSdfH)9",
 
         [ValidateNotNullOrEmpty()]
         [string]$GrantType = "client_credentials",
