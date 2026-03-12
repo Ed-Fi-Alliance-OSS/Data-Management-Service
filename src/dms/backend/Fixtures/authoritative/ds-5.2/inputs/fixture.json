@@ -1,0 +1,5 @@
+{
+  "apiSchemaFiles": ["ds-5.2-api-schema-authoritative.json"],
+  "dialects": ["pgsql", "mssql"],
+  "emitDdlManifest": true
+}
