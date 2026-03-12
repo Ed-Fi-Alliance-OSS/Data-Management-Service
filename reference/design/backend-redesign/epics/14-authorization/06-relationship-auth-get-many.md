@@ -28,7 +28,6 @@ This ticket delivers the complete authorization subquery pipeline (SQL generatio
 - When multiple relationship-based strategies are configured for the same resource, they are combined with OR semantics.
 - No duplicate results are returned (uses IN subquery approach, not JOIN).
 - Pagination (offset/limit) and total count work correctly with the authorization filter applied.
-- Resource-specific SQL checks are lazily generated on first request and cached by (EffectiveSchemaHash, resource, securableElement).
 - Works for both PostgreSQL and SQL Server. For SQL Server, when the token's EdOrgId list has fewer than 2,000 entries, use a parameterized IN clause; otherwise, use a TVP of type dms.BigIntTable.
 
 NOTE: The People-involved strategies (RelationshipsWithEdOrgsAndPeople, RelationshipsWithEdOrgsAndPeopleInverted, RelationshipsWithPeopleOnly, RelationshipsWithStudentsOnly, RelationshipsWithStudentsOnlyThroughResponsibility) will be implemented in [DMS-1095](https://edfi.atlassian.net/browse/DMS-1095).

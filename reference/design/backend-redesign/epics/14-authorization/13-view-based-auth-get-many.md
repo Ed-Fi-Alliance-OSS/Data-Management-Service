@@ -23,7 +23,6 @@ Implement the view-based authorization strategy for the GET-many scenario per:
 - View-based strategies execute before relationship-based (OR) strategies, and their order relative to Namespace-based follows the order configured in CMS.
 - When authorization fails (no matching rows), the result set is simply empty — no error is thrown for GET-many; the filter naturally excludes unauthorized resources.
 - When the custom auth view does not exist or returns invalid columns, DMS returns HTTP 500 with `type: urn:ed-fi:api:system` (same as ODS behavior). See `auth.md` §"View-based authorization strategy".
-- Resource-specific SQL checks are lazily generated on first request and cached by (EffectiveSchemaHash, resource, securableElement).
 - Works for both PostgreSQL and SQL Server.
 - Tests cover the next scenarios:
   - Basis resource = descriptor

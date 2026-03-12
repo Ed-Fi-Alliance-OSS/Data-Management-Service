@@ -7,11 +7,11 @@ jira_url: https://edfi.atlassian.net/browse/DMS-1091
 
 ## Description
 
-The backend redesign's startup flow (`new-startup-flow.md`) requires all initialization work to be managed through the DmsStartupOrchestrator using IDmsStartupTask implementations, with deterministic fail-fast behavior for startup failures.
+The backend redesign's startup flow (`new-startup-flow.md`) requires all initialization work to be managed through the DmsStartupOrchestrator using IDmsStartupTask implementations.
 
-Currently, `WarmUpOidcMetadataCache()` and `RetrieveAndCacheClaimSets()` are standalone methods in Program.cs that run outside the orchestrator. Additionally, `RetrieveAndCacheClaimSets` intentionally swallows errors and lets DMS start without cached claim sets, which violates the redesign's all-or-nothing startup principle.
+Currently, `WarmUpOidcMetadataCache()` and `RetrieveAndCacheClaimSets()` are standalone methods in Program.cs that run outside the orchestrator.
 
-This ticket formalizes auth startup into the orchestrator and enforces fail-fast per `reference/design/backend-redesign/design-docs/new-startup-flow.md`.
+This ticket formalizes auth startup into the orchestrator per `reference/design/backend-redesign/design-docs/new-startup-flow.md`.
 
 ## Acceptance Criteria
 
@@ -21,7 +21,7 @@ This ticket formalizes auth startup into the orchestrator and enforces fail-fast
   - The standalone `WarmUpOidcMetadataCache()` method is removed from Program.cs.
 - **Claim set caching runs as an IDmsStartupTask**
   - A new CacheClaimSetsTask implementing IDmsStartupTask exists with Order higher than the OIDC task (e.g., 410).
-  - Claim set retrieval fails, the task throws, causing the orchestrator to abort startup (process exits with non-zero code). The current behavior of swallowing the exception is removed.
+  - If the Claim set retrieval fails, the error gets logged. Do not prevent DMS from starting up to avoid impacting the application's availability.
   - Multi-tenant claim set loading (iterating over tenants) is preserved.
   - The standalone `RetrieveAndCacheClaimSets()` method is removed from Program.cs.
 - **Startup ordering is preserved**

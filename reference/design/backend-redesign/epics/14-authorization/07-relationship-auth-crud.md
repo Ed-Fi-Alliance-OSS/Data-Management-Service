@@ -32,6 +32,5 @@ Implement the relationship-based authorization strategies for the GET-by-id, POS
   - When a single securable element is involved, the error uses the singular form; when multiple, the plural form listing all elements.
   - EdOrg claims are shown in the error (up to 5, then `...`).
 - Auth checks are batched with other statements in the same DB roundtrip (e.g., reconstitution for GET-by-id, delete for DELETE, insert for POST) to match the roundtrip targets defined in the design doc.
-- Resource-specific SQL checks are lazily generated on first request and cached by (EffectiveSchemaHash, resource, securableElement).
 - Works for both PostgreSQL and SQL Server, using the throw_error function in PostgreSQL and the CAST('AUTH1 - ...' AS INT) pattern in SQL Server for aborting batches.
 - For SQL Server, when the token's EdOrgId list has fewer than 2,000 entries, use a parameterized IN clause; otherwise, use a TVP.

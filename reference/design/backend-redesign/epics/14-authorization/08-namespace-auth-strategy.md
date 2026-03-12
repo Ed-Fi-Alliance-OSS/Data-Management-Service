@@ -24,7 +24,6 @@ Implement the namespace-based authorization strategy for all CRUD operations per
 - The namespace column to check is resolved from the resource's Namespace securable element in ApiSchema.json. The column is always directly available on the resource's root table (no transitive joins needed).
 - When authorization fails, an AUTH1 error is thrown with the strategy index in the message (e.g., 'Unauthorized, index: 0'), aborting the batch and allowing C# to map the failure to the correct strategy for ProblemDetails.
 - Auth checks are batched in the same DB roundtrip as other statements (reconstitution, insert, delete, etc.) to match the roundtrip targets in the design doc.
-- Resource-specific SQL checks are lazily generated on first request and cached by (EffectiveSchemaHash, resource, securableElement).
 - Works for both PostgreSQL and SQL Server:
   - PostgreSQL: Use `LIKE ANY(ARRAY[...])` with parameterized prefix values.
   - SQL Server: When the client has fewer than 2,000 namespace prefixes, use parameterized OR chains of LIKE clauses. When >= 2,000, throw an error (no TVP is used for namespace prefixes).

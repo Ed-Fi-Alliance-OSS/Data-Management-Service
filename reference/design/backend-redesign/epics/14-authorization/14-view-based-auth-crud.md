@@ -24,7 +24,6 @@ Implement the view-based (custom) authorization strategy for single-record opera
 - The join path from the resource table to the basis resource is resolved using `ResolveSecurableElementColumnPath(sourceResourceFullName, targetResourceFullName)`.
 - When authorization fails, an AUTH1 error is thrown with the strategy index in the message (e.g., 'Unauthorized, index: N'), aborting the batch and allowing ProblemDetails generation.
 - Auth checks are batched in the same DB roundtrip as other statements (reconstitution, insert, delete, etc.) to match the roundtrip targets in the design doc.
-- Resource-specific SQL checks are lazily generated on first request and cached by (EffectiveSchemaHash, resource, securableElement).
 - View-based strategies are combined with AND semantics alongside other AND strategies and execute before relationship-based (OR) strategies.
 - Works for both PostgreSQL and SQL Server, using the dms.throw_error function in PostgreSQL and the CAST('AUTH1 - ...' AS INT) pattern in SQL Server for aborting batches.
 - ProblemDetails follow `auth.md` §"ProblemDetails", specifically §2.4 (no relationships without EdOrg claims), §2.7 (custom view element uninitialized), and §2.8 (custom view element missing).

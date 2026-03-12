@@ -193,7 +193,7 @@ WHERE
 
 The view must follow this naming convention: `{BasisResource}With{SomeDescription}`.
 
-When a GET request for CourseTranscript arrives, if the configured authorization strategy name is unknown, we fallback to the custom view-based strategy and extract from the strategy name the *basis resource*. In this case, `auth.StudentWithCTECourseEnrollments` maps to `Student`. Then, we validate that all the primary key columns from `Student` appear in `CourseTranscript`. These columns will be used to join with the custom view and authorize the request.
+When a GET request for CourseTranscript arrives, if the configured authorization strategy name is unknown, we fall back to the custom view-based strategy and extract from the strategy name the *basis resource*. In this case, `auth.StudentWithCTECourseEnrollments` maps to `Student`. Then, we validate that all the primary key columns from `Student` appear in `CourseTranscript`. These columns will be used to join with the custom view and authorize the request.
 
 Non-primary-key and role-named columns are allowed for the target resource ([more info here](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/511cf65e71b1f3d96a7e3801a3ed71dc84239e20/Application/EdFi.Ods.Common/Security/Authorization/CustomViewBasedAuthorizationStrategy.cs#L69)). For example, assume that `StudentUniqueId` is nullable in `CourseTranscript`; the strategy will allow it. However, for GET-many requests it will only return non-null values that match the result from the view, and for GET-by-ID it will return an unauthorized error if the entry has a null `StudentUniqueId`. Change query endpoints cannot be authorized with this strategy if it maps to non-PK columns in the target resource ([more info here](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/511cf65e71b1f3d96a7e3801a3ed71dc84239e20/Application/EdFi.Ods.Api/Security/AuthorizationStrategies/CustomViewBased/CustomViewBasedAuthorizationFilterDefinitionsFactory.cs#L147)).
 
@@ -203,7 +203,7 @@ These strategies are view-based (like the relationship-based strategies) but are
 
 These strategies can be defined without requiring code changes, compilation, or deployment; ODS refreshes the Claim Set metadata cache on a configured TTL to detect when a new custom view-based strategy is configured.
 
-When the view that backs the custom strategy doesn't exist or returns invalid columns, ODS logs the error details and returns HTTP 500:
+When the view that backs the custom strategy doesn't exist or returns invalid columns, ODS logs an error with the details and returns HTTP 500:
 ```json
 {
   "detail": "An unexpected problem has occurred.",
@@ -214,7 +214,7 @@ When the view that backs the custom strategy doesn't exist or returns invalid co
 }
 ```
 
-As of now, no validation is done during startup. It could be implemented, but such validation would also need to be executed whenever the Claim Set cache is refreshed.
+As of now, the custom views are not validated during startup. It could be implemented, but such validation would also need to be executed whenever the Claim Set cache is refreshed.
 
 ### Ownership-based authorization strategy
 
@@ -299,9 +299,7 @@ When updating a resource, we first authorize against the values that are current
 
 As of today, all fields that are securable elements must be part of the resource's identity (except for the custom view-based strategy; more info below), meaning that if a resource is POSTed with an uninitialized securable element, it will fail validation because it is a required field.
 
-However, there is also a validation in the authorization layer to ensure that these fields are initialized when creating and retrieving a resource. This validation might seem redundant, but it serves as a guardrail in case some securable elements become nullable one day.
-
-The view-based strategy allows using nullable fields as securable elements, so the validation is not redundant in that scenario.
+However, there is also a validation in the authorization layer that ensures these fields are initialized when creating and retrieving a resource. This validation might seem redundant, but it serves as an additional check in case some securable elements become nullable one day. The view-based strategy allows using nullable fields as securable elements, so the validation is not redundant in that scenario.
 
 ## What needs to be done in DMS
 
@@ -315,9 +313,9 @@ Storing the `CreatedByOwnershipTokenId` in `dms.Document` also means that we mus
 
 ### View-based authorization strategy
 
-In DMS, we aim to apply joins using the DocumentId surrogate key instead of natural keys, meaning that the custom authorization views used by this strategy must output the DocumentId/DescriptorId of the basis resource instead of the natural keys.
+In DMS, we aim to apply joins using the DocumentId surrogate key instead of natural keys, meaning that the custom authorization views used by this strategy must output the DocumentId of the basis resource instead of the natural keys.
 
-In the example above, the `auth.StudentWithCTECourseEnrollments` view will return the Student's DocumentId instead of the StudentUsi. See the `Resolving the DB columns used for authorization` section below for more information.
+In the example above, the `auth.StudentWithCTECourseEnrollments` view will return the Student's DocumentId instead of the StudentUSI. See the `Resolving the DB columns used for authorization` section below for more information.
 
 ### Performance improvements over ODS
 
@@ -820,9 +818,9 @@ The `Namespace` and `EducationOrganizationId` columns are simpler to get since t
 
 We need a helper function that, given the resource that we are trying to authorize, returns the necessary information to construct the SQL authorization check.
 
-**ResolveSecurableElementColumnPath(sourceResourceFullName, securableElement)**
+**ResolveSecurableElementColumnPath(subjectResourceFullName, securableElement)**
 
-- The `sourceResourceFullName` parameter gets initialized with the value from `projectSchema.resourceSchemas.courseTranscripts.resourceName` from the ApiSchema.json, plus its project name
+- The `subjectResourceFullName` parameter gets initialized with the `ResourceName` from the ApiSchema.json, plus its project name
 - The `securableElement` parameter gets initialized with the securable element from the ApiSchema.json, for example:
 
   ```json
@@ -833,7 +831,7 @@ We need a helper function that, given the resource that we are trying to authori
   }
   ```
 
-- For the `CourseTranscript` example, the function should return the following collection
+For the `CourseTranscript` example, the function should return the following collection:
 
   ```json
   [
@@ -931,22 +929,62 @@ The helper function should return:
 
 ---
 
-In the View-based authorization strategy, the basis resource *is* the securableElement, meaning that we need a similar helper function that takes the source and the target resource.
+In the View-based authorization strategy, the basis resource *is* the securableElement, meaning that we need a similar helper function that takes the subject and the basis resource.
 
-**ResolveSecurableElementColumnPath(sourceResourceFullName, targetResourceFullName)**
+**ResolveSecurableElementColumnPath(subjectResourceFullName, basisResourceFullName)**
 
-- The `sourceResourceFullName` parameter gets initialized with the value from `projectSchema.resourceSchemas.courseTranscripts.resourceName` from the ApiSchema.json, plus its project name
-- The `targetResourceFullName` parameter gets initialized with the name of the basis resource (like Student), plus its project name
-- The returned value is the same as the example above
+- The `subjectResourceFullName` parameter gets initialized with the `ResourceName` from the ApiSchema.json, plus its project name
+- The `basisResourceFullName` parameter gets initialized with the `ResourceName` from the ApiSchema.json, plus its project name
+- The returned value is the same as above
 
-The high-level logic is as follows: recursively traverse all the references from the sourceResource and take note of those that reach the target resource. There can be multiple paths; pick the winning path based on:
+The high-level logic is as follows: using ApiSchema.json's `documentPathsMapping`, recursively traverse all the references from the subjectResource and take note of those that reach the basisResource. 
 
-1. Prioritize references that are part of identity
-2. Prioritize required references over optional
-3. Prioritize non-role named references
-4. Shortest path
+There can be multiple resulting paths; pick the winner based on:
 
-Note that non-part-of-identity references are only allowed in the sourceResource (not in the middle of the path).
+1. Part-of-identity references win over non-part-of-identity references
+2. Required references win over optional references
+3. Non-role-named references win over role-named references
+4. Shortest path wins
+
+Note that non-part-of-identity references are only allowed in the subjectResource (not in the middle of the reference chain).
+
+The basisResource can also be a descriptor. Assume that the custom view `TransportationTypeDescriptorWithABus` is assigned to the `StudentTransportation` resource; the helper function should join with the `dms.Descriptor` table and return:
+```json
+[
+  {
+    "sourceTable": {
+      "schema": "edfi",
+      "name": "StudentTransportation"
+    },
+    "sourceColumnName": "TransportationTypeDescriptor_DescriptorId",
+    "targetTable": {
+      "schema": "dms",
+      "name": "Descriptor"
+    },
+    "targetColumnName": "DocumentId"
+  }
+]
+```
+Custom views that return descriptors (such as the `TransportationTypeDescriptorWithABus` above) should return the descriptor's DocumentId as they appear in `dms.Descriptor.DocumentId`.
+
+This function overload should also allow passing an abstract resource (such as `EducationOrganization` or `GeneralStudentProgramAssociation`) as the basis resource.
+
+Tests cover the following scenarios:
+  - The Basis resource is a directly referenced descriptor
+    - Assign `TransportationTypeDescriptorWithABus` to `StudentTransportation`
+  - The Basis resource is an indirectly referenced descriptor
+  - The Basis resource is a directly referenced resource
+  - The Basis resource is an indirectly referenced resource
+  - The Basis resource is the subject resource (self-reference)
+    - Assign `StudentWithCTECourseEnrollments` to `Student`
+    - Assign `TransportationTypeDescriptorWithABus` to `TransportationTypeDescriptor`
+  - The basis resource is abstract
+    - Assign `EducationOrganizationWithACategoryContainingAnSWord` to `School` (self-reference)
+    - Assign `EducationOrganizationWithACategoryContainingAnSWord` to `BellSchedule`
+    - Assign `EducationOrganizationWithACategoryContainingAnSWord` to `StudentSchoolAssociation`. It should use `StudentSchoolAssociation.GraduationPlan.EducationOrganizationId` instead of `StudentSchoolAssociation.SchoolId`.
+  - The basis resource is concrete
+    - Assign `SchoolContainingAnSWord` to `StaffSchoolAssociation`
+    - Assign `SchoolContainingAnSWord` to `Intervention`. Note that `Intervention` references the abstract Education Organization (instead of the concrete School). This isn't supported by ODS but we should support it for consistency.
 
 #### TVPs in SQL Server
 
@@ -1029,9 +1067,19 @@ There are performance optimizations that we could implement for specific scenari
 
 ### SQL generation and AOT
 
-The resource-specific SQL checks should be lazily generated on first request and cached by (EffectiveSchemaHash, resource, securableElement).
+Caching resource-specific SQL checks would require the cache key to include at least the following fields:
+- EffectiveSchemaHash 
+- Resource 
+- Operation (create, update, delete, read-single, read-many)
+- Applied authorization strategies (with `AND` strategies ordering)
+- How many EdOrgIds, Namespace prefixes, and Ownership tokens were rendered (because SQL Server uses `IN (@param1, @param2, ...)` and TVPs)
+- SecurableElement
 
-The [aot-compilation.md](aot-compilation.md) document says that SQL should be pre-computed and stored in .mpac files. This is out of scope for now. If we want to precompute the authorization statements, note that view-based statements cannot be pre-computed because they can be defined and configured after the ApiSchema.json has been generated.
+The resulting cache key would be too specific, causing frequent cache misses and a cache that could become too large. Additionally, if we forget to include fields in the cache key, bugs with high impact arise.
+
+Because of this, caching resource-specific SQL checks is **discouraged**.  However, we should cache calculations that aid during SQL check generation, for example, the calls to the `ResolveSecurableElementColumnPath` function.
+
+The [aot-compilation.md](aot-compilation.md) document says that SQL should be pre-computed and stored in .mpac files. This is out of scope because of the reasons above. Also, custom view-based checks cannot be pre-computed as they can be defined and configured after the ApiSchema.json has been generated.
 
 ### Database Model
 
@@ -1124,7 +1172,7 @@ DMS must return the same ProblemDetails structure as ODS when authorization fail
 
 The response implements the [Problem Details RFC 9457](https://www.rfc-editor.org/rfc/rfc9457.html), an explanation of each field is:
 
-- `type`: Uniquely identifies the error type as specified in RFC 9457. `type` is defined as a URI where each segment represents a level in the hierarchy into which the errors types are organized. For example, `urn:ed-fi:api:security:authorization:access-denied:resource` and `urn:ed-fi:api:security:authorization:access-denied:action` identify specific issue types within the context of an authorization error.
+- `type`: Uniquely identifies the error type as specified in RFC 9457. `type` is defined as a URI where each segment represents a level in the hierarchy into which the error types are organized. For example, `urn:ed-fi:api:security:authorization:access-denied:resource` and `urn:ed-fi:api:security:authorization:access-denied:action` identify specific issue types within the context of an authorization error.
 - `title`: A user-friendly representation of the `type`.
 - `detail`: A user-friendly description of the encountered issue.
 - `errors`: Sometimes additional details are provided in the `errors` extension member. This allows for supplementary descriptions aimed at API client developers and API hosts to facilitate the identification and resolution of errors.
@@ -1389,16 +1437,11 @@ The likelihood that another command is exactly the same is not as high because o
 
 DMS uses JWT Bearer tokens validated against an OpenID Connect (OIDC) identity provider. The identity provider is either the Configuration Service (via OpenIddict) or Keycloak.
 
-Token Flow
-
-1. A client authenticates with the identity provider using client credentials (client ID + secret) and receives a JWT access token.
-2. The client sends requests to DMS with Authorization: Bearer <token>.
-3. DMS validates the token and extracts claims (client ID, roles, claim set name, education organizations, etc.).
-
-The following auth metadata is stored in the Configuration Service (CMS) and retrieved and cached during DMS startup:
-- Claim Sets (i.e. what strategies have to be applied for a given request)
-- The execution order for AND strategies
-- The token-derived EdOrgIds and namespace prefixes
+The following auth metadata is stored in the Configuration Service (CMS):
+- Claim Sets (i.e., what strategies apply for a given endpoint, and the order in which `AND` strategies execute).
+  - Cached during DMS startup, TTL is 600s by default, configurable in appsettings.json: `CacheSettings.ClaimSetsCacheExpirationSeconds`
+- Granted EducationOrganizationIds, Namespace prefixes, and Ownership tokens.
+  - These get encoded in the JWT during token generation, token TTL is 30m by default, configurable in CMS appsettings.json `IdentitySettings.TokenExpirationMinutes`
 
 DMS's current authentication implementation is mostly unaffected by this redesign.
 
