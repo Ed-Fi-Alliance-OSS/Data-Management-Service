@@ -9,15 +9,15 @@ jira_url: https://edfi.atlassian.net/browse/DMS-1026
 
 Produce an implementation-ready authorization design for the relational primary store.
 
-The current authorization document is intentionally incomplete and is retained as a sketch:
+The authorization design for the relational primary store is defined in:
 
 - `reference/design/backend-redesign/design-docs/auth.md`
 
-This spike turns that sketch into a complete v1 design and identifies the follow-on implementation work (DDL + runtime).
+This story tracks follow-on implementation work (DDL + runtime) and verification.
 
 ## Acceptance Criteria
 
-- `reference/design/backend-redesign/design-docs/auth.md` is updated to an implementation-ready design with:
+- `reference/design/backend-redesign/design-docs/auth.md` is an implementation-ready design with:
   - explicit v1 scope and non-goals,
   - concrete strategy semantics mapped to existing DMS concepts,
   - a selected baseline storage/query approach,

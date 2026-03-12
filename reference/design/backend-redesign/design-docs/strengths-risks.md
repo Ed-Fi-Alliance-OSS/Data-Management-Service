@@ -137,6 +137,19 @@ Mitigations:
 - Add sampling-based verification: recompute expected referential ids from relational source-of-truth and verify round-trip mappings.
 - Provide an audit/repair tool to rebuild `dms.ReferentialIdentity` from relational tables.
 
+### Authorization correctness and performance (Security Risk)
+
+The redesign enforces authorization at the SQL layer using `auth.*` companion objects and token-derived authorization context (see `auth.md`). Failure modes include:
+- **Incorrect authorization** (data exposure or denial): wrong securable-element→column resolution, missing joins to `dms.Document` for ownership checks, or incorrect `auth.*` view/table maintenance.
+- **Unbounded latency**: missing/incorrect indexes on `auth.*` objects or on resource columns used in authorization predicates/joins can turn authorization into table scans on hot paths (GET-many, PUT).
+- **Stale security metadata**: caching token-derived authorization context (claim sets, namespace prefixes, ownership tokens, EdOrgIds) without appropriate TTL/eviction can apply outdated policy after configuration changes.
+
+Mitigations:
+- Include `auth.*` objects, authorization-required indexes, and representative authorization query execution in the DDL generator verification harness (see `ddl-generator-testing.md`).
+- Add end-to-end authorization fixtures that exercise each strategy category (namespace, ownership, relationship, custom view) against both PostgreSQL and SQL Server.
+- Treat missing/invalid auth metadata as fail-closed for the request (deny) and emit high-severity diagnostics; do not “skip auth” on errors.
+- Use short TTLs for cross-request auth-context caches and best-effort eviction on security configuration changes.
+
 ---
 
 ## Read Latency & Reconstitution Overhead

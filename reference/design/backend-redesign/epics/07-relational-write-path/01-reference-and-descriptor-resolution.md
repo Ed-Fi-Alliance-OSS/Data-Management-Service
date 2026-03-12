@@ -23,6 +23,10 @@ Align with `reference/design/backend-redesign/design-docs/transactions-and-concu
 - Descriptor validation ensures the referenced `DocumentId` is present in `dms.Descriptor` (and optionally matches the expected discriminator).
 - Resolution uses per-request memoization so duplicates do not cause duplicate work.
 
+## Authorization Batching Consideration
+
+Authorization is out of scope for this story, but the bulk resolution roundtrip should be designed to allow additional SQL statements to be batched into the same DB command. For PUT, the authorization design batches auth checks against both stored and request-body values alongside reference resolution in the same roundtrip. See `reference/design/backend-redesign/design-docs/auth.md` §"Performance improvements over ODS" (PUT roundtrip #2).
+
 ## Tasks
 
 1. Implement a request-scoped resolver that accepts extracted references and returns `DocumentId`s.

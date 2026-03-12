@@ -22,6 +22,10 @@ Align with the “one command / multiple result sets” approach in `reference/d
 - Row ordering within result sets is deterministic and supports stable reconstitution (ordering by key + ordinal where required).
 - Works for both PostgreSQL and SQL Server.
 
+## Authorization Batching Consideration
+
+Authorization is out of scope for this story, but the hydration DB command should be designed to allow authorization check statements to be prepended within the same roundtrip. For GET-by-id, the authorization check against stored values is batched alongside reconstitution in a single roundtrip. See `reference/design/backend-redesign/design-docs/auth.md` §"Performance improvements over ODS" (GET-by-id roundtrip #2).
+
 ## Tasks
 
 1. Implement compiled hydration SQL per resource that returns multiple result sets (root + child tables).

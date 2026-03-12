@@ -17,7 +17,7 @@ Key behaviors:
 - Rely on FK constraints to prevent deleting referenced documents.
 - Map FK violations to conflict responses using deterministic FK naming (and optional model-derived diagnostics).
 
-Authorization remains out of scope.
+Authorization remains out of scope; however, the delete transaction structure should accommodate future authorization checks being batched into the same DB roundtrip. See `reference/design/backend-redesign/design-docs/auth.md` §"Performance improvements over ODS" for the expected roundtrip layout for DELETE.
 
 ## Stories
 
