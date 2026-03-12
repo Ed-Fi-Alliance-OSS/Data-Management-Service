@@ -175,7 +175,9 @@ internal static class RuntimePlanFixtureModelSetBuilder
             ApiSchemaFormatVersion: apiSchemaVersion,
             RelationalMappingVersion: RelationalMappingVersion,
             EffectiveSchemaHash: effectiveSchemaHash,
-            ResourceKeyCount: resourceKeysInIdOrder.Count,
+            ResourceKeyCount: EffectiveSchemaFingerprintContract.CreateResourceKeyCountOrThrow(
+                resourceKeysInIdOrder.Count
+            ),
             ResourceKeySeedHash: seedHash,
             SchemaComponentsInEndpointOrder: projectsInEndpointOrder
                 .Select(project => new SchemaComponentInfo(
@@ -498,6 +500,11 @@ internal static class RuntimePlanFixtureModelSetBuilder
                 );
             }
 
+            if (!isAbstractResource && IsResourceExtension(resourceSchema))
+            {
+                continue;
+            }
+
             var resourceName = ResolveResourceName(resourceSchemaEntry.Key, resourceSchema);
             seeds.Add(
                 new FixtureResourceKeySeed(
@@ -507,6 +514,25 @@ internal static class RuntimePlanFixtureModelSetBuilder
                 )
             );
         }
+    }
+
+    private static bool IsResourceExtension(JsonObject resourceSchema)
+    {
+        if (
+            !resourceSchema.TryGetPropertyValue("isResourceExtension", out var isResourceExtensionNode)
+            || isResourceExtensionNode is null
+        )
+        {
+            return false;
+        }
+
+        return isResourceExtensionNode switch
+        {
+            JsonValue jsonValue => jsonValue.GetValue<bool>(),
+            _ => throw new InvalidOperationException(
+                "Expected isResourceExtension to be a bool when present, invalid ApiSchema."
+            ),
+        };
     }
 
     private static string ResolveResourceName(string endpointName, JsonObject resourceSchema)

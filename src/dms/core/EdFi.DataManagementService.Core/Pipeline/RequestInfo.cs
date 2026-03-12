@@ -6,6 +6,7 @@
 using System;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
@@ -16,7 +17,11 @@ namespace EdFi.DataManagementService.Core.Pipeline;
 /// <summary>
 /// Data container for API request processing, enriched by pipeline steps and handlers
 /// </summary>
-internal class RequestInfo(FrontendRequest _frontendRequest, RequestMethod _method)
+internal class RequestInfo(
+    FrontendRequest _frontendRequest,
+    RequestMethod _method,
+    IServiceProvider _scopedServiceProvider
+)
 {
     /// <summary>
     /// An API request sent from the frontend to be processed
@@ -143,4 +148,21 @@ internal class RequestInfo(FrontendRequest _frontendRequest, RequestMethod _meth
     /// Null if no profile applies (no profile assigned, or not a profiled endpoint).
     /// </summary>
     public ProfileContext? ProfileContext { get; set; }
+
+    /// <summary>
+    /// The cached database fingerprint from the dms.EffectiveSchema singleton row.
+    /// Set by ValidateDatabaseFingerprintMiddleware when UseRelationalBackend is true.
+    /// Null when fingerprint validation is disabled.
+    /// </summary>
+    public DatabaseFingerprint? DatabaseFingerprint { get; set; }
+
+    /// <summary>
+    /// The service provider for the current request scope.
+    /// Used by middlewares and handlers to resolve scoped services.
+    /// </summary>
+    public IServiceProvider ScopedServiceProvider
+    {
+        get => _scopedServiceProvider;
+        set => _scopedServiceProvider = value;
+    }
 }

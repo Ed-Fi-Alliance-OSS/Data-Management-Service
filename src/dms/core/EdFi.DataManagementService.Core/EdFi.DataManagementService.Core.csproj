@@ -45,6 +45,7 @@
         <PackageReference Include="JsonPath.Net" />
     </ItemGroup>
     <ItemGroup>
+        <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.External\EdFi.DataManagementService.Backend.External.csproj" />
         <ProjectReference Include="..\EdFi.DataManagementService.Core.External\EdFi.DataManagementService.Core.External.csproj" />
     </ItemGroup>
     <ItemGroup>

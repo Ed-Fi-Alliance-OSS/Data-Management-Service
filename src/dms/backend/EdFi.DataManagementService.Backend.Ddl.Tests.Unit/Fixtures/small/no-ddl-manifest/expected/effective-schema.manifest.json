@@ -1,0 +1,24 @@
+{
+  "api_schema_format_version": "1.0.0",
+  "relational_mapping_version": "v1",
+  "effective_schema_hash": "e68eb06e75b829edd10633e1077b04a29f02c23dba8cf704aaefbbb08706d4fe",
+  "resource_key_count": 1,
+  "resource_key_seed_hash": "cba2c51987bf6b657f9c898f28f22a073c0eda05b26eb5a33497af52ce1dd492",
+  "schema_components": [
+    {
+      "project_endpoint_name": "ed-fi",
+      "project_name": "Ed-Fi",
+      "project_version": "5.0.0",
+      "is_extension_project": false,
+      "project_hash": "57bd0e1d86ecc8259dffde1ab1491aa4286e4aa43b4d4947940a7142093619ea"
+    }
+  ],
+  "resource_keys": [
+    {
+      "resource_key_id": 1,
+      "project_name": "Ed-Fi",
+      "resource_name": "Person",
+      "resource_version": "5.0.0"
+    }
+  ]
+}

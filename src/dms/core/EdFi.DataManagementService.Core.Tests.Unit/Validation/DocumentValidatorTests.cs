@@ -60,7 +60,7 @@ public class DocumentValidatorTests
             RouteQualifiers: []
         );
 
-        var requestInfo = new RequestInfo(frontendRequest, RequestMethod.POST)
+        var requestInfo = new RequestInfo(frontendRequest, RequestMethod.POST, No.ServiceProvider)
         {
             ApiSchemaDocuments = apiSchema,
             ApiSchemaReloadId = Guid.NewGuid(),

@@ -533,7 +533,7 @@ After loading a mapping set for a database, DMS should validate that the databas
 Recommended validation (once per database/connection string, cached):
 - Fast path: compare a stored seed fingerprint without reading the full table:
   1. Read: `SELECT ResourceKeyCount, ResourceKeySeedHash FROM dms.EffectiveSchema WHERE EffectiveSchemaSingletonId = 1`.
-  2. Compare to the expected `(ResourceKeyCount, ResourceKeySeedHash)` derived from the mapping set’s embedded `resource_keys` list (same canonicalization as the DDL generator; `ResourceKeySeedHash` is raw SHA-256 bytes, 32 bytes).
+  2. Compare to the expected `(ResourceKeyCount, ResourceKeySeedHash)` derived from the mapping set’s embedded `resource_keys` list (same canonicalization as the DDL generator; `ResourceKeySeedHash` is raw SHA-256 bytes, 32 bytes). `ResourceKeyCount` is the same smallint-bounded count recorded in `dms.EffectiveSchema`, so pack generation/runtime validation must reject effective schemas with more than 32,767 seeded resource keys.
 - Slow path (diagnostics on mismatch):
   1. Read: `SELECT ResourceKeyId, ProjectName, ResourceName, ResourceVersion FROM dms.ResourceKey ORDER BY ResourceKeyId;`
   2. Diff vs. `payload.resource_keys` and fail fast with a detailed mismatch error.

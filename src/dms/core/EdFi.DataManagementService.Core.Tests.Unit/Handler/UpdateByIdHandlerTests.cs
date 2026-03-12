@@ -47,19 +47,22 @@ public class UpdateByIdHandlerTests
         public List<ApiSchemaFailure> ApiSchemaFailures => [];
     }
 
-    internal static IPipelineStep Handler(IDocumentStoreRepository documentStoreRepository)
+    internal static (IPipelineStep handler, IServiceProvider serviceProvider) Handler(
+        IDocumentStoreRepository documentStoreRepository
+    )
     {
         var serviceProvider = A.Fake<IServiceProvider>();
         A.CallTo(() => serviceProvider.GetService(typeof(IDocumentStoreRepository)))
             .Returns(documentStoreRepository);
 
-        return new UpdateByIdHandler(
-            serviceProvider,
+        var handler = new UpdateByIdHandler(
             NullLogger.Instance,
             ResiliencePipeline.Empty,
             new Provider(),
             new NoAuthorizationServiceFactory()
         );
+
+        return (handler, serviceProvider);
     }
 
     [TestFixture]
@@ -79,7 +82,8 @@ public class UpdateByIdHandlerTests
         [SetUp]
         public async Task Setup()
         {
-            IPipelineStep updateByIdHandler = Handler(new Repository());
+            var (updateByIdHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
             await updateByIdHandler.Execute(requestInfo, NullNext);
         }
 
@@ -108,7 +112,8 @@ public class UpdateByIdHandlerTests
         [SetUp]
         public async Task Setup()
         {
-            IPipelineStep updateByIdHandler = Handler(new Repository());
+            var (updateByIdHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
             await updateByIdHandler.Execute(requestInfo, NullNext);
         }
 
@@ -146,7 +151,8 @@ public class UpdateByIdHandlerTests
         [SetUp]
         public async Task Setup()
         {
-            IPipelineStep updateByIdHandler = Handler(new Repository());
+            var (updateByIdHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
             await updateByIdHandler.Execute(requestInfo, NullNext);
         }
 
@@ -182,7 +188,8 @@ public class UpdateByIdHandlerTests
         [SetUp]
         public async Task Setup()
         {
-            IPipelineStep updateByIdHandler = Handler(new Repository());
+            var (updateByIdHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
             await updateByIdHandler.Execute(requestInfo, NullNext);
         }
 
@@ -213,7 +220,8 @@ public class UpdateByIdHandlerTests
         [SetUp]
         public async Task Setup()
         {
-            IPipelineStep updateByIdHandler = Handler(new Repository());
+            var (updateByIdHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
             await updateByIdHandler.Execute(requestInfo, NullNext);
         }
 
@@ -246,7 +254,8 @@ public class UpdateByIdHandlerTests
         [SetUp]
         public async Task Setup()
         {
-            IPipelineStep updateByIdHandler = Handler(new Repository());
+            var (updateByIdHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
             await updateByIdHandler.Execute(requestInfo, NullNext);
         }
 
@@ -277,7 +286,8 @@ public class UpdateByIdHandlerTests
         [SetUp]
         public async Task Setup()
         {
-            IPipelineStep updateByIdHandler = Handler(new Repository());
+            var (updateByIdHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
             await updateByIdHandler.Execute(requestInfo, NullNext);
         }
 

@@ -13,6 +13,7 @@ public class AppSettings
     public required string Datastore { get; set; }
     public required string QueryHandler { get; set; }
     public bool DeployDatabaseOnStartup { get; set; }
+    public string? StartupStatusFilePath { get; set; }
     public required string CorrelationIdHeader { get; set; }
     public string DomainsExcludedFromOpenApi { get; set; } = string.Empty;
     public string RouteQualifierSegments { get; set; } = string.Empty;

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -20,10 +21,47 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 [Parallelizable]
 public class ResolveDmsInstanceMiddlewareTests
 {
+    private static void AssertExpectedFailureResponse(
+        IFrontendResponse response,
+        int expectedStatusCode,
+        string expectedType,
+        string expectedTitle,
+        string expectedDetail,
+        string expectedCorrelationId
+    )
+    {
+        response.StatusCode.Should().Be(expectedStatusCode);
+        response.ContentType.Should().Be("application/json");
+
+        JsonObject body = response.Body!.AsObject();
+
+        body.Select(property => property.Key)
+            .Should()
+            .BeEquivalentTo(
+                "detail",
+                "type",
+                "title",
+                "status",
+                "correlationId",
+                "validationErrors",
+                "errors"
+            );
+
+        body["detail"]?.GetValue<string>().Should().Be(expectedDetail);
+        body["type"]?.GetValue<string>().Should().Be(expectedType);
+        body["title"]?.GetValue<string>().Should().Be(expectedTitle);
+        body["status"]?.GetValue<int>().Should().Be(expectedStatusCode);
+        body["correlationId"]?.GetValue<string>().Should().Be(expectedCorrelationId);
+        body["validationErrors"]!.AsObject().Count.Should().Be(0);
+
+        body["errors"]!.AsArray().Select(error => error!.GetValue<string>()).Should().Equal(expectedDetail);
+    }
+
     internal static (
         ResolveDmsInstanceMiddleware middleware,
         IDmsInstanceProvider dmsInstanceProvider,
-        IDmsInstanceSelection dmsInstanceSelection
+        IDmsInstanceSelection dmsInstanceSelection,
+        IServiceProvider serviceProvider
     ) CreateMiddleware()
     {
         var dmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
@@ -35,9 +73,9 @@ public class ResolveDmsInstanceMiddlewareTests
         A.CallTo(() => serviceProvider.GetService(typeof(IDmsInstanceSelection)))
             .Returns(dmsInstanceSelection);
 
-        var middleware = new ResolveDmsInstanceMiddleware(dmsInstanceProvider, serviceProvider, logger);
+        var middleware = new ResolveDmsInstanceMiddleware(dmsInstanceProvider, logger);
 
-        return (middleware, dmsInstanceProvider, dmsInstanceSelection);
+        return (middleware, dmsInstanceProvider, dmsInstanceSelection, serviceProvider);
     }
 
     [TestFixture]
@@ -60,7 +98,9 @@ public class ResolveDmsInstanceMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET)
+            var (middleware, _, _, serviceProvider) = CreateMiddleware();
+
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, serviceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations(
                     TokenId: "token123",
@@ -71,8 +111,6 @@ public class ResolveDmsInstanceMiddlewareTests
                     DmsInstanceIds: [] // No authorized instances
                 ),
             };
-
-            var (middleware, _, _) = CreateMiddleware();
 
             await middleware.Execute(
                 _requestInfo,
@@ -101,6 +139,19 @@ public class ResolveDmsInstanceMiddlewareTests
         {
             _requestInfo.FrontendResponse.Body?.ToString().Should().Contain("No database instances");
         }
+
+        [Test]
+        public void It_returns_the_expected_authorization_denied_failure_response_contract()
+        {
+            AssertExpectedFailureResponse(
+                _requestInfo.FrontendResponse,
+                403,
+                "urn:ed-fi:api:authorization-denied",
+                "Authorization Denied",
+                "No database instances are authorized for this client",
+                "123"
+            );
+        }
     }
 
     [TestFixture]
@@ -125,7 +176,10 @@ public class ResolveDmsInstanceMiddlewareTests
                 RouteQualifiers: [] // No route qualifiers in request
             );
 
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET)
+            var (middleware, dmsInstanceProvider, dmsInstanceSelection, serviceProvider) = CreateMiddleware();
+            _dmsInstanceSelection = dmsInstanceSelection;
+
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, serviceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations(
                     TokenId: "token123",
@@ -136,9 +190,6 @@ public class ResolveDmsInstanceMiddlewareTests
                     DmsInstanceIds: [new DmsInstanceId(1)]
                 ),
             };
-
-            var (middleware, dmsInstanceProvider, dmsInstanceSelection) = CreateMiddleware();
-            _dmsInstanceSelection = dmsInstanceSelection;
 
             // Setup instance with no route context
             _expectedInstance = new DmsInstance(
@@ -203,7 +254,10 @@ public class ResolveDmsInstanceMiddlewareTests
                 Tenant: "TenantA"
             );
 
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET)
+            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
+            _dmsInstanceProvider = dmsInstanceProvider;
+
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, serviceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations(
                     TokenId: "token123",
@@ -214,9 +268,6 @@ public class ResolveDmsInstanceMiddlewareTests
                     DmsInstanceIds: [new DmsInstanceId(1)]
                 ),
             };
-
-            var (middleware, dmsInstanceProvider, _) = CreateMiddleware();
-            _dmsInstanceProvider = dmsInstanceProvider;
 
             A.CallTo(() => dmsInstanceProvider.RefreshInstancesIfExpiredAsync(A<string?>.Ignored))
                 .Returns(Task.CompletedTask);
@@ -271,7 +322,10 @@ public class ResolveDmsInstanceMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET)
+            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
+            _dmsInstanceProvider = dmsInstanceProvider;
+
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, serviceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations(
                     TokenId: "token123",
@@ -282,9 +336,6 @@ public class ResolveDmsInstanceMiddlewareTests
                     DmsInstanceIds: [new DmsInstanceId(1)]
                 ),
             };
-
-            var (middleware, dmsInstanceProvider, _) = CreateMiddleware();
-            _dmsInstanceProvider = dmsInstanceProvider;
 
             A.CallTo(() => dmsInstanceProvider.RefreshInstancesIfExpiredAsync(A<string?>.Ignored))
                 .Throws<InvalidOperationException>();
@@ -346,7 +397,9 @@ public class ResolveDmsInstanceMiddlewareTests
                 RouteQualifiers: routeQualifiers
             );
 
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET)
+            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
+
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, serviceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations(
                     TokenId: "token123",
@@ -357,8 +410,6 @@ public class ResolveDmsInstanceMiddlewareTests
                     DmsInstanceIds: [new DmsInstanceId(1), new DmsInstanceId(2)]
                 ),
             };
-
-            var (middleware, dmsInstanceProvider, _) = CreateMiddleware();
 
             // First instance doesn't match
             A.CallTo(() => dmsInstanceProvider.GetById(1, A<string?>.Ignored))
@@ -434,7 +485,9 @@ public class ResolveDmsInstanceMiddlewareTests
                 RouteQualifiers: routeQualifiers
             );
 
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET)
+            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
+
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, serviceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations(
                     TokenId: "token123",
@@ -445,8 +498,6 @@ public class ResolveDmsInstanceMiddlewareTests
                     DmsInstanceIds: [new DmsInstanceId(1), new DmsInstanceId(2)]
                 ),
             };
-
-            var (middleware, dmsInstanceProvider, _) = CreateMiddleware();
 
             // Both instances match - ambiguous!
             A.CallTo(() => dmsInstanceProvider.GetById(1, A<string?>.Ignored))
@@ -504,6 +555,19 @@ public class ResolveDmsInstanceMiddlewareTests
         {
             _requestInfo.FrontendResponse.Body?.ToString().Should().Contain("Multiple database instances");
         }
+
+        [Test]
+        public void It_returns_the_expected_route_resolution_failure_response_contract()
+        {
+            AssertExpectedFailureResponse(
+                _requestInfo.FrontendResponse,
+                400,
+                "urn:ed-fi:api:route-resolution-error",
+                "Route Resolution Error",
+                "Multiple database instances match the request route qualifiers - ambiguous routing not supported",
+                "123"
+            );
+        }
     }
 
     [TestFixture]
@@ -531,7 +595,9 @@ public class ResolveDmsInstanceMiddlewareTests
                 RouteQualifiers: routeQualifiers
             );
 
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET)
+            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
+
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, serviceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations(
                     TokenId: "token123",
@@ -542,8 +608,6 @@ public class ResolveDmsInstanceMiddlewareTests
                     DmsInstanceIds: [new DmsInstanceId(1)]
                 ),
             };
-
-            var (middleware, dmsInstanceProvider, _) = CreateMiddleware();
 
             // Instance has different route qualifiers
             A.CallTo(() => dmsInstanceProvider.GetById(1, A<string?>.Ignored))
@@ -590,6 +654,19 @@ public class ResolveDmsInstanceMiddlewareTests
                 .Should()
                 .Contain("No database instance found matching");
         }
+
+        [Test]
+        public void It_returns_the_expected_route_resolution_failure_response_contract()
+        {
+            AssertExpectedFailureResponse(
+                _requestInfo.FrontendResponse,
+                404,
+                "urn:ed-fi:api:route-resolution-error",
+                "Route Resolution Error",
+                "No database instance found matching the request route qualifiers",
+                "123"
+            );
+        }
     }
 
     [TestFixture]
@@ -612,7 +689,9 @@ public class ResolveDmsInstanceMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET)
+            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
+
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, serviceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations(
                     TokenId: "token123",
@@ -623,8 +702,6 @@ public class ResolveDmsInstanceMiddlewareTests
                     DmsInstanceIds: [new DmsInstanceId(1)]
                 ),
             };
-
-            var (middleware, dmsInstanceProvider, _) = CreateMiddleware();
 
             // Instance matches but has no connection string
             A.CallTo(() => dmsInstanceProvider.GetById(1, A<string?>.Ignored))
@@ -665,6 +742,19 @@ public class ResolveDmsInstanceMiddlewareTests
         {
             _requestInfo.FrontendResponse.Body?.ToString().Should().Contain("Database connection not");
         }
+
+        [Test]
+        public void It_returns_the_expected_service_configuration_failure_response_contract()
+        {
+            AssertExpectedFailureResponse(
+                _requestInfo.FrontendResponse,
+                503,
+                "urn:ed-fi:api:service-configuration-error",
+                "Service Configuration Error",
+                "Database connection not configured for the matched instance",
+                "123"
+            );
+        }
     }
 
     [TestFixture]
@@ -687,7 +777,9 @@ public class ResolveDmsInstanceMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET)
+            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
+
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, serviceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations(
                     TokenId: "token123",
@@ -698,8 +790,6 @@ public class ResolveDmsInstanceMiddlewareTests
                     DmsInstanceIds: [new DmsInstanceId(999)]
                 ),
             };
-
-            var (middleware, dmsInstanceProvider, _) = CreateMiddleware();
 
             // Instance not found in provider
             A.CallTo(() => dmsInstanceProvider.GetById(999, A<string?>.Ignored)).Returns(null);
@@ -752,7 +842,9 @@ public class ResolveDmsInstanceMiddlewareTests
                 RouteQualifiers: routeQualifiers
             );
 
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET)
+            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
+
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, serviceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations(
                     TokenId: "token123",
@@ -763,8 +855,6 @@ public class ResolveDmsInstanceMiddlewareTests
                     DmsInstanceIds: [new DmsInstanceId(1)]
                 ),
             };
-
-            var (middleware, dmsInstanceProvider, _) = CreateMiddleware();
 
             // Instance has lowercase value
             A.CallTo(() => dmsInstanceProvider.GetById(1, A<string?>.Ignored))
@@ -823,7 +913,9 @@ public class ResolveDmsInstanceMiddlewareTests
                 RouteQualifiers: routeQualifiers
             );
 
-            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET)
+            var (middleware, dmsInstanceProvider, _, serviceProvider) = CreateMiddleware();
+
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET, serviceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations(
                     TokenId: "token123",
@@ -834,8 +926,6 @@ public class ResolveDmsInstanceMiddlewareTests
                     DmsInstanceIds: [new DmsInstanceId(1)]
                 ),
             };
-
-            var (middleware, dmsInstanceProvider, _) = CreateMiddleware();
 
             // Instance has more qualifiers than request
             A.CallTo(() => dmsInstanceProvider.GetById(1, A<string?>.Ignored))

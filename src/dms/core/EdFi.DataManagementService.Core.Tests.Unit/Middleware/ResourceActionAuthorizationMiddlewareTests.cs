@@ -61,6 +61,27 @@ public class ResourceActionAuthorizationMiddlewareTests
         return apiSchemaDocument;
     }
 
+    internal static void AssertExpectedServerErrorResponse(
+        IFrontendResponse response,
+        string expectedMessage,
+        string expectedTraceId
+    )
+    {
+        response.StatusCode.Should().Be(500);
+        response.ContentType.Should().Be("application/json");
+
+        JsonObject body = response.Body!.AsObject();
+
+        body.Select(property => property.Key).Should().BeEquivalentTo("message", "traceId");
+        body["message"]?.GetValue<string>().Should().Be(expectedMessage);
+        body["traceId"]?.GetValue<string>().Should().Be(expectedTraceId);
+        body["detail"].Should().BeNull();
+        body["type"].Should().BeNull();
+        body["title"].Should().BeNull();
+        body["status"].Should().BeNull();
+        body["correlationId"].Should().BeNull();
+    }
+
     internal static IPipelineStep NoAuthStrategyMiddleware()
     {
         var claimSetProvider = A.Fake<IClaimSetProvider>();
@@ -98,7 +119,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []),
                 PathComponents = new PathComponents(
@@ -141,7 +162,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations("", "", "NO-MATCH", [], [], []),
                 PathComponents = new PathComponents(
@@ -189,7 +210,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []),
                 PathComponents = new PathComponents(
@@ -237,7 +258,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []),
                 PathComponents = new PathComponents(
@@ -279,7 +300,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.PUT)
+            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.PUT, No.ServiceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []),
                 PathComponents = new PathComponents(
@@ -351,7 +372,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.PUT)
+            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.PUT, No.ServiceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []),
                 PathComponents = new PathComponents(
@@ -400,7 +421,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []),
                 PathComponents = new PathComponents(
@@ -443,7 +464,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
                 ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []),
                 PathComponents = new PathComponents(
@@ -488,6 +509,49 @@ public class ResourceActionAuthorizationMiddlewareTests
                 .Contain(
                     "\"errors\":[\"No authorization strategies were defined for the requested action 'Create' against resource ['School'] matched by the caller's claim 'SIS-Vendor'.\"]"
                 );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Claim_Set_Provider_Throws : ResourceActionAuthorizationMiddlewareTests
+    {
+        private FrontendResponse _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var claimSetProvider = A.Fake<IClaimSetProvider>();
+
+            A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored))
+                .Throws(new InvalidOperationException("simulated failure"));
+
+            var middleware = new ResourceActionAuthorizationMiddleware(claimSetProvider, NullLogger.Instance);
+
+            FrontendRequest frontEndRequest = new(
+                Path: "ed-fi/schools",
+                Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
+                Form: null,
+                Headers: [],
+                QueryParameters: [],
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
+            );
+
+            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
+            {
+                ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []),
+            };
+
+            await middleware.Execute(_requestInfo, NullNext);
+
+            _response = (FrontendResponse)_requestInfo.FrontendResponse;
+        }
+
+        [Test]
+        public void It_returns_the_expected_500_body()
+        {
+            AssertExpectedServerErrorResponse(_response, "Error while authorizing the request.", "traceId");
         }
     }
 }

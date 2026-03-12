@@ -21,7 +21,6 @@ namespace EdFi.DataManagementService.Core.Handler;
 /// Handles a get by id request that has made it through the middleware pipeline steps.
 /// </summary>
 internal class GetByIdHandler(
-    IServiceProvider _serviceProvider,
     ILogger _logger,
     ResiliencePipeline _resiliencePipeline,
     IAuthorizationServiceFactory authorizationServiceFactory
@@ -31,8 +30,9 @@ internal class GetByIdHandler(
     {
         _logger.LogDebug("Entering GetByIdHandler - {TraceId}", requestInfo.FrontendRequest.TraceId.Value);
 
-        // Resolve repository from service provider within request scope
-        var documentStoreRepository = _serviceProvider.GetRequiredService<IDocumentStoreRepository>();
+        // Resolve repository from the per-request scoped service provider
+        var documentStoreRepository =
+            requestInfo.ScopedServiceProvider.GetRequiredService<IDocumentStoreRepository>();
 
         var getResult = await ExecuteWithRetryLogging(
             _resiliencePipeline,
@@ -50,6 +50,7 @@ internal class GetByIdHandler(
                             requestInfo.AuthorizationStrategyEvaluators,
                             requestInfo.AuthorizationSecurableInfo,
                             authorizationServiceFactory,
+                            requestInfo.ScopedServiceProvider,
                             _logger
                         ),
                         TraceId: requestInfo.FrontendRequest.TraceId

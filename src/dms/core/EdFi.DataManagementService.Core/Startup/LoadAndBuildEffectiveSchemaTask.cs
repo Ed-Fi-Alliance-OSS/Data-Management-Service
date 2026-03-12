@@ -17,17 +17,17 @@ namespace EdFi.DataManagementService.Core.Startup;
 internal class LoadAndBuildEffectiveSchemaTask(
     IApiSchemaProvider apiSchemaProvider,
     IEffectiveApiSchemaProvider effectiveApiSchemaProvider,
+    IEffectiveSchemaSetProvider effectiveSchemaSetProvider,
     IApiSchemaInputNormalizer inputNormalizer,
-    IEffectiveSchemaHashProvider hashProvider,
-    IResourceKeySeedProvider seedProvider,
+    EffectiveSchemaSetBuilder effectiveSchemaSetBuilder,
     ILogger<LoadAndBuildEffectiveSchemaTask> logger
 ) : IDmsStartupTask
 {
     private readonly IApiSchemaProvider _apiSchemaProvider = apiSchemaProvider;
     private readonly IEffectiveApiSchemaProvider _effectiveApiSchemaProvider = effectiveApiSchemaProvider;
+    private readonly IEffectiveSchemaSetProvider _effectiveSchemaSetProvider = effectiveSchemaSetProvider;
     private readonly IApiSchemaInputNormalizer _inputNormalizer = inputNormalizer;
-    private readonly IEffectiveSchemaHashProvider _hashProvider = hashProvider;
-    private readonly IResourceKeySeedProvider _seedProvider = seedProvider;
+    private readonly EffectiveSchemaSetBuilder _effectiveSchemaSetBuilder = effectiveSchemaSetBuilder;
     private readonly ILogger _logger = logger;
 
     /// <inheritdoc />
@@ -100,34 +100,28 @@ internal class LoadAndBuildEffectiveSchemaTask(
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Step 3: Compute effective schema hash
-        _logger.LogDebug("Computing effective schema hash");
-        var effectiveSchemaHash = _hashProvider.ComputeHash(normalizedNodes);
-        if (!string.IsNullOrEmpty(effectiveSchemaHash))
-        {
-            _logger.LogInformation("Effective schema hash: {Hash}", effectiveSchemaHash);
-        }
+        // Step 3: Build the authoritative effective schema set once for all later startup consumers.
+        _logger.LogDebug("Building effective schema set");
+        var effectiveSchemaSet = _effectiveSchemaSetBuilder.Build(normalizedNodes);
+        var effectiveSchemaInfo = effectiveSchemaSet.EffectiveSchema;
 
-        cancellationToken.ThrowIfCancellationRequested();
+        _logger.LogInformation("Effective schema hash: {Hash}", effectiveSchemaInfo.EffectiveSchemaHash);
 
-        // Step 4: Derive resource key seeds
-        _logger.LogDebug("Deriving resource key seeds");
-        var seeds = _seedProvider.GetSeeds(normalizedNodes);
-        if (seeds.Count > 0)
+        if (effectiveSchemaInfo.ResourceKeyCount > 0)
         {
-            var seedHashBytes = _seedProvider.ComputeSeedHash(seeds);
-            var seedHashHex = Convert.ToHexStringLower(seedHashBytes);
             _logger.LogInformation(
                 "Resource key seeds: {SeedCount} entries, hash: {Hash}",
-                seeds.Count,
-                seedHashHex
+                effectiveSchemaInfo.ResourceKeyCount,
+                Convert.ToHexStringLower(effectiveSchemaInfo.ResourceKeySeedHash)
             );
         }
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Step 5: Build the effective schema and prime caches
+        // Step 4: Cache the authoritative schema set before building the effective API schema so a
+        // later initialization failure does not leave the API schema provider partially initialized.
         _logger.LogInformation("Building effective schema and priming caches");
+        _effectiveSchemaSetProvider.Initialize(effectiveSchemaSet);
         _effectiveApiSchemaProvider.Initialize(normalizedNodes);
 
         _logger.LogInformation(

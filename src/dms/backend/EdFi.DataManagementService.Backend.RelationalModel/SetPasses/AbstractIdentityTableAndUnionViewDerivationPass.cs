@@ -224,37 +224,154 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
     }
 
     /// <summary>
-    /// Builds an O(1) lookup of root columns keyed by canonical <c>SourceJsonPath</c>, failing fast when
-    /// duplicate mappings are detected.
+    /// Builds an O(1) lookup of root columns keyed by canonical <c>SourceJsonPath</c>, allowing duplicates
+    /// only when they key-unify to one stored column.
     /// </summary>
     private static IReadOnlyDictionary<string, DbColumnModel> BuildRootColumnsBySourcePath(
         DbTableModel rootTable,
         QualifiedResourceName resource
     )
     {
+        var tableMetadata = UnifiedAliasStorageResolver.BuildTableMetadata(
+            rootTable,
+            new UnifiedAliasStorageResolver.PresenceGateMetadataOptions(
+                ThrowIfPresenceColumnMissing: true,
+                ThrowIfInvalidStrictSyntheticCandidate: true
+            )
+        );
         Dictionary<string, DbColumnModel> columnsByPath = new(StringComparer.Ordinal);
 
-        foreach (var column in rootTable.Columns)
+        foreach (
+            var group in rootTable
+                .Columns.Where(column => column.SourceJsonPath is not null)
+                .GroupBy(column => column.SourceJsonPath!.Value.Canonical, StringComparer.Ordinal)
+        )
         {
-            if (column.SourceJsonPath is not { } sourceJsonPath)
+            var orderedColumns = group
+                .OrderBy(column => column.ColumnName.Value, StringComparer.Ordinal)
+                .ToArray();
+
+            if (orderedColumns.Select(column => column.Kind).Distinct().Skip(1).Any())
             {
+                throw CreateMultipleRootColumnKindsException(group.Key, orderedColumns, rootTable, resource);
+            }
+
+            if (orderedColumns.Length == 1)
+            {
+                columnsByPath[group.Key] = orderedColumns[0];
                 continue;
             }
 
-            if (!columnsByPath.TryAdd(sourceJsonPath.Canonical, column))
-            {
-                var existingColumn = columnsByPath[sourceJsonPath.Canonical];
-
-                throw new InvalidOperationException(
-                    $"Concrete resource '{FormatResource(resource)}' has duplicate root-column "
-                        + $"SourceJsonPath mapping for '{sourceJsonPath.Canonical}' on table "
-                        + $"'{rootTable.Table}': '{existingColumn.ColumnName.Value}' and "
-                        + $"'{column.ColumnName.Value}'."
-                );
-            }
+            columnsByPath[group.Key] = ResolveUnifiedDuplicateRootColumn(
+                group.Key,
+                orderedColumns,
+                tableMetadata,
+                rootTable,
+                resource
+            );
         }
 
         return columnsByPath;
+    }
+
+    /// <summary>
+    /// Resolves duplicate same-kind source-path mappings to one stored column, rejecting arbitrary duplicates.
+    /// </summary>
+    private static DbColumnModel ResolveUnifiedDuplicateRootColumn(
+        string sourceJsonPath,
+        IReadOnlyList<DbColumnModel> duplicateColumns,
+        UnifiedAliasStorageResolver.TableMetadata tableMetadata,
+        DbTableModel rootTable,
+        QualifiedResourceName resource
+    )
+    {
+        var resolvedStorageColumns = duplicateColumns
+            .Select(column =>
+                UnifiedAliasStorageResolver.ResolveStorageColumn(
+                    column.ColumnName,
+                    tableMetadata,
+                    UnifiedAliasStorageResolver.PresenceGateRejectionPolicy.RejectAllPresenceGates,
+                    $"Concrete resource '{FormatResource(resource)}' root-column SourceJsonPath mapping "
+                        + $"'{sourceJsonPath}'",
+                    "root column",
+                    "abstract identity derivation"
+                )
+            )
+            .Distinct()
+            .ToArray();
+
+        if (resolvedStorageColumns.Length != 1)
+        {
+            throw CreateDuplicateRootColumnMappingException(
+                sourceJsonPath,
+                duplicateColumns,
+                rootTable,
+                resource
+            );
+        }
+
+        if (!tableMetadata.ColumnsByName.TryGetValue(resolvedStorageColumns[0], out var storageColumn))
+        {
+            throw new InvalidOperationException(
+                $"Concrete resource '{FormatResource(resource)}' resolved root-column SourceJsonPath "
+                    + $"mapping '{sourceJsonPath}' on table '{rootTable.Table}' to missing stored column "
+                    + $"'{resolvedStorageColumns[0].Value}'."
+            );
+        }
+
+        if (storageColumn.Storage is not ColumnStorage.Stored)
+        {
+            throw new InvalidOperationException(
+                $"Concrete resource '{FormatResource(resource)}' resolved root-column SourceJsonPath "
+                    + $"mapping '{sourceJsonPath}' on table '{rootTable.Table}' to non-stored column "
+                    + $"'{storageColumn.ColumnName.Value}'."
+            );
+        }
+
+        return storageColumn;
+    }
+
+    /// <summary>
+    /// Creates the duplicate-root diagnostic for same-kind mappings that do not converge to one stored column.
+    /// </summary>
+    private static InvalidOperationException CreateDuplicateRootColumnMappingException(
+        string sourceJsonPath,
+        IReadOnlyList<DbColumnModel> duplicateColumns,
+        DbTableModel rootTable,
+        QualifiedResourceName resource
+    )
+    {
+        var columnNames = string.Join(
+            ", ",
+            duplicateColumns.Select(column => $"'{column.ColumnName.Value}'")
+        );
+
+        return new InvalidOperationException(
+            $"Concrete resource '{FormatResource(resource)}' has duplicate root-column SourceJsonPath "
+                + $"mapping for '{sourceJsonPath}' on table '{rootTable.Table}': {columnNames}."
+        );
+    }
+
+    /// <summary>
+    /// Creates the mixed-kind duplicate-root diagnostic.
+    /// </summary>
+    private static InvalidOperationException CreateMultipleRootColumnKindsException(
+        string sourceJsonPath,
+        IReadOnlyList<DbColumnModel> duplicateColumns,
+        DbTableModel rootTable,
+        QualifiedResourceName resource
+    )
+    {
+        var columnDetails = string.Join(
+            ", ",
+            duplicateColumns.Select(column => $"{column.ColumnName.Value} ({column.Kind})")
+        );
+
+        return new InvalidOperationException(
+            $"Concrete resource '{FormatResource(resource)}' has multiple root-column kinds for "
+                + $"SourceJsonPath mapping '{sourceJsonPath}' on table '{rootTable.Table}': "
+                + $"{columnDetails}."
+        );
     }
 
     /// <summary>

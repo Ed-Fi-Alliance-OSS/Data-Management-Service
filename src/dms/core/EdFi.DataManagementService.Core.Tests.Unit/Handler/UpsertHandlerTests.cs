@@ -24,19 +24,22 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 
 public class UpsertHandlerTests
 {
-    internal static IPipelineStep Handler(IDocumentStoreRepository documentStoreRepository)
+    internal static (IPipelineStep handler, IServiceProvider serviceProvider) Handler(
+        IDocumentStoreRepository documentStoreRepository
+    )
     {
         var serviceProvider = A.Fake<IServiceProvider>();
         A.CallTo(() => serviceProvider.GetService(typeof(IDocumentStoreRepository)))
             .Returns(documentStoreRepository);
 
-        return new UpsertHandler(
-            serviceProvider,
+        var handler = new UpsertHandler(
             NullLogger.Instance,
             ResiliencePipeline.Empty,
             new UpdateByIdHandlerTests.Provider(),
             new NoAuthorizationServiceFactory()
         );
+
+        return (handler, serviceProvider);
     }
 
     [TestFixture]
@@ -56,7 +59,8 @@ public class UpsertHandlerTests
         [SetUp]
         public async Task Setup()
         {
-            IPipelineStep upsertHandler = Handler(new Repository());
+            var (upsertHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
             await upsertHandler.Execute(requestInfo, NullNext);
         }
 
@@ -92,7 +96,8 @@ public class UpsertHandlerTests
         [SetUp]
         public async Task Setup()
         {
-            IPipelineStep upsertHandler = Handler(new Repository());
+            var (upsertHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
             await upsertHandler.Execute(requestInfo, NullNext);
         }
 
@@ -137,7 +142,8 @@ public class UpsertHandlerTests
         [SetUp]
         public async Task Setup()
         {
-            IPipelineStep upsertHandler = Handler(new Repository());
+            var (upsertHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
             await upsertHandler.Execute(requestInfo, NullNext);
         }
 
@@ -168,7 +174,8 @@ public class UpsertHandlerTests
         [SetUp]
         public async Task Setup()
         {
-            IPipelineStep upsertHandler = Handler(new Repository());
+            var (upsertHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
             await upsertHandler.Execute(requestInfo, NullNext);
         }
 
@@ -202,7 +209,8 @@ public class UpsertHandlerTests
         [SetUp]
         public async Task Setup()
         {
-            IPipelineStep upsertHandler = Handler(new Repository());
+            var (upsertHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
             await upsertHandler.Execute(requestInfo, NullNext);
         }
 

@@ -73,7 +73,7 @@ Source documents:
 
 - `dms.EffectiveSchema` + `dms.SchemaComponent`
   - Records `EffectiveSchemaHash` (SHA-256 fingerprint) of the effective core+extension `ApiSchema.json` set as it affects relational mapping.
-  - `dms.EffectiveSchema` is a singleton current-state row (includes `ResourceKeyCount` and `ResourceKeySeedHash` for fast `dms.ResourceKey` validation; `ResourceKeySeedHash` is raw SHA-256 bytes, 32 bytes); `dms.SchemaComponent` rows are keyed by `EffectiveSchemaHash`.
+  - `dms.EffectiveSchema` is a singleton current-state row (includes smallint-bounded `ResourceKeyCount` and `ResourceKeySeedHash` for fast `dms.ResourceKey` validation; `ResourceKeySeedHash` is raw SHA-256 bytes, 32 bytes). The count uses the same 32,767-entry ceiling as `dms.ResourceKeyId`, so schema derivation/provisioning fails fast if the effective schema would exceed that supported resource inventory size; `dms.SchemaComponent` rows are keyed by `EffectiveSchemaHash`.
   - On first use of a given database connection string, DMS reads the database fingerprint, caches it, and selects the matching mapping set (rejecting requests for that database if mismatched/unsupported).
 
 ### Update tracking additions (unified design)
@@ -209,7 +209,7 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
     - extension schemas/tables,
     - abstract identity tables (and optional union views),
     - update tracking sequences and triggers,
-  - records the singleton `dms.EffectiveSchema` row (including `ResourceKeyCount` and `ResourceKeySeedHash`) and `dms.SchemaComponent` rows keyed by `EffectiveSchemaHash`.
+  - records the singleton `dms.EffectiveSchema` row (including smallint-bounded `ResourceKeyCount` and `ResourceKeySeedHash`) and `dms.SchemaComponent` rows keyed by `EffectiveSchemaHash`.
   - provision semantics: create-only (no migrations), optional database creation as a pre-step, and a single transaction for schema + seeds.
 - (Optional) ahead-of-time mapping pack compilation and file distribution keyed by `EffectiveSchemaHash` to avoid runtime plan compilation under load (see `reference/design/backend-redesign/design-docs/aot-compilation.md`).
 - DMS runtime remains validate-only and fails fast on schema mismatch per database (no in-process migration/hot reload).

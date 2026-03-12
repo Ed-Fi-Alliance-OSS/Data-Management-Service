@@ -360,6 +360,13 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
+    public void It_should_have_non_blank_api_schema_format_version_check_on_effective_schema()
+    {
+        _ddl.Should().Contain("\"CK_EffectiveSchema_ApiSchemaFormatVersion_NotBlank\"");
+        _ddl.Should().Contain("btrim(\"ApiSchemaFormatVersion\") <> ''");
+    }
+
+    [Test]
     public void It_should_have_pg_only_bytea_length_check()
     {
         _ddl.Should().Contain("\"CK_EffectiveSchema_ResourceKeySeedHash_Length\"");
@@ -626,6 +633,32 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     }
 
     [Test]
+    public void It_should_emit_go_batch_separator_before_uuidv5_function()
+    {
+        var functionIndex = _ddl.IndexOf("CREATE OR ALTER FUNCTION", StringComparison.Ordinal);
+        functionIndex.Should().BeGreaterOrEqualTo(0, "expected CREATE OR ALTER FUNCTION in DDL");
+        var goIndex = _ddl.LastIndexOf("GO\n", functionIndex);
+
+        goIndex.Should().BeGreaterOrEqualTo(0, "expected GO batch separator in DDL");
+        functionIndex.Should().BeGreaterThan(goIndex);
+        var between = _ddl.Substring(goIndex + 3, functionIndex - goIndex - 3);
+        between.Trim().Should().BeEmpty("GO should immediately precede CREATE OR ALTER FUNCTION");
+    }
+
+    [Test]
+    public void It_should_emit_go_batch_separator_after_uuidv5_function_before_tables()
+    {
+        var functionIndex = _ddl.IndexOf("CREATE OR ALTER FUNCTION", StringComparison.Ordinal);
+        var phase5Index = _ddl.IndexOf("Phase 5: Tables", StringComparison.Ordinal);
+        var goIndex = _ddl.LastIndexOf("GO\n", phase5Index);
+
+        functionIndex.Should().BeGreaterThan(0);
+        phase5Index.Should().BeGreaterThan(functionIndex);
+        goIndex.Should().BeGreaterThan(functionIndex, "expected GO batch separator after function batch");
+        goIndex.Should().BeLessThan(phase5Index);
+    }
+
+    [Test]
     public void It_should_emit_uuidv5_before_triggers()
     {
         var funcPos = _ddl.IndexOf("[dms].[uuidv5]", StringComparison.Ordinal);
@@ -809,6 +842,13 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     {
         _ddl.Should().Contain("[CK_EffectiveSchema_Singleton]");
         _ddl.Should().Contain("[EffectiveSchemaSingletonId] = 1");
+    }
+
+    [Test]
+    public void It_should_have_non_blank_api_schema_format_version_check_on_effective_schema()
+    {
+        _ddl.Should().Contain("[CK_EffectiveSchema_ApiSchemaFormatVersion_NotBlank]");
+        _ddl.Should().Contain("LEN(LTRIM(RTRIM([ApiSchemaFormatVersion]))) > 0");
     }
 
     [Test]

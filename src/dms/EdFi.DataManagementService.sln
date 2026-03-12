@@ -78,6 +78,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DataManagementService.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DataManagementService.SchemaTools.Tests.Unit", "clis\EdFi.DataManagementService.SchemaTools.Tests.Unit\EdFi.DataManagementService.SchemaTools.Tests.Unit.csproj", "{1D27E6BA-7885-4B07-A7FB-04D0E94D4E04}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "backend", "backend", "{75C4C84A-E96E-9C56-340C-9769C6DCFE8B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DataManagementService.Backend.Mssql.Tests.Integration", "backend\EdFi.DataManagementService.Backend.Mssql.Tests.Integration\EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj", "{15D9DCB9-C991-4E62-A88A-AA9B778D26D3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -448,6 +452,18 @@ Global
 		{1D27E6BA-7885-4B07-A7FB-04D0E94D4E04}.Release|x64.Build.0 = Release|Any CPU
 		{1D27E6BA-7885-4B07-A7FB-04D0E94D4E04}.Release|x86.ActiveCfg = Release|Any CPU
 		{1D27E6BA-7885-4B07-A7FB-04D0E94D4E04}.Release|x86.Build.0 = Release|Any CPU
+		{15D9DCB9-C991-4E62-A88A-AA9B778D26D3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{15D9DCB9-C991-4E62-A88A-AA9B778D26D3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{15D9DCB9-C991-4E62-A88A-AA9B778D26D3}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{15D9DCB9-C991-4E62-A88A-AA9B778D26D3}.Debug|x64.Build.0 = Debug|Any CPU
+		{15D9DCB9-C991-4E62-A88A-AA9B778D26D3}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{15D9DCB9-C991-4E62-A88A-AA9B778D26D3}.Debug|x86.Build.0 = Debug|Any CPU
+		{15D9DCB9-C991-4E62-A88A-AA9B778D26D3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{15D9DCB9-C991-4E62-A88A-AA9B778D26D3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{15D9DCB9-C991-4E62-A88A-AA9B778D26D3}.Release|x64.ActiveCfg = Release|Any CPU
+		{15D9DCB9-C991-4E62-A88A-AA9B778D26D3}.Release|x64.Build.0 = Release|Any CPU
+		{15D9DCB9-C991-4E62-A88A-AA9B778D26D3}.Release|x86.ActiveCfg = Release|Any CPU
+		{15D9DCB9-C991-4E62-A88A-AA9B778D26D3}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -483,6 +499,8 @@ Global
 		{87D109C4-EDCD-4B57-8FD2-18C073274BC5} = {75AE8F7B-B980-48AE-8518-073830FA6471}
 		{8745FD87-62B0-4668-BD85-0C26C2EE411B} = {75AE8F7B-B980-48AE-8518-073830FA6471}
 		{1D27E6BA-7885-4B07-A7FB-04D0E94D4E04} = {2B193382-DF21-4223-888A-CE5CD3B52C25}
+		{75C4C84A-E96E-9C56-340C-9769C6DCFE8B} = {22F7EF40-C77C-4AF0-8C1E-500EA6B85496}
+		{15D9DCB9-C991-4E62-A88A-AA9B778D26D3} = {75C4C84A-E96E-9C56-340C-9769C6DCFE8B}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {CAB3D5DE-BC6C-44FD-831C-9C7BE3935343}

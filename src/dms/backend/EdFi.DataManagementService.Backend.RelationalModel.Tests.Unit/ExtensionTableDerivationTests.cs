@@ -339,6 +339,122 @@ public class Given_Multiple_Extension_Projects_Extending_Same_Resource
 }
 
 /// <summary>
+/// Test fixture for extension table derivation when extension metadata inherits base-only array uniqueness paths.
+/// </summary>
+[TestFixture]
+public class Given_Extension_Table_Derivation_With_Inherited_Base_Array_Uniqueness_Constraints
+{
+    private RelationalResourceModel _schoolModel = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            ExtensionTableTestSchemaBuilder.BuildCoreProjectSchema(),
+            isExtensionProject: false
+        );
+        var extensionProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            ExtensionTableTestSchemaBuilder.BuildSampleExtensionProjectSchemaWithBaseArrayUniquenessConstraints(),
+            isExtensionProject: true
+        );
+
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([
+            coreProject,
+            extensionProject,
+        ]);
+        var builder = new DerivedRelationalModelSetBuilder([
+            new BaseTraversalAndDescriptorBindingPass(),
+            new ExtensionTableDerivationPass(),
+        ]);
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        _schoolModel = result
+            .ConcreteResourcesInNameOrder.Single(model =>
+                model.ResourceKey.Resource.ProjectName == "Ed-Fi"
+                && model.ResourceKey.Resource.ResourceName == "School"
+            )
+            .RelationalModel;
+    }
+
+    [Test]
+    public void It_should_derive_extension_tables_without_revalidating_inherited_base_paths()
+    {
+        _schoolModel
+            .TablesInDependencyOrder.Should()
+            .Contain(table => table.Table.Schema.Value == "sample" && table.Table.Name == "SchoolExtension");
+        _schoolModel
+            .TablesInDependencyOrder.Should()
+            .Contain(table =>
+                table.Table.Schema.Value == "sample" && table.Table.Name == "SchoolExtensionAddress"
+            );
+    }
+}
+
+/// <summary>
+/// Test fixture for extension table derivation when another extension project defines a standalone resource
+/// with the same bare resource name as a core resource.
+/// </summary>
+[TestFixture]
+public class Given_Extension_Table_Derivation_With_Standalone_Extension_Project_Resource_Sharing_A_Core_Name
+{
+    private DerivedRelationalModelSet _result = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            ExtensionTableTestSchemaBuilder.BuildCoreProjectSchema(),
+            isExtensionProject: false
+        );
+        var sampleProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            ExtensionTableTestSchemaBuilder.BuildSimpleSampleExtensionProjectSchema(),
+            isExtensionProject: true
+        );
+        var homographProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            ExtensionTableTestSchemaBuilder.BuildHomographStandaloneSchoolProjectSchema(),
+            isExtensionProject: true
+        );
+
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([
+            coreProject,
+            sampleProject,
+            homographProject,
+        ]);
+        var builder = new DerivedRelationalModelSetBuilder([
+            new BaseTraversalAndDescriptorBindingPass(),
+            new ExtensionTableDerivationPass(),
+        ]);
+
+        _result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+    }
+
+    [Test]
+    public void It_should_attach_the_resource_extension_to_the_core_resource_only()
+    {
+        var edFiSchool = _result.ConcreteResourcesInNameOrder.Single(model =>
+            model.ResourceKey.Resource.ProjectName == "Ed-Fi"
+            && model.ResourceKey.Resource.ResourceName == "School"
+        );
+
+        edFiSchool
+            .RelationalModel.TablesInDependencyOrder.Should()
+            .Contain(table => table.Table.Schema.Value == "sample" && table.Table.Name == "SchoolExtension");
+    }
+
+    [Test]
+    public void It_should_preserve_the_standalone_extension_project_resource()
+    {
+        _result
+            .ConcreteResourcesInNameOrder.Should()
+            .Contain(model =>
+                model.ResourceKey.Resource.ProjectName == "Homograph"
+                && model.ResourceKey.Resource.ResourceName == "School"
+            );
+    }
+}
+
+/// <summary>
 /// Test type extension table test schema builder.
 /// </summary>
 internal static class ExtensionTableTestSchemaBuilder
@@ -402,6 +518,38 @@ internal static class ExtensionTableTestSchemaBuilder
             ["projectEndpointName"] = "tpdm",
             ["projectVersion"] = "1.0.0",
             ["resourceSchemas"] = new JsonObject { ["schools"] = BuildTpdmSchoolExtensionSchema() },
+        };
+    }
+
+    /// <summary>
+    /// Build a Sample extension project schema whose extension resource carries base-only array-uniqueness
+    /// metadata.
+    /// </summary>
+    internal static JsonObject BuildSampleExtensionProjectSchemaWithBaseArrayUniquenessConstraints()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Sample",
+            ["projectEndpointName"] = "sample",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["schools"] = BuildSampleSchoolExtensionSchemaWithBaseArrayUniquenessConstraints(),
+            },
+        };
+    }
+
+    /// <summary>
+    /// Build an extension project that defines a standalone concrete School resource.
+    /// </summary>
+    internal static JsonObject BuildHomographStandaloneSchoolProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Homograph",
+            ["projectEndpointName"] = "homograph",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject { ["schools"] = BuildHomographStandaloneSchoolSchema() },
         };
     }
 
@@ -772,6 +920,126 @@ internal static class ExtensionTableTestSchemaBuilder
             ["allowIdentityUpdates"] = false,
             ["documentPathsMapping"] = new JsonObject(),
             ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["decimalPropertyValidationInfos"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray(),
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    /// <summary>
+    /// Build a standalone School resource that happens to live in an extension project.
+    /// </summary>
+    private static JsonObject BuildHomographStandaloneSchoolSchema()
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = "School",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["SchoolId"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["isDescriptor"] = false,
+                    ["isPartOfIdentity"] = true,
+                    ["isRequired"] = true,
+                    ["path"] = "$.schoolId",
+                },
+            },
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["decimalPropertyValidationInfos"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.schoolId" },
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["schoolId"] = new JsonObject { ["type"] = "integer", ["format"] = "int64" },
+                    ["homographLabel"] = new JsonObject { ["type"] = "string", ["maxLength"] = 30 },
+                },
+                ["required"] = new JsonArray { "schoolId" },
+            },
+        };
+    }
+
+    /// <summary>
+    /// Build a School extension schema with a root extension site and an address-level extension site rooted at
+    /// the base collection path.
+    /// </summary>
+    private static JsonObject BuildSampleSchoolExtensionSchemaWithBaseArrayUniquenessConstraints()
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["_ext"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["sample"] = new JsonObject
+                        {
+                            ["type"] = "object",
+                            ["properties"] = new JsonObject
+                            {
+                                ["favoriteColor"] = new JsonObject
+                                {
+                                    ["type"] = "string",
+                                    ["maxLength"] = 30,
+                                },
+                            },
+                        },
+                    },
+                },
+                ["addresses"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["items"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["_ext"] = new JsonObject
+                            {
+                                ["type"] = "object",
+                                ["properties"] = new JsonObject
+                                {
+                                    ["sample"] = new JsonObject
+                                    {
+                                        ["type"] = "object",
+                                        ["properties"] = new JsonObject
+                                        {
+                                            ["complex"] = new JsonObject
+                                            {
+                                                ["type"] = "string",
+                                                ["maxLength"] = 20,
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "School",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = true,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["documentPathsMapping"] = new JsonObject(),
+            ["arrayUniquenessConstraints"] = new JsonArray
+            {
+                new JsonObject { ["paths"] = new JsonArray { "$.addresses[*].street" } },
+            },
             ["decimalPropertyValidationInfos"] = new JsonArray(),
             ["identityJsonPaths"] = new JsonArray(),
             ["jsonSchemaForInsert"] = jsonSchemaForInsert,

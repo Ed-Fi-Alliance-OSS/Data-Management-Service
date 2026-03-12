@@ -28,8 +28,8 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var baseResourcesByName = BuildBaseResourceLookup(
-            context.ConcreteResourcesInNameOrder,
+        var baseResourcesByName = SetPassHelpers.BuildExtensionBaseResourceLookup(
+            context,
             static (index, model) => new BaseResourceEntry(index, model)
         );
         var resourceIndexByKey = context
@@ -46,18 +46,22 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
                 resourceContext.ResourceName
             );
             var equalityConstraints = ReadEqualityConstraints(resourceContext.ResourceSchema);
-
-            if (equalityConstraints.Count == 0)
-            {
-                continue;
-            }
-
             var concreteResourceIndex = ResolveConcreteResourceIndex(
                 resourceContext,
                 resource,
                 baseResourcesByName,
                 resourceIndexByKey
             );
+
+            if (
+                equalityConstraints.Count == 0
+                && !HasImplicitSameSiteUnificationCandidate(
+                    context.ConcreteResourcesInNameOrder[concreteResourceIndex].RelationalModel
+                )
+            )
+            {
+                continue;
+            }
 
             if (!constraintsByResourceIndex.TryGetValue(concreteResourceIndex, out var combinedConstraints))
             {
@@ -83,6 +87,17 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
                 RelationalModel = updatedModel,
             };
         }
+    }
+
+    /// <summary>
+    /// Returns true when one resource contains a duplicated logical reference field that needs implicit
+    /// same-site unification.
+    /// </summary>
+    private static bool HasImplicitSameSiteUnificationCandidate(RelationalResourceModel resourceModel)
+    {
+        return resourceModel
+            .DocumentReferenceBindings.GetLogicalFieldGroups()
+            .Any(group => group.MemberColumns.Count > 1);
     }
 
     /// <summary>
@@ -225,14 +240,20 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
         IReadOnlyList<EqualityConstraintInput> constraints
     )
     {
-        if (constraints.Count == 0)
+        var tables = resourceModel.TablesInDependencyOrder.ToArray();
+        var bindingsByPath = BuildSourcePathBindingsByTable(tables);
+        var logicalReferenceFieldGroups = resourceModel.DocumentReferenceBindings.GetLogicalFieldGroups();
+        var logicalReferenceFieldGroupsByPath = BuildLogicalReferenceFieldGroupsByPath(
+            logicalReferenceFieldGroups
+        );
+        Dictionary<int, List<(TableBoundColumn Left, TableBoundColumn Right)>> appliedEdgesByTable =
+            BuildImplicitSameSiteEdgesByTable(tables, logicalReferenceFieldGroups, resource);
+
+        if (constraints.Count == 0 && appliedEdgesByTable.Count == 0)
         {
             return resourceModel;
         }
 
-        var tables = resourceModel.TablesInDependencyOrder.ToArray();
-        var bindingsByPath = BuildSourcePathBindingsByTable(tables);
-        Dictionary<int, List<(TableBoundColumn Left, TableBoundColumn Right)>> appliedEdgesByTable = [];
         List<AppliedConstraintCandidate> appliedConstraints = [];
         List<KeyUnificationRedundantConstraint> redundantConstraints = [];
         List<KeyUnificationIgnoredConstraint> ignoredConstraints = [];
@@ -240,13 +261,23 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
 
         foreach (var constraint in constraints)
         {
-            var leftCandidates = ResolveEndpointCandidates(bindingsByPath, constraint.SourcePath, resource);
-            var rightCandidates = ResolveEndpointCandidates(bindingsByPath, constraint.TargetPath, resource);
+            var leftEndpoint = ResolveEndpoint(
+                bindingsByPath,
+                logicalReferenceFieldGroupsByPath,
+                constraint.SourcePath,
+                resource
+            );
+            var rightEndpoint = ResolveEndpoint(
+                bindingsByPath,
+                logicalReferenceFieldGroupsByPath,
+                constraint.TargetPath,
+                resource
+            );
 
             // Skip constraints where an endpoint path is not bound to any column
-            if (leftCandidates is null || rightCandidates is null)
+            if (leftEndpoint is null || rightEndpoint is null)
             {
-                var unresolvedEndpoint = (leftCandidates is null, rightCandidates is null) switch
+                var unresolvedEndpoint = (leftEndpoint is null, rightEndpoint is null) switch
                 {
                     (true, true) => "both",
                     (true, false) => "source",
@@ -262,16 +293,30 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
                 continue;
             }
 
-            var leftTableIndex = ResolveEndpointTableIndex(constraint.SourcePath, leftCandidates, resource);
-            var rightTableIndex = ResolveEndpointTableIndex(constraint.TargetPath, rightCandidates, resource);
+            var leftTableIndex = leftEndpoint.TableIndex;
+            var rightTableIndex = rightEndpoint.TableIndex;
 
-            // ResolveEndpointCandidates guarantees >=1 element, so the [0] access is safe
-            var left = leftCandidates[0];
-            var right = rightCandidates[0];
+            ValidateSupportedEndpointKind(leftEndpoint, constraint.SourcePath, resource);
+            ValidateSupportedEndpointKind(rightEndpoint, constraint.TargetPath, resource);
+            var orderedEndpoints = CanonicalizeConstraintEndpoints(
+                constraint,
+                leftEndpoint.RepresentativeBinding,
+                rightEndpoint.RepresentativeBinding
+            );
 
-            ValidateSupportedEndpointKind(left, constraint.SourcePath, resource);
-            ValidateSupportedEndpointKind(right, constraint.TargetPath, resource);
-            var orderedEndpoints = CanonicalizeConstraintEndpoints(constraint, left, right);
+            if (!leftEndpoint.IsResolvedLogicalEndpoint)
+            {
+                ThrowAmbiguousEndpointBinding(constraint.SourcePath, leftEndpoint.PhysicalBindings, resource);
+            }
+
+            if (!rightEndpoint.IsResolvedLogicalEndpoint)
+            {
+                ThrowAmbiguousEndpointBinding(
+                    constraint.TargetPath,
+                    rightEndpoint.PhysicalBindings,
+                    resource
+                );
+            }
 
             if (leftTableIndex != rightTableIndex)
             {
@@ -287,17 +332,7 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
                 continue;
             }
 
-            if (leftCandidates.Length != 1)
-            {
-                ThrowAmbiguousEndpointBinding(constraint.SourcePath, leftCandidates, resource);
-            }
-
-            if (rightCandidates.Length != 1)
-            {
-                ThrowAmbiguousEndpointBinding(constraint.TargetPath, rightCandidates, resource);
-            }
-
-            if (left.Column.ColumnName.Equals(right.Column.ColumnName))
+            if (AreEquivalentEndpoints(leftEndpoint, rightEndpoint))
             {
                 redundantConstraints.Add(
                     new KeyUnificationRedundantConstraint(
@@ -309,23 +344,33 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
                 continue;
             }
 
-            if (!appliedEdgesByTable.TryGetValue(left.TableIndex, out var edges))
+            if (!appliedEdgesByTable.TryGetValue(leftTableIndex, out var edges))
             {
                 edges = [];
-                appliedEdgesByTable[left.TableIndex] = edges;
+                appliedEdgesByTable[leftTableIndex] = edges;
             }
 
-            edges.Add((left, right));
-            appliedConstraints.Add(
-                new AppliedConstraintCandidate(
-                    orderedEndpoints.EndpointAPath,
-                    orderedEndpoints.EndpointBPath,
-                    left.TableIndex,
-                    left.Table.Table,
-                    orderedEndpoints.EndpointABinding.Column,
-                    orderedEndpoints.EndpointBBinding.Column
-                )
-            );
+            foreach (var (leftBinding, rightBinding) in ExpandEndpointEdges(leftEndpoint, rightEndpoint))
+            {
+                edges.Add((leftBinding, rightBinding));
+
+                var orderedAppliedEndpoints = CanonicalizeConstraintEndpoints(
+                    constraint,
+                    leftBinding,
+                    rightBinding
+                );
+
+                appliedConstraints.Add(
+                    new AppliedConstraintCandidate(
+                        orderedAppliedEndpoints.EndpointAPath,
+                        orderedAppliedEndpoints.EndpointBPath,
+                        leftBinding.TableIndex,
+                        leftBinding.Table.Table,
+                        orderedAppliedEndpoints.EndpointABinding.Column,
+                        orderedAppliedEndpoints.EndpointBBinding.Column
+                    )
+                );
+            }
         }
 
         var changed = false;
@@ -435,6 +480,245 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
     }
 
     /// <summary>
+    /// Builds a lookup from logical reference-field path to all same-site grouped field candidates.
+    /// </summary>
+    private static IReadOnlyDictionary<
+        string,
+        IReadOnlyList<DocumentReferenceFieldGroup>
+    > BuildLogicalReferenceFieldGroupsByPath(
+        IReadOnlyList<DocumentReferenceFieldGroup> logicalReferenceFieldGroups
+    )
+    {
+        Dictionary<string, List<DocumentReferenceFieldGroup>> lookup = new(StringComparer.Ordinal);
+
+        foreach (var logicalFieldGroup in logicalReferenceFieldGroups)
+        {
+            if (!lookup.TryGetValue(logicalFieldGroup.ReferenceJsonPath.Canonical, out var groupedFields))
+            {
+                groupedFields = [];
+                lookup.Add(logicalFieldGroup.ReferenceJsonPath.Canonical, groupedFields);
+            }
+
+            groupedFields.Add(logicalFieldGroup);
+        }
+
+        return lookup.ToDictionary(
+            entry => entry.Key,
+            entry =>
+                (IReadOnlyList<DocumentReferenceFieldGroup>)
+                    entry
+                        .Value.OrderBy(group => group.Table.Schema.Value, StringComparer.Ordinal)
+                        .ThenBy(group => group.Table.Name, StringComparer.Ordinal)
+                        .ThenBy(group => group.ReferenceObjectPath.Canonical, StringComparer.Ordinal)
+                        .ThenBy(group => group.FkColumn.Value, StringComparer.Ordinal)
+                        .ToArray(),
+            StringComparer.Ordinal
+        );
+    }
+
+    /// <summary>
+    /// Builds implicit same-site edges so duplicate logical reference fields unify even without explicit
+    /// equality constraints.
+    /// </summary>
+    private static Dictionary<
+        int,
+        List<(TableBoundColumn Left, TableBoundColumn Right)>
+    > BuildImplicitSameSiteEdgesByTable(
+        IReadOnlyList<DbTableModel> tables,
+        IReadOnlyList<DocumentReferenceFieldGroup> logicalReferenceFieldGroups,
+        QualifiedResourceName resource
+    )
+    {
+        Dictionary<int, List<(TableBoundColumn Left, TableBoundColumn Right)>> edgesByTable = [];
+        var indexedTables = tables
+            .Select((table, tableIndex) => new IndexedTable(tableIndex, table))
+            .ToArray();
+
+        foreach (var logicalFieldGroup in logicalReferenceFieldGroups)
+        {
+            if (logicalFieldGroup.MemberColumns.Count < 2)
+            {
+                continue;
+            }
+
+            var indexedTable = ReferenceObjectPathScopeResolver.ResolveOwningTableScope(
+                logicalFieldGroup.ReferenceObjectPath,
+                indexedTables,
+                static candidate => candidate.Table.JsonScope,
+                resource,
+                logicalFieldGroup.Table.Name
+            );
+            var memberBindings = logicalFieldGroup
+                .MemberColumns.Distinct()
+                .Select(memberColumn => new TableBoundColumn(
+                    indexedTable.TableIndex,
+                    indexedTable.Table,
+                    ResolveImplicitGroupMemberColumn(
+                        indexedTable.Table,
+                        logicalFieldGroup,
+                        memberColumn,
+                        resource
+                    )
+                ))
+                .ToArray();
+
+            if (memberBindings.Length < 2)
+            {
+                continue;
+            }
+
+            if (!edgesByTable.TryGetValue(indexedTable.TableIndex, out var tableEdges))
+            {
+                tableEdges = [];
+                edgesByTable.Add(indexedTable.TableIndex, tableEdges);
+            }
+
+            var firstMember = memberBindings[0];
+
+            foreach (var memberBinding in memberBindings.Skip(1))
+            {
+                tableEdges.Add((firstMember, memberBinding));
+            }
+        }
+
+        return edgesByTable;
+    }
+
+    /// <summary>
+    /// Resolves one implicit grouped-reference member column from the owning table.
+    /// </summary>
+    private static DbColumnModel ResolveImplicitGroupMemberColumn(
+        DbTableModel table,
+        DocumentReferenceFieldGroup logicalFieldGroup,
+        DbColumnName memberColumn,
+        QualifiedResourceName resource
+    )
+    {
+        var column = table.Columns.SingleOrDefault(candidate => candidate.ColumnName.Equals(memberColumn));
+
+        if (column is not null)
+        {
+            return column;
+        }
+
+        throw new InvalidOperationException(
+            $"Logical reference field '{logicalFieldGroup.ReferenceJsonPath.Canonical}' under "
+                + $"'{logicalFieldGroup.ReferenceObjectPath.Canonical}' on resource "
+                + $"'{FormatResource(resource)}' expected member column '{memberColumn.Value}' on table "
+                + $"'{table.Table}', but it was not found."
+        );
+    }
+
+    /// <summary>
+    /// Resolves one equality-constraint endpoint to either a single physical binding or one same-site grouped
+    /// reference field.
+    /// </summary>
+    private static ResolvedEndpoint? ResolveEndpoint(
+        IReadOnlyDictionary<string, List<TableBoundColumn>> bindingsByPath,
+        IReadOnlyDictionary<
+            string,
+            IReadOnlyList<DocumentReferenceFieldGroup>
+        > logicalReferenceFieldGroupsByPath,
+        JsonPathExpression endpointPath,
+        QualifiedResourceName resource
+    )
+    {
+        var physicalBindings = ResolveEndpointCandidates(bindingsByPath, endpointPath, resource);
+
+        if (physicalBindings is null)
+        {
+            return null;
+        }
+
+        var tableIndex = ResolveEndpointTableIndex(endpointPath, physicalBindings, resource);
+        var logicalFieldGroup = ResolveGroupedReferenceField(
+            logicalReferenceFieldGroupsByPath,
+            endpointPath,
+            physicalBindings
+        );
+
+        return new ResolvedEndpoint(
+            endpointPath,
+            tableIndex,
+            physicalBindings,
+            logicalFieldGroup,
+            physicalBindings.Length == 1 || logicalFieldGroup is not null
+        );
+    }
+
+    /// <summary>
+    /// Resolves a source path to one same-site grouped reference field when all physical bindings match one
+    /// grouped logical field exactly.
+    /// </summary>
+    private static DocumentReferenceFieldGroup? ResolveGroupedReferenceField(
+        IReadOnlyDictionary<
+            string,
+            IReadOnlyList<DocumentReferenceFieldGroup>
+        > logicalReferenceFieldGroupsByPath,
+        JsonPathExpression endpointPath,
+        IReadOnlyList<TableBoundColumn> physicalBindings
+    )
+    {
+        if (!logicalReferenceFieldGroupsByPath.TryGetValue(endpointPath.Canonical, out var groupedFields))
+        {
+            return null;
+        }
+
+        var matches = groupedFields
+            .Where(groupedField => DoesGroupedReferenceFieldMatch(groupedField, physicalBindings))
+            .DistinctBy(CreateLogicalReferenceFieldGroupIdentity)
+            .ToArray();
+
+        return matches.Length == 1 ? matches[0] : null;
+    }
+
+    /// <summary>
+    /// Builds a deterministic identity so duplicate equivalent grouped reference metadata does not surface as a
+    /// false ambiguity.
+    /// </summary>
+    private static LogicalReferenceFieldGroupIdentity CreateLogicalReferenceFieldGroupIdentity(
+        DocumentReferenceFieldGroup groupedField
+    )
+    {
+        var memberColumnsKey = string.Join(
+            "\u001f",
+            groupedField.MemberColumns.OrderBy(column => column.Value, StringComparer.Ordinal)
+        );
+
+        return new LogicalReferenceFieldGroupIdentity(
+            groupedField.ReferenceObjectPath.Canonical,
+            groupedField.Table,
+            groupedField.FkColumn,
+            groupedField.TargetResource,
+            groupedField.ReferenceJsonPath.Canonical,
+            memberColumnsKey
+        );
+    }
+
+    /// <summary>
+    /// Returns true when a grouped logical field accounts for exactly the supplied physical endpoint bindings.
+    /// </summary>
+    private static bool DoesGroupedReferenceFieldMatch(
+        DocumentReferenceFieldGroup groupedField,
+        IReadOnlyList<TableBoundColumn> physicalBindings
+    )
+    {
+        if (groupedField.MemberColumns.Count != physicalBindings.Count)
+        {
+            return false;
+        }
+
+        if (physicalBindings.Any(binding => !groupedField.Table.Equals(binding.Table.Table)))
+        {
+            return false;
+        }
+
+        var groupedMemberColumns = groupedField.MemberColumns.ToHashSet();
+
+        return physicalBindings.All(binding => groupedMemberColumns.Contains(binding.Column.ColumnName));
+    }
+
+    /// <summary>
     /// Resolves an equality-constraint endpoint to a unique table index, failing fast when bindings span tables.
     /// </summary>
     private static int ResolveEndpointTableIndex(
@@ -481,21 +765,25 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
     /// Ensures key unification only accepts scalar/descriptor endpoint kinds.
     /// </summary>
     private static void ValidateSupportedEndpointKind(
-        TableBoundColumn endpoint,
+        ResolvedEndpoint endpoint,
         JsonPathExpression endpointPath,
         QualifiedResourceName resource
     )
     {
-        if (endpoint.Column.Kind is ColumnKind.Scalar or ColumnKind.DescriptorFk)
+        foreach (var physicalBinding in endpoint.PhysicalBindings)
         {
-            return;
-        }
+            if (physicalBinding.Column.Kind is ColumnKind.Scalar or ColumnKind.DescriptorFk)
+            {
+                continue;
+            }
 
-        throw new InvalidOperationException(
-            $"Equality constraint endpoint '{endpointPath.Canonical}' on resource "
-                + $"'{FormatResource(resource)}' resolved to unsupported column kind "
-                + $"'{endpoint.Column.Kind}' at '{endpoint.Table.Table}.{endpoint.Column.ColumnName.Value}'."
-        );
+            throw new InvalidOperationException(
+                $"Equality constraint endpoint '{endpointPath.Canonical}' on resource "
+                    + $"'{FormatResource(resource)}' resolved to unsupported column kind "
+                    + $"'{physicalBinding.Column.Kind}' at "
+                    + $"'{physicalBinding.Table.Table}.{physicalBinding.Column.ColumnName.Value}'."
+            );
+        }
     }
 
     /// <summary>
@@ -531,6 +819,86 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
     private static KeyUnificationEndpointBinding ToEndpointBinding(TableBoundColumn endpoint)
     {
         return new KeyUnificationEndpointBinding(endpoint.Table.Table, endpoint.Column.ColumnName);
+    }
+
+    /// <summary>
+    /// Returns true when both endpoints already resolve to the same logical binding set.
+    /// </summary>
+    private static bool AreEquivalentEndpoints(ResolvedEndpoint left, ResolvedEndpoint right)
+    {
+        if (left.PhysicalBindings.Count != right.PhysicalBindings.Count)
+        {
+            return false;
+        }
+
+        return left
+            .PhysicalBindings.Select(CreateEndpointBindingIdentity)
+            .SequenceEqual(right.PhysicalBindings.Select(CreateEndpointBindingIdentity));
+    }
+
+    /// <summary>
+    /// Expands one resolved endpoint pair into all distinct non-self physical edges needed for unification.
+    /// </summary>
+    private static IReadOnlyList<(TableBoundColumn Left, TableBoundColumn Right)> ExpandEndpointEdges(
+        ResolvedEndpoint left,
+        ResolvedEndpoint right
+    )
+    {
+        List<(TableBoundColumn Left, TableBoundColumn Right)> edges = [];
+        HashSet<EndpointEdgeIdentity> identities = [];
+
+        foreach (var leftBinding in left.PhysicalBindings)
+        {
+            foreach (var rightBinding in right.PhysicalBindings)
+            {
+                if (
+                    leftBinding.TableIndex == rightBinding.TableIndex
+                    && leftBinding.Column.ColumnName.Equals(rightBinding.Column.ColumnName)
+                )
+                {
+                    continue;
+                }
+
+                var identity = CreateEndpointEdgeIdentity(leftBinding, rightBinding);
+
+                if (!identities.Add(identity))
+                {
+                    continue;
+                }
+
+                edges.Add((leftBinding, rightBinding));
+            }
+        }
+
+        return edges;
+    }
+
+    /// <summary>
+    /// Creates a deterministic binding identity for set comparisons.
+    /// </summary>
+    private static EndpointBindingIdentity CreateEndpointBindingIdentity(TableBoundColumn binding)
+    {
+        return new EndpointBindingIdentity(
+            binding.TableIndex,
+            binding.Table.Table,
+            binding.Column.ColumnName
+        );
+    }
+
+    /// <summary>
+    /// Creates a deterministic undirected edge identity for one physical binding pair.
+    /// </summary>
+    private static EndpointEdgeIdentity CreateEndpointEdgeIdentity(
+        TableBoundColumn left,
+        TableBoundColumn right
+    )
+    {
+        var leftIdentity = CreateEndpointBindingIdentity(left);
+        var rightIdentity = CreateEndpointBindingIdentity(right);
+
+        return leftIdentity.CompareTo(rightIdentity) <= 0
+            ? new EndpointEdgeIdentity(leftIdentity, rightIdentity)
+            : new EndpointEdgeIdentity(rightIdentity, leftIdentity);
     }
 
     /// <summary>
@@ -1352,9 +1720,84 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
     private readonly record struct UndirectedConstraintKey(string EndpointAPath, string EndpointBPath);
 
     /// <summary>
+    /// Resolved endpoint information for equality-constraint processing.
+    /// </summary>
+    private sealed record ResolvedEndpoint(
+        JsonPathExpression EndpointPath,
+        int TableIndex,
+        IReadOnlyList<TableBoundColumn> PhysicalBindings,
+        DocumentReferenceFieldGroup? LogicalFieldGroup,
+        bool IsResolvedLogicalEndpoint
+    )
+    {
+        public TableBoundColumn RepresentativeBinding => PhysicalBindings[0];
+    }
+
+    /// <summary>
+    /// Stable grouped-reference identity used to collapse duplicate equivalent logical metadata.
+    /// </summary>
+    private readonly record struct LogicalReferenceFieldGroupIdentity(
+        string ReferenceObjectPath,
+        DbTableName Table,
+        DbColumnName FkColumn,
+        QualifiedResourceName TargetResource,
+        string ReferenceJsonPath,
+        string MemberColumnsKey
+    );
+
+    /// <summary>
+    /// Stable binding identity used for endpoint equivalence and edge de-duplication.
+    /// </summary>
+    private readonly record struct EndpointBindingIdentity(
+        int TableIndex,
+        DbTableName Table,
+        DbColumnName Column
+    ) : IComparable<EndpointBindingIdentity>
+    {
+        public int CompareTo(EndpointBindingIdentity other)
+        {
+            var tableIndexComparison = TableIndex.CompareTo(other.TableIndex);
+
+            if (tableIndexComparison != 0)
+            {
+                return tableIndexComparison;
+            }
+
+            var schemaComparison = string.CompareOrdinal(Table.Schema.Value, other.Table.Schema.Value);
+
+            if (schemaComparison != 0)
+            {
+                return schemaComparison;
+            }
+
+            var tableComparison = string.CompareOrdinal(Table.Name, other.Table.Name);
+
+            if (tableComparison != 0)
+            {
+                return tableComparison;
+            }
+
+            return string.CompareOrdinal(Column.Value, other.Column.Value);
+        }
+    }
+
+    /// <summary>
+    /// Stable undirected physical-edge identity.
+    /// </summary>
+    private readonly record struct EndpointEdgeIdentity(
+        EndpointBindingIdentity EndpointA,
+        EndpointBindingIdentity EndpointB
+    );
+
+    /// <summary>
     /// One source-path column binding with table context.
     /// </summary>
     private sealed record TableBoundColumn(int TableIndex, DbTableModel Table, DbColumnModel Column);
+
+    /// <summary>
+    /// One indexed table candidate for scope-based reference-site resolution.
+    /// </summary>
+    private sealed record IndexedTable(int TableIndex, DbTableModel Table);
 
     /// <summary>
     /// Canonicalized endpoint ordering for one equality constraint.

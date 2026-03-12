@@ -63,4 +63,18 @@ public class AppSettings
     /// When enabled, tenants are identified via URL path segments.
     /// </summary>
     public bool MultiTenancy { get; set; }
+
+    /// <summary>
+    /// If true, activates the redesigned relational backend pipeline including
+    /// database fingerprint validation, effective-schema caching, and runtime
+    /// mapping selection. When false (default), the existing backend path is used.
+    /// </summary>
+    public bool UseRelationalBackend { get; set; }
+
+    /// <summary>
+    /// Startup-only switch for validating provisioned PostgreSQL runtime mappings
+    /// against loaded DMS instances. Defaults to false during the rollout so
+    /// unprovisioned startup paths can still compile and cache mappings.
+    /// </summary>
+    public bool ValidateProvisionedMappingsOnStartup { get; set; } = false;
 }

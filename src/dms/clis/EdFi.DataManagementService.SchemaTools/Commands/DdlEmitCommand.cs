@@ -9,7 +9,6 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.RelationalModel.Manifest;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Utilities;
-using EdFi.DataManagementService.SchemaTools.Bridge;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.SchemaTools.Commands;

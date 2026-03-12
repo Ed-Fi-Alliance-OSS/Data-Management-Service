@@ -17,7 +17,9 @@ public class DmsStartupOrchestrator(
     ILogger<DmsStartupOrchestrator> logger
 )
 {
-    private readonly IEnumerable<IDmsStartupTask> _tasks = tasks;
+    private readonly IReadOnlyList<IDmsStartupTask> _tasks = tasks
+        .OrderBy(static task => task.Order)
+        .ToArray();
     private readonly ILogger<DmsStartupOrchestrator> _logger = logger;
 
     /// <summary>
@@ -25,13 +27,46 @@ public class DmsStartupOrchestrator(
     /// </summary>
     /// <param name="cancellationToken">Cancellation token for the operation.</param>
     /// <exception cref="InvalidOperationException">Thrown if any task fails.</exception>
-    public async Task RunAllAsync(CancellationToken cancellationToken)
+    public Task RunAllAsync(CancellationToken cancellationToken)
     {
-        var orderedTasks = _tasks.OrderBy(t => t.Order).ToList();
+        return RunTasksAsync(static _ => true, "all tasks", cancellationToken);
+    }
+
+    /// <summary>
+    /// Runs the registered startup tasks whose <see cref="IDmsStartupTask.Order" /> values fall within the supplied range.
+    /// </summary>
+    /// <param name="minimumOrderInclusive">The minimum task order, inclusive.</param>
+    /// <param name="maximumOrderInclusive">The maximum task order, inclusive.</param>
+    /// <param name="cancellationToken">Cancellation token for the operation.</param>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when the supplied range is invalid.</exception>
+    /// <exception cref="InvalidOperationException">Thrown if any task in range fails.</exception>
+    public Task RunByOrderRangeAsync(
+        int minimumOrderInclusive,
+        int maximumOrderInclusive,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(minimumOrderInclusive, maximumOrderInclusive);
+
+        return RunTasksAsync(
+            task => task.Order >= minimumOrderInclusive && task.Order <= maximumOrderInclusive,
+            $"tasks in order range [{minimumOrderInclusive}, {maximumOrderInclusive}]",
+            cancellationToken
+        );
+    }
+
+    private async Task RunTasksAsync(
+        Func<IDmsStartupTask, bool> taskFilter,
+        string executionScope,
+        CancellationToken cancellationToken
+    )
+    {
+        var orderedTasks = _tasks.Where(taskFilter).ToList();
 
         _logger.LogInformation(
-            "DMS startup orchestrator beginning execution of {TaskCount} tasks",
-            orderedTasks.Count
+            "DMS startup orchestrator beginning execution of {TaskCount} {ExecutionScope}",
+            orderedTasks.Count,
+            executionScope
         );
 
         foreach (var task in orderedTasks)
@@ -62,6 +97,9 @@ public class DmsStartupOrchestrator(
             }
         }
 
-        _logger.LogInformation("DMS startup orchestrator completed all tasks successfully");
+        _logger.LogInformation(
+            "DMS startup orchestrator completed {ExecutionScope} successfully",
+            executionScope
+        );
     }
 }

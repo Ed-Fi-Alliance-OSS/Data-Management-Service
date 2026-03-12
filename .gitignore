@@ -451,3 +451,9 @@ openApi-codegen-cli.jar
 
 # Claude temporary files leaking into the project root in 2.1.5
 tmpclaude*
+
+# Fixture runner actual/ output directories
+**/Fixtures/**/actual/
+
+# Allow ApiSchema.json inside fixture inputs (overrides apiSchema*.json rule)
+!**/Fixtures/**/inputs/ApiSchema.json

@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -57,7 +56,8 @@ internal class ProvideAuthorizationFiltersMiddleware(
             {
                 var authFiltersProvider =
                     _authorizationServiceFactory.GetByName<IAuthorizationFiltersProvider>(
-                        authorizationStrategy
+                        authorizationStrategy,
+                        requestInfo.ScopedServiceProvider
                     );
                 if (authFiltersProvider == null)
                 {
@@ -106,11 +106,10 @@ internal class ProvideAuthorizationFiltersMiddleware(
             );
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 500,
-                Body: new JsonObject
-                {
-                    ["message"] = $"Error while authorizing the request.{ex.Message}",
-                    ["traceId"] = requestInfo.FrontendRequest.TraceId.Value,
-                },
+                Body: FailureResponse.ForServerErrorMessageBody(
+                    $"Error while authorizing the request.{ex.Message}",
+                    requestInfo.FrontendRequest.TraceId
+                ),
                 Headers: []
             );
 

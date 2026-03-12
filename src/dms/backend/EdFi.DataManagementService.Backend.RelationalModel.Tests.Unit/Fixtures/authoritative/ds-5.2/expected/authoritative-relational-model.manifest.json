@@ -4816,7 +4816,7 @@
                 "target_columns": [
                   "DocumentId",
                   "CourseOffering_LocalCourseCode",
-                  "CourseOffering_SchoolReferenceSchoolId",
+                  "SchoolId_Unified",
                   "CourseOffering_SchoolYear",
                   "CourseOffering_SessionName",
                   "SectionIdentifier"
@@ -16914,7 +16914,7 @@
                 "target_columns": [
                   "DocumentId",
                   "CourseOffering_LocalCourseCode",
-                  "CourseOffering_SchoolReferenceSchoolId",
+                  "SchoolId_Unified",
                   "CourseOffering_SchoolYear",
                   "CourseOffering_SessionName",
                   "SectionIdentifier"
@@ -28146,7 +28146,7 @@
                 "target_columns": [
                   "DocumentId",
                   "CourseOffering_LocalCourseCode",
-                  "CourseOffering_SchoolReferenceSchoolId",
+                  "SchoolId_Unified",
                   "CourseOffering_SchoolYear",
                   "CourseOffering_SessionName",
                   "SectionIdentifier"
@@ -50635,6 +50635,18 @@
                 }
               },
               {
+                "name": "SchoolId_Unified",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": true,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "Grade_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -50692,7 +50704,9 @@
                 "is_nullable": true,
                 "source_path": "$.grades[*].gradeReference.schoolId",
                 "storage": {
-                  "kind": "Stored"
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolId_Unified",
+                  "presence_column": "Grade_DocumentId"
                 }
               },
               {
@@ -50741,7 +50755,9 @@
                 "is_nullable": true,
                 "source_path": "$.grades[*].gradeReference.schoolId",
                 "storage": {
-                  "kind": "Stored"
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolId_Unified",
+                  "presence_column": "Grade_DocumentId"
                 }
               },
               {
@@ -50796,7 +50812,15 @@
                 }
               }
             ],
-            "key_unification_classes": [],
+            "key_unification_classes": [
+              {
+                "canonical_column": "SchoolId_Unified",
+                "member_path_columns": [
+                  "Grade_GradingPeriodReferenceSchoolId",
+                  "Grade_StudentSectionAssociationReferenceSchoolId"
+                ]
+              }
+            ],
             "descriptor_fk_deduplications": [],
             "constraints": [
               {
@@ -50839,7 +50863,7 @@
                   "Grade_GradeTypeDescriptor_DescriptorId",
                   "Grade_GradingPeriodDescriptor_DescriptorId",
                   "Grade_GradingPeriodName",
-                  "Grade_GradingPeriodReferenceSchoolId",
+                  "SchoolId_Unified",
                   "Grade_GradingPeriodSchoolYear",
                   "Grade_BeginDate",
                   "Grade_LocalCourseCode",
@@ -54973,7 +54997,7 @@
                 "target_columns": [
                   "DocumentId",
                   "CourseOffering_LocalCourseCode",
-                  "CourseOffering_SchoolReferenceSchoolId",
+                  "SchoolId_Unified",
                   "CourseOffering_SchoolYear",
                   "CourseOffering_SessionName",
                   "SectionIdentifier"
@@ -55143,12 +55167,24 @@
                 }
               },
               {
-                "name": "SchoolId_Unified",
+                "name": "SchoolId_U35501e03_Unified",
                 "kind": "Scalar",
                 "type": {
                   "kind": "Int32"
                 },
                 "is_nullable": true,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "SchoolId_Unified",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": false,
                 "source_path": null,
                 "storage": {
                   "kind": "Stored"
@@ -55188,7 +55224,9 @@
                 "is_nullable": false,
                 "source_path": "$.courseOfferingReference.schoolId",
                 "storage": {
-                  "kind": "Stored"
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolId_Unified",
+                  "presence_column": "CourseOffering_DocumentId"
                 }
               },
               {
@@ -55200,7 +55238,9 @@
                 "is_nullable": false,
                 "source_path": "$.courseOfferingReference.schoolId",
                 "storage": {
-                  "kind": "Stored"
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolId_Unified",
+                  "presence_column": "CourseOffering_DocumentId"
                 }
               },
               {
@@ -55263,7 +55303,7 @@
                 "source_path": "$.locationReference.schoolId",
                 "storage": {
                   "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolId_Unified",
+                  "canonical_column": "SchoolId_U35501e03_Unified",
                   "presence_column": "LocationLocation_DocumentId"
                 }
               },
@@ -55289,7 +55329,7 @@
                 "source_path": "$.locationSchoolReference.schoolId",
                 "storage": {
                   "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolId_Unified",
+                  "canonical_column": "SchoolId_U35501e03_Unified",
                   "presence_column": "LocationSchool_DocumentId"
                 }
               },
@@ -55446,10 +55486,17 @@
             ],
             "key_unification_classes": [
               {
-                "canonical_column": "SchoolId_Unified",
+                "canonical_column": "SchoolId_U35501e03_Unified",
                 "member_path_columns": [
                   "LocationLocation_SchoolId",
                   "LocationSchool_SchoolId"
+                ]
+              },
+              {
+                "canonical_column": "SchoolId_Unified",
+                "member_path_columns": [
+                  "CourseOffering_SchoolReferenceSchoolId",
+                  "CourseOffering_SessionReferenceSchoolId"
                 ]
               }
             ],
@@ -55469,7 +55516,7 @@
                 "columns": [
                   "DocumentId",
                   "CourseOffering_LocalCourseCode",
-                  "CourseOffering_SchoolReferenceSchoolId",
+                  "SchoolId_Unified",
                   "CourseOffering_SchoolYear",
                   "CourseOffering_SessionName",
                   "SectionIdentifier"
@@ -55497,7 +55544,7 @@
                 "columns": [
                   "CourseOffering_DocumentId",
                   "CourseOffering_LocalCourseCode",
-                  "CourseOffering_SchoolReferenceSchoolId",
+                  "SchoolId_Unified",
                   "CourseOffering_SchoolYear",
                   "CourseOffering_SessionName"
                 ],
@@ -55569,7 +55616,7 @@
                 "columns": [
                   "LocationLocation_DocumentId",
                   "LocationLocation_ClassroomIdentificationCode",
-                  "SchoolId_Unified"
+                  "SchoolId_U35501e03_Unified"
                 ],
                 "target_table": {
                   "schema": "edfi",
@@ -55588,7 +55635,7 @@
                 "name": "FK_Section_LocationSchool_RefKey",
                 "columns": [
                   "LocationSchool_DocumentId",
-                  "SchoolId_Unified"
+                  "SchoolId_U35501e03_Unified"
                 ],
                 "target_table": {
                   "schema": "edfi",
@@ -56268,7 +56315,7 @@
               },
               "endpoint_a_column": "LocationLocation_SchoolId",
               "endpoint_b_column": "LocationSchool_SchoolId",
-              "canonical_column": "SchoolId_Unified"
+              "canonical_column": "SchoolId_U35501e03_Unified"
             }
           ],
           "redundant": [],
@@ -61491,7 +61538,7 @@
                 "target_columns": [
                   "DocumentId",
                   "CourseOffering_LocalCourseCode",
-                  "CourseOffering_SchoolReferenceSchoolId",
+                  "SchoolId_Unified",
                   "CourseOffering_SchoolYear",
                   "CourseOffering_SessionName",
                   "SectionIdentifier"
@@ -73606,7 +73653,7 @@
                 "target_columns": [
                   "DocumentId",
                   "CourseOffering_LocalCourseCode",
-                  "CourseOffering_SchoolReferenceSchoolId",
+                  "SchoolId_Unified",
                   "CourseOffering_SchoolYear",
                   "CourseOffering_SessionName",
                   "SectionIdentifier"
@@ -90982,7 +91029,7 @@
                 "target_columns": [
                   "DocumentId",
                   "CourseOffering_LocalCourseCode",
-                  "CourseOffering_SchoolReferenceSchoolId",
+                  "SchoolId_Unified",
                   "CourseOffering_SchoolYear",
                   "CourseOffering_SessionName",
                   "SectionIdentifier"
@@ -91586,7 +91633,7 @@
                 "target_columns": [
                   "DocumentId",
                   "CourseOffering_LocalCourseCode",
-                  "CourseOffering_SchoolReferenceSchoolId",
+                  "SchoolId_Unified",
                   "CourseOffering_SchoolYear",
                   "CourseOffering_SessionName",
                   "SectionIdentifier"
@@ -99288,7 +99335,7 @@
                 "target_columns": [
                   "DocumentId",
                   "CourseOffering_LocalCourseCode",
-                  "CourseOffering_SchoolReferenceSchoolId",
+                  "SchoolId_Unified",
                   "CourseOffering_SchoolYear",
                   "CourseOffering_SessionName",
                   "SectionIdentifier"
@@ -99385,6 +99432,32 @@
                 }
               },
               {
+                "name": "Namespace_Unified",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "String",
+                  "max_length": 255
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "SurveyIdentifier_Unified",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "String",
+                  "max_length": 60
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "EducationOrganization_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -99430,7 +99503,9 @@
                 "is_nullable": false,
                 "source_path": "$.surveySectionResponseReference.namespace",
                 "storage": {
-                  "kind": "Stored"
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "Namespace_Unified",
+                  "presence_column": "SurveySectionResponse_DocumentId"
                 }
               },
               {
@@ -99443,7 +99518,9 @@
                 "is_nullable": false,
                 "source_path": "$.surveySectionResponseReference.surveyIdentifier",
                 "storage": {
-                  "kind": "Stored"
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SurveyIdentifier_Unified",
+                  "presence_column": "SurveySectionResponse_DocumentId"
                 }
               },
               {
@@ -99469,7 +99546,9 @@
                 "is_nullable": false,
                 "source_path": "$.surveySectionResponseReference.namespace",
                 "storage": {
-                  "kind": "Stored"
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "Namespace_Unified",
+                  "presence_column": "SurveySectionResponse_DocumentId"
                 }
               },
               {
@@ -99482,7 +99561,9 @@
                 "is_nullable": false,
                 "source_path": "$.surveySectionResponseReference.surveyIdentifier",
                 "storage": {
-                  "kind": "Stored"
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SurveyIdentifier_Unified",
+                  "presence_column": "SurveySectionResponse_DocumentId"
                 }
               },
               {
@@ -99499,7 +99580,22 @@
                 }
               }
             ],
-            "key_unification_classes": [],
+            "key_unification_classes": [
+              {
+                "canonical_column": "Namespace_Unified",
+                "member_path_columns": [
+                  "SurveySectionResponse_SurveyResponseReferenceNamespace",
+                  "SurveySectionResponse_SurveySectionReferenceNamespace"
+                ]
+              },
+              {
+                "canonical_column": "SurveyIdentifier_Unified",
+                "member_path_columns": [
+                  "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier",
+                  "SurveySectionResponse_SurveySectionReferenceSurveyIdentifier"
+                ]
+              }
+            ],
             "descriptor_fk_deduplications": [],
             "constraints": [
               {
@@ -99546,11 +99642,11 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_SurveySectionResponseEducationOrganizationTargetA_ba69e4aa87",
+                "name": "FK_SurveySectionResponseEducationOrganizationTargetA_d52808d4b5",
                 "columns": [
                   "SurveySectionResponse_DocumentId",
-                  "SurveySectionResponse_SurveyResponseReferenceNamespace",
-                  "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier",
+                  "Namespace_Unified",
+                  "SurveyIdentifier_Unified",
                   "SurveySectionResponse_SurveyResponseIdentifier",
                   "SurveySectionResponse_SurveySectionTitle"
                 ],
@@ -99637,6 +99733,32 @@
                 }
               },
               {
+                "name": "Namespace_Unified",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "String",
+                  "max_length": 255
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "SurveyIdentifier_Unified",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "String",
+                  "max_length": 60
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "Staff_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -99683,7 +99805,9 @@
                 "is_nullable": false,
                 "source_path": "$.surveySectionResponseReference.namespace",
                 "storage": {
-                  "kind": "Stored"
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "Namespace_Unified",
+                  "presence_column": "SurveySectionResponse_DocumentId"
                 }
               },
               {
@@ -99696,7 +99820,9 @@
                 "is_nullable": false,
                 "source_path": "$.surveySectionResponseReference.surveyIdentifier",
                 "storage": {
-                  "kind": "Stored"
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SurveyIdentifier_Unified",
+                  "presence_column": "SurveySectionResponse_DocumentId"
                 }
               },
               {
@@ -99722,7 +99848,9 @@
                 "is_nullable": false,
                 "source_path": "$.surveySectionResponseReference.namespace",
                 "storage": {
-                  "kind": "Stored"
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "Namespace_Unified",
+                  "presence_column": "SurveySectionResponse_DocumentId"
                 }
               },
               {
@@ -99735,7 +99863,9 @@
                 "is_nullable": false,
                 "source_path": "$.surveySectionResponseReference.surveyIdentifier",
                 "storage": {
-                  "kind": "Stored"
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SurveyIdentifier_Unified",
+                  "presence_column": "SurveySectionResponse_DocumentId"
                 }
               },
               {
@@ -99752,7 +99882,22 @@
                 }
               }
             ],
-            "key_unification_classes": [],
+            "key_unification_classes": [
+              {
+                "canonical_column": "Namespace_Unified",
+                "member_path_columns": [
+                  "SurveySectionResponse_SurveyResponseReferenceNamespace",
+                  "SurveySectionResponse_SurveySectionReferenceNamespace"
+                ]
+              },
+              {
+                "canonical_column": "SurveyIdentifier_Unified",
+                "member_path_columns": [
+                  "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier",
+                  "SurveySectionResponse_SurveySectionReferenceSurveyIdentifier"
+                ]
+              }
+            ],
             "descriptor_fk_deduplications": [],
             "constraints": [
               {
@@ -99799,11 +99944,11 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_SurveySectionResponseStaffTargetAssociation_Surve_9d8ebe9365",
+                "name": "FK_SurveySectionResponseStaffTargetAssociation_Surve_dbf7f4a817",
                 "columns": [
                   "SurveySectionResponse_DocumentId",
-                  "SurveySectionResponse_SurveyResponseReferenceNamespace",
-                  "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier",
+                  "Namespace_Unified",
+                  "SurveyIdentifier_Unified",
                   "SurveySectionResponse_SurveyResponseIdentifier",
                   "SurveySectionResponse_SurveySectionTitle"
                 ],

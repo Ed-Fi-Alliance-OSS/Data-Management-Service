@@ -25,12 +25,16 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 [Parallelizable]
 public class QueryRequestHandlerTests
 {
-    internal static IPipelineStep Handler(IQueryHandler queryHandler)
+    internal static (IPipelineStep handler, IServiceProvider serviceProvider) Handler(
+        IQueryHandler queryHandler
+    )
     {
         var serviceProvider = A.Fake<IServiceProvider>();
         A.CallTo(() => serviceProvider.GetService(typeof(IQueryHandler))).Returns(queryHandler);
 
-        return new QueryRequestHandler(serviceProvider, NullLogger.Instance, ResiliencePipeline.Empty);
+        var handler = new QueryRequestHandler(NullLogger.Instance, ResiliencePipeline.Empty);
+
+        return (handler, serviceProvider);
     }
 
     [TestFixture]
@@ -52,7 +56,8 @@ public class QueryRequestHandlerTests
         [SetUp]
         public async Task Setup()
         {
-            IPipelineStep queryHandler = Handler(new Repository());
+            var (queryHandler, serviceProvider) = Handler(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
             await queryHandler.Execute(_requestInfo, NullNext);
         }
 
@@ -84,7 +89,8 @@ public class QueryRequestHandlerTests
         [SetUp]
         public async Task Setup()
         {
-            IPipelineStep queryHandler = Handler(new Repository());
+            var (queryHandler, serviceProvider) = Handler(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
             await queryHandler.Execute(_requestInfo, NullNext);
         }
 
@@ -116,7 +122,8 @@ public class QueryRequestHandlerTests
         [SetUp]
         public async Task Setup()
         {
-            IPipelineStep queryHandler = Handler(new Repository());
+            var (queryHandler, serviceProvider) = Handler(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
             await queryHandler.Execute(_requestInfo, NullNext);
         }
 

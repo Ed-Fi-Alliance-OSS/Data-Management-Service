@@ -6,6 +6,7 @@
 using System.Reflection;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -109,6 +110,19 @@ public class ApiServiceJwtAuthenticationTests
             NullLogger<ProfileResolutionMiddleware>.Instance
         );
 
+        // Register ValidateDatabaseFingerprintMiddleware and its dependencies
+        var appSettingsOptions = Options.Create(
+            new AppSettings { AllowIdentityUpdateOverrides = "", MaskRequestBodyInLogs = false }
+        );
+        services.AddSingleton(appSettingsOptions);
+        services.AddSingleton<IDatabaseFingerprintReader, NullDatabaseFingerprintReader>();
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<DatabaseFingerprintProvider>();
+        services.AddTransient<ValidateDatabaseFingerprintMiddleware>();
+        services.AddTransient<ILogger<ValidateDatabaseFingerprintMiddleware>>(_ =>
+            NullLogger<ValidateDatabaseFingerprintMiddleware>.Instance
+        );
+
         var serviceProvider = services.BuildServiceProvider();
 
         // Create an instance of ApiService to test GetCommonInitialSteps
@@ -121,13 +135,12 @@ public class ApiServiceJwtAuthenticationTests
             A.Fake<IEqualityConstraintValidator>(),
             A.Fake<IDecimalValidator>(),
             NullLogger<ApiService>.Instance,
-            Options.Create(
-                new AppSettings { AllowIdentityUpdateOverrides = "", MaskRequestBodyInLogs = false }
-            ),
+            appSettingsOptions,
             A.Fake<IAuthorizationServiceFactory>(),
             ResiliencePipeline.Empty,
             A.Fake<ResourceLoadOrderCalculator>(),
             serviceProvider,
+            A.Fake<IServiceScopeFactory>(),
             A.Fake<CachedClaimSetProvider>(),
             A.Fake<IResourceDependencyGraphMLFactory>(),
             A.Fake<IProfileService>()
@@ -177,6 +190,7 @@ public class ApiServiceJwtAuthenticationTests
             ResiliencePipeline.Empty,
             A.Fake<ResourceLoadOrderCalculator>(),
             serviceProvider,
+            A.Fake<IServiceScopeFactory>(),
             A.Fake<CachedClaimSetProvider>(),
             A.Fake<IResourceDependencyGraphMLFactory>(),
             A.Fake<IProfileService>()

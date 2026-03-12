@@ -69,7 +69,9 @@ public static class Utility
     }
 
     /// <summary>
-    /// Formats a error result string from the given error information and traceId
+    /// Formats an error result from the given error information and traceId.
+    /// This returns only a JSON body rather than a complete middleware
+    /// <see cref="FrontendResponse" />.
     /// </summary>
     public static JsonNode? ToJsonError(string errorInfo, TraceId traceId)
     {

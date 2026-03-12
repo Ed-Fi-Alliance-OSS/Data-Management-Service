@@ -107,7 +107,7 @@ public class CoerceDateTimesMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
                 ApiSchemaDocuments = SchemaDocuments(),
                 ParsedBody = JsonNode.Parse(requestBody)!,
@@ -217,7 +217,7 @@ public class CoerceDateTimesMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
                 ApiSchemaDocuments = SchemaDocuments(),
                 ParsedBody = JsonNode.Parse(requestBody)!,
@@ -299,7 +299,7 @@ public class CoerceDateTimesMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
                 ApiSchemaDocuments = SchemaDocuments(),
                 ParsedBody = JsonNode.Parse(requestBody)!,
@@ -377,7 +377,7 @@ public class CoerceDateTimesMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
                 ApiSchemaDocuments = SchemaDocuments(),
                 ParsedBody = JsonNode.Parse(requestBody)!,
@@ -474,7 +474,7 @@ public class CoerceDateTimesMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
                 ApiSchemaDocuments = SchemaDocumentsWithoutDateTimePaths(),
                 ParsedBody = JsonNode.Parse(requestBody)!,

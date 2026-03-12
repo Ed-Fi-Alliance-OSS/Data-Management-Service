@@ -734,6 +734,7 @@ internal static class ExtensionProjectKeyFixture
         IReadOnlyList<ResourceKeyEntry> resourceKeys
     )
     {
+        var filteredResourceKeys = FilterResourceKeys(projects, resourceKeys);
         var schemaComponents = projects
             .OrderBy(project => project.ProjectEndpointName, StringComparer.Ordinal)
             .Select(project => new SchemaComponentInfo(
@@ -749,13 +750,57 @@ internal static class ExtensionProjectKeyFixture
             "1.0.0",
             "1.0.0",
             "edf1edf1",
-            resourceKeys.Count,
+            EffectiveSchemaFingerprintContract.CreateResourceKeyCountOrThrow(filteredResourceKeys.Count),
             new byte[] { 0x01 },
             schemaComponents,
-            resourceKeys
+            filteredResourceKeys
         );
 
         return new EffectiveSchemaSet(effectiveSchemaInfo, projects);
+    }
+
+    private static IReadOnlyList<ResourceKeyEntry> FilterResourceKeys(
+        IReadOnlyList<EffectiveProjectSchema> projects,
+        IReadOnlyList<ResourceKeyEntry> resourceKeys
+    )
+    {
+        HashSet<QualifiedResourceName> extensionResources = [];
+
+        foreach (var project in projects)
+        {
+            var projectSchema =
+                project.ProjectSchema
+                ?? throw new InvalidOperationException("ProjectSchema must be provided.");
+
+            if (projectSchema["resourceSchemas"] is not JsonObject resourceSchemas)
+            {
+                throw new InvalidOperationException("projectSchema.resourceSchemas must be provided.");
+            }
+
+            foreach (var resourceSchemaEntry in resourceSchemas)
+            {
+                if (resourceSchemaEntry.Value is not JsonObject resourceSchema)
+                {
+                    throw new InvalidOperationException(
+                        "projectSchema.resourceSchemas entries must be objects."
+                    );
+                }
+
+                if (resourceSchema["isResourceExtension"]?.GetValue<bool>() is not true)
+                {
+                    continue;
+                }
+
+                var resourceName =
+                    resourceSchema["resourceName"]?.GetValue<string>() ?? resourceSchemaEntry.Key;
+
+                extensionResources.Add(new QualifiedResourceName(project.ProjectName, resourceName));
+            }
+        }
+
+        return resourceKeys
+            .Where(resourceKey => !extensionResources.Contains(resourceKey.Resource))
+            .ToArray();
     }
 
     /// <summary>

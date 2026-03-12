@@ -39,7 +39,8 @@ public class TenantValidationMiddlewareTests
                 RouteQualifiers: [],
                 Tenant: tenant
             ),
-            RequestMethod.GET
+            RequestMethod.GET,
+            No.ServiceProvider
         );
     }
 

@@ -76,12 +76,14 @@ public sealed record EffectiveSchemaInfo(
     string ApiSchemaFormatVersion,
     string RelationalMappingVersion,
     string EffectiveSchemaHash,
-    int ResourceKeyCount,
+    short ResourceKeyCount,
     byte[] ResourceKeySeedHash,              // 32 bytes (SHA-256)
     IReadOnlyList<SchemaComponentInfo> SchemaComponentsInEndpointOrder,
     IReadOnlyList<ResourceKeyEntry> ResourceKeysInIdOrder
 );
 ```
+
+`ResourceKeyCount` intentionally uses `short` here to match the authoritative `dms.EffectiveSchema.ResourceKeyCount smallint` contract. The design already caps `dms.ResourceKey` cardinality because every `ResourceKeyId` must fit `smallint`; using the same bound in the shared runtime model makes the 32,767-entry ceiling explicit and avoids late narrowing/cast failures in provisioning or validation code.
 
 #### Dialect rules vs. SQL emission (shared, no drift)
 

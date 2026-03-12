@@ -17,6 +17,54 @@ internal static class SetPassHelpers
     {
         return scope.Segments.Count(segment => segment is JsonPathSegment.AnyArrayElement);
     }
+
+    /// <summary>
+    /// Builds the lookup of concrete base resources that resource extensions are allowed to target.
+    /// Standalone resources from extension projects are excluded so they do not collide with core resource names.
+    /// </summary>
+    internal static Dictionary<string, List<TEntry>> BuildExtensionBaseResourceLookup<TEntry>(
+        RelationalModelSetBuilderContext context,
+        Func<int, ConcreteResourceModel, TEntry> entryFactory
+    )
+    {
+        var standaloneExtensionResources = context
+            .EnumerateConcreteResourceSchemasInNameOrder()
+            .Where(resourceContext =>
+                resourceContext.Project.ProjectSchema.IsExtensionProject
+                && !EdFi.DataManagementService.Backend.RelationalModel.Schema.RelationalModelSetSchemaHelpers.IsResourceExtension(
+                    resourceContext
+                )
+            )
+            .Select(resourceContext => new QualifiedResourceName(
+                resourceContext.Project.ProjectSchema.ProjectName,
+                resourceContext.ResourceName
+            ))
+            .ToHashSet();
+
+        Dictionary<string, List<TEntry>> lookup = new(StringComparer.Ordinal);
+
+        for (var index = 0; index < context.ConcreteResourcesInNameOrder.Count; index++)
+        {
+            var resource = context.ConcreteResourcesInNameOrder[index].ResourceKey.Resource;
+
+            if (standaloneExtensionResources.Contains(resource))
+            {
+                continue;
+            }
+
+            var resourceName = resource.ResourceName;
+
+            if (!lookup.TryGetValue(resourceName, out var entries))
+            {
+                entries = [];
+                lookup.Add(resourceName, entries);
+            }
+
+            entries.Add(entryFactory(index, context.ConcreteResourcesInNameOrder[index]));
+        }
+
+        return lookup;
+    }
 }
 
 /// <summary>

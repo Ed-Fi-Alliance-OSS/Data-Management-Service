@@ -103,6 +103,82 @@ public class Given_An_EffectiveSchemaInfo_With_Missing_ResourceKeys
 }
 
 /// <summary>
+/// Test fixture for an effective schema info that omits keys for resource-extension entries.
+/// </summary>
+[TestFixture]
+public class Given_An_EffectiveSchemaInfo_That_Omits_Resource_Extension_Keys
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema = EffectiveSchemaFixture.CreateProjectSchema(("schools", "School", false));
+        var extensionProjectSchema = EffectiveSchemaFixture.CreateProjectSchema(
+            ("schoolExtension", "School", true)
+        );
+        var resourceKeys = new[] { EffectiveSchemaFixture.CreateResourceKey(1, "Ed-Fi", "School") };
+        var effectiveSchemaInfo = new EffectiveSchemaInfo(
+            ApiSchemaFormatVersion: "1.0.0",
+            RelationalMappingVersion: "1.0.0",
+            EffectiveSchemaHash: "edf1edf1",
+            ResourceKeyCount: EffectiveSchemaFingerprintContract.CreateResourceKeyCountOrThrow(
+                resourceKeys.Length
+            ),
+            ResourceKeySeedHash: [0x01],
+            SchemaComponentsInEndpointOrder:
+            [
+                new SchemaComponentInfo(
+                    "ed-fi",
+                    "Ed-Fi",
+                    "5.0.0",
+                    false,
+                    "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+                ),
+                new SchemaComponentInfo(
+                    "sample",
+                    "Sample",
+                    "1.0.0",
+                    true,
+                    "abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+                ),
+            ],
+            ResourceKeysInIdOrder: resourceKeys
+        );
+        var effectiveSchemaSet = new EffectiveSchemaSet(
+            effectiveSchemaInfo,
+            [
+                new EffectiveProjectSchema("ed-fi", "Ed-Fi", "5.0.0", false, coreProjectSchema),
+                new EffectiveProjectSchema("sample", "Sample", "1.0.0", true, extensionProjectSchema),
+            ]
+        );
+
+        var builder = new DerivedRelationalModelSetBuilder(Array.Empty<IRelationalModelSetPass>());
+
+        try
+        {
+            builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    /// <summary>
+    /// It should allow missing keys for resource-extension entries.
+    /// </summary>
+    [Test]
+    public void It_should_allow_missing_keys_for_resource_extensions()
+    {
+        _exception.Should().BeNull();
+    }
+}
+
+/// <summary>
 /// Test fixture for an effective schema info with duplicate resource key ids.
 /// </summary>
 [TestFixture]
@@ -521,7 +597,7 @@ public class Given_An_EffectiveSchemaInfo_With_Out_Of_Order_SchemaComponents
             "1.0.0",
             "1.0.0",
             "edf1edf1",
-            resourceKeys.Length,
+            EffectiveSchemaFingerprintContract.CreateResourceKeyCountOrThrow(resourceKeys.Length),
             new byte[] { 0x01 },
             schemaComponents,
             resourceKeys
@@ -753,7 +829,7 @@ internal static class EffectiveSchemaFixture
     public static EffectiveSchemaSet CreateEffectiveSchemaSet(
         JsonObject projectSchema,
         IReadOnlyList<ResourceKeyEntry> resourceKeys,
-        int? resourceKeyCountOverride = null,
+        short? resourceKeyCountOverride = null,
         IReadOnlyList<SchemaComponentInfo>? schemaComponentsOverride = null
     )
     {
@@ -774,7 +850,8 @@ internal static class EffectiveSchemaFixture
             ApiSchemaFormatVersion: "1.0.0",
             RelationalMappingVersion: "1.0.0",
             EffectiveSchemaHash: "edf1edf1",
-            ResourceKeyCount: resourceKeyCountOverride ?? resourceKeys.Count,
+            ResourceKeyCount: resourceKeyCountOverride
+                ?? EffectiveSchemaFingerprintContract.CreateResourceKeyCountOrThrow(resourceKeys.Count),
             ResourceKeySeedHash: new byte[] { 0x01 },
             SchemaComponentsInEndpointOrder: schemaComponents,
             ResourceKeysInIdOrder: resourceKeys

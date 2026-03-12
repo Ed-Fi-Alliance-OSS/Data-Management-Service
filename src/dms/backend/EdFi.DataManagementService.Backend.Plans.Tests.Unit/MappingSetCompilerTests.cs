@@ -45,6 +45,15 @@ public class Given_MappingSetCompiler
         }
 
         mappingSet
+            .ReadPlansByResource[fixture.ProjectionMetadataResource]
+            .ReferenceIdentityProjectionPlansInDependencyOrder.Should()
+            .NotBeEmpty();
+        mappingSet
+            .ReadPlansByResource[fixture.DescriptorEdgeResource]
+            .DescriptorProjectionPlansInOrder.Should()
+            .NotBeEmpty();
+
+        mappingSet
             .ReadPlansByResource[fixture.NonRootOnlyResource]
             .TablePlansInDependencyOrder.Should()
             .HaveCount(2);
@@ -218,7 +227,9 @@ public class Given_MappingSetCompiler
             ApiSchemaFormatVersion: "5.2",
             RelationalMappingVersion: "v1",
             EffectiveSchemaHash: new string('a', 64),
-            ResourceKeyCount: resourceKeysInIdOrder.Length,
+            ResourceKeyCount: EffectiveSchemaFingerprintContract.CreateResourceKeyCountOrThrow(
+                resourceKeysInIdOrder.Length
+            ),
             ResourceKeySeedHash: CreateResourceKeySeedHash(),
             SchemaComponentsInEndpointOrder:
             [
@@ -403,14 +414,46 @@ public class Given_MappingSetCompiler
     )
     {
         var model = CreateRootOnlyModel(resource, tableName);
+        var rootTable = model.Root with
+        {
+            Columns =
+            [
+                .. model.Root.Columns,
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_DocumentId"),
+                    Kind: ColumnKind.DocumentFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: new JsonPathExpression(
+                        "$.schoolReference",
+                        [new JsonPathSegment.Property("schoolReference")]
+                    ),
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "School")
+                ),
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("School_RefSchoolId"),
+                    Kind: ColumnKind.Scalar,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: true,
+                    SourceJsonPath: new JsonPathExpression(
+                        "$.schoolReference.schoolId",
+                        [
+                            new JsonPathSegment.Property("schoolReference"),
+                            new JsonPathSegment.Property("schoolId"),
+                        ]
+                    ),
+                    TargetResource: null
+                ),
+            ],
+        };
         var binding = new DocumentReferenceBinding(
             IsIdentityComponent: false,
             ReferenceObjectPath: new JsonPathExpression(
                 "$.schoolReference",
                 [new JsonPathSegment.Property("schoolReference")]
             ),
-            Table: model.Root.Table,
-            FkColumn: new DbColumnName("SchoolYear"),
+            Table: rootTable.Table,
+            FkColumn: new DbColumnName("School_DocumentId"),
             TargetResource: new QualifiedResourceName("Ed-Fi", "School"),
             IdentityBindings:
             [
@@ -422,13 +465,15 @@ public class Given_MappingSetCompiler
                             new JsonPathSegment.Property("schoolId"),
                         ]
                     ),
-                    Column: new DbColumnName("SchoolYear")
+                    Column: new DbColumnName("School_RefSchoolId")
                 ),
             ]
         );
 
         return model with
         {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
             DocumentReferenceBindings = [binding],
         };
     }
@@ -439,19 +484,40 @@ public class Given_MappingSetCompiler
     )
     {
         var model = CreateRootOnlyModel(resource, tableName);
+        var descriptorResource = new QualifiedResourceName("Ed-Fi", "AcademicSubjectDescriptor");
+        var rootTable = model.Root with
+        {
+            Columns =
+            [
+                .. model.Root.Columns,
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("AcademicSubjectDescriptorId"),
+                    Kind: ColumnKind.DescriptorFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: new JsonPathExpression(
+                        "$.academicSubjectDescriptor",
+                        [new JsonPathSegment.Property("academicSubjectDescriptor")]
+                    ),
+                    TargetResource: descriptorResource
+                ),
+            ],
+        };
         var descriptorEdgeSource = new DescriptorEdgeSource(
             IsIdentityComponent: false,
             DescriptorValuePath: new JsonPathExpression(
                 "$.academicSubjectDescriptor",
                 [new JsonPathSegment.Property("academicSubjectDescriptor")]
             ),
-            Table: model.Root.Table,
-            FkColumn: new DbColumnName("SchoolYear"),
-            DescriptorResource: new QualifiedResourceName("Ed-Fi", "AcademicSubjectDescriptor")
+            Table: rootTable.Table,
+            FkColumn: new DbColumnName("AcademicSubjectDescriptorId"),
+            DescriptorResource: descriptorResource
         );
 
         return model with
         {
+            Root = rootTable,
+            TablesInDependencyOrder = [rootTable],
             DescriptorEdgeSources = [descriptorEdgeSource],
         };
     }

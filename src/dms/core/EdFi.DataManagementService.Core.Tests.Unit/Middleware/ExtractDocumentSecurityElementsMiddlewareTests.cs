@@ -64,7 +64,8 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
                     TraceId: new TraceId("123"),
                     RouteQualifiers: []
                 ),
-                RequestMethod.POST
+                RequestMethod.POST,
+                No.ServiceProvider
             )
             {
                 ResourceSchema = resourceSchema,
@@ -127,7 +128,8 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
                     TraceId: new TraceId("123"),
                     RouteQualifiers: []
                 ),
-                RequestMethod.POST
+                RequestMethod.POST,
+                No.ServiceProvider
             )
             {
                 ResourceSchema = resourceSchema,
@@ -193,7 +195,8 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
                     TraceId: new TraceId("123"),
                     RouteQualifiers: []
                 ),
-                RequestMethod.POST
+                RequestMethod.POST,
+                No.ServiceProvider
             )
             {
                 ResourceSchema = resourceSchema,

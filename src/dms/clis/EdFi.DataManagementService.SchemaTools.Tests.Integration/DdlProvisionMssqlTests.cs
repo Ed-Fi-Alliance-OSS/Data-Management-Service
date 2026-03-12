@@ -99,6 +99,35 @@ public class Given_A_Fresh_Mssql_Database_Provisioned_With_Create_Database_Flag
     }
 
     [Test]
+    public void It_creates_the_uuidv5_function()
+    {
+        using var connection = new SqlConnection(
+            MssqlTestDatabaseHelper.BuildConnectionString(_databaseName)
+        );
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT OBJECT_ID(N'dms.uuidv5', N'FN');";
+        var result = command.ExecuteScalar();
+        result.Should().NotBeNull("the dms.uuidv5 function should exist after provisioning");
+        result.Should().NotBe(DBNull.Value, "the dms.uuidv5 function should exist after provisioning");
+    }
+
+    [Test]
+    public void It_creates_the_journaling_trigger()
+    {
+        using var connection = new SqlConnection(
+            MssqlTestDatabaseHelper.BuildConnectionString(_databaseName)
+        );
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT 1 FROM sys.triggers WHERE name = 'TR_Document_Journal';";
+        var result = command.ExecuteScalar();
+        result.Should().NotBeNull("the TR_Document_Journal trigger should exist after provisioning");
+    }
+
+    [Test]
     public void It_seeds_effective_schema_row()
     {
         using var connection = new SqlConnection(
@@ -471,7 +500,12 @@ public class Given_Mssql_Schema_Hash_Mismatch_On_Provisioning
     [Test]
     public void It_reports_schema_hash_mismatch_in_stderr()
     {
-        _secondError.Should().Contain("Schema hash mismatch");
+        _secondError
+            .Should()
+            .Contain(
+                "EffectiveSchemaHash: stored=",
+                "stderr should report the stored and expected EffectiveSchemaHash values"
+            );
     }
 
     [Test]
@@ -486,7 +520,12 @@ public class Given_Mssql_Schema_Hash_Mismatch_On_Provisioning
     [Test]
     public void It_includes_the_expected_hash_in_error_output()
     {
-        _secondError.Should().Contain("but the current schema produces hash");
+        var hashB = ProvisionTestHelper.ExtractHashFromOutput(_secondError);
+        hashB.Should().NotBeNullOrEmpty("should be able to extract hash from second run output");
+
+        _secondError
+            .Should()
+            .Contain($"expected={hashB!}", "stderr should include the hash produced by the current schema");
     }
 
     [Test]

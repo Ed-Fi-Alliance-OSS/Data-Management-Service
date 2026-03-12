@@ -67,7 +67,7 @@ Explicitly out of scope for this redesign phase:
 - A deterministic SQL script (recommended even when provisioning directly)
   - All schemas, tables, views, sequences, triggers
   - Deterministic seed inserts for `dms.ResourceKey` (`ResourceKeyId ↔ (ProjectName, ResourceName, ResourceVersion)`)
-  - Deterministic `ResourceKeySeedHash`/`ResourceKeyCount` recorded alongside `EffectiveSchemaHash` in `dms.EffectiveSchema` (fast runtime validation; `ResourceKeySeedHash` stored as raw SHA-256 bytes, 32 bytes)
+  - Deterministic `ResourceKeySeedHash`/smallint-bounded `ResourceKeyCount` recorded alongside `EffectiveSchemaHash` in `dms.EffectiveSchema` (fast runtime validation; `ResourceKeySeedHash` stored as raw SHA-256 bytes, 32 bytes)
   - Insert-if-missing statements for the singleton `dms.EffectiveSchema` row and the corresponding `dms.SchemaComponent` rows (keyed by `EffectiveSchemaHash`). These make the emitted SQL script idempotent for standalone execution (`psql -f` / `sqlcmd -i`). Note: when provisioning via `ddl provision`, a preflight check runs first — if the `dms.EffectiveSchema` table exists but the singleton row is missing, this is treated as a partial/corrupt state and provisioning fails fast with a diagnostic directing the operator to drop and recreate the database.
   - Indexes explicitly called out in the design docs plus supporting indexes for all foreign keys (no query indexes)
 - Optional deterministic **diagnostic/test artifacts** (non-SQL) used by the verification harness:
@@ -366,7 +366,8 @@ Because `ResourceKeyId` is persisted in core tables and indexes, `ResourceKeyId`
 
 Recommended derivation:
 - Build the set of `(ProjectName, ResourceName)` pairs from the effective schema (core + extensions):
-  - include all concrete `resourceSchemas[*].resourceName` (including descriptors),
+  - include all concrete `resourceSchemas[*].resourceName` where `isResourceExtension` is not `true` (including descriptors and non-extension resources from extension projects),
+  - exclude `isResourceExtension: true` resource-extension overlays because they compile into `_ext` extension tables on the owning base resource rather than standalone document/resource-key rows,
   - include all `abstractResources[*]` names (used for polymorphic/superclass alias rows in `dms.ReferentialIdentity`).
 - Sort pairs by `(ProjectName, ResourceName)` using **ordinal** (culture-invariant) string ordering.
 - Assign `ResourceKeyId` sequentially from 1..N and emit seed inserts (deriving `ResourceVersion` from the owning `projectSchema.projectVersion`):
@@ -375,7 +376,7 @@ Recommended derivation:
 
 Recommended additional fingerprinting:
 - Compute `ResourceKeySeedHash` as raw `SHA-256` bytes (32 bytes) over a canonical UTF-8 manifest derived from the same ordered seed list (include a version header like `resource-key-seed-hash:v1` and one line per row as `ResourceKeyId|ProjectName|ResourceName|ResourceVersion`).
-- Record `ResourceKeyCount=N` and `ResourceKeySeedHash` alongside `EffectiveSchemaHash` in `dms.EffectiveSchema` so DMS can validate the `ResourceKeyId` mapping with a single-row read (full table diff only on mismatch).
+- Record `ResourceKeyCount=N` and `ResourceKeySeedHash` alongside `EffectiveSchemaHash` in `dms.EffectiveSchema` so DMS can validate the `ResourceKeyId` mapping with a single-row read (full table diff only on mismatch). `ResourceKeyCount` uses the same `smallint` ceiling as `ResourceKeyId`, so the generator must reject `N > 32767` before writing the singleton row.
 
 DMS runtime should validate and cache this mapping per database (fail fast on mismatch) as part of the schema fingerprint check.
 

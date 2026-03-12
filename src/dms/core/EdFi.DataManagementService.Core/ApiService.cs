@@ -45,6 +45,7 @@ internal class ApiService : IApiService
     private readonly ResiliencePipeline _resiliencePipeline;
     private readonly ResourceLoadOrderCalculator _resourceLoadCalculator;
     private readonly IServiceProvider _serviceProvider;
+    private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly CachedClaimSetProvider _cachedClaimSetProvider;
     private readonly IResourceDependencyGraphMLFactory _resourceDependencyGraphMLFactory;
     private readonly IProfileService _profileService;
@@ -103,6 +104,7 @@ internal class ApiService : IApiService
         [FromKeyedServices("backendResiliencePipeline")] ResiliencePipeline resiliencePipeline,
         ResourceLoadOrderCalculator resourceLoadCalculator,
         IServiceProvider serviceProvider,
+        IServiceScopeFactory serviceScopeFactory,
         CachedClaimSetProvider cachedClaimSetProvider,
         IResourceDependencyGraphMLFactory resourceDependencyGraphMLFactory,
         IProfileService profileService
@@ -121,6 +123,7 @@ internal class ApiService : IApiService
         _resiliencePipeline = resiliencePipeline;
         _resourceLoadCalculator = resourceLoadCalculator;
         _serviceProvider = serviceProvider;
+        _serviceScopeFactory = serviceScopeFactory;
         _cachedClaimSetProvider = cachedClaimSetProvider;
         _resourceDependencyGraphMLFactory = resourceDependencyGraphMLFactory;
         _profileService = profileService;
@@ -148,13 +151,23 @@ internal class ApiService : IApiService
         ];
     }
 
-    private PipelineProvider CreateUpsertPipeline()
+    private List<IPipelineStep> GetRoutedResourceInitialSteps()
     {
         var steps = GetCommonInitialSteps();
         steps.AddRange([
+            new ParsePathMiddleware(_logger),
+            _serviceProvider.GetRequiredService<ValidateDatabaseFingerprintMiddleware>(),
+        ]);
+
+        return steps;
+    }
+
+    private PipelineProvider CreateUpsertPipeline()
+    {
+        var steps = GetRoutedResourceInitialSteps();
+        steps.AddRange([
             new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
             new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
-            new ParsePathMiddleware(_logger),
             new ParseBodyMiddleware(_logger),
             new RequestInfoBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
             new DuplicatePropertiesMiddleware(_logger),
@@ -194,13 +207,7 @@ internal class ApiService : IApiService
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
             new ProvideAuthorizationPathwayMiddleware(_logger),
-            new UpsertHandler(
-                _serviceProvider,
-                _logger,
-                _resiliencePipeline,
-                _apiSchemaProvider,
-                _authorizationServiceFactory
-            ),
+            new UpsertHandler(_logger, _resiliencePipeline, _apiSchemaProvider, _authorizationServiceFactory),
         ]);
 
         return new PipelineProvider(steps);
@@ -208,11 +215,10 @@ internal class ApiService : IApiService
 
     private PipelineProvider CreateGetByIdPipeline()
     {
-        var steps = GetCommonInitialSteps();
+        var steps = GetRoutedResourceInitialSteps();
         steps.AddRange([
             new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
             new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
-            new ParsePathMiddleware(_logger),
             new ValidateEndpointMiddleware(_logger),
             _serviceProvider.GetRequiredService<ProfileResolutionMiddleware>(),
             new BuildResourceInfoMiddleware(
@@ -223,7 +229,7 @@ internal class ApiService : IApiService
             new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
             new ProvideAuthorizationSecurableInfoMiddleware(_logger),
             _serviceProvider.GetRequiredService<ProfileFilteringMiddleware>(),
-            new GetByIdHandler(_serviceProvider, _logger, _resiliencePipeline, _authorizationServiceFactory),
+            new GetByIdHandler(_logger, _resiliencePipeline, _authorizationServiceFactory),
         ]);
 
         return new PipelineProvider(steps);
@@ -231,11 +237,10 @@ internal class ApiService : IApiService
 
     private PipelineProvider CreateQueryPipeline()
     {
-        var steps = GetCommonInitialSteps();
+        var steps = GetRoutedResourceInitialSteps();
         steps.AddRange([
             new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
             new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
-            new ParsePathMiddleware(_logger),
             new ValidateEndpointMiddleware(_logger),
             _serviceProvider.GetRequiredService<ProfileResolutionMiddleware>(),
             new ProvideAuthorizationSecurableInfoMiddleware(_logger),
@@ -247,7 +252,7 @@ internal class ApiService : IApiService
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
             _serviceProvider.GetRequiredService<ProfileFilteringMiddleware>(),
-            new QueryRequestHandler(_serviceProvider, _logger, _resiliencePipeline),
+            new QueryRequestHandler(_logger, _resiliencePipeline),
         ]);
 
         return new PipelineProvider(steps);
@@ -255,11 +260,10 @@ internal class ApiService : IApiService
 
     private PipelineProvider CreateUpdatePipeline()
     {
-        var steps = GetCommonInitialSteps();
+        var steps = GetRoutedResourceInitialSteps();
         steps.AddRange([
             new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
             new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
-            new ParsePathMiddleware(_logger),
             new ParseBodyMiddleware(_logger),
             new RequestInfoBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
             new DuplicatePropertiesMiddleware(_logger),
@@ -300,7 +304,6 @@ internal class ApiService : IApiService
             new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
             new ProvideAuthorizationPathwayMiddleware(_logger),
             new UpdateByIdHandler(
-                _serviceProvider,
                 _logger,
                 _resiliencePipeline,
                 _apiSchemaProvider,
@@ -312,11 +315,10 @@ internal class ApiService : IApiService
 
     private PipelineProvider CreateDeleteByIdPipeline()
     {
-        var steps = GetCommonInitialSteps();
+        var steps = GetRoutedResourceInitialSteps();
         steps.AddRange([
             new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
             new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
-            new ParsePathMiddleware(_logger),
             new ValidateEndpointMiddleware(_logger),
             new BuildResourceInfoMiddleware(
                 _logger,
@@ -326,12 +328,7 @@ internal class ApiService : IApiService
             new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
             new ProvideAuthorizationPathwayMiddleware(_logger),
             new ProvideAuthorizationSecurableInfoMiddleware(_logger),
-            new DeleteByIdHandler(
-                _serviceProvider,
-                _logger,
-                _resiliencePipeline,
-                _authorizationServiceFactory
-            ),
+            new DeleteByIdHandler(_logger, _resiliencePipeline, _authorizationServiceFactory),
         ]);
 
         return new PipelineProvider(steps);
@@ -341,6 +338,7 @@ internal class ApiService : IApiService
     {
         var steps = GetCommonInitialSteps();
         steps.AddRange([
+            _serviceProvider.GetRequiredService<ValidateDatabaseFingerprintMiddleware>(),
             new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
             new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
             _serviceProvider.GetRequiredService<GetTokenInfoHandler>(),
@@ -389,7 +387,8 @@ internal class ApiService : IApiService
     /// </summary>
     public async Task<IFrontendResponse> Upsert(FrontendRequest frontendRequest)
     {
-        RequestInfo requestInfo = new(frontendRequest, RequestMethod.POST);
+        await using var scope = _serviceScopeFactory.CreateAsyncScope();
+        RequestInfo requestInfo = new(frontendRequest, RequestMethod.POST, scope.ServiceProvider);
         await _upsertSteps.Value.Run(requestInfo);
         return requestInfo.FrontendResponse;
     }
@@ -399,7 +398,8 @@ internal class ApiService : IApiService
     /// </summary>
     public async Task<IFrontendResponse> Get(FrontendRequest frontendRequest)
     {
-        RequestInfo requestInfo = new(frontendRequest, RequestMethod.GET);
+        await using var scope = _serviceScopeFactory.CreateAsyncScope();
+        RequestInfo requestInfo = new(frontendRequest, RequestMethod.GET, scope.ServiceProvider);
 
         Match match = UtilityService.PathExpressionRegex().Match(frontendRequest.Path);
 
@@ -426,7 +426,8 @@ internal class ApiService : IApiService
     /// </summary>
     public async Task<IFrontendResponse> UpdateById(FrontendRequest frontendRequest)
     {
-        RequestInfo requestInfo = new(frontendRequest, RequestMethod.PUT);
+        await using var scope = _serviceScopeFactory.CreateAsyncScope();
+        RequestInfo requestInfo = new(frontendRequest, RequestMethod.PUT, scope.ServiceProvider);
         await _updateSteps.Value.Run(requestInfo);
         return requestInfo.FrontendResponse;
     }
@@ -436,7 +437,8 @@ internal class ApiService : IApiService
     /// </summary>
     public async Task<IFrontendResponse> DeleteById(FrontendRequest frontendRequest)
     {
-        RequestInfo requestInfo = new(frontendRequest, RequestMethod.DELETE);
+        await using var scope = _serviceScopeFactory.CreateAsyncScope();
+        RequestInfo requestInfo = new(frontendRequest, RequestMethod.DELETE, scope.ServiceProvider);
         await _deleteByIdSteps.Value.Run(requestInfo);
         return requestInfo.FrontendResponse;
     }
@@ -446,7 +448,8 @@ internal class ApiService : IApiService
     /// </summary>
     public async Task<IFrontendResponse> GetTokenInfo(FrontendRequest frontendRequest)
     {
-        RequestInfo requestInfo = new(frontendRequest, RequestMethod.POST);
+        await using var scope = _serviceScopeFactory.CreateAsyncScope();
+        RequestInfo requestInfo = new(frontendRequest, RequestMethod.POST, scope.ServiceProvider);
         await _getTokenInfoSteps.Value.Run(requestInfo);
         return requestInfo.FrontendResponse;
     }

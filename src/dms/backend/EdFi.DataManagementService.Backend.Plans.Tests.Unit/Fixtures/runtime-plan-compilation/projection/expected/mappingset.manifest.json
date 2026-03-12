@@ -1,0 +1,658 @@
+{
+  "mapping_sets": [
+    {
+      "mapping_set_key": {
+        "effective_schema_hash": "921d185f23ae0eda115cdcc69fb19c01326573601f3a20bb5ac092ba88b89191",
+        "dialect": "mssql",
+        "relational_mapping_version": "1.0.0"
+      },
+      "resources": [
+        {
+          "resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "ProjectionExample"
+          },
+          "write_plan": {
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "ProjectionExample"
+                },
+                "insert_sql_sha256": "5924f5602151f5447d88efa6cb1bd1b6fec94cef706cdc4dcb6ea363b27ee6f1",
+                "update_sql_sha256": "7a17b62476e1512b80349962be145bb7cb34d0a98885517cf481240ddcabf071",
+                "delete_by_parent_sql_sha256": null,
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 233,
+                  "parameters_per_row": 9,
+                  "max_parameters_per_command": 2100
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "documentId",
+                    "write_value_source": {
+                      "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "SessionTerm_DocumentId",
+                    "column_kind": "document_fk",
+                    "parameter_name": "sessionTerm_DocumentId",
+                    "write_value_source": {
+                      "kind": "document_reference",
+                      "binding_index": 0
+                    }
+                  },
+                  {
+                    "column_name": "SessionTerm_SchoolId",
+                    "column_kind": "scalar",
+                    "parameter_name": "sessionTerm_SchoolId",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.sessionTermReference.schoolId",
+                      "scalar_kind": "int32"
+                    }
+                  },
+                  {
+                    "column_name": "SessionTerm_SchoolYear",
+                    "column_kind": "scalar",
+                    "parameter_name": "sessionTerm_SchoolYear",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.sessionTermReference.schoolYear",
+                      "scalar_kind": "int32"
+                    }
+                  },
+                  {
+                    "column_name": "SessionTerm_SessionName",
+                    "column_kind": "scalar",
+                    "parameter_name": "sessionTerm_SessionName",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.sessionTermReference.sessionName",
+                      "scalar_kind": "string"
+                    }
+                  },
+                  {
+                    "column_name": "PrimarySchoolTypeDescriptor_DescriptorId",
+                    "column_kind": "descriptor_fk",
+                    "parameter_name": "primarySchoolTypeDescriptor_DescriptorId",
+                    "write_value_source": {
+                      "kind": "descriptor_reference",
+                      "descriptor_resource": {
+                        "project_name": "Ed-Fi",
+                        "resource_name": "SchoolTypeDescriptor"
+                      },
+                      "relative_path": "$.primarySchoolTypeDescriptor",
+                      "descriptor_value_path": "$.primarySchoolTypeDescriptor"
+                    }
+                  },
+                  {
+                    "column_name": "SecondarySchoolTypeDescriptor_DescriptorId",
+                    "column_kind": "descriptor_fk",
+                    "parameter_name": "secondarySchoolTypeDescriptor_DescriptorId",
+                    "write_value_source": {
+                      "kind": "descriptor_reference",
+                      "descriptor_resource": {
+                        "project_name": "Ed-Fi",
+                        "resource_name": "SchoolTypeDescriptor"
+                      },
+                      "relative_path": "$.secondarySchoolTypeDescriptor",
+                      "descriptor_value_path": "$.secondarySchoolTypeDescriptor"
+                    }
+                  },
+                  {
+                    "column_name": "ProjectionExampleId",
+                    "column_kind": "scalar",
+                    "parameter_name": "projectionExampleId",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.projectionExampleId",
+                      "scalar_kind": "int32"
+                    }
+                  },
+                  {
+                    "column_name": "ShortName",
+                    "column_kind": "scalar",
+                    "parameter_name": "shortName",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.shortName",
+                      "scalar_kind": "string"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              }
+            ]
+          },
+          "read_plan": {
+            "keyset_table": {
+              "temp_table_name": "#page",
+              "document_id_column_name": "DocumentId"
+            },
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "ProjectionExample"
+                },
+                "select_by_keyset_sql_sha256": "2c7d98f089384050c948d49eb68e15fa993f19e9ca25a0a2ebde51897df7e673",
+                "select_list_columns_in_order": [
+                  "DocumentId",
+                  "SessionTerm_DocumentId",
+                  "SessionTerm_SchoolId",
+                  "SessionTerm_SchoolYear",
+                  "SessionTerm_SessionName",
+                  "PrimarySchoolTypeDescriptor_DescriptorId",
+                  "SecondarySchoolTypeDescriptor_DescriptorId",
+                  "ProjectionExampleId",
+                  "ShortName"
+                ],
+                "order_by_key_columns_in_order": [
+                  "DocumentId"
+                ]
+              }
+            ],
+            "reference_identity_projection_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "ProjectionExample"
+                },
+                "bindings_in_order": [
+                  {
+                    "is_identity_component": false,
+                    "reference_object_path": "$.sessionTermReference",
+                    "target_resource": {
+                      "project_name": "Ed-Fi",
+                      "resource_name": "SessionTerm"
+                    },
+                    "fk_column_ordinal": 1,
+                    "identity_field_ordinals_in_order": [
+                      {
+                        "reference_json_path": "$.sessionTermReference.schoolId",
+                        "column_ordinal": 2
+                      },
+                      {
+                        "reference_json_path": "$.sessionTermReference.schoolYear",
+                        "column_ordinal": 3
+                      },
+                      {
+                        "reference_json_path": "$.sessionTermReference.sessionName",
+                        "column_ordinal": 4
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "descriptor_projection_plans_in_order": [
+              {
+                "select_by_keyset_sql_sha256": "ec55cbb077e5ae47b9f42656a155b19c5f137be3445f22a686dbd6854e6155de",
+                "result_shape": {
+                  "descriptor_id_ordinal": 0,
+                  "uri_ordinal": 1
+                },
+                "sources_in_order": [
+                  {
+                    "descriptor_value_path": "$.primarySchoolTypeDescriptor",
+                    "table": {
+                      "schema": "edfi",
+                      "name": "ProjectionExample"
+                    },
+                    "descriptor_resource": {
+                      "project_name": "Ed-Fi",
+                      "resource_name": "SchoolTypeDescriptor"
+                    },
+                    "descriptor_id_column_ordinal": 5
+                  },
+                  {
+                    "descriptor_value_path": "$.secondarySchoolTypeDescriptor",
+                    "table": {
+                      "schema": "edfi",
+                      "name": "ProjectionExample"
+                    },
+                    "descriptor_resource": {
+                      "project_name": "Ed-Fi",
+                      "resource_name": "SchoolTypeDescriptor"
+                    },
+                    "descriptor_id_column_ordinal": 6
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "SchoolTypeDescriptor"
+          },
+          "write_plan": null,
+          "read_plan": null
+        },
+        {
+          "resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "SessionTerm"
+          },
+          "write_plan": {
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "SessionTerm"
+                },
+                "insert_sql_sha256": "dc427e59baf1b3e8ebc0c6b1db908c73dc88c1d7006a301e70a8990c7f3215cc",
+                "update_sql_sha256": "21887d38a32c45ff114de24c1816f06d18b41c4a91027e72a9c0fe6890bd0a73",
+                "delete_by_parent_sql_sha256": null,
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 525,
+                  "parameters_per_row": 4,
+                  "max_parameters_per_command": 2100
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "documentId",
+                    "write_value_source": {
+                      "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "SchoolId",
+                    "column_kind": "scalar",
+                    "parameter_name": "schoolId",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.schoolId",
+                      "scalar_kind": "int32"
+                    }
+                  },
+                  {
+                    "column_name": "SchoolYear",
+                    "column_kind": "scalar",
+                    "parameter_name": "schoolYear",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.schoolYear",
+                      "scalar_kind": "int32"
+                    }
+                  },
+                  {
+                    "column_name": "SessionName",
+                    "column_kind": "scalar",
+                    "parameter_name": "sessionName",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.sessionName",
+                      "scalar_kind": "string"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              }
+            ]
+          },
+          "read_plan": {
+            "keyset_table": {
+              "temp_table_name": "#page",
+              "document_id_column_name": "DocumentId"
+            },
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "SessionTerm"
+                },
+                "select_by_keyset_sql_sha256": "bec8ae3389118e038717d6329dc2a01b2957f1f3859a00baec4d7432338e9fac",
+                "select_list_columns_in_order": [
+                  "DocumentId",
+                  "SchoolId",
+                  "SchoolYear",
+                  "SessionName"
+                ],
+                "order_by_key_columns_in_order": [
+                  "DocumentId"
+                ]
+              }
+            ],
+            "reference_identity_projection_plans_in_dependency_order": [],
+            "descriptor_projection_plans_in_order": []
+          }
+        }
+      ]
+    },
+    {
+      "mapping_set_key": {
+        "effective_schema_hash": "921d185f23ae0eda115cdcc69fb19c01326573601f3a20bb5ac092ba88b89191",
+        "dialect": "pgsql",
+        "relational_mapping_version": "1.0.0"
+      },
+      "resources": [
+        {
+          "resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "ProjectionExample"
+          },
+          "write_plan": {
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "ProjectionExample"
+                },
+                "insert_sql_sha256": "b3d95cd26b1624c6d52c40f96aaabe414959426b1157ee878b7a16202f33ca5b",
+                "update_sql_sha256": "d324ba6aa7b892fe64ae000a950bcf0d002ff5759eba186a6959049e6ab830aa",
+                "delete_by_parent_sql_sha256": null,
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 1000,
+                  "parameters_per_row": 9,
+                  "max_parameters_per_command": 65535
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "documentId",
+                    "write_value_source": {
+                      "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "SessionTerm_DocumentId",
+                    "column_kind": "document_fk",
+                    "parameter_name": "sessionTerm_DocumentId",
+                    "write_value_source": {
+                      "kind": "document_reference",
+                      "binding_index": 0
+                    }
+                  },
+                  {
+                    "column_name": "SessionTerm_SchoolId",
+                    "column_kind": "scalar",
+                    "parameter_name": "sessionTerm_SchoolId",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.sessionTermReference.schoolId",
+                      "scalar_kind": "int32"
+                    }
+                  },
+                  {
+                    "column_name": "SessionTerm_SchoolYear",
+                    "column_kind": "scalar",
+                    "parameter_name": "sessionTerm_SchoolYear",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.sessionTermReference.schoolYear",
+                      "scalar_kind": "int32"
+                    }
+                  },
+                  {
+                    "column_name": "SessionTerm_SessionName",
+                    "column_kind": "scalar",
+                    "parameter_name": "sessionTerm_SessionName",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.sessionTermReference.sessionName",
+                      "scalar_kind": "string"
+                    }
+                  },
+                  {
+                    "column_name": "PrimarySchoolTypeDescriptor_DescriptorId",
+                    "column_kind": "descriptor_fk",
+                    "parameter_name": "primarySchoolTypeDescriptor_DescriptorId",
+                    "write_value_source": {
+                      "kind": "descriptor_reference",
+                      "descriptor_resource": {
+                        "project_name": "Ed-Fi",
+                        "resource_name": "SchoolTypeDescriptor"
+                      },
+                      "relative_path": "$.primarySchoolTypeDescriptor",
+                      "descriptor_value_path": "$.primarySchoolTypeDescriptor"
+                    }
+                  },
+                  {
+                    "column_name": "SecondarySchoolTypeDescriptor_DescriptorId",
+                    "column_kind": "descriptor_fk",
+                    "parameter_name": "secondarySchoolTypeDescriptor_DescriptorId",
+                    "write_value_source": {
+                      "kind": "descriptor_reference",
+                      "descriptor_resource": {
+                        "project_name": "Ed-Fi",
+                        "resource_name": "SchoolTypeDescriptor"
+                      },
+                      "relative_path": "$.secondarySchoolTypeDescriptor",
+                      "descriptor_value_path": "$.secondarySchoolTypeDescriptor"
+                    }
+                  },
+                  {
+                    "column_name": "ProjectionExampleId",
+                    "column_kind": "scalar",
+                    "parameter_name": "projectionExampleId",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.projectionExampleId",
+                      "scalar_kind": "int32"
+                    }
+                  },
+                  {
+                    "column_name": "ShortName",
+                    "column_kind": "scalar",
+                    "parameter_name": "shortName",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.shortName",
+                      "scalar_kind": "string"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              }
+            ]
+          },
+          "read_plan": {
+            "keyset_table": {
+              "temp_table_name": "page",
+              "document_id_column_name": "DocumentId"
+            },
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "ProjectionExample"
+                },
+                "select_by_keyset_sql_sha256": "8d4f2623cc49abd50c4f1f7cf09ef2c77f0e4c356677c3ada3e077db7c1eb15a",
+                "select_list_columns_in_order": [
+                  "DocumentId",
+                  "SessionTerm_DocumentId",
+                  "SessionTerm_SchoolId",
+                  "SessionTerm_SchoolYear",
+                  "SessionTerm_SessionName",
+                  "PrimarySchoolTypeDescriptor_DescriptorId",
+                  "SecondarySchoolTypeDescriptor_DescriptorId",
+                  "ProjectionExampleId",
+                  "ShortName"
+                ],
+                "order_by_key_columns_in_order": [
+                  "DocumentId"
+                ]
+              }
+            ],
+            "reference_identity_projection_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "ProjectionExample"
+                },
+                "bindings_in_order": [
+                  {
+                    "is_identity_component": false,
+                    "reference_object_path": "$.sessionTermReference",
+                    "target_resource": {
+                      "project_name": "Ed-Fi",
+                      "resource_name": "SessionTerm"
+                    },
+                    "fk_column_ordinal": 1,
+                    "identity_field_ordinals_in_order": [
+                      {
+                        "reference_json_path": "$.sessionTermReference.schoolId",
+                        "column_ordinal": 2
+                      },
+                      {
+                        "reference_json_path": "$.sessionTermReference.schoolYear",
+                        "column_ordinal": 3
+                      },
+                      {
+                        "reference_json_path": "$.sessionTermReference.sessionName",
+                        "column_ordinal": 4
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "descriptor_projection_plans_in_order": [
+              {
+                "select_by_keyset_sql_sha256": "79508cb5b93b36d9e38ec41fc861516b25c88ed0317790f135e85d3cc5a95e3b",
+                "result_shape": {
+                  "descriptor_id_ordinal": 0,
+                  "uri_ordinal": 1
+                },
+                "sources_in_order": [
+                  {
+                    "descriptor_value_path": "$.primarySchoolTypeDescriptor",
+                    "table": {
+                      "schema": "edfi",
+                      "name": "ProjectionExample"
+                    },
+                    "descriptor_resource": {
+                      "project_name": "Ed-Fi",
+                      "resource_name": "SchoolTypeDescriptor"
+                    },
+                    "descriptor_id_column_ordinal": 5
+                  },
+                  {
+                    "descriptor_value_path": "$.secondarySchoolTypeDescriptor",
+                    "table": {
+                      "schema": "edfi",
+                      "name": "ProjectionExample"
+                    },
+                    "descriptor_resource": {
+                      "project_name": "Ed-Fi",
+                      "resource_name": "SchoolTypeDescriptor"
+                    },
+                    "descriptor_id_column_ordinal": 6
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "SchoolTypeDescriptor"
+          },
+          "write_plan": null,
+          "read_plan": null
+        },
+        {
+          "resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "SessionTerm"
+          },
+          "write_plan": {
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "SessionTerm"
+                },
+                "insert_sql_sha256": "893c39a4ac831a3ac4b202dae36575f1ea0f4d5913c306f00a05332e8258c963",
+                "update_sql_sha256": "072cf0be392120f2ded52b8af036d1cb774d2ec865d215613a927ef47d3274f7",
+                "delete_by_parent_sql_sha256": null,
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 1000,
+                  "parameters_per_row": 4,
+                  "max_parameters_per_command": 65535
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "documentId",
+                    "write_value_source": {
+                      "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "SchoolId",
+                    "column_kind": "scalar",
+                    "parameter_name": "schoolId",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.schoolId",
+                      "scalar_kind": "int32"
+                    }
+                  },
+                  {
+                    "column_name": "SchoolYear",
+                    "column_kind": "scalar",
+                    "parameter_name": "schoolYear",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.schoolYear",
+                      "scalar_kind": "int32"
+                    }
+                  },
+                  {
+                    "column_name": "SessionName",
+                    "column_kind": "scalar",
+                    "parameter_name": "sessionName",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.sessionName",
+                      "scalar_kind": "string"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              }
+            ]
+          },
+          "read_plan": {
+            "keyset_table": {
+              "temp_table_name": "page",
+              "document_id_column_name": "DocumentId"
+            },
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "SessionTerm"
+                },
+                "select_by_keyset_sql_sha256": "e43676d6266ea1f946dc8cf502eb9933002961e7526786cfec83f0eb0285b3a5",
+                "select_list_columns_in_order": [
+                  "DocumentId",
+                  "SchoolId",
+                  "SchoolYear",
+                  "SessionName"
+                ],
+                "order_by_key_columns_in_order": [
+                  "DocumentId"
+                ]
+              }
+            ],
+            "reference_identity_projection_plans_in_dependency_order": [],
+            "descriptor_projection_plans_in_order": []
+          }
+        }
+      ]
+    }
+  ]
+}
