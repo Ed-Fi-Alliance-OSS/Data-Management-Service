@@ -41,6 +41,12 @@ public static class FixtureConfigReader
     {
         var fixturePath = Path.Combine(fixtureDirectory, "fixture.json");
 
+        // Fallback: authoritative fixtures keep fixture.json alongside schema files in inputs/
+        if (!File.Exists(fixturePath))
+        {
+            fixturePath = Path.Combine(fixtureDirectory, "inputs", "fixture.json");
+        }
+
         if (!File.Exists(fixturePath))
         {
             throw new FileNotFoundException(
