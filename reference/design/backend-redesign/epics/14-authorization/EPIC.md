@@ -41,3 +41,5 @@ All authorization stories (design, DDL/provisioning, runtime integration, and te
 - `DMS-1065` — `16-further-performance-optimizations.md` — Further Performance Optimizations
 - `DMS-1090` — `17-no-further-auth-required-strategy.md` — Implement NoFurtherAuthorizationRequired Strategy
 - `DMS-1091` — `18-formalize-auth-startup-task.md` — Formalize Auth Startup as IDmsStartupTask
+- `DMS-1096` — `19-auth-verification-harness.md` — Verification harness for emitted auth DB objects
+- `DMS-1099` — `20-configuration-problem-details` — Implement Security Configuration ProblemDetails

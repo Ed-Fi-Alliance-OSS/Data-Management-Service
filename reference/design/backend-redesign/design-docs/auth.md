@@ -1416,7 +1416,6 @@ These indicate a misconfiguration in the security metadata and should not occur 
 | Scenario | Error |
 |---|---|
 | Resource has no security metadata | `No security metadata has been configured for this resource.` |
-| Ambiguous security metadata for multiple resource claims | `Authorization metadata was found for more than one of the supplied resource claims ('{claim1}', '{claim2}') resulting in an ambiguous basis for authorization.` |
 | No authorization strategies defined for the matching claim | `No authorization strategies were defined for the requested action '{action}' against resource URIs ['{uri1}', '{uri2}'] matched by the caller's claim '{claimName}'.` |
 | Authorization strategy implementation not found | `Could not find authorization strategy implementations for the following strategy names: '{strategyName1}', '{strategyName2}'.` |
 | Custom view basis entity property not found on the target entity | `Unable to find a property on the authorization subject entity type '{targetEntityName}' corresponding to the '{propertyName}' property on the custom authorization view's basis entity type '{basisEntityName}' in order to perform authorization. Should a different authorization strategy be used?` |

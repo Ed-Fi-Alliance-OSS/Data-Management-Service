@@ -18,5 +18,6 @@ Refer to the auth design for more information: `reference/design/backend-redesig
 - Grant access without SQL when the resource's EducationOrganizationId is directly in the client's token
 - Extend bulk reference resolution to also resolve people's DocumentIds
 - Convert authorization views to Indexed Views (SQL Server only)
+- Improve PgSQL batch caching by using NpgsqlBatch
 
 NOTE: Consider splitting this ticket

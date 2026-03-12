@@ -21,16 +21,11 @@ Implement the view-based (custom) authorization strategy for single-record opera
   - Second, authorize using the new basis resource DocumentId from the request body (abort if unauthorized).
 - DELETE: An authorization check is executed against the stored basis resource DocumentId before deletion. If unauthorized, the delete does not happen and a 403 Forbidden is returned.
 - The basis resource is extracted from the strategy name using the `{BasisResource}With{SomeDescription}` convention, prioritizing standard resources over extensions.
-- The join path from the resource table to the basis resource is resolved using `ResolveSecurableElementColumnPath(sourceResourceFullName, targetResourceFullName)`.
+- The join path from the resource table to the basis resource is resolved using `ResolveSecurableElementColumnPath(subjectResourceFullName, basisResourceFullName)`.
 - When authorization fails, an AUTH1 error is thrown with the strategy index in the message (e.g., 'Unauthorized, index: N'), aborting the batch and allowing ProblemDetails generation.
 - Auth checks are batched in the same DB roundtrip as other statements (reconstitution, insert, delete, etc.) to match the roundtrip targets in the design doc.
 - View-based strategies are combined with AND semantics alongside other AND strategies and execute before relationship-based (OR) strategies.
 - Works for both PostgreSQL and SQL Server, using the dms.throw_error function in PostgreSQL and the CAST('AUTH1 - ...' AS INT) pattern in SQL Server for aborting batches.
 - ProblemDetails follow `auth.md` §"ProblemDetails", specifically §2.4 (no relationships without EdOrg claims), §2.7 (custom view element uninitialized), and §2.8 (custom view element missing).
 - When the custom auth view does not exist or returns invalid columns, DMS returns HTTP 500 with `type: urn:ed-fi:api:system` (same as ODS behavior). See `auth.md` §"View-based authorization strategy".
-- Tests cover the next scenarios:
-  - Basis resource = descriptor
-  - Basis resource = Student
-  - Basis resource = target resource
-  - Basis resource = concrete education organization (like School)
-  - Basis resource = abstract resource (like EducationOrganization)
+- Tests cover the scenarios described in `auth.md`
