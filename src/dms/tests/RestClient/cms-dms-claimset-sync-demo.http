@@ -16,13 +16,13 @@
 
 # System Administrator credentials
 @sysAdminId=sys-admin
-@sysAdminSecret=SdfH)98&Jk
+@sysAdminSecret=SdfH)98&JkSdfH)98&JkSdfH)98&JkSdfH)9
 @encodedSysAdminSecret=SdfH%2998%26Jk
 
 # Test client credentials - using sys-admin for simplicity
 # In production, you would create a proper vendor and application
 @testClientId=sys-admin
-@testClientSecret=SdfH)98&Jk
+@testClientSecret=SdfH)98&JkSdfH)98&JkSdfH)98&JkSdfH)9
 @encodedTestClientSecret=SdfH%2998%26Jk
 
 # ==========================================
