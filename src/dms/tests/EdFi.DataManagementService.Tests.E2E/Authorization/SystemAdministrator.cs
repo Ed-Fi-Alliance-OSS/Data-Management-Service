@@ -9,6 +9,7 @@ namespace EdFi.DataManagementService.Tests.E2E.Authorization;
 
 public static class SystemAdministrator
 {
+    public const string DefaultClientSecret = "ValidSystemAdministratorSecret123456!Abcd";
     private static string _token = string.Empty;
     private static readonly SemaphoreSlim _registrationLock = new(1, 1);
 

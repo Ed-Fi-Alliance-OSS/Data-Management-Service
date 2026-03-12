@@ -955,7 +955,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             // Get system administrator token for CMS API access
             if (string.IsNullOrEmpty(SystemAdministrator.Token))
             {
-                await SystemAdministrator.Register("SystemAdministratorClient", "SystemAdministratorSecret");
+                await SystemAdministrator.Register(
+                    "SystemAdministratorClient",
+                    SystemAdministrator.DefaultClientSecret
+                );
             }
 
             // Use HttpClient to call CMS management API
