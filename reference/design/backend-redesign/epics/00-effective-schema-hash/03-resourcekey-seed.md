@@ -17,8 +17,9 @@ This seed mapping becomes part of the runtime contract (DB validation gate) and 
 ## Acceptance Criteria
 
 - The derived seed list includes entries for:
-  - every concrete `resourceSchema` (including descriptors),
+  - every concrete `resourceSchema` that is **not** `isResourceExtension: true` (including descriptors and non-extension resources from extension projects),
   - every `projectSchema.abstractResources[*]` name.
+- Resource-extension overlays (`isResourceExtension: true`) are excluded from `dms.ResourceKey` because they compile into `_ext` extension tables attached to the owning base resource rather than their own document/resource-key rows.
 - Seed ordering is stable and uses ordinal string comparisons.
 - `ResourceKeyId` values are assigned deterministically and fit within SQL `smallint` (≤ 32767); provisioning/generation fails fast if exceeded.
 - `resource_key_seed_hash` matches the algorithm in `reference/design/backend-redesign/design-docs/mpack-format-v1.md` (manifest string v1).
@@ -33,4 +34,5 @@ This seed mapping becomes part of the runtime contract (DB validation gate) and 
    1. inclusion rules (concrete + abstract),
    2. deterministic ordering and ids,
    3. seed-hash correctness,
-   4. bound overflow failure.
+   4. exclusion of `isResourceExtension: true` overlays while keeping true non-extension extension-project resources,
+   5. bound overflow failure.

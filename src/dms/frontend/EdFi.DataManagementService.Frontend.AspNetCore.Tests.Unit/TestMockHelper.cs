@@ -5,9 +5,11 @@
 
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using FakeItEasy;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 
@@ -53,5 +55,12 @@ public static class TestMockHelper
         A.CallTo(() => connectionStringProvider.GetHealthCheckConnectionString())
             .Returns("test-connection-string");
         services.AddTransient(x => connectionStringProvider);
+
+        // Replace the runtime backend mapping initializer so full app startup
+        // does not terminate the test host when backend mapping compilation fails.
+        var backendMappingInitializer = A.Fake<IBackendMappingInitializer>();
+        A.CallTo(() => backendMappingInitializer.InitializeAsync(A<CancellationToken>._))
+            .Returns(Task.CompletedTask);
+        services.Replace(ServiceDescriptor.Singleton(backendMappingInitializer));
     }
 }

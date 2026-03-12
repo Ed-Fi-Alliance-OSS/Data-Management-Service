@@ -55,6 +55,9 @@ public static class WebApplicationBuilderExtensions
             .Configure<ConfigurationServiceSettings>(
                 webAppBuilder.Configuration.GetSection("ConfigurationServiceSettings")
             )
+            .AddSingleton<IStartupStatusSignal, FileStartupStatusSignal>()
+            .AddSingleton<IStartupProcessExit, EnvironmentStartupProcessExit>()
+            .AddSingleton<StartupPhaseExecutor>()
             .AddSingleton<
                 IValidateOptions<Frontend.AspNetCore.Configuration.AppSettings>,
                 AppSettingsValidator

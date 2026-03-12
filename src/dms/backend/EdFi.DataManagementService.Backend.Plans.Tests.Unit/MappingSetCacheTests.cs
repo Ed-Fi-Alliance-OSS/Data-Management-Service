@@ -175,6 +175,49 @@ public class Given_MappingSetCache
         compileInvocationCount.Should().Be(1);
     }
 
+    [Test]
+    public async Task It_should_report_compiled_joined_in_flight_and_reused_completed_statuses()
+    {
+        var key = CreateMappingSetKey(new string('f', 64), SqlDialect.Pgsql, "v1");
+        var compiledMappingSet = CreateMappingSet(key);
+        var compilationStarted = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        var releaseCompilation = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        var compileInvocationCount = 0;
+
+        var cache = new MappingSetCache(async _ =>
+        {
+            Interlocked.Increment(ref compileInvocationCount);
+            compilationStarted.TrySetResult(true);
+            await releaseCompilation.Task;
+            return compiledMappingSet;
+        });
+
+        var firstResultTask = cache.GetOrCreateWithCacheStatusAsync(key, CancellationToken.None);
+
+        await compilationStarted.Task;
+
+        var secondResultTask = cache.GetOrCreateWithCacheStatusAsync(key, CancellationToken.None);
+        secondResultTask.IsCompleted.Should().BeFalse();
+
+        releaseCompilation.SetResult(true);
+
+        var firstResult = await firstResultTask;
+        var secondResult = await secondResultTask;
+        var thirdResult = await cache.GetOrCreateWithCacheStatusAsync(key, CancellationToken.None);
+
+        firstResult.CacheStatus.Should().Be(MappingSetCacheStatus.Compiled);
+        secondResult.CacheStatus.Should().Be(MappingSetCacheStatus.JoinedInFlight);
+        thirdResult.CacheStatus.Should().Be(MappingSetCacheStatus.ReusedCompleted);
+        firstResult.MappingSet.Should().BeSameAs(compiledMappingSet);
+        secondResult.MappingSet.Should().BeSameAs(compiledMappingSet);
+        thirdResult.MappingSet.Should().BeSameAs(compiledMappingSet);
+        compileInvocationCount.Should().Be(1);
+    }
+
     private static MappingSetKey CreateMappingSetKey(
         string effectiveSchemaHash,
         SqlDialect dialect,

@@ -89,7 +89,7 @@ public class Given_KeyUnificationPresenceGating_RuntimePlanCompilation_GoldenFix
     }
 
     [Test]
-    public void It_should_emit_read_plan_inventory_with_empty_projection_arrays_for_presence_gate_resource()
+    public void It_should_emit_descriptor_projection_inventory_for_presence_gate_resource()
     {
         foreach (var mappingSet in ParseMappingSetObjects(_manifest))
         {
@@ -106,12 +106,39 @@ public class Given_KeyUnificationPresenceGating_RuntimePlanCompilation_GoldenFix
                 )
                 .Should()
                 .BeEmpty();
-            RequireArray(
-                    readPlan["descriptor_projection_plans_in_order"],
-                    "descriptor_projection_plans_in_order"
+
+            var descriptorProjectionPlans = RequireArray(
+                readPlan["descriptor_projection_plans_in_order"],
+                "descriptor_projection_plans_in_order"
+            );
+
+            var descriptorProjectionPlan =
+                descriptorProjectionPlans.Should().ContainSingle().Subject as JsonObject
+                ?? throw new InvalidOperationException(
+                    "Expected descriptor_projection_plans_in_order entry to be an object."
+                );
+
+            RequireString(descriptorProjectionPlan, "select_by_keyset_sql_sha256").Should().HaveLength(64);
+
+            var resultShape = RequireObject(descriptorProjectionPlan["result_shape"], "result_shape");
+            RequireInt(resultShape, "descriptor_id_ordinal").Should().Be(0);
+            RequireInt(resultShape, "uri_ordinal").Should().Be(1);
+
+            var sourcesInOrder = RequireArray(
+                descriptorProjectionPlan["sources_in_order"],
+                "sources_in_order"
+            );
+
+            sourcesInOrder.Should().HaveCount(2);
+            sourcesInOrder
+                .Select(sourceNode =>
+                    RequireString(
+                        RequireObject(sourceNode, "sources_in_order entry"),
+                        "descriptor_value_path"
+                    )
                 )
                 .Should()
-                .BeEmpty();
+                .Equal("$.primarySchoolTypeDescriptor", "$.secondarySchoolTypeDescriptor");
         }
     }
 

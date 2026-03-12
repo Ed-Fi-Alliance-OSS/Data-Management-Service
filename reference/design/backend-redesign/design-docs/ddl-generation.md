@@ -332,7 +332,8 @@ Because `ResourceKeyId` is persisted in core tables and indexes, `ResourceKeyId`
 
 Recommended derivation:
 - Build the set of `(ProjectName, ResourceName)` pairs from the effective schema (core + extensions):
-  - include all concrete `resourceSchemas[*].resourceName` (including descriptors),
+  - include all concrete `resourceSchemas[*].resourceName` where `isResourceExtension` is not `true` (including descriptors and non-extension resources from extension projects),
+  - exclude `isResourceExtension: true` resource-extension overlays because they compile into `_ext` extension tables on the owning base resource rather than standalone document/resource-key rows,
   - include all `abstractResources[*]` names (used for polymorphic/superclass alias rows in `dms.ReferentialIdentity`).
 - Sort pairs by `(ProjectName, ResourceName)` using **ordinal** (culture-invariant) string ordering.
 - Assign `ResourceKeyId` sequentially from 1..N and emit seed inserts (deriving `ResourceVersion` from the owning `projectSchema.projectVersion`):

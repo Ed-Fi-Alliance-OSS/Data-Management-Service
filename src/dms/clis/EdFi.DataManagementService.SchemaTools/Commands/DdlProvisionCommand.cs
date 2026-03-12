@@ -7,7 +7,6 @@ using System.CommandLine;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Utilities;
-using EdFi.DataManagementService.SchemaTools.Bridge;
 using EdFi.DataManagementService.SchemaTools.Provisioning;
 using Microsoft.Extensions.Logging;
 

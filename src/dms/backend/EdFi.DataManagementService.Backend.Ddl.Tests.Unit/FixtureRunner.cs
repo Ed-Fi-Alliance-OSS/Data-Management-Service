@@ -9,7 +9,6 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.RelationalModel.Manifest;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Startup;
-using EdFi.DataManagementService.SchemaTools.Bridge;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EdFi.DataManagementService.Backend.Ddl.Tests.Unit;

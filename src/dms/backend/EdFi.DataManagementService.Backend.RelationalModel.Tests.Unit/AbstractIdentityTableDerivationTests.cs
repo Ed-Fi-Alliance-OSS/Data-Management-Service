@@ -946,6 +946,137 @@ public class Given_Abstract_Identity_Table_With_Duplicate_Root_Source_JsonPath_M
 }
 
 /// <summary>
+/// Test fixture for key-unified duplicate root-column SourceJsonPath mappings on a concrete member.
+/// </summary>
+[TestFixture]
+public class Given_Abstract_Identity_Table_With_Key_Unified_Duplicate_Root_Source_JsonPath_Mappings
+{
+    private DerivedRelationalModelSet _result = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema =
+            AbstractIdentityTableTestSchemaBuilder.BuildGroupedReferenceIdentityProjectSchema();
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new DescriptorResourceMappingPass(),
+                new ExtensionTableDerivationPass(),
+                new ReferenceBindingPass(),
+                new KeyUnificationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
+            }
+        );
+
+        _result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+    }
+
+    /// <summary>
+    /// It should resolve grouped duplicate root-column mappings through their canonical stored column.
+    /// </summary>
+    [Test]
+    public void It_should_resolve_key_unified_duplicate_root_columns_to_one_stored_column()
+    {
+        var abstractTable = _result.AbstractIdentityTablesInNameOrder.Single(table =>
+            table.AbstractResourceKey.Resource.ResourceName == "EnrollmentCarrier"
+        );
+        var unionView = _result.AbstractUnionViewsInNameOrder.Single(view =>
+            view.AbstractResourceKey.Resource.ResourceName == "EnrollmentCarrier"
+        );
+
+        abstractTable
+            .TableModel.Columns.Select(column => column.ColumnName.Value)
+            .Should()
+            .Contain("SchoolReferenceSchoolId");
+
+        var identityProjection = unionView
+            .UnionArmsInOrder.Single()
+            .ProjectionExpressionsInSelectOrder[1]
+            .Should()
+            .BeOfType<AbstractUnionViewProjectionExpression.SourceColumn>()
+            .Subject;
+
+        identityProjection.ColumnName.Value.Should().Be("SchoolId_Unified");
+    }
+}
+
+/// <summary>
+/// Test fixture for conflicting root-column SourceJsonPath kinds on a concrete member.
+/// </summary>
+[TestFixture]
+public class Given_Abstract_Identity_Table_With_Conflicting_Root_Source_JsonPath_Kinds
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = AbstractIdentityTableTestSchemaBuilder.BuildProjectSchema(
+            mismatchMemberType: false
+        );
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new ForceRootColumnSourcePathPass(
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    columnName: "OrganizationName",
+                    sourceJsonPath: "$.educationOrganizationId"
+                ),
+                new ForceRootColumnKindPass(
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    columnName: "OrganizationName",
+                    kind: ColumnKind.DocumentFk,
+                    scalarType: new RelationalScalarType(ScalarKind.Int64),
+                    targetResource: new QualifiedResourceName("Ed-Fi", "School")
+                ),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
+            }
+        );
+
+        try
+        {
+            builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception exception)
+        {
+            _exception = exception;
+        }
+    }
+
+    /// <summary>
+    /// It should fail fast when one duplicate root SourceJsonPath mixes column kinds.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_root_columns_share_a_source_json_path_with_conflicting_kinds()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("multiple root-column kinds");
+        _exception.Message.Should().Contain("$.educationOrganizationId");
+        _exception.Message.Should().Contain("EducationOrganizationId (Scalar)");
+        _exception.Message.Should().Contain("OrganizationName (DocumentFk)");
+    }
+}
+
+/// <summary>
 /// Test fixture for missing root-column SourceJsonPath mappings on a concrete member.
 /// </summary>
 [TestFixture]
@@ -1093,6 +1224,79 @@ internal sealed class ForceRootColumnSourcePathPass(
 
             found = true;
             updatedColumns[i] = column with { SourceJsonPath = canonicalPath };
+        }
+
+        if (!found)
+        {
+            throw new InvalidOperationException(
+                $"Root column '{columnName}' was not found on resource "
+                    + $"'{resource.ProjectName}:{resource.ResourceName}'."
+            );
+        }
+
+        var updatedRoot = root with { Columns = updatedColumns };
+        var updatedTables = concrete
+            .RelationalModel.TablesInDependencyOrder.Select(table =>
+                table.Table == root.Table ? updatedRoot : table
+            )
+            .ToArray();
+        var updatedModel = concrete.RelationalModel with
+        {
+            Root = updatedRoot,
+            TablesInDependencyOrder = updatedTables,
+        };
+
+        context.ConcreteResourcesInNameOrder[index] = concrete with { RelationalModel = updatedModel };
+    }
+}
+
+/// <summary>
+/// Rewrites a root column kind for targeted conflicting-kind validation tests.
+/// </summary>
+internal sealed class ForceRootColumnKindPass(
+    QualifiedResourceName resource,
+    string columnName,
+    ColumnKind kind,
+    RelationalScalarType scalarType,
+    QualifiedResourceName? targetResource
+) : IRelationalModelSetPass
+{
+    /// <inheritdoc />
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        var index = context.ConcreteResourcesInNameOrder.FindIndex(model =>
+            model.ResourceKey.Resource == resource
+        );
+
+        if (index < 0)
+        {
+            throw new InvalidOperationException(
+                $"Concrete resource '{resource.ProjectName}:{resource.ResourceName}' was not found."
+            );
+        }
+
+        var concrete = context.ConcreteResourcesInNameOrder[index];
+        var root = concrete.RelationalModel.Root;
+        var found = false;
+        DbColumnModel[] updatedColumns = new DbColumnModel[root.Columns.Count];
+
+        for (var i = 0; i < root.Columns.Count; i++)
+        {
+            var column = root.Columns[i];
+
+            if (!string.Equals(column.ColumnName.Value, columnName, StringComparison.Ordinal))
+            {
+                updatedColumns[i] = column;
+                continue;
+            }
+
+            found = true;
+            updatedColumns[i] = column with
+            {
+                Kind = kind,
+                ScalarType = scalarType,
+                TargetResource = targetResource,
+            };
         }
 
         if (!found)
@@ -1358,6 +1562,146 @@ internal static class AbstractIdentityTableTestSchemaBuilder
             ["projectVersion"] = "5.0.0",
             ["resourceSchemas"] = resourceSchemas,
             ["abstractResources"] = abstractResources,
+        };
+    }
+
+    /// <summary>
+    /// Build project schema with grouped reference-field duplicates that key-unify before abstract identity
+    /// derivation.
+    /// </summary>
+    internal static JsonObject BuildGroupedReferenceIdentityProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "5.0.0",
+            ["abstractResources"] = new JsonObject
+            {
+                ["EnrollmentCarrier"] = new JsonObject
+                {
+                    ["resourceName"] = "EnrollmentCarrier",
+                    ["identityJsonPaths"] = new JsonArray { "$.schoolReference.schoolId" },
+                },
+            },
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["enrollmentSchoolCarriers"] = BuildGroupedReferenceIdentityMemberSchema(),
+                ["schools"] = BuildGroupedReferenceIdentityTargetSchema(),
+            },
+        };
+    }
+
+    /// <summary>
+    /// Build subclass resource schema whose identity comes from one grouped duplicate reference field.
+    /// </summary>
+    private static JsonObject BuildGroupedReferenceIdentityMemberSchema()
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = "EnrollmentSchoolCarrier",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = true,
+            ["subclassType"] = "association",
+            ["superclassProjectName"] = "Ed-Fi",
+            ["superclassResourceName"] = "EnrollmentCarrier",
+            ["superclassIdentityJsonPath"] = null,
+            ["allowIdentityUpdates"] = false,
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["School"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "School",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.schoolId",
+                            ["referenceJsonPath"] = "$.schoolReference.schoolId",
+                        },
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.localEducationAgencyId",
+                            ["referenceJsonPath"] = "$.schoolReference.schoolId",
+                        },
+                    },
+                },
+            },
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["decimalPropertyValidationInfos"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.schoolReference.schoolId" },
+            ["equalityConstraints"] = new JsonArray(),
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["schoolReference"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["schoolId"] = new JsonObject { ["type"] = "integer" },
+                        },
+                    },
+                },
+            },
+        };
+    }
+
+    /// <summary>
+    /// Build target school schema whose key unification makes the grouped reference duplicates converge.
+    /// </summary>
+    private static JsonObject BuildGroupedReferenceIdentityTargetSchema()
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = "School",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = true,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["decimalPropertyValidationInfos"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.schoolId", "$.localEducationAgencyId" },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["SchoolId"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["isDescriptor"] = false,
+                    ["path"] = "$.schoolId",
+                },
+                ["LocalEducationAgencyId"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["isDescriptor"] = false,
+                    ["path"] = "$.localEducationAgencyId",
+                },
+            },
+            ["equalityConstraints"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["sourceJsonPath"] = "$.schoolId",
+                    ["targetJsonPath"] = "$.localEducationAgencyId",
+                },
+            },
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["schoolId"] = new JsonObject { ["type"] = "integer" },
+                    ["localEducationAgencyId"] = new JsonObject { ["type"] = "integer" },
+                },
+                ["required"] = new JsonArray("schoolId", "localEducationAgencyId"),
+            },
         };
     }
 

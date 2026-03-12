@@ -118,13 +118,16 @@ public class ValidateDatabaseFingerprintMiddlewareMissingTableTests
     {
         private RequestInfo _requestInfo = No.RequestInfo();
         private bool _nextCalled;
+        private IDatabaseFingerprintReader _fingerprintReader = null!;
 
         [SetUp]
         public async Task Setup()
         {
             var (middleware, fingerprintReader, dmsInstanceSelection, serviceProvider) = CreateMiddleware(
-                enableFingerprintValidation: true
+                enableFingerprintValidation: true,
+                validateProvisionedMappingsOnStartup: false
             );
+            _fingerprintReader = fingerprintReader;
             _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
 
             A.CallTo(() => dmsInstanceSelection.IsSet).Returns(true);
@@ -202,6 +205,13 @@ public class ValidateDatabaseFingerprintMiddlewareMissingTableTests
         public void It_includes_empty_validation_errors()
         {
             _requestInfo.FrontendResponse.Body!["validationErrors"]!.AsObject().Count.Should().Be(0);
+        }
+
+        [Test]
+        public void It_still_reads_the_database_fingerprint_when_startup_validation_bypass_is_enabled()
+        {
+            A.CallTo(() => _fingerprintReader.ReadFingerprintAsync("Server=test;Database=unprovisioned"))
+                .MustHaveHappenedOnceExactly();
         }
 
         [Test]

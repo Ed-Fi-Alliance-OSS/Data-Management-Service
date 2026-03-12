@@ -1066,6 +1066,9 @@ public abstract record TableConstraint
 /// - query compilation for reference-identity query fields (local predicates)
 /// - read-time reference reconstitution from local binding columns
 /// - write planning and FK derivation: binding columns may be stored or <c>UnifiedAlias</c>; writes and composite FKs target storage columns via <c>DbColumnModel.Storage</c>
+/// Duplicate <c>ReferenceJsonPath</c> values are allowed only within one <c>DocumentReferenceBinding</c> when a
+/// flattened reference field fans out to multiple upstream identity bindings. Consumers that materialize logical JSON
+/// fields must group such duplicates by <c>ReferenceJsonPath</c>.
 /// </param>
 /// <param name="IsIdentityComponent">
 /// True when this reference contributes to the parent document's identity (the referenced identity values are part of the parent's <c>identityJsonPaths</c>).
@@ -1118,6 +1121,8 @@ public sealed record DescriptorEdgeSource(
 
 Notes:
 - `DocumentReferenceBinding.IdentityBindings` is derived from existing `documentPathsMapping.referenceJsonPaths`.
+- Repeated `ReferenceIdentityBinding.ReferenceJsonPath` values are allowed only within one
+  `DocumentReferenceBinding` and represent one flattened reference field mapped to multiple local columns.
 
 ### 7.4 Write and read plans (plan layer)
 
@@ -1394,6 +1399,14 @@ The plan compiler uses `RelationalResourceModel.DocumentReferenceBindings` to:
 - identify the JSON reference object location, and
 - write identity fields from the bound physical columns (`ReferenceIdentityBinding.Column`),
 without joining to referenced resource tables.
+
+When one `DocumentReferenceBinding` contains duplicate `ReferenceIdentityBinding.ReferenceJsonPath` values, read
+projection MUST treat them as one logical reference field:
+- group the duplicated bindings by `ReferenceJsonPath` after storage resolution,
+- require the grouped members to converge to one logical projected value, and
+- emit one projected field for that path during reconstitution.
+
+Arbitrary duplicate reference-field emission remains invalid.
 
 ### 7.6 Execution interfaces (execution layer)
 

@@ -5,7 +5,6 @@
 
 using System.CommandLine;
 using EdFi.DataManagementService.Core.Startup;
-using EdFi.DataManagementService.SchemaTools.Bridge;
 using EdFi.DataManagementService.SchemaTools.Commands;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;

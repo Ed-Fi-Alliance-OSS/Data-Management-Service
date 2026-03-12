@@ -277,6 +277,8 @@ public class Given_An_Authoritative_Core_EffectiveSchemaManifest
 public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaManifest
 {
     private string _diffOutput = default!;
+    private string[] _resourceKeys = default!;
+    private string _resourceKeySeedHashHex = default!;
 
     /// <summary>
     /// Sets up the test fixture.
@@ -338,6 +340,14 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaManifest
             effectiveSchemaSet.EffectiveSchema,
             includeResourceKeys: true
         );
+        var manifestRoot = JsonNode.Parse(manifest)!.AsObject();
+        _resourceKeySeedHashHex = manifestRoot["resource_key_seed_hash"]!.GetValue<string>();
+        _resourceKeys = manifestRoot["resource_keys"]!
+            .AsArray()
+            .Select(resourceKey =>
+                $"{resourceKey!["project_name"]!.GetValue<string>()}:{resourceKey["resource_name"]!.GetValue<string>()}"
+            )
+            .ToArray();
 
         Directory.CreateDirectory(Path.GetDirectoryName(actualPath)!);
         File.WriteAllText(actualPath, manifest);
@@ -367,6 +377,55 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaManifest
         {
             Assert.Fail(_diffOutput);
         }
+    }
+
+    /// <summary>
+    /// It should exclude Sample resource-extension entries from resource keys.
+    /// </summary>
+    [Test]
+    public void It_should_exclude_resource_extensions_from_resource_keys()
+    {
+        _resourceKeys
+            .Should()
+            .NotContain([
+                "Sample:Contact",
+                "Sample:School",
+                "Sample:Staff",
+                "Sample:Student",
+                "Sample:StudentCTEProgramAssociation",
+                "Sample:StudentContactAssociation",
+                "Sample:StudentEducationOrganizationAssociation",
+                "Sample:StudentSchoolAssociation",
+                "Sample:StudentSectionAssociation",
+            ]);
+    }
+
+    /// <summary>
+    /// It should retain true extension-project resources in resource keys.
+    /// </summary>
+    [Test]
+    public void It_should_keep_true_extension_project_resources_in_resource_keys()
+    {
+        _resourceKeys
+            .Should()
+            .Contain([
+                "Sample:ArtMediumDescriptor",
+                "Sample:Bus",
+                "Sample:BusRoute",
+                "Sample:FavoriteBookCategoryDescriptor",
+                "Sample:MembershipTypeDescriptor",
+                "Sample:StudentArtProgramAssociation",
+                "Sample:StudentGraduationPlanAssociation",
+            ]);
+    }
+
+    /// <summary>
+    /// It should emit a runtime-style SHA-256 resource key seed hash.
+    /// </summary>
+    [Test]
+    public void It_should_emit_a_runtime_style_sha256_seed_hash()
+    {
+        _resourceKeySeedHashHex.Should().MatchRegex("^[0-9a-f]{64}$");
     }
 }
 

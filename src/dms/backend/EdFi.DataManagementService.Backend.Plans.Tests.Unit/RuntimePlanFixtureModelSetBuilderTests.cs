@@ -112,6 +112,7 @@ public class Given_RuntimePlanFixtureModelSetBuilder_CollectionsNestedExtensionF
     private const string FixturePath =
         "Fixtures/runtime-plan-compilation/collections-nested-extension/fixture.manifest.json";
     private static readonly QualifiedResourceName _schoolResource = new("Ed-Fi", "School");
+    private string[] _resourceKeys = null!;
     private IReadOnlyDictionary<string, DbTableModel> _tablesByScope = null!;
 
     [SetUp]
@@ -123,12 +124,26 @@ public class Given_RuntimePlanFixtureModelSetBuilder_CollectionsNestedExtensionF
             reverseResourceSchemaOrder: false,
             reverseFixtureInputOrder: false
         );
+
+        _resourceKeys = modelSet
+            .EffectiveSchema.ResourceKeysInIdOrder.Select(resourceKey =>
+                $"{resourceKey.Resource.ProjectName}:{resourceKey.Resource.ResourceName}"
+            )
+            .ToArray();
+
         var resource = modelSet.ConcreteResourcesInNameOrder.Single(resource =>
             resource.ResourceKey.Resource == _schoolResource
         );
         _tablesByScope = resource.RelationalModel.TablesInDependencyOrder.ToDictionary(table =>
             table.JsonScope.Canonical
         );
+    }
+
+    [Test]
+    public void It_should_exclude_resource_extension_entries_from_resource_keys()
+    {
+        _resourceKeys.Should().Contain("Ed-Fi:School");
+        _resourceKeys.Should().NotContain("Sample:School");
     }
 
     [Test]

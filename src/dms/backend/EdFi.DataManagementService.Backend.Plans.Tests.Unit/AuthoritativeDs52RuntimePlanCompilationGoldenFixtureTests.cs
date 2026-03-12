@@ -78,6 +78,88 @@ public class Given_AuthoritativeDs52_RuntimePlanCompilation_GoldenFixture
         }
     }
 
+    [Test]
+    public void It_should_emit_populated_projection_inventory_for_authoritative_resources()
+    {
+        foreach (var mappingSet in ParseMappingSets(_manifest))
+        {
+            var readPlans = ReadResources(mappingSet)
+                .Select(ReadOptionalReadPlan)
+                .Where(readPlan => readPlan is not null)
+                .Select(readPlan => readPlan!)
+                .ToArray();
+
+            readPlans
+                .Count(readPlan => ReadReferenceIdentityProjectionPlans(readPlan).Count > 0)
+                .Should()
+                .Be(122);
+
+            readPlans.Count(readPlan => ReadDescriptorProjectionPlans(readPlan).Count > 0).Should().Be(114);
+
+            var descriptorPlans = readPlans.SelectMany(ReadDescriptorProjectionPlans).ToArray();
+            descriptorPlans.Should().NotBeEmpty();
+
+            foreach (var descriptorPlan in descriptorPlans)
+            {
+                ReadRequiredString(descriptorPlan, "select_by_keyset_sql_sha256");
+
+                var resultShape = ReadRequiredObject(descriptorPlan["result_shape"], "result_shape");
+                ReadRequiredInt(resultShape, "descriptor_id_ordinal").Should().Be(0);
+                ReadRequiredInt(resultShape, "uri_ordinal").Should().Be(1);
+            }
+        }
+    }
+
+    [Test]
+    public void It_should_emit_projection_metadata_for_assessment()
+    {
+        foreach (var mappingSet in ParseMappingSets(_manifest))
+        {
+            var assessmentResource = FindResource(mappingSet, "Ed-Fi", "Assessment");
+            var readPlan = ReadRequiredReadPlan(assessmentResource);
+
+            var referencePlans = ReadReferenceIdentityProjectionPlans(readPlan);
+            referencePlans
+                .Select(ReadProjectionTableIdentity)
+                .Should()
+                .Equal("edfi.Assessment", "edfi.AssessmentProgram", "edfi.AssessmentSection");
+
+            var assessmentBindings = ReadBindingsInOrder(referencePlans[0]);
+            assessmentBindings
+                .Select(binding => ReadRequiredString(binding, "reference_object_path"))
+                .Should()
+                .Equal(
+                    "$.contentStandard.mandatingEducationOrganizationReference",
+                    "$.educationOrganizationReference"
+                );
+            ReadRequiredInt(assessmentBindings[0], "fk_column_ordinal").Should().Be(3);
+            ReadRequiredInt(assessmentBindings[1], "fk_column_ordinal").Should().Be(1);
+
+            ReadIdentityFieldOrdinalsInOrder(assessmentBindings[0])
+                .Select(identityField => ReadRequiredString(identityField, "reference_json_path"))
+                .Should()
+                .Equal("$.contentStandard.mandatingEducationOrganizationReference.educationOrganizationId");
+
+            var descriptorPlans = ReadDescriptorProjectionPlans(readPlan);
+            descriptorPlans.Should().HaveCount(1);
+
+            var descriptorPlan = descriptorPlans[0];
+            ReadRequiredString(descriptorPlan, "select_by_keyset_sql_sha256");
+
+            var descriptorSources = ReadDescriptorSourcesInOrder(descriptorPlan);
+            descriptorSources.Should().HaveCount(14);
+            descriptorSources
+                .Select(source => ReadRequiredString(source, "descriptor_value_path"))
+                .Should()
+                .ContainInOrder(
+                    "$.assessmentCategoryDescriptor",
+                    "$.contentStandard.publicationStatusDescriptor",
+                    "$.programs[*].programReference.programTypeDescriptor",
+                    "$.scores[*].resultDatatypeTypeDescriptor"
+                );
+        }
+    }
+
     private static string BuildManifest()
     {
         var compiler = new MappingSetCompiler();
@@ -127,6 +209,36 @@ public class Given_AuthoritativeDs52_RuntimePlanCompilation_GoldenFixture
         };
     }
 
+    private static JsonObject? ReadOptionalReadPlan(JsonObject resourceEntry)
+    {
+        return resourceEntry["read_plan"] switch
+        {
+            JsonObject readPlan => readPlan,
+            null => null,
+            _ => throw new InvalidOperationException(
+                "Manifest property 'read_plan' must be an object or null."
+            ),
+        };
+    }
+
+    private static JsonObject ReadRequiredReadPlan(JsonObject resourceEntry)
+    {
+        return ReadOptionalReadPlan(resourceEntry)
+            ?? throw new InvalidOperationException("Manifest property 'read_plan' is required.");
+    }
+
+    private static JsonObject FindResource(JsonObject mappingSet, string projectName, string resourceName)
+    {
+        return ReadResources(mappingSet)
+            .Single(resource =>
+            {
+                var identity = ReadRequiredObject(resource["resource"], "resource");
+
+                return ReadRequiredString(identity, "project_name") == projectName
+                    && ReadRequiredString(identity, "resource_name") == resourceName;
+            });
+    }
+
     private static IReadOnlyList<JsonObject> ReadTablePlans(JsonObject writePlan)
     {
         var tablePlans = ReadRequiredArray(
@@ -147,6 +259,76 @@ public class Given_AuthoritativeDs52_RuntimePlanCompilation_GoldenFixture
         var resourceName = ReadRequiredString(resourceIdentity, "resource_name");
 
         return resourceName.EndsWith("Descriptor", StringComparison.Ordinal);
+    }
+
+    private static IReadOnlyList<JsonObject> ReadReferenceIdentityProjectionPlans(JsonObject readPlan)
+    {
+        var referencePlans = ReadRequiredArray(
+            readPlan["reference_identity_projection_plans_in_dependency_order"],
+            "reference_identity_projection_plans_in_dependency_order"
+        );
+
+        return referencePlans
+            .Select(referencePlanNode =>
+                ReadRequiredObject(
+                    referencePlanNode,
+                    "reference_identity_projection_plans_in_dependency_order entry"
+                )
+            )
+            .ToArray();
+    }
+
+    private static IReadOnlyList<JsonObject> ReadBindingsInOrder(JsonObject referencePlan)
+    {
+        var bindings = ReadRequiredArray(referencePlan["bindings_in_order"], "bindings_in_order");
+
+        return bindings
+            .Select(bindingNode => ReadRequiredObject(bindingNode, "bindings_in_order entry"))
+            .ToArray();
+    }
+
+    private static IReadOnlyList<JsonObject> ReadIdentityFieldOrdinalsInOrder(JsonObject binding)
+    {
+        var identityFields = ReadRequiredArray(
+            binding["identity_field_ordinals_in_order"],
+            "identity_field_ordinals_in_order"
+        );
+
+        return identityFields
+            .Select(identityFieldNode =>
+                ReadRequiredObject(identityFieldNode, "identity_field_ordinals_in_order entry")
+            )
+            .ToArray();
+    }
+
+    private static IReadOnlyList<JsonObject> ReadDescriptorProjectionPlans(JsonObject readPlan)
+    {
+        var descriptorPlans = ReadRequiredArray(
+            readPlan["descriptor_projection_plans_in_order"],
+            "descriptor_projection_plans_in_order"
+        );
+
+        return descriptorPlans
+            .Select(descriptorPlanNode =>
+                ReadRequiredObject(descriptorPlanNode, "descriptor_projection_plans_in_order entry")
+            )
+            .ToArray();
+    }
+
+    private static IReadOnlyList<JsonObject> ReadDescriptorSourcesInOrder(JsonObject descriptorPlan)
+    {
+        var descriptorSources = ReadRequiredArray(descriptorPlan["sources_in_order"], "sources_in_order");
+
+        return descriptorSources
+            .Select(sourceNode => ReadRequiredObject(sourceNode, "sources_in_order entry"))
+            .ToArray();
+    }
+
+    private static string ReadProjectionTableIdentity(JsonObject projectionPlan)
+    {
+        var table = ReadRequiredObject(projectionPlan["table"], "table");
+
+        return $"{ReadRequiredString(table, "schema")}.{ReadRequiredString(table, "name")}";
     }
 
     private static JsonObject ReadRequiredObject(JsonNode? node, string propertyName)
@@ -188,5 +370,17 @@ public class Given_AuthoritativeDs52_RuntimePlanCompilation_GoldenFixture
         }
 
         return value;
+    }
+
+    private static int ReadRequiredInt(JsonObject node, string propertyName)
+    {
+        return node[propertyName] switch
+        {
+            JsonValue jsonValue => jsonValue.GetValue<int>(),
+            null => throw new InvalidOperationException($"Manifest property '{propertyName}' is required."),
+            _ => throw new InvalidOperationException(
+                $"Manifest property '{propertyName}' must be an integer."
+            ),
+        };
     }
 }

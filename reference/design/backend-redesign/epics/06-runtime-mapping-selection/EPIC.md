@@ -24,3 +24,4 @@ Authorization remains out of scope.
 - `DMS-977` — `02-mapping-set-selection.md` — Select mapping set by `(hash, dialect, mapping version)` (pack vs runtime compile)
 - `DMS-978` — `03-config-and-failure-modes.md` — Configuration surface and fail-fast behaviors
 - `DMS-979` — `04-remove-hot-reload.md` — Remove in-process schema reload/hot-reload behavior
+- `DMS-1097` — `05-remove-temporary-startup-validation-bypass.md` — Remove the temporary startup validation bypass once provisioning is ready
