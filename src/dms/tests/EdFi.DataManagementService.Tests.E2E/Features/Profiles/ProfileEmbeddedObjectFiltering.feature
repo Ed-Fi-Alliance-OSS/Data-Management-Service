@@ -186,11 +186,12 @@ Feature: Profile Embedded Object Filtering
                   }
                   """
 
-        Scenario: 05 Read profile excluding embedded object currently returns contentStandard
-            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Assessment-Readable-Excludes-Embedded-Object" and namespacePrefixes "uri://ed-fi.org"
-            When a GET request is made to "/ed-fi/assessments/{id}" with profile "Assessment-Readable-Excludes-Embedded-Object" for resource "Assessment"
-            Then the profile response status is 200
-             And the response body should contain path "contentStandard"
+        Scenario: 05 Read exclude-profile variant is currently unsupported by host
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Assessment-Readable-Excludes-Embedded-Object-Unsupported" and namespacePrefixes "uri://ed-fi.org"
+            When a GET request is made to "/ed-fi/assessments/{id}" with profile "Assessment-Readable-Excludes-Embedded-Object-Unsupported" for resource "Assessment"
+            Then the profile response status is 406
+             And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
+             And the response body should have error message "is not supported by this host"
 
         Scenario: 06 Read profile including embedded object is currently unsupported by host
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Assessment-Readable-Includes-Embedded-Object" and namespacePrefixes "uri://ed-fi.org"
@@ -199,9 +200,9 @@ Feature: Profile Embedded Object Filtering
              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
              And the response body should have error message "is not supported by this host"
 
-        Scenario: 07 Write profile excluding embedded object is currently unsupported by host
-            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Assessment-Writable-Excludes-Embedded-Object" and namespacePrefixes "uri://ed-fi.org"
-            When a PUT request is made to "/ed-fi/assessments/{id}" with profile "Assessment-Writable-Excludes-Embedded-Object" for resource "Assessment" with body
+        Scenario: 07 Write exclude-profile variant is currently unsupported by host
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Assessment-Writable-Excludes-Embedded-Object-Unsupported" and namespacePrefixes "uri://ed-fi.org"
+            When a PUT request is made to "/ed-fi/assessments/{id}" with profile "Assessment-Writable-Excludes-Embedded-Object-Unsupported" for resource "Assessment" with body
                   """
                   {
                       "id": "{id}",
@@ -293,9 +294,9 @@ Feature: Profile Embedded Object Filtering
              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
              And the response body should have error message "is not supported by this host"
 
-        Scenario: 11 Data validation with invalid embedded object exclude profile is currently unsupported by host
-            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Assessment-Writable-Excludes-Embedded-Object" and namespacePrefixes "uri://ed-fi.org"
-            When a PUT request is made to "/ed-fi/assessments/{id}" with profile "Assessment-Writable-Excludes-Embedded-Object" for resource "Assessment" with body
+        Scenario: 11 Data validation with invalid embedded object exclude-profile variant is currently unsupported by host
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Assessment-Writable-Excludes-Embedded-Object-Unsupported" and namespacePrefixes "uri://ed-fi.org"
+            When a PUT request is made to "/ed-fi/assessments/{id}" with profile "Assessment-Writable-Excludes-Embedded-Object-Unsupported" for resource "Assessment" with body
                   """
                   {
                       "id": "{id}",

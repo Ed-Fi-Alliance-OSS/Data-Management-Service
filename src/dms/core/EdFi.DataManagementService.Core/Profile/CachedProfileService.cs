@@ -143,7 +143,17 @@ internal class CachedProfileService(
             // No profiles assigned - if header was provided, validate the profile exists
             if (parsedHeader != null)
             {
-                return await ValidateExplicitProfileWithoutAssignment(parsedHeader, method);
+                CachedProfileStore unassignedProfileStore = await GetOrFetchProfileStoreAsync(tenantId);
+                // An app without profile assignments can still use a valid explicit profile.
+                // Passing null skips assignment enforcement while preserving normal profile
+                // validation for existence, resource matching, and method/content-type rules.
+                return ValidateExplicitProfile(
+                    parsedHeader,
+                    method,
+                    resourceName,
+                    cachedProfiles: null,
+                    unassignedProfileStore
+                );
             }
 
             // No profiles assigned and no header - no profile applies
@@ -233,65 +243,21 @@ internal class CachedProfileService(
             ) ?? CachedApplicationProfiles.Empty;
     }
 
-    private Task<ProfileResolutionResult> ValidateExplicitProfileWithoutAssignment(
-        ParsedProfileHeader parsedHeader,
-        RequestMethod method
-    )
-    {
-        // Client specified a profile header but has no profiles assigned
-        // We need to check if the profile exists at all and if it covers the resource
-        // For now, we'll just honor the profile if it exists (no assignment enforcement)
-
-        // This is a temporary implementation - in the future we might want to
-        // fetch the profile from CMS to validate it exists
-        // For now, return an error since we can't validate without profile data
-
-        logger.LogDebug(
-            "Profile header specified but no profiles assigned to application. Profile: {ProfileName}",
-            LoggingSanitizer.SanitizeForLogging(parsedHeader.ProfileName)
-        );
-
-        // According to the design: "When a client's application has no profiles assigned,
-        // no implicit profile selection or assignment enforcement is applied.
-        // If a profile header is provided, it is honored after normal header validation."
-        // This means we need to fetch the profile directly
-
-        // For the N+1 approach, we don't have an efficient way to look up a profile by name
-        // So we'll return an error for now - this should be refined when we add the dedicated endpoint
-        return Task.FromResult(CreateProfileNotFoundError(parsedHeader.ProfileName, method));
-    }
-
     private static ProfileResolutionResult ValidateExplicitProfile(
         ParsedProfileHeader parsedHeader,
         RequestMethod method,
         string resourceName,
-        CachedApplicationProfiles cachedProfiles,
+        CachedApplicationProfiles? cachedProfiles,
         CachedProfileStore profileStore
     )
     {
-        // Check if the profile is assigned to this application
-        if (
-            !cachedProfiles.AssignedProfileNames.Contains(
-                parsedHeader.ProfileName,
-                StringComparer.OrdinalIgnoreCase
-            )
-        )
-        {
-            string availableProfiles = BuildAvailableProfiles(cachedProfiles, resourceName, method);
-
-            return ProfileResolutionResult.Failure(
-                new ProfileResolutionError(
-                    StatusCode: 403,
-                    ErrorType: "urn:ed-fi:api:security:data-policy:incorrect-usage",
-                    Title: "Data Policy Failure Due to Incorrect Usage",
-                    Detail: "A data policy failure was encountered. The request was not constructed correctly for the data policy that has been applied to this data for the caller.",
-                    Errors:
-                    [
-                        $"Based on profile assignments, one of the following profile-specific content types is required when requesting this resource: {availableProfiles}",
-                    ]
-                )
-            );
-        }
+        IReadOnlyList<string> availableProfiles = cachedProfiles is not null
+            ? GetAvailableProfileContentTypes(cachedProfiles, profileStore, resourceName, method)
+            : [];
+        // Assignment enforcement applies only when at least one assigned profile covers the
+        // requested resource and verb. If none apply, the profiles design treats the request
+        // as standard behavior rather than blocking an otherwise valid explicit profile.
+        bool enforceAssignment = cachedProfiles is not null && availableProfiles.Count > 0;
 
         if (
             !profileStore.TryGetByName(parsedHeader.ProfileName, out ProfileDefinition? profileDefinition)
@@ -299,6 +265,17 @@ internal class CachedProfileService(
         )
         {
             return CreateProfileNotFoundError(parsedHeader.ProfileName, method);
+        }
+
+        if (
+            enforceAssignment
+            && !cachedProfiles!.AssignedProfileNames.Contains(
+                parsedHeader.ProfileName,
+                StringComparer.OrdinalIgnoreCase
+            )
+        )
+        {
+            return CreateIncorrectUsageFailure(availableProfiles);
         }
 
         // Validate resource name in header matches the requested resource
@@ -332,6 +309,11 @@ internal class CachedProfileService(
 
         if (resourceProfile == null)
         {
+            if (enforceAssignment)
+            {
+                return CreateIncorrectUsageFailure(availableProfiles);
+            }
+
             return ProfileResolutionResult.Failure(
                 new ProfileResolutionError(
                     StatusCode: 400,
@@ -377,7 +359,14 @@ internal class CachedProfileService(
         CachedProfileStore profileStore
     )
     {
-        var applicableProfiles = cachedProfiles
+        IReadOnlyList<string> availableProfiles = GetAvailableProfileContentTypes(
+            cachedProfiles,
+            profileStore,
+            resourceName,
+            method
+        );
+        bool isReadOperation = method == RequestMethod.GET;
+        List<(ProfileDefinition Definition, ResourceProfile ResourceProfile)> applicableProfiles = cachedProfiles
             .AssignedProfileNames.Select(profileName =>
                 profileStore.TryGetByName(profileName, out ProfileDefinition? definition) ? definition : null
             )
@@ -390,25 +379,30 @@ internal class CachedProfileService(
                 ),
             })
             .Where(x => x.ResourceProfile is not null)
+            .Where(x => isReadOperation ? x.ResourceProfile!.ReadContentType is not null : x.ResourceProfile!.WriteContentType is not null)
+            .Select(x => (x.Definition, x.ResourceProfile!))
             .ToList();
 
-        if (applicableProfiles.Count == 0)
+        if (availableProfiles.Count == 0)
         {
             // No profiles cover this resource - no profile applies
             return ProfileResolutionResult.NoProfileApplies();
         }
 
-        if (applicableProfiles.Count == 1)
+        if (availableProfiles.Count == 1)
         {
-            var match = applicableProfiles[0];
+            // Aligns with the profiles design in reference/design/profiles-DMS-877:
+            // if exactly one assigned profile applies to the requested resource and verb,
+            // the service implicitly selects it even when other assigned profiles exist.
+            (ProfileDefinition profileDefinition, ResourceProfile resourceProfile) = applicableProfiles[0];
 
-            // Validate the resource has the appropriate content type
             ProfileResolutionResult? contentTypeValidation = ValidateResourceContentType(
-                match.ResourceProfile!,
+                resourceProfile,
                 method,
-                match.Definition.ProfileName
+                profileDefinition.ProfileName
             );
-            if (contentTypeValidation != null)
+
+            if (contentTypeValidation is not null)
             {
                 return contentTypeValidation;
             }
@@ -418,29 +412,16 @@ internal class CachedProfileService(
 
             return ProfileResolutionResult.Success(
                 new ProfileContext(
-                    ProfileName: match.Definition.ProfileName,
+                    ProfileName: profileDefinition.ProfileName,
                     ContentType: contentType,
-                    ResourceProfile: match.ResourceProfile!,
+                    ResourceProfile: resourceProfile,
                     WasExplicitlySpecified: false
                 )
             );
         }
 
-        // Multiple profiles cover this resource - client must specify which one
-        string availableProfiles = BuildAvailableProfiles(cachedProfiles, resourceName, method);
-
-        return ProfileResolutionResult.Failure(
-            new ProfileResolutionError(
-                StatusCode: 403,
-                ErrorType: "urn:ed-fi:api:security:data-policy:incorrect-usage",
-                Title: "Data Policy Failure Due to Incorrect Usage",
-                Detail: "A data policy failure was encountered. The request was not constructed correctly for the data policy that has been applied to this data for the caller.",
-                Errors:
-                [
-                    $"Based on profile assignments, one of the following profile-specific content types is required when requesting this resource: {availableProfiles}",
-                ]
-            )
-        );
+        // More than one profile covers this resource - client must specify which one
+        return CreateIncorrectUsageFailure(availableProfiles);
     }
 
     /// <summary>
@@ -450,18 +431,51 @@ internal class CachedProfileService(
     private static ProfileUsageType GetUsageTypeForMethod(RequestMethod method) =>
         method == RequestMethod.GET ? ProfileUsageType.Readable : ProfileUsageType.Writable;
 
-    private static string BuildAvailableProfiles(
+    private static IReadOnlyList<string> GetAvailableProfileContentTypes(
         CachedApplicationProfiles cachedProfiles,
+        CachedProfileStore profileStore,
         string resourceName,
         RequestMethod method
     )
     {
         ProfileUsageType usageType = GetUsageTypeForMethod(method);
+        bool isReadOperation = method == RequestMethod.GET;
 
-        return string.Join(
-            ", ",
-            cachedProfiles.AssignedProfileNames.Select(name =>
-                $"'{ProfileHeaderParser.BuildProfileContentType(resourceName.ToLowerInvariant(), name, usageType)}'"
+        return cachedProfiles
+            .AssignedProfileNames.Select(profileName =>
+                profileStore.TryGetByName(profileName, out ProfileDefinition? definition) ? definition : null
+            )
+            .Where(definition => definition is not null)
+            .Select(definition => new
+            {
+                definition!.ProfileName,
+                ResourceProfile = definition.Resources.FirstOrDefault(r =>
+                    r.ResourceName.Equals(resourceName, StringComparison.OrdinalIgnoreCase)
+                ),
+            })
+            .Where(x => x.ResourceProfile is not null)
+            .Where(x => isReadOperation ? x.ResourceProfile!.ReadContentType is not null : x.ResourceProfile!.WriteContentType is not null)
+            .Select(x =>
+                $"'{ProfileHeaderParser.BuildProfileContentType(resourceName.ToLowerInvariant(), x.ProfileName, usageType)}'"
+            )
+            .ToList();
+    }
+
+    private static ProfileResolutionResult CreateIncorrectUsageFailure(
+        IReadOnlyList<string> availableProfiles
+    )
+    {
+        string errorMessage = availableProfiles.Count > 0
+            ? $"Based on profile assignments, one of the following profile-specific content types is required when requesting this resource: {string.Join(", ", availableProfiles)}"
+            : "None of the profiles assigned to the caller provide a profile-specific content type for this resource and method.";
+
+        return ProfileResolutionResult.Failure(
+            new ProfileResolutionError(
+                StatusCode: 403,
+                ErrorType: "urn:ed-fi:api:security:data-policy:incorrect-usage",
+                Title: "Data Policy Failure Due to Incorrect Usage",
+                Detail: "A data policy failure was encountered. The request was not constructed correctly for the data policy that has been applied to this data for the caller.",
+                Errors: [errorMessage]
             )
         );
     }
