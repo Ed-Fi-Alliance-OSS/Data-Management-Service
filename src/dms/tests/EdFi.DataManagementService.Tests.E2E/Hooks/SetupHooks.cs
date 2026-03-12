@@ -29,7 +29,10 @@ public static class SetupHooks
     {
         _containerSetup = new SearchContainerSetup();
 
-        await SystemAdministrator.Register("sys-admin " + Guid.NewGuid().ToString(), "SdfH)98&JkSdfH)98&JkSdfH)98&JkSdfH)9");
+        await SystemAdministrator.Register(
+            "sys-admin " + Guid.NewGuid().ToString(),
+            SystemAdministrator.DefaultClientSecret
+        );
     }
 
     /// <summary>
