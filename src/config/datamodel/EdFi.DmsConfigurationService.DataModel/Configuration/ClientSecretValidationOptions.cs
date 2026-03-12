@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Security.Cryptography;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.DataModel.Configuration;
@@ -44,11 +45,12 @@ public static class ClientSecretValidation
     private const string UppercaseAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     private const string DigitAlphabet = "0123456789";
     private const string SpecialAlphabet = "!@#$%^&*()-_=+[]{}:;,.?";
+    private static readonly string EscapedSpecialCharacterClass = Regex.Escape(SpecialAlphabet);
     private const string GeneratedClientSecretAlphabet =
         LowercaseAlphabet + UppercaseAlphabet + DigitAlphabet + SpecialAlphabet;
 
     public static string BuildComplexityPattern(ClientSecretValidationOptions options)
-        => $@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z\d]).{{{options.MinimumLength},{options.MaximumLength}}}$";
+        => $@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[{EscapedSpecialCharacterClass}]).{{{options.MinimumLength},{options.MaximumLength}}}$";
 
     public static string BuildComplexityErrorMessage(ClientSecretValidationOptions options)
         => $"Client secret must contain at least one lowercase letter, one uppercase letter, one number, and one special character, and must be {options.MinimumLength} to {options.MaximumLength} characters long.";

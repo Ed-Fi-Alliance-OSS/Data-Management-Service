@@ -72,6 +72,24 @@ public class ClientSecretValidationTests
     }
 
     [Test]
+    public void It_should_reject_secrets_that_only_use_whitespace_as_the_special_character()
+    {
+        var options = new ClientSecretValidationOptions
+        {
+            MinimumLength = 10,
+            MaximumLength = 16,
+        };
+
+        Regex
+            .IsMatch(
+                "ValidSecret1 ",
+                ClientSecretValidation.BuildComplexityPattern(options)
+            )
+            .Should()
+            .BeFalse();
+    }
+
+    [Test]
     public void It_should_generate_a_secret_that_matches_the_complexity_pattern()
     {
         var options = new ClientSecretValidationOptions

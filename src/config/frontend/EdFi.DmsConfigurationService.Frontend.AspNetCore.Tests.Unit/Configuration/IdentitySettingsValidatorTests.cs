@@ -98,4 +98,27 @@ public class IdentitySettingsValidatorTests
         result.Failed.Should().BeTrue();
         result.FailureMessage.Should().Contain("at least one lowercase letter");
     }
+
+    [Test]
+    public void It_should_fail_when_whitespace_is_the_only_special_character()
+    {
+        var result = _validator.Validate(
+            null,
+            new IdentitySettings
+            {
+                Authority = "http://localhost",
+                ClientId = "client-id",
+                ClientSecret = "Secret1 A",
+                RequireHttpsMetadata = false,
+                AllowRegistration = true,
+                Audience = "audience",
+                RoleClaimType = "role",
+                ConfigServiceRole = "cms-client",
+                ClientRole = "dms-client",
+            }
+        );
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("at least one lowercase letter");
+    }
 }

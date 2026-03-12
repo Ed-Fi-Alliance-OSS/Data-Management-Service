@@ -84,6 +84,16 @@ function Test_ClientSecretLength() {
     }
 }
 
+function Test_ClientSecretComplexity() {
+    param([string] $ClientSecret)
+
+    $complexityPattern = '^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()\-_=\+\[\]{}:;,.?]).{' + $ClientSecretMinimumLength + ',' + $ClientSecretMaximumLength + '}$'
+
+    if ($ClientSecret -notmatch $complexityPattern) {
+        throw "NewClientSecret must contain at least one lowercase letter, one uppercase letter, one number, and one special character from !@#$%^&*()-_=+[]{}:;,.? and must be between $ClientSecretMinimumLength and $ClientSecretMaximumLength characters long."
+    }
+}
+
 function Get_Access_Token() {
     $TokenResponse = Invoke-RestMethod -Uri "$script:KeycloakServer/realms/$script:AdminRealm/protocol/openid-connect/token" `
         -Method Post `
@@ -437,6 +447,7 @@ if ($client) {
 }
 else {
     Test_ClientSecretLength -ClientSecret $script:NewClientSecret
+    Test_ClientSecretComplexity -ClientSecret $script:NewClientSecret
     $client = Create_Client
     $clientId = $client.id
     $realmAdminRole = Get_Realm_Admin_Role "realm-admin"

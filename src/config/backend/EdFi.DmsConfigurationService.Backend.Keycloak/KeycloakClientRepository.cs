@@ -203,12 +203,14 @@ public class KeycloakClientRepository(
         }
         catch (FlurlHttpException ex)
         {
-            logger.LogError(ex, "Delete client failure");
-            return new ClientResetResult.FailureIdentityProvider(ExceptionToKeycloakError(ex));
+            logger.LogError(ex, "Reset client credentials failure");
+            return ex.StatusCode == 404
+                ? new ClientResetResult.FailureClientNotFound($"Client {clientUuid} not found")
+                : new ClientResetResult.FailureIdentityProvider(ExceptionToKeycloakError(ex));
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Delete client failure");
+            logger.LogError(ex, "Reset client credentials failure");
             return new ClientResetResult.FailureUnknown(ex.Message);
         }
     }

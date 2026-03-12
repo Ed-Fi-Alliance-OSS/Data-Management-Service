@@ -12,7 +12,7 @@ namespace EdFi.DmsConfigurationService.Backend.Keycloak;
 
 public interface IKeycloakClientFacade
 {
-    Task<IList<Role>> GetRolesAsync(string realm);
+    Task<IEnumerable<Role>> GetRolesAsync(string realm);
     Task<bool> CreateRoleAsync(string realm, Role role);
     Task<Role> GetRoleByNameAsync(string realm, string roleName);
     Task<bool> CreateClientScopeAsync(string realm, ClientScope clientScope);
@@ -21,8 +21,8 @@ public interface IKeycloakClientFacade
     Task<bool> UpdateClientAsync(string realm, string clientUuid, Client client);
     Task<bool> DeleteClientAsync(string realm, string clientUuid);
     Task<Credentials> GenerateClientSecretAsync(string realm, string clientUuid);
-    Task<IList<Client>> GetClientsAsync(string realm);
-    Task<IList<ClientScope>> GetClientScopesAsync(string realm);
+    Task<IEnumerable<Client>> GetClientsAsync(string realm);
+    Task<IEnumerable<ClientScope>> GetClientScopesAsync(string realm);
     Task<User> GetUserForServiceAccountAsync(string realm, string clientUuid);
     Task<bool> AddRealmRoleMappingsToUserAsync(string realm, string userId, IEnumerable<Role> roles);
 }
