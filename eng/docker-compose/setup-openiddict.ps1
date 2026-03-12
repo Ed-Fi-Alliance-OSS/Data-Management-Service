@@ -80,6 +80,16 @@ function Test-ClientSecretLength {
     }
 }
 
+function Test-ClientSecretComplexity {
+    param([string]$ClientSecret)
+
+    $complexityPattern = '^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()\-_=\+\[\]{}:;,.?]).{' + $ClientSecretMinimumLength + ',' + $ClientSecretMaximumLength + '}$'
+
+    if ($ClientSecret -notmatch $complexityPattern) {
+        throw "NewClientSecret must contain at least one lowercase letter, one uppercase letter, one number, and one special character from !@#$%^&*()-_=+[]{}:;,.? and must be between $ClientSecretMinimumLength and $ClientSecretMaximumLength characters long."
+    }
+}
+
 function Add-OpenIddictClientRole {
     param([string]$AppId, [string]$RoleId)
     $sql = "INSERT INTO dmscs.OpenIddictClientRole (ClientId, RoleId) VALUES ('$AppId', '$RoleId') ON CONFLICT (ClientId, RoleId) DO NOTHING;"
@@ -288,6 +298,7 @@ if ($InitDb) {
 
 if ($InsertData) {
     Test-ClientSecretLength -ClientSecret $NewClientSecret
+    Test-ClientSecretComplexity -ClientSecret $NewClientSecret
     $appId = New-OpenIddictApplication -ClientId $NewClientId -ClientName $NewClientName -ClientSecret $NewClientSecret
 
     $dmsRoleId = New-OpenIddictRole -RoleName $DmsClientRole

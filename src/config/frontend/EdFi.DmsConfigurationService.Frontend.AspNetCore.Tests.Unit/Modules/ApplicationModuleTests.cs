@@ -1452,6 +1452,34 @@ public class ApplicationModuleTests
             // Assert
             resetResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
+
+        [Test]
+        public async Task Should_return_not_found_when_application_client_is_missing_in_identity_provider()
+        {
+            using var client = SetUpClient();
+            A.CallTo(() => _clientRepository.ResetCredentialsAsync(A<string>.Ignored))
+                .Returns(new ClientResetResult.FailureClientNotFound("Client not found"));
+
+            var resetResponse = await client.PutAsync("/v2/applications/1/reset-credential", null);
+
+            resetResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
+        [Test]
+        public async Task Should_return_bad_gateway_when_identity_provider_reset_fails()
+        {
+            using var client = SetUpClient();
+            A.CallTo(() => _clientRepository.ResetCredentialsAsync(A<string>.Ignored))
+                .Returns(
+                    new ClientResetResult.FailureIdentityProvider(
+                        new IdentityProviderError("Identity provider connection failed")
+                    )
+                );
+
+            var resetResponse = await client.PutAsync("/v2/applications/1/reset-credential", null);
+
+            resetResponse.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+        }
     }
 
     [TestFixture]

@@ -8,6 +8,8 @@ using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Configuration;
 using FakeItEasy;
 using FluentAssertions;
+using Flurl.Http;
+using Flurl.Http.Configuration;
 using Keycloak.Net.Models.Clients;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -98,6 +100,22 @@ public class KeycloakClientRepositoryTests
             var result = await _repository.ResetCredentialsAsync(clientUuid);
 
             result.Should().BeOfType<ClientResetResult.FailureUnknown>();
+        }
+
+        [Test]
+        public async Task It_should_return_failure_client_not_found_when_keycloak_returns_not_found()
+        {
+            var clientUuid = Guid.NewGuid().ToString();
+            var response = A.Fake<IFlurlResponse>();
+            A.CallTo(() => response.StatusCode).Returns(404);
+            var call = new FlurlCall { Response = response };
+
+            A.CallTo(() => _keycloakClientFacade.GetClientAsync("edfi", clientUuid))
+                .Throws(new FlurlHttpException(call));
+
+            var result = await _repository.ResetCredentialsAsync(clientUuid);
+
+            result.Should().BeOfType<ClientResetResult.FailureClientNotFound>();
         }
     }
 }

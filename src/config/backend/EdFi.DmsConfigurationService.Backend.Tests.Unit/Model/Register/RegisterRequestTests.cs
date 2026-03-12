@@ -105,6 +105,22 @@ public class RegisterRequestTests
     }
 
     [Test]
+    public void Validate_WithWhitespaceAsOnlySpecialCharacter_ShouldFailValidation()
+    {
+        var request = new RegisterRequest
+        {
+            ClientId = "ValidClientId",
+            ClientSecret = "Secret1 A",
+            DisplayName = "ValidDisplayName",
+        };
+
+        var result = _validator.Validate(request);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "ClientSecret");
+    }
+
+    [Test]
     public void Validate_WithClientSecretLongerThanConfiguredMaximum_ShouldFailValidation()
     {
         var request = new RegisterRequest

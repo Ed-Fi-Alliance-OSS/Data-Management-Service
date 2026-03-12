@@ -489,8 +489,10 @@ $parameters = @{
 `setup-openiddict.ps1` configures the required application, client credentials, roles, scopes, and custom claims for OpenIddict. It uses an environment file for configuration and supports database initialization.
 
 `NewClientSecret` must stay within the configured `IdentitySettings:ClientSecretValidation`
-minimum/maximum range. The script exposes `ClientSecretMinimumLength` and
-`ClientSecretMaximumLength` so local setup can match the runtime settings.
+minimum/maximum range and include at least one lowercase letter, one uppercase
+letter, one number, and one supported special character. The script exposes
+`ClientSecretMinimumLength` and `ClientSecretMaximumLength` so local setup can
+match the runtime settings.
 
 ```pwsh
 $parameters = @{
@@ -537,4 +539,5 @@ $parameters = @{
 * `$InitDb` initializes the database schema and keys.
 * `$InsertData` inserts the OpenIddict client, roles, scopes, and claims.
 * `ClientSecretMinimumLength` and `ClientSecretMaximumLength` should match the configured `IdentitySettings:ClientSecretValidation` bounds used by CMS.
+* `NewClientSecret` must also satisfy the CMS complexity rule: lowercase, uppercase, number, and one special character from `!@#$%^&*()-_=+[]{}:;,.?`.
 * Both switches can be used together or separately as needed.

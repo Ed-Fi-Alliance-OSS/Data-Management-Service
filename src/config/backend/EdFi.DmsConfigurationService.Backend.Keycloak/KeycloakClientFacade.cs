@@ -19,7 +19,7 @@ public class KeycloakClientFacade(KeycloakContext keycloakContext) : IKeycloakCl
         new KeycloakOptions(adminClientId: keycloakContext.ClientId)
     );
 
-    public Task<IList<Role>> GetRolesAsync(string realm) => _keycloakClient.GetRolesAsync(realm);
+    public Task<IEnumerable<Role>> GetRolesAsync(string realm) => _keycloakClient.GetRolesAsync(realm);
 
     public Task<bool> CreateRoleAsync(string realm, Role role)
         => _keycloakClient.CreateRoleAsync(realm, role);
@@ -45,9 +45,10 @@ public class KeycloakClientFacade(KeycloakContext keycloakContext) : IKeycloakCl
     public Task<Credentials> GenerateClientSecretAsync(string realm, string clientUuid)
         => _keycloakClient.GenerateClientSecretAsync(realm, clientUuid);
 
-    public Task<IList<Client>> GetClientsAsync(string realm) => _keycloakClient.GetClientsAsync(realm);
+    public Task<IEnumerable<Client>> GetClientsAsync(string realm)
+        => _keycloakClient.GetClientsAsync(realm);
 
-    public Task<IList<ClientScope>> GetClientScopesAsync(string realm)
+    public Task<IEnumerable<ClientScope>> GetClientScopesAsync(string realm)
         => _keycloakClient.GetClientScopesAsync(realm);
 
     public Task<User> GetUserForServiceAccountAsync(string realm, string clientUuid)

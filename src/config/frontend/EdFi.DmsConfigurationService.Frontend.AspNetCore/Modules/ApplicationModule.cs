@@ -413,6 +413,16 @@ public class ApplicationModule : IEndpointModule
                                         Secret = resetSuccess.ClientSecret,
                                     }
                                 );
+                            case ClientResetResult.FailureClientNotFound:
+                                return FailureResults.NotFound(
+                                    "Application client not found in identity provider",
+                                    httpContext.TraceIdentifier
+                                );
+                            case ClientResetResult.FailureIdentityProvider failureIdentityProvider:
+                                return FailureResults.BadGateway(
+                                    failureIdentityProvider.IdentityProviderError.FailureMessage,
+                                    httpContext.TraceIdentifier
+                                );
                             case ClientResetResult.FailureUnknown failure:
                                 logger.LogError(
                                     "Error resetting client credentials {clientId} {clientUuid}: {message}",
