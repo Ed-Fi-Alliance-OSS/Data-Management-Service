@@ -41,7 +41,7 @@ public static class KeycloakServiceExtensions
         var realm = uri.Segments.Skip(realmsUriSegmentIndex + 1).Take(1).Single().Trim('/');
 
         services.AddScoped(x => new KeycloakContext(baseUrl, realm, ClientId, ClientSecret, RoleClaimType));
-
+        services.AddScoped<IKeycloakClientFacade, KeycloakClientFacade>();
         services.AddTransient<IIdentityProviderRepository, KeycloakClientRepository>();
         services.AddTransient<ITokenManager, KeycloakTokenManager>();
 

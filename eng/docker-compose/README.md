@@ -460,6 +460,8 @@ $parameters = @{
     NewClientId = "test-client"                # Client id (default: test-client)
     NewClientName = "test-client"              # Client name (default: Test client)
     NewClientSecret = "ValidClientSecret1234567890!Abcd"  # Client secret example
+    ClientSecretMinimumLength = 32                # Must match IdentitySettings:ClientSecretValidation:MinimumLength
+    ClientSecretMaximumLength = 128               # Must match IdentitySettings:ClientSecretValidation:MaximumLength
     ClientScopeName = "sis-vendor"             # Scope name (default: sis-vendor) We are including the 
     # claim set name as a scope in the token. This can be customized to any claim set name (e.g., 'Ed-Fi-Sandbox').
     # Please note that the claim name cannot contain spaces; use a hyphen (-) instead.
@@ -476,6 +478,8 @@ $parameters = @{
     NewClientId = "DmsConfigurationService"     # Defined in Configuration Service appsettings
     NewClientName = "DmsConfigurationService"   
     NewClientSecret = "ValidClientSecret1234567890!Abcd"  # Must match Configuration Service appsettings. Use appsettings.developer.json
+    ClientSecretMinimumLength = 32                        # Must match IdentitySettings:ClientSecretValidation:MinimumLength
+    ClientSecretMaximumLength = 128                       # Must match IdentitySettings:ClientSecretValidation:MaximumLength
 }
 ./setup-keycloak.ps1  @parameters -SetClientAsRealmAdmin
 ```

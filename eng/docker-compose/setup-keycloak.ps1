@@ -41,6 +41,12 @@ param (
     # one number, and one special character, and must be 32 to 128 characters long.
     [string]
     $NewClientSecret = "ValidClientSecret1234567890!Abcd",
+    
+    [int]
+    $ClientSecretMinimumLength = 32,
+
+    [int]
+    $ClientSecretMaximumLength = 128,
 
     # DMS specific client role
     [string]
@@ -69,6 +75,14 @@ param (
 
 # Make TokenLifespan script-scoped for use in all functions
 $script:TokenLifespan = $script:TokenLifespan
+
+function Test_ClientSecretLength() {
+    param([string] $ClientSecret)
+
+    if ($ClientSecret.Length -lt $ClientSecretMinimumLength -or $ClientSecret.Length -gt $ClientSecretMaximumLength) {
+        throw "NewClientSecret must be between $ClientSecretMinimumLength and $ClientSecretMaximumLength characters long."
+    }
+}
 
 function Get_Access_Token() {
     $TokenResponse = Invoke-RestMethod -Uri "$script:KeycloakServer/realms/$script:AdminRealm/protocol/openid-connect/token" `
@@ -422,6 +436,7 @@ if ($client) {
     Write-Warning "Client '$script:NewClientId' already exists. Please provide new client id."
 }
 else {
+    Test_ClientSecretLength -ClientSecret $script:NewClientSecret
     $client = Create_Client
     $clientId = $client.id
     $realmAdminRole = Get_Realm_Admin_Role "realm-admin"

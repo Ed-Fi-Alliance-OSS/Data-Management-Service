@@ -69,7 +69,7 @@ These settings configure the allowed client-secret length range used by CMS regi
 | MinimumLength   | Minimum allowed client-secret length. Default: `32`                                                                   |
 | MaximumLength   | Maximum allowed client-secret length. Default: `128`                                                                  |
 
-`IdentitySettings.ClientSecretValidation` does not change the existing non-length complexity requirements already enforced by CMS registration. It only controls the accepted size range.
+`IdentitySettings.ClientSecretValidation` controls the accepted size range used by CMS registration, generated secrets, and startup validation. CMS startup also requires configured client secrets to satisfy the same lowercase/uppercase/number/special-character complexity rules enforced by registration.
 
 ## RateLimit
 
