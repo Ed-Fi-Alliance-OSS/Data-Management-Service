@@ -51,6 +51,17 @@ public class IdentitySettingsValidator(
                 )
             );
         }
+        if (
+            !System.Text.RegularExpressions.Regex.IsMatch(
+                options.ClientSecret,
+                ClientSecretValidation.BuildComplexityPattern(_clientSecretValidationOptions)
+            )
+        )
+        {
+            return ValidateOptionsResult.Fail(
+                ClientSecretValidation.BuildComplexityErrorMessage(_clientSecretValidationOptions)
+            );
+        }
         if (string.IsNullOrEmpty(options.Audience))
         {
             return ValidateOptionsResult.Fail("Missing required IdentitySettings value: Audience");

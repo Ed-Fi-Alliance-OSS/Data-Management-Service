@@ -75,4 +75,27 @@ public class IdentitySettingsValidatorTests
         result.Failed.Should().BeTrue();
         result.FailureMessage.Should().Contain("between 8 and 12 characters long");
     }
+
+    [Test]
+    public void It_should_fail_when_client_secret_does_not_meet_complexity_requirements()
+    {
+        var result = _validator.Validate(
+            null,
+            new IdentitySettings
+            {
+                Authority = "http://localhost",
+                ClientId = "client-id",
+                ClientSecret = "alllower1!",
+                RequireHttpsMetadata = false,
+                AllowRegistration = true,
+                Audience = "audience",
+                RoleClaimType = "role",
+                ConfigServiceRole = "cms-client",
+                ClientRole = "dms-client",
+            }
+        );
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("at least one lowercase letter");
+    }
 }
