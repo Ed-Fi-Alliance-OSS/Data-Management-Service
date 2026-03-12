@@ -193,6 +193,11 @@ public class KeycloakClientRepository(
                 clientSecretValidationOptionsAccessor.Value
             );
             var client = await keycloakClientFacade.GetClientAsync(_realm, clientUuid);
+            if (client is null)
+            {
+                return new ClientResetResult.FailureClientNotFound($"Client {clientUuid} not found");
+            }
+
             client.Secret = newSecret;
 
             return await keycloakClientFacade.UpdateClientAsync(_realm, clientUuid, client)

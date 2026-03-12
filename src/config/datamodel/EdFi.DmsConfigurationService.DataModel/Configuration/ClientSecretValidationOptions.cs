@@ -4,7 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Security.Cryptography;
-using System.Text.RegularExpressions;
+using System.Text;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.DataModel.Configuration;
@@ -45,7 +45,8 @@ public static class ClientSecretValidation
     private const string UppercaseAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     private const string DigitAlphabet = "0123456789";
     private const string SpecialAlphabet = "!@#$%^&*()-_=+[]{}:;,.?";
-    private static readonly string EscapedSpecialCharacterClass = Regex.Escape(SpecialAlphabet);
+    private static readonly string EscapedSpecialCharacterClass =
+        BuildRegexCharacterClass(SpecialAlphabet);
     private const string GeneratedClientSecretAlphabet =
         LowercaseAlphabet + UppercaseAlphabet + DigitAlphabet + SpecialAlphabet;
 
@@ -113,5 +114,22 @@ public static class ClientSecretValidation
                 (buffer[index], buffer[swapIndex]) = (buffer[swapIndex], buffer[index]);
             }
         }
+    }
+
+    private static string BuildRegexCharacterClass(string value)
+    {
+        StringBuilder builder = new(value.Length * 2);
+
+        foreach (char character in value)
+        {
+            if (character is '\\' or '-' or ']' or '^' or '[')
+            {
+                builder.Append('\\');
+            }
+
+            builder.Append(character);
+        }
+
+        return builder.ToString();
     }
 }
