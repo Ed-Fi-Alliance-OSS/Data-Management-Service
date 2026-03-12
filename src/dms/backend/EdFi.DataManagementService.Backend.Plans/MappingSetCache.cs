@@ -17,7 +17,7 @@ public sealed class MappingSetCache(Func<MappingSetKey, Task<MappingSet>> compil
     private readonly Func<MappingSetKey, Task<MappingSet>> _compileAsync =
         compileAsync ?? throw new ArgumentNullException(nameof(compileAsync));
 
-    private readonly ConcurrentDictionary<MappingSetKey, Lazy<Task<MappingSet>>> _cache = new();
+    private readonly ConcurrentDictionary<MappingSetKey, CacheEntry> _cache = new();
 
     /// <summary>
     /// Gets or creates a compiled mapping set for <paramref name="key" />.
@@ -25,45 +25,120 @@ public sealed class MappingSetCache(Func<MappingSetKey, Task<MappingSet>> compil
     /// <remarks>
     /// Cancellation only cancels waiting for completion. Compilation continues once started.
     /// </remarks>
-    public Task<MappingSet> GetOrCreateAsync(MappingSetKey key, CancellationToken cancellationToken = default)
-    {
-        var compileTask = _cache
-            .GetOrAdd(key, static (mappingSetKey, state) => state.CreateCacheEntry(mappingSetKey), this)
-            .Value;
-
-        return compileTask.WaitAsync(cancellationToken);
-    }
-
-    /// <summary>
-    /// Creates a lazy cache entry that performs at most one in-flight compilation and supports eviction on failure.
-    /// </summary>
-    private Lazy<Task<MappingSet>> CreateCacheEntry(MappingSetKey key)
-    {
-        Lazy<Task<MappingSet>> cacheEntry = null!;
-        cacheEntry = new Lazy<Task<MappingSet>>(
-            () => CompileAndEvictOnFailureAsync(key, cacheEntry),
-            LazyThreadSafetyMode.ExecutionAndPublication
-        );
-
-        return cacheEntry;
-    }
-
-    /// <summary>
-    /// Compiles a mapping set and evicts the cache entry if compilation fails so subsequent calls can retry.
-    /// </summary>
-    private async Task<MappingSet> CompileAndEvictOnFailureAsync(
+    public async Task<MappingSet> GetOrCreateAsync(
         MappingSetKey key,
-        Lazy<Task<MappingSet>> cacheEntry
+        CancellationToken cancellationToken = default
     )
     {
-        try
+        return (
+            await GetOrCreateWithCacheStatusAsync(key, cancellationToken).ConfigureAwait(false)
+        ).MappingSet;
+    }
+
+    /// <summary>
+    /// Gets or creates a compiled mapping set for <paramref name="key" /> and indicates how this
+    /// caller obtained the returned mapping set.
+    /// </summary>
+    public async Task<MappingSetCacheResult> GetOrCreateWithCacheStatusAsync(
+        MappingSetKey key,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var createdEntry = new CacheEntry();
+        var cacheEntry = _cache.GetOrAdd(key, createdEntry);
+        var cacheStatus =
+            ReferenceEquals(cacheEntry, createdEntry) ? MappingSetCacheStatus.Compiled
+            : cacheEntry.IsCompletedSuccessfully ? MappingSetCacheStatus.ReusedCompleted
+            : MappingSetCacheStatus.JoinedInFlight;
+
+        if (cacheStatus == MappingSetCacheStatus.Compiled)
         {
-            return await _compileAsync(key).ConfigureAwait(false);
+            cacheEntry.StartCompilation(key, _compileAsync, _cache);
         }
-        catch
+
+        var mappingSet = await cacheEntry.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        return new MappingSetCacheResult(MappingSet: mappingSet, CacheStatus: cacheStatus);
+    }
+
+    private sealed class CacheEntry
+    {
+        private readonly TaskCompletionSource<MappingSet> _completionSource = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        private int _compilationStarted;
+
+        public bool IsCompletedSuccessfully => _completionSource.Task.IsCompletedSuccessfully;
+
+        public Task<MappingSet> WaitAsync(CancellationToken cancellationToken) =>
+            _completionSource.Task.WaitAsync(cancellationToken);
+
+        public void StartCompilation(
+            MappingSetKey key,
+            Func<MappingSetKey, Task<MappingSet>> compileAsync,
+            ConcurrentDictionary<MappingSetKey, CacheEntry> cache
+        )
         {
-            _cache.TryRemove(new KeyValuePair<MappingSetKey, Lazy<Task<MappingSet>>>(key, cacheEntry));
-            throw;
+            ArgumentNullException.ThrowIfNull(compileAsync);
+
+            if (Interlocked.Exchange(ref _compilationStarted, 1) != 0)
+            {
+                throw new InvalidOperationException("Cache entry compilation was already started.");
+            }
+
+            _ = CompileAndPublishAsync(key, compileAsync, cache);
+        }
+
+        /// <summary>
+        /// Compiles a mapping set and evicts the cache entry if compilation fails so subsequent calls can retry.
+        /// </summary>
+        private async Task CompileAndPublishAsync(
+            MappingSetKey key,
+            Func<MappingSetKey, Task<MappingSet>> compileAsync,
+            ConcurrentDictionary<MappingSetKey, CacheEntry> cache
+        )
+        {
+            try
+            {
+                var mappingSet = await compileAsync(key).ConfigureAwait(false);
+                _completionSource.TrySetResult(mappingSet);
+            }
+            catch (OperationCanceledException ex)
+            {
+                cache.TryRemove(new KeyValuePair<MappingSetKey, CacheEntry>(key, this));
+                _completionSource.TrySetCanceled(ex.CancellationToken);
+            }
+            catch (Exception ex)
+            {
+                cache.TryRemove(new KeyValuePair<MappingSetKey, CacheEntry>(key, this));
+                _completionSource.TrySetException(ex);
+            }
         }
     }
+}
+
+/// <summary>
+/// Result returned from <see cref="MappingSetCache.GetOrCreateWithCacheStatusAsync" />.
+/// </summary>
+public readonly record struct MappingSetCacheResult(MappingSet MappingSet, MappingSetCacheStatus CacheStatus);
+
+/// <summary>
+/// Describes how a caller obtained a mapping set from <see cref="MappingSetCache" />.
+/// </summary>
+public enum MappingSetCacheStatus
+{
+    /// <summary>
+    /// This caller won cache creation and started the compilation.
+    /// </summary>
+    Compiled,
+
+    /// <summary>
+    /// This caller found an existing cache entry whose compilation had not completed yet.
+    /// </summary>
+    JoinedInFlight,
+
+    /// <summary>
+    /// This caller found an existing cache entry whose compilation had already completed successfully.
+    /// </summary>
+    ReusedCompleted,
 }

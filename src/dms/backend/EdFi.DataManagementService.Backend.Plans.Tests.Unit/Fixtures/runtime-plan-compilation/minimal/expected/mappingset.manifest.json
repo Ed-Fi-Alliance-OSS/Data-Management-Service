@@ -330,8 +330,54 @@
                 ]
               }
             ],
-            "reference_identity_projection_plans_in_dependency_order": [],
-            "descriptor_projection_plans_in_order": []
+            "reference_identity_projection_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "Student"
+                },
+                "bindings_in_order": [
+                  {
+                    "is_identity_component": false,
+                    "reference_object_path": "$.schoolReference",
+                    "target_resource": {
+                      "project_name": "Ed-Fi",
+                      "resource_name": "School"
+                    },
+                    "fk_column_ordinal": 1,
+                    "identity_field_ordinals_in_order": [
+                      {
+                        "reference_json_path": "$.schoolReference.schoolId",
+                        "column_ordinal": 2
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "descriptor_projection_plans_in_order": [
+              {
+                "select_by_keyset_sql_sha256": "1e6f27420c22a087723624234a4060ca3d40a50144498c51bab5e3b8cd7ce814",
+                "result_shape": {
+                  "descriptor_id_ordinal": 0,
+                  "uri_ordinal": 1
+                },
+                "sources_in_order": [
+                  {
+                    "descriptor_value_path": "$.academicSubjectDescriptor",
+                    "table": {
+                      "schema": "edfi",
+                      "name": "Student"
+                    },
+                    "descriptor_resource": {
+                      "project_name": "Ed-Fi",
+                      "resource_name": "AcademicSubjectDescriptor"
+                    },
+                    "descriptor_id_column_ordinal": 3
+                  }
+                ]
+              }
+            ]
           }
         },
         {
@@ -806,8 +852,54 @@
                 ]
               }
             ],
-            "reference_identity_projection_plans_in_dependency_order": [],
-            "descriptor_projection_plans_in_order": []
+            "reference_identity_projection_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "Student"
+                },
+                "bindings_in_order": [
+                  {
+                    "is_identity_component": false,
+                    "reference_object_path": "$.schoolReference",
+                    "target_resource": {
+                      "project_name": "Ed-Fi",
+                      "resource_name": "School"
+                    },
+                    "fk_column_ordinal": 1,
+                    "identity_field_ordinals_in_order": [
+                      {
+                        "reference_json_path": "$.schoolReference.schoolId",
+                        "column_ordinal": 2
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "descriptor_projection_plans_in_order": [
+              {
+                "select_by_keyset_sql_sha256": "6403654d6a0c2b5755237eadbe94c250671fda9579be9222d01633dbc07e4cdd",
+                "result_shape": {
+                  "descriptor_id_ordinal": 0,
+                  "uri_ordinal": 1
+                },
+                "sources_in_order": [
+                  {
+                    "descriptor_value_path": "$.academicSubjectDescriptor",
+                    "table": {
+                      "schema": "edfi",
+                      "name": "Student"
+                    },
+                    "descriptor_resource": {
+                      "project_name": "Ed-Fi",
+                      "resource_name": "AcademicSubjectDescriptor"
+                    },
+                    "descriptor_id_column_ordinal": 3
+                  }
+                ]
+              }
+            ]
           }
         },
         {

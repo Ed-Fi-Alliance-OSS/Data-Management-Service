@@ -2,7 +2,7 @@
   "mapping_sets": [
     {
       "mapping_set_key": {
-        "effective_schema_hash": "832a96908962618380b5f9bfa3824a34946bce20b75cc5bfd4ccd45aea31bee8",
+        "effective_schema_hash": "0f949d6e8d72dbb4145f2a9888e41cd52bce3a867fe7872789d488ebc6be045b",
         "dialect": "mssql",
         "relational_mapping_version": "1.0.0"
       },
@@ -402,7 +402,7 @@
     },
     {
       "mapping_set_key": {
-        "effective_schema_hash": "832a96908962618380b5f9bfa3824a34946bce20b75cc5bfd4ccd45aea31bee8",
+        "effective_schema_hash": "0f949d6e8d72dbb4145f2a9888e41cd52bce3a867fe7872789d488ebc6be045b",
         "dialect": "pgsql",
         "relational_mapping_version": "1.0.0"
       },

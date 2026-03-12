@@ -13,6 +13,9 @@ Provide optional read-only database views that:
 
 This is intended for direct database ETL and analytics-style consumers. It does **not** change the write model (DMS still stores stable `DocumentId` FKs and resolves identities via `dms.ReferentialIdentity`).
 
+Security note:
+- These ETL views do **not** enforce DMS API authorization. Any direct database access must be secured independently (network/credentials/roles). API-facing authorization behavior is defined in [auth.md](auth.md).
+
 ## View shape (sketch)
 
 For each project schema `{schema}` (e.g., `edfi`) and each resource root table `{schema}.{R}`:

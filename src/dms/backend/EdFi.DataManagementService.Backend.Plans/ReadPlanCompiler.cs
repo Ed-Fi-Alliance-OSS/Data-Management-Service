@@ -17,6 +17,8 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
 {
     private readonly SqlDialect _dialect = dialect;
     private readonly ISqlDialect _sqlDialect = SqlDialectFactory.Create(dialect);
+    private readonly ReferenceIdentityProjectionPlanCompiler _referenceIdentityProjectionPlanCompiler = new();
+    private readonly DescriptorProjectionPlanCompiler _descriptorProjectionPlanCompiler = new(dialect);
 
     /// <summary>
     /// Returns <see langword="true" /> when the resource uses relational-table storage.
@@ -76,7 +78,7 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
             resourceModel,
             "read plan"
         );
-        ValidateHydrationPlanIntegrity(resourceModel);
+        var hydrationPlanMetadata = BuildHydrationPlanMetadata(resourceModel);
 
         var keysetTable = KeysetTableConventions.GetKeysetTableContract(_dialect);
         var tablePlans = new TableReadPlan[resourceModel.TablesInDependencyOrder.Count];
@@ -94,25 +96,59 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
             );
         }
 
-        return new ResourceReadPlan(
+        var referenceIdentityProjectionPlans = _referenceIdentityProjectionPlanCompiler.Compile(
+            resourceModel,
+            hydrationPlanMetadata.ColumnOrdinalsByTable
+        );
+        var descriptorProjectionPlans = _descriptorProjectionPlanCompiler.Compile(
+            resourceModel,
+            keysetTable,
+            hydrationPlanMetadata.TablesByName,
+            hydrationPlanMetadata.ColumnOrdinalsByTable
+        );
+
+        var readPlan = new ResourceReadPlan(
             Model: resourceModel,
             KeysetTable: keysetTable,
             TablePlansInDependencyOrder: tablePlans,
-            ReferenceIdentityProjectionPlansInDependencyOrder: [],
-            DescriptorProjectionPlansInOrder: []
+            ReferenceIdentityProjectionPlansInDependencyOrder: referenceIdentityProjectionPlans,
+            DescriptorProjectionPlansInOrder: descriptorProjectionPlans
         );
+
+        ReadPlanProjectionContractValidator.ValidateOrThrow(
+            readPlan,
+            reason => new InvalidOperationException(
+                $"Cannot compile read plan for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}': "
+                    + $"compiled projection metadata is invalid. {reason}. This indicates a read-plan compiler bug."
+            )
+        );
+
+        return readPlan;
     }
 
     /// <summary>
-    /// Validates key ordering metadata and future projection dependencies before SQL emission.
+    /// Validates key ordering metadata and builds deterministic hydration metadata used by projection compilers.
     /// </summary>
-    private static void ValidateHydrationPlanIntegrity(RelationalResourceModel resourceModel)
+    private static HydrationPlanMetadata BuildHydrationPlanMetadata(RelationalResourceModel resourceModel)
     {
+        var tablesByName = new Dictionary<DbTableName, DbTableModel>();
         var columnOrdinalByTable = new Dictionary<DbTableName, IReadOnlyDictionary<DbColumnName, int>>();
 
         foreach (var tableModel in resourceModel.TablesInDependencyOrder)
         {
-            var columnOrdinalByName = BuildHydrationColumnOrdinalMap(tableModel);
+            var columnOrdinalByName = ProjectionMetadataResolver.BuildHydrationColumnOrdinalMapOrThrow(
+                tableModel,
+                duplicateColumn => new InvalidOperationException(
+                    $"Cannot compile read plan for '{tableModel.Table}': duplicate column name '{duplicateColumn.Value}' encountered while building hydration select-list ordinal map."
+                )
+            );
+
+            if (!tablesByName.TryAdd(tableModel.Table, tableModel))
+            {
+                throw new InvalidOperationException(
+                    $"Cannot compile read plan for resource '{resourceModel.Resource.ProjectName}.{resourceModel.Resource.ResourceName}': duplicate table '{tableModel.Table}' encountered while building hydration table metadata."
+                );
+            }
 
             if (!columnOrdinalByTable.TryAdd(tableModel.Table, columnOrdinalByName))
             {
@@ -126,37 +162,15 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
 
         foreach (var binding in resourceModel.DocumentReferenceBindings)
         {
-            ValidateDocumentReferenceBinding(binding, columnOrdinalByTable);
+            ValidateDocumentReferenceBinding(binding, tablesByName, columnOrdinalByTable);
         }
 
         foreach (var edgeSource in resourceModel.DescriptorEdgeSources)
         {
-            ValidateDescriptorEdgeSource(edgeSource, columnOrdinalByTable);
-        }
-    }
-
-    /// <summary>
-    /// Builds a deterministic hydration select-list ordinal map and rejects duplicate physical column names.
-    /// </summary>
-    private static IReadOnlyDictionary<DbColumnName, int> BuildHydrationColumnOrdinalMap(
-        DbTableModel tableModel
-    )
-    {
-        var columnOrdinalByName = new Dictionary<DbColumnName, int>();
-
-        for (var index = 0; index < tableModel.Columns.Count; index++)
-        {
-            var columnName = tableModel.Columns[index].ColumnName;
-
-            if (!columnOrdinalByName.TryAdd(columnName, index))
-            {
-                throw new InvalidOperationException(
-                    $"Cannot compile read plan for '{tableModel.Table}': duplicate column name '{columnName.Value}' encountered while building hydration select-list ordinal map."
-                );
-            }
+            ValidateDescriptorEdgeSource(edgeSource, tablesByName, columnOrdinalByTable);
         }
 
-        return columnOrdinalByName;
+        return new HydrationPlanMetadata(tablesByName, columnOrdinalByTable);
     }
 
     /// <summary>
@@ -187,25 +201,61 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
     /// </summary>
     private static void ValidateDocumentReferenceBinding(
         DocumentReferenceBinding binding,
+        IReadOnlyDictionary<DbTableName, DbTableModel> tablesByName,
         IReadOnlyDictionary<DbTableName, IReadOnlyDictionary<DbColumnName, int>> columnOrdinalByTable
     )
     {
-        var columnOrdinalByName = ResolveHydrationColumnOrdinals(binding.Table, columnOrdinalByTable);
-
-        ValidateHydrationProjectionColumn(
+        var tableModel = ProjectionMetadataResolver.ResolveTableModelOrThrow(
             binding.Table,
-            binding.FkColumn,
+            tablesByName,
+            missingTable => new InvalidOperationException(
+                $"Cannot compile read plan for '{missingTable}': owning table is not present in TablesInDependencyOrder."
+            )
+        );
+        var columnOrdinalByName = ProjectionMetadataResolver.ResolveHydrationColumnOrdinalsOrThrow(
+            binding.Table,
+            columnOrdinalByTable,
+            missingTable => new InvalidOperationException(
+                $"Cannot compile read plan for '{missingTable}': owning table is not present in TablesInDependencyOrder."
+            )
+        );
+        var fkColumn = ProjectionMetadataResolver.ResolveHydrationProjectionColumnOrThrow(
+            tableModel,
             columnOrdinalByName,
-            $"document-reference binding '{binding.ReferenceObjectPath.Canonical}' FK column"
+            binding.FkColumn,
+            missingColumn => new InvalidOperationException(
+                $"Cannot compile read plan for '{tableModel.Table}': document-reference binding '{binding.ReferenceObjectPath.Canonical}' FK column '{missingColumn.Value}' does not exist in hydration select-list columns."
+            )
+        );
+
+        ReadPlanProjectionContractValidator.ValidateDocumentReferenceFkColumnOrThrow(
+            tableModel.Table,
+            fkColumn,
+            binding,
+            reason => new InvalidOperationException(
+                $"Cannot compile read plan for '{tableModel.Table}': {reason}."
+            )
         );
 
         foreach (var identityBinding in binding.IdentityBindings)
         {
-            ValidateHydrationProjectionColumn(
-                binding.Table,
-                identityBinding.Column,
+            var identityColumn = ProjectionMetadataResolver.ResolveHydrationProjectionColumnOrThrow(
+                tableModel,
                 columnOrdinalByName,
-                $"reference-identity binding '{identityBinding.ReferenceJsonPath.Canonical}' for reference '{binding.ReferenceObjectPath.Canonical}' column"
+                identityBinding.Column,
+                missingColumn => new InvalidOperationException(
+                    $"Cannot compile read plan for '{tableModel.Table}': reference-identity binding '{identityBinding.ReferenceJsonPath.Canonical}' for reference '{binding.ReferenceObjectPath.Canonical}' column '{missingColumn.Value}' does not exist in hydration select-list columns."
+                )
+            );
+
+            ReadPlanProjectionContractValidator.ValidateReferenceIdentityBindingPathOrThrow(
+                tableModel.Table,
+                identityColumn,
+                binding,
+                identityBinding,
+                reason => new InvalidOperationException(
+                    $"Cannot compile read plan for '{tableModel.Table}': {reason}."
+                )
             );
         }
     }
@@ -215,53 +265,49 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
     /// </summary>
     private static void ValidateDescriptorEdgeSource(
         DescriptorEdgeSource edgeSource,
+        IReadOnlyDictionary<DbTableName, DbTableModel> tablesByName,
         IReadOnlyDictionary<DbTableName, IReadOnlyDictionary<DbColumnName, int>> columnOrdinalByTable
     )
     {
-        var columnOrdinalByName = ResolveHydrationColumnOrdinals(edgeSource.Table, columnOrdinalByTable);
-
-        ValidateHydrationProjectionColumn(
+        var tableModel = ProjectionMetadataResolver.ResolveTableModelOrThrow(
             edgeSource.Table,
-            edgeSource.FkColumn,
-            columnOrdinalByName,
-            $"descriptor edge source '{edgeSource.DescriptorValuePath.Canonical}' FK column"
+            tablesByName,
+            missingTable => new InvalidOperationException(
+                $"Cannot compile read plan for '{missingTable}': owning table is not present in TablesInDependencyOrder."
+            )
         );
-    }
+        var columnOrdinalByName = ProjectionMetadataResolver.ResolveHydrationColumnOrdinalsOrThrow(
+            edgeSource.Table,
+            columnOrdinalByTable,
+            missingTable => new InvalidOperationException(
+                $"Cannot compile read plan for '{missingTable}': owning table is not present in TablesInDependencyOrder."
+            )
+        );
+        var fkColumn = ProjectionMetadataResolver.ResolveHydrationProjectionColumnOrThrow(
+            tableModel,
+            columnOrdinalByName,
+            edgeSource.FkColumn,
+            missingColumn => new InvalidOperationException(
+                $"Cannot compile read plan for '{tableModel.Table}': descriptor edge source '{edgeSource.DescriptorValuePath.Canonical}' FK column '{missingColumn.Value}' does not exist in hydration select-list columns."
+            )
+        );
 
-    /// <summary>
-    /// Resolves the table-local hydration select-list ordinal map for a binding owner.
-    /// </summary>
-    private static IReadOnlyDictionary<DbColumnName, int> ResolveHydrationColumnOrdinals(
-        DbTableName table,
-        IReadOnlyDictionary<DbTableName, IReadOnlyDictionary<DbColumnName, int>> columnOrdinalByTable
-    )
-    {
-        if (!columnOrdinalByTable.TryGetValue(table, out var columnOrdinalByName))
-        {
-            throw new InvalidOperationException(
-                $"Cannot compile read plan for '{table}': owning table is not present in TablesInDependencyOrder."
-            );
-        }
-
-        return columnOrdinalByName;
-    }
-
-    /// <summary>
-    /// Ensures a binding column resolves to a deterministic hydration select-list ordinal.
-    /// </summary>
-    private static void ValidateHydrationProjectionColumn(
-        DbTableName table,
-        DbColumnName column,
-        IReadOnlyDictionary<DbColumnName, int> columnOrdinalByName,
-        string dependencyDescription
-    )
-    {
-        if (!columnOrdinalByName.ContainsKey(column))
-        {
-            throw new InvalidOperationException(
-                $"Cannot compile read plan for '{table}': {dependencyDescription} '{column.Value}' does not exist in hydration select-list columns."
-            );
-        }
+        ReadPlanProjectionContractValidator.ValidateDescriptorEdgeSourcePathOrThrow(
+            tableModel.Table,
+            fkColumn,
+            edgeSource,
+            reason => new InvalidOperationException(
+                $"Cannot compile read plan for '{tableModel.Table}': {reason}."
+            )
+        );
+        ReadPlanProjectionContractValidator.ValidateDescriptorEdgeSourceTargetResourceOrThrow(
+            tableModel.Table,
+            fkColumn,
+            edgeSource,
+            reason => new InvalidOperationException(
+                $"Cannot compile read plan for '{tableModel.Table}': {reason}."
+            )
+        );
     }
 
     /// <summary>
@@ -350,4 +396,9 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
     {
         writer.Append($"{tableAlias}.").AppendQuoted(columnName.Value);
     }
+
+    private sealed record HydrationPlanMetadata(
+        IReadOnlyDictionary<DbTableName, DbTableModel> TablesByName,
+        IReadOnlyDictionary<DbTableName, IReadOnlyDictionary<DbColumnName, int>> ColumnOrdinalsByTable
+    );
 }

@@ -57,6 +57,8 @@ public static class DmsCoreServiceExtensions
             .AddSingleton<IEffectiveApiSchemaProvider>(provider =>
                 provider.GetRequiredService<EffectiveApiSchemaProvider>()
             )
+            .AddSingleton<EffectiveSchemaSetBuilder>()
+            .AddSingleton<IEffectiveSchemaSetProvider, EffectiveSchemaSetProvider>()
             // Startup orchestration
             .AddSingleton<DmsStartupOrchestrator>()
             .AddSingleton<IDmsStartupTask, ValidateDatabaseFingerprintReaderRegistrationTask>()

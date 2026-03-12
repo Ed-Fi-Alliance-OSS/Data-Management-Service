@@ -5,6 +5,13 @@
 
 namespace EdFi.DataManagementService.Core.Startup;
 
+public static class DmsStartupTaskOrderRanges
+{
+    public const int ApiSchemaInitializationMaximum = 299;
+    public const int BackendMappingMinimum = 300;
+    public const int BackendMappingMaximum = 399;
+}
+
 /// <summary>
 /// Defines a startup task that runs during DMS application initialization.
 /// Tasks are executed in order before the application begins serving requests.

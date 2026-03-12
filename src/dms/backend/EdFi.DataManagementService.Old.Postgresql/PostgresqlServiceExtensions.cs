@@ -3,9 +3,13 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Old.Postgresql.Operation;
+using EdFi.DataManagementService.Old.Postgresql.Startup;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace EdFi.DataManagementService.Old.Postgresql;
 
@@ -19,6 +23,24 @@ public static class PostgresqlServiceExtensions
     /// </summary>
     public static IServiceCollection AddPostgresqlDatastore(this IServiceCollection services)
     {
+        services.AddSingleton<MappingSetCompiler>();
+        services.AddSingleton<PostgresqlRuntimeMappingSetCompiler>();
+        services.AddSingleton<MappingSetCache>(serviceProvider =>
+        {
+            var compiler = serviceProvider.GetRequiredService<PostgresqlRuntimeMappingSetCompiler>();
+            return new MappingSetCache(compiler.CompileAsync);
+        });
+        services.AddSingleton<PostgresqlRuntimeMappingSetAccessor>();
+        services.AddSingleton<
+            IPostgresqlRuntimeDatabaseMetadataReader,
+            PostgresqlRuntimeDatabaseMetadataReader
+        >();
+        services.AddSingleton<PostgresqlValidatedResourceKeyMapCache>();
+        services.AddSingleton<PostgresqlRuntimeInstanceMappingValidator>();
+        services.Replace(
+            ServiceDescriptor.Singleton<IBackendMappingInitializer, PostgresqlBackendMappingInitializer>()
+        );
+
         // Register singleton cache for NpgsqlDataSource instances
         services.AddSingleton<NpgsqlDataSourceCache>();
 

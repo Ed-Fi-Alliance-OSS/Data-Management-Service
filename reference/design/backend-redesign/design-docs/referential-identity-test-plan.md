@@ -2,6 +2,8 @@
 
 This test plan targets the correctness risk described in `reference/design/backend-redesign/design-docs/strengths-risks.md` (“ReferentialIdentity Incorrect Mapping”): a valid `ReferentialId` resolving to the wrong `DocumentId`, or a `DocumentId` having an incorrect/stale `ReferentialId`.
 
+Security note: authorization checks rely on correct `DocumentId` resolution (both for reference resolution in the write path and for relationship-based authorization joins). A `ReferentialId → DocumentId` corruption can therefore become a data-exposure risk, not only a correctness bug; see `reference/design/backend-redesign/design-docs/auth.md`.
+
 This plan applies to the baseline redesign (and any future variants) that retain `dms.ReferentialIdentity` and maintain it transactionally (e.g., row-local triggers + cascades). Variants that remove `ReferentialId`s entirely are out of scope for this test plan.
 
 ## Execution matrix (minimum)

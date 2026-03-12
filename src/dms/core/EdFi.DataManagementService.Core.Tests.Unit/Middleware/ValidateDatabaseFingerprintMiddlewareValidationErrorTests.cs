@@ -66,14 +66,19 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         IDmsInstanceSelection dmsInstanceSelection,
         CapturingLogger<ValidateDatabaseFingerprintMiddleware> middlewareLogger,
         IServiceProvider serviceProvider
-    ) CreateMiddleware()
+    ) CreateMiddleware(bool validateProvisionedMappingsOnStartup = false)
     {
         var fingerprintReader = A.Fake<IDatabaseFingerprintReader>();
         var dmsInstanceSelection = A.Fake<IDmsInstanceSelection>();
         var middlewareLogger = new CapturingLogger<ValidateDatabaseFingerprintMiddleware>();
 
         var appSettings = Options.Create(
-            new AppSettings { AllowIdentityUpdateOverrides = "", UseRelationalBackend = true }
+            new AppSettings
+            {
+                AllowIdentityUpdateOverrides = "",
+                UseRelationalBackend = true,
+                ValidateProvisionedMappingsOnStartup = validateProvisionedMappingsOnStartup,
+            }
         );
 
         var serviceProvider = A.Fake<IServiceProvider>();
@@ -143,6 +148,7 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         private RequestInfo _requestInfo = No.RequestInfo();
         private JsonNode _body = default!;
         private bool _nextCalled;
+        private IDatabaseFingerprintReader _fingerprintReader = null!;
         private CapturingLogger<ValidateDatabaseFingerprintMiddleware> _middlewareLogger = null!;
         private CapturingLogger _exceptionLogger = null!;
 
@@ -150,8 +156,9 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         public async Task Setup()
         {
             var (middleware, fingerprintReader, dmsInstanceSelection, middlewareLogger, serviceProvider) =
-                CreateMiddleware();
+                CreateMiddleware(validateProvisionedMappingsOnStartup: false);
 
+            _fingerprintReader = fingerprintReader;
             _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
             _middlewareLogger = middlewareLogger;
             _exceptionLogger = new CapturingLogger();
@@ -269,6 +276,13 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
                     && entry.Message.Contains("Test Instance")
                     && entry.Message.Contains("test-trace-id")
                 );
+        }
+
+        [Test]
+        public void It_still_reads_the_database_fingerprint_when_startup_validation_bypass_is_enabled()
+        {
+            A.CallTo(() => _fingerprintReader.ReadFingerprintAsync("Server=test;Database=corrupt"))
+                .MustHaveHappenedOnceExactly();
         }
 
         [Test]

@@ -2,8 +2,8 @@
   "api_schema_format_version": "1.0.0",
   "relational_mapping_version": "1.0.0",
   "effective_schema_hash": "edf1edf1",
-  "resource_key_count": 367,
-  "resource_key_seed_hash": "01",
+  "resource_key_count": 358,
+  "resource_key_seed_hash": "0e73350eb601a6157d0168ca5c627355a7a737ddcdcf8b3a545f413e2c4dd662",
   "schema_components": [
     {
       "project_endpoint_name": "ed-fi",
@@ -2148,79 +2148,25 @@
     {
       "resource_key_id": 355,
       "project_name": "Sample",
-      "resource_name": "Contact",
+      "resource_name": "FavoriteBookCategoryDescriptor",
       "resource_version": "1.1.0"
     },
     {
       "resource_key_id": 356,
       "project_name": "Sample",
-      "resource_name": "FavoriteBookCategoryDescriptor",
+      "resource_name": "MembershipTypeDescriptor",
       "resource_version": "1.1.0"
     },
     {
       "resource_key_id": 357,
       "project_name": "Sample",
-      "resource_name": "MembershipTypeDescriptor",
+      "resource_name": "StudentArtProgramAssociation",
       "resource_version": "1.1.0"
     },
     {
       "resource_key_id": 358,
       "project_name": "Sample",
-      "resource_name": "School",
-      "resource_version": "1.1.0"
-    },
-    {
-      "resource_key_id": 359,
-      "project_name": "Sample",
-      "resource_name": "Staff",
-      "resource_version": "1.1.0"
-    },
-    {
-      "resource_key_id": 360,
-      "project_name": "Sample",
-      "resource_name": "Student",
-      "resource_version": "1.1.0"
-    },
-    {
-      "resource_key_id": 361,
-      "project_name": "Sample",
-      "resource_name": "StudentArtProgramAssociation",
-      "resource_version": "1.1.0"
-    },
-    {
-      "resource_key_id": 362,
-      "project_name": "Sample",
-      "resource_name": "StudentCTEProgramAssociation",
-      "resource_version": "1.1.0"
-    },
-    {
-      "resource_key_id": 363,
-      "project_name": "Sample",
-      "resource_name": "StudentContactAssociation",
-      "resource_version": "1.1.0"
-    },
-    {
-      "resource_key_id": 364,
-      "project_name": "Sample",
-      "resource_name": "StudentEducationOrganizationAssociation",
-      "resource_version": "1.1.0"
-    },
-    {
-      "resource_key_id": 365,
-      "project_name": "Sample",
       "resource_name": "StudentGraduationPlanAssociation",
-      "resource_version": "1.1.0"
-    },
-    {
-      "resource_key_id": 366,
-      "project_name": "Sample",
-      "resource_name": "StudentSchoolAssociation",
-      "resource_version": "1.1.0"
-    },
-    {
-      "resource_key_id": 367,
-      "project_name": "Sample",
-      "resource_name": "StudentSectionAssociation",
       "resource_version": "1.1.0"
     }
   ]

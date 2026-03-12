@@ -1153,6 +1153,11 @@ internal static class RelationalModelSetValidation
             var resourceName = GetResourceName(resourceSchemaEntry.Key, resourceSchema);
             var resource = new QualifiedResourceName(projectName, resourceName);
 
+            if (!isAbstract && IsResourceExtension(resourceSchema, resource))
+            {
+                continue;
+            }
+
             if (resources.Add(resource))
             {
                 isAbstractByResource[resource] = isAbstract;

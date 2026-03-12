@@ -1,0 +1,196 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Ed-Fi",
+    "projectEndpointName": "ed-fi",
+    "projectVersion": "5.0.0",
+    "resourceSchemas": {
+      "projectionExamples": {
+        "resourceName": "ProjectionExample",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "identityJsonPaths": [
+          "$.projectionExampleId"
+        ],
+        "documentPathsMapping": {
+          "ProjectionExampleId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.projectionExampleId"
+          },
+          "SessionTerm": {
+            "isReference": true,
+            "isDescriptor": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "projectName": "Ed-Fi",
+            "resourceName": "SessionTerm",
+            "referenceJsonPaths": [
+              {
+                "identityJsonPath": "$.schoolId",
+                "referenceJsonPath": "$.sessionTermReference.schoolId"
+              },
+              {
+                "identityJsonPath": "$.schoolYear",
+                "referenceJsonPath": "$.sessionTermReference.schoolYear"
+              },
+              {
+                "identityJsonPath": "$.sessionName",
+                "referenceJsonPath": "$.sessionTermReference.sessionName"
+              }
+            ]
+          },
+          "PrimarySchoolTypeDescriptor": {
+            "isReference": true,
+            "isDescriptor": true,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "projectName": "Ed-Fi",
+            "resourceName": "SchoolTypeDescriptor",
+            "path": "$.primarySchoolTypeDescriptor"
+          },
+          "SecondarySchoolTypeDescriptor": {
+            "isReference": true,
+            "isDescriptor": true,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "projectName": "Ed-Fi",
+            "resourceName": "SchoolTypeDescriptor",
+            "path": "$.secondarySchoolTypeDescriptor"
+          },
+          "ShortName": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "path": "$.shortName"
+          }
+        },
+        "equalityConstraints": [],
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "projectionExampleId": {
+              "type": "integer"
+            },
+            "shortName": {
+              "type": "string",
+              "maxLength": 75
+            },
+            "primarySchoolTypeDescriptor": {
+              "type": "string",
+              "maxLength": 30
+            },
+            "secondarySchoolTypeDescriptor": {
+              "type": "string",
+              "maxLength": 30
+            },
+            "sessionTermReference": {
+              "type": "object",
+              "properties": {
+                "schoolId": {
+                  "type": "integer"
+                },
+                "schoolYear": {
+                  "type": "integer"
+                },
+                "sessionName": {
+                  "type": "string",
+                  "maxLength": 60
+                }
+              }
+            }
+          },
+          "required": [
+            "projectionExampleId"
+          ]
+        }
+      },
+      "schoolTypeDescriptors": {
+        "resourceName": "SchoolTypeDescriptor",
+        "isDescriptor": true,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "identityJsonPaths": [],
+        "documentPathsMapping": {},
+        "equalityConstraints": [],
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "namespace": {
+              "type": "string",
+              "maxLength": 255
+            },
+            "codeValue": {
+              "type": "string",
+              "maxLength": 30
+            }
+          },
+          "required": [
+            "namespace",
+            "codeValue"
+          ]
+        }
+      },
+      "sessionTerms": {
+        "resourceName": "SessionTerm",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "identityJsonPaths": [
+          "$.schoolId",
+          "$.schoolYear",
+          "$.sessionName"
+        ],
+        "documentPathsMapping": {
+          "SchoolId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.schoolId"
+          },
+          "SchoolYear": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.schoolYear"
+          },
+          "SessionName": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.sessionName"
+          }
+        },
+        "equalityConstraints": [],
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "schoolId": {
+              "type": "integer"
+            },
+            "schoolYear": {
+              "type": "integer"
+            },
+            "sessionName": {
+              "type": "string",
+              "maxLength": 60
+            }
+          },
+          "required": [
+            "schoolId",
+            "schoolYear",
+            "sessionName"
+          ]
+        }
+      }
+    }
+  }
+}

@@ -9,6 +9,7 @@ This document defines an **optional** alternative to runtime compilation of the 
 - `reference/design/backend-redesign/design-docs/data-model.md` (EffectiveSchemaHash)
 - `reference/design/backend-redesign/design-docs/transactions-and-concurrency.md` (per-database schema fingerprint selection)
 - `reference/design/backend-redesign/design-docs/mpack-format-v1.md` (**normative** `.mpack` wire format for PackFormatVersion=1)
+- `reference/design/backend-redesign/design-docs/auth.md` (authorization is token-dependent and is integrated with the read/write paths, but is not the primary focus of mapping packs)
 
 The goal is to support **ahead-of-time compilation** into a redistributable artifact (“mapping pack”) that is keyed by `EffectiveSchemaHash`, so a single DMS server can efficiently serve many databases where not all databases share the same effective schema.
 
@@ -106,6 +107,10 @@ Pack contains:
     - page-batched descriptor URI projection plans (`DescriptorProjectionPlan`)
   - model-level reference binding metadata required by reconstitution (e.g., `DocumentReferenceBinding` / `DescriptorEdgeSource`)
 - any additional metadata needed to execute those plans without re-deriving/compiling from `ApiSchema.json`.
+
+Authorization note:
+- Mapping packs do not embed token-dependent authorization SQL (which depends on caller context and configured strategy sets). Authorization is applied at runtime using the `auth.*` companion objects and token-derived context described in `auth.md`.
+- Any schema-derived authorization metadata that benefits from precomputation (e.g., mapping `securableElements` JSON paths to DB columns/joins) can be derived at startup from the loaded effective schema and cached keyed by `EffectiveSchemaHash` alongside mapping-set selection.
 
 Logical plan pack identity is `(EffectiveSchemaHash, Dialect, RelationalMappingVersion, PackFormatVersion)`.
 

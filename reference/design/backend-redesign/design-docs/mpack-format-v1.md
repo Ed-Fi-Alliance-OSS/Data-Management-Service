@@ -10,7 +10,7 @@ This document defines the on-disk bytes for a **Mapping Pack** (“`.mpack`”) 
 - Effective schema fingerprinting: `reference/design/backend-redesign/design-docs/data-model.md` (`EffectiveSchemaHash`)
 - DDL generator workflow and `dms.ResourceKey` seeding: `reference/design/backend-redesign/design-docs/ddl-generation.md`
 
-Authorization is intentionally out of scope.
+Authorization is addressed in [auth.md](auth.md). Mapping packs focus on schema-derived relational mapping artifacts and do not embed token-dependent authorization SQL (which depends on caller context and configured strategy sets). The runtime applies authorization using `auth.*` companion objects and token-derived context alongside the plans/materialization described by this format.
 
 ---
 
@@ -131,7 +131,9 @@ All collections are `repeated` and MUST be emitted in stable deterministic order
   - `document_reference_bindings`: ascending by `(reference_object_path)`
   - `descriptor_edge_sources`: ascending by `(descriptor_value_path)`
   - `key_unification_classes`: ascending by `(canonical_column.value)`
-  - within `document_reference_bindings[*]`: `identity_bindings` preserve ApiSchema `referenceJsonPaths` order (identity field order)
+  - within `document_reference_bindings[*]`: `identity_bindings` preserve ApiSchema `referenceJsonPaths` order
+    (identity field order); duplicate `reference_json_path` values are allowed only within one binding and represent a
+    same-site flattened reference group
   - within `key_unification_classes[*]`:
     - `member_path_columns` order is semantically significant and MUST NOT be sorted
     - producers MUST emit the list exactly as derived (used for deterministic write-time coalescing)
@@ -155,7 +157,12 @@ All collections are `repeated` and MUST be emitted in stable deterministic order
   - `descriptor_projection_plans`: order is semantically significant (execution order) and MUST NOT be sorted
 - Within each `ReferenceIdentityProjectionTablePlan`:
   - `bindings_in_order`: order is semantically significant and MUST preserve deterministic `reference_object_path` order from `relational_model.document_reference_bindings` for that table
-  - within `bindings_in_order[*]`: `identity_field_ordinals_in_order` preserves reference identity field order and MUST NOT be sorted
+  - within `bindings_in_order[*]`: `identity_field_ordinals_in_order` preserves logical reference field order and MUST
+    NOT be sorted
+    - duplicate `reference_json_path` values from `relational_model.document_reference_bindings[*].identity_bindings`
+      MUST be grouped by `reference_json_path` after storage resolution
+    - emitted `identity_field_ordinals_in_order[*].reference_json_path` values MUST therefore be distinct within a
+      binding
 - Within each `DescriptorProjectionPlan`:
   - `sources_in_order`: order is semantically significant and MUST preserve deterministic `descriptor_value_path` order from `relational_model.descriptor_edge_sources` for the plan's selected source set
 
@@ -183,7 +190,8 @@ Every pack payload includes the deterministic `dms.ResourceKey` seed mapping for
 
 The payload MUST include the complete set of `ResourceKeyEntry` rows for:
 
-- every concrete `resourceSchema` in the effective schema (including descriptors), and
+- every concrete `resourceSchema` in the effective schema where `isResourceExtension` is not `true` (including descriptors and non-extension resources from extension projects),
+- excluding `isResourceExtension: true` resource-extension overlays because they compile into `_ext` extension tables on the owning base resource rather than standalone document/resource-key rows, and
 - every `abstractResources[*]` name (used for polymorphic/superclass alias behavior).
 
 `resource_key_id` MUST fit in SQL `smallint` (≤ 32767).
@@ -241,6 +249,8 @@ Given `(expectedEffectiveSchemaHash, expectedDialect, expectedRelationalMappingV
      - within `relational_model`, canonical path keys are unique:
        - `document_reference_bindings[*].reference_object_path` has no duplicates
        - `descriptor_edge_sources[*].descriptor_value_path` has no duplicates
+       - `document_reference_bindings[*].identity_bindings[*].reference_json_path` MAY repeat only within one
+         `document_reference_binding` and only to represent one same-site flattened reference group
      - all referenced tables/columns/bindings referenced by plans exist in the model
      - write/query binding invariants:
        - each `column_bindings[*].parameter_name` is present and unique case-insensitively within a statement
@@ -248,6 +258,7 @@ Given `(expectedEffectiveSchemaHash, expectedDialect, expectedRelationalMappingV
      - read/projection invariants:
        - every `read_plan.table_plans[*].table` exists in `relational_model.tables_in_dependency_order`
        - every `read_plan.reference_identity_projection_table_plans[*].table` exists, and `fk_column_ordinal` plus every `identity_field_ordinals_in_order[*].column_ordinal` are valid ordinals for that table's hydration row shape
+       - every `read_plan.reference_identity_projection_table_plans[*].bindings_in_order[*].identity_field_ordinals_in_order[*].reference_json_path` is distinct within that binding
        - every `read_plan.descriptor_projection_plans[*].sources_in_order[*].table` exists, and `descriptor_id_column_ordinal` is a valid ordinal for that source table's hydration row shape
        - every `read_plan.descriptor_projection_plans[*].result_shape` has distinct `descriptor_id_ordinal` and `uri_ordinal`
      - key unification invariants (when used in this `RelationalMappingVersion`):
@@ -273,7 +284,9 @@ During step 7, consumers MUST fail fast with deterministic errors when any recon
 - unknown `(schema, name)` table identities
 - unknown `DbColumnName.value` in a resolved table
 - out-of-range binding indices and select-list ordinals
-- duplicate canonical paths (`reference_object_path`, `descriptor_value_path`, per-binding `reference_json_path`)
+- duplicate canonical paths (`reference_object_path`, `descriptor_value_path`)
+- duplicate `reference_json_path` values in `read_plan.reference_identity_projection_table_plans[*].bindings_in_order[*].identity_field_ordinals_in_order`
+- duplicate `document_reference_bindings[*].identity_bindings[*].reference_json_path` values that are not confined to one same-site flattened reference group
 - duplicate/ambiguous parameter names where uniqueness is required
 - unsupported dialect values when deriving keyset table constants
 
@@ -538,7 +551,7 @@ message DocumentReferenceBinding {
   DbTableName table = 3;
   DbColumnName fk_column = 4;                            // "..._DocumentId"
   QualifiedResourceName target_resource = 5;
-  repeated ReferenceIdentityBinding identity_bindings = 6; // identity field order
+  repeated ReferenceIdentityBinding identity_bindings = 6; // identity field order; duplicate reference_json_path allowed only for same-site flattened reference groups
 }
 
 message ReferenceIdentityBinding {
@@ -666,7 +679,7 @@ message ReferenceIdentityProjectionBinding {
   string reference_object_path = 2;                      // canonical JsonPath string
   QualifiedResourceName target_resource = 3;
   uint32 fk_column_ordinal = 4;                          // zero-based hydration select-list ordinal
-  repeated ReferenceIdentityProjectionFieldOrdinal identity_field_ordinals_in_order = 5; // ordered; do not sort
+  repeated ReferenceIdentityProjectionFieldOrdinal identity_field_ordinals_in_order = 5; // ordered logical fields; do not sort; reference_json_path values must be distinct within a binding
 }
 
 message ReferenceIdentityProjectionFieldOrdinal {

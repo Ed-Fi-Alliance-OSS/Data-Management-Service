@@ -144,6 +144,7 @@ public class Given_DescriptorPathInference_With_Reordered_ResourceSchemas_And_Do
         var schoolSchema = new JsonObject
         {
             ["resourceName"] = "School",
+            ["isResourceExtension"] = false,
             ["identityJsonPaths"] = new JsonArray { "$.schoolTypeDescriptor" },
             ["documentPathsMapping"] = new JsonObject
             {
@@ -160,6 +161,7 @@ public class Given_DescriptorPathInference_With_Reordered_ResourceSchemas_And_Do
         var gradingPeriodSchema = new JsonObject
         {
             ["resourceName"] = "GradingPeriod",
+            ["isResourceExtension"] = false,
             ["identityJsonPaths"] = new JsonArray { "$.periodDescriptor" },
             ["documentPathsMapping"] = new JsonObject
             {
@@ -176,17 +178,20 @@ public class Given_DescriptorPathInference_With_Reordered_ResourceSchemas_And_Do
         var sectionSchema = new JsonObject
         {
             ["resourceName"] = "Section",
+            ["isResourceExtension"] = false,
             ["documentPathsMapping"] = CreateSectionDocumentPathsMapping(reverseMappingOrder),
         };
         var schoolTypeDescriptorSchema = new JsonObject
         {
             ["resourceName"] = "SchoolTypeDescriptor",
+            ["isResourceExtension"] = false,
             ["identityJsonPaths"] = new JsonArray { "$.schoolTypeDescriptorId" },
             ["documentPathsMapping"] = new JsonObject(),
         };
         var periodDescriptorSchema = new JsonObject
         {
             ["resourceName"] = "PeriodDescriptor",
+            ["isResourceExtension"] = false,
             ["identityJsonPaths"] = new JsonArray { "$.periodDescriptorId" },
             ["documentPathsMapping"] = new JsonObject(),
         };
@@ -323,6 +328,7 @@ public class Given_DescriptorPathInference_With_Conflicting_Reference_Descriptor
         return new JsonObject
         {
             ["resourceName"] = "School",
+            ["isResourceExtension"] = false,
             ["documentPathsMapping"] = new JsonObject
             {
                 ["SchoolTypeDescriptor"] = new JsonObject
@@ -345,6 +351,7 @@ public class Given_DescriptorPathInference_With_Conflicting_Reference_Descriptor
         return new JsonObject
         {
             ["resourceName"] = "GradingPeriod",
+            ["isResourceExtension"] = false,
             ["documentPathsMapping"] = new JsonObject
             {
                 ["PeriodDescriptor"] = new JsonObject
@@ -368,6 +375,7 @@ public class Given_DescriptorPathInference_With_Conflicting_Reference_Descriptor
         return new JsonObject
         {
             ["resourceName"] = "Section",
+            ["isResourceExtension"] = false,
             ["documentPathsMapping"] = new JsonObject
             {
                 ["GradingPeriod"] = new JsonObject
@@ -412,6 +420,7 @@ public class Given_DescriptorPathInference_With_Conflicting_Reference_Descriptor
         return new JsonObject
         {
             ["resourceName"] = resourceName,
+            ["isResourceExtension"] = false,
             ["documentPathsMapping"] = new JsonObject(),
         };
     }

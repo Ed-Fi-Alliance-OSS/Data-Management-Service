@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.OpenApi;
 using FluentAssertions;
+using Json.Path;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Core.Tests.Unit.OpenApi.OpenApiDocumentTestBase;
@@ -21,6 +22,7 @@ public class OpenApiDocumentHelperTests
     {
         private JsonNode _coreSchemaRootNode = null!;
         private JsonNode[] _extensionSchemaRootNodes = null!;
+        private JsonNode _openApiDocument = null!;
 
         private static JsonNode CoreSchemaWithAmbiguousContactSchemas()
         {
@@ -133,32 +135,34 @@ public class OpenApiDocumentHelperTests
         {
             _coreSchemaRootNode = CoreSchemaWithAmbiguousContactSchemas();
             _extensionSchemaRootNodes = [ExtensionWithCommonOverridesForAmbiguousContact()];
+            OpenApiDocument doc = new(NullLogger.Instance);
+            _openApiDocument = doc.CreateDocument(
+                new(_coreSchemaRootNode, _extensionSchemaRootNodes),
+                OpenApiDocument.OpenApiDocumentType.Resource
+            );
         }
 
         [Test]
-        public void It_should_throw_invalid_operation_exception()
+        public void It_should_prefer_the_schema_with_the_matching_core_prefix()
         {
-            OpenApiDocument doc = new(NullLogger.Instance);
-            var action = () =>
-                doc.CreateDocument(
-                    new(_coreSchemaRootNode, _extensionSchemaRootNodes),
-                    OpenApiDocument.OpenApiDocumentType.Resource
-                );
+            JsonPath jsonPath = JsonPath.Parse("$.components.schemas.EdFi_Contact_Address.properties._ext");
+            PathResult pathResult = jsonPath.Evaluate(_openApiDocument);
 
-            action.Should().Throw<InvalidOperationException>();
+            pathResult.Matches.Should().HaveCount(1);
+            pathResult
+                .Matches[0]
+                .Value?["$ref"]?.GetValue<string>()
+                .Should()
+                .Be("#/components/schemas/EdFi_Contact_AddressExtension");
         }
 
         [Test]
-        public void It_should_include_conflicting_schema_names_in_message()
+        public void It_should_not_apply_common_overrides_to_non_core_prefix_matches()
         {
-            OpenApiDocument doc = new(NullLogger.Instance);
-            var action = () =>
-                doc.CreateDocument(
-                    new(_coreSchemaRootNode, _extensionSchemaRootNodes),
-                    OpenApiDocument.OpenApiDocumentType.Resource
-                );
+            JsonPath jsonPath = JsonPath.Parse("$.components.schemas.TPDM_Contact_Address.properties._ext");
+            PathResult pathResult = jsonPath.Evaluate(_openApiDocument);
 
-            action.Should().Throw<InvalidOperationException>().WithMessage("*matched multiple core schemas*");
+            pathResult.Matches.Should().BeEmpty();
         }
     }
 

@@ -20,7 +20,7 @@ Core produces validated JSON + extracted references; the backend:
 - persists rows in a single transaction with replace semantics for collections,
 - relies on database-driven maintenance for derived artifacts required for correctness (propagated reference identity columns, `dms.ReferentialIdentity`, and update-tracking stamps).
 
-Authorization remains out of scope.
+Authorization remains out of scope; however, the roundtrip and transaction structures built in this epic should accommodate future authorization queries being batched into the same DB roundtrips. See `reference/design/backend-redesign/design-docs/auth.md` §"Performance improvements over ODS" for the expected roundtrip layout per operation.
 
 ## Stories
 
