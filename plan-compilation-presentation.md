@@ -32,11 +32,20 @@
 
 ---
 
-## 4. Determinism Foundations
+## 4. Example: Actual Query Plan
 
-- Stable SQL formatting and quoting
-- Stable parameter and alias naming
-- Stable batching and projection ordering
+- Shows filter, unified alias rewrite, and paging parameters
+
+```sql
+SELECT r."DocumentId"
+FROM "edfi"."StudentSchoolAssociation" r
+WHERE
+    (r."SchoolYear" >= @schoolYear)
+    AND (r."Student_DocumentId" IS NOT NULL AND r."StudentUniqueId_Unified" = @studentUniqueId)
+ORDER BY r."DocumentId" ASC
+LIMIT @limit OFFSET @offset
+;
+```
 
 ---
 
@@ -45,22 +54,45 @@
 - `InsertSql` for every table
 - `UpdateSql` for applicable 1:1 tables
 - `DeleteByParentSql` for replace semantics
+- Example root bindings: `SchoolId -> @schoolId`, `SchoolYear -> @schoolYear`, `StudentUniqueId -> @studentUniqueId`
 
 ---
 
-## 6. Write Path Details
+## 6. Example: Child Table Write Plan
 
-- Ordered column bindings drive execution
-- Child and extension tables use delete + bulk insert
-- Key unification is compiled as explicit precompute metadata
+- Shows parent key, ordinal, and scalar binding
+
+```json
+{
+  "table": { "schema": "sample", "name": "SchoolExtensionAddress" },
+  "delete_by_parent_sql_sha256": "8c202607...",
+  "column_bindings_in_order": [
+    { "column_name": "School_DocumentId", "write_value_source": { "kind": "parent_key_part", "index": 0 } },
+    { "column_name": "Ordinal", "write_value_source": { "kind": "ordinal" } },
+    { "column_name": "Zone", "write_value_source": { "kind": "scalar", "relative_path": "$.zone" } }
+  ]
+}
+```
 
 ---
 
-## 7. Read Plan Compilation
+## 7. Example: Projection Read Plan
 
-- Hydration SQL compiled per table
-- Keyset-driven reads by `DocumentId`
-- Deterministic `ORDER BY` aligned to table keys
+- Golden source: `projection/mappingset.manifest.json`
+- Shows reference identity and descriptor projection metadata
+- Good example of ordinal-driven reconstitution
+
+```json
+{
+  "reference_object_path": "$.sessionTermReference",
+  "fk_column_ordinal": 1,
+  "identity_field_ordinals_in_order": [
+    { "reference_json_path": "$.sessionTermReference.schoolId", "column_ordinal": 2 },
+    { "reference_json_path": "$.sessionTermReference.schoolYear", "column_ordinal": 3 }
+  ],
+  "result_shape": { "descriptor_id_ordinal": 0, "uri_ordinal": 1 }
+}
+```
 
 ---
 
