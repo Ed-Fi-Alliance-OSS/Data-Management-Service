@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Net.Http.Headers;
 using System.Text.Json;
 using EdFi.InstanceManagement.Tests.E2E.Models;
 
@@ -59,7 +60,7 @@ public static class TokenHelper
             clientKey,
             clientSecret
         );
-        request.Headers.Add("Authorization", $"Basic {credentials}");
+        request.Headers.Authorization = new AuthenticationHeaderValue($"Basic", credentials);
 
         var requestContent = new FormUrlEncodedContent(
             new Dictionary<string, string> { { "grant_type", "client_credentials" } }
@@ -68,6 +69,7 @@ public static class TokenHelper
         request.Content = requestContent;
 
         var response = await HttpClient.SendAsync(request);
+
         response.EnsureSuccessStatusCode();
 
         var content = await response.Content.ReadAsStringAsync();
