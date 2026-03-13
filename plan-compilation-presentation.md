@@ -92,10 +92,16 @@ LIMIT @limit OFFSET @offset
 ```json
 {
   "reference_object_path": "$.sessionTermReference",
+  "target_resource": "Ed-Fi.SessionTerm",
   "fk_column_ordinal": 1,
   "identity_field_ordinals_in_order": [
     { "reference_json_path": "$.sessionTermReference.schoolId", "column_ordinal": 2 },
-    { "reference_json_path": "$.sessionTermReference.schoolYear", "column_ordinal": 3 }
+    { "reference_json_path": "$.sessionTermReference.schoolYear", "column_ordinal": 3 },
+    { "reference_json_path": "$.sessionTermReference.sessionName", "column_ordinal": 4 }
+  ],
+  "descriptor_sources_in_order": [
+    { "descriptor_value_path": "$.primarySchoolTypeDescriptor", "descriptor_id_column_ordinal": 5 },
+    { "descriptor_value_path": "$.secondarySchoolTypeDescriptor", "descriptor_id_column_ordinal": 6 }
   ],
   "result_shape": { "descriptor_id_ordinal": 0, "uri_ordinal": 1 }
 }
