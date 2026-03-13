@@ -56,7 +56,6 @@ LIMIT @limit OFFSET @offset
 ```json
 {
   "table": { "schema": "sample", "name": "SchoolExtensionAddress" },
-  "delete_by_parent_sql_sha256": "8c202607...",
   "column_bindings_in_order": [
     { "column_name": "School_DocumentId", "write_value_source": { "kind": "parent_key_part", "index": 0 } },
     { "column_name": "Ordinal", "write_value_source": { "kind": "ordinal" } },
@@ -87,12 +86,22 @@ LIMIT @limit OFFSET @offset
 ```
 ---
 
-## 8. Example: Read Plan with Multi-column Identity & Descriptor
+## 8. Example: Read Plan - Multi-column Identity + Descriptor
 
 ```json
 {
-  "reference_object_path": "$.sessionTermReference",
-  "target_resource": "Ed-Fi.SessionTerm",
+  "table": { "schema": "edfi", "name": "ProjectionExample" },
+  "columns_in_order": [
+    "DocumentId",
+    "SessionTerm_DocumentId",
+    "SessionTerm_SchoolId",
+    "SessionTerm_SchoolYear",
+    "SessionTerm_SessionName",
+    "PrimarySchoolTypeDescriptor_DescriptorId",
+    "SecondarySchoolTypeDescriptor_DescriptorId",
+    "ProjectionExampleId",
+    "ShortName"
+  ],
   "fk_column_ordinal": 1,
   "identity_field_ordinals_in_order": [
     { "reference_json_path": "$.sessionTermReference.schoolId", "column_ordinal": 2 },
@@ -108,8 +117,6 @@ LIMIT @limit OFFSET @offset
 ```
 
 ```sql
-  Hydration SelectByKeysetSql:
-
   SELECT
       r."DocumentId",
       r."SessionTerm_DocumentId",
@@ -125,8 +132,6 @@ LIMIT @limit OFFSET @offset
   ORDER BY
       r."DocumentId" ASC
   ;
-
-  Descriptor projection SelectByKeysetSql:
 
   SELECT
       p."DescriptorId",
@@ -150,33 +155,8 @@ LIMIT @limit OFFSET @offset
 ```
 ---
 
-## 9. Runtime Integration
+## What's Next
 
-- Compile active mapping set from effective schema
-- Cache once per process
-- Log `Compiled`, `Joined in-flight`, or `Reused completed`
-
----
-
-## 10. Evidence
-
-- Golden tests for SQL and manifest output
-- Authoritative DS 5.2 fixture coverage
-- Determinism tests for repeatability
-- Cache tests for compile-once concurrency
-
----
-
-## 11. Scope Boundaries
-
-- This epic builds the compilation layer, not the full executor story
-- PostgreSQL is the runtime path wired here
+- This epic builds the compilation layer, the runtime executor is next
+- PostgreSQL is the only runtime path wired here
 - AOT mapping-pack compilation is not implemented yet
-
----
-
-## Close
-
-- Deterministic plans now exist for reads and writes
-- The runtime can compile and cache them safely
-- The output is testable, reusable, and ready for executor implementation
