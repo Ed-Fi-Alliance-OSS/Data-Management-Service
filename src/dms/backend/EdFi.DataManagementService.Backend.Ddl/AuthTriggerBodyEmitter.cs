@@ -48,15 +48,23 @@ internal static class AuthTriggerBodyEmitter
         {
             case AuthHierarchyTriggerEvent.Insert:
                 if (isLeaf)
+                {
                     EmitLeafInsertBody(writer, dialect, entity);
+                }
                 else
+                {
                     EmitHierarchicalInsertBody(writer, dialect, entity);
+                }
                 break;
             case AuthHierarchyTriggerEvent.Delete:
                 if (isLeaf)
+                {
                     EmitLeafDeleteBody(writer, dialect, entity);
+                }
                 else
+                {
                     EmitHierarchicalDeleteBody(writer, dialect, entity);
+                }
                 break;
             case AuthHierarchyTriggerEvent.Update:
                 EmitHierarchicalUpdateBody(writer, dialect, entity);
@@ -176,11 +184,11 @@ internal static class AuthTriggerBodyEmitter
         AuthParentEdOrgFk fk
     )
     {
-        var (authTable, source, target, idCol) = GetQuotedNames(dialect, entity);
-        var fkCol = Quote(dialect, fk.FkColumn);
-        var parentTable = Quote(dialect, fk.ParentTable);
-        var parentIdCol = Quote(dialect, fk.ParentIdentityColumn);
-        var docIdCol = Quote(dialect, _documentIdCol);
+        (string authTable, string source, string target, string idCol) = GetQuotedNames(dialect, entity);
+        string fkCol = Quote(dialect, fk.FkColumn);
+        string parentTable = Quote(dialect, fk.ParentTable);
+        string parentIdCol = Quote(dialect, fk.ParentIdentityColumn);
+        string docIdCol = Quote(dialect, _documentIdCol);
 
         if (dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
@@ -238,11 +246,11 @@ internal static class AuthTriggerBodyEmitter
         AuthParentEdOrgFk fk
     )
     {
-        var (authTable, source, target, idCol) = GetQuotedNames(dialect, entity);
-        var fkCol = Quote(dialect, fk.FkColumn);
-        var parentTable = Quote(dialect, fk.ParentTable);
-        var parentIdCol = Quote(dialect, fk.ParentIdentityColumn);
-        var docIdCol = Quote(dialect, _documentIdCol);
+        (string authTable, string source, string target, string idCol) = GetQuotedNames(dialect, entity);
+        string fkCol = Quote(dialect, fk.FkColumn);
+        string parentTable = Quote(dialect, fk.ParentTable);
+        string parentIdCol = Quote(dialect, fk.ParentIdentityColumn);
+        string docIdCol = Quote(dialect, _documentIdCol);
 
         if (dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
@@ -360,11 +368,11 @@ internal static class AuthTriggerBodyEmitter
         AuthParentEdOrgFk fk
     )
     {
-        var (authTable, source, target, idCol) = GetQuotedNames(dialect, entity);
-        var fkCol = Quote(dialect, fk.FkColumn);
-        var parentTable = Quote(dialect, fk.ParentTable);
-        var parentIdCol = Quote(dialect, fk.ParentIdentityColumn);
-        var docIdCol = Quote(dialect, _documentIdCol);
+        (string authTable, string source, string target, string idCol) = GetQuotedNames(dialect, entity);
+        string fkCol = Quote(dialect, fk.FkColumn);
+        string parentTable = Quote(dialect, fk.ParentTable);
+        string parentIdCol = Quote(dialect, fk.ParentIdentityColumn);
+        string docIdCol = Quote(dialect, _documentIdCol);
 
         if (dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
@@ -578,11 +586,11 @@ internal static class AuthTriggerBodyEmitter
         TriggerContext ctx
     )
     {
-        var (authTable, source, target, idCol) = GetQuotedNames(dialect, entity);
-        var fkCol = Quote(dialect, fk.FkColumn);
-        var parentTable = Quote(dialect, fk.ParentTable);
-        var parentIdCol = Quote(dialect, fk.ParentIdentityColumn);
-        var docIdCol = Quote(dialect, _documentIdCol);
+        (string authTable, string source, string target, string idCol) = GetQuotedNames(dialect, entity);
+        string fkCol = Quote(dialect, fk.FkColumn);
+        string parentTable = Quote(dialect, fk.ParentTable);
+        string parentIdCol = Quote(dialect, fk.ParentIdentityColumn);
+        string docIdCol = Quote(dialect, _documentIdCol);
 
         if (dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
