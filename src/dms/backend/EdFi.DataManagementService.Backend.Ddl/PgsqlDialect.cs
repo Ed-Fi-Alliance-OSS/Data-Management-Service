@@ -95,7 +95,8 @@ public sealed class PgsqlDialect : SqlDialectBase
         DbTableName table,
         string indexName,
         IReadOnlyList<DbColumnName> columns,
-        bool isUnique = false
+        bool isUnique = false,
+        IReadOnlyList<DbColumnName>? includeColumns = null
     )
     {
         ArgumentNullException.ThrowIfNull(indexName);
@@ -110,7 +111,11 @@ public sealed class PgsqlDialect : SqlDialectBase
         var quotedIndex = QuoteIdentifier(indexName);
         var columnList = string.Join(", ", columns.Select(c => QuoteIdentifier(c.Value)));
 
-        return $"CREATE {uniqueKeyword}INDEX IF NOT EXISTS {quotedIndex} ON {QualifyTable(table)} ({columnList});";
+        var includeClause = includeColumns is { Count: > 0 }
+            ? $" INCLUDE ({string.Join(", ", includeColumns.Select(c => QuoteIdentifier(c.Value)))})"
+            : "";
+
+        return $"CREATE {uniqueKeyword}INDEX IF NOT EXISTS {quotedIndex} ON {QualifyTable(table)} ({columnList}){includeClause};";
     }
 
     /// <inheritdoc />

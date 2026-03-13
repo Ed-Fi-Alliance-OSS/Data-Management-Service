@@ -3237,6 +3237,30 @@
   ],
   "indexes": [
     {
+      "name": "IX_EducationOrganizationIdToEducationOrganizationId_Source",
+      "table": {
+        "schema": "auth",
+        "name": "EducationOrganizationIdToEducationOrganizationId"
+      },
+      "kind": "Explicit",
+      "is_unique": false,
+      "key_columns": [
+        "SourceEducationOrganizationId"
+      ]
+    },
+    {
+      "name": "IX_EducationOrganizationIdToEducationOrganizationId_Target",
+      "table": {
+        "schema": "auth",
+        "name": "EducationOrganizationIdToEducationOrganizationId"
+      },
+      "kind": "Explicit",
+      "is_unique": false,
+      "key_columns": [
+        "TargetEducationOrganizationId"
+      ]
+    },
+    {
       "name": "IX_AcademicWeek_School_DocumentId_School_SchoolId",
       "table": {
         "schema": "edfi",
@@ -30410,6 +30434,34 @@
       "discriminator_value": "Ed-Fi:CommunityOrganization"
     },
     {
+      "name": "TR_CommunityOrganization_AuthHierarchy_Delete",
+      "table": {
+        "schema": "edfi",
+        "name": "CommunityOrganization"
+      },
+      "kind": "AuthHierarchyMaintenance",
+      "key_columns": [],
+      "identity_projection_columns": [],
+      "entity_name": "CommunityOrganization",
+      "trigger_event": "Delete",
+      "identity_column": "CommunityOrganizationId",
+      "parent_fks": []
+    },
+    {
+      "name": "TR_CommunityOrganization_AuthHierarchy_Insert",
+      "table": {
+        "schema": "edfi",
+        "name": "CommunityOrganization"
+      },
+      "kind": "AuthHierarchyMaintenance",
+      "key_columns": [],
+      "identity_projection_columns": [],
+      "entity_name": "CommunityOrganization",
+      "trigger_event": "Insert",
+      "identity_column": "CommunityOrganizationId",
+      "parent_fks": []
+    },
+    {
       "name": "TR_CommunityOrganization_ReferentialIdentity",
       "table": {
         "schema": "edfi",
@@ -30577,6 +30629,75 @@
         }
       ],
       "discriminator_value": "Ed-Fi:CommunityProvider"
+    },
+    {
+      "name": "TR_CommunityProvider_AuthHierarchy_Delete",
+      "table": {
+        "schema": "edfi",
+        "name": "CommunityProvider"
+      },
+      "kind": "AuthHierarchyMaintenance",
+      "key_columns": [],
+      "identity_projection_columns": [],
+      "entity_name": "CommunityProvider",
+      "trigger_event": "Delete",
+      "identity_column": "CommunityProviderId",
+      "parent_fks": [
+        {
+          "fk_column": "CommunityOrganization_DocumentId",
+          "parent_table": {
+            "schema": "edfi",
+            "name": "CommunityOrganization"
+          },
+          "parent_identity_column": "CommunityOrganizationId"
+        }
+      ]
+    },
+    {
+      "name": "TR_CommunityProvider_AuthHierarchy_Insert",
+      "table": {
+        "schema": "edfi",
+        "name": "CommunityProvider"
+      },
+      "kind": "AuthHierarchyMaintenance",
+      "key_columns": [],
+      "identity_projection_columns": [],
+      "entity_name": "CommunityProvider",
+      "trigger_event": "Insert",
+      "identity_column": "CommunityProviderId",
+      "parent_fks": [
+        {
+          "fk_column": "CommunityOrganization_DocumentId",
+          "parent_table": {
+            "schema": "edfi",
+            "name": "CommunityOrganization"
+          },
+          "parent_identity_column": "CommunityOrganizationId"
+        }
+      ]
+    },
+    {
+      "name": "TR_CommunityProvider_AuthHierarchy_Update",
+      "table": {
+        "schema": "edfi",
+        "name": "CommunityProvider"
+      },
+      "kind": "AuthHierarchyMaintenance",
+      "key_columns": [],
+      "identity_projection_columns": [],
+      "entity_name": "CommunityProvider",
+      "trigger_event": "Update",
+      "identity_column": "CommunityProviderId",
+      "parent_fks": [
+        {
+          "fk_column": "CommunityOrganization_DocumentId",
+          "parent_table": {
+            "schema": "edfi",
+            "name": "CommunityOrganization"
+          },
+          "parent_identity_column": "CommunityOrganizationId"
+        }
+      ]
     },
     {
       "name": "TR_CommunityProvider_ReferentialIdentity",
@@ -31875,6 +31996,34 @@
       "discriminator_value": "Ed-Fi:EducationOrganizationNetwork"
     },
     {
+      "name": "TR_EducationOrganizationNetwork_AuthHierarchy_Delete",
+      "table": {
+        "schema": "edfi",
+        "name": "EducationOrganizationNetwork"
+      },
+      "kind": "AuthHierarchyMaintenance",
+      "key_columns": [],
+      "identity_projection_columns": [],
+      "entity_name": "EducationOrganizationNetwork",
+      "trigger_event": "Delete",
+      "identity_column": "EducationOrganizationNetworkId",
+      "parent_fks": []
+    },
+    {
+      "name": "TR_EducationOrganizationNetwork_AuthHierarchy_Insert",
+      "table": {
+        "schema": "edfi",
+        "name": "EducationOrganizationNetwork"
+      },
+      "kind": "AuthHierarchyMaintenance",
+      "key_columns": [],
+      "identity_projection_columns": [],
+      "entity_name": "EducationOrganizationNetwork",
+      "trigger_event": "Insert",
+      "identity_column": "EducationOrganizationNetworkId",
+      "parent_fks": []
+    },
+    {
       "name": "TR_EducationOrganizationNetwork_ReferentialIdentity",
       "table": {
         "schema": "edfi",
@@ -32128,6 +32277,75 @@
         }
       ],
       "discriminator_value": "Ed-Fi:EducationServiceCenter"
+    },
+    {
+      "name": "TR_EducationServiceCenter_AuthHierarchy_Delete",
+      "table": {
+        "schema": "edfi",
+        "name": "EducationServiceCenter"
+      },
+      "kind": "AuthHierarchyMaintenance",
+      "key_columns": [],
+      "identity_projection_columns": [],
+      "entity_name": "EducationServiceCenter",
+      "trigger_event": "Delete",
+      "identity_column": "EducationServiceCenterId",
+      "parent_fks": [
+        {
+          "fk_column": "StateEducationAgency_DocumentId",
+          "parent_table": {
+            "schema": "edfi",
+            "name": "StateEducationAgency"
+          },
+          "parent_identity_column": "StateEducationAgencyId"
+        }
+      ]
+    },
+    {
+      "name": "TR_EducationServiceCenter_AuthHierarchy_Insert",
+      "table": {
+        "schema": "edfi",
+        "name": "EducationServiceCenter"
+      },
+      "kind": "AuthHierarchyMaintenance",
+      "key_columns": [],
+      "identity_projection_columns": [],
+      "entity_name": "EducationServiceCenter",
+      "trigger_event": "Insert",
+      "identity_column": "EducationServiceCenterId",
+      "parent_fks": [
+        {
+          "fk_column": "StateEducationAgency_DocumentId",
+          "parent_table": {
+            "schema": "edfi",
+            "name": "StateEducationAgency"
+          },
+          "parent_identity_column": "StateEducationAgencyId"
+        }
+      ]
+    },
+    {
+      "name": "TR_EducationServiceCenter_AuthHierarchy_Update",
+      "table": {
+        "schema": "edfi",
+        "name": "EducationServiceCenter"
+      },
+      "kind": "AuthHierarchyMaintenance",
+      "key_columns": [],
+      "identity_projection_columns": [],
+      "entity_name": "EducationServiceCenter",
+      "trigger_event": "Update",
+      "identity_column": "EducationServiceCenterId",
+      "parent_fks": [
+        {
+          "fk_column": "StateEducationAgency_DocumentId",
+          "parent_table": {
+            "schema": "edfi",
+            "name": "StateEducationAgency"
+          },
+          "parent_identity_column": "StateEducationAgencyId"
+        }
+      ]
     },
     {
       "name": "TR_EducationServiceCenter_ReferentialIdentity",
@@ -33674,6 +33892,123 @@
       "discriminator_value": "Ed-Fi:LocalEducationAgency"
     },
     {
+      "name": "TR_LocalEducationAgency_AuthHierarchy_Delete",
+      "table": {
+        "schema": "edfi",
+        "name": "LocalEducationAgency"
+      },
+      "kind": "AuthHierarchyMaintenance",
+      "key_columns": [],
+      "identity_projection_columns": [],
+      "entity_name": "LocalEducationAgency",
+      "trigger_event": "Delete",
+      "identity_column": "LocalEducationAgencyId",
+      "parent_fks": [
+        {
+          "fk_column": "EducationServiceCenter_DocumentId",
+          "parent_table": {
+            "schema": "edfi",
+            "name": "EducationServiceCenter"
+          },
+          "parent_identity_column": "EducationServiceCenterId"
+        },
+        {
+          "fk_column": "ParentLocalEducationAgency_DocumentId",
+          "parent_table": {
+            "schema": "edfi",
+            "name": "LocalEducationAgency"
+          },
+          "parent_identity_column": "LocalEducationAgencyId"
+        },
+        {
+          "fk_column": "StateEducationAgency_DocumentId",
+          "parent_table": {
+            "schema": "edfi",
+            "name": "StateEducationAgency"
+          },
+          "parent_identity_column": "StateEducationAgencyId"
+        }
+      ]
+    },
+    {
+      "name": "TR_LocalEducationAgency_AuthHierarchy_Insert",
+      "table": {
+        "schema": "edfi",
+        "name": "LocalEducationAgency"
+      },
+      "kind": "AuthHierarchyMaintenance",
+      "key_columns": [],
+      "identity_projection_columns": [],
+      "entity_name": "LocalEducationAgency",
+      "trigger_event": "Insert",
+      "identity_column": "LocalEducationAgencyId",
+      "parent_fks": [
+        {
+          "fk_column": "EducationServiceCenter_DocumentId",
+          "parent_table": {
+            "schema": "edfi",
+            "name": "EducationServiceCenter"
+          },
+          "parent_identity_column": "EducationServiceCenterId"
+        },
+        {
+          "fk_column": "ParentLocalEducationAgency_DocumentId",
+          "parent_table": {
+            "schema": "edfi",
+            "name": "LocalEducationAgency"
+          },
+          "parent_identity_column": "LocalEducationAgencyId"
+        },
+        {
+          "fk_column": "StateEducationAgency_DocumentId",
+          "parent_table": {
+            "schema": "edfi",
+            "name": "StateEducationAgency"
+          },
+          "parent_identity_column": "StateEducationAgencyId"
+        }
+      ]
+    },
+    {
+      "name": "TR_LocalEducationAgency_AuthHierarchy_Update",
+      "table": {
+        "schema": "edfi",
+        "name": "LocalEducationAgency"
+      },
+      "kind": "AuthHierarchyMaintenance",
+      "key_columns": [],
+      "identity_projection_columns": [],
+      "entity_name": "LocalEducationAgency",
+      "trigger_event": "Update",
+      "identity_column": "LocalEducationAgencyId",
+      "parent_fks": [
+        {
+          "fk_column": "EducationServiceCenter_DocumentId",
+          "parent_table": {
+            "schema": "edfi",
+            "name": "EducationServiceCenter"
+          },
+          "parent_identity_column": "EducationServiceCenterId"
+        },
+        {
+          "fk_column": "ParentLocalEducationAgency_DocumentId",
+          "parent_table": {
+            "schema": "edfi",
+            "name": "LocalEducationAgency"
+          },
+          "parent_identity_column": "LocalEducationAgencyId"
+        },
+        {
+          "fk_column": "StateEducationAgency_DocumentId",
+          "parent_table": {
+            "schema": "edfi",
+            "name": "StateEducationAgency"
+          },
+          "parent_identity_column": "StateEducationAgencyId"
+        }
+      ]
+    },
+    {
       "name": "TR_LocalEducationAgency_ReferentialIdentity",
       "table": {
         "schema": "edfi",
@@ -34300,6 +34635,75 @@
       "discriminator_value": "Ed-Fi:OrganizationDepartment"
     },
     {
+      "name": "TR_OrganizationDepartment_AuthHierarchy_Delete",
+      "table": {
+        "schema": "edfi",
+        "name": "OrganizationDepartment"
+      },
+      "kind": "AuthHierarchyMaintenance",
+      "key_columns": [],
+      "identity_projection_columns": [],
+      "entity_name": "OrganizationDepartment",
+      "trigger_event": "Delete",
+      "identity_column": "OrganizationDepartmentId",
+      "parent_fks": [
+        {
+          "fk_column": "ParentEducationOrganization_DocumentId",
+          "parent_table": {
+            "schema": "edfi",
+            "name": "EducationOrganizationIdentity"
+          },
+          "parent_identity_column": "EducationOrganizationId"
+        }
+      ]
+    },
+    {
+      "name": "TR_OrganizationDepartment_AuthHierarchy_Insert",
+      "table": {
+        "schema": "edfi",
+        "name": "OrganizationDepartment"
+      },
+      "kind": "AuthHierarchyMaintenance",
+      "key_columns": [],
+      "identity_projection_columns": [],
+      "entity_name": "OrganizationDepartment",
+      "trigger_event": "Insert",
+      "identity_column": "OrganizationDepartmentId",
+      "parent_fks": [
+        {
+          "fk_column": "ParentEducationOrganization_DocumentId",
+          "parent_table": {
+            "schema": "edfi",
+            "name": "EducationOrganizationIdentity"
+          },
+          "parent_identity_column": "EducationOrganizationId"
+        }
+      ]
+    },
+    {
+      "name": "TR_OrganizationDepartment_AuthHierarchy_Update",
+      "table": {
+        "schema": "edfi",
+        "name": "OrganizationDepartment"
+      },
+      "kind": "AuthHierarchyMaintenance",
+      "key_columns": [],
+      "identity_projection_columns": [],
+      "entity_name": "OrganizationDepartment",
+      "trigger_event": "Update",
+      "identity_column": "OrganizationDepartmentId",
+      "parent_fks": [
+        {
+          "fk_column": "ParentEducationOrganization_DocumentId",
+          "parent_table": {
+            "schema": "edfi",
+            "name": "EducationOrganizationIdentity"
+          },
+          "parent_identity_column": "EducationOrganizationId"
+        }
+      ]
+    },
+    {
       "name": "TR_OrganizationDepartment_ReferentialIdentity",
       "table": {
         "schema": "edfi",
@@ -34559,6 +34963,34 @@
         }
       ],
       "discriminator_value": "Ed-Fi:PostSecondaryInstitution"
+    },
+    {
+      "name": "TR_PostSecondaryInstitution_AuthHierarchy_Delete",
+      "table": {
+        "schema": "edfi",
+        "name": "PostSecondaryInstitution"
+      },
+      "kind": "AuthHierarchyMaintenance",
+      "key_columns": [],
+      "identity_projection_columns": [],
+      "entity_name": "PostSecondaryInstitution",
+      "trigger_event": "Delete",
+      "identity_column": "PostSecondaryInstitutionId",
+      "parent_fks": []
+    },
+    {
+      "name": "TR_PostSecondaryInstitution_AuthHierarchy_Insert",
+      "table": {
+        "schema": "edfi",
+        "name": "PostSecondaryInstitution"
+      },
+      "kind": "AuthHierarchyMaintenance",
+      "key_columns": [],
+      "identity_projection_columns": [],
+      "entity_name": "PostSecondaryInstitution",
+      "trigger_event": "Insert",
+      "identity_column": "PostSecondaryInstitutionId",
+      "parent_fks": []
     },
     {
       "name": "TR_PostSecondaryInstitution_ReferentialIdentity",
@@ -35360,6 +35792,75 @@
         }
       ],
       "discriminator_value": "Ed-Fi:School"
+    },
+    {
+      "name": "TR_School_AuthHierarchy_Delete",
+      "table": {
+        "schema": "edfi",
+        "name": "School"
+      },
+      "kind": "AuthHierarchyMaintenance",
+      "key_columns": [],
+      "identity_projection_columns": [],
+      "entity_name": "School",
+      "trigger_event": "Delete",
+      "identity_column": "SchoolId",
+      "parent_fks": [
+        {
+          "fk_column": "LocalEducationAgency_DocumentId",
+          "parent_table": {
+            "schema": "edfi",
+            "name": "LocalEducationAgency"
+          },
+          "parent_identity_column": "LocalEducationAgencyId"
+        }
+      ]
+    },
+    {
+      "name": "TR_School_AuthHierarchy_Insert",
+      "table": {
+        "schema": "edfi",
+        "name": "School"
+      },
+      "kind": "AuthHierarchyMaintenance",
+      "key_columns": [],
+      "identity_projection_columns": [],
+      "entity_name": "School",
+      "trigger_event": "Insert",
+      "identity_column": "SchoolId",
+      "parent_fks": [
+        {
+          "fk_column": "LocalEducationAgency_DocumentId",
+          "parent_table": {
+            "schema": "edfi",
+            "name": "LocalEducationAgency"
+          },
+          "parent_identity_column": "LocalEducationAgencyId"
+        }
+      ]
+    },
+    {
+      "name": "TR_School_AuthHierarchy_Update",
+      "table": {
+        "schema": "edfi",
+        "name": "School"
+      },
+      "kind": "AuthHierarchyMaintenance",
+      "key_columns": [],
+      "identity_projection_columns": [],
+      "entity_name": "School",
+      "trigger_event": "Update",
+      "identity_column": "SchoolId",
+      "parent_fks": [
+        {
+          "fk_column": "LocalEducationAgency_DocumentId",
+          "parent_table": {
+            "schema": "edfi",
+            "name": "LocalEducationAgency"
+          },
+          "parent_identity_column": "LocalEducationAgencyId"
+        }
+      ]
     },
     {
       "name": "TR_School_ReferentialIdentity",
@@ -36769,6 +37270,34 @@
         }
       ],
       "discriminator_value": "Ed-Fi:StateEducationAgency"
+    },
+    {
+      "name": "TR_StateEducationAgency_AuthHierarchy_Delete",
+      "table": {
+        "schema": "edfi",
+        "name": "StateEducationAgency"
+      },
+      "kind": "AuthHierarchyMaintenance",
+      "key_columns": [],
+      "identity_projection_columns": [],
+      "entity_name": "StateEducationAgency",
+      "trigger_event": "Delete",
+      "identity_column": "StateEducationAgencyId",
+      "parent_fks": []
+    },
+    {
+      "name": "TR_StateEducationAgency_AuthHierarchy_Insert",
+      "table": {
+        "schema": "edfi",
+        "name": "StateEducationAgency"
+      },
+      "kind": "AuthHierarchyMaintenance",
+      "key_columns": [],
+      "identity_projection_columns": [],
+      "entity_name": "StateEducationAgency",
+      "trigger_event": "Insert",
+      "identity_column": "StateEducationAgencyId",
+      "parent_fks": []
     },
     {
       "name": "TR_StateEducationAgency_ReferentialIdentity",

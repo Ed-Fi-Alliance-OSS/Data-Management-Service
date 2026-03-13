@@ -52,6 +52,7 @@ public class Given_Default_RelationalModelSet_Passes
                 typeof(ValidateForeignKeyStorageInvariantPass),
                 typeof(DeriveIndexInventoryPass),
                 typeof(DeriveTriggerInventoryPass),
+                typeof(DeriveAuthHierarchyPass),
                 typeof(ApplyDialectIdentifierShorteningPass),
                 typeof(CanonicalizeOrderingPass)
             );

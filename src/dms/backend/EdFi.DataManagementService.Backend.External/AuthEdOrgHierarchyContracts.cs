@@ -6,6 +6,37 @@
 namespace EdFi.DataManagementService.Backend.External;
 
 /// <summary>
+/// Classifies the DML event for an auth hierarchy maintenance trigger.
+/// </summary>
+public enum AuthHierarchyTriggerEvent
+{
+    /// <summary>INSERT trigger.</summary>
+    Insert,
+
+    /// <summary>UPDATE trigger (hierarchical entities only).</summary>
+    Update,
+
+    /// <summary>DELETE trigger.</summary>
+    Delete,
+}
+
+/// <summary>
+/// Shared table and column name constants for the <c>auth.*</c> schema.
+/// </summary>
+public static class AuthTableNames
+{
+    public static readonly DbSchemaName AuthSchema = new("auth");
+
+    public static readonly DbTableName EdOrgIdToEdOrgId = new(
+        AuthSchema,
+        "EducationOrganizationIdToEducationOrganizationId"
+    );
+
+    public static readonly DbColumnName SourceEdOrgId = new("SourceEducationOrganizationId");
+    public static readonly DbColumnName TargetEdOrgId = new("TargetEducationOrganizationId");
+}
+
+/// <summary>
 /// Describes a parent EducationOrganization FK column on a concrete EdOrg table.
 /// The FK column stores a <c>DocumentId</c> pointing to the parent entity. To resolve
 /// the parent's <c>EducationOrganizationId</c>, the trigger joins via

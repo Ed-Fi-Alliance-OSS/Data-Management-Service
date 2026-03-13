@@ -93,12 +93,14 @@ public interface ISqlDialect
     /// <param name="indexName">The index name.</param>
     /// <param name="columns">The columns to include in the index.</param>
     /// <param name="isUnique">Whether the index should enforce uniqueness.</param>
+    /// <param name="includeColumns">Optional non-key columns for the INCLUDE clause.</param>
     /// <returns>The idempotent CREATE INDEX statement.</returns>
     string CreateIndexIfNotExists(
         DbTableName table,
         string indexName,
         IReadOnlyList<DbColumnName> columns,
-        bool isUnique = false
+        bool isUnique = false,
+        IReadOnlyList<DbColumnName>? includeColumns = null
     );
 
     /// <summary>
