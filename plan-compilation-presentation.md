@@ -5,23 +5,32 @@
 - The relational model is the database-shaped version of an Ed-Fi resource schema.
 - It defines the tables, columns, keys, and relationships needed to store and read that resource.
 - Plan compilation uses it to generate deterministic read and write plans.
-
+### &nbsp;
+### &nbsp;
+### &nbsp;
+### &nbsp;
 ---
 
 ## Plan Compilers
 
+- Compile executor-ready plans, SQL with placeholders
 - Removes runtime guesswork and SQL parsing
-- Compile executor-ready plans
 - Reuse the same plan shape across runtime and future AOT work
-
+### &nbsp;
+### &nbsp;
+### &nbsp;
+### &nbsp;
 ---
 
-## When Each Compiler Runs
+## When They Run
 
 - Query plan compiler runs at request time because filters, operators, and paging can change per request
-- Write and read plan compilers run at startup when the `MappingSet` is compiled for the current schema, dialect, and mapping version
+- Write and read plan compilers run at startup when the `MappingSet` is compiled for the current effective schema
 - Requests then reuse the cached read and write plans and only bind request values at execution time
-
+### &nbsp;
+### &nbsp;
+### &nbsp;
+### &nbsp;
 ---
 
 ## Example: Query Plan
@@ -39,7 +48,10 @@ ORDER BY r."DocumentId" ASC
 LIMIT @limit OFFSET @offset
 ;
 ```
-
+### &nbsp;
+### &nbsp;
+### &nbsp;
+### &nbsp;
 ---
 
 ## Write Plan Compilation
@@ -47,48 +59,95 @@ LIMIT @limit OFFSET @offset
 - The compiler emits the SQL needed to write each relational table in a resource
 - Root and 1:1 tables can use `InsertSql` and `UpdateSql`
 - Child and collection tables use `DeleteByParentSql` plus insert for replace semantics
-- The plan also carries binding metadata such as `SchoolId -> @schoolId`, `SchoolYear -> @schoolYear`, and `StudentUniqueId -> @studentUniqueId`
-
+- The plan also carries binding metadata such as `DocumentId -> @documentId`, `NameOfInstitution -> @nameOfInstitution`, `SchoolId -> @schoolId`, and `City -> @city`
+### &nbsp;
+### &nbsp;
+### &nbsp;
+### &nbsp;
 ---
 
 ## Example: Collection Table Write Plan
-
+Note the relational model already has:
+```
+edfi.School.SchoolId -> $.schoolId
+edfi.School.NameOfInstitution -> $.nameOfInstitution
+edfi.SchoolAddress.City -> $addresses[*].city
+```
+Plan Objects
 ```json
 {
-  "table": { "schema": "sample", "name": "SchoolExtensionAddress" },
-  "column_bindings_in_order": [
-    { "column_name": "School_DocumentId", "write_value_source": { "kind": "parent_key_part", "index": 0 } },
-    { "column_name": "Ordinal", "write_value_source": { "kind": "ordinal" } },
-    { "column_name": "Zone", "write_value_source": { "kind": "scalar", "relative_path": "$.zone" } }
+  "table_plans_in_dependency_order": [
+    {
+      "table": { "schema": "edfi", "name": "School" },
+      "column_bindings_in_order": [
+        { "column_name": "DocumentId", "parameter_name": "documentId", "write_value_source": { "kind": "document_id" } },
+        { "column_name": "NameOfInstitution", "parameter_name": "nameOfInstitution", "write_value_source": { "kind": "scalar", "relative_path": "$.nameOfInstitution" } },
+        { "column_name": "SchoolId", "parameter_name": "schoolId", "write_value_source": { "kind": "scalar", "relative_path": "$.schoolId" } }
+      ]
+    },
+    {
+      "table": { "schema": "edfi", "name": "SchoolAddress" },
+      "column_bindings_in_order": [
+        { "column_name": "School_DocumentId", "parameter_name": "school_DocumentId", "write_value_source": { "kind": "parent_key_part", "index": 0 } },
+        { "column_name": "Ordinal", "parameter_name": "ordinal", "write_value_source": { "kind": "ordinal" } },
+        { "column_name": "City", "parameter_name": "city", "write_value_source": { "kind": "scalar", "relative_path": "$.city" } }
+      ]
+    }
   ]
 }
 ```
-
+Plan SQL
 ```sql
-  DELETE FROM "sample"."SchoolExtensionAddress"
-  WHERE
-      ("School_DocumentId" = @school_DocumentId)
-  ;
+INSERT INTO "edfi"."School"
+(
+    "DocumentId",
+    "NameOfInstitution",
+    "SchoolId"
+)
+VALUES
+(
+    @documentId,
+    @nameOfInstitution,
+    @schoolId
+)
+;
 
-  INSERT INTO "sample"."SchoolExtensionAddress"
-  (
-      "School_DocumentId",
-      "Ordinal",
-      "Zone"
-  )
-  VALUES
-  (
-      @school_DocumentId,
-      @ordinal,
-      @zone
-  )
-  ;
+UPDATE "edfi"."School"
+SET
+    "NameOfInstitution" = @nameOfInstitution,
+    "SchoolId" = @schoolId
+WHERE
+    ("DocumentId" = @documentId)
+;
 ```
+```sql
+DELETE FROM "edfi"."SchoolAddress"
+WHERE
+    ("School_DocumentId" = @school_DocumentId)
+;
 
+INSERT INTO "edfi"."SchoolAddress"
+(
+    "School_DocumentId",
+    "Ordinal",
+    "City"
+)
+VALUES
+(
+    @school_DocumentId,
+    @ordinal,
+    @city
+)
+;
+```
+### &nbsp;
+### &nbsp;
+### &nbsp;
+### &nbsp;
 ---
 
 ## Example: Collection Table Read Plan
-
+Plan Objects
 ```json
 {
   "table_plans_in_dependency_order": [
@@ -105,7 +164,7 @@ LIMIT @limit OFFSET @offset
   ]
 }
 ```
-
+Plan SQL
 ```sql
 SELECT
     r."DocumentId",
@@ -128,17 +187,13 @@ ORDER BY
     t."Ordinal" ASC
 ;
 ```
-Note the relational model already has:
-```
-edfi.School.SchoolId -> $.schoolId
-edfi.School.NameOfInstitution -> $.nameOfInstitution
-edfi.SchoolAddress.City -> $addresses[*].city
-```
-
+### &nbsp;
+### &nbsp;
+### &nbsp;
+### &nbsp;
 ---
 
 ## What's Next
 
-- This epic builds the compilation layer, the runtime executor is next
-- PostgreSQL is the only runtime path wired here
-- AOT mapping-pack compilation is not implemented yet
+- The runtime executor is next
+- AOT mapping-pack compilation is probably not V1
