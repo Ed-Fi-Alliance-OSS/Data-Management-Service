@@ -4,7 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.RegularExpressions;
+using EdFi.DmsConfigurationService.DataModel.Configuration;
 using FluentValidation;
+using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.DataModel.Model.Register;
 
@@ -16,15 +18,21 @@ public class RegisterRequest
 
     public class Validator : AbstractValidator<RegisterRequest>
     {
-        public Validator()
+        public Validator(IOptions<ClientSecretValidationOptions>? optionsAccessor = null)
         {
+            var clientSecretValidationOptions = optionsAccessor?.Value ?? new ClientSecretValidationOptions();
+
             RuleFor(m => m.ClientId).NotEmpty();
             RuleFor(m => m.ClientSecret).NotEmpty();
             RuleFor(m => m.ClientSecret)
-                .Matches(new Regex(@"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z\d]).{8,12}$"))
+                .Matches(
+                    new Regex(
+                        ClientSecretValidation.BuildComplexityPattern(clientSecretValidationOptions)
+                    )
+                )
                 .When(m => !string.IsNullOrEmpty(m.ClientSecret))
                 .WithMessage(
-                    "Client secret must contain at least one lowercase letter, one uppercase letter, one number, and one special character, and must be 8 to 12 characters long."
+                    ClientSecretValidation.BuildComplexityErrorMessage(clientSecretValidationOptions)
                 );
 
             RuleFor(m => m.DisplayName).NotEmpty();

@@ -3,8 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel.Configuration;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
@@ -49,6 +49,7 @@ public class ApplicationModule : IEndpointModule
         IVendorRepository vendorRepository,
         IIdentityProviderRepository clientRepository,
         IOptions<IdentitySettings> identitySettings,
+        IOptions<ClientSecretValidationOptions> clientSecretValidationOptionsAccessor,
         ILogger<ApplicationModule> logger
     )
     {
@@ -56,9 +57,8 @@ public class ApplicationModule : IEndpointModule
         await validator.GuardAsync(command);
 
         var clientId = Guid.NewGuid().ToString();
-        var clientSecret = RandomNumberGenerator.GetString(
-            "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
-            32
+        var clientSecret = ClientSecretValidation.GenerateSecretWithMinimumLength(
+            clientSecretValidationOptionsAccessor.Value
         );
 
         string namespacePrefixes;
@@ -412,6 +412,16 @@ public class ApplicationModule : IEndpointModule
                                         Key = client.ClientId,
                                         Secret = resetSuccess.ClientSecret,
                                     }
+                                );
+                            case ClientResetResult.FailureClientNotFound:
+                                return FailureResults.NotFound(
+                                    "Application client not found in identity provider",
+                                    httpContext.TraceIdentifier
+                                );
+                            case ClientResetResult.FailureIdentityProvider failureIdentityProvider:
+                                return FailureResults.BadGateway(
+                                    failureIdentityProvider.IdentityProviderError.FailureMessage,
+                                    httpContext.TraceIdentifier
                                 );
                             case ClientResetResult.FailureUnknown failure:
                                 logger.LogError(

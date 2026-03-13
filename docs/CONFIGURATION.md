@@ -60,6 +60,17 @@ These settings configure how the DMS API connects to the Configuration Service t
 | Scope                  | The authorization scope required for accessing the Configuration Service endpoints. Example: `edfi_admin_api/authMetadata_readonly_access`                               |
 | CacheExpirationMinutes | The duration in minutes before cached claim sets and other metadata expire and are refreshed from the Configuration Service.                                             |
 
+## IdentitySettings.ClientSecretValidation
+
+These settings configure the allowed client-secret length range used by CMS registration validation and by CMS startup validation for configured client secrets.
+
+| Parameter       | Description                                                                                                           |
+| --------------- | --------------------------------------------------------------------------------------------------------------------- |
+| MinimumLength   | Minimum allowed client-secret length. Default: `32`                                                                   |
+| MaximumLength   | Maximum allowed client-secret length. Default: `128`                                                                  |
+
+`IdentitySettings.ClientSecretValidation` controls the accepted size range used by CMS registration, generated secrets, and startup validation. CMS startup also requires configured client secrets to satisfy the same lowercase/uppercase/number/special-character complexity rules enforced by registration, where supported special characters are `!@#$%^&*()-_=+[]{}:;,.?`.
+
 ## RateLimit
 
 Basic rate limiting can be applied by supplying a `RateLimit` object in the

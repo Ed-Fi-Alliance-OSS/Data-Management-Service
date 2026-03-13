@@ -6,13 +6,16 @@
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel.Configuration;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ApiClient;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
 using FakeItEasy;
 using FluentAssertions;
@@ -33,7 +36,7 @@ public class ApiClientModuleTests
     private readonly IIdentityProviderRepository _identityProviderRepository =
         A.Fake<IIdentityProviderRepository>();
 
-    private HttpClient SetUpClient()
+    private HttpClient SetUpClient(int? clientSecretMinimumLength = null)
     {
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -42,6 +45,24 @@ public class ApiClientModuleTests
             {
                 // Use the new test authentication extension that mimics production setup
                 collection.AddTestAuthentication();
+                if (clientSecretMinimumLength is not null)
+                {
+                    collection.Configure<ClientSecretValidationOptions>(options =>
+                    {
+                        options.MinimumLength = clientSecretMinimumLength.Value;
+                        options.MaximumLength = clientSecretMinimumLength.Value + 96;
+                    });
+                    collection.Configure<IdentitySettings>(options =>
+                    {
+                        options.ClientSecret = ClientSecretValidation.GenerateSecretWithMinimumLength(
+                            new ClientSecretValidationOptions
+                            {
+                                MinimumLength = clientSecretMinimumLength.Value,
+                                MaximumLength = clientSecretMinimumLength.Value + 96,
+                            }
+                        );
+                    });
+                }
 
                 collection
                     .AddTransient((_) => _apiClientRepository)
@@ -239,6 +260,74 @@ public class ApiClientModuleTests
             getByClientIdResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        }
+
+        [Test]
+        public async Task It_generates_api_client_secret_using_the_configured_minimum_length()
+        {
+            // Arrange
+            var configuredMinimumLength = 48;
+            string generatedSecret = string.Empty;
+
+            A.CallTo(() =>
+                    _identityProviderRepository.CreateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored
+                    )
+                )
+                .Invokes(call =>
+                    generatedSecret =
+                        call.GetArgument<string>(1)
+                        ?? throw new InvalidOperationException("Generated secret should not be null.")
+                )
+                .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
+
+            using var client = SetUpClient(configuredMinimumLength);
+
+            // Act
+            var insertResponse = await client.PostAsync(
+                "/v2/apiClients",
+                new StringContent(
+                    """
+                    {
+                      "applicationId": 1,
+                      "name": "Test API Client",
+                      "isApproved": true,
+                      "dmsInstanceIds": [1]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            // Assert
+            insertResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+            generatedSecret.Should().HaveLength(configuredMinimumLength);
+            Regex
+                .IsMatch(
+                    generatedSecret,
+                    ClientSecretValidation.BuildComplexityPattern(
+                        new ClientSecretValidationOptions
+                        {
+                            MinimumLength = configuredMinimumLength,
+                            MaximumLength = configuredMinimumLength + 96,
+                        }
+                    )
+                )
+                .Should()
+                .BeTrue();
+
+            var responseContent = await insertResponse.Content.ReadAsStringAsync();
+            var actualResponse = JsonNode.Parse(responseContent);
+            actualResponse!["secret"]!.GetValue<string>().Should().HaveLength(configuredMinimumLength);
+            actualResponse!["secret"]!.GetValue<string>().Should().Be(generatedSecret);
         }
 
         [Test]

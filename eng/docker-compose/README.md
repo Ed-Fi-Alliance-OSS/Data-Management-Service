@@ -439,6 +439,11 @@ in DMS_HTTP_PORTS).
 `setup-keycloak.ps1` will setup all the required realm, client, client
 credentials, required role, and custom claims.
 
+Keep the Keycloak client secret aligned with the CMS `IdentitySettings:ClientSecretValidation`
+settings in `appsettings.json` or environment variables. CMS startup will
+reject configured secrets whose length falls outside the configured
+minimum/maximum range.
+
 ```pwsh
 
 $parameters = @{
@@ -454,7 +459,9 @@ $parameters = @{
     # Configuration service client, then use "cms-client"
     NewClientId = "test-client"                # Client id (default: test-client)
     NewClientName = "test-client"              # Client name (default: Test client)
-    NewClientSecret = "s3creT@09"              # Client secret (default: s3creT@09)
+    NewClientSecret = "ValidClientSecret1234567890!Abcd"  # Client secret example
+    ClientSecretMinimumLength = 32                # Must match IdentitySettings:ClientSecretValidation:MinimumLength
+    ClientSecretMaximumLength = 128               # Must match IdentitySettings:ClientSecretValidation:MaximumLength
     ClientScopeName = "sis-vendor"             # Scope name (default: sis-vendor) We are including the 
     # claim set name as a scope in the token. This can be customized to any claim set name (e.g., 'Ed-Fi-Sandbox').
     # Please note that the claim name cannot contain spaces; use a hyphen (-) instead.
@@ -470,7 +477,9 @@ $parameters = @{
     NewClientRole = "config-service-ap"         # Defined in Configuration Service appsettings
     NewClientId = "DmsConfigurationService"     # Defined in Configuration Service appsettings
     NewClientName = "DmsConfigurationService"   
-    NewClientSecret = "s3creT@09"               # Must match Configuration Service appsettings. Use appsettings.developer.json
+    NewClientSecret = "ValidClientSecret1234567890!Abcd"  # Must match Configuration Service appsettings. Use appsettings.developer.json
+    ClientSecretMinimumLength = 32                        # Must match IdentitySettings:ClientSecretValidation:MinimumLength
+    ClientSecretMaximumLength = 128                       # Must match IdentitySettings:ClientSecretValidation:MaximumLength
 }
 ./setup-keycloak.ps1  @parameters -SetClientAsRealmAdmin
 ```
@@ -479,13 +488,21 @@ $parameters = @{
 
 `setup-openiddict.ps1` configures the required application, client credentials, roles, scopes, and custom claims for OpenIddict. It uses an environment file for configuration and supports database initialization.
 
+`NewClientSecret` must stay within the configured `IdentitySettings:ClientSecretValidation`
+minimum/maximum range and include at least one lowercase letter, one uppercase
+letter, one number, and one supported special character. The script exposes
+`ClientSecretMinimumLength` and `ClientSecretMaximumLength` so local setup can
+match the runtime settings.
+
 ```pwsh
 $parameters = @{
   OpenIddictServer = "http://localhost:8081"    # OpenIddict URL
   NewClientRole = "dms-client"                  # Client role (default: dms-client); use "cms-client" for Configuration Service
   NewClientId = "test-client"                   # Client id (default: test-client)
   NewClientName = "test-client"                 # Client name (default: Test client)
-  NewClientSecret = "s3creT@09"                 # Client secret (default: s3creT@09)
+  NewClientSecret = "ValidClientSecret1234567890!Abcd"  # Client secret example
+  ClientSecretMinimumLength = 32                # Must match IdentitySettings:ClientSecretValidation:MinimumLength
+  ClientSecretMaximumLength = 128               # Must match IdentitySettings:ClientSecretValidation:MaximumLength
   ClientScopeName = "sis-vendor"                # Scope name (default: sis-vendor); can be customized (e.g., 'Ed-Fi-Sandbox')
   EnvironmentFile = "./.env"                    # Path to environment file for DB and other settings
 }
@@ -510,7 +527,7 @@ $parameters = @{
   NewClientRole = "config-service-ap"           # Defined in Configuration Service appsettings
   NewClientId = "DmsConfigurationService"       # Defined in Configuration Service appsettings
   NewClientName = "DmsConfigurationService"
-  NewClientSecret = "s3creT@09"                 # Must match Configuration Service appsettings. Use appsettings.developer.json
+  NewClientSecret = "ValidClientSecret1234567890!Abcd"  # Must match Configuration Service appsettings. Use appsettings.developer.json
   EnvironmentFile = "./.env"
 }
 ./setup-openiddict.ps1 @parameters -InsertData
@@ -521,4 +538,6 @@ $parameters = @{
 * `EnvironmentFile` is required for DB connection and other settings.
 * `$InitDb` initializes the database schema and keys.
 * `$InsertData` inserts the OpenIddict client, roles, scopes, and claims.
+* `ClientSecretMinimumLength` and `ClientSecretMaximumLength` should match the configured `IdentitySettings:ClientSecretValidation` bounds used by CMS.
+* `NewClientSecret` must also satisfy the CMS complexity rule: lowercase, uppercase, number, and one special character from `!@#$%^&*()-_=+[]{}:;,.?`.
 * Both switches can be used together or separately as needed.

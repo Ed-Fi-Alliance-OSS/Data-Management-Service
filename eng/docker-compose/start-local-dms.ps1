@@ -225,10 +225,10 @@ else {
 
         try {
             # Create system administrator credentials
-            Add-CmsClient -CmsUrl "http://localhost:8081" -ClientId "dms-instance-admin" -ClientSecret "DmsSetup1!" -DisplayName "DMS Instance Setup Administrator"
+            Add-CmsClient -CmsUrl "http://localhost:8081" -ClientId "dms-instance-admin" -ClientSecret "ValidClientSecret1234567890!Abcd" -DisplayName "DMS Instance Setup Administrator"
 
             # Get configuration service token
-            $configToken = Get-CmsToken -CmsUrl "http://localhost:8081" -ClientId "dms-instance-admin" -ClientSecret "DmsSetup1!"
+            $configToken = Get-CmsToken -CmsUrl "http://localhost:8081" -ClientId "dms-instance-admin" -ClientSecret "ValidClientSecret1234567890!Abcd"
 
             # Create tenant if multi-tenancy is enabled
             if ($envValues.DMS_CONFIG_MULTI_TENANCY -eq "true" -and $envValues.CONFIG_SERVICE_TENANT) {

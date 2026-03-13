@@ -28,7 +28,7 @@ public class InstanceSetupStepDefinitions(
         context.ConfigToken = await TokenHelper.GetConfigServiceTokenAsync(
             tokenUrl,
             "DmsConfigurationService",
-            "s3creT@09"
+            "ValidClientSecret1234567890!Abcd"
         );
 
         // Create a client for the current tenant (if one is set)
@@ -57,7 +57,7 @@ public class InstanceSetupStepDefinitions(
             context.ConfigToken = await TokenHelper.GetConfigServiceTokenAsync(
                 tokenUrl,
                 "DmsConfigurationService",
-                "s3creT@09"
+                "ValidClientSecret1234567890!Abcd"
             );
         }
 
@@ -223,7 +223,7 @@ public class InstanceSetupStepDefinitions(
             context.ConfigToken = await TokenHelper.GetConfigServiceTokenAsync(
                 tokenUrl,
                 "DmsConfigurationService",
-                "s3creT@09"
+                "ValidClientSecret1234567890!Abcd"
             );
         }
 

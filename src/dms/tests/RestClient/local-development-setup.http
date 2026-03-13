@@ -20,7 +20,7 @@
 #        "Authority": "http://localhost:8045/realms/edfi",
 #        "Audience": "account",
 #        "ClientId": "DmsConfigurationService",
-#        "ClientSecret": "s3creT@09",
+#        "ClientSecret": "ValidClientSecret1234567890!Abcd",
 #        "RequireHttpsMetadata": "false",
 #        "RoleClaimType": "http://schemas.microsoft.com/ws/2008/06/identity/claims/role",
 #        "Scope": "edfi_admin_api/full_access"
@@ -43,7 +43,7 @@
 #    "ConfigurationServiceSettings": {
 #        "BaseUrl": "http://localhost:5126",
 #        "ClientId": "DmsConfigurationService",
-#        "ClientSecret": "s3creT@09",
+#        "ClientSecret": "ValidClientSecret1234567890!Abcd",
 #        "Scope": "edfi_admin_api/full_access",
 #        "CacheExpirationMinutes": 10
 #    },
@@ -62,8 +62,8 @@
 @configPort=5126
 @dmsPort=5198
 @sysAdminId=sys-admin
-@sysAdminSecret=SdfH)98&Jk
-@encodedSysAdminSecret=SdfH%2998%26Jk
+@sysAdminSecret=SdfH)98&JkSdfH)98&JkSdfH)98&JkSdfH)9
+@encodedSysAdminSecret=SdfH%2998%26JkSdfH%2998%26JkSdfH%2998%26JkSdfH)9
 
 #
 # Create a new system administrator and create a token

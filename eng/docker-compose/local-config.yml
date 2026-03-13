@@ -22,6 +22,8 @@ services:
       IdentitySettings__Audience: ${DMS_CONFIG_IDENTITY_AUDIENCE:-account}
       IdentitySettings__ClientId: ${DMS_CONFIG_IDENTITY_CLIENT_ID:-DmsConfigurationService}
       IdentitySettings__ClientSecret: ${DMS_CONFIG_IDENTITY_CLIENT_SECRET}
+      IdentitySettings__ClientSecretValidation__MinimumLength: ${DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH:-32}
+      IdentitySettings__ClientSecretValidation__MaximumLength: ${DMS_CONFIG_IDENTITY_CLIENT_SECRET_MAXIMUM_LENGTH:-128}
       IdentitySettings__RequireHttpsMetadata: ${DMS_CONFIG_IDENTITY_REQUIRE_HTTPS:-false}
       IdentitySettings__RoleClaimType: ${DMS_CONFIG_IDENTITY_ROLE_CLAIM_TYPE:-http://schemas.microsoft.com/ws/2008/06/identity/claims/role}
       Serilog__MinimumLevel__Default: ${DMS_CONFIG_LOG_LEVEL:-Information}

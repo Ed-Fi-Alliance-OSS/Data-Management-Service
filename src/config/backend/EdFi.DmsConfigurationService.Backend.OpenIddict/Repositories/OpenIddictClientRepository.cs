@@ -6,7 +6,9 @@
 using System.Text.Json;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
 {
@@ -17,7 +19,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
     public class OpenIddictClientRepository(
         ILogger<OpenIddictClientRepository> logger,
         IClientSecretHasher secretHasher,
-        IOpenIddictDataRepository dataRepository
+        IOpenIddictDataRepository dataRepository,
+        IOptions<ClientSecretValidationOptions> clientSecretValidationOptionsAccessor
     ) : IIdentityProviderRepository
     {
         /// <summary>
@@ -437,7 +440,9 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
         {
             try
             {
-                var newSecret = Guid.NewGuid().ToString("N");
+                var newSecret = ClientSecretValidation.GenerateSecretWithMinimumLength(
+                    clientSecretValidationOptionsAccessor.Value
+                );
                 var hashedNewSecret = await secretHasher.HashSecretAsync(newSecret);
                 using var connection = await dataRepository.CreateConnectionAsync();
 
