@@ -53,8 +53,6 @@ LIMIT @limit OFFSET @offset
 
 ## 7. Example: Collection Table Write Plan
 
-- Shows parent key, ordinal, and scalar binding
-
 ```json
 {
   "table": { "schema": "sample", "name": "SchoolExtensionAddress" },
@@ -67,6 +65,26 @@ LIMIT @limit OFFSET @offset
 }
 ```
 
+```sql
+  DELETE FROM "sample"."SchoolExtensionAddress"
+  WHERE
+      ("School_DocumentId" = @school_DocumentId)
+  ;
+
+  INSERT INTO "sample"."SchoolExtensionAddress"
+  (
+      "School_DocumentId",
+      "Ordinal",
+      "Zone"
+  )
+  VALUES
+  (
+      @school_DocumentId,
+      @ordinal,
+      @zone
+  )
+  ;
+```
 ---
 
 ## 8. Example: Read Plan with Multi-column Identity & Descriptor
@@ -83,6 +101,47 @@ LIMIT @limit OFFSET @offset
 }
 ```
 
+```sql
+  Hydration SelectByKeysetSql:
+
+  SELECT
+      r."DocumentId",
+      r."SessionTerm_DocumentId",
+      r."SessionTerm_SchoolId",
+      r."SessionTerm_SchoolYear",
+      r."SessionTerm_SessionName",
+      r."PrimarySchoolTypeDescriptor_DescriptorId",
+      r."SecondarySchoolTypeDescriptor_DescriptorId",
+      r."ProjectionExampleId",
+      r."ShortName"
+  FROM "edfi"."ProjectionExample" r
+  INNER JOIN "page" k ON r."DocumentId" = k."DocumentId"
+  ORDER BY
+      r."DocumentId" ASC
+  ;
+
+  Descriptor projection SelectByKeysetSql:
+
+  SELECT
+      p."DescriptorId",
+      d."Uri"
+  FROM
+      (
+          SELECT t0."PrimarySchoolTypeDescriptor_DescriptorId" AS "DescriptorId"
+          FROM "edfi"."ProjectionExample" t0
+          INNER JOIN "page" k ON t0."DocumentId" = k."DocumentId"
+          WHERE t0."PrimarySchoolTypeDescriptor_DescriptorId" IS NOT NULL
+          UNION
+          SELECT t1."SecondarySchoolTypeDescriptor_DescriptorId" AS "DescriptorId"
+          FROM "edfi"."ProjectionExample" t1
+          INNER JOIN "page" k ON t1."DocumentId" = k."DocumentId"
+          WHERE t1."SecondarySchoolTypeDescriptor_DescriptorId" IS NOT NULL
+      ) p
+  INNER JOIN "dms"."Descriptor" d ON d."DocumentId" = p."DescriptorId"
+  ORDER BY
+      p."DescriptorId" ASC
+  ;
+```
 ---
 
 ## 9. Runtime Integration
