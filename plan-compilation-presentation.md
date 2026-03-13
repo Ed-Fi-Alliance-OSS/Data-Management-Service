@@ -4,7 +4,8 @@
 
 - The relational model is the database-shaped version of an Ed-Fi resource schema.
 - It defines the tables, columns, keys, and relationships needed to store and read that resource.
-- Plan compilation uses it to generate deterministic read and write plans.
+- This includes mappings from JsonPaths to columns.
+- Plan compilation uses the relational model to generate deterministic read and write plans.
 ### &nbsp;
 ### &nbsp;
 ### &nbsp;
@@ -13,7 +14,7 @@
 
 ## Plan Compilers
 
-- Compile executor-ready plans, SQL with placeholders
+- Compile executor-ready plans (SQL with placeholders)
 - Removes runtime guesswork and SQL parsing
 - Reuse the same plan shape across runtime and future AOT work
 ### &nbsp;
