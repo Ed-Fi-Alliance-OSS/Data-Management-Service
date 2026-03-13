@@ -7,7 +7,7 @@
 @configPort=8081
 @sysAdminId=sys-admin
 @sysAdminSecret=SdfH)98&JkSdfH)98&JkSdfH)98&JkSdfH)9
-@encodedSysAdminSecret=SdfH%2998%26Jk
+@encodedSysAdminSecret=SdfH%2998%26JkSdfH%2998%26JkSdfH%2998%26JkSdfH)9
 
 ### Step 1: Register system administrator (skip if already registered)
 POST http://localhost:{{configPort}}/connect/register

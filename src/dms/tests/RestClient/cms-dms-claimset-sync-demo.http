@@ -17,13 +17,13 @@
 # System Administrator credentials
 @sysAdminId=sys-admin
 @sysAdminSecret=SdfH)98&JkSdfH)98&JkSdfH)98&JkSdfH)9
-@encodedSysAdminSecret=SdfH%2998%26Jk
+@encodedSysAdminSecret=SdfH%2998%26JkSdfH%2998%26JkSdfH%2998%26JkSdfH)9
 
 # Test client credentials - using sys-admin for simplicity
 # In production, you would create a proper vendor and application
 @testClientId=sys-admin
 @testClientSecret=SdfH)98&JkSdfH)98&JkSdfH)98&JkSdfH)9
-@encodedTestClientSecret=SdfH%2998%26Jk
+@encodedTestClientSecret=SdfH%2998%26JkSdfH%2998%26JkSdfH%2998%26JkSdfH)9
 
 # ==========================================
 # PART 1: Setup System Administrator Token
