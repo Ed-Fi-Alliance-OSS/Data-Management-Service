@@ -20,6 +20,13 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// Validates that the database resource key seed matches the expected effective schema.
 /// Short-circuits with 503 if the resource key seed is mismatched.
 /// No-op when UseRelationalBackend is false.
+///
+/// Design note: The design docs (new-startup-flow.md §6, flattening-reconstitution.md §4.0)
+/// describe resource key validation as a startup-time step. This implementation defers
+/// validation to first request per connection string via middleware, matching the
+/// ValidateDatabaseFingerprintMiddleware pattern. Lazy validation is better suited for
+/// multi-tenant scenarios with dynamic instance discovery where connection strings are
+/// not all known at startup.
 /// </summary>
 internal class ValidateResourceKeySeedMiddleware(
     IOptions<AppSettings> appSettings,
