@@ -209,12 +209,16 @@ public readonly record struct DbIndexName(string Value);
 /// <param name="KeyColumns">Index key columns in order.</param>
 /// <param name="IsUnique">Whether the index enforces uniqueness.</param>
 /// <param name="Kind">The index intent classification.</param>
+/// <param name="IncludeColumns">
+/// Optional non-key columns to include in the index leaf pages (INCLUDE clause).
+/// </param>
 public sealed record DbIndexInfo(
     DbIndexName Name,
     DbTableName Table,
     IReadOnlyList<DbColumnName> KeyColumns,
     bool IsUnique,
-    DbIndexKind Kind
+    DbIndexKind Kind,
+    IReadOnlyList<DbColumnName>? IncludeColumns = null
 );
 
 /// <summary>
@@ -268,6 +272,17 @@ public abstract record TriggerKindParameters
     /// <param name="ReferrerUpdates">The list of referrer tables to update when identity changes.</param>
     public sealed record IdentityPropagationFallback(IReadOnlyList<PropagationReferrerTarget> ReferrerUpdates)
         : TriggerKindParameters;
+
+    /// <summary>
+    /// Parameters for triggers that maintain the <c>auth.EducationOrganizationIdToEducationOrganizationId</c>
+    /// hierarchy table. One trigger is emitted per (entity, event) pair.
+    /// </summary>
+    /// <param name="Entity">The concrete EducationOrganization entity metadata.</param>
+    /// <param name="TriggerEvent">The DML event this trigger fires on.</param>
+    public sealed record AuthHierarchyMaintenance(
+        AuthEdOrgEntity Entity,
+        AuthHierarchyTriggerEvent TriggerEvent
+    ) : TriggerKindParameters;
 }
 
 /// <summary>
@@ -362,6 +377,10 @@ public sealed record DbTriggerInfo(
 /// Trigger inventory in canonical deterministic order by schema, table, and name; insertion order is not preserved and
 /// the sequence is not a dependency-aware DDL execution order.
 /// </param>
+/// <param name="AuthEdOrgHierarchy">
+/// Optional EducationOrganization hierarchy for auth DDL emission. <c>null</c> when no abstract
+/// EducationOrganization resource exists in the schema.
+/// </param>
 public sealed record DerivedRelationalModelSet(
     EffectiveSchemaInfo EffectiveSchema,
     SqlDialect Dialect,
@@ -370,5 +389,6 @@ public sealed record DerivedRelationalModelSet(
     IReadOnlyList<AbstractIdentityTableInfo> AbstractIdentityTablesInNameOrder,
     IReadOnlyList<AbstractUnionViewInfo> AbstractUnionViewsInNameOrder,
     IReadOnlyList<DbIndexInfo> IndexesInCreateOrder,
-    IReadOnlyList<DbTriggerInfo> TriggersInCreateOrder
+    IReadOnlyList<DbTriggerInfo> TriggersInCreateOrder,
+    AuthEdOrgHierarchy? AuthEdOrgHierarchy = null
 );

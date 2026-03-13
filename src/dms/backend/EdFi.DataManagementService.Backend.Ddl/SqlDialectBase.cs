@@ -53,7 +53,8 @@ public abstract class SqlDialectBase : ISqlDialect
         DbTableName table,
         string indexName,
         IReadOnlyList<DbColumnName> columns,
-        bool isUnique = false
+        bool isUnique = false,
+        IReadOnlyList<DbColumnName>? includeColumns = null
     );
 
     /// <inheritdoc />

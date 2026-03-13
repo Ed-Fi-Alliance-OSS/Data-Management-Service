@@ -139,6 +139,13 @@ public abstract class DdlEmissionGoldenTestBase
             .Should()
             .BeEmpty("emitted DDL must not contain trailing whitespace on any line");
 
+        // MSSQL batch-boundary check: every CREATE OR ALTER TRIGGER must be preceded
+        // by a GO batch separator to avoid "must be the first statement in a batch" errors.
+        if (dialect == SqlDialect.Mssql)
+        {
+            AssertMssqlBatchBoundaries(ddl);
+        }
+
         Directory.CreateDirectory(Path.GetDirectoryName(actualPath)!);
         File.WriteAllText(actualPath, ddl);
 
@@ -171,6 +178,50 @@ public abstract class DdlEmissionGoldenTestBase
                     + $"Diff:\n{diffOutput}"
             );
         }
+    }
+
+    /// <summary>
+    /// Validates that every <c>CREATE OR ALTER TRIGGER</c> statement in MSSQL DDL output
+    /// is preceded by a <c>GO</c> batch separator.
+    /// </summary>
+    private static void AssertMssqlBatchBoundaries(string ddl)
+    {
+        var lines = ddl.Split('\n');
+        var violations = new List<string>();
+
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var trimmed = lines[i].TrimStart();
+            if (!trimmed.StartsWith("CREATE OR ALTER TRIGGER", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            // Walk backwards to find the most recent non-blank line
+            var foundGo = false;
+            for (var j = i - 1; j >= 0; j--)
+            {
+                var prev = lines[j].Trim();
+                if (prev.Length == 0)
+                {
+                    continue;
+                }
+
+                foundGo = string.Equals(prev, "GO", StringComparison.OrdinalIgnoreCase);
+                break;
+            }
+
+            if (!foundGo)
+            {
+                violations.Add(
+                    $"Line {i + 1}: '{trimmed[..Math.Min(60, trimmed.Length)]}...' is not preceded by GO"
+                );
+            }
+        }
+
+        violations
+            .Should()
+            .BeEmpty("every CREATE OR ALTER TRIGGER in MSSQL DDL must be preceded by a GO batch separator");
     }
 
     /// <summary>
