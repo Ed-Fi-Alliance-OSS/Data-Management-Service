@@ -51,7 +51,7 @@ LIMIT @limit OFFSET @offset
 
 ---
 
-## 7. Example: Collection Table Write Plan
+## Example: Collection Table Write Plan
 
 ```json
 {
@@ -86,7 +86,7 @@ LIMIT @limit OFFSET @offset
 ```
 ---
 
-## 8. Example: Read Plan - Multi-column Identity + Descriptor
+## Example: Read Plan - Multi-column Identity + Descriptor
 
 ```json
 {
