@@ -486,6 +486,57 @@ public class TokenEndpointTests
     }
 
     [Test]
+    public async Task Given_basic_auth_credentials_with_reserved_characters()
+    {
+        // Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    collection.AddTransient((_) => new TokenRequest.Validator());
+                    collection.AddTransient((_) => _tokenManager!);
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        var encodedCredentials = Convert.ToBase64String(
+            System.Text.Encoding.UTF8.GetBytes("client%3Awith%2Breserved:secret%3Awith%25reserved%2Bchars")
+        );
+        client.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", encodedCredentials);
+
+        // Act
+        var requestContent = new FormUrlEncodedContent(
+            new[]
+            {
+                new KeyValuePair<string, string>("grant_type", "client_credentials"),
+                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
+            }
+        );
+        var response = await client.PostAsync("/connect/token", requestContent);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        A.CallTo(() =>
+                _tokenManager!.GetAccessTokenAsync(
+                    A<IEnumerable<KeyValuePair<string, string>>>.That.Matches(credentials =>
+                        credentials.Any(pair =>
+                            pair.Key == "client_id" && pair.Value == "client:with+reserved"
+                        )
+                        && credentials.Any(pair =>
+                            pair.Key == "client_secret"
+                            && pair.Value == "secret:with%reserved+chars"
+                        )
+                    )
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
     public async Task Given_empty_client_credentials()
     {
         // Arrange

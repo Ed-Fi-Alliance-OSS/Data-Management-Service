@@ -74,12 +74,12 @@ Feature: Connect endpoints
                     }
                   """
 
-        Scenario: 02a Verify password complexity
+        Scenario: 02a Verify client secret complexity
              When a Form URL Encoded POST request is made to "/connect/register" with
-                  | Key          | Value          |
-                  | ClientId     | _scenarioRunId |
-                  | ClientSecret | AbcdefghijklmnopqrstuvwxYZ123456           |
-                  | DisplayName  | _scenarioRunId |
+                  | Key          | Value                            |
+                  | ClientId     | _scenarioRunId                   |
+                  | ClientSecret | AbcdefghijklmnopqrstuvwxYZ123456 |
+                  | DisplayName  | _scenarioRunId                   |
              Then it should respond with 400
               And the response body is
                   """

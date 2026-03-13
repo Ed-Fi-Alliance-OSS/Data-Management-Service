@@ -24,14 +24,14 @@ public class ClientSecretValidationOptionsValidator : IValidateOptions<ClientSec
         if (options.MinimumLength < 4)
         {
             return ValidateOptionsResult.Fail(
-                "Missing required ClientSecretValidation value: MinimumLength must be greater than or equal to 4."
+                "Invalid ClientSecretValidation configuration: MinimumLength must be greater than or equal to 4."
             );
         }
 
         if (options.MaximumLength < options.MinimumLength)
         {
             return ValidateOptionsResult.Fail(
-                "Missing required ClientSecretValidation value: MaximumLength must be greater than or equal to MinimumLength."
+                "Invalid ClientSecretValidation configuration: MaximumLength must be greater than or equal to MinimumLength."
             );
         }
 

@@ -165,8 +165,8 @@ public class IdentityModule : IEndpointModule
                     var parts = credentials.Split(':', 2);
                     if (parts.Length == 2)
                     {
-                        clientId = parts[0];
-                        clientSecret = parts[1];
+                        clientId = Uri.UnescapeDataString(parts[0]);
+                        clientSecret = Uri.UnescapeDataString(parts[1]);
                     }
                 }
                 catch (Exception ex)
