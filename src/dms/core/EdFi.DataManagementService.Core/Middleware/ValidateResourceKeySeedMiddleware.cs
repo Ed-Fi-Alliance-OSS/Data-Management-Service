@@ -62,16 +62,6 @@ internal class ValidateResourceKeySeedMiddleware(
 
         var effectiveSchema = effectiveSchemaSetProvider.EffectiveSchemaSet.EffectiveSchema;
 
-        // Convert ResourceKeyEntry list to ResourceKeyRow list for the validator interface
-        var expectedResourceKeys = effectiveSchema
-            .ResourceKeysInIdOrder.Select(e => new ResourceKeyRow(
-                e.ResourceKeyId,
-                e.Resource.ProjectName,
-                e.Resource.ResourceName,
-                e.ResourceVersion
-            ))
-            .ToList();
-
         ResourceKeyValidationResult result;
 
         try
@@ -79,13 +69,26 @@ internal class ValidateResourceKeySeedMiddleware(
             result = await cacheProvider.GetOrValidateAsync(
                 connectionString,
                 () =>
-                    resourceKeyValidator.ValidateAsync(
+                {
+                    // Convert ResourceKeyEntry list to ResourceKeyRow list for the validator interface.
+                    // Built inside the factory so the allocation only happens on cache miss.
+                    var expectedResourceKeys = effectiveSchema
+                        .ResourceKeysInIdOrder.Select(e => new ResourceKeyRow(
+                            e.ResourceKeyId,
+                            e.Resource.ProjectName,
+                            e.Resource.ResourceName,
+                            e.ResourceVersion
+                        ))
+                        .ToList();
+
+                    return resourceKeyValidator.ValidateAsync(
                         fingerprint,
                         effectiveSchema.ResourceKeyCount,
                         [.. effectiveSchema.ResourceKeySeedHash],
                         expectedResourceKeys,
                         connectionString
-                    )
+                    );
+                }
             );
         }
         catch (Exception ex)
