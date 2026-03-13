@@ -22,12 +22,12 @@ public static class FullDdlEmitter
     public static string Emit(ISqlDialect dialect, DerivedRelationalModelSet modelSet)
     {
         var seedEmitter = new SeedDmlEmitter(dialect);
-        var preflightDdl = WrapPhase0(
+        string preflightDdl = WrapPhase0(
             seedEmitter.EmitPreflightOnly(modelSet.EffectiveSchema.EffectiveSchemaHash)
         );
-        var coreDdl = new CoreDdlEmitter(dialect).Emit();
-        var relationalDdl = new RelationalModelDdlEmitter(dialect).Emit(modelSet);
-        var seedDml = seedEmitter.Emit(modelSet.EffectiveSchema);
+        string coreDdl = new CoreDdlEmitter(dialect).Emit();
+        string relationalDdl = new RelationalModelDdlEmitter(dialect).Emit(modelSet);
+        string seedDml = seedEmitter.Emit(modelSet.EffectiveSchema);
         return JoinSegments(preflightDdl, coreDdl, relationalDdl, seedDml);
     }
 
@@ -50,12 +50,16 @@ public static class FullDdlEmitter
     internal static string JoinSegments(params string[] segments)
     {
         var sb = new StringBuilder();
-        foreach (var segment in segments)
+        foreach (string segment in segments)
         {
             if (segment.Length == 0)
+            {
                 continue;
+            }
             if (sb.Length > 0 && sb[sb.Length - 1] != '\n')
+            {
                 sb.Append('\n');
+            }
             sb.Append(segment);
         }
         return sb.ToString();
