@@ -27,10 +27,8 @@ public static class FullDdlEmitter
         );
         var coreDdl = new CoreDdlEmitter(dialect).Emit();
         var relationalDdl = new RelationalModelDdlEmitter(dialect).Emit(modelSet);
-        var authHierarchy = AuthEdOrgHierarchyCompiler.Compile(modelSet);
-        var authDdl = new AuthDdlEmitter(dialect, authHierarchy).Emit();
         var seedDml = seedEmitter.Emit(modelSet.EffectiveSchema);
-        return JoinSegments(preflightDdl, coreDdl, relationalDdl, authDdl, seedDml);
+        return JoinSegments(preflightDdl, coreDdl, relationalDdl, seedDml);
     }
 
     private static string WrapPhase0(string preflightSql)

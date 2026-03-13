@@ -3,41 +3,127 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.RelationalModel.Build;
 
-namespace EdFi.DataManagementService.Backend.Ddl;
+namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 
 /// <summary>
-/// Extracts an <see cref="AuthEdOrgHierarchy"/> from a <see cref="DerivedRelationalModelSet"/>
-/// by identifying concrete EducationOrganization members and classifying their
-/// <see cref="ColumnKind.DocumentFk"/> columns as parent EdOrg references.
+/// Derives the EducationOrganization auth hierarchy from the model set and adds
+/// auth hierarchy triggers to the trigger inventory.
 /// </summary>
 /// <remarks>
-/// Model-driven: no hardcoded EdOrg list. Extensions that add new concrete
-/// EducationOrganization subclasses are automatically discovered via the
-/// abstract union view arms.
+/// Must run after <see cref="DeriveTriggerInventoryPass"/> because it reads
+/// <c>ConcreteResourcesInNameOrder</c>, <c>AbstractUnionViewsInNameOrder</c>,
+/// and <c>AbstractIdentityTablesInNameOrder</c> which must already be populated.
 /// </remarks>
-public static class AuthEdOrgHierarchyCompiler
+public sealed class DeriveAuthHierarchyPass : IRelationalModelSetPass
 {
     private const string EducationOrganizationResourceName = "EducationOrganization";
 
-    /// <summary>
-    /// Compiles the EducationOrganization hierarchy from the derived relational model set.
-    /// Returns an empty hierarchy when no abstract EducationOrganization resource exists.
-    /// </summary>
-    public static AuthEdOrgHierarchy Compile(DerivedRelationalModelSet modelSet)
+    public void Execute(RelationalModelSetBuilderContext context)
     {
-        ArgumentNullException.ThrowIfNull(modelSet);
+        ArgumentNullException.ThrowIfNull(context);
 
+        var hierarchy = CompileHierarchy(context);
+        context.AuthEdOrgHierarchy = hierarchy;
+
+        if (hierarchy is null || hierarchy.EntitiesInNameOrder.Count == 0)
+        {
+            return;
+        }
+
+        // Add auth covering indexes to the index inventory.
+        // (Source) INCLUDE (Target) — used by non-inverted authorization strategies.
+        context.IndexInventory.Add(
+            new DbIndexInfo(
+                new DbIndexName("IX_EducationOrganizationIdToEducationOrganizationId_Source"),
+                AuthTableNames.EdOrgIdToEdOrgId,
+                KeyColumns: [AuthTableNames.SourceEdOrgId],
+                IsUnique: false,
+                Kind: DbIndexKind.Explicit,
+                IncludeColumns: [AuthTableNames.TargetEdOrgId]
+            )
+        );
+
+        // (Target) INCLUDE (Source) — used by inverted authorization strategies.
+        context.IndexInventory.Add(
+            new DbIndexInfo(
+                new DbIndexName("IX_EducationOrganizationIdToEducationOrganizationId_Target"),
+                AuthTableNames.EdOrgIdToEdOrgId,
+                KeyColumns: [AuthTableNames.TargetEdOrgId],
+                IsUnique: false,
+                Kind: DbIndexKind.Explicit,
+                IncludeColumns: [AuthTableNames.SourceEdOrgId]
+            )
+        );
+
+        // Add auth triggers to the trigger inventory so they participate in
+        // canonical ordering and dialect identifier shortening.
+        foreach (var entity in hierarchy.EntitiesInNameOrder)
+        {
+            bool isLeaf = entity.ParentEdOrgFks.Count == 0;
+
+            // Delete trigger (every entity)
+            context.TriggerInventory.Add(
+                new DbTriggerInfo(
+                    new DbTriggerName($"TR_{entity.EntityName}_AuthHierarchy_Delete"),
+                    entity.Table,
+                    KeyColumns: [],
+                    IdentityProjectionColumns: [],
+                    new TriggerKindParameters.AuthHierarchyMaintenance(
+                        entity,
+                        AuthHierarchyTriggerEvent.Delete
+                    )
+                )
+            );
+
+            // Insert trigger (every entity)
+            context.TriggerInventory.Add(
+                new DbTriggerInfo(
+                    new DbTriggerName($"TR_{entity.EntityName}_AuthHierarchy_Insert"),
+                    entity.Table,
+                    KeyColumns: [],
+                    IdentityProjectionColumns: [],
+                    new TriggerKindParameters.AuthHierarchyMaintenance(
+                        entity,
+                        AuthHierarchyTriggerEvent.Insert
+                    )
+                )
+            );
+
+            // Update trigger (hierarchical entities only)
+            if (!isLeaf)
+            {
+                context.TriggerInventory.Add(
+                    new DbTriggerInfo(
+                        new DbTriggerName($"TR_{entity.EntityName}_AuthHierarchy_Update"),
+                        entity.Table,
+                        KeyColumns: [],
+                        IdentityProjectionColumns: [],
+                        new TriggerKindParameters.AuthHierarchyMaintenance(
+                            entity,
+                            AuthHierarchyTriggerEvent.Update
+                        )
+                    )
+                );
+            }
+        }
+    }
+
+    /// <summary>
+    /// Compiles the EducationOrganization hierarchy from the builder context.
+    /// Returns <c>null</c> when no abstract EducationOrganization resource exists.
+    /// </summary>
+    private static AuthEdOrgHierarchy? CompileHierarchy(RelationalModelSetBuilderContext context)
+    {
         // Step 1: Find the abstract EducationOrganization union view.
-        // Its union arms enumerate all concrete members (including extension-added ones).
-        var edOrgUnionView = modelSet.AbstractUnionViewsInNameOrder.FirstOrDefault(v =>
+        var edOrgUnionView = context.AbstractUnionViewsInNameOrder.FirstOrDefault(v =>
             v.AbstractResourceKey.Resource.ResourceName == EducationOrganizationResourceName
         );
 
         if (edOrgUnionView is null)
         {
-            return new AuthEdOrgHierarchy([]);
+            return null;
         }
 
         var abstractEdOrgResource = edOrgUnionView.AbstractResourceKey.Resource;
@@ -47,19 +133,16 @@ public static class AuthEdOrgHierarchyCompiler
             edOrgUnionView.UnionArmsInOrder.Select(arm => arm.ConcreteMemberResourceKey.Resource)
         );
 
-        // Step 3: Find the abstract identity table for parent FK resolution
-        // on abstract references (e.g., OrganizationDepartment.ParentEducationOrganization).
+        // Step 3: Find the abstract identity table for parent FK resolution.
         var abstractIdentityTable =
-            modelSet.AbstractIdentityTablesInNameOrder.FirstOrDefault(t =>
+            context.AbstractIdentityTablesInNameOrder.FirstOrDefault(t =>
                 t.AbstractResourceKey.Resource == abstractEdOrgResource
             )
             ?? throw new InvalidOperationException(
                 $"No abstract identity table found for '{abstractEdOrgResource.ResourceName}'."
             );
 
-        // Step 4: Determine the abstract identity column from the abstract identity table.
-        // This is the scalar column that is NOT Discriminator (DocumentId columns are
-        // implicitly excluded by their non-Scalar ColumnKind).
+        // Step 4: Determine the abstract identity column.
         var abstractIdentityColumn = (
             abstractIdentityTable.TableModel.Columns.FirstOrDefault(c =>
                 c.Kind == ColumnKind.Scalar && c.ColumnName.Value != "Discriminator"
@@ -69,10 +152,7 @@ public static class AuthEdOrgHierarchyCompiler
             )
         ).ColumnName;
 
-        // Step 5: Build a mapping from concrete member resource to its entity-specific
-        // identity column using the union view arm projections. Concrete EdOrg tables use
-        // entity-specific column names (e.g., SchoolId, LocalEducationAgencyId) while the
-        // abstract identity table uses the abstract name (EducationOrganizationId).
+        // Step 5: Build mapping from concrete member to entity-specific identity column.
         var identityOutputIndex = edOrgUnionView
             .OutputColumnsInSelectOrder.Select((col, idx) => (col, idx))
             .First(x => x.col.ColumnName == abstractIdentityColumn)
@@ -87,8 +167,8 @@ public static class AuthEdOrgHierarchyCompiler
                 ).ColumnName
         );
 
-        // Step 6: Build a lookup of concrete resource models by qualified name.
-        var concreteResourcesByName = modelSet
+        // Step 6: Build lookup of concrete resource models by qualified name.
+        var concreteResourcesByName = context
             .ConcreteResourcesInNameOrder.Where(cr => concreteMemberNames.Contains(cr.ResourceKey.Resource))
             .ToDictionary(cr => cr.ResourceKey.Resource);
 
@@ -148,10 +228,6 @@ public static class AuthEdOrgHierarchyCompiler
         return new AuthEdOrgHierarchy(entities);
     }
 
-    /// <summary>
-    /// Returns <c>true</c> when the target resource is the abstract EducationOrganization
-    /// or one of its concrete members.
-    /// </summary>
     private static bool IsEdOrgFamilyMember(
         QualifiedResourceName target,
         QualifiedResourceName abstractEdOrgResource,
@@ -161,11 +237,6 @@ public static class AuthEdOrgHierarchyCompiler
         return target == abstractEdOrgResource || concreteMemberNames.Contains(target);
     }
 
-    /// <summary>
-    /// Resolves the parent identity column for a DocumentFk targeting an EdOrg family member.
-    /// Abstract references use the abstract identity column; concrete references use the
-    /// entity-specific identity column (e.g., SchoolId, LocalEducationAgencyId).
-    /// </summary>
     private static DbColumnName ResolveParentIdentityColumn(
         QualifiedResourceName targetResource,
         QualifiedResourceName abstractEdOrgResource,
@@ -189,11 +260,6 @@ public static class AuthEdOrgHierarchyCompiler
         return concreteColumn;
     }
 
-    /// <summary>
-    /// Resolves the parent table for a DocumentFk targeting an EdOrg family member.
-    /// Abstract references resolve to the abstract identity table; concrete references
-    /// resolve to the concrete member's root table.
-    /// </summary>
     private static DbTableName ResolveParentTable(
         QualifiedResourceName targetResource,
         QualifiedResourceName abstractEdOrgResource,

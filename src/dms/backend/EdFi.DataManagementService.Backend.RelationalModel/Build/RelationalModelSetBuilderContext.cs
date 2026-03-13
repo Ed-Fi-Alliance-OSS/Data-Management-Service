@@ -165,6 +165,12 @@ public sealed class RelationalModelSetBuilderContext
     public List<DbTriggerInfo> TriggerInventory { get; } = [];
 
     /// <summary>
+    /// Derived auth EducationOrganization hierarchy. <c>null</c> when no abstract EducationOrganization
+    /// resource exists in the schema.
+    /// </summary>
+    public AuthEdOrgHierarchy? AuthEdOrgHierarchy { get; set; }
+
+    /// <summary>
     /// Clears cached strict unified-alias metadata.
     /// </summary>
     internal void ClearStrictUnifiedAliasTableMetadataCache()
@@ -600,7 +606,8 @@ public sealed class RelationalModelSetBuilderContext
             orderedAbstractIdentityTables,
             orderedAbstractUnionViews,
             canonicalIndexes,
-            canonicalTriggers
+            canonicalTriggers,
+            AuthEdOrgHierarchy
         );
     }
 
