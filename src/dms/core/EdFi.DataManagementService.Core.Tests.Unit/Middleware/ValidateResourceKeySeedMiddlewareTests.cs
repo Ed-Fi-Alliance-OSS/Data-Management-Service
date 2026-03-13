@@ -348,6 +348,24 @@ public class ValidateResourceKeySeedMiddlewareTests
         {
             _requestInfo.FrontendResponse.Body!.ToString().Should().NotContain("test diff report");
         }
+
+        [Test]
+        public void It_returns_resource_key_seed_validation_error_type()
+        {
+            _requestInfo
+                .FrontendResponse.Body!.ToString()
+                .Should()
+                .Contain("urn:ed-fi:api:resource-key-seed-validation-error");
+        }
+
+        [Test]
+        public void It_does_not_return_database_fingerprint_error_type()
+        {
+            _requestInfo
+                .FrontendResponse.Body!.ToString()
+                .Should()
+                .NotContain("urn:ed-fi:api:database-fingerprint-validation-error");
+        }
     }
 
     [TestFixture]

@@ -100,7 +100,7 @@ internal class ValidateResourceKeySeedMiddleware(
 
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 503,
-                Body: FailureResponse.ForDatabaseFingerprintValidationError(
+                Body: FailureResponse.ForResourceKeySeedValidationError(
                     ResourceKeySeedMismatchTitle,
                     "Resource key seed validation encountered an unexpected error. Check server logs for details.",
                     ["An unexpected error occurred during resource key seed validation."],
@@ -130,7 +130,7 @@ internal class ValidateResourceKeySeedMiddleware(
 
                 requestInfo.FrontendResponse = new FrontendResponse(
                     StatusCode: 503,
-                    Body: FailureResponse.ForDatabaseFingerprintValidationError(
+                    Body: FailureResponse.ForResourceKeySeedValidationError(
                         ResourceKeySeedMismatchTitle,
                         ResourceKeySeedMismatchDetail,
                         [ResourceKeySeedMismatchDetail],
