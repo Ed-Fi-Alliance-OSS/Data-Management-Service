@@ -157,6 +157,7 @@ internal class ApiService : IApiService
         steps.AddRange([
             new ParsePathMiddleware(_logger),
             _serviceProvider.GetRequiredService<ValidateDatabaseFingerprintMiddleware>(),
+            _serviceProvider.GetRequiredService<ValidateResourceKeySeedMiddleware>(),
         ]);
 
         return steps;
@@ -339,6 +340,7 @@ internal class ApiService : IApiService
         var steps = GetCommonInitialSteps();
         steps.AddRange([
             _serviceProvider.GetRequiredService<ValidateDatabaseFingerprintMiddleware>(),
+            _serviceProvider.GetRequiredService<ValidateResourceKeySeedMiddleware>(),
             new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
             new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
             _serviceProvider.GetRequiredService<GetTokenInfoHandler>(),
