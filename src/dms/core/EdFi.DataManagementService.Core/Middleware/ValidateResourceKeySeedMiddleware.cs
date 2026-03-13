@@ -95,7 +95,7 @@ internal class ValidateResourceKeySeedMiddleware(
                 "Resource key seed validation failed with an unexpected error for instance {InstanceId} ({InstanceName}). TraceId: {TraceId}",
                 selectedInstance.Id,
                 LoggingSanitizer.SanitizeForLogging(selectedInstance.InstanceName),
-                requestInfo.FrontendRequest.TraceId.Value
+                LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
             );
 
             requestInfo.FrontendResponse = new FrontendResponse(
@@ -125,7 +125,7 @@ internal class ValidateResourceKeySeedMiddleware(
                     selectedInstance.Id,
                     LoggingSanitizer.SanitizeForLogging(selectedInstance.InstanceName),
                     LoggingSanitizer.SanitizeForLogging(failure.DiffReport),
-                    requestInfo.FrontendRequest.TraceId.Value
+                    LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
                 );
 
                 requestInfo.FrontendResponse = new FrontendResponse(
