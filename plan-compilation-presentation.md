@@ -45,7 +45,7 @@ LIMIT @limit OFFSET @offset
 ## Write Plan Compilation
 
 - The compiler emits the SQL needed to write each relational table in a resource
-- Root and 1:1 tables can use `InsertSql` and, when applicable, `UpdateSql`
+- Root and 1:1 tables can use `InsertSql` and `UpdateSql`
 - Child and collection tables use `DeleteByParentSql` plus insert for replace semantics
 - The plan also carries binding metadata such as `SchoolId -> @schoolId`, `SchoolYear -> @schoolYear`, and `StudentUniqueId -> @studentUniqueId`
 
