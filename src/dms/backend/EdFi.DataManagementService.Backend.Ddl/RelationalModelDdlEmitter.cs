@@ -158,7 +158,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         {
             // Descriptor resources use the shared dms.Descriptor table (emitted by core DDL).
             if (resource.StorageKind == ResourceStorageKind.SharedDescriptorTable)
+            {
                 continue;
+            }
 
             foreach (var table in resource.RelationalModel.TablesInDependencyOrder)
             {
@@ -284,7 +286,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         foreach (var resource in resources)
         {
             if (resource.StorageKind == ResourceStorageKind.SharedDescriptorTable)
+            {
                 continue;
+            }
 
             foreach (var table in resource.RelationalModel.TablesInDependencyOrder)
             {
@@ -657,9 +661,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     private void EmitDocumentStampingBody(SqlWriter writer, DbTriggerInfo trigger)
     {
         if (trigger.KeyColumns.Count != 1)
+        {
             throw new InvalidOperationException(
                 $"DocumentStamping trigger '{trigger.Name.Value}' requires exactly one key column, but has {trigger.KeyColumns.Count}."
             );
+        }
 
         var documentTable = Quote(DmsTableNames.Document);
         var sequenceName = FormatSequenceName();
@@ -954,7 +960,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         for (int i = 0; i < elements.Count; i++)
         {
             if (i > 0)
+            {
                 writer.Append(" || '#' || ");
+            }
             writer.Append("'$");
             writer.Append(SqlDialectBase.EscapeSingleQuote(elements[i].IdentityJsonPath));
             writer.Append("=' || ");
@@ -1132,7 +1140,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         for (int i = 0; i < elements.Count; i++)
         {
             if (i > 0)
+            {
                 writer.Append(" + N'#' + ");
+            }
             writer.Append("N'$");
             writer.Append(SqlDialectBase.EscapeSingleQuote(elements[i].IdentityJsonPath));
             writer.Append("=' + ");
@@ -1282,7 +1292,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             for (int i = 0; i < mappings.Count; i++)
             {
                 if (i > 0)
+                {
                     writer.Append(", ");
+                }
                 writer.Append(Quote(mappings[i].TargetColumn));
                 writer.Append(" = EXCLUDED.");
                 writer.Append(Quote(mappings[i].TargetColumn));
@@ -1397,7 +1409,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         for (int i = 0; i < mappings.Count; i++)
         {
             if (i > 0)
+            {
                 writer.Append(", ");
+            }
             writer.Append("t.");
             writer.Append(Quote(mappings[i].TargetColumn));
             writer.Append(" = s.");
@@ -1480,7 +1494,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 for (int i = 0; i < referrer.ColumnMappings.Count; i++)
                 {
                     if (i > 0)
+                    {
                         writer.Append(", ");
+                    }
                     // TargetColumn = referrer's stored identity column (e.g., School_SchoolId)
                     // SourceColumn = trigger table's identity column (e.g., SchoolId)
                     writer.Append("r.");
@@ -1511,7 +1527,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 for (int i = 0; i < referrer.ColumnMappings.Count; i++)
                 {
                     if (i > 0)
+                    {
                         writer.Append(" OR ");
+                    }
                     var col = Quote(referrer.ColumnMappings[i].SourceColumn);
                     EmitMssqlNullSafeNotEqual(writer, "i", col, "d", col);
                 }
@@ -1535,7 +1553,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         for (int i = 0; i < identityProjectionColumns.Count; i++)
         {
             if (i > 0)
+            {
                 writer.Append(" OR ");
+            }
             var col = Quote(identityProjectionColumns[i]);
             writer.Append("OLD.");
             writer.Append(col);
@@ -1558,7 +1578,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         for (int i = 0; i < identityProjectionColumns.Count; i++)
         {
             if (i > 0)
+            {
                 writer.Append(" OR ");
+            }
             writer.Append("UPDATE(");
             writer.Append(Quote(identityProjectionColumns[i]));
             writer.Append(")");
@@ -1600,7 +1622,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         for (int i = 0; i < identityProjectionColumns.Count; i++)
         {
             if (i > 0)
+            {
                 writer.Append(" OR ");
+            }
             var col = Quote(identityProjectionColumns[i]);
             EmitMssqlNullSafeNotEqual(writer, "i", col, "d", col);
         }
@@ -1810,11 +1834,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             var arm = viewInfo.UnionArmsInOrder[i];
 
             if (arm.ProjectionExpressionsInSelectOrder.Count != viewInfo.OutputColumnsInSelectOrder.Count)
+            {
                 throw new InvalidOperationException(
                     $"Union arm from table '{arm.FromTable.Schema.Value}.{arm.FromTable.Name}' has "
                         + $"{arm.ProjectionExpressionsInSelectOrder.Count} projection expressions but the view expects "
                         + $"{viewInfo.OutputColumnsInSelectOrder.Count} output columns."
                 );
+            }
 
             if (i > 0)
             {
@@ -1827,7 +1853,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             for (int j = 0; j < arm.ProjectionExpressionsInSelectOrder.Count; j++)
             {
                 if (j > 0)
+                {
                     writer.Append(", ");
+                }
 
                 var expr = arm.ProjectionExpressionsInSelectOrder[j];
                 var outputColumn = viewInfo.OutputColumnsInSelectOrder[j];
