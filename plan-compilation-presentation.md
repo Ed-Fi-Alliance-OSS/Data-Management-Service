@@ -87,7 +87,7 @@ LIMIT @limit OFFSET @offset
 
 ---
 
-## Example: Read Plan - Root Table + Collection Table
+## Example: Collection Table Read Plan
 
 ```json
 {
