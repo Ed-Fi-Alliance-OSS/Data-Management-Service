@@ -194,8 +194,10 @@ public static class ProfileAwareAuthorizationProvider
             new KeyValuePair<string, string>("grant_type", "client_credentials"),
         ]);
 
-        byte[] basicBytes = Encoding.ASCII.GetBytes($"{_clientCredentials.key}:{_clientCredentials.secret}");
-        string basicB64 = Convert.ToBase64String(basicBytes);
+        string basicB64 = OAuthClientCredentialsEncoder.CreateBasicSchemeParameter(
+            _clientCredentials.key,
+            _clientCredentials.secret
+        );
 
         _dmsClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", basicB64);
         HttpResponseMessage tokenResponse = await _dmsClient.PostAsync("oauth/token", formData);
