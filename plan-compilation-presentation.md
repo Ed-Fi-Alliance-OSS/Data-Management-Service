@@ -84,6 +84,7 @@ LIMIT @limit OFFSET @offset
   )
   ;
 ```
+
 ---
 
 ## Example: Read Plan - Root Table + Collection Table
@@ -127,6 +128,13 @@ ORDER BY
     t."Ordinal" ASC
 ;
 ```
+Note the relational model already has:
+```
+edfi.School.SchoolId -> $.schoolId
+edfi.School.NameOfInstitution -> $.nameOfInstitution
+edfi.SchoolAddress.City -> $addresses[*].city
+```
+
 ---
 
 ## What's Next
