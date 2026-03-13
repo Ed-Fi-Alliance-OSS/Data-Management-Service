@@ -8,39 +8,32 @@
 
 ---
 
-## Plan Compilation
+## Plan Compilers
 
 - Removes runtime guesswork and SQL parsing
-- Compile executor-ready plans once (caching)
+- Compile executor-ready plans
 - Reuse the same plan shape across runtime and future AOT work
 
 ---
 
-## What The Epic Delivered
+## When Each Compiler Runs
 
-- Canonical SQL generation
-- Stable read, write, and projection plan contracts
-- Runtime mapping set compilation and cache
-
----
-
-## The Core Output
-
-- Compile target: `MappingSet`
-- Cache key: schema hash + dialect + mapping version
-- Result: immutable per-resource read and write plans
+- Query plan compiler runs at request time because filters, operators, and paging can change per request
+- Write and read plan compilers run at startup when the `MappingSet` is compiled for the current schema, dialect, and mapping version
+- Requests then reuse the cached read and write plans and only bind request values at execution time
 
 ---
 
-## 4. Example: Actual Query Plan
+## Example: Query Plan
 
-- Shows filter, unified alias rewrite, and paging parameters
+- From SQL compiler, given schoolYear and studentUniqueId as query parameters for StudentSchoolAssociation
+- SchoolYear filter, StudentUniqueId key unification lookup, and paging parameters
 
 ```sql
 SELECT r."DocumentId"
 FROM "edfi"."StudentSchoolAssociation" r
 WHERE
-    (r."SchoolYear" >= @schoolYear)
+    (r."SchoolYear" = @schoolYear)
     AND (r."Student_DocumentId" IS NOT NULL AND r."StudentUniqueId_Unified" = @studentUniqueId)
 ORDER BY r."DocumentId" ASC
 LIMIT @limit OFFSET @offset
@@ -49,16 +42,16 @@ LIMIT @limit OFFSET @offset
 
 ---
 
-## 5. Write Plan Compilation
+## Write Plan Compilation
 
-- `InsertSql` for every table
-- `UpdateSql` for applicable 1:1 tables
-- `DeleteByParentSql` for replace semantics
-- Example root bindings: `SchoolId -> @schoolId`, `SchoolYear -> @schoolYear`, `StudentUniqueId -> @studentUniqueId`
+- The compiler emits the SQL needed to write each relational table in a resource
+- Root and 1:1 tables can use `InsertSql` and, when applicable, `UpdateSql`
+- Child and collection tables use `DeleteByParentSql` plus insert for replace semantics
+- The plan also carries binding metadata such as `SchoolId -> @schoolId`, `SchoolYear -> @schoolYear`, and `StudentUniqueId -> @studentUniqueId`
 
 ---
 
-## 6. Example: Child Table Write Plan
+## 7. Example: Collection Table Write Plan
 
 - Shows parent key, ordinal, and scalar binding
 
@@ -76,11 +69,7 @@ LIMIT @limit OFFSET @offset
 
 ---
 
-## 7. Example: Projection Read Plan
-
-- Golden source: `projection/mappingset.manifest.json`
-- Shows reference identity and descriptor projection metadata
-- Good example of ordinal-driven reconstitution
+## 8. Example: Read Plan with Multi-column Identity & Descriptor
 
 ```json
 {
@@ -96,7 +85,7 @@ LIMIT @limit OFFSET @offset
 
 ---
 
-## 8. Runtime Integration
+## 9. Runtime Integration
 
 - Compile active mapping set from effective schema
 - Cache once per process
@@ -104,7 +93,7 @@ LIMIT @limit OFFSET @offset
 
 ---
 
-## 9. Evidence
+## 10. Evidence
 
 - Golden tests for SQL and manifest output
 - Authoritative DS 5.2 fixture coverage
@@ -113,7 +102,7 @@ LIMIT @limit OFFSET @offset
 
 ---
 
-## 10. Scope Boundaries
+## 11. Scope Boundaries
 
 - This epic builds the compilation layer, not the full executor story
 - PostgreSQL is the runtime path wired here
