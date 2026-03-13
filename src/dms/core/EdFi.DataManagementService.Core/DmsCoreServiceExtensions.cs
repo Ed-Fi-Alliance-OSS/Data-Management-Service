@@ -62,6 +62,7 @@ public static class DmsCoreServiceExtensions
             // Startup orchestration
             .AddSingleton<DmsStartupOrchestrator>()
             .AddSingleton<IDmsStartupTask, ValidateDatabaseFingerprintReaderRegistrationTask>()
+            .AddSingleton<IDmsStartupTask, ValidateResourceKeyRowReaderRegistrationTask>()
             .AddSingleton<IDmsStartupTask, LoadAndBuildEffectiveSchemaTask>()
             .AddSingleton<IDmsStartupTask, BackendMappingInitializationTask>()
             // Startup components
@@ -106,6 +107,11 @@ public static class DmsCoreServiceExtensions
             .AddSingleton<DatabaseFingerprintProvider>()
             .AddSingleton<ResolveDmsInstanceMiddleware>()
             .AddSingleton<ValidateDatabaseFingerprintMiddleware>()
+            // Resource key validation
+            .AddSingleton<IResourceKeyRowReader, MissingResourceKeyRowReader>()
+            .AddSingleton<IResourceKeyValidator, ResourceKeyValidator>()
+            .AddSingleton<ResourceKeyValidationCacheProvider>()
+            .AddSingleton<ValidateResourceKeySeedMiddleware>()
             .AddSingleton<IProfileCmsProvider, ConfigurationServiceProfileProvider>()
             .AddSingleton<IProfileService, CachedProfileService>()
             .AddSingleton<IProfileResponseFilter, ProfileResponseFilter>()

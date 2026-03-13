@@ -189,6 +189,10 @@ public static class WebApplicationBuilderExtensions
                 IDatabaseFingerprintReader,
                 Backend.Postgresql.PostgresqlDatabaseFingerprintReader
             >();
+            webAppBuilder.Services.AddSingleton<
+                IResourceKeyRowReader,
+                Backend.Postgresql.PostgresqlResourceKeyRowReader
+            >();
         }
         else
         {
@@ -197,6 +201,10 @@ public static class WebApplicationBuilderExtensions
             webAppBuilder.Services.AddSingleton<
                 IDatabaseFingerprintReader,
                 Backend.Mssql.MssqlDatabaseFingerprintReader
+            >();
+            webAppBuilder.Services.AddSingleton<
+                IResourceKeyRowReader,
+                Backend.Mssql.MssqlResourceKeyRowReader
             >();
         }
     }
