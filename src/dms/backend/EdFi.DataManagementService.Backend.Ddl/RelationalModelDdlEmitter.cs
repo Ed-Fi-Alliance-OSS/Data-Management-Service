@@ -599,7 +599,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             _ => throw new ArgumentOutOfRangeException(nameof(auth.TriggerEvent)),
         };
 
-        writer.AppendLine("GO");
         writer.Append("CREATE OR ALTER TRIGGER ");
         writer.Append(Quote(schema));
         writer.Append(".");
@@ -615,6 +614,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             AuthTriggerBodyEmitter.EmitBody(writer, _dialect, auth.Entity, auth.TriggerEvent);
         }
         writer.AppendLine("END;");
+        // Close the batch so that the next trigger (or any subsequent DDL/DML
+        // concatenated after the relational model DDL) starts in a fresh batch.
+        writer.AppendLine("GO");
         writer.AppendLine();
     }
 
