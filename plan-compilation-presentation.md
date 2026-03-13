@@ -86,72 +86,46 @@ LIMIT @limit OFFSET @offset
 ```
 ---
 
-## Example: Read Plan - Multi-column Identity + Descriptor
+## Example: Read Plan - Root Table + Collection Table
 
 ```json
 {
-  "table": { "schema": "edfi", "name": "ProjectionExample" },
-  "columns_in_order": [
-    "DocumentId",
-    "SessionTerm_DocumentId",
-    "SessionTerm_SchoolId",
-    "SessionTerm_SchoolYear",
-    "SessionTerm_SessionName",
-    "PrimarySchoolTypeDescriptor_DescriptorId",
-    "SecondarySchoolTypeDescriptor_DescriptorId",
-    "ProjectionExampleId",
-    "ShortName"
-  ],
-  "fk_column_ordinal": 1,
-  "identity_field_ordinals_in_order": [
-    { "reference_json_path": "$.sessionTermReference.schoolId", "column_ordinal": 2 },
-    { "reference_json_path": "$.sessionTermReference.schoolYear", "column_ordinal": 3 },
-    { "reference_json_path": "$.sessionTermReference.sessionName", "column_ordinal": 4 }
-  ],
-  "descriptor_sources_in_order": [
-    { "descriptor_value_path": "$.primarySchoolTypeDescriptor", "descriptor_id_column_ordinal": 5 },
-    { "descriptor_value_path": "$.secondarySchoolTypeDescriptor", "descriptor_id_column_ordinal": 6 }
-  ],
-  "result_shape": { "descriptor_id_ordinal": 0, "uri_ordinal": 1 }
+  "table_plans_in_dependency_order": [
+    {
+      "table": { "schema": "edfi", "name": "School" },
+      "select_list_columns_in_order": ["DocumentId", "NameOfInstitution", "SchoolId"],
+      "order_by_key_columns_in_order": ["DocumentId"]
+    },
+    {
+      "table": { "schema": "edfi", "name": "SchoolAddress" },
+      "select_list_columns_in_order": ["School_DocumentId", "Ordinal", "City"],
+      "order_by_key_columns_in_order": ["School_DocumentId", "Ordinal"]
+    }
+  ]
 }
 ```
 
 ```sql
-  SELECT
-      r."DocumentId",
-      r."SessionTerm_DocumentId",
-      r."SessionTerm_SchoolId",
-      r."SessionTerm_SchoolYear",
-      r."SessionTerm_SessionName",
-      r."PrimarySchoolTypeDescriptor_DescriptorId",
-      r."SecondarySchoolTypeDescriptor_DescriptorId",
-      r."ProjectionExampleId",
-      r."ShortName"
-  FROM "edfi"."ProjectionExample" r
-  INNER JOIN "page" k ON r."DocumentId" = k."DocumentId"
-  ORDER BY
-      r."DocumentId" ASC
-  ;
+SELECT
+    r."DocumentId",
+    r."NameOfInstitution",
+    r."SchoolId"
+FROM "edfi"."School" r
+INNER JOIN "page" k ON r."DocumentId" = k."DocumentId"
+ORDER BY
+    r."DocumentId" ASC
+;
 
-  SELECT
-      p."DescriptorId",
-      d."Uri"
-  FROM
-      (
-          SELECT t0."PrimarySchoolTypeDescriptor_DescriptorId" AS "DescriptorId"
-          FROM "edfi"."ProjectionExample" t0
-          INNER JOIN "page" k ON t0."DocumentId" = k."DocumentId"
-          WHERE t0."PrimarySchoolTypeDescriptor_DescriptorId" IS NOT NULL
-          UNION
-          SELECT t1."SecondarySchoolTypeDescriptor_DescriptorId" AS "DescriptorId"
-          FROM "edfi"."ProjectionExample" t1
-          INNER JOIN "page" k ON t1."DocumentId" = k."DocumentId"
-          WHERE t1."SecondarySchoolTypeDescriptor_DescriptorId" IS NOT NULL
-      ) p
-  INNER JOIN "dms"."Descriptor" d ON d."DocumentId" = p."DescriptorId"
-  ORDER BY
-      p."DescriptorId" ASC
-  ;
+SELECT
+    t."School_DocumentId",
+    t."Ordinal",
+    t."City"
+FROM "edfi"."SchoolAddress" t
+INNER JOIN "page" k ON t."School_DocumentId" = k."DocumentId"
+ORDER BY
+    t."School_DocumentId" ASC,
+    t."Ordinal" ASC
+;
 ```
 ---
 
