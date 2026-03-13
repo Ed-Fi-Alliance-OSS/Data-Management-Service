@@ -3246,6 +3246,9 @@
       "is_unique": false,
       "key_columns": [
         "SourceEducationOrganizationId"
+      ],
+      "include_columns": [
+        "TargetEducationOrganizationId"
       ]
     },
     {
@@ -3258,6 +3261,9 @@
       "is_unique": false,
       "key_columns": [
         "TargetEducationOrganizationId"
+      ],
+      "include_columns": [
+        "SourceEducationOrganizationId"
       ]
     },
     {

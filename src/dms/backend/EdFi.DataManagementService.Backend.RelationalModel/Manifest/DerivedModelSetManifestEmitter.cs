@@ -297,6 +297,11 @@ public static class DerivedModelSetManifestEmitter
             writer.WriteBoolean("is_unique", index.IsUnique);
             writer.WritePropertyName("key_columns");
             WriteColumnNameList(writer, index.KeyColumns);
+            if (index.IncludeColumns is { Count: > 0 })
+            {
+                writer.WritePropertyName("include_columns");
+                WriteColumnNameList(writer, index.IncludeColumns);
+            }
             writer.WriteEndObject();
         }
 

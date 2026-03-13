@@ -92,8 +92,8 @@ public sealed record AuthEdOrgEntity(
 
 /// <summary>
 /// The complete EducationOrganization hierarchy for auth DDL trigger generation.
-/// Produced by the hierarchy compiler from the <see cref="DerivedRelationalModelSet"/>
-/// and consumed by the <c>AuthDdlEmitter</c>.
+/// Produced by <see cref="DeriveAuthHierarchyPass"/> and consumed by
+/// <c>RelationalModelDdlEmitter</c> (via <c>AuthTriggerBodyEmitter</c>).
 /// </summary>
 /// <param name="EntitiesInNameOrder">
 /// All concrete EducationOrganization entities, sorted alphabetically by
