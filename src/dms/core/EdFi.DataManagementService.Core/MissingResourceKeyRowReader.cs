@@ -19,7 +19,10 @@ internal sealed class MissingResourceKeyRowReader(IOptions<AppSettings> appSetti
         + "Register the PostgreSQL or MSSQL resource key row reader in the host composition root "
         + "(see WebApplicationBuilderExtensions.ConfigureDatastore for an example).";
 
-    public Task<IReadOnlyList<ResourceKeyRow>> ReadResourceKeyRowsAsync(string connectionString)
+    public Task<IReadOnlyList<ResourceKeyRow>> ReadResourceKeyRowsAsync(
+        string connectionString,
+        CancellationToken cancellationToken = default
+    )
     {
         if (appSettings.Value.UseRelationalBackend)
         {

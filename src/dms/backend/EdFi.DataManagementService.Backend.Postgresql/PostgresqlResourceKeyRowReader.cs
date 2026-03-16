@@ -18,21 +18,24 @@ public class PostgresqlResourceKeyRowReader(ILogger<PostgresqlResourceKeyRowRead
         ORDER BY "ResourceKeyId"
         """;
 
-    public async Task<IReadOnlyList<ResourceKeyRow>> ReadResourceKeyRowsAsync(string connectionString)
+    public async Task<IReadOnlyList<ResourceKeyRow>> ReadResourceKeyRowsAsync(
+        string connectionString,
+        CancellationToken cancellationToken = default
+    )
     {
         logger.LogDebug("Reading resource key rows from dms.ResourceKey");
 
         await using var connection = new NpgsqlConnection(connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
 
         await using var command = connection.CreateCommand();
         command.CommandText = ResourceKeySelectSql;
 
-        await using var reader = await command.ExecuteReaderAsync();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
         var rows = new List<ResourceKeyRow>();
 
-        while (await reader.ReadAsync())
+        while (await reader.ReadAsync(cancellationToken))
         {
             rows.Add(
                 new ResourceKeyRow(

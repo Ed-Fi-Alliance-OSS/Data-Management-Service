@@ -13,6 +13,8 @@ namespace EdFi.DataManagementService.Core;
 /// </summary>
 internal sealed class NullResourceKeyRowReader : IResourceKeyRowReader
 {
-    public Task<IReadOnlyList<ResourceKeyRow>> ReadResourceKeyRowsAsync(string connectionString) =>
-        Task.FromResult<IReadOnlyList<ResourceKeyRow>>([]);
+    public Task<IReadOnlyList<ResourceKeyRow>> ReadResourceKeyRowsAsync(
+        string connectionString,
+        CancellationToken cancellationToken = default
+    ) => Task.FromResult<IReadOnlyList<ResourceKeyRow>>([]);
 }

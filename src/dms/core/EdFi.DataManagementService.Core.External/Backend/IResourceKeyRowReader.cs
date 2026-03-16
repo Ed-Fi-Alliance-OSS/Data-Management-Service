@@ -16,5 +16,8 @@ public interface IResourceKeyRowReader
     /// </summary>
     /// <param name="connectionString">The database connection string.</param>
     /// <returns>All resource key rows ordered by ResourceKeyId.</returns>
-    Task<IReadOnlyList<ResourceKeyRow>> ReadResourceKeyRowsAsync(string connectionString);
+    Task<IReadOnlyList<ResourceKeyRow>> ReadResourceKeyRowsAsync(
+        string connectionString,
+        CancellationToken cancellationToken = default
+    );
 }

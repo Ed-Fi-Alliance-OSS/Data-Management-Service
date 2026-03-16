@@ -67,7 +67,8 @@ public class ResourceKeyValidatorTests
         [Test]
         public void It_does_not_call_the_row_reader()
         {
-            A.CallTo(() => _reader.ReadResourceKeyRowsAsync(A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => _reader.ReadResourceKeyRowsAsync(A<string>._, A<CancellationToken>._))
+                .MustNotHaveHappened();
         }
     }
 
@@ -82,7 +83,7 @@ public class ResourceKeyValidatorTests
         public async Task Setup()
         {
             _reader = A.Fake<IResourceKeyRowReader>();
-            A.CallTo(() => _reader.ReadResourceKeyRowsAsync("conn1"))
+            A.CallTo(() => _reader.ReadResourceKeyRowsAsync("conn1", A<CancellationToken>._))
                 .Returns(
                     Task.FromResult<IReadOnlyList<ResourceKeyRow>>(
                         new List<ResourceKeyRow>
@@ -120,7 +121,8 @@ public class ResourceKeyValidatorTests
         [Test]
         public void It_calls_the_row_reader()
         {
-            A.CallTo(() => _reader.ReadResourceKeyRowsAsync("conn1")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _reader.ReadResourceKeyRowsAsync("conn1", A<CancellationToken>._))
+                .MustHaveHappenedOnceExactly();
         }
 
         [Test]
@@ -142,7 +144,7 @@ public class ResourceKeyValidatorTests
         public async Task Setup()
         {
             _reader = A.Fake<IResourceKeyRowReader>();
-            A.CallTo(() => _reader.ReadResourceKeyRowsAsync("conn1"))
+            A.CallTo(() => _reader.ReadResourceKeyRowsAsync("conn1", A<CancellationToken>._))
                 .Returns(
                     Task.FromResult<IReadOnlyList<ResourceKeyRow>>(
                         new List<ResourceKeyRow>
@@ -179,7 +181,8 @@ public class ResourceKeyValidatorTests
         [Test]
         public void It_calls_the_row_reader()
         {
-            A.CallTo(() => _reader.ReadResourceKeyRowsAsync("conn1")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _reader.ReadResourceKeyRowsAsync("conn1", A<CancellationToken>._))
+                .MustHaveHappenedOnceExactly();
         }
 
         [Test]
@@ -202,7 +205,7 @@ public class ResourceKeyValidatorTests
         public async Task Setup()
         {
             var reader = A.Fake<IResourceKeyRowReader>();
-            A.CallTo(() => reader.ReadResourceKeyRowsAsync("conn1"))
+            A.CallTo(() => reader.ReadResourceKeyRowsAsync("conn1", A<CancellationToken>._))
                 .Returns(
                     Task.FromResult<IReadOnlyList<ResourceKeyRow>>(
                         new List<ResourceKeyRow> { Row(1, "Ed-Fi", "Student", "5.0.0") }
@@ -253,7 +256,7 @@ public class ResourceKeyValidatorTests
         public async Task Setup()
         {
             var reader = A.Fake<IResourceKeyRowReader>();
-            A.CallTo(() => reader.ReadResourceKeyRowsAsync("conn1"))
+            A.CallTo(() => reader.ReadResourceKeyRowsAsync("conn1", A<CancellationToken>._))
                 .Returns(
                     Task.FromResult<IReadOnlyList<ResourceKeyRow>>(
                         new List<ResourceKeyRow>
@@ -304,7 +307,7 @@ public class ResourceKeyValidatorTests
         public async Task Setup()
         {
             var reader = A.Fake<IResourceKeyRowReader>();
-            A.CallTo(() => reader.ReadResourceKeyRowsAsync("conn1"))
+            A.CallTo(() => reader.ReadResourceKeyRowsAsync("conn1", A<CancellationToken>._))
                 .Returns(
                     Task.FromResult<IReadOnlyList<ResourceKeyRow>>(
                         new List<ResourceKeyRow> { Row(1, "Ed-Fi", "School", "4.0.0") }
@@ -359,7 +362,7 @@ public class ResourceKeyValidatorTests
         public async Task Setup()
         {
             var reader = A.Fake<IResourceKeyRowReader>();
-            A.CallTo(() => reader.ReadResourceKeyRowsAsync("conn1"))
+            A.CallTo(() => reader.ReadResourceKeyRowsAsync("conn1", A<CancellationToken>._))
                 .Returns(
                     Task.FromResult<IReadOnlyList<ResourceKeyRow>>(
                         new List<ResourceKeyRow>
@@ -430,7 +433,7 @@ public class ResourceKeyValidatorTests
         public async Task Setup()
         {
             var reader = A.Fake<IResourceKeyRowReader>();
-            A.CallTo(() => reader.ReadResourceKeyRowsAsync("conn1"))
+            A.CallTo(() => reader.ReadResourceKeyRowsAsync("conn1", A<CancellationToken>._))
                 .Returns(Task.FromResult<IReadOnlyList<ResourceKeyRow>>(new List<ResourceKeyRow>()));
 
             var validator = new ResourceKeyValidator(reader, NullLogger<ResourceKeyValidator>.Instance);

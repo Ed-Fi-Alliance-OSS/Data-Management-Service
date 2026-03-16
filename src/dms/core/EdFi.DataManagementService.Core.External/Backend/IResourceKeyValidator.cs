@@ -29,6 +29,7 @@ public interface IResourceKeyValidator
         short expectedResourceKeyCount,
         ImmutableArray<byte> expectedResourceKeySeedHash,
         IReadOnlyList<ResourceKeyRow> expectedResourceKeysInIdOrder,
-        string connectionString
+        string connectionString,
+        CancellationToken cancellationToken = default
     );
 }

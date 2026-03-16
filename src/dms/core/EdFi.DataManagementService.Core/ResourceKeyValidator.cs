@@ -28,7 +28,8 @@ internal sealed class ResourceKeyValidator(
         short expectedResourceKeyCount,
         ImmutableArray<byte> expectedResourceKeySeedHash,
         IReadOnlyList<ResourceKeyRow> expectedResourceKeysInIdOrder,
-        string connectionString
+        string connectionString,
+        CancellationToken cancellationToken = default
     )
     {
         // Fast path: compare count and hash
@@ -42,7 +43,10 @@ internal sealed class ResourceKeyValidator(
 
         // Slow path: read actual rows and diff
         logger.LogInformation("Resource key fingerprint mismatch detected, performing row-level validation");
-        var actualRows = await resourceKeyRowReader.ReadResourceKeyRowsAsync(connectionString);
+        var actualRows = await resourceKeyRowReader.ReadResourceKeyRowsAsync(
+            connectionString,
+            cancellationToken
+        );
         var diffReport = BuildDiffReport(actualRows, expectedResourceKeysInIdOrder);
         return new ResourceKeyValidationResult.ValidationFailure(diffReport);
     }
