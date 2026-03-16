@@ -425,6 +425,61 @@ public class ResourceKeyValidatorTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_Slow_Path_Where_Rows_Match_But_Fingerprint_Does_Not : ResourceKeyValidatorTests
+    {
+        private ResourceKeyValidationResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var reader = A.Fake<IResourceKeyRowReader>();
+            // Actual rows match expected rows exactly
+            A.CallTo(() => reader.ReadResourceKeyRowsAsync("conn1", A<CancellationToken>._))
+                .Returns(
+                    Task.FromResult<IReadOnlyList<ResourceKeyRow>>(
+                        new List<ResourceKeyRow>
+                        {
+                            Row(1, "Ed-Fi", "Student", "5.0.0"),
+                            Row(2, "Ed-Fi", "School", "5.0.0"),
+                        }
+                    )
+                );
+
+            var validator = new ResourceKeyValidator(reader, NullLogger<ResourceKeyValidator>.Instance);
+
+            var expectedKeys = new List<ResourceKeyRow>
+            {
+                Row(1, "Ed-Fi", "Student", "5.0.0"),
+                Row(2, "Ed-Fi", "School", "5.0.0"),
+            };
+
+            // Fingerprint hash mismatches (HashB vs HashA) but rows match
+            _result = await validator.ValidateAsync(
+                Fingerprint(2, HashB()),
+                2,
+                HashA().ToImmutableArray(),
+                expectedKeys,
+                "conn1"
+            );
+        }
+
+        [Test]
+        public void It_returns_validation_failure()
+        {
+            _result.Should().BeOfType<ResourceKeyValidationResult.ValidationFailure>();
+        }
+
+        [Test]
+        public void It_reports_only_effective_schema_metadata_is_inconsistent()
+        {
+            var failure = _result.Should().BeOfType<ResourceKeyValidationResult.ValidationFailure>().Subject;
+            failure.DiffReport.Should().Contain("Only the dms.EffectiveSchema metadata is inconsistent");
+            failure.DiffReport.Should().NotContain("Seed data mismatch");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_Slow_Path_With_More_Than_Twenty_Missing_Rows : ResourceKeyValidatorTests
     {
         private ResourceKeyValidationResult _result = null!;

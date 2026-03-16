@@ -48,10 +48,23 @@ internal sealed class ResourceKeyValidator(
             cancellationToken
         );
         var diffReport = BuildDiffReport(actualRows, expectedResourceKeysInIdOrder);
+
+        if (diffReport == null)
+        {
+            // The fingerprint (ResourceKeyCount or ResourceKeySeedHash) in dms.EffectiveSchema
+            // does not match, but the actual dms.ResourceKey rows are correct. Only the
+            // metadata row is inconsistent — reprovisioning dms.EffectiveSchema may suffice.
+            return new ResourceKeyValidationResult.ValidationFailure(
+                "Resource key fingerprint mismatch (ResourceKeyCount or ResourceKeySeedHash in dms.EffectiveSchema) "
+                    + "but dms.ResourceKey rows match the expected seed. "
+                    + "Only the dms.EffectiveSchema metadata is inconsistent."
+            );
+        }
+
         return new ResourceKeyValidationResult.ValidationFailure(diffReport);
     }
 
-    private static string BuildDiffReport(
+    private static string? BuildDiffReport(
         IReadOnlyList<ResourceKeyRow> actualRows,
         IReadOnlyList<ResourceKeyRow> expectedKeys
     )
@@ -123,12 +136,17 @@ internal sealed class ResourceKeyValidator(
 
     private static string Sanitize(string? input) => LoggingSanitizer.SanitizeForLogging(input);
 
-    private static string FormatDiffReport(
+    private static string? FormatDiffReport(
         IReadOnlyList<string> missingKeys,
         IReadOnlyList<string> unexpectedKeys,
         IReadOnlyList<string> modifiedDetails
     )
     {
+        if (missingKeys.Count == 0 && unexpectedKeys.Count == 0 && modifiedDetails.Count == 0)
+        {
+            return null;
+        }
+
         var sb = new StringBuilder();
         sb.AppendLine("Seed data mismatch in dms.ResourceKey:");
 

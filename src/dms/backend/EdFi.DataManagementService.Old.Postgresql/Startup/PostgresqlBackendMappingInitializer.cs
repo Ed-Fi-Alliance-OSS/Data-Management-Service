@@ -4,20 +4,22 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.Plans;
-using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Startup;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Old.Postgresql.Startup;
 
 internal sealed class PostgresqlBackendMappingInitializer(
     PostgresqlRuntimeMappingSetAccessor runtimeMappingSetAccessor,
-    PostgresqlRuntimeInstanceMappingValidator runtimeInstanceMappingValidator,
-    IOptions<AppSettings> appSettings,
     ILogger<PostgresqlBackendMappingInitializer> logger
 ) : IBackendMappingInitializer
 {
+    /// <summary>
+    /// Loads/compiles the PostgreSQL runtime mapping set. Instance-level database
+    /// validation (fingerprint + resource key seed) is handled by the Core-level
+    /// <c>ValidateStartupInstancesTask</c> (Order 310), which runs after this task
+    /// and supports per-instance failure isolation.
+    /// </summary>
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
         var cacheResult = await runtimeMappingSetAccessor
@@ -27,32 +29,12 @@ internal sealed class PostgresqlBackendMappingInitializer(
         var mappingSetKey = cacheResult.MappingSet.Key;
         var initializationMode = GetInitializationMode(cacheResult.CacheStatus);
 
-        if (!appSettings.Value.ValidateProvisionedMappingsOnStartup)
-        {
-            logger.LogWarning(
-                "{InitializationMode} PostgreSQL runtime mapping set for EffectiveSchemaHash {EffectiveSchemaHash}, Dialect {Dialect}, RelationalMappingVersion {RelationalMappingVersion}; temporary startup validation bypass is active because AppSettings.ValidateProvisionedMappingsOnStartup is false",
-                initializationMode,
-                mappingSetKey.EffectiveSchemaHash,
-                mappingSetKey.Dialect,
-                mappingSetKey.RelationalMappingVersion
-            );
-
-            return;
-        }
-
-        var validationSummary = await runtimeInstanceMappingValidator
-            .ValidateLoadedInstancesAsync(cacheResult.MappingSet, cancellationToken)
-            .ConfigureAwait(false);
-
         logger.LogInformation(
-            "{InitializationMode} PostgreSQL runtime mapping set for EffectiveSchemaHash {EffectiveSchemaHash}, Dialect {Dialect}, RelationalMappingVersion {RelationalMappingVersion}; validated {ValidatedDatabaseCount} database(s) across {InstanceCount} loaded DMS instance(s), reused {ReusedValidationCount} cached validation(s)",
+            "{InitializationMode} PostgreSQL runtime mapping set for EffectiveSchemaHash {EffectiveSchemaHash}, Dialect {Dialect}, RelationalMappingVersion {RelationalMappingVersion}",
             initializationMode,
             mappingSetKey.EffectiveSchemaHash,
             mappingSetKey.Dialect,
-            mappingSetKey.RelationalMappingVersion,
-            validationSummary.ValidatedDatabaseCount,
-            validationSummary.InstanceCount,
-            validationSummary.ReusedValidationCount
+            mappingSetKey.RelationalMappingVersion
         );
     }
 

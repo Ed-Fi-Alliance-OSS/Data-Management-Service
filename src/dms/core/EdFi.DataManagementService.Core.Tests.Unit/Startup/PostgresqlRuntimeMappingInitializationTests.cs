@@ -544,22 +544,14 @@ public class PostgresqlRuntimeMappingInitializationTests
         }
 
         [Test]
-        public void It_logs_a_warning_that_the_temporary_startup_validation_bypass_is_active()
+        public void It_logs_mapping_set_compilation_at_information_level()
         {
             _initializerLogger
                 .Entries.Should()
                 .Contain(entry =>
-                    entry.Level == LogLevel.Warning
+                    entry.Level == LogLevel.Information
                     && entry.Message.Contains(
                         "Compiled PostgreSQL runtime mapping set",
-                        StringComparison.Ordinal
-                    )
-                    && entry.Message.Contains(
-                        "temporary startup validation bypass is active",
-                        StringComparison.Ordinal
-                    )
-                    && entry.Message.Contains(
-                        "ValidateProvisionedMappingsOnStartup is false",
                         StringComparison.Ordinal
                     )
                 );
@@ -636,26 +628,6 @@ public class PostgresqlRuntimeMappingInitializationTests
 
             cacheResult.CacheStatus.Should().Be(MappingSetCacheStatus.ReusedCompleted);
             cacheResult.MappingSet.Key.Should().Be(mappingSetKey);
-            _serviceProvider
-                .GetRequiredService<PostgresqlValidatedResourceKeyMapCache>()
-                .TryGet(ConnectionString, out var validatedMaps)
-                .Should()
-                .BeTrue();
-            validatedMaps.MappingSetKey.Should().Be(mappingSetKey);
-            A.CallTo(() =>
-                    _databaseMetadataReader.ReadFingerprintAsync(
-                        ConnectionString,
-                        A<CancellationToken>.Ignored
-                    )
-                )
-                .MustHaveHappenedOnceExactly();
-            A.CallTo(() =>
-                    _databaseMetadataReader.ReadResourceKeysAsync(
-                        ConnectionString,
-                        A<CancellationToken>.Ignored
-                    )
-                )
-                .MustNotHaveHappened();
         }
     }
 
@@ -866,20 +838,6 @@ public class PostgresqlRuntimeMappingInitializationTests
                 .IdentityFieldOrdinalsInOrder.Select(static field => field.ReferenceJsonPath.Canonical)
                 .Should()
                 .Equal("$.schoolReference.schoolId");
-
-            _serviceProvider
-                .GetRequiredService<PostgresqlValidatedResourceKeyMapCache>()
-                .TryGet(ConnectionString, out var validatedMaps)
-                .Should()
-                .BeTrue();
-            validatedMaps.MappingSetKey.Should().Be(mappingSetKey);
-            A.CallTo(() =>
-                    _databaseMetadataReader.ReadResourceKeysAsync(
-                        ConnectionString,
-                        A<CancellationToken>.Ignored
-                    )
-                )
-                .MustNotHaveHappened();
         }
     }
 
@@ -970,20 +928,6 @@ public class PostgresqlRuntimeMappingInitializationTests
                 .Which;
 
             extensionTablePlan.TableModel.JsonScope.Canonical.Should().Be("$._ext.sample");
-
-            _serviceProvider
-                .GetRequiredService<PostgresqlValidatedResourceKeyMapCache>()
-                .TryGet(ConnectionString, out var validatedMaps)
-                .Should()
-                .BeTrue();
-            validatedMaps.MappingSetKey.Should().Be(mappingSetKey);
-            A.CallTo(() =>
-                    _databaseMetadataReader.ReadResourceKeysAsync(
-                        ConnectionString,
-                        A<CancellationToken>.Ignored
-                    )
-                )
-                .MustNotHaveHappened();
         }
     }
 
