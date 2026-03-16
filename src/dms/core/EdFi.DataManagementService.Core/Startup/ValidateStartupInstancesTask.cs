@@ -115,25 +115,14 @@ internal sealed class ValidateStartupInstancesTask(
         var result = await resourceKeyValidationCacheProvider.GetOrValidateAsync(
             connectionString,
             () =>
-            {
-                var expectedResourceKeys = effectiveSchema
-                    .ResourceKeysInIdOrder.Select(e => new ResourceKeyRow(
-                        e.ResourceKeyId,
-                        e.Resource.ProjectName,
-                        e.Resource.ResourceName,
-                        e.ResourceVersion
-                    ))
-                    .ToList();
-
-                return resourceKeyValidator.ValidateAsync(
+                resourceKeyValidator.ValidateAsync(
                     fingerprint,
                     effectiveSchema.ResourceKeyCount,
                     [.. effectiveSchema.ResourceKeySeedHash],
-                    expectedResourceKeys,
+                    effectiveSchema.ResourceKeysInIdOrder.ToResourceKeyRows(),
                     connectionString,
                     cancellationToken
-                );
-            }
+                )
         );
 
         if (result is ResourceKeyValidationResult.ValidationFailure failure)

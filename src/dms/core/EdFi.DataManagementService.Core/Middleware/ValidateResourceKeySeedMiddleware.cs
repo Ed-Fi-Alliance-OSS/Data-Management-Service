@@ -75,22 +75,15 @@ internal class ValidateResourceKeySeedMiddleware(
                 connectionString,
                 () =>
                 {
-                    // Convert ResourceKeyEntry list to ResourceKeyRow list for the validator interface.
-                    // Built inside the factory so the allocation only happens on cache miss.
-                    var expectedResourceKeys = effectiveSchema
-                        .ResourceKeysInIdOrder.Select(e => new ResourceKeyRow(
-                            e.ResourceKeyId,
-                            e.Resource.ProjectName,
-                            e.Resource.ResourceName,
-                            e.ResourceVersion
-                        ))
-                        .ToList();
-
+                    // CancellationToken is intentionally not passed here because the pipeline
+                    // interface (IPipelineStep) does not propagate one. The slow-path DB read
+                    // is a one-time-per-connection-string event for a small table, so the cost
+                    // of running to completion on client disconnect is negligible.
                     return resourceKeyValidator.ValidateAsync(
                         fingerprint,
                         effectiveSchema.ResourceKeyCount,
                         [.. effectiveSchema.ResourceKeySeedHash],
-                        expectedResourceKeys,
+                        effectiveSchema.ResourceKeysInIdOrder.ToResourceKeyRows(),
                         connectionString
                     );
                 }
@@ -148,6 +141,11 @@ internal class ValidateResourceKeySeedMiddleware(
                 );
 
                 return;
+
+            default:
+                throw new InvalidOperationException(
+                    $"Unhandled ResourceKeyValidationResult type: {result.GetType().Name}"
+                );
         }
     }
 }

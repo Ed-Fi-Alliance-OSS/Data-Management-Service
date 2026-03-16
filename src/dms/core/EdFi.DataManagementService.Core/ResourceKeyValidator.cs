@@ -118,8 +118,7 @@ internal sealed class ResourceKeyValidator(
         return diffs.Count > 0 ? string.Join(", ", diffs) : null;
     }
 
-    private static string Sanitize(string? input) =>
-        LoggingSanitizer.SanitizeForConsole(input).Replace("\r", string.Empty).Replace("\n", string.Empty);
+    private static string Sanitize(string? input) => LoggingSanitizer.SanitizeForLogging(input);
 
     private static string FormatDiffReport(
         IReadOnlyList<string> missingKeys,
