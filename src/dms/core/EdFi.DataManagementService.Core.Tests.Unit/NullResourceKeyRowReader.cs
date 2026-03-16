@@ -9,7 +9,7 @@ namespace EdFi.DataManagementService.Core;
 
 /// <summary>
 /// Testing-only no-op implementation of IResourceKeyRowReader that always returns an empty list.
-/// This should not be the runtime registration when UseRelationalBackend is enabled.
+/// Used in pipeline construction tests where resource key validation is not under test.
 /// </summary>
 internal sealed class NullResourceKeyRowReader : IResourceKeyRowReader
 {

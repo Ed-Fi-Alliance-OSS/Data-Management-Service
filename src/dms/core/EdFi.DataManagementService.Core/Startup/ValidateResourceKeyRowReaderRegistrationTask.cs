@@ -36,7 +36,7 @@ internal sealed class ValidateResourceKeyRowReaderRegistrationTask(
             return Task.CompletedTask;
         }
 
-        if (resourceKeyRowReader is MissingResourceKeyRowReader or NullResourceKeyRowReader)
+        if (resourceKeyRowReader is MissingResourceKeyRowReader)
         {
             throw MissingResourceKeyRowReader.CreateConfigurationException();
         }
