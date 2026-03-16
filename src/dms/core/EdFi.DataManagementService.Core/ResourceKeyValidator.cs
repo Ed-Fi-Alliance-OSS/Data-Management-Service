@@ -42,7 +42,7 @@ internal sealed class ResourceKeyValidator(
         }
 
         // Slow path: read actual rows and diff
-        logger.LogInformation("Resource key fingerprint mismatch detected, performing row-level validation");
+        logger.LogDebug("Resource key fingerprint mismatch detected, performing row-level validation");
         var actualRows = await resourceKeyRowReader.ReadResourceKeyRowsAsync(
             connectionString,
             cancellationToken
