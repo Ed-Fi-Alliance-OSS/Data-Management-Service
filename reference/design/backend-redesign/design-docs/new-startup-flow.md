@@ -68,7 +68,7 @@ The new lifecycle splits startup into explicit phases:
    - load `.mpack` for the configured dialect/version OR compile mapping sets from the loaded ApiSchemas,
    - for each configured DMS instance database:
      - read the database fingerprint (`dms.EffectiveSchema`, `dms.SchemaComponent`),
-     - validate `ResourceKeySeedHash/Count` (fast path) and cache `ResourceKeyId` maps,
+     - validate `ResourceKeySeedHash/Count` (fast path),
      - fail fast on mismatch.
 5. **Initialize authentication/authorization metadata caches** (startup-time, best-effort warmup):
    - warm OIDC discovery/JWKS metadata (if configured),
@@ -239,8 +239,7 @@ For a single host process serving a single effective schema set:
    - for each configured `DmsInstance`:
      - connect and read `dms.EffectiveSchema` (and `dms.SchemaComponent` if required),
      - validate `EffectiveSchemaHash` matches,
-     - validate `ResourceKeySeedHash/Count` fast path (and diff `dms.ResourceKey` only on mismatch),
-     - cache `QualifiedResourceName ↔ ResourceKeyId` maps,
+     - validate `ResourceKeySeedHash/Count` fast path (and diff `dms.ResourceKey` only on mismatch).
      - (optional) validate dialect compatibility.
 
 > **Implementation note — hybrid validation:** The implementation uses a hybrid approach.
@@ -253,6 +252,13 @@ For a single host process serving a single effective schema set:
 > `ValidateResourceKeySeedMiddleware` still perform deferred validation on first request.
 > Validation results (both success and failure) are cached for the lifetime of the process —
 > a DMS restart is required to clear cached validation state.
+
+> **Scope note — map caching:** DMS-976 validates resource key seeds and caches
+> the validation result (pass/fail) per connection string. The bidirectional
+> `QualifiedResourceName ↔ ResourceKeyId` runtime map cache is populated by
+> DMS-977 as part of mapping set initialization (pack load or runtime compile),
+> since the maps are derived from the compiled `MappingSet`, not from the raw
+> seed validation step.
 
 7. Startup completes; host begins serving traffic.
 
@@ -319,7 +325,7 @@ Startup should emit structured logs and metrics for:
   - tenant (if applicable),
   - effective hash observed vs expected,
   - seed hash/count observed vs expected,
-  - number of resource keys cached.
+  - number of resource keys validated.
 
 Health checks should reflect readiness:
 “schemas loaded + mappings initialized + all required instances validated”.
@@ -336,7 +342,6 @@ Implement the full startup-time flow in one change set:
    startup.
 5. Stub for initialize mapping sets at startup (pack load and/or runtime compile) for the configured
    dialect/version.
-6. Stub to validate every configured database instance at startup (fingerprint + `ResourceKeySeedHash/Count`)
-   and
-   cache `ResourceKeyId` maps.
+6. Stub to validate every configured database instance at startup (fingerprint + `ResourceKeySeedHash/Count`).
+   Bidirectional `ResourceKeyId` map caching is part of mapping set initialization (step 5 / DMS-977).
 7. Remove request-time schema/mapping initialization and disable schema reload for relational backends.
