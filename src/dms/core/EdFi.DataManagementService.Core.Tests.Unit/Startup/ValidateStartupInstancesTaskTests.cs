@@ -275,6 +275,88 @@ public class ValidateStartupInstancesTaskTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_EffectiveSchemaHash_Mismatch : ValidateStartupInstancesTaskTests
+    {
+        [Test]
+        public async Task It_throws_InvalidOperationException_with_hash_details()
+        {
+            var instanceProvider = A.Fake<IDmsInstanceProvider>();
+            var connectionStringProvider = A.Fake<IConnectionStringProvider>();
+            var fingerprintReader = A.Fake<IDatabaseFingerprintReader>();
+            var schemaSetProvider = A.Fake<IEffectiveSchemaSetProvider>();
+
+            // Fingerprint has hash "db_hash_999" but effective schema expects "abc123"
+            var fingerprint = new DatabaseFingerprint(
+                "1.0",
+                "db_hash_999",
+                2,
+                new byte[32].ToImmutableArray()
+            );
+            var schemaSet = CreateEffectiveSchemaSet();
+
+            A.CallTo(() => instanceProvider.GetLoadedTenantKeys()).Returns(new[] { "" });
+            A.CallTo(() => instanceProvider.GetAll(null))
+                .Returns([new DmsInstance(1, "Type", "TestInstance", "Server=test", [])]);
+            A.CallTo(() => connectionStringProvider.GetConnectionString(1, null)).Returns("Server=test");
+            A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<string>._)).Returns(fingerprint);
+            A.CallTo(() => schemaSetProvider.EffectiveSchemaSet).Returns(schemaSet);
+
+            var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
+            var task = CreateTask(
+                useRelational: true,
+                instanceProvider: instanceProvider,
+                connectionStringProvider: connectionStringProvider,
+                fingerprintProvider: fingerprintProvider,
+                schemaSetProvider: schemaSetProvider
+            );
+
+            Func<Task> act = async () => await task.ExecuteAsync(CancellationToken.None);
+
+            var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+            exception.Which.Message.Should().Contain("EffectiveSchemaHash mismatch");
+            exception.Which.Message.Should().Contain("TestInstance");
+            exception.Which.Message.Should().Contain("db_hash_999");
+            exception.Which.Message.Should().Contain("abc123");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Fingerprint_Reader_Throws_Unexpected_Exception : ValidateStartupInstancesTaskTests
+    {
+        [Test]
+        public async Task It_wraps_exception_with_instance_context()
+        {
+            var instanceProvider = A.Fake<IDmsInstanceProvider>();
+            var connectionStringProvider = A.Fake<IConnectionStringProvider>();
+            var fingerprintReader = A.Fake<IDatabaseFingerprintReader>();
+
+            A.CallTo(() => instanceProvider.GetLoadedTenantKeys()).Returns(new[] { "" });
+            A.CallTo(() => instanceProvider.GetAll(null))
+                .Returns([new DmsInstance(1, "Type", "TestInstance", "Server=test", [])]);
+            A.CallTo(() => connectionStringProvider.GetConnectionString(1, null)).Returns("Server=test");
+            A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<string>._))
+                .ThrowsAsync(new TimeoutException("connection timed out"));
+
+            var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
+            var task = CreateTask(
+                useRelational: true,
+                instanceProvider: instanceProvider,
+                connectionStringProvider: connectionStringProvider,
+                fingerprintProvider: fingerprintProvider
+            );
+
+            Func<Task> act = async () => await task.ExecuteAsync(CancellationToken.None);
+
+            var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+            exception.Which.Message.Should().Contain("TestInstance");
+            exception.Which.Message.Should().Contain("connection timed out");
+            exception.Which.InnerException.Should().BeOfType<TimeoutException>();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_ResourceKey_Mismatch : ValidateStartupInstancesTaskTests
     {
         [Test]

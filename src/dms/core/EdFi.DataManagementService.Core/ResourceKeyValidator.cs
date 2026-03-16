@@ -69,7 +69,7 @@ internal sealed class ResourceKeyValidator(
         {
             if (!actualById.TryGetValue(expected.ResourceKeyId, out var actual))
             {
-                missingKeys.Add(expected.ResourceKeyId.ToString());
+                missingKeys.Add(FormatRowTuple(expected));
             }
             else
             {
@@ -84,9 +84,9 @@ internal sealed class ResourceKeyValidator(
         // Find extra rows: in DB but not in expected
         var expectedIds = new HashSet<short>(expectedKeys.Select(e => e.ResourceKeyId));
         var unexpectedKeys = actualById
-            .Keys.Where(id => !expectedIds.Contains(id))
-            .OrderBy(id => id)
-            .Select(id => id.ToString())
+            .Where(kvp => !expectedIds.Contains(kvp.Key))
+            .OrderBy(kvp => kvp.Key)
+            .Select(kvp => FormatRowTuple(kvp.Value))
             .ToList();
 
         return FormatDiffReport(missingKeys, unexpectedKeys, modifiedDetails);
@@ -117,6 +117,9 @@ internal sealed class ResourceKeyValidator(
 
         return diffs.Count > 0 ? string.Join(", ", diffs) : null;
     }
+
+    private static string FormatRowTuple(ResourceKeyRow row) =>
+        $"({row.ResourceKeyId}, {Sanitize(row.ProjectName)}, {Sanitize(row.ResourceName)}, {Sanitize(row.ResourceVersion)})";
 
     private static string Sanitize(string? input) => LoggingSanitizer.SanitizeForLogging(input);
 

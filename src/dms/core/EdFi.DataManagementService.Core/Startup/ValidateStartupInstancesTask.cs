@@ -95,43 +95,83 @@ internal sealed class ValidateStartupInstancesTask(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Phase 1: Fingerprint validation (populates DatabaseFingerprintProvider cache)
-        var fingerprint = await fingerprintProvider.GetFingerprintAsync(connectionString);
-
-        if (fingerprint == null)
+        try
         {
-            throw new InvalidOperationException(
-                $"Database not provisioned (no dms.EffectiveSchema row) for instance "
-                    + $"{instance.Id} ('{LoggingSanitizer.SanitizeForLogging(instance.InstanceName)}') "
-                    + $"tenant '{LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)")}'. "
-                    + "Run 'ddl provision' to initialize the database schema."
-            );
-        }
+            // Phase 1: Fingerprint validation (populates DatabaseFingerprintProvider cache)
+            var fingerprint = await fingerprintProvider.GetFingerprintAsync(connectionString);
 
-        // Phase 2: Resource key seed validation (populates ResourceKeyValidationCacheProvider cache)
-        var effectiveSchema = effectiveSchemaSetProvider.EffectiveSchemaSet.EffectiveSchema;
+            if (fingerprint == null)
+            {
+                throw new InvalidOperationException(
+                    $"Database not provisioned (no dms.EffectiveSchema row) for instance "
+                        + $"{instance.Id} ('{LoggingSanitizer.SanitizeForLogging(instance.InstanceName)}') "
+                        + $"tenant '{LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)")}'. "
+                        + "Run 'ddl provision' to initialize the database schema."
+                );
+            }
 
-        var result = await resourceKeyValidationCacheProvider.GetOrValidateAsync(
-            connectionString,
-            () =>
-                resourceKeyValidator.ValidateAsync(
-                    fingerprint,
-                    effectiveSchema.ResourceKeyCount,
-                    [.. effectiveSchema.ResourceKeySeedHash],
-                    effectiveSchema.ResourceKeysInIdOrder.ToResourceKeyRows(),
-                    connectionString,
-                    cancellationToken
+            // Phase 1b: EffectiveSchemaHash validation
+            var effectiveSchema = effectiveSchemaSetProvider.EffectiveSchemaSet.EffectiveSchema;
+            if (
+                !string.Equals(
+                    fingerprint.EffectiveSchemaHash,
+                    effectiveSchema.EffectiveSchemaHash,
+                    StringComparison.Ordinal
                 )
-        );
+            )
+            {
+                throw new InvalidOperationException(
+                    $"EffectiveSchemaHash mismatch for instance "
+                        + $"{instance.Id} ('{LoggingSanitizer.SanitizeForLogging(instance.InstanceName)}') "
+                        + $"tenant '{LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)")}': "
+                        + $"database has '{LoggingSanitizer.SanitizeForLogging(fingerprint.EffectiveSchemaHash)}', "
+                        + $"process expects '{LoggingSanitizer.SanitizeForLogging(effectiveSchema.EffectiveSchemaHash)}'. "
+                        + "The database must be reprovisioned with 'ddl provision' against a fresh database."
+                );
+            }
 
-        if (result is ResourceKeyValidationResult.ValidationFailure failure)
+            // Phase 2: Resource key seed validation (populates ResourceKeyValidationCacheProvider cache)
+
+            var result = await resourceKeyValidationCacheProvider.GetOrValidateAsync(
+                connectionString,
+                () =>
+                    resourceKeyValidator.ValidateAsync(
+                        fingerprint,
+                        effectiveSchema.ResourceKeyCount,
+                        [.. effectiveSchema.ResourceKeySeedHash],
+                        effectiveSchema.ResourceKeysInIdOrder.ToResourceKeyRows(),
+                        connectionString,
+                        cancellationToken
+                    )
+            );
+
+            if (result is ResourceKeyValidationResult.ValidationFailure failure)
+            {
+                throw new InvalidOperationException(
+                    $"Resource key seed mismatch for instance "
+                        + $"{instance.Id} ('{LoggingSanitizer.SanitizeForLogging(instance.InstanceName)}') "
+                        + $"tenant '{LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)")}'. "
+                        + $"Diff: {LoggingSanitizer.SanitizeForConsole(failure.DiffReport)}. "
+                        + "The database must be reprovisioned with 'ddl provision' against a fresh database."
+                );
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
         {
             throw new InvalidOperationException(
-                $"Resource key seed mismatch for instance "
+                $"Startup validation failed for instance "
                     + $"{instance.Id} ('{LoggingSanitizer.SanitizeForLogging(instance.InstanceName)}') "
-                    + $"tenant '{LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)")}'. "
-                    + $"Diff: {LoggingSanitizer.SanitizeForConsole(failure.DiffReport)}. "
-                    + "The database must be reprovisioned with 'ddl provision' against a fresh database."
+                    + $"tenant '{LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)")}': "
+                    + ex.Message,
+                ex
             );
         }
 

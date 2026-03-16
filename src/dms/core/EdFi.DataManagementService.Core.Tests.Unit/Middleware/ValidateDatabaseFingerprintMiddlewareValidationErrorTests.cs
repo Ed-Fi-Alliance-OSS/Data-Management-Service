@@ -5,6 +5,7 @@
 
 using System.Linq;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
@@ -12,6 +13,7 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Startup;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
@@ -71,6 +73,16 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         var fingerprintReader = A.Fake<IDatabaseFingerprintReader>();
         var dmsInstanceSelection = A.Fake<IDmsInstanceSelection>();
         var middlewareLogger = new CapturingLogger<ValidateDatabaseFingerprintMiddleware>();
+        var effectiveSchemaSetProvider = A.Fake<IEffectiveSchemaSetProvider>();
+
+        // Default schema set with hash "abc123" to match test fingerprints
+        A.CallTo(() => effectiveSchemaSetProvider.EffectiveSchemaSet)
+            .Returns(
+                new EffectiveSchemaSet(
+                    new EffectiveSchemaInfo("1.0", "1.0", "abc123", 0, new byte[32], [], []),
+                    []
+                )
+            );
 
         var appSettings = Options.Create(
             new AppSettings
@@ -89,6 +101,7 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         var middleware = new ValidateDatabaseFingerprintMiddleware(
             appSettings,
             fingerprintProvider,
+            effectiveSchemaSetProvider,
             middlewareLogger
         );
 

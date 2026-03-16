@@ -126,10 +126,10 @@ public class ResourceKeyValidatorTests
         }
 
         [Test]
-        public void It_includes_unexpected_rows_in_diff_report()
+        public void It_includes_unexpected_rows_with_full_tuples_in_diff_report()
         {
             var failure = _result.Should().BeOfType<ResourceKeyValidationResult.ValidationFailure>().Subject;
-            failure.DiffReport.Should().Contain("3");
+            failure.DiffReport.Should().Contain("(3, Ed-Fi, Section, 5.0.0)");
         }
     }
 
@@ -237,12 +237,12 @@ public class ResourceKeyValidatorTests
         }
 
         [Test]
-        public void It_reports_missing_rows()
+        public void It_reports_missing_rows_with_full_tuples()
         {
             var failure = _result.Should().BeOfType<ResourceKeyValidationResult.ValidationFailure>().Subject;
             failure.DiffReport.Should().Contain("Missing rows");
-            failure.DiffReport.Should().Contain("2");
-            failure.DiffReport.Should().Contain("3");
+            failure.DiffReport.Should().Contain("(2, Ed-Fi, School, 5.0.0)");
+            failure.DiffReport.Should().Contain("(3, Ed-Fi, Section, 5.0.0)");
         }
     }
 
@@ -288,12 +288,12 @@ public class ResourceKeyValidatorTests
         }
 
         [Test]
-        public void It_reports_unexpected_rows()
+        public void It_reports_unexpected_rows_with_full_tuples()
         {
             var failure = _result.Should().BeOfType<ResourceKeyValidationResult.ValidationFailure>().Subject;
             failure.DiffReport.Should().Contain("Unexpected rows");
-            failure.DiffReport.Should().Contain("2");
-            failure.DiffReport.Should().Contain("3");
+            failure.DiffReport.Should().Contain("(2, Ed-Fi, School, 5.0.0)");
+            failure.DiffReport.Should().Contain("(3, Ed-Fi, Section, 5.0.0)");
         }
     }
 
@@ -398,20 +398,20 @@ public class ResourceKeyValidatorTests
         }
 
         [Test]
-        public void It_reports_missing_rows()
+        public void It_reports_missing_rows_with_full_tuples()
         {
             var failure = _result.Should().BeOfType<ResourceKeyValidationResult.ValidationFailure>().Subject;
             failure.DiffReport.Should().Contain("Missing rows");
-            failure.DiffReport.Should().Contain("2");
-            failure.DiffReport.Should().Contain("3");
+            failure.DiffReport.Should().Contain("(2, Ed-Fi, School, 5.0.0)");
+            failure.DiffReport.Should().Contain("(3, Ed-Fi, Section, 5.0.0)");
         }
 
         [Test]
-        public void It_reports_unexpected_rows()
+        public void It_reports_unexpected_rows_with_full_tuples()
         {
             var failure = _result.Should().BeOfType<ResourceKeyValidationResult.ValidationFailure>().Subject;
             failure.DiffReport.Should().Contain("Unexpected rows");
-            failure.DiffReport.Should().Contain("4");
+            failure.DiffReport.Should().Contain("(4, TPDM, Candidate, 1.0.0)");
         }
 
         [Test]
@@ -466,11 +466,11 @@ public class ResourceKeyValidatorTests
         }
 
         [Test]
-        public void It_lists_first_twenty_missing_row_ids()
+        public void It_lists_first_twenty_missing_rows()
         {
             var failure = _result.Should().BeOfType<ResourceKeyValidationResult.ValidationFailure>().Subject;
-            failure.DiffReport.Should().Contain("20");
-            failure.DiffReport.Should().NotContain("21");
+            failure.DiffReport.Should().Contain("(20, Ed-Fi, Resource20, 5.0.0)");
+            failure.DiffReport.Should().NotContain("Resource21");
         }
     }
 }
