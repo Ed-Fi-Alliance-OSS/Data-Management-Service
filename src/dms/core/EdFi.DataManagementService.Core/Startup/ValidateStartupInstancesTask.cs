@@ -131,7 +131,7 @@ internal sealed class ValidateStartupInstancesTask(
                 $"Resource key seed mismatch for instance "
                     + $"{instance.Id} ('{LoggingSanitizer.SanitizeForLogging(instance.InstanceName)}') "
                     + $"tenant '{LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)")}'. "
-                    + $"Diff: {LoggingSanitizer.SanitizeForLogging(failure.DiffReport)}. "
+                    + $"Diff: {LoggingSanitizer.SanitizeForConsole(failure.DiffReport)}. "
                     + "The database must be reprovisioned with 'ddl provision' against a fresh database."
             );
         }

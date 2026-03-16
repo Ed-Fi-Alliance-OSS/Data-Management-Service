@@ -243,7 +243,8 @@ public class ValidateResourceKeySeedMiddlewareTests
                         A<short>._,
                         A<ImmutableArray<byte>>._,
                         A<IReadOnlyList<ResourceKeyRow>>._,
-                        A<string>._
+                        A<string>._,
+                        A<CancellationToken>._
                     )
                 )
                 .Returns(new ResourceKeyValidationResult.ValidationSuccess());
@@ -298,7 +299,8 @@ public class ValidateResourceKeySeedMiddlewareTests
                         A<short>._,
                         A<ImmutableArray<byte>>._,
                         A<IReadOnlyList<ResourceKeyRow>>._,
-                        A<string>._
+                        A<string>._,
+                        A<CancellationToken>._
                     )
                 )
                 .Returns(new ResourceKeyValidationResult.ValidationFailure("test diff report"));
@@ -395,7 +397,8 @@ public class ValidateResourceKeySeedMiddlewareTests
                         A<short>._,
                         A<ImmutableArray<byte>>._,
                         A<IReadOnlyList<ResourceKeyRow>>._,
-                        A<string>._
+                        A<string>._,
+                        A<CancellationToken>._
                     )
                 )
                 .Returns(new ResourceKeyValidationResult.ValidationSuccess());
@@ -440,7 +443,8 @@ public class ValidateResourceKeySeedMiddlewareTests
                         A<short>._,
                         A<ImmutableArray<byte>>._,
                         A<IReadOnlyList<ResourceKeyRow>>._,
-                        A<string>._
+                        A<string>._,
+                        A<CancellationToken>._
                     )
                 )
                 .MustHaveHappenedOnceExactly();
@@ -480,7 +484,8 @@ public class ValidateResourceKeySeedMiddlewareTests
                         A<short>._,
                         A<ImmutableArray<byte>>._,
                         A<IReadOnlyList<ResourceKeyRow>>._,
-                        A<string>._
+                        A<string>._,
+                        A<CancellationToken>._
                     )
                 )
                 .Returns(new ResourceKeyValidationResult.ValidationFailure("cached diff"));
@@ -532,10 +537,88 @@ public class ValidateResourceKeySeedMiddlewareTests
                         A<short>._,
                         A<ImmutableArray<byte>>._,
                         A<IReadOnlyList<ResourceKeyRow>>._,
-                        A<string>._
+                        A<string>._,
+                        A<CancellationToken>._
                     )
                 )
                 .MustHaveHappenedOnceExactly();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Validator_Throws_Exception : ValidateResourceKeySeedMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private bool _nextCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (middleware, validator, _, schemaSetProvider, dmsInstanceSelection, serviceProvider) =
+                CreateMiddleware(useRelationalBackend: true);
+
+            SetupDmsInstanceSelection(dmsInstanceSelection);
+            A.CallTo(() => schemaSetProvider.EffectiveSchemaSet).Returns(CreateMinimalEffectiveSchemaSet());
+
+            A.CallTo(() =>
+                    validator.ValidateAsync(
+                        A<DatabaseFingerprint>._,
+                        A<short>._,
+                        A<ImmutableArray<byte>>._,
+                        A<IReadOnlyList<ResourceKeyRow>>._,
+                        A<string>._,
+                        A<CancellationToken>._
+                    )
+                )
+                .ThrowsAsync(new TimeoutException("connection timed out"));
+
+            _requestInfo = CreateRequestInfoWithFingerprint(
+                serviceProvider,
+                new DatabaseFingerprint("1.0", "abc123", 2, new byte[32].ToImmutableArray())
+            );
+
+            await middleware.Execute(
+                _requestInfo,
+                () =>
+                {
+                    _nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_does_not_call_next()
+        {
+            _nextCalled.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_returns_503_service_unavailable()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(503);
+        }
+
+        [Test]
+        public void It_returns_unexpected_error_message()
+        {
+            _requestInfo.FrontendResponse.Body!.ToString().Should().Contain("unexpected error");
+        }
+
+        [Test]
+        public void It_does_not_leak_exception_message_in_response_body()
+        {
+            _requestInfo.FrontendResponse.Body!.ToString().Should().NotContain("connection timed out");
+        }
+
+        [Test]
+        public void It_returns_resource_key_seed_validation_error_type()
+        {
+            _requestInfo
+                .FrontendResponse.Body!.ToString()
+                .Should()
+                .Contain("urn:ed-fi:api:resource-key-seed-validation-error");
         }
     }
 }

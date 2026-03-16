@@ -76,7 +76,7 @@ internal sealed class ResourceKeyValidator(
                 var diff = GetResourceKeyDiff(expected, actual);
                 if (diff is not null)
                 {
-                    modifiedDetails.Add($"ResourceKeyId={expected.ResourceKeyId}: {diff}");
+                    modifiedDetails.Add($"ResourceKeyId/{expected.ResourceKeyId}: {diff}");
                 }
             }
         }
@@ -99,19 +99,19 @@ internal sealed class ResourceKeyValidator(
         if (!string.Equals(expected.ProjectName, actual.ProjectName, StringComparison.Ordinal))
         {
             diffs.Add(
-                $"ProjectName expected='{Sanitize(expected.ProjectName)}' actual='{Sanitize(actual.ProjectName)}'"
+                $"ProjectName expected/{Sanitize(expected.ProjectName)}/ actual/{Sanitize(actual.ProjectName)}/"
             );
         }
         if (!string.Equals(expected.ResourceName, actual.ResourceName, StringComparison.Ordinal))
         {
             diffs.Add(
-                $"ResourceName expected='{Sanitize(expected.ResourceName)}' actual='{Sanitize(actual.ResourceName)}'"
+                $"ResourceName expected/{Sanitize(expected.ResourceName)}/ actual/{Sanitize(actual.ResourceName)}/"
             );
         }
         if (!string.Equals(expected.ResourceVersion, actual.ResourceVersion, StringComparison.Ordinal))
         {
             diffs.Add(
-                $"ResourceVersion expected='{Sanitize(expected.ResourceVersion)}' actual='{Sanitize(actual.ResourceVersion)}'"
+                $"ResourceVersion expected/{Sanitize(expected.ResourceVersion)}/ actual/{Sanitize(actual.ResourceVersion)}/"
             );
         }
 
@@ -132,7 +132,7 @@ internal sealed class ResourceKeyValidator(
         if (missingKeys.Count > 0)
         {
             var displayed = missingKeys.Take(MaxRowsPerSection);
-            sb.AppendLine($"  Missing rows (expected but not in database): [{string.Join(", ", displayed)}]");
+            sb.AppendLine($"  Missing rows - expected but not in database: {string.Join(" ", displayed)}");
             if (missingKeys.Count > MaxRowsPerSection)
             {
                 sb.AppendLine($"    ... and {missingKeys.Count - MaxRowsPerSection} more");
@@ -142,9 +142,7 @@ internal sealed class ResourceKeyValidator(
         if (unexpectedKeys.Count > 0)
         {
             var displayed = unexpectedKeys.Take(MaxRowsPerSection);
-            sb.AppendLine(
-                $"  Unexpected rows (in database but not expected): [{string.Join(", ", displayed)}]"
-            );
+            sb.AppendLine($"  Unexpected rows - in database but not expected: {string.Join(" ", displayed)}");
             if (unexpectedKeys.Count > MaxRowsPerSection)
             {
                 sb.AppendLine($"    ... and {unexpectedKeys.Count - MaxRowsPerSection} more");

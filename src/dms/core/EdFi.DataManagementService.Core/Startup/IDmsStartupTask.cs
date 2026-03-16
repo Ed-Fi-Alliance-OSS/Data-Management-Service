@@ -23,7 +23,7 @@ public interface IDmsStartupTask
     /// Recommended ranges:
     /// - 100-199: Schema loading and validation
     /// - 200-299: Schema processing (normalization, hashing)
-    /// - 300-399: Backend mapping initialization
+    /// - 300-399: Backend mapping initialization and instance validation
     /// </summary>
     int Order { get; }
 

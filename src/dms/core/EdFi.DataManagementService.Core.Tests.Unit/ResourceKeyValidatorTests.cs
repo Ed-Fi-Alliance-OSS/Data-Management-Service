@@ -419,7 +419,7 @@ public class ResourceKeyValidatorTests
         {
             var failure = _result.Should().BeOfType<ResourceKeyValidationResult.ValidationFailure>().Subject;
             failure.DiffReport.Should().Contain("Modified rows");
-            failure.DiffReport.Should().Contain("ResourceKeyId=1");
+            failure.DiffReport.Should().Contain("ResourceKeyId/1");
         }
     }
 
