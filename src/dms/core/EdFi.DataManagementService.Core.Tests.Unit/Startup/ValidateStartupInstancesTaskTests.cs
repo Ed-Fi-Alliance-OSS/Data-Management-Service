@@ -127,7 +127,7 @@ public class ValidateStartupInstancesTaskTests
     public class Given_Instance_Without_ConnectionString : ValidateStartupInstancesTaskTests
     {
         [Test]
-        public async Task It_skips_that_instance()
+        public async Task It_throws_InvalidOperationException()
         {
             var instanceProvider = A.Fake<IDmsInstanceProvider>();
             var connectionStringProvider = A.Fake<IConnectionStringProvider>();
@@ -148,7 +148,9 @@ public class ValidateStartupInstancesTaskTests
 
             Func<Task> act = async () => await task.ExecuteAsync(CancellationToken.None);
 
-            await act.Should().NotThrowAsync();
+            var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+            exception.Which.Message.Should().Contain("no connection string");
+            exception.Which.Message.Should().Contain("TestInstance");
             A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<string>._)).MustNotHaveHappened();
         }
     }

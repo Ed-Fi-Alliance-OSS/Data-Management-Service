@@ -66,13 +66,12 @@ internal sealed class ValidateStartupInstancesTask(
 
                 if (string.IsNullOrWhiteSpace(connectionString))
                 {
-                    logger.LogWarning(
-                        "Instance {InstanceId} ({InstanceName}) for tenant '{Tenant}' has no connection string; skipping startup validation",
-                        instance.Id,
-                        LoggingSanitizer.SanitizeForLogging(instance.InstanceName),
-                        LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)")
+                    throw new InvalidOperationException(
+                        $"Instance {instance.Id} ('{LoggingSanitizer.SanitizeForLogging(instance.InstanceName)}') "
+                            + $"for tenant '{LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)")}' has no connection string configured. "
+                            + "Every loaded DMS instance must have a valid connection string at startup. "
+                            + "Check the instance configuration in the DMS Configuration Service."
                     );
-                    continue;
                 }
 
                 await ValidateInstanceAsync(instance, tenant, connectionString, cancellationToken);
