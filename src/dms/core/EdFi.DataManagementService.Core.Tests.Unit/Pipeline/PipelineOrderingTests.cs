@@ -13,7 +13,6 @@ using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Security;
-using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Validation;
 using FakeItEasy;
 using FluentAssertions;
@@ -86,14 +85,7 @@ public class PipelineOrderingTests
                 NullLogger<ValidateDatabaseFingerprintMiddleware>.Instance
             );
 
-            services.AddSingleton<IResourceKeyRowReader, NullResourceKeyRowReader>();
-            services.AddSingleton<IResourceKeyValidator>(A.Fake<IResourceKeyValidator>());
-            services.AddSingleton<ResourceKeyValidationCacheProvider>();
-            services.AddSingleton<IEffectiveSchemaSetProvider>(A.Fake<IEffectiveSchemaSetProvider>());
-            services.AddTransient<ValidateResourceKeySeedMiddleware>();
-            services.AddTransient<ILogger<ValidateResourceKeySeedMiddleware>>(_ =>
-                NullLogger<ValidateResourceKeySeedMiddleware>.Instance
-            );
+            TestHelper.AddResourceKeyValidationServices(services);
 
             services.AddSingleton<IProfileService>(A.Fake<IProfileService>());
             services.AddTransient<ProfileResolutionMiddleware>();
@@ -259,14 +251,7 @@ public class PipelineOrderingTests
                 NullLogger<ValidateDatabaseFingerprintMiddleware>.Instance
             );
 
-            services.AddSingleton<IResourceKeyRowReader, NullResourceKeyRowReader>();
-            services.AddSingleton<IResourceKeyValidator>(A.Fake<IResourceKeyValidator>());
-            services.AddSingleton<ResourceKeyValidationCacheProvider>();
-            services.AddSingleton<IEffectiveSchemaSetProvider>(A.Fake<IEffectiveSchemaSetProvider>());
-            services.AddTransient<ValidateResourceKeySeedMiddleware>();
-            services.AddTransient<ILogger<ValidateResourceKeySeedMiddleware>>(_ =>
-                NullLogger<ValidateResourceKeySeedMiddleware>.Instance
-            );
+            TestHelper.AddResourceKeyValidationServices(services);
 
             var claimSetProvider = A.Fake<IClaimSetProvider>();
             var profileService = A.Fake<IProfileService>();
