@@ -127,7 +127,7 @@ public class ValidateStartupInstancesTaskTests
     public class Given_Instance_Without_ConnectionString : ValidateStartupInstancesTaskTests
     {
         [Test]
-        public async Task It_throws_InvalidOperationException()
+        public async Task It_completes_without_throwing()
         {
             var instanceProvider = A.Fake<IDmsInstanceProvider>();
             var connectionStringProvider = A.Fake<IConnectionStringProvider>();
@@ -148,9 +148,7 @@ public class ValidateStartupInstancesTaskTests
 
             Func<Task> act = async () => await task.ExecuteAsync(CancellationToken.None);
 
-            var exception = await act.Should().ThrowAsync<InvalidOperationException>();
-            exception.Which.Message.Should().Contain("no connection string");
-            exception.Which.Message.Should().Contain("TestInstance");
+            await act.Should().NotThrowAsync();
             A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<string>._)).MustNotHaveHappened();
         }
     }
@@ -212,7 +210,7 @@ public class ValidateStartupInstancesTaskTests
     public class Given_Unprovisioned_Database : ValidateStartupInstancesTaskTests
     {
         [Test]
-        public async Task It_throws_InvalidOperationException()
+        public async Task It_completes_without_throwing()
         {
             var instanceProvider = A.Fake<IDmsInstanceProvider>();
             var connectionStringProvider = A.Fake<IConnectionStringProvider>();
@@ -235,9 +233,7 @@ public class ValidateStartupInstancesTaskTests
 
             Func<Task> act = async () => await task.ExecuteAsync(CancellationToken.None);
 
-            var exception = await act.Should().ThrowAsync<InvalidOperationException>();
-            exception.Which.Message.Should().Contain("Database not provisioned");
-            exception.Which.Message.Should().Contain("TestInstance");
+            await act.Should().NotThrowAsync();
         }
     }
 
@@ -246,7 +242,7 @@ public class ValidateStartupInstancesTaskTests
     public class Given_Malformed_Fingerprint : ValidateStartupInstancesTaskTests
     {
         [Test]
-        public async Task It_throws_DatabaseFingerprintValidationException()
+        public async Task It_completes_without_throwing()
         {
             var instanceProvider = A.Fake<IDmsInstanceProvider>();
             var connectionStringProvider = A.Fake<IConnectionStringProvider>();
@@ -269,7 +265,7 @@ public class ValidateStartupInstancesTaskTests
 
             Func<Task> act = async () => await task.ExecuteAsync(CancellationToken.None);
 
-            await act.Should().ThrowAsync<DatabaseFingerprintValidationException>();
+            await act.Should().NotThrowAsync();
         }
     }
 
@@ -278,7 +274,7 @@ public class ValidateStartupInstancesTaskTests
     public class Given_EffectiveSchemaHash_Mismatch : ValidateStartupInstancesTaskTests
     {
         [Test]
-        public async Task It_throws_InvalidOperationException_with_hash_details()
+        public async Task It_completes_without_throwing()
         {
             var instanceProvider = A.Fake<IDmsInstanceProvider>();
             var connectionStringProvider = A.Fake<IConnectionStringProvider>();
@@ -312,11 +308,7 @@ public class ValidateStartupInstancesTaskTests
 
             Func<Task> act = async () => await task.ExecuteAsync(CancellationToken.None);
 
-            var exception = await act.Should().ThrowAsync<InvalidOperationException>();
-            exception.Which.Message.Should().Contain("EffectiveSchemaHash mismatch");
-            exception.Which.Message.Should().Contain("TestInstance");
-            exception.Which.Message.Should().Contain("db_hash_999");
-            exception.Which.Message.Should().Contain("abc123");
+            await act.Should().NotThrowAsync();
         }
     }
 
@@ -325,7 +317,7 @@ public class ValidateStartupInstancesTaskTests
     public class Given_Fingerprint_Reader_Throws_Unexpected_Exception : ValidateStartupInstancesTaskTests
     {
         [Test]
-        public async Task It_wraps_exception_with_instance_context()
+        public async Task It_completes_without_throwing()
         {
             var instanceProvider = A.Fake<IDmsInstanceProvider>();
             var connectionStringProvider = A.Fake<IConnectionStringProvider>();
@@ -348,10 +340,7 @@ public class ValidateStartupInstancesTaskTests
 
             Func<Task> act = async () => await task.ExecuteAsync(CancellationToken.None);
 
-            var exception = await act.Should().ThrowAsync<InvalidOperationException>();
-            exception.Which.Message.Should().Contain("TestInstance");
-            exception.Which.Message.Should().Contain("connection timed out");
-            exception.Which.InnerException.Should().BeOfType<TimeoutException>();
+            await act.Should().NotThrowAsync();
         }
     }
 
@@ -360,7 +349,7 @@ public class ValidateStartupInstancesTaskTests
     public class Given_ResourceKey_Mismatch : ValidateStartupInstancesTaskTests
     {
         [Test]
-        public async Task It_throws_InvalidOperationException_with_diff_report()
+        public async Task It_completes_without_throwing()
         {
             var instanceProvider = A.Fake<IDmsInstanceProvider>();
             var connectionStringProvider = A.Fake<IConnectionStringProvider>();
@@ -403,10 +392,75 @@ public class ValidateStartupInstancesTaskTests
 
             Func<Task> act = async () => await task.ExecuteAsync(CancellationToken.None);
 
-            var exception = await act.Should().ThrowAsync<InvalidOperationException>();
-            exception.Which.Message.Should().Contain("Resource key seed mismatch");
-            exception.Which.Message.Should().Contain("TestInstance");
-            exception.Which.Message.Should().Contain("missing: Ed-Fi.Student");
+            await act.Should().NotThrowAsync();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_One_Bad_Instance_And_One_Good_Instance : ValidateStartupInstancesTaskTests
+    {
+        [Test]
+        public async Task It_validates_both_without_throwing()
+        {
+            var instanceProvider = A.Fake<IDmsInstanceProvider>();
+            var connectionStringProvider = A.Fake<IConnectionStringProvider>();
+            var fingerprintReader = A.Fake<IDatabaseFingerprintReader>();
+            var resourceKeyValidator = A.Fake<IResourceKeyValidator>();
+            var schemaSetProvider = A.Fake<IEffectiveSchemaSetProvider>();
+
+            var goodFingerprint = CreateFingerprint();
+            var schemaSet = CreateEffectiveSchemaSet();
+
+            A.CallTo(() => instanceProvider.GetLoadedTenantKeys()).Returns(new[] { "" });
+            A.CallTo(() => instanceProvider.GetAll(null))
+                .Returns([
+                    new DmsInstance(1, "Type", "BadInstance", "Server=bad", []),
+                    new DmsInstance(2, "Type", "GoodInstance", "Server=good", []),
+                ]);
+            A.CallTo(() => connectionStringProvider.GetConnectionString(1, null)).Returns("Server=bad");
+            A.CallTo(() => connectionStringProvider.GetConnectionString(2, null)).Returns("Server=good");
+
+            // Bad instance: unprovisioned database
+            A.CallTo(() => fingerprintReader.ReadFingerprintAsync("Server=bad"))
+                .Returns((DatabaseFingerprint?)null);
+
+            // Good instance: valid fingerprint
+            A.CallTo(() => fingerprintReader.ReadFingerprintAsync("Server=good")).Returns(goodFingerprint);
+
+            A.CallTo(() => schemaSetProvider.EffectiveSchemaSet).Returns(schemaSet);
+            A.CallTo(() =>
+                    resourceKeyValidator.ValidateAsync(
+                        A<DatabaseFingerprint>._,
+                        A<short>._,
+                        A<ImmutableArray<byte>>._,
+                        A<IReadOnlyList<ResourceKeyRow>>._,
+                        A<string>._,
+                        A<CancellationToken>._
+                    )
+                )
+                .Returns(new ResourceKeyValidationResult.ValidationSuccess());
+
+            var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
+            var cacheProvider = new ResourceKeyValidationCacheProvider();
+            var task = CreateTask(
+                useRelational: true,
+                instanceProvider: instanceProvider,
+                connectionStringProvider: connectionStringProvider,
+                fingerprintProvider: fingerprintProvider,
+                resourceKeyValidator: resourceKeyValidator,
+                cacheProvider: cacheProvider,
+                schemaSetProvider: schemaSetProvider
+            );
+
+            Func<Task> act = async () => await task.ExecuteAsync(CancellationToken.None);
+
+            // The bad instance does not prevent the good instance from being validated
+            await act.Should().NotThrowAsync();
+            A.CallTo(() => fingerprintReader.ReadFingerprintAsync("Server=bad"))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => fingerprintReader.ReadFingerprintAsync("Server=good"))
+                .MustHaveHappenedOnceExactly();
         }
     }
 

@@ -242,16 +242,19 @@ For a single host process serving a single effective schema set:
      - validate `ResourceKeySeedHash/Count` fast path (and diff `dms.ResourceKey` only on mismatch).
      - (optional) validate dialect compatibility.
 
-> **Implementation note — hybrid validation:** The implementation uses a hybrid approach.
-> `ValidateStartupInstancesTask` (Order 310) eagerly validates database fingerprints and
-> resource key seeds for all instances known at startup, failing fast on any mismatch.
-> Results are pre-populated into the singleton caches (`DatabaseFingerprintProvider`,
-> `ResourceKeyValidationCacheProvider`), making the request-time middleware a no-op for
-> these instances. For instances discovered dynamically after startup (multi-tenant
-> cache-miss scenarios), `ValidateDatabaseFingerprintMiddleware` and
-> `ValidateResourceKeySeedMiddleware` still perform deferred validation on first request.
-> Validation results (both success and failure) are cached for the lifetime of the process —
-> a DMS restart is required to clear cached validation state.
+> **Implementation note — eager validation:** `ValidateStartupInstancesTask` (Order 310)
+> eagerly validates database fingerprints and resource key seeds for all instances known at
+> startup, pre-populating the singleton caches (`DatabaseFingerprintProvider`,
+> `ResourceKeyValidationCacheProvider`). Per-instance validation failures are logged at
+> Critical level but **do not abort startup** — the failure is cached and the request-time
+> middleware returns 503 for that instance while other instances continue to be served.
+> This preserves the multi-instance-safe failure mode required by the design (see EPIC.md,
+> transactions-and-concurrency.md, 03-config-and-failure-modes.md).
+> For instances discovered dynamically after startup (multi-tenant cache-miss scenarios),
+> `ValidateDatabaseFingerprintMiddleware` and `ValidateResourceKeySeedMiddleware` still
+> perform deferred validation on first request. Validation results (both success and failure)
+> are cached for the lifetime of the process — a DMS restart is required to clear cached
+> validation state.
 
 > **Scope note — map caching:** DMS-976 validates resource key seeds and caches
 > the validation result (pass/fail) per connection string. The bidirectional
@@ -266,23 +269,29 @@ For a single host process serving a single effective schema set:
 
 The startup-based flow forces explicit decisions about “what is fatal”.
 
-- **Fatal**:
+- **Fatal** (abort startup):
   - ApiSchema load/validation failure,
   - mapping pack load failure when pack-only mode is enabled,
-  - mapping compilation failure when compile is required,
-  - any configured database instance fails startup validation (connectivity failure, wrong
-    `EffectiveSchemaHash`, missing `dms.EffectiveSchema`, invalid `ResourceKeySeedHash/Count`).
+  - mapping compilation failure when compile is required.
 
-Startup validation is all-or-nothing: if any database instance fails validation, the service startup fails.
-Logs must identify each failing instance (tenant, instance id/name) and the specific validation failure.
+- **Per-instance** (log Critical, cache failure, serve 503 at request time):
+  - connectivity failure to a configured database instance,
+  - wrong `EffectiveSchemaHash`,
+  - missing `dms.EffectiveSchema`,
+  - invalid `ResourceKeySeedHash/Count`.
 
-> **Implementation note:** With hybrid validation (see §6 note above), instances known at startup
-> are validated eagerly — validation failures prevent startup. For dynamically-discovered instances,
-> validation failures result in `503 Service Unavailable` with a remediation-guidance error body
-> (the detailed diff report is logged server-side only, correlated via `TraceId`). In both
-> cases, the failure result is cached permanently — subsequent requests to the same connection
-> string return 503 without re-validating. A DMS restart is required to retry validation (e.g.,
-> after reprovisioning the database).
+Per-instance validation failures do not abort startup. Each failing instance is logged at
+Critical level (identifying tenant, instance id/name, and the specific failure), and the
+failure is cached so the request-time middleware returns `503 Service Unavailable` for that
+instance. Other instances continue to be served normally. This preserves the multi-instance-safe
+failure mode (see EPIC.md, transactions-and-concurrency.md, 03-config-and-failure-modes.md).
+
+> **Implementation note:** Both startup-known and dynamically-discovered instances follow the
+> same failure model: validation failures result in `503 Service Unavailable` with a
+> remediation-guidance error body (the detailed diff report is logged server-side only,
+> correlated via `TraceId`). The failure result is cached permanently — subsequent requests
+> to the same connection string return 503 without re-validating. A DMS restart is required
+> to retry validation (e.g., after reprovisioning the database).
 
 ### Container-oriented “fail fast”
 
