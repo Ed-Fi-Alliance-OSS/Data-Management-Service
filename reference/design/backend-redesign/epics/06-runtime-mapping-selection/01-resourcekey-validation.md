@@ -17,10 +17,11 @@ Per `reference/design/backend-redesign/design-docs/ddl-generation.md` and `refer
 ## Acceptance Criteria
 
 - When `ResourceKeyCount` and `ResourceKeySeedHash` match expected, validation succeeds without reading the full `dms.ResourceKey` table.
-- When the fast path mismatches, validation performs a slow-path diff and fails fast with a diagnostic that includes:
-  - missing rows,
-  - extra rows,
+- When the fast path mismatches, validation performs a slow-path diff and fails fast. The diff report is logged server-side and includes:
+  - missing rows (expected but not in database),
+  - unexpected rows (in database but not expected),
   - and mismatched `(ResourceKeyId, ProjectName, ResourceName, ResourceVersion)` rows.
+- The HTTP 503 response body contains only high-level remediation guidance (reprovisioning instructions) and a `correlationId` for log correlation — **not** the diff report itself.
 - Validation results are cached per connection string and invalidated only when the connection string changes.
 
 ## Tasks
@@ -29,7 +30,7 @@ Per `reference/design/backend-redesign/design-docs/ddl-generation.md` and `refer
    - mapping set expected seed summary and list,
    - DB fingerprint from `dms.EffectiveSchema`.
 2. Implement dialect-specific slow-path reads of `dms.ResourceKey` ordered by `ResourceKeyId`.
-3. Implement a deterministic diff report format suitable for logs and test assertions.
+3. Implement a deterministic diff report format suitable for server logs and test assertions. The diff report is not included in HTTP response bodies.
 4. Add unit tests covering:
    1. fast-path success,
    2. slow-path mismatch reporting,

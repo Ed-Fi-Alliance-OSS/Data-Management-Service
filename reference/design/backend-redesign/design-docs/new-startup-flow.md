@@ -272,7 +272,8 @@ Logs must identify each failing instance (tenant, instance id/name) and the spec
 
 > **Implementation note:** With hybrid validation (see §6 note above), instances known at startup
 > are validated eagerly — validation failures prevent startup. For dynamically-discovered instances,
-> validation failures result in `503 Service Unavailable` with a diagnostic error body. In both
+> validation failures result in `503 Service Unavailable` with a remediation-guidance error body
+> (the detailed diff report is logged server-side only, correlated via `TraceId`). In both
 > cases, the failure result is cached permanently — subsequent requests to the same connection
 > string return 503 without re-validating. A DMS restart is required to retry validation (e.g.,
 > after reprovisioning the database).
