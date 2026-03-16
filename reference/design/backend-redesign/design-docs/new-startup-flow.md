@@ -243,14 +243,16 @@ For a single host process serving a single effective schema set:
      - cache `QualifiedResourceName ↔ ResourceKeyId` maps,
      - (optional) validate dialect compatibility.
 
-> **Implementation note — deferred validation:** The current implementation defers database
-> fingerprint validation and resource key seed validation to **first request per connection string**
-> via middleware (`ValidateDatabaseFingerprintMiddleware`, `ValidateResourceKeySeedMiddleware`),
-> rather than performing them at startup. This approach is better suited for multi-tenant scenarios
-> with dynamic instance discovery, where connection strings may not all be known at startup.
+> **Implementation note — hybrid validation:** The implementation uses a hybrid approach.
+> `ValidateStartupInstancesTask` (Order 310) eagerly validates database fingerprints and
+> resource key seeds for all instances known at startup, failing fast on any mismatch.
+> Results are pre-populated into the singleton caches (`DatabaseFingerprintProvider`,
+> `ResourceKeyValidationCacheProvider`), making the request-time middleware a no-op for
+> these instances. For instances discovered dynamically after startup (multi-tenant
+> cache-miss scenarios), `ValidateDatabaseFingerprintMiddleware` and
+> `ValidateResourceKeySeedMiddleware` still perform deferred validation on first request.
 > Validation results (both success and failure) are cached for the lifetime of the process —
-> a DMS restart is required to clear cached validation state. See the design notes in
-> `ValidateResourceKeySeedMiddleware.cs` and `ValidateDatabaseFingerprintMiddleware.cs` for details.
+> a DMS restart is required to clear cached validation state.
 
 7. Startup completes; host begins serving traffic.
 
@@ -268,11 +270,12 @@ The startup-based flow forces explicit decisions about “what is fatal”.
 Startup validation is all-or-nothing: if any database instance fails validation, the service startup fails.
 Logs must identify each failing instance (tenant, instance id/name) and the specific validation failure.
 
-> **Implementation note:** With deferred validation (see §6 note above), validation failures do not
-> prevent startup. Instead, requests to a failing database instance receive `503 Service Unavailable`
-> with a diagnostic error body. The failure result is cached permanently — subsequent requests to
-> the same connection string return 503 without re-validating. A DMS restart is required to retry
-> validation (e.g., after reprovisioning the database).
+> **Implementation note:** With hybrid validation (see §6 note above), instances known at startup
+> are validated eagerly — validation failures prevent startup. For dynamically-discovered instances,
+> validation failures result in `503 Service Unavailable` with a diagnostic error body. In both
+> cases, the failure result is cached permanently — subsequent requests to the same connection
+> string return 503 without re-validating. A DMS restart is required to retry validation (e.g.,
+> after reprovisioning the database).
 
 ### Container-oriented “fail fast”
 
