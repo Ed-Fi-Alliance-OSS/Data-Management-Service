@@ -113,6 +113,8 @@ public static class DmsCoreServiceExtensions
             .AddSingleton<IResourceKeyValidator, ResourceKeyValidator>()
             .AddSingleton<ResourceKeyValidationCacheProvider>()
             .AddSingleton<ValidateResourceKeySeedMiddleware>()
+            // Mapping set resolution
+            .AddSingleton<ResolveMappingSetMiddleware>()
             .AddSingleton<IProfileCmsProvider, ConfigurationServiceProfileProvider>()
             .AddSingleton<IProfileService, CachedProfileService>()
             .AddSingleton<IProfileResponseFilter, ProfileResponseFilter>()
