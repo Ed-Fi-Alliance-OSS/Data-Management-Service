@@ -47,7 +47,7 @@ public class ClaimSetManagementHooks(PlaywrightContext playwrightContext, TestLo
                 // Ensure we have a system administrator token (use consistent credentials)
                 await EnsureSystemAdministratorToken(
                     "SystemAdministratorClient",
-                    "SystemAdministratorSecret"
+                    SystemAdministrator.DefaultClientSecret
                 );
 
                 // Clear DMS claimsets cache
@@ -104,7 +104,10 @@ public class ClaimSetManagementHooks(PlaywrightContext playwrightContext, TestLo
 
             // First reset CMS claimsets
             _logger.log.Information("Resetting CMS claimsets...");
-            await EnsureSystemAdministratorToken("SystemAdministratorClient", "SystemAdministratorSecret");
+            await EnsureSystemAdministratorToken(
+                "SystemAdministratorClient",
+                SystemAdministrator.DefaultClientSecret
+            );
             await ReloadCmsClaimsets();
 
             // Wait for CMS to process the reload

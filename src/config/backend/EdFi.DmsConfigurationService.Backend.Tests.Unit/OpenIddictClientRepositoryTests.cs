@@ -5,13 +5,16 @@
 
 using System.Data;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel.Configuration;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit;
 
@@ -21,6 +24,7 @@ public class OpenIddictClientRepositoryTests
     private ILogger<OpenIddictClientRepository> _logger = null!;
     private IClientSecretHasher _secretHasher = null!;
     private IOpenIddictDataRepository _dataRepository = null!;
+    private IOptions<ClientSecretValidationOptions> _clientSecretValidationOptionsAccessor = null!;
     private OpenIddictClientRepository _repository = null!;
 
     [SetUp]
@@ -29,6 +33,9 @@ public class OpenIddictClientRepositoryTests
         _logger = A.Fake<ILogger<OpenIddictClientRepository>>();
         _secretHasher = A.Fake<IClientSecretHasher>();
         _dataRepository = A.Fake<IOpenIddictDataRepository>();
+        _clientSecretValidationOptionsAccessor = Options.Create(
+            new ClientSecretValidationOptions()
+        );
         var connection = A.Fake<IDbConnection>();
         var transaction = A.Fake<IDbTransaction>();
 
@@ -37,7 +44,12 @@ public class OpenIddictClientRepositoryTests
         A.CallTo(() => _secretHasher.HashSecretAsync(A<string>.Ignored))
             .Returns(Task.FromResult("hashed_secret"));
 
-        _repository = new OpenIddictClientRepository(_logger, _secretHasher, _dataRepository);
+        _repository = new OpenIddictClientRepository(
+            _logger,
+            _secretHasher,
+            _dataRepository,
+            _clientSecretValidationOptionsAccessor
+        );
     }
 
     [TestFixture]
@@ -443,6 +455,61 @@ public class OpenIddictClientRepositoryTests
             // When null is passed, the existing dmsInstanceIds should be preserved
             dmsInstanceIdsClaim.Should().NotBeNull("Existing dmsInstanceIds claim should be preserved");
             dmsInstanceIdsClaim!["claim.value"].Should().Be("1,2,3", "Original value should be unchanged");
+        }
+    }
+
+    [TestFixture]
+    public class Given_ResetCredentialsAsync : OpenIddictClientRepositoryTests
+    {
+        [SetUp]
+        public void ResetSetup()
+        {
+            _clientSecretValidationOptionsAccessor = Options.Create(
+                new ClientSecretValidationOptions
+                {
+                    MinimumLength = 40,
+                    MaximumLength = 128,
+                }
+            );
+
+            _repository = new OpenIddictClientRepository(
+                _logger,
+                _secretHasher,
+                _dataRepository,
+                _clientSecretValidationOptionsAccessor
+            );
+        }
+
+        [Test]
+        public async Task It_should_generate_a_secret_using_the_configured_minimum_length()
+        {
+            // Arrange
+            A.CallTo(() =>
+                    _dataRepository.UpdateClientSecretAsync(
+                        A<Guid>._,
+                        A<string>._,
+                        A<IDbConnection>._
+                    )
+                )
+                .Returns(1);
+
+            // Act
+            var result = await _repository.ResetCredentialsAsync(Guid.NewGuid().ToString());
+
+            // Assert
+            result.Should().BeOfType<ClientResetResult.Success>();
+            var success = (ClientResetResult.Success)result;
+            success.ClientSecret.Should().HaveLength(40);
+            Regex
+                .IsMatch(
+                    success.ClientSecret,
+                    ClientSecretValidation.BuildComplexityPattern(
+                        _clientSecretValidationOptionsAccessor.Value
+                    )
+                )
+                .Should()
+                .BeTrue();
+            A.CallTo(() => _secretHasher.HashSecretAsync(success.ClientSecret)).MustHaveHappenedOnceExactly();
         }
     }
 }

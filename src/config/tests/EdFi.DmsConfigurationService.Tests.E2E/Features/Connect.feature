@@ -2,10 +2,10 @@ Feature: Connect endpoints
 
         Scenario: 00 Verify register new client
              When a Form URL Encoded POST request is made to "/connect/register" with
-                  | Key          | Value          |
-                  | ClientId     | _scenarioRunId |
-                  | ClientSecret | Secr3t:)       |
-                  | DisplayName  | E2E            |
+                  | Key          | Value                                          |
+                  | ClientId     | _scenarioRunId                                 |
+                  | ClientSecret | S3cr3t!SuperLongSecretKeyWith$peci@lChar123456 |
+                  | DisplayName  | E2E                                            |
              Then it should respond with 200
               And the response body is
                   """
@@ -17,10 +17,10 @@ Feature: Connect endpoints
 
         Scenario: 01 Verify already registered clients return 400
              When a Form URL Encoded POST request is made to "/connect/register" with
-                  | Key          | Value          |
-                  | ClientId     | _scenarioRunId |
-                  | ClientSecret | Secr3t:)       |
-                  | DisplayName  | E2E            |
+                  | Key          | Value                                          |
+                  | ClientId     | _scenarioRunId                                 |
+                  | ClientSecret | S3cr3t!SuperLongSecretKeyWith$peci@lChar123456 |
+                  | DisplayName  | E2E                                            |
              Then it should respond with 200
               And the response body is
                   """
@@ -30,10 +30,10 @@ Feature: Connect endpoints
                   }
                   """
              When a Form URL Encoded POST request is made to "/connect/register" with
-                  | Key          | Value          |
-                  | ClientId     | _scenarioRunId |
-                  | ClientSecret | Secr3t:)       |
-                  | DisplayName  | E2E            |
+                  | Key          | Value                                          |
+                  | ClientId     | _scenarioRunId                                 |
+                  | ClientSecret | S3cr3t!SuperLongSecretKeyWith$peci@lChar123456 |
+                  | DisplayName  | E2E                                            |
              Then it should respond with 400
               And the response body is
                   """
@@ -67,11 +67,72 @@ Feature: Connect endpoints
                     "status": 400,
                     "validationErrors": {
                         "ClientSecret": [
-                            "Client secret must contain at least one lowercase letter, one uppercase letter, one number, and one special character, and must be 8 to 12 characters long."
+                            "Client secret must contain at least one lowercase letter, one uppercase letter, one number, and one special character, and must be 32 to 128 characters long."
                         ]
                     },
                     "errors": []
                     }
+                  """
+
+        Scenario: 02a Verify client secret complexity
+             When a Form URL Encoded POST request is made to "/connect/register" with
+                  | Key          | Value                            |
+                  | ClientId     | _scenarioRunId                   |
+                  | ClientSecret | AbcdefghijklmnopqrstuvwxYZ123456 |
+                  | DisplayName  | _scenarioRunId                   |
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "validationErrors": {
+                        "ClientSecret": [
+                            "Client secret must contain at least one lowercase letter, one uppercase letter, one number, and one special character, and must be 32 to 128 characters long."
+                        ]
+                    },
+                    "errors": []
+                    }
+                  """
+
+        Scenario: 02b Verify client secret minimum length boundary
+             When a Form URL Encoded POST request is made to "/connect/register" with
+                  | Key          | Value                           |
+                  | ClientId     | _scenarioRunId                  |
+                  | ClientSecret | Aa1!aaaaaaaaaaaaaaaaaaaaaaaaaaa |
+                  | DisplayName  | _scenarioRunId                  |
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "validationErrors": {
+                        "ClientSecret": [
+                            "Client secret must contain at least one lowercase letter, one uppercase letter, one number, and one special character, and must be 32 to 128 characters long."
+                        ]
+                    },
+                    "errors": []
+                    }
+                  """
+
+        Scenario: 02c Verify client secret maximum length boundary
+             When a Form URL Encoded POST request is made to "/connect/register" with
+                  | Key          | Value                                                                                                                            |
+                  | ClientId     | _scenarioRunId                                                                                                                   |
+                  | ClientSecret | Aa1!aaaaaaaaaaaaaaaaaaaaaaaaaaaaAa1!aaaaaaaaaaaaaaaaaaaaaaaaaaaaAa1!aaaaaaaaaaaaaaaaaaaaaaaaaaaaAa1!aaaaaaaaaaaaaaaaaaaaaaaaaaaa |
+                  | DisplayName  | _scenarioRunId                                                                                                                   |
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                    "title": "Registered client {scenarioRunId} successfully.",
+                    "status": 200
+                  }
                   """
 
         Scenario: 03 Verify empty post failure
@@ -101,10 +162,10 @@ Feature: Connect endpoints
                   """
         Scenario: 04 Verify token creation with registered client
              When a Form URL Encoded POST request is made to "/connect/register" with
-                  | Key          | Value          |
-                  | ClientId     | _scenarioRunId |
-                  | ClientSecret | Secr3t:)       |
-                  | DisplayName  | _scenarioRunId |
+                  | Key          | Value                                          |
+                  | ClientId     | _scenarioRunId                                 |
+                  | ClientSecret | S3cr3t!SuperLongSecretKeyWith$peci@lChar123456 |
+                  | DisplayName  | _scenarioRunId                                 |
              Then it should respond with 200
               And the response body is
                   """
@@ -114,11 +175,11 @@ Feature: Connect endpoints
                   }
                   """
              When a Form URL Encoded POST request is made to "/connect/token" with
-                  | Key           | Value                      |
-                  | client_id     | _scenarioRunId             |
-                  | client_secret | Secr3t:)                   |
-                  | grant_type    | client_credentials         |
-                  | scope         | edfi_admin_api/full_access |
+                  | Key           | Value                                          |
+                  | client_id     | _scenarioRunId                                 |
+                  | client_secret | S3cr3t!SuperLongSecretKeyWith$peci@lChar123456 |
+                  | grant_type    | client_credentials                             |
+                  | scope         | edfi_admin_api/full_access                     |
              Then it should respond with 200
               And the response body is
                   """
@@ -129,12 +190,12 @@ Feature: Connect endpoints
                   }
                   """
 
-       Scenario: 05 Verify token creation with invalid client_secret value
+        Scenario: 05 Verify token creation with invalid client_secret value
              When a Form URL Encoded POST request is made to "/connect/register" with
-                  | Key          | Value          |
-                  | ClientId     | _scenarioRunId |
-                  | ClientSecret | Secr3t:)       |
-                  | DisplayName  | _scenarioRunId |
+                  | Key          | Value                                          |
+                  | ClientId     | _scenarioRunId                                 |
+                  | ClientSecret | S3cr3t!SuperLongSecretKeyWith$peci@lChar123456 |
+                  | DisplayName  | _scenarioRunId                                 |
              Then it should respond with 200
               And the response body is
                   """
@@ -164,12 +225,12 @@ Feature: Connect endpoints
                   }
                   """
 
-     Scenario: 06 Verify token creation with invalid client_id value
+        Scenario: 06 Verify token creation with invalid client_id value
              When a Form URL Encoded POST request is made to "/connect/register" with
-                  | Key          | Value          |
-                  | ClientId     | _scenarioRunId |
-                  | ClientSecret | Secr3t:)       |
-                  | DisplayName  | _scenarioRunId |
+                  | Key          | Value                                          |
+                  | ClientId     | _scenarioRunId                                 |
+                  | ClientSecret | S3cr3t!SuperLongSecretKeyWith$peci@lChar123456 |
+                  | DisplayName  | _scenarioRunId                                 |
              Then it should respond with 200
               And the response body is
                   """
@@ -179,11 +240,11 @@ Feature: Connect endpoints
                   }
                   """
              When a Form URL Encoded POST request is made to "/connect/token" with
-                  | Key           | Value                      |
-                  | client_id     | wrong                      |
-                  | client_secret | Secr3t:)                   |
-                  | grant_type    | client_credentials         |
-                  | scope         | edfi_admin_api/full_access |
+                  | Key           | Value                                          |
+                  | client_id     | wrong                                          |
+                  | client_secret | S3cr3t!SuperLongSecretKeyWith$peci@lChar123456 |
+                  | grant_type    | client_credentials                             |
+                  | scope         | edfi_admin_api/full_access                     |
              Then it should respond with 401
               And the response body is
                   """
@@ -198,4 +259,3 @@ Feature: Connect endpoints
                         ]
                   }
                   """
-

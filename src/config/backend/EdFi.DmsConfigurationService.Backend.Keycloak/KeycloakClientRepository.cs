@@ -4,27 +4,25 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel.Configuration;
 using Flurl.Http;
-using Keycloak.Net;
 using Keycloak.Net.Models.Clients;
 using Keycloak.Net.Models.ClientScopes;
 using Keycloak.Net.Models.ProtocolMappers;
 using Keycloak.Net.Models.Roles;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using static EdFi.DmsConfigurationService.DataModel.LoggingUtility;
 
 namespace EdFi.DmsConfigurationService.Backend.Keycloak;
 
 public class KeycloakClientRepository(
     KeycloakContext keycloakContext,
-    ILogger<KeycloakClientRepository> logger
+    IKeycloakClientFacade keycloakClientFacade,
+    ILogger<KeycloakClientRepository> logger,
+    IOptions<ClientSecretValidationOptions> clientSecretValidationOptionsAccessor
 ) : IIdentityProviderRepository
 {
-    private readonly KeycloakClient _keycloakClient = new(
-        $"{keycloakContext.Url.Trim('/')}/",
-        keycloakContext.ClientSecret,
-        new KeycloakOptions(adminClientId: keycloakContext.ClientId)
-    );
     private readonly string _realm = keycloakContext.Realm;
 
     public async Task<ClientCreateResult> CreateClientAsync(
@@ -63,21 +61,21 @@ public class KeycloakClientRepository(
             };
 
             // Read role from the realm
-            var realmRoles = await _keycloakClient.GetRolesAsync(_realm);
+            var realmRoles = await keycloakClientFacade.GetRolesAsync(_realm);
             Role? clientRole = realmRoles.FirstOrDefault(x =>
                 x.Name.Equals(role, StringComparison.InvariantCultureIgnoreCase)
             );
 
             if (clientRole is null)
             {
-                await _keycloakClient.CreateRoleAsync(_realm, new Role() { Name = role });
+                await keycloakClientFacade.CreateRoleAsync(_realm, new Role() { Name = role });
 
-                clientRole = await _keycloakClient.GetRoleByNameAsync(_realm, role);
+                clientRole = await keycloakClientFacade.GetRoleByNameAsync(_realm, role);
             }
 
             await CheckAndCreateClientScopeAsync(scope);
 
-            string? createdClientUuid = await _keycloakClient.CreateClientAndRetrieveClientIdAsync(
+            string? createdClientUuid = await keycloakClientFacade.CreateClientAndRetrieveClientIdAsync(
                 _realm,
                 client
             );
@@ -86,12 +84,12 @@ public class KeycloakClientRepository(
                 if (clientRole != null)
                 {
                     // Assign the service role to client's service account
-                    var serviceAccountUser = await _keycloakClient.GetUserForServiceAccountAsync(
+                    var serviceAccountUser = await keycloakClientFacade.GetUserForServiceAccountAsync(
                         _realm,
                         createdClientUuid
                     );
 
-                    _ = await _keycloakClient.AddRealmRoleMappingsToUserAsync(
+                    _ = await keycloakClientFacade.AddRealmRoleMappingsToUserAsync(
                         _realm,
                         serviceAccountUser.Id,
                         [clientRole]
@@ -130,10 +128,10 @@ public class KeycloakClientRepository(
     {
         try
         {
-            var client = await _keycloakClient.GetClientAsync(_realm, clientUuid);
+            var client = await keycloakClientFacade.GetClientAsync(_realm, clientUuid);
 
             // Delete the existing client
-            await _keycloakClient.DeleteClientAsync(_realm, clientUuid);
+            await keycloakClientFacade.DeleteClientAsync(_realm, clientUuid);
 
             var protocolMappers = ConfigServiceRoleProtocolMapper();
             protocolMappers.Add(NamespacePrefixProtocolMapper(namespacePrefixes));
@@ -148,7 +146,7 @@ public class KeycloakClientRepository(
                 ProtocolMappers = protocolMappers,
             };
             // Re-create the client
-            string? newClientId = await _keycloakClient.CreateClientAndRetrieveClientIdAsync(
+            string? newClientId = await keycloakClientFacade.CreateClientAndRetrieveClientIdAsync(
                 _realm,
                 newClient
             );
@@ -176,7 +174,7 @@ public class KeycloakClientRepository(
     {
         try
         {
-            return await _keycloakClient.DeleteClientAsync(_realm, clientUuid)
+            return await keycloakClientFacade.DeleteClientAsync(_realm, clientUuid)
                 ? new ClientDeleteResult.Success()
                 : new ClientDeleteResult.FailureUnknown($"Unknown failure deleting {clientUuid}");
         }
@@ -191,17 +189,33 @@ public class KeycloakClientRepository(
     {
         try
         {
-            var credentials = await _keycloakClient.GenerateClientSecretAsync(_realm, clientUuid);
-            return new ClientResetResult.Success(credentials.Value);
+            var newSecret = ClientSecretValidation.GenerateSecretWithMinimumLength(
+                clientSecretValidationOptionsAccessor.Value
+            );
+            var client = await keycloakClientFacade.GetClientAsync(_realm, clientUuid);
+            if (client is null)
+            {
+                return new ClientResetResult.FailureClientNotFound($"Client {clientUuid} not found");
+            }
+
+            client.Secret = newSecret;
+
+            return await keycloakClientFacade.UpdateClientAsync(_realm, clientUuid, client)
+                ? new ClientResetResult.Success(newSecret)
+                : new ClientResetResult.FailureUnknown(
+                    $"Unknown failure updating client secret for {clientUuid}"
+                );
         }
         catch (FlurlHttpException ex)
         {
-            logger.LogError(ex, "Delete client failure");
-            return new ClientResetResult.FailureIdentityProvider(ExceptionToKeycloakError(ex));
+            logger.LogError(ex, "Reset client credentials failure");
+            return ex.StatusCode == 404
+                ? new ClientResetResult.FailureClientNotFound($"Client {clientUuid} not found")
+                : new ClientResetResult.FailureIdentityProvider(ExceptionToKeycloakError(ex));
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Delete client failure");
+            logger.LogError(ex, "Reset client credentials failure");
             return new ClientResetResult.FailureUnknown(ex.Message);
         }
     }
@@ -210,7 +224,7 @@ public class KeycloakClientRepository(
     {
         try
         {
-            var clients = await _keycloakClient.GetClientsAsync(_realm);
+            var clients = await keycloakClientFacade.GetClientsAsync(_realm);
             return new ClientClientsResult.Success(clients.Select(x => x.ClientId).ToList());
         }
         catch (FlurlHttpException ex)
@@ -231,7 +245,7 @@ public class KeycloakClientRepository(
 
         if (!scopeExists)
         {
-            await _keycloakClient.CreateClientScopeAsync(
+            await keycloakClientFacade.CreateClientScopeAsync(
                 _realm,
                 new ClientScope()
                 {
@@ -259,7 +273,7 @@ public class KeycloakClientRepository(
 
     private async Task<bool> ClientScopeExistsAsync(string scope)
     {
-        var clientScopes = await _keycloakClient.GetClientScopesAsync(_realm);
+        var clientScopes = await keycloakClientFacade.GetClientScopesAsync(_realm);
         ClientScope? clientScope = clientScopes.FirstOrDefault(x => x.Name.Equals(scope));
         return clientScope != null;
     }
@@ -286,13 +300,13 @@ public class KeycloakClientRepository(
     {
         try
         {
-            var client = await _keycloakClient.GetClientAsync(_realm, clientUuid);
+            var client = await keycloakClientFacade.GetClientAsync(_realm, clientUuid);
             await CheckAndCreateClientScopeAsync(scope);
             var scopeExists = await ClientScopeExistsAsync(scope);
             if (scopeExists)
             {
                 // Delete the existing client
-                await _keycloakClient.DeleteClientAsync(_realm, clientUuid);
+                await keycloakClientFacade.DeleteClientAsync(_realm, clientUuid);
                 var protocolMappers = client.ProtocolMappers.ToList();
                 CheckAndUpdateEducationOrganizationIds(protocolMappers);
                 CheckAndUpdateDmsInstanceIds(protocolMappers, dmsInstanceIds);
@@ -307,7 +321,7 @@ public class KeycloakClientRepository(
                     ProtocolMappers = protocolMappers,
                 };
                 // Re-create the client
-                string? newClientId = await _keycloakClient.CreateClientAndRetrieveClientIdAsync(
+                string? newClientId = await keycloakClientFacade.CreateClientAndRetrieveClientIdAsync(
                     _realm,
                     newClient
                 );

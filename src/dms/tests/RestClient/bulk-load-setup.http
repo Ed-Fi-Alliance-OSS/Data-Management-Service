@@ -11,8 +11,8 @@
 #5198 or 8080
 @dmsPort=5198
 @sysAdminId=sys-admin
-@sysAdminSecret=SdfH)98&Jk
-@encodedSysAdminSecret=SdfH%2998%26Jk
+@sysAdminSecret=SdfH)98&JkSdfH)98&JkSdfH)98&JkSdfH)9
+@encodedSysAdminSecret=SdfH%2998%26JkSdfH%2998%26JkSdfH%2998%26JkSdfH)9
 
 #
 # Create a new system administrator and create a token

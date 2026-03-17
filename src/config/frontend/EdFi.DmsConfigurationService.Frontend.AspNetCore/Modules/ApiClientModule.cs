@@ -3,8 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.DataModel.Configuration;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ApiClient;
@@ -41,6 +42,7 @@ public class ApiClientModule : IEndpointModule
         IDmsInstanceRepository dmsInstanceRepository,
         IIdentityProviderRepository clientRepository,
         IOptions<IdentitySettings> identitySettings,
+        IOptions<ClientSecretValidationOptions> clientSecretValidationOptionsAccessor,
         ILogger<ApiClientModule> logger
     )
     {
@@ -106,9 +108,8 @@ public class ApiClientModule : IEndpointModule
         }
 
         var clientId = Guid.NewGuid().ToString();
-        var clientSecret = RandomNumberGenerator.GetString(
-            "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
-            32
+        var clientSecret = ClientSecretValidation.GenerateSecretWithMinimumLength(
+            clientSecretValidationOptionsAccessor.Value
         );
 
         // Create client in identity provider FIRST (will rollback on database failure)
@@ -131,10 +132,10 @@ public class ApiClientModule : IEndpointModule
             case ClientCreateResult.FailureIdentityProvider failureIdentityProvider:
                 logger.LogError(
                     "Failure creating client: {failureMessage}",
-                    failureIdentityProvider.IdentityProviderError.FailureMessage
+                    SanitizeForLog(failureIdentityProvider.IdentityProviderError.FailureMessage)
                 );
                 return FailureResults.BadGateway(
-                    failureIdentityProvider.IdentityProviderError.FailureMessage,
+                    "Identity provider error during client creation",
                     httpContext.TraceIdentifier
                 );
             case ClientCreateResult.Success clientSuccess:
@@ -226,24 +227,7 @@ public class ApiClientModule : IEndpointModule
     /// </summary>
     private static string SanitizeForLog(string? input)
     {
-        if (string.IsNullOrEmpty(input))
-        {
-            return string.Empty;
-        }
-        // Whitelist approach: only allow alphanumeric characters and specific safe symbols
-        return new string(
-            input
-                .Where(c =>
-                    char.IsLetterOrDigit(c)
-                    || c == ' '
-                    || c == '_'
-                    || c == '-'
-                    || c == '.'
-                    || c == ':'
-                    || c == '/'
-                )
-                .ToArray()
-        );
+        return LoggingUtility.SanitizeForLog(input);
     }
 
     private async Task<IResult> UpdateApiClient(
@@ -365,7 +349,7 @@ public class ApiClientModule : IEndpointModule
                     SanitizeForLog(failureIdentityProvider.IdentityProviderError.FailureMessage)
                 );
                 return FailureResults.BadGateway(
-                    failureIdentityProvider.IdentityProviderError.FailureMessage,
+                    "Identity provider error during client update",
                     httpContext.TraceIdentifier
                 );
             case ClientUpdateResult.FailureNotFound notFound:
@@ -538,7 +522,7 @@ public class ApiClientModule : IEndpointModule
                         SanitizeForLog(failureIdentityProvider.IdentityProviderError.FailureMessage)
                     );
                     return FailureResults.BadGateway(
-                        failureIdentityProvider.IdentityProviderError.FailureMessage,
+                        "Identity provider error during client deletion",
                         httpContext.TraceIdentifier
                     );
             }
@@ -663,8 +647,9 @@ public class ApiClientModule : IEndpointModule
                     httpContext.TraceIdentifier
                 ),
                 ClientResetResult.FailureIdentityProvider failureIdentityProvider =>
-                    FailureResults.BadGateway(
-                        failureIdentityProvider.IdentityProviderError.FailureMessage,
+                    HandleIdentityProviderResetFailure(
+                        failureIdentityProvider,
+                        logger,
                         httpContext.TraceIdentifier
                     ),
                 ClientResetResult.FailureUnknown failure => FailureResults.Unknown(
@@ -683,5 +668,22 @@ public class ApiClientModule : IEndpointModule
             );
             return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
+    }
+
+    private static IResult HandleIdentityProviderResetFailure(
+        ClientResetResult.FailureIdentityProvider failureIdentityProvider,
+        ILogger<ApiClientModule> logger,
+        string traceIdentifier
+    )
+    {
+        logger.LogError(
+            "Identity provider error during credential reset: {failureMessage}",
+            SanitizeForLog(failureIdentityProvider.IdentityProviderError.FailureMessage)
+        );
+
+        return FailureResults.BadGateway(
+            "Identity provider error during credential reset",
+            traceIdentifier
+        );
     }
 }

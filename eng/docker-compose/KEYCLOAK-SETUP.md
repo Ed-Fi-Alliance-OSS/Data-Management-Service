@@ -63,6 +63,10 @@ Keycloak locally using docker-compose.
     Leave the rest as-is
    ```
 
+   Keep the copied client secret aligned with the CMS `IdentitySettings:ClientSecretValidation`
+   settings. If you customize `MinimumLength` or `MaximumLength`, configure
+   Keycloak so the secret you generate or assign falls within the same range.
+
     > [!NOTE]
     > To test the connect/register endpoint, make sure the AllowRegistration flag
     > is set to true in the IdentitySettings.
@@ -75,14 +79,14 @@ Keycloak locally using docker-compose.
     // connect/register sample request payload
     {    
     "clientId":"CSClientApp",
-    "clientSecret":"test1@Secret",
+    "clientSecret":"ValidClientSecret1234567890!Abcd",
     "displayName":"CSClientApp"
     }
     
     // connect/token sample request payload
     {    
     "clientId":"CSClientApp",
-    "clientSecret":"test1@Secret"
+    "clientSecret":"ValidClientSecret1234567890!Abcd"
     }
     ```
 
@@ -175,7 +179,8 @@ Please refer "Creating a Configuration Service Client" section above
 
 1. You can provide any valid Client ID and Name when creating your client.
 2. After creating the client, Keycloak will automatically generate a secret for
-   you. Make sure to store this for later use.
+   you. Make sure to store this for later use and confirm its length matches the
+   CMS `IdentitySettings:ClientSecretValidation` minimum/maximum settings.
 3. Follow the section titled "Configuring service-specific realm roles" to
    create a role specific to your service (e.g., dms-client for a DMS-specific
    role).

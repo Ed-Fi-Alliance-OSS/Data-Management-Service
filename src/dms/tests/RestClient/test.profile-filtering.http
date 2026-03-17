@@ -17,7 +17,7 @@
 @configPort=8081
 @dmsPort=8080
 @sysAdminId=DmsConfigurationService
-@sysAdminSecret=s3creT@09
+@sysAdminSecret=ValidClientSecret1234567890!Abcd
 
 ### Step 1: Get a token from the config API
 # @name configTokenRequest

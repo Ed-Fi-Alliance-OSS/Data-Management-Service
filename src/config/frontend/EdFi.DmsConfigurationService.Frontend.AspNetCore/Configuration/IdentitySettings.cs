@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.DataModel.Configuration;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
@@ -20,9 +21,12 @@ public class IdentitySettings
     public required string ClientRole { get; set; }
 }
 
-public class IdentitySettingsValidator : IValidateOptions<IdentitySettings>
+public class IdentitySettingsValidator(
+    IOptions<ClientSecretValidationOptions>? clientSecretValidationOptionsAccessor = null
+) : IValidateOptions<IdentitySettings>
 {
-    public IdentitySettingsValidator() { }
+    private readonly ClientSecretValidationOptions _clientSecretValidationOptions =
+        clientSecretValidationOptionsAccessor?.Value ?? new();
 
     public ValidateOptionsResult Validate(string? name, IdentitySettings options)
     {
@@ -37,6 +41,26 @@ public class IdentitySettingsValidator : IValidateOptions<IdentitySettings>
         if (string.IsNullOrWhiteSpace(options.ClientSecret))
         {
             return ValidateOptionsResult.Fail("Missing required IdentitySettings value: ClientSecret");
+        }
+        if (!ClientSecretValidation.IsWithinLengthRange(options.ClientSecret, _clientSecretValidationOptions))
+        {
+            return ValidateOptionsResult.Fail(
+                ClientSecretValidation.BuildLengthErrorMessage(
+                    "IdentitySettings value: ClientSecret",
+                    _clientSecretValidationOptions
+                )
+            );
+        }
+        if (
+            !System.Text.RegularExpressions.Regex.IsMatch(
+                options.ClientSecret,
+                ClientSecretValidation.BuildComplexityPattern(_clientSecretValidationOptions)
+            )
+        )
+        {
+            return ValidateOptionsResult.Fail(
+                ClientSecretValidation.BuildComplexityErrorMessage(_clientSecretValidationOptions)
+            );
         }
         if (string.IsNullOrEmpty(options.Audience))
         {
