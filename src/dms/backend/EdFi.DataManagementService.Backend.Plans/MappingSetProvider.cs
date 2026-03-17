@@ -7,6 +7,7 @@ using System.Collections.Frozen;
 using EdFi.DataManagementService.Backend.External;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using static EdFi.DataManagementService.Backend.External.LogSanitizer;
 
 namespace EdFi.DataManagementService.Backend.Plans;
 
@@ -33,8 +34,9 @@ public sealed class MappingSetProvider : IMappingSetProvider
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-        var compilerList = compilers?.ToList() ?? throw new ArgumentNullException(nameof(compilers));
-        _compilersByDialect = compilerList.ToFrozenDictionary(c => c.Dialect);
+        _compilersByDialect = (
+            compilers ?? throw new ArgumentNullException(nameof(compilers))
+        ).ToFrozenDictionary(c => c.Dialect);
 
         _cache = new MappingSetCache(LoadOrCompileAsync);
     }
@@ -112,27 +114,5 @@ public sealed class MappingSetProvider : IMappingSetProvider
         );
 
         return await compiler.CompileAsync(key, CancellationToken.None).ConfigureAwait(false);
-    }
-
-    private static string SanitizeForLog(string? input)
-    {
-        if (string.IsNullOrEmpty(input))
-        {
-            return string.Empty;
-        }
-
-        return new string(
-            input
-                .Where(c =>
-                    char.IsLetterOrDigit(c)
-                    || c == ' '
-                    || c == '_'
-                    || c == '-'
-                    || c == '.'
-                    || c == ':'
-                    || c == '/'
-                )
-                .ToArray()
-        );
     }
 }

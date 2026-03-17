@@ -33,7 +33,8 @@ internal class ResolveMappingSetMiddleware(
     // Resolve the configured dialect from the registered compiler(s).
     // In practice there is one compiler per deployment; if multiple are registered,
     // take the first (the backend that was configured).
-    private readonly SqlDialect _dialect = runtimeCompilers.FirstOrDefault()?.Dialect ?? SqlDialect.Pgsql;
+    // Null when no compiler is registered (UseRelationalBackend is disabled).
+    private readonly SqlDialect? _dialect = runtimeCompilers.FirstOrDefault()?.Dialect;
 
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
@@ -51,11 +52,34 @@ internal class ResolveMappingSetMiddleware(
             return;
         }
 
+        if (_dialect is null)
+        {
+            logger.LogError(
+                "No runtime mapping set compiler is registered. "
+                    + "Ensure a relational backend (PostgreSQL or MSSQL) is configured. "
+                    + "TraceId: {TraceId}",
+                LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
+            );
+
+            requestInfo.FrontendResponse = new FrontendResponse(
+                StatusCode: 503,
+                Body: FailureResponse.ForDatabaseFingerprintValidationError(
+                    MappingSetUnavailableTitle,
+                    "No relational backend compiler is registered. "
+                        + "Ensure a relational backend is configured.",
+                    ["No relational backend compiler is registered. " + "Check server configuration."],
+                    requestInfo.FrontendRequest.TraceId
+                ),
+                Headers: []
+            );
+            return;
+        }
+
         var effectiveSchema = effectiveSchemaSetProvider.EffectiveSchemaSet.EffectiveSchema;
 
         var key = new MappingSetKey(
             EffectiveSchemaHash: fingerprint.EffectiveSchemaHash,
-            Dialect: _dialect,
+            Dialect: _dialect.Value,
             RelationalMappingVersion: effectiveSchema.RelationalMappingVersion
         );
 

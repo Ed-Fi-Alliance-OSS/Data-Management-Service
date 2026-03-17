@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Startup;
 using Microsoft.Extensions.Logging;
+using static EdFi.DataManagementService.Backend.External.LogSanitizer;
 
 namespace EdFi.DataManagementService.Old.Postgresql.Startup;
 
@@ -27,8 +28,8 @@ internal sealed class PostgresqlBackendMappingInitializer(
 
         logger.LogInformation(
             "Initializing PostgreSQL mapping set for EffectiveSchemaHash {EffectiveSchemaHash}, RelationalMappingVersion {RelationalMappingVersion}",
-            key.EffectiveSchemaHash,
-            key.RelationalMappingVersion
+            SanitizeForLog(key.EffectiveSchemaHash),
+            SanitizeForLog(key.RelationalMappingVersion)
         );
 
         var mappingSet = await mappingSetProvider
@@ -37,7 +38,7 @@ internal sealed class PostgresqlBackendMappingInitializer(
 
         logger.LogInformation(
             "PostgreSQL mapping set ready for EffectiveSchemaHash {EffectiveSchemaHash}, Dialect {Dialect}",
-            mappingSet.Key.EffectiveSchemaHash,
+            SanitizeForLog(mappingSet.Key.EffectiveSchemaHash),
             mappingSet.Key.Dialect
         );
     }

@@ -79,6 +79,29 @@ public class Given_MappingSetProvider
     }
 
     [TestFixture]
+    public class Given_PacksEnabled_And_Pack_Found : Given_MappingSetProvider
+    {
+        [Test]
+        public async Task It_attempts_pack_decode_via_FromPayload()
+        {
+            var packStore = new TestPackStore(new MappingPackPayload());
+
+            var provider = CreateProvider(
+                options: new MappingSetProviderOptions { PacksEnabled = true },
+                packStore: packStore
+            );
+
+            var act = () => provider.GetOrCreateAsync(_testKey, CancellationToken.None);
+
+            // FromPayload is not yet implemented (deferred to DMS-968), so it throws.
+            // This verifies the pack-loading path is taken when a pack is found.
+            await act.Should()
+                .ThrowAsync<NotSupportedException>()
+                .WithMessage("*AOT mapping-pack decode is not implemented*");
+        }
+    }
+
+    [TestFixture]
     public class Given_PacksEnabled_Is_False : Given_MappingSetProvider
     {
         [Test]
@@ -217,6 +240,14 @@ public class Given_MappingSetProvider
             second.Should().BeSameAs(expectedMappingSet);
             compileCount.Should().Be(1);
         }
+    }
+
+    private sealed class TestPackStore(MappingPackPayload? payload) : IMappingPackStore
+    {
+        public Task<MappingPackPayload?> TryLoadPayloadAsync(
+            MappingSetKey key,
+            CancellationToken cancellationToken
+        ) => Task.FromResult(payload);
     }
 
     private sealed class TestRuntimeCompiler(MappingSetKey currentKey, Func<Task<MappingSet>> compileFunc)
