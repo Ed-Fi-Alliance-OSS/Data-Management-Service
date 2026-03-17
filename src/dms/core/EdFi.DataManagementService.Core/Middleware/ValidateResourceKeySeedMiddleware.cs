@@ -120,12 +120,14 @@ internal class ValidateResourceKeySeedMiddleware(
                 return;
 
             case ResourceKeyValidationResult.ValidationFailure failure:
+                // Use SanitizeForConsole for the diff report to preserve tuple
+                // punctuation (parentheses, commas, brackets) needed for readability.
                 logger.LogError(
                     "Resource key seed mismatch for instance {InstanceId} ({InstanceName}). "
                         + "Diff report: {DiffReport}. TraceId: {TraceId}",
                     selectedInstance.Id,
                     LoggingSanitizer.SanitizeForLogging(selectedInstance.InstanceName),
-                    LoggingSanitizer.SanitizeForLogging(failure.DiffReport),
+                    LoggingSanitizer.SanitizeForConsole(failure.DiffReport),
                     LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
                 );
 
