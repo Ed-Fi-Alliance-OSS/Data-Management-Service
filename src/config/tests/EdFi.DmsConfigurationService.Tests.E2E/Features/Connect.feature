@@ -97,6 +97,44 @@ Feature: Connect endpoints
                     }
                   """
 
+        Scenario: 02b Verify client secret minimum length boundary
+             When a Form URL Encoded POST request is made to "/connect/register" with
+                  | Key          | Value                           |
+                  | ClientId     | _scenarioRunId                  |
+                  | ClientSecret | Aa1!aaaaaaaaaaaaaaaaaaaaaaaaaaa |
+                  | DisplayName  | _scenarioRunId                  |
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "validationErrors": {
+                        "ClientSecret": [
+                            "Client secret must contain at least one lowercase letter, one uppercase letter, one number, and one special character, and must be 32 to 128 characters long."
+                        ]
+                    },
+                    "errors": []
+                    }
+                  """
+
+        Scenario: 02c Verify client secret maximum length boundary
+             When a Form URL Encoded POST request is made to "/connect/register" with
+                  | Key          | Value                                                                                                                            |
+                  | ClientId     | _scenarioRunId                                                                                                                   |
+                  | ClientSecret | Aa1!aaaaaaaaaaaaaaaaaaaaaaaaaaaaAa1!aaaaaaaaaaaaaaaaaaaaaaaaaaaaAa1!aaaaaaaaaaaaaaaaaaaaaaaaaaaaAa1!aaaaaaaaaaaaaaaaaaaaaaaaaaaa |
+                  | DisplayName  | _scenarioRunId                                                                                                                   |
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                    "title": "Registered client {scenarioRunId} successfully.",
+                    "status": 200
+                  }
+                  """
+
         Scenario: 03 Verify empty post failure
              When a Form URL Encoded POST request is made to "/connect/register" with
                   | Key | Value |
@@ -221,4 +259,3 @@ Feature: Connect endpoints
                         ]
                   }
                   """
-

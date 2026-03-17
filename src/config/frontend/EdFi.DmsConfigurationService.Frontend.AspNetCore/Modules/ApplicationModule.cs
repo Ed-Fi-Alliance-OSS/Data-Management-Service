@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Configuration;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
@@ -92,10 +93,10 @@ public class ApplicationModule : IEndpointModule
             case ClientCreateResult.FailureIdentityProvider failureIdentityProvider:
                 logger.LogError(
                     "Failure creating client: {failureMessage}",
-                    failureIdentityProvider.IdentityProviderError.FailureMessage
+                    SanitizeForLog(failureIdentityProvider.IdentityProviderError.FailureMessage)
                 );
                 return FailureResults.BadGateway(
-                    failureIdentityProvider.IdentityProviderError.FailureMessage,
+                    "Identity provider error during client creation",
                     httpContext.TraceIdentifier
                 );
             case ClientCreateResult.Success clientSuccess:
@@ -191,6 +192,11 @@ public class ApplicationModule : IEndpointModule
         };
     }
 
+    private static string SanitizeForLog(string? input)
+    {
+        return LoggingUtility.SanitizeForLog(input);
+    }
+
     private static async Task<IResult> Update(
         long id,
         ApplicationUpdateCommand.Validator validator,
@@ -282,10 +288,12 @@ public class ApplicationModule : IEndpointModule
                         case ClientUpdateResult.FailureIdentityProvider failureIdentityProvider:
                             logger.LogError(
                                 "Failure updating client: {failureMessage}",
-                                failureIdentityProvider.IdentityProviderError.FailureMessage
+                                SanitizeForLog(
+                                    failureIdentityProvider.IdentityProviderError.FailureMessage
+                                )
                             );
                             return FailureResults.BadGateway(
-                                failureIdentityProvider.IdentityProviderError.FailureMessage,
+                                "Identity provider error during client update",
                                 httpContext.TraceIdentifier
                             );
                         case ClientUpdateResult.FailureNotFound notFound:
@@ -419,8 +427,14 @@ public class ApplicationModule : IEndpointModule
                                     httpContext.TraceIdentifier
                                 );
                             case ClientResetResult.FailureIdentityProvider failureIdentityProvider:
+                                logger.LogError(
+                                    "Identity provider error during credential reset: {message}",
+                                    SanitizeForLog(
+                                        failureIdentityProvider.IdentityProviderError.FailureMessage
+                                    )
+                                );
                                 return FailureResults.BadGateway(
-                                    failureIdentityProvider.IdentityProviderError.FailureMessage,
+                                    "Identity provider error during credential reset",
                                     httpContext.TraceIdentifier
                                 );
                             case ClientResetResult.FailureUnknown failure:

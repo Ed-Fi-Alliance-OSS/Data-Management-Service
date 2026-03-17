@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.RegularExpressions;
 using EdFi.DmsConfigurationService.DataModel.Configuration;
 using FluentValidation;
 using Microsoft.Extensions.Options;
@@ -26,9 +25,7 @@ public class RegisterRequest
             RuleFor(m => m.ClientSecret).NotEmpty();
             RuleFor(m => m.ClientSecret)
                 .Matches(
-                    new Regex(
-                        ClientSecretValidation.BuildComplexityPattern(clientSecretValidationOptions)
-                    )
+                    ClientSecretValidation.BuildComplexityPattern(clientSecretValidationOptions)
                 )
                 .When(m => !string.IsNullOrEmpty(m.ClientSecret))
                 .WithMessage(

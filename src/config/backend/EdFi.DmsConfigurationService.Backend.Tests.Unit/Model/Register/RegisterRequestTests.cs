@@ -11,7 +11,7 @@ using Microsoft.Extensions.Options;
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.Model.Register;
 
 [TestFixture]
-public class RegisterRequestTests
+public class Given_a_RegisterRequest_validator
 {
     private RegisterRequest.Validator _validator;
 
@@ -30,7 +30,7 @@ public class RegisterRequestTests
     }
 
     [Test]
-    public void Validate_WithValidRequest_ShouldPassValidation()
+    public void It_should_pass_validation_with_valid_request()
     {
         // Arrange
         var request = new RegisterRequest
@@ -48,7 +48,7 @@ public class RegisterRequestTests
     }
 
     [Test]
-    public void Validate_WithEmptyClientId_ShouldFailValidation()
+    public void It_should_fail_validation_with_empty_client_id()
     {
         // Arrange
         var request = new RegisterRequest
@@ -67,7 +67,7 @@ public class RegisterRequestTests
     }
 
     [Test]
-    public void Validate_WithEmptyClientSecret_ShouldFailValidation()
+    public void It_should_fail_validation_with_empty_client_secret()
     {
         // Arrange
         var request = new RegisterRequest
@@ -86,7 +86,7 @@ public class RegisterRequestTests
     }
 
     [Test]
-    public void Validate_WithInvalidClientSecret_ShouldFailValidation()
+    public void It_should_fail_validation_with_invalid_client_secret()
     {
         // Arrange
         var request = new RegisterRequest
@@ -105,7 +105,7 @@ public class RegisterRequestTests
     }
 
     [Test]
-    public void Validate_WithWhitespaceAsOnlySpecialCharacter_ShouldFailValidation()
+    public void It_should_fail_when_whitespace_is_the_only_special_character()
     {
         var request = new RegisterRequest
         {
@@ -121,7 +121,7 @@ public class RegisterRequestTests
     }
 
     [Test]
-    public void Validate_WithClientSecretLongerThanConfiguredMaximum_ShouldFailValidation()
+    public void It_should_fail_when_secret_exceeds_configured_maximum_length()
     {
         var request = new RegisterRequest
         {
@@ -137,7 +137,7 @@ public class RegisterRequestTests
     }
 
     [Test]
-    public void Validate_WithEmptyDisplayName_ShouldFailValidation()
+    public void It_should_fail_validation_with_empty_display_name()
     {
         // Arrange
         var request = new RegisterRequest

@@ -12,6 +12,7 @@ namespace EdFi.DmsConfigurationService.DataModel.Configuration;
 public class ClientSecretValidationOptions
 {
     public const string SectionName = "IdentitySettings:ClientSecretValidation";
+    public const int MaximumAllowedLength = 1024;
 
     public int MinimumLength { get; set; } = 32;
     public int MaximumLength { get; set; } = 128;
@@ -35,6 +36,13 @@ public class ClientSecretValidationOptionsValidator : IValidateOptions<ClientSec
             );
         }
 
+        if (options.MaximumLength > ClientSecretValidationOptions.MaximumAllowedLength)
+        {
+            return ValidateOptionsResult.Fail(
+                $"Invalid ClientSecretValidation configuration: MaximumLength must not exceed {ClientSecretValidationOptions.MaximumAllowedLength}."
+            );
+        }
+
         return ValidateOptionsResult.Success;
     }
 }
@@ -44,6 +52,10 @@ public static class ClientSecretValidation
     private const string LowercaseAlphabet = "abcdefghijklmnopqrstuvwxyz";
     private const string UppercaseAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     private const string DigitAlphabet = "0123456789";
+    /// <summary>
+    /// The set of special characters allowed in client secrets.
+    /// Excludes characters that may cause issues in shell scripts, URLs, or JSON: ~ ` | < > " '
+    /// </summary>
     private const string SpecialAlphabet = "!@#$%^&*()-_=+[]{}:;,.?";
     private static readonly string EscapedSpecialCharacterClass =
         BuildRegexCharacterClass(SpecialAlphabet);
@@ -79,6 +91,13 @@ public static class ClientSecretValidation
         {
             throw new InvalidOperationException(
                 "Client secret validation options are invalid. MinimumLength must be at least 4 to satisfy the client secret complexity requirements."
+            );
+        }
+
+        if (options.MaximumLength > ClientSecretValidationOptions.MaximumAllowedLength)
+        {
+            throw new InvalidOperationException(
+                $"Client secret validation options are invalid. MaximumLength must not exceed {ClientSecretValidationOptions.MaximumAllowedLength}."
             );
         }
 
