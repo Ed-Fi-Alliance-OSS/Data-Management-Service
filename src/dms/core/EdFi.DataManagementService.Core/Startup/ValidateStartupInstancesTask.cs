@@ -73,9 +73,8 @@ internal sealed class ValidateStartupInstancesTask(
 
                 if (string.IsNullOrWhiteSpace(connectionString))
                 {
-                    // No connection string means we can't cache anything — the request-time
-                    // middleware (ValidateDatabaseFingerprintMiddleware) independently checks
-                    // for missing connection strings and returns 503.
+                    // No connection string means we can't cache anything — the
+                    // request-time middleware independently checks for this and returns 503.
                     logger.LogCritical(
                         "Instance {InstanceId} ({InstanceName}) for tenant {Tenant} has no connection string configured. "
                             + "Requests routed to this instance will receive 503. "
@@ -138,13 +137,12 @@ internal sealed class ValidateStartupInstancesTask(
 
         try
         {
-            // Phase 1: Fingerprint validation (populates DatabaseFingerprintProvider cache)
+            // Phase 1: Fingerprint validation — populates the fingerprint cache
             var fingerprint = await fingerprintProvider.GetFingerprintAsync(connectionString);
 
             if (fingerprint == null)
             {
-                // Null fingerprint is permanently cached by DatabaseFingerprintProvider;
-                // the middleware will return 503 with a "not provisioned" message.
+                // Null result is permanently cached; middleware will return 503.
                 logger.LogCritical(
                     "Database not provisioned (no dms.EffectiveSchema row) for instance "
                         + "{InstanceId} ({InstanceName}) tenant {Tenant}. "
@@ -167,9 +165,8 @@ internal sealed class ValidateStartupInstancesTask(
                 )
             )
             {
-                // The fingerprint (with its wrong hash) is already cached by
-                // DatabaseFingerprintProvider; the middleware will compare hashes
-                // and return 503 with a schema-mismatch message.
+                // Wrong-hash fingerprint is already cached; middleware will
+                // compare hashes and return 503.
                 logger.LogCritical(
                     "EffectiveSchemaHash mismatch for instance "
                         + "{InstanceId} ({InstanceName}) tenant {Tenant}: "
@@ -185,7 +182,7 @@ internal sealed class ValidateStartupInstancesTask(
                 return false;
             }
 
-            // Phase 2: Resource key seed validation (populates ResourceKeyValidationCacheProvider cache)
+            // Phase 2: Resource key seed validation — populates the validation cache
 
             var result = await resourceKeyValidationCacheProvider.GetOrValidateAsync(
                 connectionString,
@@ -202,8 +199,7 @@ internal sealed class ValidateStartupInstancesTask(
 
             if (result is ResourceKeyValidationResult.ValidationFailure failure)
             {
-                // The ValidationFailure is permanently cached by ResourceKeyValidationCacheProvider;
-                // the middleware will return 503 with a seed-mismatch message.
+                // Failure is permanently cached; middleware will return 503.
                 logger.LogCritical(
                     "Resource key seed mismatch for instance "
                         + "{InstanceId} ({InstanceName}) tenant {Tenant}. "
@@ -224,8 +220,7 @@ internal sealed class ValidateStartupInstancesTask(
         }
         catch (DatabaseFingerprintValidationException ex)
         {
-            // DatabaseFingerprintValidationException is permanently cached by
-            // DatabaseFingerprintProvider; the middleware will return 503.
+            // Malformed fingerprint is permanently cached; middleware will return 503.
             logger.LogCritical(
                 ex,
                 "Malformed dms.EffectiveSchema fingerprint for instance "
@@ -240,8 +235,8 @@ internal sealed class ValidateStartupInstancesTask(
         }
         catch (Exception ex)
         {
-            // Transient exceptions (network, timeout) are evicted from caches so the
-            // middleware will retry on first request. Log but don't fail startup.
+            // Transient errors are evicted from caches so the middleware will
+            // retry on first request. Log but don't fail startup.
             logger.LogCritical(
                 ex,
                 "Startup validation failed for instance "
