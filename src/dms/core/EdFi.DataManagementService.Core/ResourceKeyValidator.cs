@@ -41,12 +41,36 @@ internal sealed class ResourceKeyValidator(
             return new ResourceKeyValidationResult.ValidationSuccess();
         }
 
-        // Slow path: read actual rows and diff
+        // Slow path: read actual rows and diff. Wrap in try-catch so that
+        // read failures (missing table, permissions, broken schema) produce a
+        // cached ValidationFailure rather than an evicted exception.
         logger.LogDebug("Resource key fingerprint mismatch detected, performing row-level validation");
-        var actualRows = await resourceKeyRowReader.ReadResourceKeyRowsAsync(
-            connectionString,
-            cancellationToken
-        );
+
+        IReadOnlyList<ResourceKeyRow> actualRows;
+        try
+        {
+            actualRows = await resourceKeyRowReader.ReadResourceKeyRowsAsync(
+                connectionString,
+                cancellationToken
+            );
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(
+                ex,
+                "Failed to read dms.ResourceKey rows for slow-path diff (table may be missing or malformed)"
+            );
+            return new ResourceKeyValidationResult.ValidationFailure(
+                "Resource key fingerprint mismatch detected, but slow-path dms.ResourceKey read failed: "
+                    + LoggingSanitizer.SanitizeForLogging(ex.Message)
+                    + ". The database must be reprovisioned with 'ddl provision' against a fresh database."
+            );
+        }
+
         var diffReport = BuildDiffReport(actualRows, expectedResourceKeysInIdOrder);
 
         if (diffReport == null)

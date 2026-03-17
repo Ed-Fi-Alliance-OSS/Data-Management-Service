@@ -590,4 +590,49 @@ public class ResourceKeyValidatorTests
             failure.DiffReport.Should().NotContain("Only the dms.EffectiveSchema metadata is inconsistent");
         }
     }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Slow_Path_Where_Row_Reader_Throws : ResourceKeyValidatorTests
+    {
+        private ResourceKeyValidationResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var reader = A.Fake<IResourceKeyRowReader>();
+            A.CallTo(() => reader.ReadResourceKeyRowsAsync("conn1", A<CancellationToken>._))
+                .ThrowsAsync(new InvalidOperationException("relation \"dms.ResourceKey\" does not exist"));
+
+            var validator = new ResourceKeyValidator(reader, NullLogger<ResourceKeyValidator>.Instance);
+
+            var expectedKeys = new List<ResourceKeyRow>
+            {
+                Row(1, "Ed-Fi", "Student", "5.0.0"),
+                Row(2, "Ed-Fi", "School", "5.0.0"),
+            };
+
+            // Fingerprint mismatch triggers slow path, which throws
+            _result = await validator.ValidateAsync(
+                Fingerprint(2, HashB()),
+                2,
+                HashA().ToImmutableArray(),
+                expectedKeys,
+                "conn1"
+            );
+        }
+
+        [Test]
+        public void It_returns_validation_failure_not_exception()
+        {
+            _result.Should().BeOfType<ResourceKeyValidationResult.ValidationFailure>();
+        }
+
+        [Test]
+        public void It_reports_the_read_failure()
+        {
+            var failure = _result.Should().BeOfType<ResourceKeyValidationResult.ValidationFailure>().Subject;
+            failure.DiffReport.Should().Contain("slow-path dms.ResourceKey read failed");
+        }
+    }
 }
