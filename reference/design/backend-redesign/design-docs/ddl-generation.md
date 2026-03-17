@@ -148,6 +148,7 @@ This inventory is the explicit “what exists in the database” contract that t
 
 **Sequence**
 - `dms.ChangeVersionSequence`
+- `dms.CollectionItemIdSequence`
 
 **Triggers (required)**
 - Journal emission triggers on `dms.Document`:
@@ -389,7 +390,7 @@ Rules:
 - All ordering comparisons use `StringComparer.Ordinal` semantics (culture-invariant, case-sensitive).
 - When emitting a multi-phase DDL script, use a stable phase order to avoid dependency/topological sorting differences across dialects:
   1. Create schemas
-  2. Create sequences (e.g., `dms.ChangeVersionSequence`) required by table defaults/triggers
+  2. Create sequences (e.g., `dms.ChangeVersionSequence`, `dms.CollectionItemIdSequence`) required by table defaults/triggers
   3. Create tables (PK/UNIQUE/CHECK only; omit cross-table FKs)
   4. Add foreign keys (all `ALTER TABLE ... ADD CONSTRAINT ... FOREIGN KEY ...`)
   5. Create indexes
@@ -407,7 +408,7 @@ Within each phase:
   - then by `JsonScope` string (ordinal),
   - then by physical table name as a final tie-breaker.
 - **Columns within a table**:
-  1. key columns in key order (`DocumentId` / parent key parts in order, then `Ordinal`)
+  1. key columns in key order (`DocumentId` for root tables, `CollectionItemId` for collection tables)
   2. key-unification support columns (when present), ordered by column name:
      - canonical storage columns for unification classes, and
      - synthetic `..._Present` presence-flag columns used for presence-gated unified aliases

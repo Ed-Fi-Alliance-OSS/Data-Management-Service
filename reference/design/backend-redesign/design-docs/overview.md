@@ -81,15 +81,17 @@ This redesign keeps it and stores it in `dms.ReferentialIdentity(ReferentialId �
 Keep DMS Core mostly intact:
 
 - Core remains the home of API canonicalization, validation, identity extraction, and referential-id computation.
-- **Only required Core change in this redesign**: add concrete *JSON location* (with indices) to extracted document references (see “Document references inside nested collections” in [flattening-reconstitution.md](flattening-reconstitution.md)). Descriptors already carry location via `DescriptorReference.Path`.
+- For baseline non-profile relational writes, the required Core extraction-model change is to add concrete *JSON location* (with indices) to extracted document references (see “Document references inside nested collections” in [flattening-reconstitution.md](flattening-reconstitution.md)). Descriptors already carry location via `DescriptorReference.Path`.
+- Profile-constrained collection merges add a second Core/backend contract: Core supplies an optional request-scoped `ProfileAppliedWriteRequest` with a `WritableRequestBody`; backend then loads the current stored document and invokes a Core-owned projector to derive a profile-shaped `VisibleStoredBody` used to determine which persisted collection rows are visible for merge/delete.
+- Core MUST reject any writable profile definition that excludes a field required to compute the compiled semantic identity of a persisted multi-item collection scope.
 
-- Core continues to produce `DocumentInfo` (identity + `ReferentialId` + extracted references/descriptors, including reference locations) and operates on JSON bodies.
+- Core continues to produce `DocumentInfo` (identity + `ReferentialId` + extracted references/descriptors, including reference locations) and operates on JSON bodies. When profile-specific collection filtering applies, Core also provides the request-scoped write-shaping input described above.
 - Backend repositories (`IDocumentStoreRepository`, `IQueryHandler`) become responsible for:
   1. **Flattening** incoming JSON into relational tables
   2. **Reference resolution** (natural keys → `DocumentId`)
   3. **Reconstitution** (relational → JSON) for GET/query responses
 
-This preserves the Core/Backend boundary and avoids leaking relational concerns into Core.
+This keeps persistence-state loading in backend while keeping profile semantics centralized in Core; visibility comes from profile-shaped stored JSON, while row matching remains backend-owned via compiled semantic identities.
 
 ## Deep Dives
 
@@ -99,6 +101,7 @@ This redesign is split into focused docs in this directory:
 - Authentication & authorization (token-derived context, DB companion objects, query filtering/batching): [auth.md](auth.md)
 - Key unification (canonical columns + generated aliases; presence-gated when optional): [key-unification.md](key-unification.md)
 - Flattening & reconstitution (derived mapping, compiled plans, C# shapes): [flattening-reconstitution.md](flattening-reconstitution.md)
+- Profiles (Core/backend contract for readable/writable filtering, hidden-data preservation, and profile-scoped merges): [profiles.md](profiles.md)
 - Unified mapping models (shared in-memory shape for DDL/runtime/packs): [compiled-mapping-set.md](compiled-mapping-set.md)
 - AOT compilation (optional mapping pack distribution keyed by `EffectiveSchemaHash`): [aot-compilation.md](aot-compilation.md)
 - Mapping pack file format (normative `.mpack` schema): [mpack-format-v1.md](mpack-format-v1.md)

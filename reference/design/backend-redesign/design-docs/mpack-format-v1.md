@@ -140,6 +140,7 @@ All collections are `repeated` and MUST be emitted in stable deterministic order
 - Within each `ResourceWritePlan`:
   - `table_plans`: ascending by `(table.schema, table.name)`
 - Within each `TableWritePlan`:
+  - `collection_merge_plan`, when present, is semantically significant and MUST be emitted deterministically
   - `bulk_insert_batching` is semantically significant and MUST be derived deterministically from:
     - dialect limits (e.g., SQL Server parameter limits),
     - policy row caps, and
@@ -265,7 +266,7 @@ Given `(expectedEffectiveSchemaHash, expectedDialect, expectedRelationalMappingV
        - every `DbColumnModel` has `storage` set
        - any `UnifiedAlias` storage references only stored columns on the same table (canonical + optional presence)
        - any `DbTableModel.key_unification_classes` entries reference only columns on the same table and the member list is ordered and distinct
-       - any `WriteValueSource.precomputed` bindings are populated by exactly one `TableWritePlan.key_unification_plans` entry
+       - any `WriteValueSource.precomputed` bindings are populated either by exactly one `TableWritePlan.key_unification_plans` entry or by deterministic collection-id reservation associated with `TableWritePlan.collection_merge_plan`
 7. Reconstruct executor-facing contracts deterministically from normalized payload values:
    - resolve table identities by `(schema, name)` and columns by `DbColumnName.value` (within each resolved table)
    - compile canonical JsonPath strings into `JsonPathExpression` runtime objects
@@ -430,7 +431,7 @@ message DbTableModel {
 }
 
 message TableKey {
-  repeated DbKeyColumn columns = 1;                      // root: [DocumentId]; child: [ParentKeyParts..., Ordinal]
+  repeated DbKeyColumn columns = 1;                      // root/root-scope extension: [DocumentId]; collection: [CollectionItemId]; collection/common-type extension scope: [BaseCollectionItemId]
 }
 
 enum ColumnKind {
@@ -440,6 +441,7 @@ enum ColumnKind {
   COLUMN_KIND_DESCRIPTOR_FK = 3;
   COLUMN_KIND_ORDINAL = 4;
   COLUMN_KIND_PARENT_KEY_PART = 5;
+  COLUMN_KIND_COLLECTION_KEY = 6;
 }
 
 enum ScalarKind {
@@ -465,7 +467,7 @@ message RelationalScalarType {
 
 message DbKeyColumn {
   DbColumnName column_name = 1;
-  ColumnKind kind = 2;                                   // must be PARENT_KEY_PART or ORDINAL
+  ColumnKind kind = 2;                                   // root/root-scope extension: PARENT_KEY_PART; collection: COLLECTION_KEY; collection/common-type extension scope: PARENT_KEY_PART
 }
 
 message DbColumnModel {
@@ -584,12 +586,24 @@ message TableWritePlan {
   // Deterministic bulk-insert batching bound for this table.
   // Derived from dialect limits (e.g., SQL Server parameter limits), policy row caps, and the plan's bound column count.
   BulkInsertBatchingInfo bulk_insert_batching = 13;
+  CollectionMergePlan collection_merge_plan = 14;        // omitted when not a collection table
 
   // Parameter/value ordering for insert is defined by this list.
   repeated WriteColumnBinding column_bindings = 20;
 
   // Empty when this table has no key-unification classes.
   repeated KeyUnificationWritePlan key_unification_plans = 30;
+}
+
+message CollectionMergePlan {
+  repeated CollectionSemanticIdentityBinding semantic_identity_bindings = 2; // required and non-empty for persisted multi-item collection scopes
+  string select_current_sibling_set_sql = 10;
+  string delete_by_collection_item_ids_sql = 11;
+}
+
+message CollectionSemanticIdentityBinding {
+  string relative_path = 1;                              // relative to table scope node
+  DbColumnName column_name = 2;
 }
 
 message BulkInsertBatchingInfo {
@@ -621,7 +635,7 @@ message WriteDocumentId {}
 message WritePrecomputed {}
 
 message WriteParentKeyPart {
-  uint32 index = 1;                                      // index in parent key parts array
+  uint32 index = 1;                                      // index in parent scope locator array
 }
 
 message WriteOrdinal {}

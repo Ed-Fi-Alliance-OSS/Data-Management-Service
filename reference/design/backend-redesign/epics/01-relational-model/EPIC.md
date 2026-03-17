@@ -44,3 +44,5 @@ The end-to-end build is orchestrated by `DMS-1033` as an ordered set-level build
 - `DMS-945` — `07-index-and-trigger-inventory.md` — Derive deterministic indexes + triggers inventory (DDL intent)
 - `DMS-1033` — `08-derived-relational-model-set-builder.md` — Build `DerivedRelationalModelSet` from the effective schema set
 - `DMS-1035` — `09-common-extensions.md` — Common-type extensions (`_ext` attachment to commons) schema support
+- `DMS-1042` — `10-key-unification.md` — Key unification (canonical columns + generated aliases)
+- `DMS-1100` — `11-stable-collection-row-identity.md` — Derive stable `CollectionItemId` / `ParentCollectionItemId` collection keys

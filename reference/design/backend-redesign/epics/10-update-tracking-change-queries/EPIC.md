@@ -16,6 +16,7 @@ Deliverables include:
 - write-side stamping of `ContentVersion/IdentityVersion` (global monotonic stamps),
 - journal emission via triggers on `dms.Document`,
 - serving `_etag`, `_lastModifiedDate`, and per-item `ChangeVersion` from stored stamps on `dms.Document`,
+- ensuring successful no-op updates leave stored stamps and journal rows unchanged,
 - `If-Match` enforcement using stored representation stamps,
 - foundations for Change Query selection using `dms.DocumentChangeEvent` (“journal + verify”).
 
@@ -23,7 +24,7 @@ Authorization remains out of scope.
 
 ## Stories
 
-- `DMS-1002` — `00-token-stamping.md` — Allocate stamps and update token columns (no-op detection)
+- `DMS-1002` — `00-token-stamping.md` — Allocate stamps and update token columns only for representation changes
 - `DMS-1003` — `01-journaling-contract.md` — Treat journals as derived artifacts; validate trigger behavior
 - `DMS-1004` — `02-derived-metadata.md` — Serve `_etag/_lastModifiedDate/ChangeVersion` from stored stamps
 - `DMS-1005` — `03-if-match.md` — Enforce optimistic concurrency using stored `_etag`

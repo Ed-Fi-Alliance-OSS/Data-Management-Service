@@ -53,7 +53,7 @@ Table naming patterns come from `reference/design/flattening-metadata-design.md`
 - extension root tables are named `{ResourceName}Extension`
 - extension collection tables are named `{ResourceName}Extension{CollectionSuffix}` using PascalCase
 
-This redesign keeps those table-name patterns, while using the redesigned key strategy (`DocumentId` and composite parent+ordinal keys).
+This redesign keeps those table-name patterns, while using the redesigned key strategy (`DocumentId` for root scope and `CollectionItemId` for collection/common-type scopes).
 
 ### Physical database schemas
 
@@ -105,25 +105,25 @@ For a base resource `R` and an extension project endpoint name `p` where `$._ext
 **Row presence rule**
 - If the document has no values under `$._ext.{p}` (absent or empty after Core pruning), do not store a row in `{R}Extension`.
 
-### 2) `_ext` inside common types and collections → extension scope tables aligned to base keys
+### 2) `_ext` inside common types and collections → extension scope tables aligned to stable base identities
 
-When an `_ext.{p}` subtree appears inside a base table scope (root or a collection element), store it in a table keyed exactly like the base scope it extends.
+When an `_ext.{p}` subtree appears inside a base table scope (root or a collection element), store it in a table keyed to the stable identity of the base scope it extends.
 
-Example: core has `edfi.SchoolAddress` keyed by `(School_DocumentId, Ordinal)`. If `_ext.sample` exists under `$.addresses[*]`, create:
+Example: core has `edfi.SchoolAddress` with internal key `CollectionItemId`. If `_ext.sample` exists under `$.addresses[*]`, create:
 
 - `sample.SchoolExtensionAddress`
-  - key columns: `(School_DocumentId, Ordinal)`
-  - FK back to `edfi.SchoolAddress(School_DocumentId, Ordinal)` ON DELETE CASCADE
+  - key column: `BaseCollectionItemId`
+  - FK back to `edfi.SchoolAddress(CollectionItemId)` ON DELETE CASCADE
   - extension scalar/ref/descriptor columns from the schema under that `_ext.sample` site
 
 This “key alignment” rule ensures:
 - no orphan extension rows,
 - correct delete cascades,
-- deterministic reconstitution (extension rows attach to the correct base element by key/ordinal).
+- deterministic reconstitution (extension rows attach to the correct base element by stable base identity).
 
-### 3) Arrays under `_ext` → extension child tables (parent+ordinal keys)
+### 3) Arrays under `_ext` → extension child tables (`CollectionItemId` + root document scope + parent-scope keys)
 
-Arrays inside an extension subtree create extension child tables using the same parent+ordinal strategy as core collections.
+Arrays inside an extension subtree create extension child tables using the same `CollectionItemId` + root document scope + parent-scope strategy as core collections.
 
 Naming follows the old pattern:
 - `{R}Extension{Suffix}` (or nested suffix) using PascalCase base names derived from the array property path.
@@ -147,10 +147,13 @@ During write materialization, extension row buffers are produced alongside core 
 
 1. Traverse the JSON once (as in the core flattener).
 2. Whenever an `_ext.{p}` subtree is encountered at a table scope, materialize the corresponding extension row for that scope.
-3. Apply the same “replace” strategy as the core baseline:
-   - delete existing extension rows for the document (root extension tables + extension child tables) and insert the current rows.
+3. Apply the same merge strategy as the core collection writer:
+   - matched extension-scope rows keep their stable base identity,
+   - new extension child rows receive new `CollectionItemId`s,
+   - omitted visible extension child rows are deleted,
+   - hidden profile-scoped extension data is preserved.
 
-This keeps semantics aligned with “replace document” and avoids requiring stable per-element IDs.
+This keeps extension semantics aligned with the core collection merge rules and avoids exposing per-element IDs in the API surface.
 
 ## Reconstitution (GET/query) integration
 

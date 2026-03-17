@@ -14,6 +14,7 @@ Add runtime integration tests that exercise the relational backend end-to-end:
 - PUT by id
 - DELETE by id
 - GET by query paging
+- profile-constrained write scenarios for root creatability, hidden-data preservation, hidden-gap collection ordering, `_ext` preservation, and collection/non-collection merge behavior
 
 Tests run against provisioned PostgreSQL/SQL Server using docker compose (no Testcontainers).
 
@@ -23,15 +24,22 @@ Tests run against provisioned PostgreSQL/SQL Server using docker compose (no Tes
   - persisted relational state is correct (basic invariants),
   - response JSON is correct after reconstitution,
   - reference validation works (missing refs fail),
-  - delete conflicts are reported correctly.
+  - unchanged PUT / POST-as-update requests are successful no-ops that preserve `_etag` / `ChangeVersion`,
+  - delete conflicts are reported correctly,
+  - profiled `POST` create requests reject non-creatable root resources,
+  - profiled updates preserve hidden stored data while applying visible changes,
+  - visible-but-absent profiled non-collection scopes delete separate-table rows or clear inlined parent/root-row values correctly,
+  - profile-filtered collections preserve hidden rows/hidden columns while merging visible items, including deterministic hidden-gap sibling ordering after visible-row updates/inserts/deletes,
+  - profiled `_ext` data preserves hidden resource-level rows, collection/common-type extension rows, and extension child collections while visible data merges normally, and
+  - profile-based validation/creatability failures return consistent HTTP error semantics.
 - Tests can be run locally via documented commands/scripts.
 
 ## Tasks
 
-1. Create a set of small fixture schemas + sample payloads for CRUD scenarios.
+1. Create a set of small fixture schemas + sample payloads for CRUD and profile-constrained scenarios, explicitly including hidden-gap collection-ordering cases and hidden `_ext` rows/child collections.
 2. Implement integration test helpers that:
    - provision DB,
    - run DMS with the relational backend,
-   - execute HTTP requests and assert responses.
+   - execute HTTP requests with and without profile media types and assert responses/persisted state.
 3. Add a test category for integration tests and wire into CI as appropriate.
-
+4. Add fixtures/assertions covering unchanged writes and the required profile scenarios, including root-create denial, hidden-data preservation, hidden-gap collection ordering, hidden `_ext` row/child-collection preservation, and profile-aware collection/non-collection behavior.

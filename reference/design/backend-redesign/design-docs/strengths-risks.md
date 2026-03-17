@@ -48,10 +48,10 @@ Capture major strengths and risks of the baseline redesign, with an emphasis on 
 - Serves `_etag/_lastModifiedDate/ChangeVersion` from stored `dms.Document` stamps (no read-time dependency derivation).
 - Uses a narrow, append-only journal (`dms.DocumentChangeEvent`) for scalable Change Query candidate selection.
 
-### Composite parent+ordinal keys for collections
+### Stable collection identities + merge semantics for collections
 
-- Composite `(ParentKeyParts..., Ordinal)` keys avoid identity capture and enable batch writes for nested collections.
-- Preserves collection ordering deterministically for read-path reconstitution.
+- `CollectionItemId` preserves physical child-row identity across profile-scoped merges, nested descendants, and extension scopes.
+- Root document scope plus sibling `Ordinal` still support deterministic keyset hydration and read-path reconstitution.
 
 ### Metadata-driven mapping without code generation
 

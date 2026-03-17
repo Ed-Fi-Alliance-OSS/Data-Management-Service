@@ -176,7 +176,7 @@ Deep dive on derived mapping and the minimal `ApiSchema.json` additions: [flatte
 - `identityJsonPaths`: natural key extraction and uniqueness
 - `documentPathsMapping`: identifies references vs scalars vs descriptor paths, plus reference identity mapping
 - `decimalPropertyValidationInfos`: precision/scale for `decimal`
-- `arrayUniquenessConstraints`: relational unique constraints for collection tables
+- `arrayUniquenessConstraints`: required schema metadata for collection semantic identity / relational unique constraints. The metadata may be empty for some scopes, but any persisted multi-item collection scope in the supported design must still compile a non-empty semantic identity or fail validation/compilation.
 - `abstractResources`: abstract identity metadata for polymorphic reference targets (drives `{AbstractResource}Identity` tables and optional union views)
 - `isSubclass` + superclass metadata: drives insertion of superclass/abstract alias referential-id rows in `dms.ReferentialIdentity`
 - `queryFieldMapping`: defines queryable fields and their JSON paths/types; may map to:
@@ -206,8 +206,11 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
      - polymorphic/abstract identities via superclass/abstract alias rows in `dms.ReferentialIdentity`
    - Descriptor refs additionally require a `dms.Descriptor` existence/type check (for “is a descriptor” enforcement)
 3. Backend writes within a single transaction:
+   - For update flows that already loaded the current document state, backend SHOULD compare the request-derived
+     post-merge rowset to the current persisted rowset before issuing DML. If they are equal, treat the request as a successful
+     no-op and skip data-modifying statements (see “No-op update detection” below).
    - Insert/update `dms.Document` (allocate `DocumentId`; persist `DocumentUuid` and `ResourceKeyId`).
-   - Write resource root + child + extension tables (replace strategy for collections).
+   - Write resource root + child + extension tables (merge strategy for collections).
    - For each document reference site:
      - persist the stable `..._DocumentId`, and
      - populate canonical/storage identity-part columns deterministically (key-unified when required).
@@ -268,6 +271,24 @@ Engine considerations:
 - **Update by id (PUT)**: detect by `DocumentUuid`:
   - Find `DocumentId` from `dms.Document` by `DocumentUuid`.
 
+### No-op update detection
+
+For `PUT`, and for `POST` when upsert resolves to an existing document, the write path SHOULD support a
+whole-document no-op fast path:
+
+- Compare the request-derived relational rowset to the current persisted rowset using the stored/writable columns that
+  the normal write executor would bind, after applying the same collection merge rules the write path would execute.
+- Reuse the update flow’s existing “load current document” roundtrip for this comparison. Do not add a dedicated
+  preflight query by default; the optimization is meant to reduce write amplification, not trade one write for an
+  extra read roundtrip.
+- If the rowsets are equal, the request succeeds without issuing DML for the resource tables, `dms.Document`, or other
+  derived artifacts. No update-tracking stamps or change-journal rows are produced.
+- If any row differs, execute the normal merge write path unchanged.
+
+This is intentionally distinct from “API-surface partial updates”. The merge executor still implements full-document
+PUT semantics; it just preserves stable child-row identities and hidden profile-scoped data while computing the new
+stored state.
+
 ### Identity updates (`AllowIdentityUpdates`)
 
 If identity changes on update:
@@ -305,8 +326,20 @@ With stored representation stamps:
 - PUT/DELETE `If-Match` validation is row-local:
   - compare the request `_etag` to the current stored stamp for that `DocumentId`;
   - if mismatched, return `412 Precondition Failed`.
+- A no-op decision made before the write batch is only provisional. Before short-circuiting, the backend MUST verify
+  that the `ContentVersion` observed during comparison is still current for that `DocumentId`.
+  - If the observed `ContentVersion` is still current, the backend may commit a successful no-op without DML.
+  - If the observed `ContentVersion` is no longer current and the request supplied `If-Match`, return `412 Precondition Failed`.
+  - If the observed `ContentVersion` is no longer current and no `If-Match` precondition was supplied, abandon the
+    no-op fast path and retry / re-evaluate against current state rather than returning success based on stale data.
 
 Because FK cascades update referrers’ rows and triggers bump their representation stamps, indirect changes correctly cause `If-Match` failures on subsequently stale clients.
+
+Collection-write note:
+- For profile-constrained writes, backend determines the visible persisted rows by applying the writable profile to the current stored JSON and recomputing collection semantic keys from the projected stored items. Backend does not evaluate profile predicates itself.
+- Core MUST reject any writable profile definition that excludes a field required to compute the compiled semantic identity of a persisted multi-item collection scope.
+- Every persisted multi-item collection scope MUST compile a semantic identity; models that do not are outside the supported design and must fail before runtime merge execution.
+- Correctness for accepted profile writes still relies on the same `If-Match` / `ContentVersion` guard described above; no new API surface is required.
 
 ### Deadlock + retry policy
 

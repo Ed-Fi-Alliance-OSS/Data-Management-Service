@@ -72,6 +72,9 @@ A document’s served representation changes when any of the following occur:
 - the document’s own persisted scalar/collection content changes (root/child/extension tables), or
 - any referenced document’s identity values embedded in the representation change, which is realized as an FK cascade update to the document’s stored reference identity storage columns (canonical under key unification; see [key-unification.md](key-unification.md)).
 
+A successful update request that results in **no persisted row changes** is **not** a representation change. In that
+case, `ContentVersion`, `ContentLastModifiedAt`, and `dms.DocumentChangeEvent` MUST remain unchanged.
+
 ### What counts as an identity projection change?
 
 A document’s identity/URI projection changes when any identity component changes, including:
@@ -107,6 +110,7 @@ A constant default (e.g., `DEFAULT 1`) is not compatible with the uniqueness/mon
 Notes:
 - Multiple updates to the same `DocumentId` in one transaction may allocate multiple sequence values; the only required property is that the final committed stamps are monotonic and correct.
 - FK-cascade updates to reference identity storage columns MUST cause stamping (the database update itself triggers the same table triggers as a direct UPDATE; under key unification, per-site binding aliases recompute automatically).
+- A successful no-op update path (request accepted, but no stored/writable row values changed) MUST NOT allocate new content or identity stamps.
 - For watermark-only compatibility, allocating stamps must be **per-document**, not “one stamp for the whole statement”:
   - when a trigger stamps N `dms.Document` rows, it MUST allocate N distinct `ChangeVersionSequence` values (one per affected `DocumentId`).
   - SQL Server: do **not** assign `NEXT VALUE FOR dms.ChangeVersionSequence` to a variable and reuse it; use `NEXT VALUE FOR dms.ChangeVersionSequence` directly in the set-based `UPDATE` that stamps `dms.Document` (and dedupe `DocumentId`s so each document is updated once per trigger execution).

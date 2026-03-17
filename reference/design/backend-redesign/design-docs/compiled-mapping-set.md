@@ -363,7 +363,23 @@ For a write request targeting resource `R`:
    - The compiled `InsertSql` for the table is emitted such that its parameter placeholders correspond to `ColumnBindings[0..N)` in that same order and use `WriteColumnBinding.ParameterName`.
    - Runtime binds parameters from `WriteColumnBinding.ParameterName` (not by “guessing” from SQL text), so it always knows which extracted value goes in which SQL parameter position.
 
-6. **Execute (single transaction, replace semantics for scoped child data)**
+6. **Whole-document no-op detection for existing documents**
+   - Applies to `PUT` and to `POST` requests that resolved to an existing `DocumentId`.
+   - Use the current-document rows already materialized earlier in the request (for auth/reconstitution) and project
+     them into comparable rowsets using the same table ordering and stored/writable column ordering as
+     `TableWritePlan.ColumnBindings`, after applying the same collection merge rules the normal executor would use.
+   - Compare table-by-table, including:
+     - 1:1 scope presence/absence,
+     - collection sibling ordering and membership after merge using the same deterministic post-merge sibling-order rule as the normal executor, and
+     - ordered stored/writable values (resolved FK ids, canonical storage columns, synthetic presence flags, etc.).
+   - If all comparable rowsets are equal, mark the request as a **no-op candidate** and proceed to guarded execution.
+
+7. **Execute (single transaction, merge semantics for scoped child data)**
+   - If the request is a no-op candidate, the write batch must first verify that the observed `ContentVersion` is still
+     current for that `DocumentId`. If it is still current, commit without issuing DML for the resource tables or
+     `dms.Document`.
+   - If the observed `ContentVersion` is no longer current, abandon the no-op fast path and follow the retry /
+     precondition rules in `transactions-and-concurrency.md`.
    - Root table:
      - `InsertSql` for insert and/or `UpdateSql` for update (depending on identity outcome).
    - Non-root 1:1 tables (including root-scope `_ext` tables):
@@ -371,7 +387,12 @@ For a write request targeting resource `R`:
      - `UpdateSql` when the scoped row already exists, and
      - `DeleteByParentSql` when the scoped object is absent in the payload.
    - Collection tables:
-     - execute `DeleteByParentSql` (for the parent key) then bulk insert the new rows.
+     - load the current sibling sets for the document,
+     - determine the visible stored rows for each scope instance from the request-scoped profile projection of the current stored document (or treat all rows as visible when no profile filtering applies),
+     - match incoming rows by the compiled semantic identity,
+     - update matched rows in place by `CollectionItemId`,
+     - delete omitted visible rows by `CollectionItemId`, and
+     - bulk insert only the newly created rows, then recompute `Ordinal` using the deterministic post-merge sibling-order rule described in `flattening-reconstitution.md`.
    - Bulk insert is used whenever a table has 0..N rows to write (especially child/collection and extension tables): a dialect-aware executor (e.g. `IBulkInserter`) batches `RowBuffer`s into multi-row inserts (or `COPY`/`SqlBulkCopy`-style paths for large batches), using `InsertSql` + ordered `ColumnBindings` and chunking by `TableWritePlan.BulkInsertBatching.MaxRowsPerBatch` to respect dialect parameter limits.
 
 ### 4.3 Read path usage (GET by id / query)
@@ -400,7 +421,7 @@ For a read request targeting resource `R`:
      2) a `SELECT` of `dms.Document` joined to the keyset (document UUID + stamps like `_etag`/`_lastModifiedDate` + resource key id), and
      3) one `SELECT` per `DbTableModel` in `ResourceReadPlan.Model.TablesInDependencyOrder`, using each table’s compiled `TableReadPlan.SelectByKeysetSql` (each `SELECT` joins the table to the keyset to return all rows for the page).
    - Read result sets in order using `DbDataReader.NextResult()` / `QueryMultiple`, mapping each result set to the corresponding table model in the same order used to build the batch.
-   - Each `SelectByKeysetSql` must emit rows ordered by the table key (parent key parts..., ordinal) so reconstitution can assemble arrays deterministically.
+   - Each `SelectByKeysetSql` must emit rows ordered by root document scope, then immediate parent scope where applicable, then `Ordinal`, so reconstitution can assemble arrays deterministically.
    - Each `SelectByKeysetSql` must emit its select-list in a stable order consistent with the table model (so readers can consume by ordinal without name-based mapping).
 
 4. **Reconstitute JSON**
@@ -408,7 +429,7 @@ For a read request targeting resource `R`:
    - Use the `RelationalResourceModel` (table scopes + column metadata) to rebuild a document in two phases:
      1) **Assemble an in-memory row graph** for each `DocumentId` in the page keyset:
         - treat the root table as the anchor (one row per `DocumentId`),
-        - for each child table, group rows by the *parent key parts* (the prefix of the composite key) and attach them to the parent row,
+        - for each child table, group rows by the immediate parent scope locator (`..._DocumentId` for top-level collections, `ParentCollectionItemId` for nested collections) and attach them to the parent row,
         - for array scopes, order siblings by the `Ordinal` key column so JSON arrays are stable and deterministic,
         - repeat depth-first using `TablesInDependencyOrder` so parents are always available before children.
      2) **Stream JSON output** from that row graph:
