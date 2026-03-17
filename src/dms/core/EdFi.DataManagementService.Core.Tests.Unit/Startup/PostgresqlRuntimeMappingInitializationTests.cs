@@ -514,14 +514,10 @@ public class PostgresqlRuntimeMappingInitializationTests
         {
             var mappingSetKey = CreateMappingSetKey(BuildEffectiveSchemaSet(_schemaNodes));
 
-            var cache = _serviceProvider.GetRequiredService<MappingSetCache>();
-            var cacheResult = await cache.GetOrCreateWithCacheStatusAsync(
-                mappingSetKey,
-                CancellationToken.None
-            );
+            var provider = _serviceProvider.GetRequiredService<IMappingSetProvider>();
+            var mappingSet = await provider.GetOrCreateAsync(mappingSetKey, CancellationToken.None);
 
-            cacheResult.CacheStatus.Should().Be(MappingSetCacheStatus.ReusedCompleted);
-            cacheResult.MappingSet.Key.Should().Be(mappingSetKey);
+            mappingSet.Key.Should().Be(mappingSetKey);
             _serviceProvider
                 .GetRequiredService<PostgresqlValidatedResourceKeyMapCache>()
                 .TryGet(ConnectionString, out _)
@@ -550,10 +546,7 @@ public class PostgresqlRuntimeMappingInitializationTests
                 .Entries.Should()
                 .Contain(entry =>
                     entry.Level == LogLevel.Information
-                    && entry.Message.Contains(
-                        "Compiled PostgreSQL runtime mapping set",
-                        StringComparison.Ordinal
-                    )
+                    && entry.Message.Contains("PostgreSQL mapping set ready", StringComparison.Ordinal)
                 );
         }
     }
@@ -620,14 +613,10 @@ public class PostgresqlRuntimeMappingInitializationTests
 
             var mappingSetKey = CreateMappingSetKey(BuildEffectiveSchemaSet(_schemaNodes));
 
-            var cache = _serviceProvider.GetRequiredService<MappingSetCache>();
-            var cacheResult = await cache.GetOrCreateWithCacheStatusAsync(
-                mappingSetKey,
-                CancellationToken.None
-            );
+            var provider = _serviceProvider.GetRequiredService<IMappingSetProvider>();
+            var mappingSet = await provider.GetOrCreateAsync(mappingSetKey, CancellationToken.None);
 
-            cacheResult.CacheStatus.Should().Be(MappingSetCacheStatus.ReusedCompleted);
-            cacheResult.MappingSet.Key.Should().Be(mappingSetKey);
+            mappingSet.Key.Should().Be(mappingSetKey);
         }
     }
 
@@ -813,20 +802,16 @@ public class PostgresqlRuntimeMappingInitializationTests
             await RunStartupInitializationPhasesAsync(_serviceProvider, CancellationToken.None);
 
             var mappingSetKey = CreateMappingSetKey(BuildEffectiveSchemaSet(_schemaNodes));
-            var cache = _serviceProvider.GetRequiredService<MappingSetCache>();
-            var cacheResult = await cache.GetOrCreateWithCacheStatusAsync(
-                mappingSetKey,
-                CancellationToken.None
-            );
+            var provider = _serviceProvider.GetRequiredService<IMappingSetProvider>();
+            var mappingSet = await provider.GetOrCreateAsync(mappingSetKey, CancellationToken.None);
 
-            cacheResult.CacheStatus.Should().Be(MappingSetCacheStatus.ReusedCompleted);
-            cacheResult.MappingSet.Key.Should().Be(mappingSetKey);
-            cacheResult
-                .MappingSet.ReadPlansByResource.Should()
+            mappingSet.Key.Should().Be(mappingSetKey);
+            mappingSet
+                .ReadPlansByResource.Should()
                 .ContainKey(new QualifiedResourceName("Ed-Fi", "Enrollment"));
 
-            var schoolReferenceBinding = cacheResult
-                .MappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "Enrollment")]
+            var schoolReferenceBinding = mappingSet
+                .ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "Enrollment")]
                 .ReferenceIdentityProjectionPlansInDependencyOrder.Should()
                 .ContainSingle()
                 .Subject.BindingsInOrder.Should()
@@ -907,16 +892,12 @@ public class PostgresqlRuntimeMappingInitializationTests
             await RunStartupInitializationPhasesAsync(_serviceProvider, CancellationToken.None);
 
             var mappingSetKey = CreateMappingSetKey(BuildEffectiveSchemaSet(_schemaNodes));
-            var cache = _serviceProvider.GetRequiredService<MappingSetCache>();
-            var cacheResult = await cache.GetOrCreateWithCacheStatusAsync(
-                mappingSetKey,
-                CancellationToken.None
-            );
+            var provider = _serviceProvider.GetRequiredService<IMappingSetProvider>();
+            var mappingSet = await provider.GetOrCreateAsync(mappingSetKey, CancellationToken.None);
 
-            cacheResult.CacheStatus.Should().Be(MappingSetCacheStatus.ReusedCompleted);
-            cacheResult.MappingSet.Key.Should().Be(mappingSetKey);
+            mappingSet.Key.Should().Be(mappingSetKey);
 
-            var contactReadPlan = cacheResult.MappingSet.ReadPlansByResource[
+            var contactReadPlan = mappingSet.ReadPlansByResource[
                 new QualifiedResourceName("Ed-Fi", "Contact")
             ];
             var extensionTablePlan = contactReadPlan
@@ -1094,14 +1075,10 @@ public class PostgresqlRuntimeMappingInitializationTests
             );
 
             var mappingSetKey = CreateMappingSetKey(BuildEffectiveSchemaSet(_startupSchemaNodes));
-            var cache = _serviceProvider.GetRequiredService<MappingSetCache>();
-            var cacheResult = await cache.GetOrCreateWithCacheStatusAsync(
-                mappingSetKey,
-                CancellationToken.None
-            );
+            var provider = _serviceProvider.GetRequiredService<IMappingSetProvider>();
+            var mappingSet = await provider.GetOrCreateAsync(mappingSetKey, CancellationToken.None);
 
-            cacheResult.CacheStatus.Should().Be(MappingSetCacheStatus.ReusedCompleted);
-            cacheResult.MappingSet.Key.Should().Be(mappingSetKey);
+            mappingSet.Key.Should().Be(mappingSetKey);
             A.CallTo(() => _apiSchemaProvider.GetApiSchemaNodes()).MustHaveHappenedOnceExactly();
         }
     }
@@ -1177,25 +1154,23 @@ public class PostgresqlRuntimeMappingInitializationTests
                     BuildExtensionBearingStartupExtensionProjectSchema()
                 )
             );
-            var effectiveSchemaSetProvider = A.Fake<IEffectiveSchemaSetProvider>();
-            var compiler = new PostgresqlRuntimeMappingSetCompiler(
-                effectiveSchemaSetProvider,
-                new MappingSetCompiler()
-            );
             var accessCount = 0;
-
-            A.CallTo(() => effectiveSchemaSetProvider.EffectiveSchemaSet)
-                .ReturnsLazily(() =>
-                    accessCount++ switch
-                    {
-                        0 => initialEffectiveSchemaSet,
-                        _ => changedEffectiveSchemaSet,
-                    }
-                );
+            Func<EffectiveSchemaSet> effectiveSchemaSetAccessor = () =>
+                accessCount++ switch
+                {
+                    0 => initialEffectiveSchemaSet,
+                    _ => changedEffectiveSchemaSet,
+                };
+            var compiler = new RuntimeMappingSetCompiler(
+                effectiveSchemaSetAccessor,
+                new MappingSetCompiler(),
+                SqlDialect.Pgsql,
+                new PgsqlDialectRules()
+            );
 
             _expectedKey = compiler.GetCurrentKey();
             _actualKey = CreateMappingSetKey(changedEffectiveSchemaSet);
-            _act = async () => await compiler.CompileAsync(_expectedKey);
+            _act = async () => await compiler.CompileAsync(_expectedKey, CancellationToken.None);
         }
 
         [Test]

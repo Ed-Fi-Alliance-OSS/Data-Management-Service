@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Startup;
@@ -23,14 +24,22 @@ public static class PostgresqlServiceExtensions
     /// </summary>
     public static IServiceCollection AddPostgresqlDatastore(this IServiceCollection services)
     {
+        // Mapping set compilation pipeline (generic, dialect-neutral)
         services.AddSingleton<MappingSetCompiler>();
-        services.AddSingleton<PostgresqlRuntimeMappingSetCompiler>();
-        services.AddSingleton<MappingSetCache>(serviceProvider =>
+        services.AddSingleton<IMappingPackStore, NoOpMappingPackStore>();
+        services.AddSingleton<IRuntimeMappingSetCompiler>(sp =>
         {
-            var compiler = serviceProvider.GetRequiredService<PostgresqlRuntimeMappingSetCompiler>();
-            return new MappingSetCache(compiler.CompileAsync);
+            var schemaSetProvider = sp.GetRequiredService<IEffectiveSchemaSetProvider>();
+            var compiler = sp.GetRequiredService<MappingSetCompiler>();
+            return new RuntimeMappingSetCompiler(
+                () => schemaSetProvider.EffectiveSchemaSet,
+                compiler,
+                SqlDialect.Pgsql,
+                new PgsqlDialectRules()
+            );
         });
-        services.AddSingleton<PostgresqlRuntimeMappingSetAccessor>();
+        services.AddSingleton<IMappingSetProvider, MappingSetProvider>();
+
         services.AddSingleton<
             IPostgresqlRuntimeDatabaseMetadataReader,
             PostgresqlRuntimeDatabaseMetadataReader

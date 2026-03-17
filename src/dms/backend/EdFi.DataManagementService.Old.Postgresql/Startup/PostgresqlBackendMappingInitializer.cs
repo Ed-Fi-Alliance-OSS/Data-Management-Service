@@ -3,14 +3,15 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Startup;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Old.Postgresql.Startup;
 
 internal sealed class PostgresqlBackendMappingInitializer(
-    PostgresqlRuntimeMappingSetAccessor runtimeMappingSetAccessor,
+    IMappingSetProvider mappingSetProvider,
+    IRuntimeMappingSetCompiler pgsqlCompiler,
     ILogger<PostgresqlBackendMappingInitializer> logger
 ) : IBackendMappingInitializer
 {
@@ -22,30 +23,22 @@ internal sealed class PostgresqlBackendMappingInitializer(
     /// </summary>
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
-        var cacheResult = await runtimeMappingSetAccessor
-            .GetCurrentAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        var mappingSetKey = cacheResult.MappingSet.Key;
-        var initializationMode = GetInitializationMode(cacheResult.CacheStatus);
+        var key = pgsqlCompiler.GetCurrentKey();
 
         logger.LogInformation(
-            "{InitializationMode} PostgreSQL runtime mapping set for EffectiveSchemaHash {EffectiveSchemaHash}, Dialect {Dialect}, RelationalMappingVersion {RelationalMappingVersion}",
-            initializationMode,
-            mappingSetKey.EffectiveSchemaHash,
-            mappingSetKey.Dialect,
-            mappingSetKey.RelationalMappingVersion
+            "Initializing PostgreSQL mapping set for EffectiveSchemaHash {EffectiveSchemaHash}, RelationalMappingVersion {RelationalMappingVersion}",
+            key.EffectiveSchemaHash,
+            key.RelationalMappingVersion
         );
-    }
 
-    private static string GetInitializationMode(MappingSetCacheStatus cacheStatus)
-    {
-        return cacheStatus switch
-        {
-            MappingSetCacheStatus.Compiled => "Compiled",
-            MappingSetCacheStatus.JoinedInFlight => "Joined in-flight",
-            MappingSetCacheStatus.ReusedCompleted => "Reused completed",
-            _ => throw new ArgumentOutOfRangeException(nameof(cacheStatus), cacheStatus, null),
-        };
+        var mappingSet = await mappingSetProvider
+            .GetOrCreateAsync(key, cancellationToken)
+            .ConfigureAwait(false);
+
+        logger.LogInformation(
+            "PostgreSQL mapping set ready for EffectiveSchemaHash {EffectiveSchemaHash}, Dialect {Dialect}",
+            mappingSet.Key.EffectiveSchemaHash,
+            mappingSet.Key.Dialect
+        );
     }
 }
