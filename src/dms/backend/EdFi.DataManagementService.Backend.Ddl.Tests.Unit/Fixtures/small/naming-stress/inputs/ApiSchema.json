@@ -1,0 +1,103 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Ed-Fi",
+    "projectEndpointName": "ed-fi",
+    "projectVersion": "5.0.0",
+    "isExtensionProject": false,
+    "description": "Naming-stress fixture: exercises long identifiers, nameOverride, SQL reserved words, and PostgreSQL 63-char truncation collisions",
+    "abstractResources": {},
+    "caseInsensitiveEndpointNameMapping": {
+      "namingstressitems": "namingstressitems"
+    },
+    "educationOrganizationHierarchy": {},
+    "educationOrganizationTypes": [],
+    "resourceNameMapping": {
+      "NamingStressItem": "namingstressitems"
+    },
+    "resourceSchemas": {
+      "namingstressitems": {
+        "resourceName": "NamingStressItem",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [
+          "$.namingStressItemId"
+        ],
+        "documentPathsMapping": {
+          "NamingStressItemId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.namingStressItemId"
+          },
+          "VeryLongIdentifierNameThatExceedsSixtyThreeCharactersInPostgreSQL": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "path": "$.veryLongIdentifierNameThatExceedsSixtyThreeCharactersInPostgreSQL"
+          },
+          "ShortName": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "nameOverride": "override_short_name",
+            "path": "$.shortName"
+          },
+          "Order": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "path": "$.order"
+          },
+          "ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThree": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "path": "$.thisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThree"
+          },
+          "ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThreeX": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "path": "$.thisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThreeX"
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "namingStressItemId": {
+              "type": "integer"
+            },
+            "veryLongIdentifierNameThatExceedsSixtyThreeCharactersInPostgreSQL": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "shortName": {
+              "type": "string",
+              "maxLength": 60
+            },
+            "order": {
+              "type": "integer"
+            },
+            "thisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThree": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "thisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThreeX": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          "required": [
+            "namingStressItemId"
+          ]
+        }
+      }
+    }
+  }
+}

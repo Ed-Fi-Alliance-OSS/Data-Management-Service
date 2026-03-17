@@ -1,0 +1,30 @@
+{
+  "api_schema_format_version": "1.0.0",
+  "relational_mapping_version": "v1",
+  "effective_schema_hash": "ea14ae28715c959a5e38e07c8b93bb60bab145a0fca766a33b631475b43a5848",
+  "resource_key_count": 2,
+  "resource_key_seed_hash": "a351748c34c9c8b22f541ee0c3f773fb6c35170c0a238745eb5d93fc058afb90",
+  "schema_components": [
+    {
+      "project_endpoint_name": "ed-fi",
+      "project_name": "Ed-Fi",
+      "project_version": "5.0.0",
+      "is_extension_project": false,
+      "project_hash": "19be14c3aa2317f7a8575e1f8c2d16f5dbaeda1210aaa3b87a7b5a7e21eaf92e"
+    }
+  ],
+  "resource_keys": [
+    {
+      "resource_key_id": 1,
+      "project_name": "Ed-Fi",
+      "resource_name": "AddressTypeDescriptor",
+      "resource_version": "5.0.0"
+    },
+    {
+      "resource_key_id": 2,
+      "project_name": "Ed-Fi",
+      "resource_name": "School",
+      "resource_version": "5.0.0"
+    }
+  ]
+}
