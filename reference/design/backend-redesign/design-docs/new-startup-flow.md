@@ -252,9 +252,13 @@ For a single host process serving a single effective schema set:
 > transactions-and-concurrency.md, 03-config-and-failure-modes.md).
 > For instances discovered dynamically after startup (multi-tenant cache-miss scenarios),
 > `ValidateDatabaseFingerprintMiddleware` and `ValidateResourceKeySeedMiddleware` still
-> perform deferred validation on first request. Validation results (both success and failure)
-> are cached for the lifetime of the process — a DMS restart is required to clear cached
-> validation state.
+> perform deferred validation on first request. **Deterministic** validation results (success,
+> schema mismatch, seed mismatch, malformed fingerprint, unprovisioned database) are cached
+> permanently — a DMS restart is required to clear them. **Transient** failures (network
+> errors, timeouts, connection refused) are evicted from the cache immediately so the next
+> request retries validation. This distinction is intentional: deterministic failures require
+> operator intervention (reprovisioning), while transient failures may resolve on their own
+> (e.g., database maintenance window, brief network partition).
 
 > **Scope note — map caching:** DMS-976 validates resource key seeds and caches
 > the validation result (pass/fail) per connection string. The bidirectional
@@ -274,24 +278,33 @@ The startup-based flow forces explicit decisions about “what is fatal”.
   - mapping pack load failure when pack-only mode is enabled,
   - mapping compilation failure when compile is required.
 
-- **Per-instance** (log Critical, cache failure, serve 503 at request time):
-  - connectivity failure to a configured database instance,
+- **Per-instance deterministic** (log Critical, cache failure permanently, serve 503 at request time):
   - wrong `EffectiveSchemaHash`,
   - missing `dms.EffectiveSchema`,
+  - malformed `dms.EffectiveSchema` metadata,
   - invalid `ResourceKeySeedHash/Count`.
 
+- **Per-instance transient** (log Critical, evict from cache, retry on next request):
+  - connectivity failure / timeout to a configured database instance,
+  - other unexpected exceptions during fingerprint or seed validation.
+
 Per-instance validation failures do not abort startup. Each failing instance is logged at
-Critical level (identifying tenant, instance id/name, and the specific failure), and the
-failure is cached so the request-time middleware returns `503 Service Unavailable` for that
-instance. Other instances continue to be served normally. This preserves the multi-instance-safe
-failure mode (see EPIC.md, transactions-and-concurrency.md, 03-config-and-failure-modes.md).
+Critical level (identifying tenant, instance id/name, and the specific failure). Other
+instances continue to be served normally. This preserves the multi-instance-safe failure mode
+(see EPIC.md, transactions-and-concurrency.md, 03-config-and-failure-modes.md).
+
+Deterministic failures (schema mismatch, missing/malformed metadata, seed mismatch) are cached
+permanently per connection string — the request-time middleware returns `503 Service Unavailable`
+without re-validating, and a DMS restart is required after reprovisioning the database. Transient
+failures (network errors, timeouts) are evicted from the cache so the next request retries
+validation automatically, since these may resolve without operator intervention.
 
 > **Implementation note:** Both startup-known and dynamically-discovered instances follow the
 > same failure model: validation failures result in `503 Service Unavailable` with a
 > remediation-guidance error body (the detailed diff report is logged server-side only,
-> correlated via `TraceId`). The failure result is cached permanently — subsequent requests
-> to the same connection string return 503 without re-validating. A DMS restart is required
-> to retry validation (e.g., after reprovisioning the database).
+> correlated via `TraceId`). Deterministic failures are cached permanently; transient
+> failures are evicted so the next request retries. A DMS restart is required to clear
+> deterministic failure cache entries (e.g., after reprovisioning the database).
 
 ### Container-oriented “fail fast”
 
