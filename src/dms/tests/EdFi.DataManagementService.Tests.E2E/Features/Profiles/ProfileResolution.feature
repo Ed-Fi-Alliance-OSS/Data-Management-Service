@@ -3,7 +3,7 @@ Feature: Profile Resolution
     I want profile filtering to be applied correctly based on my request headers
     So that I receive appropriately filtered responses
 
-    Rule: Single profile is applied implicitly when no Accept header is provided
+    Rule: Single profile can be applied implicitly without Accept header
 
         Background:
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-School-IncludeOnly" and namespacePrefixes "uri://ed-fi.org"
@@ -31,7 +31,7 @@ Feature: Profile Resolution
                   }
                   """
 
-        Scenario: 01 Single profile applied implicitly without Accept header
+        Scenario: 01 Single profile without Accept header applies implicitly
             When a GET request is made to "/ed-fi/schools/{id}" without profile header
             Then the profile response status is 200
              And the response body should only contain fields "id, schoolId, nameOfInstitution, webSite"

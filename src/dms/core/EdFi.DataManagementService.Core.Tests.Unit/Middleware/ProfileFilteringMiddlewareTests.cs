@@ -253,6 +253,14 @@ public class ProfileFilteringMiddlewareTests
             _requestInfo.FrontendResponse.Body!["id"]?.GetValue<string>().Should().Be("12345");
             _requestInfo.FrontendResponse.Body["studentUniqueId"]?.GetValue<string>().Should().Be("STU001");
         }
+
+        [Test]
+        public void It_sets_profile_content_type()
+        {
+            _requestInfo
+                .FrontendResponse.ContentType.Should()
+                .Be("application/vnd.ed-fi.student.testprofile.readable+json");
+        }
     }
 
     [TestFixture]
