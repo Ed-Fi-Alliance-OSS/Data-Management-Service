@@ -4,6 +4,13 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.Middleware;
+using EdFi.DataManagementService.Core.Startup;
+using FakeItEasy;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit;
 
@@ -27,5 +34,21 @@ public static class TestHelper
             new(projectNamespace)
         )!;
         return new ResourceSchema(projectSchema.FindResourceSchemaNodeByEndpointName(new(endpointName))!);
+    }
+
+    /// <summary>
+    /// Registers the resource key validation services needed by the pipeline for tests
+    /// where resource key validation is not under test.
+    /// </summary>
+    public static void AddResourceKeyValidationServices(IServiceCollection services)
+    {
+        services.AddSingleton<IResourceKeyRowReader, NullResourceKeyRowReader>();
+        services.AddSingleton<IResourceKeyValidator>(A.Fake<IResourceKeyValidator>());
+        services.AddSingleton<ResourceKeyValidationCacheProvider>();
+        services.AddSingleton<IEffectiveSchemaSetProvider>(A.Fake<IEffectiveSchemaSetProvider>());
+        services.AddTransient<ValidateResourceKeySeedMiddleware>();
+        services.AddTransient<ILogger<ValidateResourceKeySeedMiddleware>>(_ =>
+            NullLogger<ValidateResourceKeySeedMiddleware>.Instance
+        );
     }
 }

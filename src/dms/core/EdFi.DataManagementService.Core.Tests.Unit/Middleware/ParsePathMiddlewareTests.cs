@@ -131,6 +131,8 @@ public class ParsePathMiddlewareTests
             NullLogger<ValidateDatabaseFingerprintMiddleware>.Instance
         );
 
+        TestHelper.AddResourceKeyValidationServices(services);
+
         services.AddSingleton<IProfileService>(A.Fake<IProfileService>());
         services.AddTransient<ProfileResolutionMiddleware>();
         services.AddTransient<ILogger<ProfileResolutionMiddleware>>(_ =>

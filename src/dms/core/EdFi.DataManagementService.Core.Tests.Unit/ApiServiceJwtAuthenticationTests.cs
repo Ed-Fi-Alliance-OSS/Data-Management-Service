@@ -123,6 +123,8 @@ public class ApiServiceJwtAuthenticationTests
             NullLogger<ValidateDatabaseFingerprintMiddleware>.Instance
         );
 
+        TestHelper.AddResourceKeyValidationServices(services);
+
         var serviceProvider = services.BuildServiceProvider();
 
         // Create an instance of ApiService to test GetCommonInitialSteps

@@ -72,9 +72,12 @@ public class AppSettings
     public bool UseRelationalBackend { get; set; }
 
     /// <summary>
-    /// Startup-only switch for validating provisioned PostgreSQL runtime mappings
-    /// against loaded DMS instances. Defaults to false during the rollout so
-    /// unprovisioned startup paths can still compile and cache mappings.
+    /// TODO(DMS-1097): Remove this property. It is no longer consulted at runtime.
+    /// Instance validation is now handled unconditionally by
+    /// <c>ValidateStartupInstancesTask</c> when <see cref="UseRelationalBackend"/>
+    /// is enabled. This property is retained only for configuration-binding
+    /// compatibility until DMS-1097 removes it along with the temporary bypass
+    /// documentation and tests.
     /// </summary>
     public bool ValidateProvisionedMappingsOnStartup { get; set; } = false;
 }

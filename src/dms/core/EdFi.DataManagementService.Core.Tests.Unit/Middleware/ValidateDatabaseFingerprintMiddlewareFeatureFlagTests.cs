@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -12,6 +13,7 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Startup;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
@@ -34,6 +36,16 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
         var fingerprintReader = A.Fake<IDatabaseFingerprintReader>();
         var dmsInstanceSelection = A.Fake<IDmsInstanceSelection>();
         var logger = A.Fake<ILogger<ValidateDatabaseFingerprintMiddleware>>();
+        var effectiveSchemaSetProvider = A.Fake<IEffectiveSchemaSetProvider>();
+
+        // Default schema set with hash "abc123" to match test fingerprints
+        A.CallTo(() => effectiveSchemaSetProvider.EffectiveSchemaSet)
+            .Returns(
+                new EffectiveSchemaSet(
+                    new EffectiveSchemaInfo("1.0", "1.0", "abc123", 0, new byte[32], [], []),
+                    []
+                )
+            );
 
         var appSettings = Options.Create(
             new AppSettings
@@ -49,7 +61,12 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
             .Returns(dmsInstanceSelection);
 
         var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
-        var middleware = new ValidateDatabaseFingerprintMiddleware(appSettings, fingerprintProvider, logger);
+        var middleware = new ValidateDatabaseFingerprintMiddleware(
+            appSettings,
+            fingerprintProvider,
+            effectiveSchemaSetProvider,
+            logger
+        );
 
         return (middleware, fingerprintReader, dmsInstanceSelection, serviceProvider);
     }
@@ -387,9 +404,19 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
                 new AppSettings { AllowIdentityUpdateOverrides = "", UseRelationalBackend = true }
             );
 
+            var schemaSetProvider = A.Fake<IEffectiveSchemaSetProvider>();
+            A.CallTo(() => schemaSetProvider.EffectiveSchemaSet)
+                .Returns(
+                    new EffectiveSchemaSet(
+                        new EffectiveSchemaInfo("1.0", "1.0", "abc123", 0, new byte[32], [], []),
+                        []
+                    )
+                );
+
             var middleware = new ValidateDatabaseFingerprintMiddleware(
                 appSettings,
                 new DatabaseFingerprintProvider(new MissingDatabaseFingerprintReader(appSettings)),
+                schemaSetProvider,
                 A.Fake<ILogger<ValidateDatabaseFingerprintMiddleware>>()
             );
 
@@ -398,19 +425,19 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
         }
 
         [Test]
-        public async Task It_throws_a_configuration_error()
+        public async Task It_returns_503_service_unavailable()
         {
-            var exception = await _execute.Should().ThrowAsync<InvalidOperationException>();
+            await _execute();
 
-            exception.Which.Message.Should().Be(MissingDatabaseFingerprintReader.ConfigurationErrorMessage);
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(503);
         }
 
         [Test]
-        public async Task It_does_not_return_the_database_not_provisioned_response()
+        public async Task It_does_not_set_database_fingerprint()
         {
-            await _execute.Should().ThrowAsync<InvalidOperationException>();
+            await _execute();
 
-            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo.DatabaseFingerprint.Should().BeNull();
         }
     }
 }

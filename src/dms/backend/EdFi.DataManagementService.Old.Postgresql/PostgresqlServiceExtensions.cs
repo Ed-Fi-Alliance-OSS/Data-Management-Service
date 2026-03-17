@@ -35,6 +35,9 @@ public static class PostgresqlServiceExtensions
             IPostgresqlRuntimeDatabaseMetadataReader,
             PostgresqlRuntimeDatabaseMetadataReader
         >();
+        // TODO(DMS-1097): Remove these registrations. Instance validation is now handled by
+        // the core-level ValidateStartupInstancesTask; the old PostgreSQL-specific validator
+        // and its cache are no longer called at runtime.
         services.AddSingleton<PostgresqlValidatedResourceKeyMapCache>();
         services.AddSingleton<PostgresqlRuntimeInstanceMappingValidator>();
         services.Replace(

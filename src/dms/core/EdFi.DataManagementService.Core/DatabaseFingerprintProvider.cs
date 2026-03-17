@@ -18,6 +18,12 @@ namespace EdFi.DataManagementService.Core;
 /// Permanent validation failures are also cached so malformed databases fail
 /// fast per connection string. Other faulted tasks are evicted immediately so
 /// transient errors retry on next request.
+///
+/// NOTE: This cache/eviction pattern is intentionally duplicated in
+/// <see cref="ResourceKeyValidationCacheProvider"/> because the two caches
+/// store different value types and have different deterministic-failure
+/// semantics. If the retry policy needs to change, update both classes
+/// and the design doc (new-startup-flow.md §Failure Modes).
 /// </summary>
 internal sealed class DatabaseFingerprintProvider(IDatabaseFingerprintReader fingerprintReader)
 {

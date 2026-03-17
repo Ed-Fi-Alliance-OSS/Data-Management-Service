@@ -18,7 +18,8 @@ public interface IBackendMappingInitializer
     /// - Loading .mpack files for the configured dialect/version
     /// - Runtime compilation of mapping sets
     /// - Validating database fingerprints (EffectiveSchemaHash)
-    /// - Caching ResourceKeyId maps
+    /// - Caching bidirectional QualifiedResourceName ↔ ResourceKeyId maps
+    ///   (derived from compiled MappingSet, not from seed validation)
     /// </summary>
     /// <param name="cancellationToken">Cancellation token for the operation.</param>
     /// <exception cref="InvalidOperationException">Thrown if initialization fails.</exception>

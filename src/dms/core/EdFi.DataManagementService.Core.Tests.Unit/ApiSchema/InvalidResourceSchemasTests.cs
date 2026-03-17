@@ -157,6 +157,8 @@ public class InvalidResourceSchemasTests
                 NullLogger<ValidateDatabaseFingerprintMiddleware>.Instance
             );
 
+            TestHelper.AddResourceKeyValidationServices(services);
+
             var serviceProvider = services.BuildServiceProvider();
 
             return new ApiService(

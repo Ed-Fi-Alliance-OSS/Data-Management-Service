@@ -68,7 +68,7 @@ The new lifecycle splits startup into explicit phases:
    - load `.mpack` for the configured dialect/version OR compile mapping sets from the loaded ApiSchemas,
    - for each configured DMS instance database:
      - read the database fingerprint (`dms.EffectiveSchema`, `dms.SchemaComponent`),
-     - validate `ResourceKeySeedHash/Count` (fast path) and cache `ResourceKeyId` maps,
+     - validate `ResourceKeySeedHash/Count` (fast path),
      - fail fast on mismatch.
 5. **Initialize authentication/authorization metadata caches** (startup-time, best-effort warmup):
    - warm OIDC discovery/JWKS metadata (if configured),
@@ -239,24 +239,72 @@ For a single host process serving a single effective schema set:
    - for each configured `DmsInstance`:
      - connect and read `dms.EffectiveSchema` (and `dms.SchemaComponent` if required),
      - validate `EffectiveSchemaHash` matches,
-     - validate `ResourceKeySeedHash/Count` fast path (and diff `dms.ResourceKey` only on mismatch),
-     - cache `QualifiedResourceName ↔ ResourceKeyId` maps,
+     - validate `ResourceKeySeedHash/Count` fast path (and diff `dms.ResourceKey` only on mismatch).
      - (optional) validate dialect compatibility.
+
+> **Implementation note — eager validation:** `ValidateStartupInstancesTask` (Order 310)
+> eagerly validates database fingerprints and resource key seeds for all instances known at
+> startup, pre-populating the singleton caches (`DatabaseFingerprintProvider`,
+> `ResourceKeyValidationCacheProvider`). Per-instance validation failures are logged at
+> Critical level but **do not abort startup** — the failure is cached and the request-time
+> middleware returns 503 for that instance while other instances continue to be served.
+> This preserves the multi-instance-safe failure mode required by the design (see EPIC.md,
+> transactions-and-concurrency.md, 03-config-and-failure-modes.md).
+> For instances discovered dynamically after startup (multi-tenant cache-miss scenarios),
+> `ValidateDatabaseFingerprintMiddleware` and `ValidateResourceKeySeedMiddleware` still
+> perform deferred validation on first request. **Deterministic** validation results (success,
+> schema mismatch, seed mismatch, malformed fingerprint, unprovisioned database) are cached
+> permanently — a DMS restart is required to clear them. **Transient** failures (network
+> errors, timeouts, connection refused) are evicted from the cache immediately so the next
+> request retries validation. This distinction is intentional: deterministic failures require
+> operator intervention (reprovisioning), while transient failures may resolve on their own
+> (e.g., database maintenance window, brief network partition).
+
+> **Scope note — map caching:** DMS-976 validates resource key seeds and caches
+> the validation result (pass/fail) per connection string. The bidirectional
+> `QualifiedResourceName ↔ ResourceKeyId` runtime map cache is populated by
+> DMS-977 as part of mapping set initialization (pack load or runtime compile),
+> since the maps are derived from the compiled `MappingSet`, not from the raw
+> seed validation step.
+
 7. Startup completes; host begins serving traffic.
 
 ## Failure Modes and Policy
 
 The startup-based flow forces explicit decisions about “what is fatal”.
 
-- **Fatal**:
+- **Fatal** (abort startup):
   - ApiSchema load/validation failure,
   - mapping pack load failure when pack-only mode is enabled,
-  - mapping compilation failure when compile is required,
-  - any configured database instance fails startup validation (connectivity failure, wrong
-    `EffectiveSchemaHash`, missing `dms.EffectiveSchema`, invalid `ResourceKeySeedHash/Count`).
+  - mapping compilation failure when compile is required.
 
-Startup validation is all-or-nothing: if any database instance fails validation, the service startup fails.
-Logs must identify each failing instance (tenant, instance id/name) and the specific validation failure.
+- **Per-instance deterministic** (log Critical, cache failure permanently, serve 503 at request time):
+  - wrong `EffectiveSchemaHash`,
+  - missing `dms.EffectiveSchema`,
+  - malformed `dms.EffectiveSchema` metadata,
+  - invalid `ResourceKeySeedHash/Count`.
+
+- **Per-instance transient** (log Critical, evict from cache, retry on next request):
+  - connectivity failure / timeout to a configured database instance,
+  - other unexpected exceptions during fingerprint or seed validation.
+
+Per-instance validation failures do not abort startup. Each failing instance is logged at
+Critical level (identifying tenant, instance id/name, and the specific failure). Other
+instances continue to be served normally. This preserves the multi-instance-safe failure mode
+(see EPIC.md, transactions-and-concurrency.md, 03-config-and-failure-modes.md).
+
+Deterministic failures (schema mismatch, missing/malformed metadata, seed mismatch) are cached
+permanently per connection string — the request-time middleware returns `503 Service Unavailable`
+without re-validating, and a DMS restart is required after reprovisioning the database. Transient
+failures (network errors, timeouts) are evicted from the cache so the next request retries
+validation automatically, since these may resolve without operator intervention.
+
+> **Implementation note:** Both startup-known and dynamically-discovered instances follow the
+> same failure model: validation failures result in `503 Service Unavailable` with a
+> remediation-guidance error body (the detailed diff report is logged server-side only,
+> correlated via `TraceId`). Deterministic failures are cached permanently; transient
+> failures are evicted so the next request retries. A DMS restart is required to clear
+> deterministic failure cache entries (e.g., after reprovisioning the database).
 
 ### Container-oriented “fail fast”
 
@@ -299,7 +347,7 @@ Startup should emit structured logs and metrics for:
   - tenant (if applicable),
   - effective hash observed vs expected,
   - seed hash/count observed vs expected,
-  - number of resource keys cached.
+  - number of resource keys validated.
 
 Health checks should reflect readiness:
 “schemas loaded + mappings initialized + all required instances validated”.
@@ -316,7 +364,6 @@ Implement the full startup-time flow in one change set:
    startup.
 5. Stub for initialize mapping sets at startup (pack load and/or runtime compile) for the configured
    dialect/version.
-6. Stub to validate every configured database instance at startup (fingerprint + `ResourceKeySeedHash/Count`)
-   and
-   cache `ResourceKeyId` maps.
+6. Stub to validate every configured database instance at startup (fingerprint + `ResourceKeySeedHash/Count`).
+   Bidirectional `ResourceKeyId` map caching is part of mapping set initialization (step 5 / DMS-977).
 7. Remove request-time schema/mapping initialization and disable schema reload for relational backends.

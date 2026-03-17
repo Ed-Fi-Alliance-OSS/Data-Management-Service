@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
+using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -24,12 +25,19 @@ namespace EdFi.DataManagementService.Core.Middleware;
 internal class ValidateDatabaseFingerprintMiddleware(
     IOptions<AppSettings> appSettings,
     DatabaseFingerprintProvider fingerprintProvider,
+    IEffectiveSchemaSetProvider effectiveSchemaSetProvider,
     ILogger<ValidateDatabaseFingerprintMiddleware> logger
 ) : IPipelineStep
 {
     private const string MalformedFingerprintTitle = "Database Provisioning Error";
     private const string MalformedFingerprintDetail =
         "The target database contains malformed dms.EffectiveSchema provisioning metadata. Repair the database by re-running 'ddl provision' against an empty database. If provisioning was partial or the database was modified after provisioning, drop and recreate the database before reprovisioning. Restart DMS after the database has been repaired to clear the cached fingerprint validation failure.";
+
+    private const string SchemaHashMismatchTitle = "Effective Schema Hash Mismatch";
+    private const string SchemaHashMismatchDetail =
+        "The database was provisioned for a different effective schema than this DMS process expects. "
+        + "The database must be reprovisioned with 'ddl provision' against a fresh database "
+        + "and DMS restarted to clear the cached validation state.";
 
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
@@ -97,6 +105,28 @@ internal class ValidateDatabaseFingerprintMiddleware(
 
             return;
         }
+        catch (Exception ex)
+        {
+            logger.LogError(
+                ex,
+                "Database fingerprint read failed for DMS instance {InstanceId} ({InstanceName}). "
+                    + "This is a transient error and will be retried on the next request. TraceId: {TraceId}",
+                selectedInstance.Id,
+                LoggingSanitizer.SanitizeForLogging(selectedInstance.InstanceName),
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+
+            requestInfo.FrontendResponse = new FrontendResponse(
+                StatusCode: 503,
+                Body: FailureResponse.ForServiceConfigurationError(
+                    "Database fingerprint validation encountered a transient error. Check server logs for details.",
+                    requestInfo.FrontendRequest.TraceId
+                ),
+                Headers: []
+            );
+
+            return;
+        }
 
         if (fingerprint == null)
         {
@@ -109,6 +139,32 @@ internal class ValidateDatabaseFingerprintMiddleware(
                 StatusCode: 503,
                 Body: FailureResponse.ForDatabaseNotProvisioned(
                     "The target database has not been provisioned. Run 'ddl provision' to initialize the database schema. If this database was provisioned after DMS first tried to use it, restart DMS to clear the cached provisioning state.",
+                    requestInfo.FrontendRequest.TraceId
+                ),
+                Headers: []
+            );
+            return;
+        }
+
+        var expectedHash = effectiveSchemaSetProvider.EffectiveSchemaSet.EffectiveSchema.EffectiveSchemaHash;
+        if (!string.Equals(fingerprint.EffectiveSchemaHash, expectedHash, StringComparison.Ordinal))
+        {
+            logger.LogError(
+                "EffectiveSchemaHash mismatch for instance {InstanceId} ({InstanceName}): "
+                    + "database has {DbHash}, process expects {ExpectedHash}. TraceId: {TraceId}",
+                selectedInstance.Id,
+                LoggingSanitizer.SanitizeForLogging(selectedInstance.InstanceName),
+                LoggingSanitizer.SanitizeForLogging(fingerprint.EffectiveSchemaHash),
+                LoggingSanitizer.SanitizeForLogging(expectedHash),
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+
+            requestInfo.FrontendResponse = new FrontendResponse(
+                StatusCode: 503,
+                Body: FailureResponse.ForDatabaseFingerprintValidationError(
+                    SchemaHashMismatchTitle,
+                    SchemaHashMismatchDetail,
+                    [SchemaHashMismatchDetail],
                     requestInfo.FrontendRequest.TraceId
                 ),
                 Headers: []

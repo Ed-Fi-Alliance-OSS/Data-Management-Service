@@ -85,6 +85,8 @@ public class PipelineOrderingTests
                 NullLogger<ValidateDatabaseFingerprintMiddleware>.Instance
             );
 
+            TestHelper.AddResourceKeyValidationServices(services);
+
             services.AddSingleton<IProfileService>(A.Fake<IProfileService>());
             services.AddTransient<ProfileResolutionMiddleware>();
             services.AddTransient<ILogger<ProfileResolutionMiddleware>>(_ =>
@@ -173,6 +175,43 @@ public class PipelineOrderingTests
                     "ValidateDatabaseFingerprintMiddleware must run before schema-dependent middleware"
                 );
         }
+
+        [Test]
+        public void It_contains_ValidateResourceKeySeedMiddleware()
+        {
+            _stepTypes.Should().Contain(typeof(ValidateResourceKeySeedMiddleware));
+        }
+
+        [Test]
+        public void It_places_resource_key_validation_after_fingerprint_validation()
+        {
+            var fingerprintIndex = _stepTypes.IndexOf(typeof(ValidateDatabaseFingerprintMiddleware));
+            var resourceKeyIndex = _stepTypes.IndexOf(typeof(ValidateResourceKeySeedMiddleware));
+
+            fingerprintIndex.Should().BeGreaterThanOrEqualTo(0);
+            resourceKeyIndex
+                .Should()
+                .BeGreaterThan(
+                    fingerprintIndex,
+                    "ValidateResourceKeySeedMiddleware must come after ValidateDatabaseFingerprintMiddleware"
+                );
+        }
+
+        [Test]
+        public void It_places_resource_key_validation_before_the_first_schema_dependent_step()
+        {
+            var resourceKeyIndex = _stepTypes.IndexOf(typeof(ValidateResourceKeySeedMiddleware));
+            var apiSchemaValidationIndex = _stepTypes.IndexOf(typeof(ApiSchemaValidationMiddleware));
+
+            resourceKeyIndex.Should().BeGreaterThanOrEqualTo(0);
+            apiSchemaValidationIndex.Should().BeGreaterThanOrEqualTo(0);
+            resourceKeyIndex
+                .Should()
+                .BeLessThan(
+                    apiSchemaValidationIndex,
+                    "ValidateResourceKeySeedMiddleware must run before schema-dependent middleware"
+                );
+        }
     }
 
     [TestFixture]
@@ -211,6 +250,8 @@ public class PipelineOrderingTests
             services.AddTransient<ILogger<ValidateDatabaseFingerprintMiddleware>>(_ =>
                 NullLogger<ValidateDatabaseFingerprintMiddleware>.Instance
             );
+
+            TestHelper.AddResourceKeyValidationServices(services);
 
             var claimSetProvider = A.Fake<IClaimSetProvider>();
             var profileService = A.Fake<IProfileService>();
@@ -288,6 +329,43 @@ public class PipelineOrderingTests
                 .BeLessThan(
                     handlerIndex,
                     "ValidateDatabaseFingerprintMiddleware must run before GetTokenInfoHandler"
+                );
+        }
+
+        [Test]
+        public void It_contains_ValidateResourceKeySeedMiddleware()
+        {
+            _stepTypes.Should().Contain(typeof(ValidateResourceKeySeedMiddleware));
+        }
+
+        [Test]
+        public void It_places_resource_key_validation_after_fingerprint_validation()
+        {
+            var fingerprintIndex = _stepTypes.IndexOf(typeof(ValidateDatabaseFingerprintMiddleware));
+            var resourceKeyIndex = _stepTypes.IndexOf(typeof(ValidateResourceKeySeedMiddleware));
+
+            fingerprintIndex.Should().BeGreaterThanOrEqualTo(0);
+            resourceKeyIndex
+                .Should()
+                .BeGreaterThan(
+                    fingerprintIndex,
+                    "ValidateResourceKeySeedMiddleware must come after ValidateDatabaseFingerprintMiddleware"
+                );
+        }
+
+        [Test]
+        public void It_places_resource_key_validation_before_schema_dependent_middleware()
+        {
+            var resourceKeyIndex = _stepTypes.IndexOf(typeof(ValidateResourceKeySeedMiddleware));
+            var apiSchemaValidationIndex = _stepTypes.IndexOf(typeof(ApiSchemaValidationMiddleware));
+
+            resourceKeyIndex.Should().BeGreaterThanOrEqualTo(0);
+            apiSchemaValidationIndex.Should().BeGreaterThanOrEqualTo(0);
+            resourceKeyIndex
+                .Should()
+                .BeLessThan(
+                    apiSchemaValidationIndex,
+                    "ValidateResourceKeySeedMiddleware must run before schema-dependent middleware"
                 );
         }
     }

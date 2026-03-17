@@ -60,6 +60,8 @@ public class Given_Scope_Validation_Is_Enabled_For_Profile_Resolution_Middleware
             NullLogger<ValidateDatabaseFingerprintMiddleware>.Instance
         );
 
+        TestHelper.AddResourceKeyValidationServices(services);
+
         services.AddSingleton<IProfileService>(A.Fake<IProfileService>());
         services.AddTransient<ProfileResolutionMiddleware>();
         services.AddTransient<ILogger<ProfileResolutionMiddleware>>(_ =>

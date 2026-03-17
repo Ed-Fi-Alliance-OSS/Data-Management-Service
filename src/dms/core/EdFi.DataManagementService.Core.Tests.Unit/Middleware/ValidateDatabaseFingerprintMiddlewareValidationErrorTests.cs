@@ -5,6 +5,7 @@
 
 using System.Linq;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
@@ -12,6 +13,7 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Startup;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
@@ -71,6 +73,16 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         var fingerprintReader = A.Fake<IDatabaseFingerprintReader>();
         var dmsInstanceSelection = A.Fake<IDmsInstanceSelection>();
         var middlewareLogger = new CapturingLogger<ValidateDatabaseFingerprintMiddleware>();
+        var effectiveSchemaSetProvider = A.Fake<IEffectiveSchemaSetProvider>();
+
+        // Default schema set with hash "abc123" to match test fingerprints
+        A.CallTo(() => effectiveSchemaSetProvider.EffectiveSchemaSet)
+            .Returns(
+                new EffectiveSchemaSet(
+                    new EffectiveSchemaInfo("1.0", "1.0", "abc123", 0, new byte[32], [], []),
+                    []
+                )
+            );
 
         var appSettings = Options.Create(
             new AppSettings
@@ -89,6 +101,7 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         var middleware = new ValidateDatabaseFingerprintMiddleware(
             appSettings,
             fingerprintProvider,
+            effectiveSchemaSetProvider,
             middlewareLogger
         );
 
@@ -592,6 +605,68 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         public void It_does_not_fall_through_the_unknown_error_handler()
         {
             _exceptionLogger.Entries.Should().NotContain(entry => entry.Message.Contains("Unknown Error"));
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Database_Fingerprint_Read_Throws_Transient_Exception
+        : ValidateDatabaseFingerprintMiddlewareValidationErrorTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private JsonNode _body = default!;
+        private CapturingLogger _exceptionLogger = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (middleware, fingerprintReader, dmsInstanceSelection, _, serviceProvider) =
+                CreateMiddleware();
+
+            A.CallTo(() => dmsInstanceSelection.IsSet).Returns(true);
+            A.CallTo(() => dmsInstanceSelection.GetSelectedDmsInstance())
+                .Returns(
+                    new DmsInstance(
+                        Id: 1,
+                        InstanceType: "Test",
+                        InstanceName: "TransientFailInstance",
+                        ConnectionString: "Host=localhost;Database=transient",
+                        RouteContext: new Dictionary<RouteQualifierName, RouteQualifierValue>()
+                    )
+                );
+
+            A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<string>._))
+                .ThrowsAsync(new TimeoutException("connection timed out"));
+
+            _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
+            _exceptionLogger = new CapturingLogger();
+
+            var exceptionLoggingMiddleware = new CoreExceptionLoggingMiddleware(_exceptionLogger);
+
+            await exceptionLoggingMiddleware.Execute(
+                _requestInfo,
+                () => middleware.Execute(_requestInfo, () => Task.CompletedTask)
+            );
+
+            _body = ((FrontendResponse)_requestInfo.FrontendResponse).Body!;
+        }
+
+        [Test]
+        public void It_returns_503_service_unavailable()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(503);
+        }
+
+        [Test]
+        public void It_does_not_fall_through_to_500_unknown_error()
+        {
+            _exceptionLogger.Entries.Should().NotContain(entry => entry.Message.Contains("Unknown Error"));
+        }
+
+        [Test]
+        public void It_returns_a_problem_response_body()
+        {
+            _body["title"]?.GetValue<string>().Should().NotBeNullOrEmpty();
         }
     }
 }
