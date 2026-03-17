@@ -17,6 +17,12 @@ namespace EdFi.DataManagementService.Core;
 /// the expected seed, the database must be reprovisioned and DMS restarted.
 /// Transient exceptions (network errors, timeouts) are evicted so the next
 /// request retries.
+///
+/// NOTE: This cache/eviction pattern is intentionally duplicated in
+/// <see cref="DatabaseFingerprintProvider"/> because the two caches store
+/// different value types and have different deterministic-failure semantics.
+/// If the retry policy needs to change, update both classes and the design
+/// doc (new-startup-flow.md §Failure Modes).
 /// </summary>
 internal sealed class ResourceKeyValidationCacheProvider
 {
