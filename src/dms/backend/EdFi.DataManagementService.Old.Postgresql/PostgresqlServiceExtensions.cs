@@ -25,6 +25,7 @@ public static class PostgresqlServiceExtensions
     public static IServiceCollection AddPostgresqlDatastore(this IServiceCollection services)
     {
         // Mapping set compilation pipeline (generic, dialect-neutral)
+        services.Configure<MappingSetProviderOptions>(_ => { });
         services.AddSingleton<MappingSetCompiler>();
         services.AddSingleton<IMappingPackStore, NoOpMappingPackStore>();
         services.AddSingleton<IRuntimeMappingSetCompiler>(sp =>

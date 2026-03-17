@@ -45,19 +45,6 @@ public sealed class MappingSetProvider : IMappingSetProvider
         return _cache.GetOrCreateAsync(key, cancellationToken);
     }
 
-    /// <summary>
-    /// Gets or creates a compiled mapping set and reports the cache status.
-    /// Used by startup initialization to log whether the set was compiled, joined
-    /// in-flight, or reused from cache.
-    /// </summary>
-    internal Task<MappingSetCacheResult> GetOrCreateWithCacheStatusAsync(
-        MappingSetKey key,
-        CancellationToken cancellationToken
-    )
-    {
-        return _cache.GetOrCreateWithCacheStatusAsync(key, cancellationToken);
-    }
-
     private async Task<MappingSet> LoadOrCompileAsync(MappingSetKey key)
     {
         if (_options.PacksEnabled)
@@ -70,9 +57,9 @@ public sealed class MappingSetProvider : IMappingSetProvider
             {
                 _logger.LogInformation(
                     "Loaded mapping pack for EffectiveSchemaHash {EffectiveSchemaHash}, Dialect {Dialect}, RelationalMappingVersion {RelationalMappingVersion}",
-                    key.EffectiveSchemaHash,
+                    SanitizeForLog(key.EffectiveSchemaHash),
                     key.Dialect,
-                    key.RelationalMappingVersion
+                    SanitizeForLog(key.RelationalMappingVersion)
                 );
                 return MappingSet.FromPayload(payload);
             }
@@ -99,7 +86,7 @@ public sealed class MappingSetProvider : IMappingSetProvider
 
             _logger.LogInformation(
                 "Mapping pack not found for EffectiveSchemaHash {EffectiveSchemaHash}, Dialect {Dialect}; falling back to runtime compilation",
-                key.EffectiveSchemaHash,
+                SanitizeForLog(key.EffectiveSchemaHash),
                 key.Dialect
             );
         }
@@ -119,11 +106,33 @@ public sealed class MappingSetProvider : IMappingSetProvider
 
         _logger.LogInformation(
             "Compiling runtime mapping set for EffectiveSchemaHash {EffectiveSchemaHash}, Dialect {Dialect}, RelationalMappingVersion {RelationalMappingVersion}",
-            key.EffectiveSchemaHash,
+            SanitizeForLog(key.EffectiveSchemaHash),
             key.Dialect,
-            key.RelationalMappingVersion
+            SanitizeForLog(key.RelationalMappingVersion)
         );
 
         return await compiler.CompileAsync(key, CancellationToken.None).ConfigureAwait(false);
+    }
+
+    private static string SanitizeForLog(string? input)
+    {
+        if (string.IsNullOrEmpty(input))
+        {
+            return string.Empty;
+        }
+
+        return new string(
+            input
+                .Where(c =>
+                    char.IsLetterOrDigit(c)
+                    || c == ' '
+                    || c == '_'
+                    || c == '-'
+                    || c == '.'
+                    || c == ':'
+                    || c == '/'
+                )
+                .ToArray()
+        );
     }
 }
