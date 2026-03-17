@@ -528,4 +528,66 @@ public class ResourceKeyValidatorTests
             failure.DiffReport.Should().NotContain("Resource21");
         }
     }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Slow_Path_With_Duplicate_ResourceKeyIds : ResourceKeyValidatorTests
+    {
+        private ResourceKeyValidationResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var reader = A.Fake<IResourceKeyRowReader>();
+            // Database returns duplicate ResourceKeyId 1
+            A.CallTo(() => reader.ReadResourceKeyRowsAsync("conn1", A<CancellationToken>._))
+                .Returns(
+                    Task.FromResult<IReadOnlyList<ResourceKeyRow>>(
+                        new List<ResourceKeyRow>
+                        {
+                            Row(1, "Ed-Fi", "Student", "5.0.0"),
+                            Row(1, "Ed-Fi", "StudentDuplicate", "5.0.0"),
+                            Row(2, "Ed-Fi", "School", "5.0.0"),
+                        }
+                    )
+                );
+
+            var validator = new ResourceKeyValidator(reader, NullLogger<ResourceKeyValidator>.Instance);
+
+            var expectedKeys = new List<ResourceKeyRow>
+            {
+                Row(1, "Ed-Fi", "Student", "5.0.0"),
+                Row(2, "Ed-Fi", "School", "5.0.0"),
+            };
+
+            _result = await validator.ValidateAsync(
+                Fingerprint(3, HashB()),
+                2,
+                HashA().ToImmutableArray(),
+                expectedKeys,
+                "conn1"
+            );
+        }
+
+        [Test]
+        public void It_returns_validation_failure()
+        {
+            _result.Should().BeOfType<ResourceKeyValidationResult.ValidationFailure>();
+        }
+
+        [Test]
+        public void It_reports_duplicate_resource_key_ids()
+        {
+            var failure = _result.Should().BeOfType<ResourceKeyValidationResult.ValidationFailure>().Subject;
+            failure.DiffReport.Should().Contain("duplicate ResourceKeyId");
+            failure.DiffReport.Should().Contain("1");
+        }
+
+        [Test]
+        public void It_does_not_report_metadata_only_inconsistency()
+        {
+            var failure = _result.Should().BeOfType<ResourceKeyValidationResult.ValidationFailure>().Subject;
+            failure.DiffReport.Should().NotContain("Only the dms.EffectiveSchema metadata is inconsistent");
+        }
+    }
 }

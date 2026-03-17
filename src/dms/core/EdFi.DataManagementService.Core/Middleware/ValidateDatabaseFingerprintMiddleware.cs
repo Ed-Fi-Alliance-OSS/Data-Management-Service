@@ -105,6 +105,28 @@ internal class ValidateDatabaseFingerprintMiddleware(
 
             return;
         }
+        catch (Exception ex)
+        {
+            logger.LogError(
+                ex,
+                "Database fingerprint read failed for DMS instance {InstanceId} ({InstanceName}). "
+                    + "This is a transient error and will be retried on the next request. TraceId: {TraceId}",
+                selectedInstance.Id,
+                LoggingSanitizer.SanitizeForLogging(selectedInstance.InstanceName),
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+
+            requestInfo.FrontendResponse = new FrontendResponse(
+                StatusCode: 503,
+                Body: FailureResponse.ForServiceConfigurationError(
+                    "Database fingerprint validation encountered a transient error. Check server logs for details.",
+                    requestInfo.FrontendRequest.TraceId
+                ),
+                Headers: []
+            );
+
+            return;
+        }
 
         if (fingerprint == null)
         {

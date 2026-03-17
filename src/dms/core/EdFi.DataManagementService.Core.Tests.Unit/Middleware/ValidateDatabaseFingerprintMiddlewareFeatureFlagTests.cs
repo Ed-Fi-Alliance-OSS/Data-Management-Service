@@ -425,19 +425,19 @@ public class ValidateDatabaseFingerprintMiddlewareFeatureFlagTests
         }
 
         [Test]
-        public async Task It_throws_a_configuration_error()
+        public async Task It_returns_503_service_unavailable()
         {
-            var exception = await _execute.Should().ThrowAsync<InvalidOperationException>();
+            await _execute();
 
-            exception.Which.Message.Should().Be(MissingDatabaseFingerprintReader.ConfigurationErrorMessage);
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(503);
         }
 
         [Test]
-        public async Task It_does_not_return_the_database_not_provisioned_response()
+        public async Task It_does_not_set_database_fingerprint()
         {
-            await _execute.Should().ThrowAsync<InvalidOperationException>();
+            await _execute();
 
-            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo.DatabaseFingerprint.Should().BeNull();
         }
     }
 }

@@ -70,9 +70,27 @@ internal sealed class ResourceKeyValidator(
     )
     {
         var actualById = new Dictionary<short, ResourceKeyRow>();
+        var duplicateIds = new List<short>();
         foreach (var row in actualRows)
         {
-            actualById.TryAdd(row.ResourceKeyId, row);
+            if (!actualById.TryAdd(row.ResourceKeyId, row))
+            {
+                duplicateIds.Add(row.ResourceKeyId);
+            }
+        }
+
+        if (duplicateIds.Count > 0)
+        {
+            var displayed = string.Join(
+                ", ",
+                duplicateIds.Distinct().Take(MaxRowsPerSection).Select(id => id.ToString())
+            );
+            var suffix =
+                duplicateIds.Distinct().Count() > MaxRowsPerSection
+                    ? $" (+{duplicateIds.Distinct().Count() - MaxRowsPerSection} more)"
+                    : "";
+            return $"Corrupt dms.ResourceKey table: duplicate ResourceKeyId values detected: [{displayed}]{suffix}. "
+                + "The database must be reprovisioned with 'ddl provision' against a fresh database.";
         }
 
         var missingKeys = new List<string>();
