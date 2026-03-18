@@ -20,12 +20,13 @@ Ensure the relational redesign behaves consistently across PostgreSQL and SQL Se
   - update-tracking metadata behavior (`_etag/_lastModifiedDate/ChangeVersion` served from stored stamps),
   - paging determinism,
   - hidden-data preservation, hidden inlined-member preservation, hidden extension-column preservation on matched visible rows, and delete/clear behavior for profiled non-collection scopes, and
+  - the distinction between update-of-existing-visible-data and create-of-new-visible-data for profiled non-collection scopes and collection items, and
   - profile-scoped hidden-gap sibling ordering, semantic-identity-based visible-row matching, and hidden `_ext` row/child-collection preservation, and
   - profile-based validation/creatability failure semantics.
 - Any dialect-specific differences are explicitly documented and tested.
 
 ## Tasks
 
-1. Define a parity test matrix (features × dialects × fixtures), explicitly including profile-constrained create/update/merge/error scenarios plus hidden-gap collection-ordering fixtures, hidden inlined-member preservation fixtures, hidden extension-column preservation fixtures, visible-vs-hidden non-collection fixtures, and hidden `_ext` row/child-collection fixtures.
+1. Define a parity test matrix (features × dialects × fixtures), explicitly including profile-constrained create/update/merge/error scenarios plus hidden-gap collection-ordering fixtures, hidden inlined-member preservation fixtures, hidden extension-column preservation fixtures, visible-vs-hidden non-collection fixtures, hidden `_ext` row/child-collection fixtures, and update-allowed/create-denied creatability pairs.
 2. Implement a harness that runs each test case against both engines and compares results.
 3. Add documentation for expected/allowed differences and how to add new parity cases, including the profile fixtures for hidden-gap ordering, hidden inlined-member preservation, hidden extension-column preservation, visible-vs-hidden non-collection behavior, and hidden `_ext` preservation.

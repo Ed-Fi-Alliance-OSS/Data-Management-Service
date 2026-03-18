@@ -27,6 +27,7 @@ Tests run against provisioned PostgreSQL/SQL Server using docker compose (no Tes
   - unchanged PUT / POST-as-update requests are successful no-ops that preserve `_etag` / `ChangeVersion`,
   - delete conflicts are reported correctly,
   - profiled `POST` create requests reject non-creatable root resources,
+  - profiled writes distinguish update-of-existing-visible-data from create-of-new-visible-data for non-collection scopes and collection items,
   - profiled updates preserve hidden stored data while applying visible changes,
   - profiled updates preserve hidden inlined parent/root-row values on matched visible scopes,
   - profiled updates preserve hidden extension columns on matched visible `_ext` rows,
@@ -38,10 +39,10 @@ Tests run against provisioned PostgreSQL/SQL Server using docker compose (no Tes
 
 ## Tasks
 
-1. Create a set of small fixture schemas + sample payloads for CRUD and profile-constrained scenarios, explicitly including hidden-gap collection-ordering cases, hidden inlined-member preservation, hidden extension-column preservation on matched visible rows, hidden-vs-visible-absent non-collection cases, and hidden `_ext` rows/child collections.
+1. Create a set of small fixture schemas + sample payloads for CRUD and profile-constrained scenarios, explicitly including hidden-gap collection-ordering cases, hidden inlined-member preservation, hidden extension-column preservation on matched visible rows, hidden-vs-visible-absent non-collection cases, hidden `_ext` rows/child collections, and update-allowed/create-denied creatability pairs for non-collection scopes and collection items.
 2. Implement integration test helpers that:
    - provision DB,
    - run DMS with the relational backend,
    - execute HTTP requests with and without profile media types and assert responses/persisted state.
 3. Add a test category for integration tests and wire into CI as appropriate.
-4. Add fixtures/assertions covering unchanged writes and the required profile scenarios, including root-create denial, hidden-data preservation, hidden inlined-member preservation, hidden extension-column preservation on matched visible rows, hidden-vs-visible-absent non-collection behavior, hidden-gap collection ordering, hidden `_ext` row/child-collection preservation, and profile-aware collection/non-collection behavior.
+4. Add fixtures/assertions covering unchanged writes and the required profile scenarios, including root-create denial, hidden-data preservation, hidden inlined-member preservation, hidden extension-column preservation on matched visible rows, hidden-vs-visible-absent non-collection behavior, hidden-gap collection ordering, hidden `_ext` row/child-collection preservation, update-allowed/create-denied creatability pairs, and profile-aware collection/non-collection behavior.

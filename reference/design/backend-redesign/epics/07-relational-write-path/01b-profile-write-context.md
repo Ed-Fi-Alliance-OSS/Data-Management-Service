@@ -47,6 +47,11 @@ Backend must not re-evaluate profile member filters or collection-item value pre
   - a new resource instance,
   - a new visible non-collection scope, and
   - a new visible collection/common-type/extension item or scope.
+- The contract distinguishes create-of-new-visible-data from update-of-existing-visible-data:
+  - `RootResourceCreatable` applies only when the write would create a new document/root row,
+  - `RequestScopeState.Creatable` applies only when `Visibility=VisiblePresent` and no visible stored scope exists at that address, and
+  - `VisibleRequestCollectionItem.Creatable` applies only when no visible stored row matches by compiled semantic identity.
+- Existing visible scopes/rows remain updatable even when `Creatable=false`; hidden stored data does not convert a create attempt into an update.
 - Every scope/item entry carries the compiled `JsonScope` plus a stable scope-instance address that uses ancestor collection semantic identities instead of request ordinals.
 - Visible stored collection-row entries expose semantic identity values in compiled order so backend can identify visible persisted rows by compiled semantic identity.
 - Stored-scope and stored-row entries expose `HiddenMemberPaths` metadata sufficient for backend to preserve hidden columns and hidden inlined values on matched rows/scopes.
@@ -67,12 +72,13 @@ Backend must not re-evaluate profile member filters or collection-item value pre
   - no-profile behavior,
   - profile-scoped `POST` create behavior that checks root creatability without requiring current-state projection,
   - profile-scoped update/upsert behavior that invokes the projector from a supplied current stored document, and
-  - visibility/creatability hand-off for at least one collection scope and one non-collection scope, including stable scope addressing, hidden-member preservation metadata, and one matched-row overlay case for hidden inlined or extension members.
+  - visibility/creatability hand-off for at least one collection scope and one non-collection scope, including stable scope addressing, hidden-member preservation metadata, and one matched-row overlay case for hidden inlined or extension members, and
+  - one paired scenario proving an existing visible scope/item update remains allowed while the same profile marks a brand-new visible scope/item as non-creatable because required members are hidden.
 
 ## Tasks
 
 1. Define the backend-facing abstractions used to receive optional `ProfileAppliedWriteRequest` and `ProfileAppliedWriteContext`, including request/stored scope states, visible request/stored collection metadata, stable scope addresses, and hidden-member preservation metadata that downstream executors can apply through compiled bindings.
 2. Thread `WritableRequestBody` into write-path flattening entry points without duplicating profile logic in backend.
 3. For `POST` requests that would create a new document, consult Core-supplied root creatability before creating `dms.Document` or root rows; for profile-scoped update/upsert flows, accept the current stored document from the separate write-side load/reconstitution step and invoke the Core-owned stored-state projector.
-4. Surface root/scope visibility, collection visibility details, hidden-member preservation metadata, and creatability metadata to downstream merge/no-op code so matched rows/scopes can use the compiled-binding overlay model.
-5. Add tests that prove the backend consumes the Core-owned contract without inferring hidden-vs-absent semantics from `WritableRequestBody` or `VisibleStoredBody` alone, including root-resource create rejection, one scope-addressed collection scenario, and one matched-row hidden-member overlay scenario.
+4. Surface root/scope visibility, collection visibility details, hidden-member preservation metadata, and creatability metadata to downstream merge/no-op code so the executor can distinguish create-of-new-visible-data from update-of-existing-visible-data without re-evaluating profile rules.
+5. Add tests that prove the backend consumes the Core-owned contract without inferring hidden-vs-absent semantics from `WritableRequestBody` or `VisibleStoredBody` alone, including root-resource create rejection, one scope-addressed collection scenario, one matched-row hidden-member overlay scenario, and one update-allowed/create-denied pair.

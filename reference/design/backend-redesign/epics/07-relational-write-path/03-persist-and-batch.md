@@ -13,7 +13,7 @@ Persist flattened row buffers to the database in a single transaction:
 - Insert/update `dms.Document` and resource root rows when a change exists, but reject profiled creates when Core marks the root resource instance non-creatable.
 - For non-collection scopes (root-adjacent, nested/common-type, and extension scopes), use normal visible-present / visible-absent semantics:
   - use `StoredScopeStates` keyed by compiled scope identity to distinguish visible-present, visible-absent, and hidden,
-  - insert when newly present and stored in a separate table,
+  - insert only when the scope is newly present, stored in a separate table, and Core marked that create-of-new-visible-data case as creatable,
   - update matched visible rows/scopes by overlaying visible request/resolved values onto current stored row values using compiled bindings plus `HiddenMemberPaths`,
   - delete only when the scope is visible and intentionally absent and stored in a separate table,
   - when the visible-but-absent scope is inlined into parent storage, clear only the visible compiled bindings for that scope and preserve bindings governed by `HiddenMemberPaths`, and
@@ -39,6 +39,7 @@ Persist flattened row buffers to the database in a single transaction:
 - Profile-scoped non-collection decisions consume structured stored-scope visibility metadata, and profile-scoped collection merges consume structured stored-row metadata keyed by compiled scope identity rather than inferring hidden-vs-absent from `VisibleStoredBody` alone.
 - Profile-scoped collection/common-type/extension collection merges preserve hidden rows in their existing relative gaps, append extra visible inserts after the last previously visible row for that scope instance, and renumber `Ordinal` contiguously.
 - Matched collection rows, matched visible non-collection rows/scopes, and matched visible extension rows preserve hidden values through compiled-binding overlay from current stored rows plus `HiddenMemberPaths`.
+- Matched visible scopes/items update successfully even when the same writable profile would reject creation of a brand-new visible scope/item because required members are hidden by the profile.
 - Hidden collection rows, hidden non-collection scopes, hidden inlined parent/root-row values, and hidden extension data are preserved under writable profiles.
 - Hidden `_ext` rows, collection-aligned extension rows, and extension child collections follow the same preservation/merge rules as base data.
 - Visible-but-absent non-collection scopes delete separate-table rows or clear only the visible compiled bindings for inlined parent/root-row scopes according to the compiled mapping; hidden scopes are not treated as deletes.
@@ -54,9 +55,9 @@ Authorization is out of scope for this story, but the transaction and batching s
 
 1. Implement rowset comparison for existing-document update flows using the same stable-identity merge and post-merge ordering rules as the real executor.
 2. Implement a guarded no-op fast path that revalidates the observed `ContentVersion` before short-circuiting and returns a stale-compare outcome to the outer concurrency layer when freshness is lost.
-3. Implement a write executor that applies the compiled `ResourceWritePlan` table-by-table in dependency order when a change exists, including pre-DML failure for non-creatable profiled root-resource creates.
-4. Implement profile-aware non-collection scope handling for separate-table 1:1/extension scopes and inlined parent-row common-type/root-column data using `ProfileAppliedWriteContext.StoredScopeStates` plus `HiddenMemberPaths`, including compiled-binding overlay for matched visible scopes and clear-only-visible-bindings behavior for visible-absent inlined scopes.
-5. Implement stable-identity collection/common-type merge execution using `ProfileAppliedWriteContext.VisibleStoredCollectionRows` and `ProfileAppliedWriteRequest.VisibleRequestCollectionItems`, including matched-row update via compiled-binding overlay, visible-row delete, hidden-member preservation, and batched `CollectionItemId` reservation for inserts.
+3. Implement a write executor that applies the compiled `ResourceWritePlan` table-by-table in dependency order when a change exists, including pre-DML failure for non-creatable profiled root-resource creates and the rule that existing visible roots remain on the update path.
+4. Implement profile-aware non-collection scope handling for separate-table 1:1/extension scopes and inlined parent-row common-type/root-column data using `ProfileAppliedWriteContext.StoredScopeStates` plus `HiddenMemberPaths`, including compiled-binding overlay for matched visible scopes, clear-only-visible-bindings behavior for visible-absent inlined scopes, and the distinction between create-of-new-visible-data and update-of-existing-visible-data.
+5. Implement stable-identity collection/common-type merge execution using `ProfileAppliedWriteContext.VisibleStoredCollectionRows` and `ProfileAppliedWriteRequest.VisibleRequestCollectionItems`, including matched-row update via compiled-binding overlay, visible-row delete, hidden-member preservation, batched `CollectionItemId` reservation for inserts, and the rule that only unmatched visible items consult `Creatable`.
 6. Implement deterministic post-merge `Ordinal` recomputation aligned to the no-op comparison path.
 7. Implement bulk insert batching with dialect-specific limits and strategies.
 8. Add integration tests that:
@@ -67,5 +68,6 @@ Authorization is out of scope for this story, but the transaction and batching s
    - exercise hidden inlined parent/root-row value preservation on a matched visible scope,
    - exercise hidden extension-column preservation on a matched visible `_ext` row,
    - exercise a profiled update/no-op scenario with hidden `_ext` rows or extension child collections and assert they are preserved under the same merge rules as base data,
-   - reject a profiled create or visible-scope insert when Core marks it non-creatable, and
+   - prove a matched visible scope/item update succeeds even when the same profile would mark a brand-new visible scope/item as non-creatable because required members are hidden, and
+   - reject a profiled create or visible-scope/item insert when Core marks it non-creatable, and
    - issue unchanged PUT / POST-as-update requests and verify no DML-visible state or update-tracking metadata changes (pgsql + mssql where available).

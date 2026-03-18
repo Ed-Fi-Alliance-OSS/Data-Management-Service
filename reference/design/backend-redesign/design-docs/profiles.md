@@ -26,6 +26,7 @@ This document is the API profiles deep dive for `overview.md`, focusing on:
 - [Everything Backend Is Expected to Own](#everything-backend-is-expected-to-own)
 - [Data Model and Compilation Prerequisites](#data-model-and-compilation-prerequisites)
 - [Minimum Core Write Contract](#minimum-core-write-contract)
+- [Creatability Decision Model](#creatability-decision-model)
 - [Hidden-Member Preservation Execution Model](#hidden-member-preservation-execution-model)
 - [Profile-Constrained Write Flow](#profile-constrained-write-flow)
 - [Collection Merge Rules Under Profiles](#collection-merge-rules-under-profiles)
@@ -323,7 +324,9 @@ Normative requirements:
 - `WritableRequestBody` is the request after normal canonicalization and writable-profile shaping.
 - `RootResourceCreatable` is a Core-owned decision that backend must consult before creating `dms.Document` or root rows for a profile-constrained create.
 - `RequestScopeStates` and `StoredScopeStates` MUST distinguish `VisiblePresent`, `VisibleAbsent`, and `Hidden` for every compiled non-collection scope instance that can affect write behavior, including root-adjacent 1:1 scopes, nested/common-type scopes, and `_ext` scopes.
+- `RequestScopeState.Creatable` MUST answer only the "create a new visible scope instance here" question. When `Visibility=VisiblePresent` and a visible stored scope already exists at `Address`, backend may update that scope even when `Creatable=false`. For `VisibleAbsent` and `Hidden`, `Creatable` MUST be `false`.
 - `VisibleRequestCollectionItems` MUST include every visible submitted item for collection/common-type/extension collection scopes. If an item does not match an existing visible stored row, backend may insert it only when `Creatable=true`.
+- `VisibleRequestCollectionItem.Creatable` MUST answer only the "insert a new visible row here" question. A matched visible stored row may be updated even when `Creatable=false`.
 - `VisibleStoredCollectionRows` MUST identify visible persisted rows by compiled semantic identity, not by array ordinal.
 - Every `JsonScope` in the contract MUST equal the compiled `DbTableModel.JsonScope` / `TableWritePlan.TableModel.JsonScope` for the addressed scope.
 - `AncestorCollectionInstances` MUST be ordered from the root-most collection ancestor to the immediate parent collection ancestor and MUST use compiled semantic identity so the address stays stable across caller-visible reordering.
@@ -333,6 +336,118 @@ Normative requirements:
 - Core MUST reject any writable profile definition that excludes a field required to compute the compiled semantic identity of a persisted multi-item collection scope.
 
 This contract is internal to Core/backend. It MUST NOT change the public API surface.
+
+## Creatability Decision Model
+
+Creatability is the Core-owned answer to a narrow question:
+
+> If this request would materialize a new visible stored instance at this root/scope/item address, is that create allowed under the active writable profile?
+
+It is not a general permission bit for mentioning that scope/item in the request. Existing visible data may remain updatable even when the same profile forbids creation of a brand-new visible instance.
+
+Normative rules:
+
+- Creatability MUST be evaluated against the visible stored state represented by `StoredScopeStates` and `VisibleStoredCollectionRows`, not against raw stored JSON alone.
+- Only existing visible stored data suppresses the create decision. Hidden stored data never converts a create-of-new-visible-data attempt into an update-of-existing-visible-data.
+- Creatability MUST be evaluated top-down. A child scope/item is not creatable unless its immediate visible parent instance already exists in stored state or is itself creatable in the same request.
+- Creation-required members are the writable-profile-controlled request members needed to materialize a valid new visible stored instance for that root/scope/item. They include:
+  - required members of the root/scope/item under the effective schema,
+  - required members of any newly visible nested/common-type scope that must also be created as part of the same request, and
+  - compiled semantic-identity members for persisted multi-item collections.
+- Storage-managed values such as `DocumentId`, `CollectionItemId`, `ParentCollectionItemId`, timestamps, and `ContentVersion` are not creation-required members for this algorithm.
+- A creation-required member hidden by the writable profile makes the create attempt non-creatable.
+- Submitted data that fails a writable profile value filter is a writable-profile validation failure, not a creatability decision.
+- For persisted multi-item collections, a writable profile that hides a compiled semantic-identity member is invalid profile metadata. Core MUST reject that profile definition before runtime instead of reporting `Creatable=false`.
+- Matched visible stored scopes/rows may be updated even when the same profile would reject creation of a new visible scope/row because hidden required members are preserved from stored state on update.
+
+Normative decision procedure:
+
+1. Determine whether the request is trying to create a new visible stored instance.
+   - Root resource instance: the operation would create a new document/root row.
+   - Non-collection scope: `RequestScopeState.Visibility=VisiblePresent` and there is no visible stored scope at the same `ScopeInstanceAddress`.
+   - Collection/common-type/extension collection item: the visible request item has no visible stored row match at the same parent address by compiled semantic identity.
+2. If the request is not trying to create a new visible stored instance, it is on the update/delete/preserve path rather than the creatability path.
+   - Existing document/root row: update path; `RootResourceCreatable` is not consulted.
+   - Existing visible non-collection scope with `Visibility=VisiblePresent`: update path even when `Creatable=false`.
+   - Visible non-collection scope with `Visibility=VisibleAbsent`: delete/clear path.
+   - Hidden non-collection scope: preserve path.
+   - Matched visible collection/common-type/extension item: update path even when `Creatable=false`.
+   - Omitted visible stored collection row: delete path.
+   - Hidden stored collection row: preserve path.
+3. If the request is trying to create a new visible stored instance, it is creatable only when all of the following are true:
+   - the immediate visible parent instance already exists or is creatable in the same request,
+   - every creation-required member for that new visible instance is exposed by the writable profile, and
+   - after writable-profile shaping, the request still provides the required visible values, or those values come from normal system/backend processing rather than hidden stored data.
+
+Decision table:
+
+| Create target | When it is a create attempt | Create allowed when | Existing visible behavior |
+| --- | --- | --- | --- |
+| New resource instance | The write would create a new `dms.Document` + root row | Root creation-required members are visible or system-supplied, and any newly visible children are creatable | Existing document update ignores `RootResourceCreatable` |
+| New 1:1 child scope | `Visibility=VisiblePresent` and no visible stored scope exists at the same scope address | Parent visible instance exists or is creatable, and the scope's creation-required members are visible or system-supplied | Existing visible scope updates normally; hidden required members do not block that update |
+| New nested/common-type scope | Same as any non-collection scope, whether stored in a separate table or inlined into the parent row | Parent visible instance exists or is creatable, and the nested scope's creation-required members are visible or system-supplied | Existing visible scope updates normally; `VisibleAbsent` clears/deletes instead of creating |
+| New collection item | Visible request item has no visible stored-row match by compiled semantic identity | Parent visible instance exists or is creatable, the item passes writable-profile validation, and the item's creation-required members are visible or system-supplied | Matched visible row updates in place even when `Creatable=false` |
+| New extension scope | `Visibility=VisiblePresent` on a `_ext` scope and no visible stored extension scope exists at that address | Owning base instance exists or is creatable, and the extension scope's creation-required members are visible or system-supplied | Existing visible extension scope updates normally |
+| New extension collection item | Visible request item in an extension collection has no visible stored-row match by compiled semantic identity | Owning base/extension parent exists or is creatable, the item passes writable-profile validation, and the item's creation-required members are visible or system-supplied | Matched visible extension row updates in place even when `Creatable=false` |
+
+Worked examples:
+
+1. Rejected new resource instance because the writable profile hides a required root member.
+
+```text
+Writable profile exposes: $.studentReference.studentUniqueId, $.entryDate
+Writable profile hides required root member: $.schoolReference.schoolId
+Operation: POST that would create a new resource instance
+Result: RootResourceCreatable=false
+Backend behavior: reject before creating dms.Document or root rows
+```
+
+2. Existing visible non-collection scope may update even though a new scope would be non-creatable.
+
+```text
+Scope: $.birthData
+Required scope members: birthDate, countryOfBirthDescriptor
+Writable profile exposes: birthDate
+Writable profile hides: countryOfBirthDescriptor
+
+Case A: stored visible $.birthData already exists
+Request keeps $.birthData visible/present and changes birthDate
+Result: update allowed, hidden countryOfBirthDescriptor is preserved from stored state
+
+Case B: stored $.birthData does not exist
+Same request body would create a new visible $.birthData scope
+Result: RequestScopeState.Creatable=false, reject as a creatability failure
+```
+
+3. Existing visible collection item may update even though a new item would be non-creatable.
+
+```text
+Collection scope: $.sessions[*]
+Compiled semantic identity: sessionName
+Required item members: sessionName, startDate
+Writable profile exposes: sessionName, endDate
+Writable profile hides: startDate
+
+Case A: visible stored row exists for sessionName="Regular"
+Request updates endDate for sessionName="Regular"
+Result: matched visible row updates in place; hidden startDate is preserved
+
+Case B: request includes sessionName="Summer" and no visible stored row matches
+Result: VisibleRequestCollectionItem.Creatable=false, reject before insert
+```
+
+4. Extension scopes follow the same rule set.
+
+```text
+Extension scope: $._ext.project.interventionPlan
+Required members: interventionTypeDescriptor, beginDate
+
+Case A: profile exposes both required members and request supplies them
+Result: new visible extension scope is creatable
+
+Case B: extension child collection item requires serviceDescriptor but the profile hides it
+Result: submitted new visible extension collection item is non-creatable and must be rejected
+```
 
 ## Hidden-Member Preservation Execution Model
 
@@ -555,5 +670,6 @@ Related redesign discussion:
 - invalid request usage of a readable vs writable profile fails before persistence logic runs,
 - submitted collection items that violate writable profile filters fail request validation,
 - attempts to create a new scope/item that the writable profile does not permit fail as a profile-based write validation/policy error,
+- creatability failures apply only to create-of-new-visible-data cases; matched visible scope/item updates remain valid even when the same profile would forbid creation of a brand-new visible instance because required members are hidden,
 - backend must not silently prune invalid submitted data to make the write succeed,
 - backend must not delete hidden stored data because a filtered request omitted it.
