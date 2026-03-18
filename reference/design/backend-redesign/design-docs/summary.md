@@ -158,8 +158,9 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
      - document references with `ReferentialId`s.
    - Required baseline Core extraction-model change for this redesign: add concrete indexed JSON locations to document reference instances (`DocumentReference.Path`) so nested-collection reference FKs can be populated without per-row JSONPath evaluation/hashing.
    - Profile-constrained collection writes additionally require request-scoped profile write shaping:
-     - Core supplies `ProfileAppliedWriteRequest.WritableRequestBody`, after writable-profile filtering and canonicalization,
-     - backend then loads the current stored document and invokes a Core-owned projector to derive `ProfileAppliedWriteContext.VisibleStoredBody`, and
+     - Core supplies `ProfileAppliedWriteRequest.WritableRequestBody`, `RootResourceCreatable`, `RequestScopeStates`, and `VisibleRequestCollectionItems`,
+     - `RequestScopeStates` uses the canonical scope-visibility states `VisiblePresent`, `VisibleAbsent`, and `Hidden`,
+     - backend then loads the current stored document and invokes a Core-owned projector to derive `ProfileAppliedWriteContext.VisibleStoredBody`, `StoredScopeStates`, and `VisibleStoredCollectionRows`, and
      - Core MUST reject any writable profile definition that excludes a field required to compute the compiled semantic identity of a persisted multi-item collection scope.
 
 2. **Bulk reference and descriptor resolution**
@@ -174,11 +175,11 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
    - Insert/update `dms.Document`.
    - Write root table row (insert/update).
    - Write collection and extension tables using merge semantics:
-     - for profile-constrained writes, the write pipeline derives visible persisted collection rows from the profile-projected stored document; backend does not evaluate profile filters itself,
+     - for profile-constrained writes, non-collection scope behavior comes from `RequestScopeStates` / `StoredScopeStates`, and collection/common-type/extension collection merges consume `VisibleRequestCollectionItems` / `VisibleStoredCollectionRows`; backend does not evaluate profile filters itself,
      - match by the compiled semantic identity,
      - allocate new `CollectionItemId`s from `dms.CollectionItemIdSequence` for unmatched rows,
      - preserve hidden profile rows/columns by overlaying visible values onto current stored rows using `HiddenMemberPaths`, while matched rows keep stable `CollectionItemId`s, and
-     - for profile-scoped collection/common-type/extension collection writes, start from the current full sibling sequence for that scope instance, replace the visible-row subsequence with the merged visible rows in request order, preserve hidden rows in their existing relative gaps, append extra visible inserts after the last previously visible row for that scope instance (or at the end when there was no previously visible row), and renumber `Ordinal` contiguously using the same deterministic rule as no-op detection.
+     - for profile-scoped collection/common-type/extension collection writes, start from the current full sibling sequence for that scope instance, replace the visible-row subsequence with the merged visible rows in request order, preserve hidden rows in their existing relative gaps, append extra visible inserts after the last previously visible row for that scope instance (or at the end when there was no previously visible row), and renumber `Ordinal` contiguously using the same deterministic post-merge sibling-order rule as no-op detection.
    - Write extension tables similarly (root extension rows only when extension values exist; scope-aligned rows for nested extension sites).
    - For each document reference site, write the stable `..._DocumentId` FK column (resolved from `dms.ReferentialIdentity`) and the referenced identity-part values to the table’s canonical stored columns (the per-site binding columns used for query/reconstitution may be generated/persisted aliases under key unification). Composite FKs enforce consistency.
 

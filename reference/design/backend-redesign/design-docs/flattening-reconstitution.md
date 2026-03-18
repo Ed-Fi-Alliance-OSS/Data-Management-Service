@@ -322,10 +322,12 @@ For a given request, backend already has:
 - optional `ProfileAppliedWriteRequest` for profile-constrained writes:
   - `WritableRequestBody`: the request body after Core applies writable profile semantics and normal canonicalization
   - `RootResourceCreatable`: Core-owned create/no-create decision for a new root instance under the active writable profile
-  - `RequestScopeStates` / `VisibleRequestCollectionItems`: structured request-side visibility and creatability metadata keyed to compiled `JsonScope`
+  - `RequestScopeStates`: structured request-side non-collection scope metadata keyed to compiled `JsonScope`, using the canonical visibility states `VisiblePresent`, `VisibleAbsent`, and `Hidden`
+  - `VisibleRequestCollectionItems`: structured request-side collection/common-type/extension item metadata keyed to compiled `JsonScope`, including `VisibleRequestCollectionItem.Creatable`
 - optional `ProfileAppliedWriteContext`, assembled inside the backend write pipeline after current-state load for profile-constrained update/upsert flows:
   - `VisibleStoredBody`: the current stored document after Core applies the same writable profile semantics used for `WritableRequestBody`
-  - `StoredScopeStates` / `VisibleStoredCollectionRows`: structured stored-state visibility and hidden-member preservation metadata keyed to compiled `JsonScope`
+  - `StoredScopeStates`: structured stored-side non-collection scope metadata keyed to compiled `JsonScope`, using the same `VisiblePresent`, `VisibleAbsent`, and `Hidden` states
+  - `VisibleStoredCollectionRows`: structured stored-side collection/common-type/extension row metadata keyed to compiled `JsonScope`, including `HiddenMemberPaths`
 
 ### 5.2 Reference & descriptor resolution (bulk)
 
@@ -1367,7 +1369,7 @@ public sealed record ResourceWritePlan(
 /// <param name="TableModel">The shape model for the table.</param>
 /// <param name="InsertSql">Parameterized insert SQL (multi-row insert is handled by IBulkInserter).</param>
 /// <param name="UpdateSql">Optional update SQL for in-place row updates. For 1:1 scopes this targets the scope key; for collection tables it targets <c>CollectionItemId</c>.</param>
-/// <param name="DeleteByParentSql">Delete SQL used for 1:1 scope replacement. Collection-row deletes are driven by the merge executor using stable row identities.</param>
+/// <param name="DeleteByParentSql">Delete SQL used when a separate-table 1:1 scope is <c>VisibleAbsent</c>. Collection-row deletes are driven by the merge executor using stable row identities.</param>
 /// <param name="CollectionMergePlan">
 /// Optional compiled merge metadata for collection tables. Null for root and non-collection 1:1 scopes.
 /// </param>
@@ -2061,8 +2063,8 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
 Notes:
 - `_referenceResolver.ResolveAsync(...)` resolves document and descriptor references to `DocumentId` via `dms.ReferentialIdentity` (`ReferentialId → DocumentId`) for all identities (self-contained, reference-bearing, and polymorphic/abstract via alias rows), and may validate descriptor existence/type via `dms.Descriptor`.
 - `_writer.ExecuteAsync(...)` uses the compiled `CollectionMergePlan`s, batched reservations from `dms.CollectionItemIdSequence`, and `IBulkInserter` to avoid N+1 inserts while preserving stable `CollectionItemId`s for matched rows.
-- For 1:1 extension scopes (including document-scope `_ext` tables), execution uses `InsertSql` when the scoped row is newly present and `UpdateSql` when it already exists.
-- When a scoped object is absent in the payload, execution uses `DeleteByParentSql` for scope replacement.
+- The sketch omits the explicit profile branches: profile-constrained creates consult `RootResourceCreatable`, non-collection scope behavior comes from `RequestScopeStates` / `StoredScopeStates` using `VisiblePresent`, `VisibleAbsent`, and `Hidden`, and collection merges consume `VisibleRequestCollectionItems` / `VisibleStoredCollectionRows` plus `HiddenMemberPaths`.
+- For separate-table 1:1 scopes (including document-scope `_ext` tables), execution uses `InsertSql` when the scoped row is newly `VisiblePresent`, `UpdateSql` when it already exists, and `DeleteByParentSql` only when the scope state is `VisibleAbsent`; `Hidden` scopes are preserved, and inlined `VisibleAbsent` scopes clear only their visible compiled bindings.
 
 Flattening inner loop sketch (how `TableWritePlan.ColumnBindings` and `TableWritePlan.KeyUnificationPlans` get used):
 

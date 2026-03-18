@@ -367,10 +367,10 @@ For a write request targeting resource `R`:
    - Applies to `PUT` and to `POST` requests that resolved to an existing `DocumentId`.
    - Use the current-document rows already materialized earlier in the request (for auth/reconstitution) and project
      them into comparable rowsets using the same table ordering and stored/writable column ordering as
-     `TableWritePlan.ColumnBindings`, after applying the same collection merge rules the normal executor would use.
+     `TableWritePlan.ColumnBindings`, after applying the same profile-aware merge rules the normal executor would use.
    - Compare table-by-table, including:
-     - 1:1 scope presence/absence,
-     - collection sibling ordering and membership after merge using the same deterministic post-merge sibling-order rule as the normal executor, and
+     - non-collection scope state using `ProfileAppliedWriteContext.StoredScopeStates` (`VisiblePresent`, `VisibleAbsent`, `Hidden`) when profile filtering applies,
+     - collection sibling ordering and membership after merge using `ProfileAppliedWriteContext.VisibleStoredCollectionRows` plus the same deterministic post-merge sibling-order rule as the normal executor, and
      - ordered stored/writable values (resolved FK ids, canonical storage columns, synthetic presence flags, etc.).
    - If all comparable rowsets are equal, mark the request as a **no-op candidate** and proceed to guarded execution.
 
@@ -381,18 +381,18 @@ For a write request targeting resource `R`:
    - If the observed `ContentVersion` is no longer current, abandon the no-op fast path and follow the retry /
      precondition rules in `transactions-and-concurrency.md`.
    - Root table:
-     - `InsertSql` for insert and/or `UpdateSql` for update (depending on identity outcome).
+     - `InsertSql` for insert and/or `UpdateSql` for update (depending on identity outcome), and profile-constrained creates consult `ProfileAppliedWriteRequest.RootResourceCreatable` before root insert DML.
    - Non-root 1:1 tables (including root-scope `_ext` tables):
-     - `InsertSql` when the scoped row is newly present,
-     - `UpdateSql` when the scoped row already exists, and
-     - `DeleteByParentSql` when the scoped object is absent in the payload.
+     - `InsertSql` when `RequestScopeStates` / `StoredScopeStates` show the scope is newly `VisiblePresent` and that create-of-new-visible-data is creatable,
+     - `UpdateSql` when the scoped row already exists and remains `VisiblePresent`, preserving hidden members via compiled-binding overlay plus `HiddenMemberPaths`, and
+     - `DeleteByParentSql` only when a separate-table scope is `VisibleAbsent`; inlined `VisibleAbsent` scopes clear only their visible compiled bindings, while `Hidden` scopes are preserved.
    - Collection tables:
      - load the current sibling sets for the document,
-     - determine the visible stored rows for each scope instance from the request-scoped profile projection of the current stored document (or treat all rows as visible when no profile filtering applies),
+     - determine the visible stored rows for each scope instance from `ProfileAppliedWriteContext.VisibleStoredCollectionRows` (or treat all rows as visible when no profile filtering applies),
      - match incoming rows by the compiled semantic identity,
-     - update matched rows in place by `CollectionItemId`,
+     - update matched rows in place by `CollectionItemId`, preserving bindings governed by `HiddenMemberPaths`,
      - delete omitted visible rows by `CollectionItemId`, and
-     - bulk insert only the newly created rows, then recompute `Ordinal` using the deterministic post-merge sibling-order rule described in `flattening-reconstitution.md`.
+     - bulk insert only the newly created rows when the corresponding `ProfileAppliedWriteRequest.VisibleRequestCollectionItems` entry is creatable, then recompute `Ordinal` using the deterministic post-merge sibling-order rule described in `flattening-reconstitution.md`.
    - Bulk insert is used whenever a table has 0..N rows to write (especially child/collection and extension tables): a dialect-aware executor (e.g. `IBulkInserter`) batches `RowBuffer`s into multi-row inserts (or `COPY`/`SqlBulkCopy`-style paths for large batches), using `InsertSql` + ordered `ColumnBindings` and chunking by `TableWritePlan.BulkInsertBatching.MaxRowsPerBatch` to respect dialect parameter limits.
 
 ### 4.3 Read path usage (GET by id / query)

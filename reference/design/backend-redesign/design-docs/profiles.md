@@ -80,12 +80,14 @@ Related redesign discussion:
 
 - **Readable profile**: the profile surface used for GET/query representations.
 - **Writable profile**: the profile surface used for POST/PUT request validation and shaping.
-- **Writable request body**: the request body after normal Core canonicalization and writable-profile shaping.
-- **Visible stored body**: the current stored document after Core applies the same writable-profile rules used for the writable request body.
+- **`WritableRequestBody`**: the request body after normal Core canonicalization and writable-profile shaping.
+- **`VisibleStoredBody`**: the current stored document after Core applies the same writable-profile rules used for `WritableRequestBody`.
+- **Profile visibility state**: one of `VisiblePresent`, `VisibleAbsent`, or `Hidden` for a compiled scope instance.
 - **Hidden data**: persisted data excluded from the writable profile surface for the current request.
 - **Visible data**: persisted data included in the writable profile surface for the current request.
 - **Semantic collection identity**: the compiled non-empty key used to match persisted and requested collection items within a parent scope.
-- **Creatability**: whether a profile permits creation of a new visible scope or collection item, taking required members and filtered members into account.
+- **Creatability**: the Core-owned answer to the "create new visible data here?" question, surfaced as `RootResourceCreatable`, `RequestScopeState.Creatable`, and `VisibleRequestCollectionItem.Creatable`.
+- **Deterministic post-merge sibling-order rule**: the rule used by both write execution and no-op detection to merge visible rows back into the full stored sibling sequence.
 
 ## Legacy Semantics to Preserve
 
@@ -238,7 +240,7 @@ Related redesign discussion:
    - nested collections additionally store `ParentCollectionItemId`,
    - extension/common-type scope tables align to the owning stable base identity.
 
-4. **Deterministic post-merge ordering**
+4. **Deterministic post-merge sibling-order rule**
    - write execution and no-op detection must use the same sibling-order rule after profile-scoped merges.
 
 5. **Current-state loading**
@@ -505,7 +507,7 @@ Related redesign discussion:
    - apply normal request canonicalization,
    - validate submitted data against writable profile rules,
    - reject invalid submitted collection items instead of silently pruning them,
-   - produce `ProfileAppliedWriteRequest`, including root creatability, request-scope visibility, and visible submitted collection-item metadata.
+   - produce `ProfileAppliedWriteRequest`, including `WritableRequestBody`, `RootResourceCreatable`, `RequestScopeStates`, and `VisibleRequestCollectionItems`.
 
 3. **Backend resolves references and authorization inputs**
    - resolve references/descriptors to `DocumentId`,
@@ -517,7 +519,7 @@ Related redesign discussion:
 5. **Backend invokes Core stored-state projection**
    - this is a backend-to-Core callback function invocation.
    - apply writable profile semantics to the current stored JSON,
-   - assemble `ProfileAppliedWriteContext` containing `VisibleStoredBody`, stored-scope visibility, and visible stored collection-row metadata.
+   - assemble `ProfileAppliedWriteContext` containing `VisibleStoredBody`, `StoredScopeStates`, and `VisibleStoredCollectionRows`.
 
 6. **Backend extracts request candidates**
    - flatten the `WritableRequestBody` into logical row candidates,
