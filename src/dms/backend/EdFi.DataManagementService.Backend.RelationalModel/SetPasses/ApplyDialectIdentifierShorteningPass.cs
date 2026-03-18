@@ -1115,8 +1115,16 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         var updatedName = new DbIndexName(dialectRules.ShortenIdentifier(index.Name.Value));
         var updatedTable = ShortenTable(index.Table, dialectRules);
         var updatedColumns = ShortenColumns(index.KeyColumns, dialectRules, out var columnsChanged);
+        var includeChanged = false;
+        var updatedIncludeColumns = index.IncludeColumns is { Count: > 0 }
+            ? ShortenColumns(index.IncludeColumns, dialectRules, out includeChanged)
+            : index.IncludeColumns;
 
-        changed = columnsChanged || !updatedTable.Equals(index.Table) || !updatedName.Equals(index.Name);
+        changed =
+            columnsChanged
+            || includeChanged
+            || !updatedTable.Equals(index.Table)
+            || !updatedName.Equals(index.Name);
 
         if (!changed)
         {
@@ -1128,6 +1136,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             Name = updatedName,
             Table = updatedTable,
             KeyColumns = updatedColumns,
+            IncludeColumns = updatedIncludeColumns,
         };
     }
 
