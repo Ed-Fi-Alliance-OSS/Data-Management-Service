@@ -391,6 +391,7 @@ For a write request targeting resource `R`:
      - load the current sibling sets for the document,
      - determine the visible stored rows for each scope instance from `ProfileAppliedWriteContext.VisibleStoredCollectionRows` (or treat all rows as visible when no profile filtering applies),
      - match incoming rows by the compiled semantic identity,
+     - assume at most one incoming row per `(scope instance, compiled semantic identity)`; duplicate request candidates are upstream data-validation failures and must not be left to database unique-constraint handling,
      - update matched rows in place by `CollectionItemId`, preserving bindings governed by `HiddenMemberPaths`,
      - delete omitted visible rows by `CollectionItemId`, and
      - bulk insert only the newly created rows when the corresponding `ProfileAppliedWriteRequest.VisibleRequestCollectionItems` entry is creatable, then recompute `Ordinal` using the deterministic post-merge sibling-order rule described in `flattening-reconstitution.md`.

@@ -9,15 +9,18 @@ jira_url: https://edfi.atlassian.net/browse/DMS-986
 
 Provide consistent, actionable error mapping for relational writes across PostgreSQL and SQL Server:
 
-- Unique constraint violations (natural key conflicts).
+- Unique constraint violations that survive pre-DML validation (for example root natural-key conflicts or unexpected persisted-state races).
 - FK violations (unresolved/missing references when writing, or schema mismatch).
 - Deterministic fallback mapping for final DB write exceptions that are not profile failures.
+
+Submitted duplicate collection/common-type/extension collection items are not in scope for this DB-exception story. They remain request-validation failures keyed by `arrayUniquenessConstraints` / compiled semantic identity and should be rejected before backend DML reaches the database.
 
 Profile-specific classification and API mapping are handled by `DMS-1104`; deadlock/serialization retry policy remains owned by `DMS-996`. This story stays limited to final database exception classification and mapping.
 
 ## Acceptance Criteria
 
 - Natural key uniqueness failures map to a deterministic DMS conflict response.
+- Duplicate submitted collection/common-type/extension collection items that collide on compiled semantic identity within the same parent scope are excluded from DB exception mapping; the design requires them to fail earlier as `400 Data Validation Failed` request-validation errors.
 - FK violations are mapped to:
   - reference validation failures when possible (preferred), or
   - consistent internal errors when they represent unexpected states.

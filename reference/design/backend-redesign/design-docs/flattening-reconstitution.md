@@ -508,6 +508,7 @@ Materialization is a two-phase process:
 1. Traverse the incoming JSON and build logical collection-item candidates:
    - each candidate records its `JsonScope`, `OrdinalPath`, requested sibling order, scalar values, resolved FK values, and any extension subtrees
    - for each persisted multi-item collection scope, compute the candidate’s semantic key from the compiled paths
+   - candidates for the same stable parent scope instance MUST already be unique by semantic key before storage binding begins; duplicate submitted candidates are request-validation failures, not merge tie-breakers
 2. After loading the current document graph for update flows, bind each candidate to storage:
    - determine the visible persisted rows for each collection scope from `ProfileAppliedWriteContext.VisibleStoredCollectionRows` when present, keyed by compiled `JsonScope` plus stable parent address; otherwise treat all current rows in that scope as visible
    - match to an existing visible row by semantic key
@@ -558,6 +559,7 @@ Bulk insert options (non-codegen):
 Collection writes use merge semantics, not blanket delete-and-reinsert:
 
 - Every persisted multi-item collection scope MUST have a compiled semantic key; match by `(ParentScope, SemanticKey)`.
+- Submitted request siblings that collide on `(ParentScope, SemanticKey)` are invalid input and MUST fail request validation before merge/no-op/DML. Relational unique constraints on collection tables remain defense in depth for races/corruption, not the primary client-visible behavior for duplicate submitted items.
 - For profile-constrained writes, visible stored rows are the rows enumerated in `ProfileAppliedWriteContext.VisibleStoredCollectionRows` for that collection scope and parent scope instance, in caller-visible order.
 - Core MUST reject any writable profile definition that excludes a field required to compute the semantic key of a persisted multi-item collection scope.
 - Hidden profile-scoped rows are current persisted rows for that collection scope instance that are not enumerated in `ProfileAppliedWriteContext.VisibleStoredCollectionRows`; they are never deleted or updated.

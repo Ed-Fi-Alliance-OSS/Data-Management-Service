@@ -57,6 +57,7 @@ Coverage in this story should reuse the shared scenario names from `reference/de
   - `RootResourceCreatable` applies only when the write would create a new document/root row,
   - `RequestScopeState.Creatable` applies only when `Visibility=VisiblePresent` and no visible stored scope exists at that address, and
   - `VisibleRequestCollectionItem.Creatable` applies only when no visible stored row matches by compiled semantic identity.
+- For any compiled collection scope and stable parent address, Core emits at most one `VisibleRequestCollectionItem` per `CollectionRowAddress`; duplicate visible submitted items by compiled semantic identity are rejected during request validation before the contract reaches backend.
 - Existing visible scopes/rows remain updatable even when `Creatable=false`; hidden stored data does not convert a create attempt into an update.
 - The contract is rich enough to drive top-down creatability across a three-level chain (existing root -> middle collection/common-type scope -> descendant extension child collection) so existing visible parent data stays on the update path while a new visible parent with a hidden required member is rejected and blocks descendant creation.
 - Every scope/item entry carries the compiled `JsonScope` plus a stable scope-instance/row address derived from compiled collection ancestry and compiled semantic-identity member order instead of request ordinals.
@@ -74,6 +75,7 @@ Coverage in this story should reuse the shared scenario names from `reference/de
 ### Core validation prerequisite
 
 - Invalid writable profiles that exclude fields required to compute compiled semantic identity for persisted multi-item collection scopes are rejected by Core before backend runtime orchestration.
+- Submitted visible collection/common-type/extension collection items that collide on compiled semantic identity within the same stable parent address are rejected by Core as request-validation failures before backend runtime orchestration.
 
 ### Ownership boundary
 

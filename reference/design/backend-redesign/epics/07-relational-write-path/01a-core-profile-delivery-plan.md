@@ -25,6 +25,7 @@ The spike turns the ownership statements in `reference/design/backend-redesign/d
   - profile metadata loading and validation,
   - readable vs writable profile selection,
   - recursive request shaping and writable validation,
+  - duplicate visible collection-item validation by compiled semantic identity within a stable parent scope,
   - stored-state projection for profiled writes,
   - `ScopeInstanceAddress` and `CollectionRowAddress` derivation,
   - creatability analysis,
@@ -38,7 +39,7 @@ The spike turns the ownership statements in `reference/design/backend-redesign/d
 
 ## Tasks
 
-1. Break the Core-owned profile surface into concrete implementation slices across request shaping, stored-state projection, readable projection, address derivation, creatability, and error classification.
+1. Break the Core-owned profile surface into concrete implementation slices across request shaping, stored-state projection, readable projection, address derivation, duplicate visible collection-item validation by compiled semantic identity, creatability, and error classification.
 2. Define the shared compiled-scope metadata/adapter Core needs so request-side and stored-side address derivation, canonical member-path emission, and `HiddenMemberPaths` generation align with backend compiled plans without exposing backend runtime plan internals directly.
 3. Produce the follow-on story inventory and recommended sequencing for the Core work required by profiled writes and readable-profile projection.
 4. Update the dependency notes in the blocked backend/read-path stories so they point to this spike explicitly.
