@@ -27,6 +27,8 @@ Core produces validated JSON + extracted references; the backend:
 
 Authorization remains out of scope; however, the roundtrip and transaction structures built in this epic should accommodate future authorization queries being batched into the same DB roundtrips. See `reference/design/backend-redesign/design-docs/auth.md` §"Performance improvements over ODS" for the expected roundtrip layout per operation.
 
+Critical-path note: `reference/design/backend-redesign/epics/DEPENDENCIES.md` remains the source of truth for story blocking, but runtime collection-merge execution in this epic does not start until `DMS-1102` / `E15-S04b` (`reference/design/backend-redesign/epics/15-plan-compilation/04b-stable-collection-merge-plans.md`) lands. `DMS-984` consumes that retrofitted merge-plan contract; it must not implement profile-aware stable-identity collection merge execution against the earlier delete-by-parent / `Ordinal`-based write-plan shape.
+
 ## Stories
 
 - `DMS-981` — `00-core-extraction-location.md` — Core emits concrete JSON locations for document references
@@ -34,7 +36,7 @@ Authorization remains out of scope; however, the roundtrip and transaction struc
 - `DMS-1103` — `01b-profile-write-context.md` — Integrate the Core/backend profile write contract
 - `DMS-1105` — `01c-current-document-for-profile-projection.md` — Load/reconstitute the current stored document for profiled update/upserts
 - `DMS-983` — `02-flattening-executor.md` — Flatten `WritableRequestBody` into row buffers and collection candidates using compiled mapping
-- `DMS-984` — `03-persist-and-batch.md` — Persist rows with stable-identity merge semantics and guarded no-op detection (pgsql + mssql)
+- `DMS-984` — `03-persist-and-batch.md` — Persist rows with stable-identity merge semantics and guarded no-op detection (pgsql + mssql); blocked on `DMS-1102` for the executor-facing collection merge-plan contract
 - `DMS-985` — `04-propagated-reference-identity-columns.md` — Populate propagated reference identity columns (no reverse-edge table)
 - `DMS-986` — `05-write-error-mapping.md` — Map DB constraint errors to DMS error shapes (consistent across dialects)
 - `DMS-1104` — `05b-profile-error-classification.md` — Classify and map profile write failures to DMS error shapes
