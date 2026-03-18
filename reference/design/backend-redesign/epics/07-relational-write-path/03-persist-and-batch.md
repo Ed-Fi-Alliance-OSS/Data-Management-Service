@@ -38,7 +38,8 @@ Persist flattened row buffers to the database in a single transaction:
 - Before returning a no-op result, the executor revalidates that the observed `ContentVersion` is still current; stale compares are surfaced to the outer concurrency layer instead of returning success on stale state.
 - Collection/common-type rows preserve existing stable identity for matched rows and reserve new `CollectionItemId` values only for unmatched inserts.
 - Profile-scoped non-collection decisions consume Core-projected `StoredScopeStates`, and profile-scoped collection merges consume Core-projected `VisibleStoredCollectionRows` keyed by compiled scope identity; runtime execution does not evaluate writable-profile predicates in backend or infer hidden-vs-absent from `VisibleStoredBody` alone.
-- Profile-scoped collection/common-type/extension collection merges preserve hidden rows in their existing relative gaps, append extra visible inserts after the last previously visible row for that scope instance, and renumber `Ordinal` contiguously.
+- Profile-scoped collection/common-type/extension collection merges start from the current full sibling sequence for that scope instance, replace the visible-row subsequence with the merged visible rows in request order, preserve hidden rows in their existing relative gaps, append extra visible inserts after the last previously visible row for that scope instance (or at the end when there was no previously visible row), and renumber `Ordinal` contiguously.
+- Ordering coverage includes scope instances with no previously visible rows, delete-all-visible cases where hidden rows remain, visible updates plus inserts with hidden rows interleaved, nested collection scopes, and extension child collections.
 - Matched collection rows, matched visible non-collection rows/scopes, and matched visible extension rows preserve hidden values through compiled-binding overlay from current stored rows plus `HiddenMemberPaths`.
 - Matched visible scopes/items update successfully even when the same writable profile would reject creation of a brand-new visible scope/item because required members are hidden by the profile.
 - Hidden collection rows, hidden non-collection scopes, hidden inlined parent/root-row values, and hidden extension data are preserved under writable profiles.
@@ -65,7 +66,10 @@ Authorization is out of scope for this story, but the transaction and batching s
 8. Add integration tests that:
    - write a changed resource with nested collections and verify row counts/keys after commit,
    - exercise a profile-scoped update that preserves hidden stored data while updating visible rows, and
-   - exercise a profile-scoped collection merge with hidden rows interleaved between visible siblings and assert deterministic hidden-gap ordering after `Ordinal` renumbering,
+   - exercise a profile-scoped collection merge where a scope instance has no previously visible row and assert new visible inserts append after the hidden rows for that scope instance,
+   - exercise a profile-scoped collection merge where all previously visible rows are deleted and hidden rows remain, and assert only the hidden rows survive with relative order preserved,
+   - exercise a profile-scoped collection merge with visible updates plus inserts and hidden rows interleaved, and assert deterministic hidden-gap ordering after `Ordinal` renumbering,
+   - exercise the same deterministic ordering rule on one nested collection scope and one extension child collection scope,
    - exercise profile-scoped non-collection handling for one separate-table scope and one inlined scope, including hidden-vs-visible-absent behavior and clear-only-visible-bindings behavior for the inlined scope,
    - exercise hidden inlined parent/root-row value preservation on a matched visible scope,
    - exercise hidden extension-column preservation on a matched visible `_ext` row,

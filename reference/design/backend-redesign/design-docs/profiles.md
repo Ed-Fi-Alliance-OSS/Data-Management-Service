@@ -563,7 +563,7 @@ Related redesign discussion:
 Ordering rules:
 
 - for full-surface writes, the stored sibling set may reorder to match request order,
-- for profile-scoped writes, start from the current full sibling sequence,
+- for profile-scoped writes, start from the current full sibling sequence for that scope instance,
 - identify the visible-row subsequence for that scope instance,
 - replace that visible subsequence with the merged visible rows in request order,
 - preserve hidden rows in their existing relative gaps,
@@ -573,6 +573,67 @@ Ordering rules:
 The same deterministic ordering rule must be used by:
 - the real write executor, and
 - whole-document no-op detection.
+
+Normative worked examples:
+
+Apply the same rule independently per compiled collection scope plus stable parent instance.
+
+1. No previously visible row for the scope instance.
+
+```text
+Stored siblings:  [A1(hidden,id=10), A2(hidden,id=11)]
+Request siblings: [A3(city=new), A4(city=new)]
+Visible subset:   []
+Match mode:       SemanticKey
+Result:           insert A3 with new id=20, insert A4 with new id=21
+Stored order:     [A1(hidden,id=10), A2(hidden,id=11), A3(visible,id=20), A4(visible,id=21)]
+```
+
+2. Deleting all previously visible rows while hidden rows remain.
+
+```text
+Stored siblings:  [A1(hidden,id=10), A2(visible,id=11), A3(hidden,id=12), A4(visible,id=13)]
+Request siblings: []
+Visible subset:   [id=11, id=13]
+Match mode:       SemanticKey
+Result:           delete visible id=11 and id=13
+Stored order:     [A1(hidden,id=10), A3(hidden,id=12)]
+```
+
+3. Visible updates plus inserts with hidden rows interleaved.
+
+```text
+Stored siblings:  [A1(hidden,id=10), A2(visible,id=11), A3(hidden,id=12), A4(visible,id=13)]
+Request siblings: [A4(city=updated), A2(city=updated), A5(city=new)]
+Visible subset:   [id=11, id=13]
+Match mode:       SemanticKey
+Result:           update visible id=13 and id=11 in place, insert A5 with new id=20
+Stored order:     [A1(hidden,id=10), A4(visible,id=13), A3(hidden,id=12), A2(visible,id=11), A5(visible,id=20)]
+```
+
+4. Nested collection scopes use the same rule per stable parent instance.
+
+```text
+Scope instance:   $.sections[*].meetings[*] under ParentCollectionItemId=50
+Stored siblings:  [M1(hidden,id=100), M2(visible,id=101), M3(hidden,id=102)]
+Request siblings: [M2(room=updated), M4(room=new)]
+Visible subset:   [id=101]
+Match mode:       SemanticKey
+Result:           update visible id=101 in place, insert M4 with new id=110
+Stored order:     [M1(hidden,id=100), M2(visible,id=101), M3(hidden,id=102), M4(visible,id=110)]
+```
+
+5. Extension child collections use the same rule per stable parent instance.
+
+```text
+Scope instance:   $._ext.project.interventions[*].services[*] under ParentCollectionItemId=300
+Stored siblings:  [S1(hidden,id=401), S2(visible,id=402), S3(hidden,id=403)]
+Request siblings: [S2(code=updated), S4(code=new)]
+Visible subset:   [id=402]
+Match mode:       SemanticKey
+Result:           update visible id=402 in place, insert S4 with new id=450
+Stored order:     [S1(hidden,id=401), S2(visible,id=402), S3(hidden,id=403), S4(visible,id=450)]
+```
 
 ## Non-Collection Scope Rules Under Profiles
 

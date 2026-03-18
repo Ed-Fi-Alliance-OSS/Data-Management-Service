@@ -562,7 +562,7 @@ Collection writes use merge semantics, not blanket delete-and-reinsert:
 Order rules:
 
 - For semantic-key scopes, full-surface writes may reorder the full sibling set to the request order.
-- For semantic-key profile-scoped writes, start from the current full sibling sequence, identify the visible-row subsequence from `ProfileAppliedWriteContext.VisibleStoredCollectionRows`, replace that visible subsequence with the merged visible rows in request order, preserve hidden rows in their existing relative gaps, append any extra visible inserts after the last previously visible row (or at the end when there was no previously visible row), and then renumber `Ordinal` contiguously.
+- For semantic-key profile-scoped writes, start from the current full sibling sequence for that scope instance, identify the visible-row subsequence from `ProfileAppliedWriteContext.VisibleStoredCollectionRows`, replace that visible subsequence with the merged visible rows in request order, preserve hidden rows in their existing relative gaps, append any extra visible inserts after the last previously visible row for that scope instance (or at the end when there was no previously visible row), and then renumber `Ordinal` contiguously.
 - Hidden rows keep their relative order when profile filtering applies.
 - The same deterministic post-merge sibling-order rule MUST be used by both write execution and whole-document no-op detection.
 
@@ -578,15 +578,61 @@ Result:           delete id=10, update id=11 in place, insert A3 with new id=20
 Stored order:     [A2(id=11), A3(id=20)]
 ```
 
-2. Semantic-key profile-scoped write:
+2. Semantic-key profile-scoped write with no previously visible row:
+
+```text
+Stored siblings:  [A1(hidden,id=10), A2(hidden,id=11)]
+Request siblings: [A3(city=new), A4(city=new)]
+Visible subset:   []
+Match mode:       SemanticKey
+Result:           insert A3 with new id=20, insert A4 with new id=21
+Stored order:     [A1(hidden,id=10), A2(hidden,id=11), A3(visible,id=20), A4(visible,id=21)]
+```
+
+3. Semantic-key profile-scoped write deleting all previously visible rows:
 
 ```text
 Stored siblings:  [A1(hidden,id=10), A2(visible,id=11), A3(hidden,id=12), A4(visible,id=13)]
-Request siblings: [A4(city=updated), A5(city=new)]
+Request siblings: []
 Visible subset:   [id=11, id=13]
 Match mode:       SemanticKey
-Result:           delete visible id=11, update visible id=13 in place, insert A5 with new id=20
-Stored order:     [A1(hidden,id=10), A4(visible,id=13), A3(hidden,id=12), A5(visible,id=20)]
+Result:           delete visible id=11 and id=13
+Stored order:     [A1(hidden,id=10), A3(hidden,id=12)]
+```
+
+4. Semantic-key profile-scoped write with visible updates plus inserts and hidden rows interleaved:
+
+```text
+Stored siblings:  [A1(hidden,id=10), A2(visible,id=11), A3(hidden,id=12), A4(visible,id=13)]
+Request siblings: [A4(city=updated), A2(city=updated), A5(city=new)]
+Visible subset:   [id=11, id=13]
+Match mode:       SemanticKey
+Result:           update visible id=13 and id=11 in place, insert A5 with new id=20
+Stored order:     [A1(hidden,id=10), A4(visible,id=13), A3(hidden,id=12), A2(visible,id=11), A5(visible,id=20)]
+```
+
+5. Semantic-key profile-scoped write for a nested collection scope:
+
+```text
+Scope instance:   $.sections[*].meetings[*] under ParentCollectionItemId=50
+Stored siblings:  [M1(hidden,id=100), M2(visible,id=101), M3(hidden,id=102)]
+Request siblings: [M2(room=updated), M4(room=new)]
+Visible subset:   [id=101]
+Match mode:       SemanticKey
+Result:           update visible id=101 in place, insert M4 with new id=110
+Stored order:     [M1(hidden,id=100), M2(visible,id=101), M3(hidden,id=102), M4(visible,id=110)]
+```
+
+6. Semantic-key profile-scoped write for an extension child collection scope:
+
+```text
+Scope instance:   $._ext.project.interventions[*].services[*] under ParentCollectionItemId=300
+Stored siblings:  [S1(hidden,id=401), S2(visible,id=402), S3(hidden,id=403)]
+Request siblings: [S2(code=updated), S4(code=new)]
+Visible subset:   [id=402]
+Match mode:       SemanticKey
+Result:           update visible id=402 in place, insert S4 with new id=450
+Stored order:     [S1(hidden,id=401), S2(visible,id=402), S3(hidden,id=403), S4(visible,id=450)]
 ```
 
 ### 5.6 Whole-document no-op detection (update fast path)
