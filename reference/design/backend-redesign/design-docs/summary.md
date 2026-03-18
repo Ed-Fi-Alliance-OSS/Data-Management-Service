@@ -106,10 +106,16 @@ For each project, create a physical schema derived from `ProjectEndpointName` (e
     - descriptors: FK to `dms.Descriptor(DocumentId)` via `..._DescriptorId`.
 
 - Collection tables `{schema}.{Resource}_{CollectionPath}`:
-  - Composite parent+ordinal keys to preserve order and enable batching:
-    - PK is `(DocumentId, <ParentOrdinals...>, Ordinal)`.
-  - Nested collections add ancestor ordinals into the key and FK (no generated IDs; avoids `RETURNING`/`OUTPUT` capture).
-  - Optional unique constraints from `arrayUniquenessConstraints`.
+  - Stable internal row identity for every persisted collection item:
+    - PK is `CollectionItemId`, allocated from global `dms.CollectionItemIdSequence`.
+  - Parent scope columns preserve containment and enable batching:
+    - every collection table stores the root `..._DocumentId` for keyset hydration,
+    - nested collections additionally store `ParentCollectionItemId`,
+    - nested collections keep the denormalized root scope consistent via a composite FK from `(ParentCollectionItemId, ..._DocumentId)` to the parent collection row.
+  - `Ordinal` preserves array order for reconstitution and is constrained uniquely within the parent scope.
+  - `arrayUniquenessConstraints` are the authoritative schema metadata for collection semantic identity and relational unique constraints.
+  - For a persisted multi-item collection scope, the compiled semantic identity is the non-empty ordered member set resolved for that scope from `arrayUniquenessConstraints`; DMS does not fall back to ordinals, parent-only locators, or hidden/internal row ids.
+  - The supported DMS boundary is valid MetaEd-generated models with the relevant validator set applied. If such a scope still cannot produce a non-empty compiled identity, validation/compilation fails before runtime write execution.
 
 - Abstract identity artifacts:
   - `{schema}.{AbstractResource}Identity` tables provide FK targets for polymorphic references with cascade support.
@@ -121,8 +127,8 @@ For each project, create a physical schema derived from `ProjectEndpointName` (e
 
 - Extension tables live in the extension project schema (e.g., `sample`, `tpdm`), not in the core schema.
 - Resource-level `_ext.{project}` becomes `{projectSchema}.{Resource}Extension` keyed by `DocumentId` (1:1) with FK to the base resource root.
-- `_ext` inside common types/collections becomes scope-aligned extension tables keyed exactly like the base scope they extend (DocumentId + ordinals), with FK back to the base scope table.
-- Arrays inside `_ext` become extension child tables using the same parent+ordinal key strategy.
+- `_ext` inside common types/collections becomes scope-aligned extension tables keyed to the stable identity of the base scope they extend (`DocumentId` for root scope, `CollectionItemId` for collection/common-type scopes).
+- Arrays inside `_ext` become extension child tables using the same stable-key strategy as core collections: always `CollectionItemId` plus the root `..._DocumentId`, with the immediate parent locator being that same `..._DocumentId` for root-level `_ext` arrays or `BaseCollectionItemId` for collection-aligned `_ext` arrays.
 - References/descriptors inside extensions follow the same FK rules as core mapping (`..._DocumentId` and `..._DescriptorId`).
 
 ## Derived mapping and plan compilation (no codegen)
@@ -150,7 +156,12 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
      - resource `ReferentialId`,
      - descriptor references (already include concrete JSON paths),
      - document references with `ReferentialId`s.
-   - Required Core change for this redesign: add concrete indexed JSON locations to document reference instances (`DocumentReference.Path`) so nested-collection reference FKs can be populated without per-row JSONPath evaluation/hashing.
+   - Required baseline Core extraction-model change for this redesign: add concrete indexed JSON locations to document reference instances (`DocumentReference.Path`) so nested-collection reference FKs can be populated without per-row JSONPath evaluation/hashing.
+   - Profile-constrained collection writes additionally require request-scoped profile write shaping:
+     - Core supplies `ProfileAppliedWriteRequest.WritableRequestBody`, `RootResourceCreatable`, `RequestScopeStates`, and `VisibleRequestCollectionItems`,
+     - `RequestScopeStates` uses the canonical scope-visibility states `VisiblePresent`, `VisibleAbsent`, and `Hidden`,
+     - backend then loads the current stored document and invokes a Core-owned projector with the same mapping-set-scoped compiled-scope catalog used for address derivation to derive `ProfileAppliedWriteContext.VisibleStoredBody`, `StoredScopeStates`, and `VisibleStoredCollectionRows`, and
+     - Core MUST reject any writable profile definition that excludes a field required to compute the compiled semantic identity of a persisted multi-item collection scope.
 
 2. **Bulk reference and descriptor resolution**
    - Resolve all referential ids in bulk via `dms.ReferentialIdentity` (`ReferentialId → DocumentId`).
@@ -163,7 +174,12 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
 4. **Flatten and write relational rows (single transaction)**
    - Insert/update `dms.Document`.
    - Write root table row (insert/update).
-   - Write child tables using a baseline replace strategy (delete by parent key, bulk insert rows), with batching to respect SQL Server parameter limits.
+   - Write collection and extension tables using merge semantics:
+     - for profile-constrained writes, non-collection scope behavior comes from `RequestScopeStates` / `StoredScopeStates`, and collection/common-type/extension collection merges consume `VisibleRequestCollectionItems` / `VisibleStoredCollectionRows`; backend does not evaluate profile filters itself,
+     - match by the compiled semantic identity,
+     - allocate new `CollectionItemId`s from `dms.CollectionItemIdSequence` for unmatched rows,
+     - preserve hidden profile rows/columns by overlaying visible values onto current stored rows using `HiddenMemberPaths`, while matched rows keep stable `CollectionItemId`s, and
+     - for profile-scoped collection/common-type/extension collection writes, start from the current full sibling sequence for that scope instance, replace the visible-row subsequence with the merged visible rows in request order, preserve hidden rows in their existing relative gaps, append extra visible inserts after the last previously visible row for that scope instance (or at the end when there was no previously visible row), and renumber `Ordinal` contiguously using the same deterministic post-merge sibling-order rule as no-op detection.
    - Write extension tables similarly (root extension rows only when extension values exist; scope-aligned rows for nested extension sites).
    - For each document reference site, write the stable `..._DocumentId` FK column (resolved from `dms.ReferentialIdentity`) and the referenced identity-part values to the table’s canonical stored columns (the per-site binding columns used for query/reconstitution may be generated/persisted aliases under key unification). Composite FKs enforce consistency.
 

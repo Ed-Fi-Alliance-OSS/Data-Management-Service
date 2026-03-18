@@ -472,12 +472,14 @@ public sealed record TableWritePlan(
     string InsertSql,
     string? UpdateSql,
     string? DeleteByParentSql,
+    CollectionMergePlan? CollectionMergePlan,
+    BulkInsertBatchingInfo BulkInsertBatching,
     IReadOnlyList<WriteColumnBinding> ColumnBindings,
     IReadOnlyList<KeyUnificationWritePlan> KeyUnificationPlans
 );
 ```
 
-`KeyUnificationPlans` is empty when `DbTableModel.KeyUnificationClasses` is empty.
+`TableWritePlan` is defined authoritatively in `flattening-reconstitution.md`; the shape shown here must stay aligned with that definition. `KeyUnificationPlans` is empty when `DbTableModel.KeyUnificationClasses` is empty.
 
 Add a per-table inventory describing how to compute canonical and presence-flag values during row materialization:
 
@@ -608,8 +610,8 @@ For each table row being materialized, and for each `KeyUnificationClass` on tha
 5. Write the canonical value to `CanonicalColumn`.
 
 Notes:
-- This coalescing rule applies identically to `POST` (upsert) and `PUT` (update-by-id) to preserve replace semantics
-  and idempotency.
+- This coalescing rule applies identically to `POST` (upsert) and `PUT` (update-by-id) to preserve full-document PUT
+  semantics and idempotency.
 - “First present member” uses the deterministic ordering already required by `KeyUnificationClass.MemberPathColumns`.
   The baseline ordering rule remains `SourceJsonPath.Canonical` ordinal sort unless an explicit preferred-source policy
   is added later.
@@ -2257,7 +2259,7 @@ semantics, or cascade correctness.
   - when canonical is `NOT NULL`, canonical must be non-null.
 - Descriptor resolution failures fail closed:
   - descriptor URI present but unresolved → write fails.
-- PUT/replace semantics remain deterministic:
+- PUT/full-document semantics remain deterministic:
   - missing unified values do not consult existing row values to “retain” canonical values.
 
 ### Read / reconstitution / query semantics

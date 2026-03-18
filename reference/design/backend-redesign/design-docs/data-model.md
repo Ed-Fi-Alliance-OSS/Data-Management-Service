@@ -165,7 +165,26 @@ CREATE SEQUENCE dms.ChangeVersionSequence
     INCREMENT BY 1;
 ```
 
-##### 1b) `dms.DocumentChangeEvent` (append-only journal)
+##### 1b) `dms.CollectionItemIdSequence`
+
+Global monotonic `bigint` sequence used to allocate stable internal collection-row ids (`CollectionItemId`) for core and extension collection tables. Writers SHOULD reserve ids in batches per request after collection matching and before bulk insert generation so inserts never depend on `RETURNING`/`OUTPUT` key capture.
+
+**PostgreSQL**
+
+```sql
+CREATE SEQUENCE dms.CollectionItemIdSequence AS bigint START WITH 1 INCREMENT BY 1;
+```
+
+**SQL Server**
+
+```sql
+CREATE SEQUENCE dms.CollectionItemIdSequence
+    AS bigint
+    START WITH 1
+    INCREMENT BY 1;
+```
+
+##### 1c) `dms.DocumentChangeEvent` (append-only journal)
 
 Append-only journal of per-document representation changes (served `_etag/_lastModifiedDate/ChangeVersion` impacts). Used to support future Change Query APIs. See `reference/design/backend-redesign/design-docs/update-tracking.md` for the selection algorithm and retention guidance.
 
@@ -600,14 +619,19 @@ Typical structure:
 For each JSON array of objects under the resource:
 
 `{schema}.{R}_{CollectionPath}` (name derived deterministically; see Naming Rules)
-- Parent key columns (for root-level arrays this is typically `<RootResource>_DocumentId BIGINT` FK → `{schema}.{R}(DocumentId)` ON DELETE CASCADE)
+- `CollectionItemId BIGINT NOT NULL` (internal stable row identity; primary key; default sourced from `dms.CollectionItemIdSequence`)
+- Parent scope columns:
+  - every collection table stores `<RootResource>_DocumentId BIGINT`; for root-level arrays this is the direct FK → `{schema}.{R}(DocumentId)` ON DELETE CASCADE
+  - nested arrays additionally store `ParentCollectionItemId BIGINT` FK → the immediate parent collection table’s `CollectionItemId`
+  - nested arrays keep `<RootResource>_DocumentId` consistent with the parent chain via a composite FK `(ParentCollectionItemId, <RootResource>_DocumentId)` → parent `(CollectionItemId, <RootResource>_DocumentId)`; this avoids a second cascading root FK on SQL Server
 - `Ordinal INT NOT NULL` (preserve array order for reconstitution)
-- Primary key is **composite** on parent key + ordinal (e.g., `PRIMARY KEY (School_DocumentId, Ordinal)`)
+- Primary key is `CollectionItemId`
 - Scalar columns for the element object
 - Reference/descriptor FK columns as above
-- Unique constraints derived from `arrayUniquenessConstraints` when available (often separate from the PK)
+- Unique constraint on `(ParentScope, Ordinal)` to preserve sibling ordering
+- Unique constraints derived from the compiled collection semantic identity (separate from the PK). For a persisted multi-item collection scope, that identity is the non-empty ordered member set derived from the applicable `arrayUniquenessConstraints` entry for the scope; DMS does not fall back to ordinals or hidden/internal row ids, and validation/compilation fails if a supported model cannot supply that identity.
 
-Nested collections add the parent’s ordinal(s) into the key and FK, avoiding generated IDs and `RETURNING`/`OUTPUT` key-capture round trips.
+Nested collections attach to the immediate parent collection row by `ParentCollectionItemId`, while extension/common-type scope tables under collections use the same stable collection row identity.
 
 #### Abstract identity tables for polymorphic references
 
@@ -736,6 +760,8 @@ CREATE TABLE IF NOT EXISTS edfi.School (
 -- Example collection table: School has a collection of GradeLevelDescriptor values
 -- (e.g., 1st, 2nd, 3rd, ...) stored as rows. Ordinal preserves client order.
 CREATE TABLE IF NOT EXISTS edfi.SchoolGradeLevel (
+    CollectionItemId bigint PRIMARY KEY DEFAULT nextval('dms.CollectionItemIdSequence'),
+
     School_DocumentId bigint NOT NULL
                       REFERENCES edfi.School(DocumentId) ON DELETE CASCADE,
 
@@ -744,13 +770,15 @@ CREATE TABLE IF NOT EXISTS edfi.SchoolGradeLevel (
     GradeLevelDescriptor_DescriptorId bigint NOT NULL
                       REFERENCES dms.Descriptor(DocumentId),
 
-    CONSTRAINT PK_SchoolGradeLevel PRIMARY KEY (School_DocumentId, Ordinal),
+    CONSTRAINT UX_SchoolGradeLevel_Ordinal UNIQUE (School_DocumentId, Ordinal),
     CONSTRAINT UX_SchoolGradeLevel UNIQUE (School_DocumentId, GradeLevelDescriptor_DescriptorId)
 );
 
--- Example nested collection with composite keys:
+-- Example nested collection with stable internal child-row identities:
 -- School -> addresses[*] -> periods[*]
 CREATE TABLE IF NOT EXISTS edfi.SchoolAddress (
+    CollectionItemId bigint PRIMARY KEY DEFAULT nextval('dms.CollectionItemIdSequence'),
+
     School_DocumentId bigint NOT NULL
                       REFERENCES edfi.School(DocumentId) ON DELETE CASCADE,
 
@@ -762,22 +790,25 @@ CREATE TABLE IF NOT EXISTS edfi.SchoolAddress (
     StreetNumberName varchar(150) NULL,
     City varchar(30) NULL,
 
-    CONSTRAINT PK_SchoolAddress PRIMARY KEY (School_DocumentId, Ordinal),
+    CONSTRAINT UX_SchoolAddress_Ordinal UNIQUE (School_DocumentId, Ordinal),
+    CONSTRAINT UX_SchoolAddress_CollectionItemRoot UNIQUE (CollectionItemId, School_DocumentId),
     CONSTRAINT UX_SchoolAddress UNIQUE (School_DocumentId, AddressTypeDescriptor_DescriptorId)
 );
 
 CREATE TABLE IF NOT EXISTS edfi.SchoolAddressPeriod (
+    CollectionItemId bigint PRIMARY KEY DEFAULT nextval('dms.CollectionItemIdSequence'),
+
     School_DocumentId bigint NOT NULL,
-    AddressOrdinal int NOT NULL,
+    ParentCollectionItemId bigint NOT NULL,
     Ordinal int NOT NULL,
 
     BeginDate date NOT NULL,
     EndDate date NULL,
 
-    CONSTRAINT PK_SchoolAddressPeriod PRIMARY KEY (School_DocumentId, AddressOrdinal, Ordinal),
-    CONSTRAINT FK_SchoolAddressPeriod_SchoolAddress FOREIGN KEY (School_DocumentId, AddressOrdinal)
-        REFERENCES edfi.SchoolAddress (School_DocumentId, Ordinal) ON DELETE CASCADE,
-    CONSTRAINT UX_SchoolAddressPeriod UNIQUE (School_DocumentId, AddressOrdinal, BeginDate)
+    CONSTRAINT FK_SchoolAddressPeriod_SchoolAddress FOREIGN KEY (ParentCollectionItemId, School_DocumentId)
+        REFERENCES edfi.SchoolAddress (CollectionItemId, School_DocumentId) ON DELETE CASCADE,
+    CONSTRAINT UX_SchoolAddressPeriod_Ordinal UNIQUE (ParentCollectionItemId, Ordinal),
+    CONSTRAINT UX_SchoolAddressPeriod UNIQUE (ParentCollectionItemId, BeginDate)
 );
 
 CREATE TABLE IF NOT EXISTS edfi.StudentSchoolAssociation (
@@ -815,7 +846,7 @@ Extension projects and resource extensions should follow a consistent “separat
   - extension collection tables: `{ResourceName}Extension{CollectionSuffix}` (e.g., `sample.ContactExtensionAddress`)
 - For `isResourceExtension: true` resources (and other `_ext` sites), store extension fields in:
   - a 1:1 extension root row keyed by `DocumentId` (FK to the base resource root table), and
-  - extension scope/collection tables keyed to the same composite keys as the base scope they extend (root + ordinals) so extension rows attach deterministically and cascade deletes cleanly.
+  - extension scope/collection tables keyed to the stable identity of the base scope they extend (`DocumentId` for root scope, `CollectionItemId` for collection/common-type scopes) so extension rows attach deterministically and cascade deletes cleanly.
 
 See [extensions.md](extensions.md) for the normative mapping rules for `_ext` (resource + common-type extensions, nested collections, and multiple extension projects).
 
@@ -882,16 +913,15 @@ Note: SQL examples in this directory may omit quoting for readability. The DDL g
 
 **Primary keys**
 - Root tables: `DocumentId` (PK + FK → `dms.Document(DocumentId)`)
-- Child tables use composite keys (see `flattening-reconstitution.md`):
-  - key column order is stable: parent key parts first, then `Ordinal`
-  - parent key parts include:
-    - the root `DocumentId`, plus
-    - any ancestor ordinals (in root-to-leaf order)
+- Collection tables: `CollectionItemId`
+- Root-scope extension tables: `DocumentId`
+- Collection/common-type extension scope tables: the owning base row’s collection item id (e.g., `BaseCollectionItemId`)
 
-**Parent key part columns (child tables)**
-- Root document id key part: `{RootBaseName}_DocumentId` (e.g., `School_DocumentId`)
-- Ancestor ordinals:
-  - `{ParentCollectionBaseName}Ordinal` (e.g., `AddressOrdinal`)
+**Parent / scope locator columns**
+- Root document scope on collection tables: `{RootBaseName}_DocumentId` (e.g., `School_DocumentId`); required on every collection table, including nested and extension child tables
+- Nested collection parent scope: `ParentCollectionItemId`
+- Collection/common-type extension scope parent: `BaseCollectionItemId`
+- `Ordinal` remains the standard sibling-order column name on collection tables
 
 **Reference and descriptor FK columns**
 - Resource references: `{ReferenceBaseName}_DocumentId`

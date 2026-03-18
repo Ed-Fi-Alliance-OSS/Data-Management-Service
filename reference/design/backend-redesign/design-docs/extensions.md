@@ -53,7 +53,7 @@ Table naming patterns come from `reference/design/flattening-metadata-design.md`
 - extension root tables are named `{ResourceName}Extension`
 - extension collection tables are named `{ResourceName}Extension{CollectionSuffix}` using PascalCase
 
-This redesign keeps those table-name patterns, while using the redesigned key strategy (`DocumentId` and composite parent+ordinal keys).
+This redesign keeps those table-name patterns, while using the redesigned key strategy (`DocumentId` for root scope and `CollectionItemId` for collection/common-type scopes).
 
 ### Physical database schemas
 
@@ -105,28 +105,53 @@ For a base resource `R` and an extension project endpoint name `p` where `$._ext
 **Row presence rule**
 - If the document has no values under `$._ext.{p}` (absent or empty after Core pruning), do not store a row in `{R}Extension`.
 
-### 2) `_ext` inside common types and collections → extension scope tables aligned to base keys
+### 2) `_ext` inside common types and collections → extension scope tables aligned to stable base identities
 
-When an `_ext.{p}` subtree appears inside a base table scope (root or a collection element), store it in a table keyed exactly like the base scope it extends.
+When an `_ext.{p}` subtree appears inside a base table scope (root or a collection element), store it in a table keyed to the stable identity of the base scope it extends.
 
-Example: core has `edfi.SchoolAddress` keyed by `(School_DocumentId, Ordinal)`. If `_ext.sample` exists under `$.addresses[*]`, create:
+Example: core has `edfi.SchoolAddress` with internal key `CollectionItemId`. If `_ext.sample` exists under `$.addresses[*]`, create:
 
 - `sample.SchoolExtensionAddress`
-  - key columns: `(School_DocumentId, Ordinal)`
-  - FK back to `edfi.SchoolAddress(School_DocumentId, Ordinal)` ON DELETE CASCADE
+  - key column: `BaseCollectionItemId`
+  - FK back to `edfi.SchoolAddress(CollectionItemId)` ON DELETE CASCADE
   - extension scalar/ref/descriptor columns from the schema under that `_ext.sample` site
 
 This “key alignment” rule ensures:
 - no orphan extension rows,
 - correct delete cascades,
-- deterministic reconstitution (extension rows attach to the correct base element by key/ordinal).
+- deterministic reconstitution (extension rows attach to the correct base element by stable base identity).
 
-### 3) Arrays under `_ext` → extension child tables (parent+ordinal keys)
+**Row presence rule**
+- If a collection/common-type `_ext.{p}` site has no values after Core pruning, do not store an aligned extension scope row.
+- If that `_ext.{p}` site has any persisted values, including descendant extension child collections, materialize the aligned extension scope row so child tables have a stable immediate parent anchor.
 
-Arrays inside an extension subtree create extension child tables using the same parent+ordinal strategy as core collections.
+### 3) Arrays under `_ext` → extension child tables (`CollectionItemId` + root document scope + parent-scope keys)
+
+Arrays inside an extension subtree create extension child tables using the same `CollectionItemId` + root document scope + parent-scope strategy as core collections.
 
 Naming follows the old pattern:
 - `{R}Extension{Suffix}` (or nested suffix) using PascalCase base names derived from the array property path.
+
+See [Example](#example-contact--sample-extension-resource--common-type) for explicit root-level and collection-aligned extension child-table key shapes.
+
+### 3a) Foreign-key chains and delete semantics for extension child tables
+
+- Root-level extension child collections reuse `<Root>_DocumentId` as both:
+  - the root locator for hydration/reconstitution and plan addressing, and
+  - the immediate parent key for the root-level extension row `{ProjectSchema}.{Resource}Extension(DocumentId)`.
+- For root-level extension child collections, delete propagation follows the extension-parent chain:
+  - base root delete cascades to `{ProjectSchema}.{Resource}Extension`,
+  - `{ProjectSchema}.{Resource}Extension` delete cascades to the root-level extension child rows through that same `<Root>_DocumentId` column.
+- Because the extension-parent chain already reaches the child rows, the child table does not need a second independent cascading FK directly to the base root table merely to restate root scope. The column still serves as the root locator, but delete propagation stays on the immediate-parent chain to avoid redundant cascade paths.
+- Collection-aligned extension child collections store `<Root>_DocumentId` plus `BaseCollectionItemId`. Their immediate parent is the aligned extension scope row keyed by `BaseCollectionItemId`, and that aligned extension scope row is itself anchored to the owning base collection/common-type row.
+- Delete propagation for collection-aligned extension child collections therefore runs:
+  - base collection/common-type row delete cascades to the aligned extension scope row,
+  - aligned extension scope row delete cascades to the aligned extension child collection rows.
+- Nested extension child collections use the same pattern as core nested collections:
+  - store `CollectionItemId`, `<Root>_DocumentId`, `ParentCollectionItemId`, and `Ordinal`,
+  - attach to the immediate parent extension child row through `(ParentCollectionItemId, <Root>_DocumentId)`,
+  - cascade deletes from the immediate parent extension child row rather than from a separate direct root FK.
+- In all cases, the root `<Root>_DocumentId` column remains part of the physical row shape for addressing, batching, and deterministic reconstitution, while delete semantics follow the immediate parent chain.
 
 ### 4) References and descriptors inside extensions
 
@@ -147,10 +172,13 @@ During write materialization, extension row buffers are produced alongside core 
 
 1. Traverse the JSON once (as in the core flattener).
 2. Whenever an `_ext.{p}` subtree is encountered at a table scope, materialize the corresponding extension row for that scope.
-3. Apply the same “replace” strategy as the core baseline:
-   - delete existing extension rows for the document (root extension tables + extension child tables) and insert the current rows.
+3. Apply the same merge strategy as the core collection writer:
+   - matched extension-scope rows keep their stable base identity and overlay visible request/resolved values onto stored row values using compiled bindings plus `HiddenMemberPaths`,
+   - new extension child rows receive new `CollectionItemId`s,
+   - omitted visible extension child rows are deleted,
+   - hidden profile-scoped extension rows and hidden extension columns on matched rows are preserved.
 
-This keeps semantics aligned with “replace document” and avoids requiring stable per-element IDs.
+This keeps extension semantics aligned with the core collection merge rules and avoids exposing per-element IDs in the API surface.
 
 ## Reconstitution (GET/query) integration
 
@@ -169,6 +197,8 @@ Assume:
 - extension project endpoint name: `sample` → schema `sample`
 - base resource: `Contact`
 - base collection: `addresses[*]`
+- root-level extension child collection: `$._ext.sample.interventions[*]`
+- collection-aligned extension child collection: `$.addresses[*]._ext.sample.services[*]`
 
 Core tables:
 - `edfi.Contact`
@@ -177,3 +207,29 @@ Core tables:
 Sample extension tables:
 - `sample.ContactExtension` (resource-level extension fields under `$._ext.sample`)
 - `sample.ContactExtensionAddress` (extension fields under `$.addresses[*]._ext.sample`)
+- `sample.ContactExtensionIntervention` (root-level extension child collection under `$._ext.sample.interventions[*]`)
+- `sample.ContactExtensionAddressService` (collection-aligned extension child collection under `$.addresses[*]._ext.sample.services[*]`)
+
+Required keys for the extension child tables:
+
+1. Root-level extension child collection: `sample.ContactExtensionIntervention`
+   - `CollectionItemId`: stable child-row identity
+   - `Contact_DocumentId`: required root-scope key for the `Contact` document
+   - immediate parent-scope key: `Contact_DocumentId` again, because the parent scope is the root-level extension row `sample.ContactExtension(DocumentId)`
+   - `Ordinal`: sibling order within `$._ext.sample.interventions[*]`
+   - FK/delete chain:
+     - `Contact_DocumentId` points to `sample.ContactExtension(DocumentId)` as the immediate parent and uses `ON DELETE CASCADE`
+     - deleting `edfi.Contact(DocumentId)` cascades to `sample.ContactExtension(DocumentId)`, which then cascades to `sample.ContactExtensionIntervention`
+     - no second independent cascading FK to `edfi.Contact(DocumentId)` is required on the child table; `Contact_DocumentId` still serves as the root locator for plan/address purposes
+
+2. Collection-aligned extension child collection: `sample.ContactExtensionAddressService`
+   - `CollectionItemId`: stable child-row identity
+   - `Contact_DocumentId`: required root-scope key for the `Contact` document
+   - `BaseCollectionItemId`: required immediate parent-scope key, aligned to the stable base address row identity for `$.addresses[*]`
+   - `Ordinal`: sibling order within `$.addresses[*]._ext.sample.services[*]`
+   - FK/delete chain:
+     - `BaseCollectionItemId` points to `sample.ContactExtensionAddress(BaseCollectionItemId)` as the immediate parent scope
+     - `sample.ContactExtensionAddress(BaseCollectionItemId)` is itself aligned to `edfi.ContactAddress(CollectionItemId)`, so deleting the base address row cascades through the aligned extension scope to `sample.ContactExtensionAddressService`
+     - `Contact_DocumentId` remains on the child table as the root locator for hydration, addressing, and deterministic ordering, but delete propagation still follows the immediate parent chain
+
+In both cases, references and descriptors inside the extension child rows follow the same `..._DocumentId` / `..._DescriptorId` rules as core rows. If an extension child collection nests another extension child collection, the nested table keeps the root `Contact_DocumentId`, gets its own `CollectionItemId`, and uses `(ParentCollectionItemId, Contact_DocumentId)` to align to the immediate parent extension child row and cascade deletes through that parent-child chain.

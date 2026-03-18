@@ -14,8 +14,9 @@ Derive extension table models for Ed-Fi-style extensions (`_ext`) as defined in 
 - Create extension tables in the extension project schema:
   - `{Resource}Extension` for resource-level extension fields (1:1 by `DocumentId`),
   - scope-aligned extension tables for `_ext` inside collections/common types,
-  - extension child tables for arrays under `_ext` using parent+ordinal keys.
+  - extension child tables for arrays under `_ext` using stable child keys plus the immediate stable parent locator (`..._DocumentId` for root-level `_ext` arrays, `BaseCollectionItemId` for collection/common-type-aligned `_ext` arrays), with nested extension child tables switching to `ParentCollectionItemId` once the immediate parent is another extension child row.
 - Apply the same reference/descriptor binding rules inside extensions.
+- Materialize aligned extension scope rows whenever an `_ext` site has any persisted values, including descendant extension child collections, so those child tables have a stable immediate parent chain.
 
 Note: The current base-schema traversal (DMS-929) skips `_ext` during column derivation and enforces that all descriptor
 paths from `documentPathsMapping` are encountered in the JSON schema walk. Once descriptor paths exist under extension
@@ -33,10 +34,13 @@ This story contributes extension schemas/tables into the unified `DerivedRelatio
 ## Acceptance Criteria
 
 - Extension project schemas are created deterministically from resolved `ProjectEndpointName`.
-- Extension table keys align exactly to the base scope keys they extend (including ordinals).
+- Extension table keys align exactly to the stable base scope keys they extend:
+  - root-level `_ext` child collections use `CollectionItemId` plus the root `..._DocumentId`, with that same `..._DocumentId` column serving as the immediate parent locator to the extension root row rather than requiring a second direct root-cascade edge,
+  - collection/common-type-aligned `_ext` child collections use `CollectionItemId`, the root `..._DocumentId`, and `BaseCollectionItemId`, with the aligned extension scope row keyed by `BaseCollectionItemId` acting as the immediate parent in the FK chain, and
+  - nested extension child collections attach through `ParentCollectionItemId` once the immediate parent is another extension child table.
 - Extension table naming follows the patterns described in `reference/design/backend-redesign/design-docs/extensions.md`.
 - Unknown `_ext` project keys fail fast at model compilation time.
-- A small fixture with `_ext` at root and inside a collection produces the expected extension table inventory.
+- A small fixture with `_ext` at root and inside a collection produces the expected extension table inventory, including one root-level extension child collection, one collection-aligned extension child collection, and a nested extension child collection that attaches through `ParentCollectionItemId`.
 
 ## Tasks
 
@@ -45,7 +49,9 @@ This story contributes extension schemas/tables into the unified `DerivedRelatio
 3. Implement extension table derivation rules (root extension, scope extension, extension arrays).
 4. Integrate reference/descriptor binding into extension table derivation.
 5. Add unit tests for:
-   1. root `_ext` + collection `_ext`,
-   2. multiple extension projects,
-   3. unknown `_ext` key failure.
+   1. root `_ext` + root-level extension child collection,
+   2. collection `_ext` + collection-aligned extension child collection,
+   3. nested extension child collection below another extension child collection,
+   4. multiple extension projects,
+   5. unknown `_ext` key failure.
 6. Wire this derivation into the `DMS-1033` set-level builder as the whole-schema extension pass.

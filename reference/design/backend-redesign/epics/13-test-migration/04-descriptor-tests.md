@@ -21,6 +21,7 @@ This story complements the DDL generator harness by validating runtime descripto
 - Integration tests validate:
   - descriptor POST creates a retrievable descriptor resource,
   - descriptor PUT updates non-identity fields and updates `_etag/_lastModifiedDate`,
+  - descriptor PUT with unchanged non-identity fields is a successful no-op that preserves `_etag/_lastModifiedDate/ChangeVersion`,
   - descriptor PUT rejects identity changes (`Namespace`/`CodeValue`),
   - descriptor queries filter correctly on key fields and page deterministically,
   - a descriptor-referencing resource write fails fast when a required descriptor does not exist and succeeds once seeded/created.
@@ -28,6 +29,6 @@ This story complements the DDL generator harness by validating runtime descripto
 
 ## Tasks
 
-1. Add runtime integration tests for descriptor create/update/query behaviors.
+1. Add runtime integration tests for descriptor create/update/query behaviors, including unchanged PUT no-op behavior.
 2. Add a “descriptor reference required” test that exercises write-time descriptor resolution and error mapping.
 3. When descriptor seeding is enabled, add an integration test that seeds a small `InterchangeDescriptors` input and verifies descriptors become resolvable.

@@ -15,12 +15,13 @@ Implement write-side stamping per `reference/design/backend-redesign/design-docs
   - `dms.Document.IdentityVersion` and `dms.Document.IdentityLastModifiedAt`,
   - and treat it as a representation change (also bump content stamps).
 
-No-op detection is best-effort and optional; correctness requires only that stamps change when the served representation changes.
+A successful update request that produces no persisted-row changes is not a representation change and must not allocate new stamps.
 
 ## Acceptance Criteria
 
 - Representation changes update `ContentVersion` and `ContentLastModifiedAt`.
 - Identity projection changes update `IdentityVersion` and `IdentityLastModifiedAt` and also update `ContentVersion`.
+- Successful no-op updates do **not** change `ContentVersion`, `ContentLastModifiedAt`, `IdentityVersion`, or `IdentityLastModifiedAt`.
 - FK-cascade updates to propagated identity columns cause the same stamping behavior as direct writes.
 - **ODS watermark-only compatibility**: when one statement/trigger stamps N distinct `DocumentId`s, it allocates N distinct `ContentVersion` values (no “one version per statement” stamping).
 
@@ -35,5 +36,6 @@ No-op detection is best-effort and optional; correctness requires only that stam
 3. Add unit/integration tests for:
    1. content-only changes,
    2. identity projection changes,
-   3. indirect reference-identity changes via cascades.
-   4. multi-row DML updates that stamp multiple documents in one statement and assert `ContentVersion` values are distinct (especially on SQL Server).
+   3. indirect reference-identity changes via cascades,
+   4. successful no-op updates that leave stored stamps unchanged, and
+   5. multi-row DML updates that stamp multiple documents in one statement and assert `ContentVersion` values are distinct (especially on SQL Server).

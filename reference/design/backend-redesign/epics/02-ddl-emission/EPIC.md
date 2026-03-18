@@ -27,3 +27,4 @@ Authorization objects remain out of scope.
 - `DMS-940` — `04-sql-canonicalization.md` — SQL canonicalization + deterministic ordering tests
 - `DMS-943` — `05-descriptor-ddl.md` — ODS-parity `dms.Descriptor` DDL (descriptor resources stored in `dms`)
 - `DMS-946` — `06-uuidv5-function.md` — Engine UUIDv5 helper function for deterministic `ReferentialId` recomputation
+- `DMS-1101` — `07-stable-collection-row-identity-ddl.md` — Emit `CollectionItemId`-based collection/common-type DDL

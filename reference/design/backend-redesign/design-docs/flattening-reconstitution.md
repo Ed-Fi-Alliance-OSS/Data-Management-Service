@@ -211,7 +211,7 @@ Note: C# types referenced below are defined in [7.3 Relational resource model](#
      - `Ordinal` (order preservation)
      - derived element columns
    - Each **object** node is **inlined** (except `_ext`): its scalar descendant properties become columns on the current table (with a deterministic prefix).
-     - `_ext` handling: treat each `_ext.{project}` subtree as belonging to that extension project’s schema and derive extension tables using the extension naming patterns (e.g., `{Resource}Extension`, `{Resource}Extension{Suffix}`) aligned to the owning scope’s key/ordinals (see [extensions.md](extensions.md)).
+     - `_ext` handling: treat each `_ext.{project}` subtree as belonging to that extension project’s schema and derive extension tables using the extension naming patterns (e.g., `{Resource}Extension`, `{Resource}Extension{Suffix}`) aligned to the owning scope’s stable identity (`DocumentId` for root scope, `CollectionItemId` for collection/common-type scopes; see [extensions.md](extensions.md)).
    - Each **scalar** node becomes a typed column on the current table.
 
 3. Apply `documentPathsMapping`:
@@ -235,6 +235,11 @@ Note: C# types referenced below are defined in [7.3 Relational resource model](#
 
 5. Apply `arrayUniquenessConstraints`:
    - create UNIQUE constraints on child tables based on the specified JSONPaths (mapped to columns)
+   - for each persisted multi-item collection scope, compile the semantic match identity from the applicable `arrayUniquenessConstraints` member set resolved to that scope; the compiled identity is the resulting non-empty ordered list of scope-relative bindings
+   - DMS does not synthesize collection identity from `Ordinal`, `CollectionItemId`, or a parent-only locator when that metadata is absent
+   - raw `arrayUniquenessConstraints` metadata may be empty only when no persisted multi-item collection scope in the effective schema requires semantic matching
+   - the supported DMS boundary is valid MetaEd-generated models with the relevant validator set applied; for example, common-backed collections rely on validators such as `CommonPropertyCollectionTargetMustContainIdentity` to ensure the target common exposes identity members
+   - if any persisted multi-item collection scope still cannot produce a non-empty semantic identity after that derivation, validation/compilation MUST fail before runtime merge execution
 
 6. Apply naming rules + `nameOverrides`:
    - resolve all table and column names deterministically
@@ -249,18 +254,23 @@ Note: C# types referenced below are defined in [7.3 Relational resource model](#
    - Use `{schema}.{A}Identity` as the composite-FK target for abstract reference sites; FKs use `ON UPDATE CASCADE` (identity tables are trigger-maintained) to propagate identity changes and enforce membership/type at the DB level.
    - (Optional) also emit `{schema}.{A}_View` as a narrow `UNION ALL` projection for diagnostics/ad-hoc querying.
 
-### 4.2 Recommended child-table keys (composite parent+ordinal)
+### 4.2 Recommended child-table keys (stable internal collection identity)
 
-To avoid `INSERT ... RETURNING` identity capture and to batch nested collections efficiently, instead of a surrogate key use:
+To preserve stable row identity across profile-scoped merges, nested descendants, and extension scopes, use:
 
 - Root table PK: `(DocumentId)`
-- Child table PK: `(ParentKeyPart..., Ordinal)`
-- Nested child PK: `(DocumentId, ParentOrdinal(s)..., Ordinal)`
+- Collection table PK: `(CollectionItemId)`
+- Root document scope on every collection table: `<Root>_DocumentId`
+- Nested collection parent scope: `ParentCollectionItemId`
+- Nested parent/root consistency: `(ParentCollectionItemId, <Root>_DocumentId)` → parent `(CollectionItemId, <Root>_DocumentId)`
+- Sibling order: unique `(ParentScope, Ordinal)`
+- Semantic match identity: unique `(ParentScope, <compiled collection identity...>)`; `<compiled collection identity...>` is the non-empty ordered member set derived from the applicable `arrayUniquenessConstraints` entry for that scope, and DMS does not fall back to `Ordinal`, `CollectionItemId`, or parent-only matching when that metadata is missing
 
 Example:
 
 ```sql
 CREATE TABLE IF NOT EXISTS edfi.SchoolAddress (
+    CollectionItemId bigint NOT NULL DEFAULT nextval('dms.CollectionItemIdSequence'),
     School_DocumentId bigint NOT NULL,
     Ordinal int NOT NULL,
 
@@ -269,22 +279,26 @@ CREATE TABLE IF NOT EXISTS edfi.SchoolAddress (
 
     StreetNumberName varchar(150) NULL,
 
-    CONSTRAINT PK_SchoolAddress PRIMARY KEY (School_DocumentId, Ordinal),
+    CONSTRAINT PK_SchoolAddress PRIMARY KEY (CollectionItemId),
+    CONSTRAINT UX_SchoolAddress_Ordinal UNIQUE (School_DocumentId, Ordinal),
+    CONSTRAINT UX_SchoolAddress_CollectionItemRoot UNIQUE (CollectionItemId, School_DocumentId),
     CONSTRAINT UX_SchoolAddress UNIQUE (School_DocumentId, AddressTypeDescriptor_DescriptorId)
 );
 
 CREATE TABLE IF NOT EXISTS edfi.SchoolAddressPeriod (
+    CollectionItemId bigint NOT NULL DEFAULT nextval('dms.CollectionItemIdSequence'),
     School_DocumentId bigint NOT NULL,
-    AddressOrdinal int NOT NULL,
+    ParentCollectionItemId bigint NOT NULL,
     Ordinal int NOT NULL,
 
     BeginDate date NOT NULL,
     EndDate date NULL,
 
-    CONSTRAINT PK_SchoolAddressPeriod PRIMARY KEY (School_DocumentId, AddressOrdinal, Ordinal),
-    CONSTRAINT FK_SchoolAddressPeriod_SchoolAddress FOREIGN KEY (School_DocumentId, AddressOrdinal)
-        REFERENCES edfi.SchoolAddress (School_DocumentId, Ordinal) ON DELETE CASCADE,
-    CONSTRAINT UX_SchoolAddressPeriod UNIQUE (School_DocumentId, AddressOrdinal, BeginDate)
+    CONSTRAINT PK_SchoolAddressPeriod PRIMARY KEY (CollectionItemId),
+    CONSTRAINT FK_SchoolAddressPeriod_SchoolAddress FOREIGN KEY (ParentCollectionItemId, School_DocumentId)
+        REFERENCES edfi.SchoolAddress (CollectionItemId, School_DocumentId) ON DELETE CASCADE,
+    CONSTRAINT UX_SchoolAddressPeriod_Ordinal UNIQUE (ParentCollectionItemId, Ordinal),
+    CONSTRAINT UX_SchoolAddressPeriod UNIQUE (ParentCollectionItemId, BeginDate)
 );
 ```
 
@@ -296,7 +310,7 @@ CREATE TABLE IF NOT EXISTS edfi.SchoolAddressPeriod (
 
 For a given request, backend already has:
 - `ResourceInfo` (project/resource/version)
-- validated/coerced JSON body (`JsonNode` / `JsonElement`) after Core canonicalization:
+- validated/coerced JSON body (`JsonNode` / `JsonElement`) after Core canonicalization and writable-profile filtering when applicable:
   - overposted fields (JSON Schema `additionalProperties`) removed
   - null-valued properties removed
   - empty arrays (and arrays of empty objects) removed
@@ -305,6 +319,15 @@ For a given request, backend already has:
   - resource referential id
   - descriptor references (with concrete JSON paths, including indices)
   - document references (referential ids + concrete reference-object JSON paths, including indices; grouped by wildcard path; requires addition of `DocumentReference.Path` as described below)
+- optional `ProfileAppliedWriteRequest` for profile-constrained writes:
+  - `WritableRequestBody`: the request body after Core applies writable profile semantics and normal canonicalization
+  - `RootResourceCreatable`: Core-owned create/no-create decision for a new root instance under the active writable profile
+  - `RequestScopeStates`: structured request-side non-collection scope metadata keyed to compiled `JsonScope`, using the canonical visibility states `VisiblePresent`, `VisibleAbsent`, and `Hidden`
+  - `VisibleRequestCollectionItems`: structured request-side collection/common-type/extension item metadata keyed to compiled `JsonScope`, including `VisibleRequestCollectionItem.Creatable`
+- optional `ProfileAppliedWriteContext`, assembled inside the backend write pipeline after current-state load for profile-constrained update/upsert flows:
+  - `VisibleStoredBody`: the current stored document after Core applies the same writable profile semantics used for `WritableRequestBody`
+  - `StoredScopeStates`: structured stored-side non-collection scope metadata keyed to compiled `JsonScope`, using the same `VisiblePresent`, `VisibleAbsent`, and `Hidden` states
+  - `VisibleStoredCollectionRows`: structured stored-side collection/common-type/extension row metadata keyed to compiled `JsonScope`, including `HiddenMemberPaths`
 
 ### 5.2 Reference & descriptor resolution (bulk)
 
@@ -319,15 +342,16 @@ Cache these lookups aggressively (L1/L2 optional), but only populate caches afte
 
 ### 5.2.1 Document references inside nested collections
 
-When a document reference appears inside a collection (or nested collection), its FK is stored in a **child table row** whose key includes one or more **ordinals**. To set the correct FK column without per-row JSONPath evaluation and per-row referential id hashing, we need a stable way to answer:
+When a document reference appears inside a collection (or nested collection), its FK is ultimately stored in a child-table row keyed by `CollectionItemId`. During request traversal, however, the flattener still reaches the incoming collection item by its concrete array location. To set the correct FK column without per-row JSONPath evaluation and per-row referential id hashing, we need a stable way to answer:
 
 > For this `DocumentReferenceBinding`, and for this row’s **ordinal path**, what is the referenced `DocumentId`?
 
 DMS uses a single required approach: Core emits each reference instance *with its concrete JSON location (indices)* so the backend can address it by ordinal path.
 
-- Keeps referential id computation centralized in Core; flattening becomes pure lookup; nested collections work naturally with composite parent+ordinal keys.
+- Keeps referential id computation centralized in Core; flattening becomes pure lookup; incoming collection traversal still works naturally even though stored row identity is `CollectionItemId`.
 - Requires enhancing Core’s extracted reference model to carry location; backend builds a small per-request index.
-- This is the **only** required Core change in this redesign.
+- For baseline non-profile relational writes, this is the required Core extraction-model change in this redesign.
+- Profile-constrained collection merges additionally require the request/body-shaping and visibility-projection contract described in section 5.2.3.
 
 **What Core must provide (minimal enhancement)**
 
@@ -380,133 +404,148 @@ Write-path ordering (high level):
 Ownership-based authorization integration:
 - On create, stamp `dms.Document.CreatedByOwnershipTokenId` from the authenticated client context (not from request JSON) as described in `auth.md`.
 
+### 5.2.3 Profile write request and context assembly
+
+Profile semantics stay in Core. Backend MUST NOT evaluate profile member filters, value filters, or profile media-type rules while matching/deleting collection rows.
+
+For writes constrained by a profile, Core supplies request-scoped write shaping, and backend assembles the current-state-dependent visibility context after it loads the stored document. The backend-facing contract MUST be semantically equivalent to the contract defined in `profiles.md`:
+
+```csharp
+public enum ProfileVisibilityKind
+{
+    VisiblePresent,
+    VisibleAbsent,
+    Hidden
+}
+
+public sealed record ScopeInstanceAddress(
+    string JsonScope,
+    ImmutableArray<AncestorCollectionInstance> AncestorCollectionInstances
+);
+
+public sealed record AncestorCollectionInstance(
+    string JsonScope,
+    ImmutableArray<SemanticIdentityPart> SemanticIdentityInOrder
+);
+
+public sealed record CollectionRowAddress(
+    string JsonScope,
+    ScopeInstanceAddress ParentAddress,
+    ImmutableArray<SemanticIdentityPart> SemanticIdentityInOrder
+);
+
+public sealed record SemanticIdentityPart(string RelativePath, JsonNode? Value, bool IsPresent);
+
+public sealed record RequestScopeState(
+    ScopeInstanceAddress Address,
+    ProfileVisibilityKind Visibility,
+    bool Creatable
+);
+
+public sealed record VisibleRequestCollectionItem(
+    CollectionRowAddress Address,
+    bool Creatable
+);
+
+public sealed record StoredScopeState(
+    ScopeInstanceAddress Address,
+    ProfileVisibilityKind Visibility,
+    ImmutableArray<string> HiddenMemberPaths
+);
+
+public sealed record VisibleStoredCollectionRow(
+    CollectionRowAddress Address,
+    ImmutableArray<string> HiddenMemberPaths
+);
+
+public sealed record ProfileAppliedWriteRequest(
+    JsonNode WritableRequestBody,
+    bool RootResourceCreatable,
+    ImmutableArray<RequestScopeState> RequestScopeStates,
+    ImmutableArray<VisibleRequestCollectionItem> VisibleRequestCollectionItems
+);
+
+public sealed record ProfileAppliedWriteContext(
+    ProfileAppliedWriteRequest Request,
+    JsonNode VisibleStoredBody,
+    ImmutableArray<StoredScopeState> StoredScopeStates,
+    ImmutableArray<VisibleStoredCollectionRow> VisibleStoredCollectionRows
+);
+```
+
+Contract:
+
+- `ProfileAppliedWriteRequest.WritableRequestBody` is the request after Core applies the writable profile shape and the normal canonicalization rules.
+- `ProfileAppliedWriteRequest.RootResourceCreatable` is the Core-owned create/no-create decision backend must consult before creating `dms.Document` or root rows for a profile-constrained create.
+- Core MUST reject any writable profile definition that excludes a field required to compute the compiled semantic identity of a persisted multi-item collection scope.
+- Backend continues to own loading the current stored document as part of the normal update flow.
+- Backend MUST also provide Core with the mapping-set-scoped compiled-scope catalog or equivalent adapter described in `profiles.md`; Core does not inspect raw `TableWritePlan` / `CollectionMergePlan` types directly.
+- After that load, backend invokes a Core-owned projector/pure function with the current stored JSON plus that shared adapter to apply the same writable profile semantics and produce `VisibleStoredBody`, `StoredScopeStates`, and `VisibleStoredCollectionRows`.
+- Every `JsonScope` in the structured profile contract MUST align to the compiled `DbTableModel.JsonScope` / `TableWritePlan.TableModel.JsonScope` used by the executor.
+- `ScopeInstanceAddress` and `CollectionRowAddress` MUST be derived from the shared compiled-scope adapter plus JSON data using the normative algorithm in `profiles.md`; backend MUST NOT rewrite them from request ordinals or ad hoc JSON traversal.
+- `VisibleStoredCollectionRows` identifies visible persisted rows by compiled semantic identity in compiled member order. Backend MUST use that structured metadata, not array ordinals, to line up stored rows with request candidates.
+- Backend MUST fail fast on contract mismatches such as unknown `JsonScope`, mismatched ancestor collection ancestry, or stored-side profile metadata that cannot be lined up to the compiled current-state shape.
+- `HiddenMemberPaths` identifies stored row/scope members that backend must preserve on matched rows/scopes, including hidden inlined members and extension members, and uses the canonical scope-relative member-path vocabulary published by the shared adapter.
+- Hidden-member preservation uses a compiled-binding overlay model: for any matched stored row/scope that survives the write, backend overlays visible request-derived values onto current stored row values and keeps any binding governed by `HiddenMemberPaths`.
+- Hidden-vs-visible-absent for inlined common-type members comes from `StoredScopeStates` / `RequestScopeStates`, not from JSON object presence in `WritableRequestBody` or `VisibleStoredBody`.
+- `_ext` scopes follow the same model; because the redesign stores `_ext` in separate extension tables, scope visibility governs row delete/preserve decisions while `HiddenMemberPaths` governs column preservation within matched visible extension rows.
+- `VisibleStoredBody` remains the projected JSON view of currently visible stored state, but it is not by itself the executable merge contract for hidden-vs-absent or row-identity decisions.
+- This is an internal backend/Core contract only and MUST NOT change the public API surface.
+- When no profile-specific filtering applies, `ProfileAppliedWriteRequest` / `ProfileAppliedWriteContext` may be omitted and backend treats all current rows in each scope as visible.
+
 ### 5.3 Row materialization (in-memory)
 
 Using the compiled `ResourceWritePlan`, materialize:
 
 - one root row buffer
-- N child row buffers per child table
-- M extension row buffers (root + scope tables) for each extension project present in the document (see [extensions.md](extensions.md))
+- incoming collection-item candidates per collection scope
+- extension row buffers (root + scope tables) for each extension project present in the document (see [extensions.md](extensions.md))
 
-Important: materialization traverses each JSON array exactly once and does not perform any DB calls.
+Important: request traversal still walks each JSON array exactly once and uses `OrdinalPath` only to address the incoming payload instance. `OrdinalPath` is not the persisted child-row identity.
 
-Code sketch:
-```C#
-public sealed class ResourceFlattener : IResourceFlattener
-  {
-      public FlattenedWriteSet Flatten(
-          ResourceWritePlan plan,
-          long documentId,
-          JsonNode document,
-          IDocumentReferenceInstanceIndex documentReferences,
-          ResolvedReferenceSet resolved)
-      {
-          // keyed lookup for direct addressing; do not iterate this for execution order
-          var tablePlanByTable = plan.TablePlansInDependencyOrder.ToDictionary(s => s.TableModel.Table, s => s);
+Materialization is a two-phase process:
 
-          // pseudocode: plan.TableRows[...] = ...
-          var childRows = new Dictionary<DbTableName, IReadOnlyList<RowBuffer>>();
+1. Traverse the incoming JSON and build logical collection-item candidates:
+   - each candidate records its `JsonScope`, `OrdinalPath`, requested sibling order, scalar values, resolved FK values, and any extension subtrees
+   - for each persisted multi-item collection scope, compute the candidate’s semantic key from the compiled paths
+   - candidates for the same stable parent scope instance MUST already be unique by semantic key before storage binding begins; duplicate submitted candidates are request-validation failures, not merge tie-breakers
+2. After loading the current document graph for update flows, bind each candidate to storage:
+   - determine the visible persisted rows for each collection scope from `ProfileAppliedWriteContext.VisibleStoredCollectionRows` when present, keyed by compiled `JsonScope` plus stable parent address; otherwise treat all current rows in that scope as visible
+   - match to an existing visible row by semantic key
+   - allow insert of an unmatched visible request candidate only when the matching `VisibleRequestCollectionItem` is marked creatable
+   - matched rows keep their existing `CollectionItemId`
+   - unmatched rows receive `CollectionItemId`s reserved in one batch from `dms.CollectionItemIdSequence` before DML generation
 
-          // pseudocode: rootRow = plan.Root.CreateRow(documentId) + SetScalars + SetFks
-          var rootTable = plan.Model.Root.Table;
-          var rootTablePlan = tablePlanByTable[rootTable];
-
-          var rootRow = MaterializeRow(
-              resourcePlan: plan,
-              tablePlan: rootTablePlan,
-              documentId: documentId,
-              scopeNode: document,                       // root scope "$"
-              parentKeyParts: new[] { documentId },      // not important for root; keeps the signature uniform
-              ordinal: 0,
-              ordinalPath: ReadOnlySpan<int>.Empty,
-              documentReferences: documentReferences,
-              resolved: resolved);
-
-          // pseudocode: for each childPlan in plan.ChildrenDepthFirst ...
-          foreach (var tablePlan in plan.TablePlansInDependencyOrder)
-          {
-              var tableModel = tablePlan.TableModel;
-
-              if (tableModel.Table.Equals(rootTable))
-                  continue;
-
-              var rows = new List<RowBuffer>();
-
-              // pseudocode: for each element in EnumerateArray(documentJson, childPlan.ArrayPath)
-              foreach (var scope in EnumerateTableScopeInstances(document, tableModel.JsonScope))
-              {
-                  var ordinalPath = scope.OrdinalPath.AsSpan(); // e.g. [2] or [2,0]
-                  var ordinal = ordinalPath[^1];                // last index is this table row's Ordinal
-                  var parentKeyParts = BuildParentKeyParts(documentId, ordinalPath); // DocumentId + ancestor ordinals
-
-                  // pseudocode: row = childPlan.CreateRow(parentKey, ordinal) + SetScalars + SetFks
-                  rows.Add(MaterializeRow(
-                      resourcePlan: plan,
-                      tablePlan,
-                      documentId,
-                      scopeNode: scope.ScopeNode,               // the object at this table scope
-                      parentKeyParts: parentKeyParts,
-                      ordinal: ordinal,
-                      ordinalPath: ordinalPath,
-                      documentReferences: documentReferences,
-                      resolved: resolved));
-              }
-
-              // pseudocode: plan.TableRows[childPlan.Table] = rows
-              childRows[tableModel.Table] = rows;
-          }
-
-          return new FlattenedWriteSet(rootTable, rootRow, childRows);
-      }
-
-      private static long[] BuildParentKeyParts(long documentId, ReadOnlySpan<int> ordinalPath)
-      {
-          // PK scheme: (DocumentId, ancestorOrdinal1, ..., ancestorOrdinalN, Ordinal)
-          // ParentKeyParts = everything except this row's Ordinal.
-          var parentKeyParts = new long[1 + Math.Max(0, ordinalPath.Length - 1)];
-          parentKeyParts[0] = documentId;
-
-          for (var i = 0; i < ordinalPath.Length - 1; i++)
-              parentKeyParts[1 + i] = ordinalPath[i];
-
-          return parentKeyParts;
-      }
-
-      private readonly record struct TableScopeInstance(JsonNode ScopeNode, int[] OrdinalPath);
-
-      private static IEnumerable<TableScopeInstance> EnumerateTableScopeInstances(JsonNode root, JsonPathExpression jsonScope)
-      {
-          // This is the C# equivalent of the pseudocode's:
-          //   EnumerateArray(documentJson, childPlan.ArrayPath)
-          //
-          // Examples of what it should yield:
-          // - scope "$.addresses[*]"              -> (addresses[i], [i])
-          // - scope "$.addresses[*].periods[*]"   -> (periods[j],  [i, j])
-          //
-          // Implementation is intentionally omitted here; later code assumes
-          // you avoid JSONPath evaluation in the hot loop and track ordinals as you enumerate.
-          throw new NotImplementedException();
-      }
-
-      // MaterializeRow(...) is the helper shown later in the document.
-  }
-
-```
+The resulting write set is keyed by stable `CollectionItemId`s plus parent-scope locators (`..._DocumentId` on every collection table, and `ParentCollectionItemId` for nested collections).
 
 ### 5.4 Write execution (single transaction, no N+1)
 
 Within a single transaction:
 
 1. Write `dms.Document` and `dms.ReferentialIdentity`
-2. Write resource root row (`INSERT` or `UPDATE`)
-3. For each child table (depth-first):
-   - `DELETE FROM Child WHERE ParentKey = @documentId` (or rely on cascade from the parent resource root row if you do “delete then insert root” in some flows)
-   - bulk insert all rows for that child table in batches
-4. Write extension tables (per extension project schema):
-   - 1:1 extension root table rows (keyed by `DocumentId`)
-   - extension scope/collection rows keyed to the same composite keys as the base scope they extend (document id + ordinals)
-   - use the same baseline “replace” strategy as core collections (delete existing, insert current)
-5. No derived reverse-edge maintenance is required:
+2. Write the resource root row (`INSERT` or `UPDATE`)
+3. For each non-root 1:1 scope:
+   - `InsertSql` when the scope is visible and present, the row is newly present, and Core marked the scope creatable
+   - `UpdateSql` when the scope is visible and present and the scope already exists; build the final row by overlaying visible request/resolved values onto the stored row using compiled bindings plus `HiddenMemberPaths`
+   - `DeleteByParentSql` when the scope is visible and absent
+   - when the scope is inlined into the parent/root row and is visible and absent, clear only the visible compiled bindings for that scope and preserve bindings governed by `HiddenMemberPaths`
+   - preserve the scoped row or inlined stored values when the scope is hidden
+4. For each collection scope (depth-first, parent before child descendants):
+   - load the current sibling set
+   - determine the visible stored rows for that scope from `ProfileAppliedWriteContext.VisibleStoredCollectionRows` when present, keyed by compiled `JsonScope` and stable parent address; otherwise treat the full sibling set as visible
+   - match incoming candidates using the compiled semantic collection identity
+   - for profile-constrained merges, rely on semantic-key matching; Core must reject writable profiles that would hide fields required for that match
+   - insert unmatched visible request candidates only when Core marked the corresponding request collection item creatable
+   - reserve any needed `CollectionItemId`s from `dms.CollectionItemIdSequence` for unmatched rows
+   - update matched rows in place by `CollectionItemId`, using the same compiled-binding overlay model to preserve bindings governed by `HiddenMemberPaths`
+   - delete omitted visible rows by `CollectionItemId`
+   - bulk insert newly created rows
+   - recompute `Ordinal` for the stored sibling set using the deterministic post-merge sibling-order rule below
+5. Write extension tables using the same stable-identity rules:
+   - root extension rows keyed by `DocumentId`
+   - collection/common-type extension scope rows keyed by the owning base row identity
+   - extension child collections using the same merge strategy as core collections
+6. No derived reverse-edge maintenance is required:
    - referential-id impacts propagate through composite reference FKs anchored on canonical storage columns (binding/path columns may be generated aliases); use `ON UPDATE CASCADE` only when the referenced target has `allowIdentityUpdates=true` (otherwise `ON UPDATE NO ACTION`), and
    - row-local triggers maintain `dms.ReferentialIdentity` and update-tracking stamps in the same transaction.
 
@@ -515,16 +554,131 @@ Bulk insert options (non-codegen):
 - **PostgreSQL**: `COPY` via `NpgsqlBinaryImporter` for large collections
 - **SQL Server**: `SqlBulkCopy` for large collections
 
-### 5.5 Update behavior for collections (replace strategy)
+### 5.5 Update behavior for collections (merge strategy)
 
-Initial implementation should use **replace** semantics for arrays:
-- delete existing child rows for that parent
-- insert current payload rows
+Collection writes use merge semantics, not blanket delete-and-reinsert:
 
-This avoids diff logic and is consistent with how document databases treat “replace document”.
-Optimizations (delta updates) can be added later if needed, but require stable element keys and careful semantics.
+- Every persisted multi-item collection scope MUST have a compiled semantic key; match by `(ParentScope, SemanticKey)`.
+- Submitted request siblings that collide on `(ParentScope, SemanticKey)` are invalid input and MUST fail request validation before merge/no-op/DML. Relational unique constraints on collection tables remain defense in depth for races/corruption, not the primary client-visible behavior for duplicate submitted items.
+- For profile-constrained writes, visible stored rows are the rows enumerated in `ProfileAppliedWriteContext.VisibleStoredCollectionRows` for that collection scope and parent scope instance, in caller-visible order.
+- Core MUST reject any writable profile definition that excludes a field required to compute the semantic key of a persisted multi-item collection scope.
+- Hidden profile-scoped rows are current persisted rows for that collection scope instance that are not enumerated in `ProfileAppliedWriteContext.VisibleStoredCollectionRows`; they are never deleted or updated.
+- Hidden columns on matched rows are preserved by overlaying visible request-derived values onto the stored row while matched rows keep their existing `CollectionItemId`.
+- A change to a semantic-key value is treated as `delete old row + insert new row`, not as an in-place rename.
 
-### 5.6 Parameter limits and batching
+Order rules:
+
+- For semantic-key scopes, full-surface writes may reorder the full sibling set to the request order.
+- For semantic-key profile-scoped writes, start from the current full sibling sequence for that scope instance, identify the visible-row subsequence from `ProfileAppliedWriteContext.VisibleStoredCollectionRows`, replace that visible subsequence with the merged visible rows in request order, preserve hidden rows in their existing relative gaps, append any extra visible inserts after the last previously visible row for that scope instance (or at the end when there was no previously visible row), and then renumber `Ordinal` contiguously.
+- Hidden rows keep their relative order when profile filtering applies.
+- The same deterministic post-merge sibling-order rule MUST be used by both write execution and whole-document no-op detection.
+
+Worked examples:
+
+1. Semantic-key full-surface write:
+
+```text
+Stored siblings:  [A1(id=10), A2(id=11)]
+Request siblings: [A2(city=updated), A3(city=new)]
+Match mode:       SemanticKey
+Result:           delete id=10, update id=11 in place, insert A3 with new id=20
+Stored order:     [A2(id=11), A3(id=20)]
+```
+
+2. Semantic-key profile-scoped write with no previously visible row:
+
+```text
+Stored siblings:  [A1(hidden,id=10), A2(hidden,id=11)]
+Request siblings: [A3(city=new), A4(city=new)]
+Visible subset:   []
+Match mode:       SemanticKey
+Result:           insert A3 with new id=20, insert A4 with new id=21
+Stored order:     [A1(hidden,id=10), A2(hidden,id=11), A3(visible,id=20), A4(visible,id=21)]
+```
+
+3. Semantic-key profile-scoped write deleting all previously visible rows:
+
+```text
+Stored siblings:  [A1(hidden,id=10), A2(visible,id=11), A3(hidden,id=12), A4(visible,id=13)]
+Request siblings: []
+Visible subset:   [id=11, id=13]
+Match mode:       SemanticKey
+Result:           delete visible id=11 and id=13
+Stored order:     [A1(hidden,id=10), A3(hidden,id=12)]
+```
+
+4. Semantic-key profile-scoped write with visible updates plus inserts and hidden rows interleaved:
+
+```text
+Stored siblings:  [A1(hidden,id=10), A2(visible,id=11), A3(hidden,id=12), A4(visible,id=13)]
+Request siblings: [A4(city=updated), A2(city=updated), A5(city=new)]
+Visible subset:   [id=11, id=13]
+Match mode:       SemanticKey
+Result:           update visible id=13 and id=11 in place, insert A5 with new id=20
+Stored order:     [A1(hidden,id=10), A4(visible,id=13), A3(hidden,id=12), A2(visible,id=11), A5(visible,id=20)]
+```
+
+5. Semantic-key profile-scoped write for a nested collection scope:
+
+```text
+Scope instance:   $.sections[*].meetings[*] under ParentCollectionItemId=50
+Stored siblings:  [M1(hidden,id=100), M2(visible,id=101), M3(hidden,id=102)]
+Request siblings: [M2(room=updated), M4(room=new)]
+Visible subset:   [id=101]
+Match mode:       SemanticKey
+Result:           update visible id=101 in place, insert M4 with new id=110
+Stored order:     [M1(hidden,id=100), M2(visible,id=101), M3(hidden,id=102), M4(visible,id=110)]
+```
+
+6. Semantic-key profile-scoped write for an extension child collection scope:
+
+```text
+Scope instance:   $._ext.project.interventions[*].services[*] under ParentCollectionItemId=300
+Stored siblings:  [S1(hidden,id=401), S2(visible,id=402), S3(hidden,id=403)]
+Request siblings: [S2(code=updated), S4(code=new)]
+Visible subset:   [id=402]
+Match mode:       SemanticKey
+Result:           update visible id=402 in place, insert S4 with new id=450
+Stored order:     [S1(hidden,id=401), S2(visible,id=402), S3(hidden,id=403), S4(visible,id=450)]
+```
+
+### 5.6 Whole-document no-op detection (update fast path)
+
+For `PUT`, and for `POST` when upsert resolves to an existing document, the write path SHOULD add a
+whole-document no-op detection step before issuing DML. This is intentionally narrower than “API-surface partial updates”:
+if anything changed, the executor still uses the same merge semantics described above.
+
+High-level flow:
+- flatten the incoming request into logical collection-item candidates after reference/descriptor resolution,
+- materialize the current persisted rows for the existing `DocumentId`,
+- simulate the normal collection merge rules to produce the post-write relational rowset, and
+- compare the current rowset to that post-merge rowset table-by-table using ordered stored/writable column values, and
+- if all comparable rows are equal, treat the request as a successful no-op and skip data-modifying SQL.
+
+Implementation rule:
+- whole-document no-op detection MUST reuse the same merge-ordering and post-merge rowset-synthesis logic as the real executor, either directly or through a shared helper built from the same executor-facing `TableWritePlan` / `CollectionMergePlan` metadata. Do not add a separate profile-specific compare-only merge implementation.
+
+Comparison rules:
+- Compare in **storage space**, not by raw JSON text. The comparison should use resolved `..._DocumentId` /
+  `..._DescriptorId` values, canonical storage columns under key unification, row presence/absence for 1:1 scopes,
+  and collection ordinals after merge.
+- Exclude generated/read-only aliases and derived artifacts (`dms.ReferentialIdentity`, update-tracking stamps,
+  change journals) from the equality comparison. If the stored/writable rows are equal, those derived artifacts must
+  remain unchanged as well.
+- If any comparable row differs, fall back to the normal write execution path unchanged: root update/insert plus
+  merge semantics for scoped child data.
+
+Performance note:
+- The current-state read used for comparison should piggyback on the update flow’s existing “load current document”
+  roundtrip (used for auth/reconstitution). Do not add a dedicated “did anything change?” roundtrip by default; the
+  purpose of this optimization is to reduce write amplification without paying for an extra read roundtrip.
+
+Concurrency note:
+- A no-op decision computed before the write batch can become stale. The guarded execution rules are defined in
+  `transactions-and-concurrency.md`; in short, the write fast path must validate that the observed `ContentVersion`
+  is still current before short-circuiting.
+
+### 5.7 Parameter limits and batching
 
 Avoid huge single commands:
 - SQL Server parameter limit (~2100) means multi-row INSERT must be chunked.
@@ -578,7 +732,7 @@ OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY;
 ```
 
 All subsequent reads “hydrate” root + child tables by joining to that keyset.
-Extension tables (in extension project schemas) are hydrated the same way: select by the page keyset and attach by the same key/ordinal columns (see [extensions.md](extensions.md)).
+Extension tables (in extension project schemas) are hydrated the same way: select by the page keyset and attach by the same stable base-scope identities plus `Ordinal` ordering where applicable (see [extensions.md](extensions.md)).
 
 #### Query predicates for reference identity fields (local columns)
 
@@ -649,7 +803,7 @@ ORDER BY r.DocumentId;
 SELECT c.*
 FROM <schema>.<ChildTable> c
 JOIN page p ON p.DocumentId = c.<RootDocumentIdColumn>
-ORDER BY c.<RootDocumentIdColumn>, c.<ParentOrdinalColumns...>, c.Ordinal;
+ORDER BY c.<RootDocumentIdColumn>, c.<ParentScopeColumn>, c.Ordinal;
 ```
 
 This avoids N+1 queries and keeps network round-trips minimal (one command, multiple result sets).
@@ -692,21 +846,21 @@ DocumentId | SchoolId | NameOfInstitution | SchoolTypeDescriptor_DescriptorId
 **Result set 4 (child rows: `edfi.SchoolAddress`)**
 
 ```text
-School_DocumentId | Ordinal | AddressTypeDescriptor_DescriptorId | StreetNumberName | City
------------------ | ------- | --------------------------------- | ---------------- | -----------
-2001              | 0       | 91001                             | 123 Main St      | Springfield
-2001              | 1       | 91002                             | 45 Oak Ave       | Springfield
-2002              | 0       | 91001                             | 9 Pine Rd        | Centerville
+CollectionItemId | School_DocumentId | Ordinal | AddressTypeDescriptor_DescriptorId | StreetNumberName | City
+---------------- | ----------------- | ------- | --------------------------------- | ---------------- | -----------
+3001             | 2001              | 0       | 91001                             | 123 Main St      | Springfield
+3002             | 2001              | 1       | 91002                             | 45 Oak Ave       | Springfield
+3003             | 2002              | 0       | 91001                             | 9 Pine Rd        | Centerville
 ```
 
 **Result set 5 (nested child rows: `edfi.SchoolAddressPeriod`)**
 
 ```text
-School_DocumentId | AddressOrdinal | Ordinal | BeginDate   | EndDate
------------------ | ------------- | ------- | ----------- | ----------
-2001              | 0             | 0       | 2025-08-15  | NULL
-2001              | 0             | 1       | 2026-01-10  | NULL
-2002              | 0             | 0       | 2024-08-15  | 2025-06-30
+CollectionItemId | School_DocumentId | ParentCollectionItemId | Ordinal | BeginDate   | EndDate
+---------------- | ----------------- | ---------------------- | ------- | ----------- | ----------
+4001             | 2001              | 3001                   | 0       | 2025-08-15  | NULL
+4002             | 2001              | 3001                   | 1       | 2026-01-10  | NULL
+4003             | 2002              | 3003                   | 0       | 2024-08-15  | 2025-06-30
 ```
 
 ### 6.2 Assembly strategy (in-memory)
@@ -715,7 +869,7 @@ Reconstitution walks the derived table/tree model:
 
 1. Read the root rows into a dictionary `DocumentId → RootRow`.
 2. For each child table in dependency order (including extension scope/collection tables):
-   - group child rows by their parent key `(DocumentId, parentOrdinal...)`
+   - group child rows by their parent scope id (`DocumentId` for top-level collections, `CollectionItemId` for nested collections)
    - attach to the parent as a list, ordered by `Ordinal`
 3. Once all rows are attached, write JSON using a streaming writer.
 
@@ -817,6 +971,12 @@ public enum ColumnKind
     Scalar,
 
     /// <summary>
+    /// A stable internal collection-row identity column (stored as BIGINT).
+    /// Column naming convention: CollectionItemId
+    /// </summary>
+    CollectionKey,
+
+    /// <summary>
     /// A foreign key to a concrete resource row (stored as BIGINT DocumentId).
     /// Column naming convention: ..._DocumentId
     /// </summary>
@@ -836,8 +996,9 @@ public enum ColumnKind
     Ordinal,
 
     /// <summary>
-    /// A key column that comes from the parent table’s key (e.g. ParentDocumentId and parent ordinals).
-    /// With composite parent+ordinal keys, the child table’s key begins with one or more ParentKeyPart columns.
+    /// A scope-locator column that identifies the owning parent scope (e.g. the root DocumentId for top-level
+    /// collections, or ParentCollectionItemId for nested collections). These columns are not necessarily part of
+    /// the table primary key.
     /// </summary>
     ParentKeyPart
 }
@@ -986,14 +1147,17 @@ public sealed record RelationalResourceModel(
 /// </param>
 /// <param name="Key">
 /// The primary key for the table.
-/// Recommended scheme (composite parent+ordinal keys):
+/// Recommended scheme:
 /// - Root: (DocumentId)
-/// - Child: (ParentKeyPart..., Ordinal)
-/// Invariant: for any child table, the sequence of ParentKeyPart columns must match the parent table’s Key columns (by position).
+/// - Collection: (CollectionItemId)
+/// - Collection/common-type extension scope: the owning base row identity
+/// Parent-scope locator columns and Ordinal remain regular columns with UNIQUE constraints rather than forming the PK.
 /// </param>
 /// <param name="Columns">
 /// All columns in the table, including:
-/// - key columns (DocumentId / parent key parts / ordinal)
+/// - key columns (DocumentId or CollectionItemId)
+/// - parent-scope locator columns
+/// - Ordinal
 /// - scalar columns (typed)
 /// - document reference FK columns (..._DocumentId)
 /// - descriptor FK columns (..._DescriptorId)
@@ -1029,7 +1193,7 @@ public sealed record KeyUnificationClass(
 /// <summary>
 /// A primary key description. Key column kinds should be:
 /// - Root: a single ParentKeyPart column holding DocumentId
-/// - Child: ParentKeyPart columns followed by Ordinal
+/// - Collection: a single internal collection-row identity column
 /// </summary>
 public sealed record TableKey(IReadOnlyList<DbKeyColumn> Columns);
 
@@ -1052,7 +1216,7 @@ public abstract record ColumnStorage
 /// A table column description used for both DDL and runtime binding.
 /// </summary>
 /// <param name="ColumnName">Physical column name.</param>
-/// <param name="Kind">Semantic kind (Scalar, DocumentFk, DescriptorFk, Ordinal, ParentKeyPart).</param>
+/// <param name="Kind">Semantic kind (Scalar, CollectionKey, DocumentFk, DescriptorFk, Ordinal, ParentKeyPart).</param>
 /// <param name="ScalarType">Scalar type definition for Kind=Scalar; otherwise null.</param>
 /// <param name="IsNullable">Whether the column can be null (DDL + parameter binding).</param>
 /// <param name="SourceJsonPath">
@@ -1073,7 +1237,7 @@ public sealed record DbColumnModel(
     ColumnKind Kind,
     RelationalScalarType? ScalarType,
     bool IsNullable,
-    JsonPathExpression? SourceJsonPath,            // null for derived columns (ParentKey/Ordinal)
+    JsonPathExpression? SourceJsonPath,            // null for derived columns (CollectionKey/ParentKey/Ordinal)
     QualifiedResourceName? TargetResource,         // for DocumentFk / DescriptorFk
     ColumnStorage Storage
 );
@@ -1200,7 +1364,7 @@ This is required to support golden-file tests for compiled SQL, stable AOT pack 
 ```csharp
 /// <summary>
 /// Compiled write plan for a single resource type.
-/// Used by POST and PUT to perform inserts/updates with replace-semantics for collections.
+/// Used by POST and PUT to perform inserts/updates with merge-semantics for collections.
 /// </summary>
 public sealed record ResourceWritePlan(
     RelationalResourceModel Model,
@@ -1212,8 +1376,11 @@ public sealed record ResourceWritePlan(
 /// </summary>
 /// <param name="TableModel">The shape model for the table.</param>
 /// <param name="InsertSql">Parameterized insert SQL (multi-row insert is handled by IBulkInserter).</param>
-/// <param name="UpdateSql">Optional update SQL (for 1:1 tables; key contains no Ordinal).</param>
-/// <param name="DeleteByParentSql">Delete SQL that removes all child rows for a parent key (replace semantics).</param>
+/// <param name="UpdateSql">Optional update SQL for in-place row updates. For 1:1 scopes this targets the scope key; for collection tables it targets <c>CollectionItemId</c>.</param>
+/// <param name="DeleteByParentSql">Delete SQL used when a separate-table 1:1 scope is <c>VisibleAbsent</c>. Collection-row deletes are driven by the merge executor using stable row identities.</param>
+/// <param name="CollectionMergePlan">
+/// Optional compiled merge metadata for collection tables. Null for root and non-collection 1:1 scopes.
+/// </param>
 /// <param name="BulkInsertBatching">
 /// Deterministic bulk-insert batching metadata for this table plan.
 /// </param>
@@ -1229,16 +1396,45 @@ public sealed record TableWritePlan(
     string InsertSql,
     string? UpdateSql,
     string? DeleteByParentSql,
+    CollectionMergePlan? CollectionMergePlan,
     BulkInsertBatchingInfo BulkInsertBatching,
     IReadOnlyList<WriteColumnBinding> ColumnBindings,
     IReadOnlyList<KeyUnificationWritePlan> KeyUnificationPlans
 );
 
 /// <summary>
+/// Compiled merge metadata for one collection table.
+/// </summary>
+/// <param name="SemanticIdentityBindings">
+/// Relative-path-to-column bindings used to compute the semantic collection identity.
+/// </param>
+/// <param name="SelectCurrentSiblingSetSql">
+/// Parameterized SQL that loads the current sibling set for one parent scope, including <c>CollectionItemId</c>,
+/// root document scope, <c>Ordinal</c>, and any columns required for semantic matching and writable comparison.
+/// Visibility selection is request-scoped data assembled during the write pipeline and is not compiled into this SQL.
+/// </param>
+/// <param name="DeleteByCollectionItemIdsSql">
+/// Parameterized SQL that deletes omitted visible rows by stable collection-row identity.
+/// </param>
+public sealed record CollectionMergePlan(
+    IReadOnlyList<CollectionSemanticIdentityBinding> SemanticIdentityBindings,
+    string SelectCurrentSiblingSetSql,
+    string DeleteByCollectionItemIdsSql
+);
+
+/// <summary>
+/// Maps one semantic-identity JSON path to its physical storage column.
+/// </summary>
+public sealed record CollectionSemanticIdentityBinding(
+    JsonPathExpression RelativePath,
+    DbColumnName ColumnName
+);
+
+/// <summary>
 /// Binds a physical column to a write-time value source.
 /// </summary>
 /// <param name="Column">The column model being written.</param>
-/// <param name="Source">Where the value comes from (parent key, ordinal, scalar json value, reference resolution, ...).</param>
+/// <param name="Source">Where the value comes from (preallocated collection id, parent scope, ordinal, scalar json value, reference resolution, ...).</param>
 /// <param name="ParameterName">
 /// The authoritative bare SQL parameter name used by the plan's SQL (without the <c>@</c> prefix).
 /// Runtime binds by this name and never infers bindings by parsing SQL text.
@@ -1266,13 +1462,14 @@ public abstract record WriteValueSource
     public sealed record DocumentId() : WriteValueSource;
 
     /// <summary>
-    /// The column value is produced by a table-local precompute step (e.g., key-unification canonical coalescing).
+    /// The column value is produced by a table-local precompute step (e.g., preallocated CollectionItemId or
+    /// key-unification canonical coalescing).
     /// </summary>
     public sealed record Precomputed() : WriteValueSource;
 
     /// <summary>
-    /// One component of the parent table key, by index in the parent key.
-    /// For nested collections this includes parent ordinals as well as the parent DocumentId.
+    /// One component of the parent scope locator written to this row.
+    /// For collection tables this is the root DocumentId for top-level collections or the ParentCollectionItemId for nested collections.
     /// </summary>
     public sealed record ParentKeyPart(int Index) : WriteValueSource;
 
@@ -1824,15 +2021,44 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
         request.DocumentInfo.DocumentReferenceArrays,
         resolved.DocumentIdByReferentialId);
 
-    // 4) Flatten: materialize all table rows in memory with FK columns filled.
-    var writeSet = _flattener.Flatten(
+    // 4) Load the current persisted rows needed for auth/reconstitution/merge on update flows.
+    var currentState = await _currentDocumentLoader.LoadForWriteAsync(
         writePlan,
         documentId,
-        request.EdfiDoc /* JsonNode */,
+        connection,
+        tx,
+        ct);
+
+    // 4b) Core may provide profile-shaped write input for profile-constrained writes.
+    var profileRequest = request.ProfileAppliedWriteRequest;
+    var profileContext = profileRequest is null
+        ? null
+        : _profileWriteContextProjector.Project(
+            currentState.StoredJson,
+            profileRequest);
+    var writableBody = profileRequest?.WritableRequestBody ?? request.EdfiDoc;
+
+    // 5) Extract logical candidates from the writable request body.
+    var candidateSet = _flattener.ExtractCandidates(
+        writePlan,
+        documentId,
+        writableBody,
         documentReferences,
         resolved);
 
-    // 5) Execute root + child table writes in plan order (set-based).
+    // 6) Bind candidates against current sibling sets, reserve any needed CollectionItemIds,
+    //    and produce the post-merge write set.
+    var writeSet = _mergeBinder.Bind(
+        writePlan,
+        documentId,
+        candidateSet,
+        currentState,
+        profileContext,
+        connection,
+        tx,
+        ct);
+
+    // 7) Execute root + child table writes in plan order (set-based).
     await _writer.ExecuteAsync(writePlan, documentId, writeSet, connection, tx, ct);
 
     // ReferentialId maintenance and update tracking are handled in-transaction by generated database triggers
@@ -1844,9 +2070,9 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
 
 Notes:
 - `_referenceResolver.ResolveAsync(...)` resolves document and descriptor references to `DocumentId` via `dms.ReferentialIdentity` (`ReferentialId → DocumentId`) for all identities (self-contained, reference-bearing, and polymorphic/abstract via alias rows), and may validate descriptor existence/type via `dms.Descriptor`.
-- `_writer.ExecuteAsync(...)` uses `TableWritePlan.DeleteByParentSql` + `IBulkInserter` to avoid N+1 inserts.
-- For 1:1 extension scopes (including document-scope `_ext` tables), execution uses `InsertSql` when the scoped row is newly present and `UpdateSql` when it already exists.
-- When a scoped object is absent in the payload, execution uses `DeleteByParentSql` for scope replacement.
+- `_writer.ExecuteAsync(...)` uses the compiled `CollectionMergePlan`s, batched reservations from `dms.CollectionItemIdSequence`, and `IBulkInserter` to avoid N+1 inserts while preserving stable `CollectionItemId`s for matched rows.
+- The sketch omits the explicit profile branches: profile-constrained creates consult `RootResourceCreatable`, non-collection scope behavior comes from `RequestScopeStates` / `StoredScopeStates` using `VisiblePresent`, `VisibleAbsent`, and `Hidden`, and collection merges consume `VisibleRequestCollectionItems` / `VisibleStoredCollectionRows` plus `HiddenMemberPaths`.
+- For separate-table 1:1 scopes (including document-scope `_ext` tables), execution uses `InsertSql` when the scoped row is newly `VisiblePresent`, `UpdateSql` when it already exists, and `DeleteByParentSql` only when the scope state is `VisibleAbsent`; `Hidden` scopes are preserved, and inlined `VisibleAbsent` scopes clear only their visible compiled bindings.
 
 Flattening inner loop sketch (how `TableWritePlan.ColumnBindings` and `TableWritePlan.KeyUnificationPlans` get used):
 
@@ -1856,7 +2082,7 @@ private static RowBuffer MaterializeRow(
     TableWritePlan tablePlan,
     long documentId,
     JsonNode scopeNode,
-    IReadOnlyList<long> parentKeyParts, // e.g. [DocumentId] or [DocumentId, parentOrdinal]
+    IReadOnlyList<long> parentKeyParts, // e.g. [DocumentId] or [ParentCollectionItemId]
     int ordinal,
     ReadOnlySpan<int> ordinalPath, // e.g. [] (root), [2] (child), [2,0] (nested)
     IDocumentReferenceInstanceIndex documentReferences,
@@ -2071,7 +2297,7 @@ public async Task<ReconstitutedPage> ReconstituteAsync(
     foreach (var table in plan.Model.TablesInDependencyOrder)
     {
         await reader.NextResultAsync(ct);
-        ReadTableRows(reader, table); // grouped by (parent key parts..., ordinal)
+        ReadTableRows(reader, table); // grouped by root document scope + immediate parent scope + Ordinal
     }
 
     // descriptor projection follow-ups can either be:

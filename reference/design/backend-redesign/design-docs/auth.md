@@ -329,9 +329,9 @@ ODS executes an additional DB roundtrip for single-record authorizations, presum
   - Run authorization check using the already-stored values (throw if unauthorized)
   - Run authorization check using the values from the request body (throw if unauthorized) (only if identifying values changed)
   - Retrieve the referenced resources' DocumentIds (using `dms.ReferentialIdentity`)
-  - Reconstitute the record
+  - Reconstitute the record and/or materialize comparable current rowsets for no-op detection
 - Roundtrip #3
-  - Execute update (only if it actually changed)
+  - Execute guarded no-op or update (only if it actually changed)
 
 ODS requires at least 4 roundtrips for the same operation, and more if the resource has child tables.
 

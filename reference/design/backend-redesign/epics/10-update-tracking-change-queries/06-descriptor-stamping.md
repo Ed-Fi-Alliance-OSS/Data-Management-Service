@@ -12,12 +12,15 @@ When descriptor resources are stored in `dms.Descriptor`, updates to descriptor 
 - bump the descriptor document’s stored representation stamps on `dms.Document`, and
 - emit the corresponding `dms.DocumentChangeEvent` journal row (via triggers on `dms.Document` when `ContentVersion` changes).
 
+Successful descriptor updates that produce no persisted-row changes must not bump stamps or emit journal rows.
+
 This story ensures update tracking remains correct for descriptor resources without requiring per-descriptor tables.
 
 ## Acceptance Criteria
 
 - INSERT/UPDATE/DELETE of a descriptor resource causes correct update-tracking behavior for the descriptor document:
   - updates to descriptor fields bump `dms.Document.ContentVersion/ContentLastModifiedAt`,
+  - unchanged descriptor PUT leaves `dms.Document.ContentVersion/ContentLastModifiedAt` unchanged and emits no journal row,
   - identity immutability is enforced so `Uri` does not change (unless explicitly supported later),
   - journal rows are emitted for descriptor document representation changes.
 - Trigger coverage includes `dms.Descriptor` changes (not just project-schema root/child/_ext tables).
@@ -32,4 +35,5 @@ This story ensures update tracking remains correct for descriptor resources with
 3. Add an integration test that:
    1. creates a descriptor,
    2. updates a non-identity field,
-   3. asserts stored stamps and journal behavior.
+   3. asserts stored stamps and journal behavior,
+   4. repeats the same PUT and asserts stamps/journal remain unchanged.
