@@ -27,14 +27,16 @@ public class Given_MappingSetCache
         );
         var compileInvocationCount = 0;
 
-        var cache = new MappingSetCache(async cacheKey =>
-        {
-            Interlocked.Increment(ref compileInvocationCount);
-            cacheKey.Should().Be(key);
-            compilationStarted.TrySetResult(true);
-            await releaseCompilation.Task;
-            return compiledMappingSet;
-        });
+        var cache = new MappingSetCache(
+            async (cacheKey, _) =>
+            {
+                Interlocked.Increment(ref compileInvocationCount);
+                cacheKey.Should().Be(key);
+                compilationStarted.TrySetResult(true);
+                await releaseCompilation.Task;
+                return compiledMappingSet;
+            }
+        );
 
         var callers = Enumerable
             .Range(0, 20)
@@ -61,18 +63,20 @@ public class Given_MappingSetCache
         var compiledMappingSet = CreateMappingSet(key);
         var compileInvocationCount = 0;
 
-        var cache = new MappingSetCache(async _ =>
-        {
-            var invocationCount = Interlocked.Increment(ref compileInvocationCount);
-            await Task.Yield();
-
-            if (invocationCount == 1)
+        var cache = new MappingSetCache(
+            async (_, _) =>
             {
-                throw new InvalidOperationException("failed to compile mapping set");
-            }
+                var invocationCount = Interlocked.Increment(ref compileInvocationCount);
+                await Task.Yield();
 
-            return compiledMappingSet;
-        });
+                if (invocationCount == 1)
+                {
+                    throw new InvalidOperationException("failed to compile mapping set");
+                }
+
+                return compiledMappingSet;
+            }
+        );
 
         var firstAct = async () => await cache.GetOrCreateAsync(key, CancellationToken.None);
         await firstAct
@@ -99,19 +103,21 @@ public class Given_MappingSetCache
         );
         var compileInvocationCount = 0;
 
-        var cache = new MappingSetCache(async _ =>
-        {
-            var invocationCount = Interlocked.Increment(ref compileInvocationCount);
-            compilationStarted.TrySetResult(true);
-            await releaseCompilation.Task;
-
-            if (invocationCount == 1)
+        var cache = new MappingSetCache(
+            async (_, _) =>
             {
-                throw new InvalidOperationException("failed to compile mapping set");
-            }
+                var invocationCount = Interlocked.Increment(ref compileInvocationCount);
+                compilationStarted.TrySetResult(true);
+                await releaseCompilation.Task;
 
-            return compiledMappingSet;
-        });
+                if (invocationCount == 1)
+                {
+                    throw new InvalidOperationException("failed to compile mapping set");
+                }
+
+                return compiledMappingSet;
+            }
+        );
 
         var firstCallers = Enumerable
             .Range(0, 8)
@@ -150,13 +156,15 @@ public class Given_MappingSetCache
         );
         var compileInvocationCount = 0;
 
-        var cache = new MappingSetCache(async _ =>
-        {
-            Interlocked.Increment(ref compileInvocationCount);
-            compilationStarted.TrySetResult(true);
-            await releaseCompilation.Task;
-            return compiledMappingSet;
-        });
+        var cache = new MappingSetCache(
+            async (_, _) =>
+            {
+                Interlocked.Increment(ref compileInvocationCount);
+                compilationStarted.TrySetResult(true);
+                await releaseCompilation.Task;
+                return compiledMappingSet;
+            }
+        );
 
         using var cancellationSource = new CancellationTokenSource();
 
@@ -172,49 +180,6 @@ public class Given_MappingSetCache
 
         var completedResult = await cache.GetOrCreateAsync(key, CancellationToken.None);
         completedResult.Should().BeSameAs(compiledMappingSet);
-        compileInvocationCount.Should().Be(1);
-    }
-
-    [Test]
-    public async Task It_should_report_compiled_joined_in_flight_and_reused_completed_statuses()
-    {
-        var key = CreateMappingSetKey(new string('f', 64), SqlDialect.Pgsql, "v1");
-        var compiledMappingSet = CreateMappingSet(key);
-        var compilationStarted = new TaskCompletionSource<bool>(
-            TaskCreationOptions.RunContinuationsAsynchronously
-        );
-        var releaseCompilation = new TaskCompletionSource<bool>(
-            TaskCreationOptions.RunContinuationsAsynchronously
-        );
-        var compileInvocationCount = 0;
-
-        var cache = new MappingSetCache(async _ =>
-        {
-            Interlocked.Increment(ref compileInvocationCount);
-            compilationStarted.TrySetResult(true);
-            await releaseCompilation.Task;
-            return compiledMappingSet;
-        });
-
-        var firstResultTask = cache.GetOrCreateWithCacheStatusAsync(key, CancellationToken.None);
-
-        await compilationStarted.Task;
-
-        var secondResultTask = cache.GetOrCreateWithCacheStatusAsync(key, CancellationToken.None);
-        secondResultTask.IsCompleted.Should().BeFalse();
-
-        releaseCompilation.SetResult(true);
-
-        var firstResult = await firstResultTask;
-        var secondResult = await secondResultTask;
-        var thirdResult = await cache.GetOrCreateWithCacheStatusAsync(key, CancellationToken.None);
-
-        firstResult.CacheStatus.Should().Be(MappingSetCacheStatus.Compiled);
-        secondResult.CacheStatus.Should().Be(MappingSetCacheStatus.JoinedInFlight);
-        thirdResult.CacheStatus.Should().Be(MappingSetCacheStatus.ReusedCompleted);
-        firstResult.MappingSet.Should().BeSameAs(compiledMappingSet);
-        secondResult.MappingSet.Should().BeSameAs(compiledMappingSet);
-        thirdResult.MappingSet.Should().BeSameAs(compiledMappingSet);
         compileInvocationCount.Should().Be(1);
     }
 

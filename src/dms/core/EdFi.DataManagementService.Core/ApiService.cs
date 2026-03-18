@@ -158,6 +158,7 @@ internal class ApiService : IApiService
             new ParsePathMiddleware(_logger),
             _serviceProvider.GetRequiredService<ValidateDatabaseFingerprintMiddleware>(),
             _serviceProvider.GetRequiredService<ValidateResourceKeySeedMiddleware>(),
+            _serviceProvider.GetRequiredService<ResolveMappingSetMiddleware>(),
         ]);
 
         return steps;

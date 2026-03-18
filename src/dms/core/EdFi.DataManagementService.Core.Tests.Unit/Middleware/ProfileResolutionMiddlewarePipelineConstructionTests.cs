@@ -61,6 +61,7 @@ public class Given_Scope_Validation_Is_Enabled_For_Profile_Resolution_Middleware
         );
 
         TestHelper.AddResourceKeyValidationServices(services);
+        TestHelper.AddMappingSetResolutionServices(services);
 
         services.AddSingleton<IProfileService>(A.Fake<IProfileService>());
         services.AddTransient<ProfileResolutionMiddleware>();

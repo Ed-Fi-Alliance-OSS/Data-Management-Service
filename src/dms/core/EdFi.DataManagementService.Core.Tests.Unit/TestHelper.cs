@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.Middleware;
@@ -49,6 +50,23 @@ public static class TestHelper
         services.AddTransient<ValidateResourceKeySeedMiddleware>();
         services.AddTransient<ILogger<ValidateResourceKeySeedMiddleware>>(_ =>
             NullLogger<ValidateResourceKeySeedMiddleware>.Instance
+        );
+    }
+
+    /// <summary>
+    /// Registers the mapping set resolution services needed by the pipeline for tests
+    /// where mapping set resolution is not under test.
+    /// </summary>
+    public static void AddMappingSetResolutionServices(IServiceCollection services)
+    {
+        services.AddSingleton<IMappingSetProvider>(A.Fake<IMappingSetProvider>());
+        services.AddSingleton<IEnumerable<IRuntimeMappingSetCompiler>>(
+            Array.Empty<IRuntimeMappingSetCompiler>()
+        );
+        services.AddSingleton<IEffectiveSchemaSetProvider>(A.Fake<IEffectiveSchemaSetProvider>());
+        services.AddSingleton<ResolveMappingSetMiddleware>();
+        services.AddTransient<ILogger<ResolveMappingSetMiddleware>>(_ =>
+            NullLogger<ResolveMappingSetMiddleware>.Instance
         );
     }
 }

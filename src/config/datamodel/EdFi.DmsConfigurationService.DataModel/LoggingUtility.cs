@@ -13,7 +13,7 @@ public static class LoggingUtility
     /// <summary>
     /// Sanitizes a string for safe logging by allowing only safe characters.
     /// Uses a whitelist approach to prevent log injection and log forging attacks.
-    /// Allows: letters, digits, spaces, and safe punctuation (_-.:/)
+    /// Allows: letters, digits, spaces, and safe punctuation (_-.:/\)
     /// Explicitly excludes all control characters (ASCII &lt; 32, including \r, \n, \t, etc.)
     /// </summary>
     /// <param name="input">The input string to sanitize</param>
@@ -38,6 +38,7 @@ public static class LoggingUtility
                         || c == '.'
                         || c == ':'
                         || c == '/'
+                        || c == '\\'
                     )
                 )
                 .ToArray()

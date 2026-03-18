@@ -12,9 +12,9 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// <summary>
 /// Process-local cache of compiled mapping sets keyed by <see cref="MappingSetKey" />.
 /// </summary>
-public sealed class MappingSetCache(Func<MappingSetKey, Task<MappingSet>> compileAsync)
+public sealed class MappingSetCache(Func<MappingSetKey, CancellationToken, Task<MappingSet>> compileAsync)
 {
-    private readonly Func<MappingSetKey, Task<MappingSet>> _compileAsync =
+    private readonly Func<MappingSetKey, CancellationToken, Task<MappingSet>> _compileAsync =
         compileAsync ?? throw new ArgumentNullException(nameof(compileAsync));
 
     private readonly ConcurrentDictionary<MappingSetKey, CacheEntry> _cache = new();
@@ -23,42 +23,23 @@ public sealed class MappingSetCache(Func<MappingSetKey, Task<MappingSet>> compil
     /// Gets or creates a compiled mapping set for <paramref name="key" />.
     /// </summary>
     /// <remarks>
-    /// Cancellation only cancels waiting for completion. Compilation continues once started.
+    /// <paramref name="cancellationToken"/> cancels only the wait for completion.
+    /// Once compilation starts it runs to completion so other waiters are not affected.
     /// </remarks>
     public async Task<MappingSet> GetOrCreateAsync(
         MappingSetKey key,
         CancellationToken cancellationToken = default
     )
     {
-        return (
-            await GetOrCreateWithCacheStatusAsync(key, cancellationToken).ConfigureAwait(false)
-        ).MappingSet;
-    }
-
-    /// <summary>
-    /// Gets or creates a compiled mapping set for <paramref name="key" /> and indicates how this
-    /// caller obtained the returned mapping set.
-    /// </summary>
-    public async Task<MappingSetCacheResult> GetOrCreateWithCacheStatusAsync(
-        MappingSetKey key,
-        CancellationToken cancellationToken = default
-    )
-    {
         var createdEntry = new CacheEntry();
         var cacheEntry = _cache.GetOrAdd(key, createdEntry);
-        var cacheStatus =
-            ReferenceEquals(cacheEntry, createdEntry) ? MappingSetCacheStatus.Compiled
-            : cacheEntry.IsCompletedSuccessfully ? MappingSetCacheStatus.ReusedCompleted
-            : MappingSetCacheStatus.JoinedInFlight;
 
-        if (cacheStatus == MappingSetCacheStatus.Compiled)
+        if (ReferenceEquals(cacheEntry, createdEntry))
         {
             cacheEntry.StartCompilation(key, _compileAsync, _cache);
         }
 
-        var mappingSet = await cacheEntry.WaitAsync(cancellationToken).ConfigureAwait(false);
-
-        return new MappingSetCacheResult(MappingSet: mappingSet, CacheStatus: cacheStatus);
+        return await cacheEntry.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private sealed class CacheEntry
@@ -68,14 +49,12 @@ public sealed class MappingSetCache(Func<MappingSetKey, Task<MappingSet>> compil
         );
         private int _compilationStarted;
 
-        public bool IsCompletedSuccessfully => _completionSource.Task.IsCompletedSuccessfully;
-
         public Task<MappingSet> WaitAsync(CancellationToken cancellationToken) =>
             _completionSource.Task.WaitAsync(cancellationToken);
 
         public void StartCompilation(
             MappingSetKey key,
-            Func<MappingSetKey, Task<MappingSet>> compileAsync,
+            Func<MappingSetKey, CancellationToken, Task<MappingSet>> compileAsync,
             ConcurrentDictionary<MappingSetKey, CacheEntry> cache
         )
         {
@@ -94,13 +73,15 @@ public sealed class MappingSetCache(Func<MappingSetKey, Task<MappingSet>> compil
         /// </summary>
         private async Task CompileAndPublishAsync(
             MappingSetKey key,
-            Func<MappingSetKey, Task<MappingSet>> compileAsync,
+            Func<MappingSetKey, CancellationToken, Task<MappingSet>> compileAsync,
             ConcurrentDictionary<MappingSetKey, CacheEntry> cache
         )
         {
             try
             {
-                var mappingSet = await compileAsync(key).ConfigureAwait(false);
+                // CancellationToken.None: compilation is shared across callers and must not
+                // be cancelled by any single waiter.
+                var mappingSet = await compileAsync(key, CancellationToken.None).ConfigureAwait(false);
                 _completionSource.TrySetResult(mappingSet);
             }
             catch (OperationCanceledException ex)
@@ -115,30 +96,4 @@ public sealed class MappingSetCache(Func<MappingSetKey, Task<MappingSet>> compil
             }
         }
     }
-}
-
-/// <summary>
-/// Result returned from <see cref="MappingSetCache.GetOrCreateWithCacheStatusAsync" />.
-/// </summary>
-public readonly record struct MappingSetCacheResult(MappingSet MappingSet, MappingSetCacheStatus CacheStatus);
-
-/// <summary>
-/// Describes how a caller obtained a mapping set from <see cref="MappingSetCache" />.
-/// </summary>
-public enum MappingSetCacheStatus
-{
-    /// <summary>
-    /// This caller won cache creation and started the compilation.
-    /// </summary>
-    Compiled,
-
-    /// <summary>
-    /// This caller found an existing cache entry whose compilation had not completed yet.
-    /// </summary>
-    JoinedInFlight,
-
-    /// <summary>
-    /// This caller found an existing cache entry whose compilation had already completed successfully.
-    /// </summary>
-    ReusedCompleted,
 }

@@ -5,6 +5,7 @@
 
 using System;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
@@ -155,6 +156,13 @@ internal class RequestInfo(
     /// Null when fingerprint validation is disabled.
     /// </summary>
     public DatabaseFingerprint? DatabaseFingerprint { get; set; }
+
+    /// <summary>
+    /// The compiled mapping set for the current request's database instance.
+    /// Set by ResolveMappingSetMiddleware when UseRelationalBackend is true.
+    /// Null when relational backend is disabled.
+    /// </summary>
+    public MappingSet? MappingSet { get; set; }
 
     /// <summary>
     /// The service provider for the current request scope.

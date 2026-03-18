@@ -3,10 +3,14 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.External;
+
 namespace EdFi.DataManagementService.Core.Utilities;
 
 /// <summary>
-/// Utility class for sanitizing strings in logging to prevent log injection attacks
+/// Utility class for sanitizing strings in logging to prevent log injection attacks.
+/// Structured-log sanitization delegates to <see cref="LogSanitizer"/> (the canonical
+/// implementation in Backend.External) so there is a single whitelist definition.
 /// </summary>
 public static class LoggingSanitizer
 {
@@ -18,58 +22,7 @@ public static class LoggingSanitizer
     /// </summary>
     /// <param name="input">The input string to sanitize</param>
     /// <returns>A sanitized string safe for logging</returns>
-    public static string SanitizeForLogging(string? input)
-    {
-        if (string.IsNullOrEmpty(input))
-        {
-            return string.Empty;
-        }
-
-        // First pass: check if sanitization is needed and count safe characters
-        int safeCount = 0;
-        bool needsSanitization = false;
-
-        foreach (char c in input)
-        {
-            if (IsAllowedChar(c))
-            {
-                safeCount++;
-            }
-            else
-            {
-                needsSanitization = true;
-            }
-        }
-
-        if (!needsSanitization)
-        {
-            return input;
-        }
-
-        if (safeCount == 0)
-        {
-            return string.Empty;
-        }
-
-        // Second pass: build the sanitized string with exact allocation
-#pragma warning disable S3267 // Loop intentionally avoids LINQ for performance - no intermediate allocations
-        return string.Create(
-            safeCount,
-            input,
-            static (span, source) =>
-            {
-                int index = 0;
-                foreach (char c in source)
-                {
-                    if (IsAllowedChar(c))
-                    {
-                        span[index++] = c;
-                    }
-                }
-            }
-        );
-#pragma warning restore S3267
-    }
+    public static string SanitizeForLogging(string? input) => LogSanitizer.SanitizeForLog(input);
 
     /// <summary>
     /// Sanitizes input for console/stderr output by stripping control characters,
@@ -131,10 +84,4 @@ public static class LoggingSanitizer
         );
 #pragma warning restore S3267
     }
-
-    // Explicitly reject control characters for defense in depth
-    // Includes backslash for Windows file paths
-    private static bool IsAllowedChar(char c) =>
-        !char.IsControl(c)
-        && (char.IsLetterOrDigit(c) || c is ' ' or '_' or '-' or '.' or ':' or '/' or '\\');
 }

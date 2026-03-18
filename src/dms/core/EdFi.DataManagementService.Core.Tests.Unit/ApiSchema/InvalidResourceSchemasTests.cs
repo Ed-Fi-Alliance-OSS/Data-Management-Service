@@ -158,6 +158,7 @@ public class InvalidResourceSchemasTests
             );
 
             TestHelper.AddResourceKeyValidationServices(services);
+            TestHelper.AddMappingSetResolutionServices(services);
 
             var serviceProvider = services.BuildServiceProvider();
 
