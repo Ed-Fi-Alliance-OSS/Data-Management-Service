@@ -297,6 +297,11 @@ public static class DerivedModelSetManifestEmitter
             writer.WriteBoolean("is_unique", index.IsUnique);
             writer.WritePropertyName("key_columns");
             WriteColumnNameList(writer, index.KeyColumns);
+            if (index.IncludeColumns is { Count: > 0 })
+            {
+                writer.WritePropertyName("include_columns");
+                WriteColumnNameList(writer, index.IncludeColumns);
+            }
             writer.WriteEndObject();
         }
 
@@ -325,6 +330,7 @@ public static class DerivedModelSetManifestEmitter
                     TriggerKindParameters.ReferentialIdentityMaintenance => "ReferentialIdentityMaintenance",
                     TriggerKindParameters.AbstractIdentityMaintenance => "AbstractIdentityMaintenance",
                     TriggerKindParameters.IdentityPropagationFallback => "IdentityPropagationFallback",
+                    TriggerKindParameters.AuthHierarchyMaintenance => "AuthHierarchyMaintenance",
                     _ => throw new ArgumentOutOfRangeException(
                         nameof(trigger),
                         "Unsupported trigger kind parameters type."
@@ -398,6 +404,24 @@ public static class DerivedModelSetManifestEmitter
 
                 case TriggerKindParameters.DocumentStamping:
                     // DocumentStamping has no additional properties
+                    break;
+
+                case TriggerKindParameters.AuthHierarchyMaintenance auth:
+                    writer.WriteString("entity_name", auth.Entity.EntityName);
+                    writer.WriteString("trigger_event", auth.TriggerEvent.ToString());
+                    writer.WriteString("identity_column", auth.Entity.IdentityColumn.Value);
+                    writer.WritePropertyName("parent_fks");
+                    writer.WriteStartArray();
+                    foreach (var fk in auth.Entity.ParentEdOrgFks)
+                    {
+                        writer.WriteStartObject();
+                        writer.WriteString(
+                            "denormalized_parent_id_column",
+                            fk.DenormalizedParentIdColumn.Value
+                        );
+                        writer.WriteEndObject();
+                    }
+                    writer.WriteEndArray();
                     break;
             }
 

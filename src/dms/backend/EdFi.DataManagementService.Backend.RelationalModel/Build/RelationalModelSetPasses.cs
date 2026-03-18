@@ -35,6 +35,9 @@ public static class RelationalModelSetPasses
             // which rewrites all identifiers including those in the inventories.
             new DeriveIndexInventoryPass(),
             new DeriveTriggerInventoryPass(),
+            // Auth hierarchy pass must follow trigger inventory so that concrete
+            // resources, abstract identity tables, and union views are populated.
+            new DeriveAuthHierarchyPass(),
             new ApplyDialectIdentifierShorteningPass(),
             new CanonicalizeOrderingPass(),
         ];

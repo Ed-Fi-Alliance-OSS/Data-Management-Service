@@ -82,6 +82,40 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             },
             dialectRules
         );
+
+        ShortenAuthEdOrgHierarchy(context, dialectRules);
+    }
+
+    /// <summary>
+    /// Applies dialect shortening to the auth EdOrg hierarchy stored on the context.
+    /// </summary>
+    private static void ShortenAuthEdOrgHierarchy(
+        RelationalModelSetBuilderContext context,
+        ISqlDialectRules dialectRules
+    )
+    {
+        if (context.AuthEdOrgHierarchy is null || context.AuthEdOrgHierarchy.EntitiesInNameOrder.Count == 0)
+        {
+            return;
+        }
+
+        var entities = context.AuthEdOrgHierarchy.EntitiesInNameOrder;
+        var updated = new AuthEdOrgEntity[entities.Count];
+        var anyChanged = false;
+
+        for (var i = 0; i < entities.Count; i++)
+        {
+            updated[i] = ShortenAuthEdOrgEntity(entities[i], dialectRules, out var entityChanged);
+            if (entityChanged)
+            {
+                anyChanged = true;
+            }
+        }
+
+        if (anyChanged)
+        {
+            context.AuthEdOrgHierarchy = new AuthEdOrgHierarchy(updated);
+        }
     }
 
     /// <summary>
@@ -1081,8 +1115,16 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         var updatedName = new DbIndexName(dialectRules.ShortenIdentifier(index.Name.Value));
         var updatedTable = ShortenTable(index.Table, dialectRules);
         var updatedColumns = ShortenColumns(index.KeyColumns, dialectRules, out var columnsChanged);
+        var includeChanged = false;
+        var updatedIncludeColumns = index.IncludeColumns is { Count: > 0 }
+            ? ShortenColumns(index.IncludeColumns, dialectRules, out includeChanged)
+            : index.IncludeColumns;
 
-        changed = columnsChanged || !updatedTable.Equals(index.Table) || !updatedName.Equals(index.Name);
+        changed =
+            columnsChanged
+            || includeChanged
+            || !updatedTable.Equals(index.Table)
+            || !updatedName.Equals(index.Name);
 
         if (!changed)
         {
@@ -1094,6 +1136,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             Name = updatedName,
             Table = updatedTable,
             KeyColumns = updatedColumns,
+            IncludeColumns = updatedIncludeColumns,
         };
     }
 
@@ -1200,6 +1243,12 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                 );
                 changed = referrersChanged;
                 return changed ? propagation with { ReferrerUpdates = updatedReferrers } : parameters;
+            }
+            case TriggerKindParameters.AuthHierarchyMaintenance auth:
+            {
+                var updatedEntity = ShortenAuthEdOrgEntity(auth.Entity, dialectRules, out var entityChanged);
+                changed = entityChanged;
+                return changed ? auth with { Entity = updatedEntity } : parameters;
             }
             case TriggerKindParameters.DocumentStamping:
                 changed = false;
@@ -1331,6 +1380,66 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         );
 
         return changed ? alias with { IdentityElements = updatedElements } : alias;
+    }
+
+    /// <summary>
+    /// Shortens identifiers inside an <see cref="AuthEdOrgEntity"/> using dialect rules.
+    /// </summary>
+    private static AuthEdOrgEntity ShortenAuthEdOrgEntity(
+        AuthEdOrgEntity entity,
+        ISqlDialectRules dialectRules,
+        out bool changed
+    )
+    {
+        changed = false;
+
+        var updatedTable = ShortenTable(entity.Table, dialectRules);
+        var updatedIdentityColumn = ShortenColumn(entity.IdentityColumn, dialectRules);
+
+        if (!updatedTable.Equals(entity.Table) || !updatedIdentityColumn.Equals(entity.IdentityColumn))
+        {
+            changed = true;
+        }
+
+        var updatedFks = ShortenAuthParentEdOrgFks(entity.ParentEdOrgFks, dialectRules, out var fksChanged);
+        if (fksChanged)
+        {
+            changed = true;
+        }
+
+        return changed
+            ? new AuthEdOrgEntity(entity.EntityName, updatedTable, updatedIdentityColumn, updatedFks)
+            : entity;
+    }
+
+    /// <summary>
+    /// Shortens identifiers inside auth parent EdOrg FK records using dialect rules.
+    /// </summary>
+    private static IReadOnlyList<AuthParentEdOrgFk> ShortenAuthParentEdOrgFks(
+        IReadOnlyList<AuthParentEdOrgFk> fks,
+        ISqlDialectRules dialectRules,
+        out bool changed
+    )
+    {
+        changed = false;
+        var updated = new AuthParentEdOrgFk[fks.Count];
+
+        for (var i = 0; i < fks.Count; i++)
+        {
+            var fk = fks[i];
+            var updatedColumn = ShortenColumn(fk.DenormalizedParentIdColumn, dialectRules);
+
+            var fkChanged = !updatedColumn.Equals(fk.DenormalizedParentIdColumn);
+
+            if (fkChanged)
+            {
+                changed = true;
+            }
+
+            updated[i] = fkChanged ? new AuthParentEdOrgFk(updatedColumn) : fk;
+        }
+
+        return changed ? updated : fks;
     }
 
     /// <summary>

@@ -139,6 +139,13 @@ public abstract class DdlEmissionGoldenTestBase
             .Should()
             .BeEmpty("emitted DDL must not contain trailing whitespace on any line");
 
+        // MSSQL batch-boundary check: every CREATE OR ALTER TRIGGER must be preceded
+        // by a GO batch separator to avoid "must be the first statement in a batch" errors.
+        if (dialect == SqlDialect.Mssql)
+        {
+            AssertMssqlBatchBoundaries(ddl);
+        }
+
         Directory.CreateDirectory(Path.GetDirectoryName(actualPath)!);
         File.WriteAllText(actualPath, ddl);
 
@@ -171,6 +178,50 @@ public abstract class DdlEmissionGoldenTestBase
                     + $"Diff:\n{diffOutput}"
             );
         }
+    }
+
+    /// <summary>
+    /// Validates that every <c>CREATE OR ALTER TRIGGER</c> statement in MSSQL DDL output
+    /// is preceded by a <c>GO</c> batch separator.
+    /// </summary>
+    private static void AssertMssqlBatchBoundaries(string ddl)
+    {
+        var lines = ddl.Split('\n');
+        var violations = new List<string>();
+
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var trimmed = lines[i].TrimStart();
+            if (!trimmed.StartsWith("CREATE OR ALTER TRIGGER", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            // Walk backwards to find the most recent non-blank line
+            var foundGo = false;
+            for (var j = i - 1; j >= 0; j--)
+            {
+                var prev = lines[j].Trim();
+                if (prev.Length == 0)
+                {
+                    continue;
+                }
+
+                foundGo = string.Equals(prev, "GO", StringComparison.OrdinalIgnoreCase);
+                break;
+            }
+
+            if (!foundGo)
+            {
+                violations.Add(
+                    $"Line {i + 1}: '{trimmed[..Math.Min(60, trimmed.Length)]}...' is not preceded by GO"
+                );
+            }
+        }
+
+        violations
+            .Should()
+            .BeEmpty("every CREATE OR ALTER TRIGGER in MSSQL DDL must be preceded by a GO batch separator");
     }
 
     /// <summary>
@@ -602,6 +653,188 @@ public class Given_DdlEmitter_With_FkSupportIndex_For_Mssql : DdlEmissionGoldenT
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// Golden File Tests - Auth EdOrg Hierarchy
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_DdlEmitter_With_AuthEdOrgHierarchy_For_Pgsql : DdlEmissionGoldenTestBase
+{
+    private GoldenTestPaths _paths = default!;
+    private string _ddlContent = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var modelSet = AuthEdOrgHierarchyFixture.Build(SqlDialect.Pgsql);
+        _paths = EmitDdl("auth-edorg-hierarchy", SqlDialect.Pgsql, modelSet);
+        _ddlContent = File.ReadAllText(_paths.ActualPath);
+    }
+
+    [Test]
+    public void It_should_emit_ddl_matching_golden_file()
+    {
+        AssertGoldenMatch(_paths);
+    }
+
+    [Test]
+    public void It_should_emit_auth_schema()
+    {
+        _ddlContent.Should().Contain("auth", "auth schema should be created");
+    }
+
+    [Test]
+    public void It_should_emit_auth_hierarchy_table()
+    {
+        _ddlContent
+            .Should()
+            .Contain(
+                "EducationOrganizationIdToEducationOrganizationId",
+                "auth hierarchy table should be created"
+            );
+    }
+
+    [Test]
+    public void It_should_emit_auth_covering_index()
+    {
+        _ddlContent
+            .Should()
+            .Contain(
+                "IX_EducationOrganizationIdToEducationOrganizationId_Target",
+                "auth covering index should be created"
+            );
+    }
+
+    [Test]
+    public void It_should_emit_auth_triggers_for_leaf_entity()
+    {
+        _ddlContent
+            .Should()
+            .Contain(
+                "TR_StateEducationAgency_AuthHierarchy_Insert",
+                "INSERT trigger for leaf entity should be created"
+            );
+        _ddlContent
+            .Should()
+            .Contain(
+                "TR_StateEducationAgency_AuthHierarchy_Delete",
+                "DELETE trigger for leaf entity should be created"
+            );
+    }
+
+    [Test]
+    public void It_should_emit_auth_triggers_for_hierarchical_entity()
+    {
+        _ddlContent
+            .Should()
+            .Contain(
+                "TR_LocalEducationAgency_AuthHierarchy_Insert",
+                "INSERT trigger for hierarchical entity should be created"
+            );
+        _ddlContent
+            .Should()
+            .Contain(
+                "TR_LocalEducationAgency_AuthHierarchy_Update",
+                "UPDATE trigger for hierarchical entity should be created"
+            );
+        _ddlContent
+            .Should()
+            .Contain(
+                "TR_LocalEducationAgency_AuthHierarchy_Delete",
+                "DELETE trigger for hierarchical entity should be created"
+            );
+    }
+}
+
+[TestFixture]
+public class Given_DdlEmitter_With_AuthEdOrgHierarchy_For_Mssql : DdlEmissionGoldenTestBase
+{
+    private GoldenTestPaths _paths = default!;
+    private string _ddlContent = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var modelSet = AuthEdOrgHierarchyFixture.Build(SqlDialect.Mssql);
+        _paths = EmitDdl("auth-edorg-hierarchy", SqlDialect.Mssql, modelSet);
+        _ddlContent = File.ReadAllText(_paths.ActualPath);
+    }
+
+    [Test]
+    public void It_should_emit_ddl_matching_golden_file()
+    {
+        AssertGoldenMatch(_paths);
+    }
+
+    [Test]
+    public void It_should_emit_auth_schema()
+    {
+        _ddlContent.Should().Contain("auth", "auth schema should be created");
+    }
+
+    [Test]
+    public void It_should_emit_auth_hierarchy_table()
+    {
+        _ddlContent
+            .Should()
+            .Contain(
+                "EducationOrganizationIdToEducationOrganizationId",
+                "auth hierarchy table should be created"
+            );
+    }
+
+    [Test]
+    public void It_should_emit_auth_covering_index()
+    {
+        _ddlContent
+            .Should()
+            .Contain(
+                "IX_EducationOrganizationIdToEducationOrganizationId_Target",
+                "auth covering index should be created"
+            );
+    }
+
+    [Test]
+    public void It_should_emit_auth_triggers_for_leaf_entity()
+    {
+        _ddlContent
+            .Should()
+            .Contain(
+                "TR_StateEducationAgency_AuthHierarchy_Insert",
+                "INSERT trigger for leaf entity should be created"
+            );
+        _ddlContent
+            .Should()
+            .Contain(
+                "TR_StateEducationAgency_AuthHierarchy_Delete",
+                "DELETE trigger for leaf entity should be created"
+            );
+    }
+
+    [Test]
+    public void It_should_emit_auth_triggers_for_hierarchical_entity()
+    {
+        _ddlContent
+            .Should()
+            .Contain(
+                "TR_LocalEducationAgency_AuthHierarchy_Insert",
+                "INSERT trigger for hierarchical entity should be created"
+            );
+        _ddlContent
+            .Should()
+            .Contain(
+                "TR_LocalEducationAgency_AuthHierarchy_Update",
+                "UPDATE trigger for hierarchical entity should be created"
+            );
+        _ddlContent
+            .Should()
+            .Contain(
+                "TR_LocalEducationAgency_AuthHierarchy_Delete",
+                "DELETE trigger for hierarchical entity should be created"
+            );
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Golden File Tests - DDL Manifest
 // ═══════════════════════════════════════════════════════════════════
 
@@ -704,6 +937,24 @@ public class Given_DdlManifest_For_FkSupportIndex : DdlEmissionGoldenTestBase
     public void Setup()
     {
         _paths = EmitDdlManifest("fk-support-index", FkSupportIndexFixture.Build);
+    }
+
+    [Test]
+    public void It_should_emit_manifest_matching_golden_file()
+    {
+        AssertGoldenMatch(_paths);
+    }
+}
+
+[TestFixture]
+public class Given_DdlManifest_For_AuthEdOrgHierarchy : DdlEmissionGoldenTestBase
+{
+    private GoldenTestPaths _paths = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _paths = EmitDdlManifest("auth-edorg-hierarchy", AuthEdOrgHierarchyFixture.Build);
     }
 
     [Test]
@@ -2386,6 +2637,432 @@ internal static class KeyUnificationFixture
             [],
             [],
             triggers
+        );
+    }
+}
+
+/// <summary>
+/// Fixture for auth EdOrg hierarchy scenario:
+/// Abstract EducationOrganization with StateEducationAgency (leaf) + LocalEducationAgency (hierarchical, parent → SEA).
+/// Includes auth hierarchy table, triggers, and covering index.
+/// </summary>
+internal static class AuthEdOrgHierarchyFixture
+{
+    internal static DerivedRelationalModelSet Build(SqlDialect dialect)
+    {
+        var schema = new DbSchemaName("edfi");
+        var documentIdColumn = new DbColumnName("DocumentId");
+        var discriminatorColumn = new DbColumnName("Discriminator");
+        var organizationIdColumn = new DbColumnName("EducationOrganizationId");
+        var seaParentIdColumn = new DbColumnName("StateEducationAgency_EducationOrganizationId");
+
+        // Abstract resource
+        var abstractResource = new QualifiedResourceName("Ed-Fi", "EducationOrganization");
+        var abstractResourceKey = new ResourceKeyEntry(1, abstractResource, "1.0.0", true);
+
+        // Concrete resources
+        var leaResource = new QualifiedResourceName("Ed-Fi", "LocalEducationAgency");
+        var leaResourceKey = new ResourceKeyEntry(2, leaResource, "1.0.0", false);
+
+        var seaResource = new QualifiedResourceName("Ed-Fi", "StateEducationAgency");
+        var seaResourceKey = new ResourceKeyEntry(3, seaResource, "1.0.0", false);
+
+        // Identity table for abstract type
+        var identityTableName = new DbTableName(schema, "EducationOrganizationIdentity");
+        var identityTable = new DbTableModel(
+            identityTableName,
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_EducationOrganizationIdentity",
+                [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    organizationIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    discriminatorColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 50),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            [
+                new TableConstraint.ForeignKey(
+                    "FK_EducationOrganizationIdentity_Document",
+                    [documentIdColumn],
+                    new DbTableName(new DbSchemaName("dms"), "Document"),
+                    [documentIdColumn],
+                    ReferentialAction.Cascade,
+                    ReferentialAction.NoAction
+                ),
+            ]
+        );
+
+        // StateEducationAgency concrete table (leaf)
+        var seaTableName = new DbTableName(schema, "StateEducationAgency");
+        var seaTable = new DbTableModel(
+            seaTableName,
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_StateEducationAgency",
+                [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    organizationIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            [
+                new TableConstraint.ForeignKey(
+                    "FK_StateEducationAgency_EducationOrganizationIdentity",
+                    [documentIdColumn],
+                    identityTableName,
+                    [documentIdColumn],
+                    ReferentialAction.Cascade,
+                    ReferentialAction.NoAction
+                ),
+            ]
+        );
+
+        // LocalEducationAgency concrete table (hierarchical, parent FK to SEA)
+        var leaTableName = new DbTableName(schema, "LocalEducationAgency");
+        var leaTable = new DbTableModel(
+            leaTableName,
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_LocalEducationAgency",
+                [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    organizationIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    seaParentIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: true,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            [
+                new TableConstraint.ForeignKey(
+                    "FK_LocalEducationAgency_EducationOrganizationIdentity",
+                    [documentIdColumn],
+                    identityTableName,
+                    [documentIdColumn],
+                    ReferentialAction.Cascade,
+                    ReferentialAction.NoAction
+                ),
+            ]
+        );
+
+        // Abstract union view
+        var viewName = new DbTableName(schema, "EducationOrganization_View");
+        List<AbstractUnionViewOutputColumn> outputColumns =
+        [
+            new(documentIdColumn, new RelationalScalarType(ScalarKind.Int64), null, null),
+            new(organizationIdColumn, new RelationalScalarType(ScalarKind.Int32), null, null),
+            new(discriminatorColumn, new RelationalScalarType(ScalarKind.String, MaxLength: 50), null, null),
+        ];
+
+        var leaArm = new AbstractUnionViewArm(
+            leaResourceKey,
+            leaTableName,
+            [
+                new AbstractUnionViewProjectionExpression.SourceColumn(documentIdColumn),
+                new AbstractUnionViewProjectionExpression.SourceColumn(organizationIdColumn),
+                new AbstractUnionViewProjectionExpression.StringLiteral("Ed-Fi:LocalEducationAgency"),
+            ]
+        );
+
+        var seaArm = new AbstractUnionViewArm(
+            seaResourceKey,
+            seaTableName,
+            [
+                new AbstractUnionViewProjectionExpression.SourceColumn(documentIdColumn),
+                new AbstractUnionViewProjectionExpression.SourceColumn(organizationIdColumn),
+                new AbstractUnionViewProjectionExpression.StringLiteral("Ed-Fi:StateEducationAgency"),
+            ]
+        );
+
+        var unionView = new AbstractUnionViewInfo(
+            abstractResourceKey,
+            viewName,
+            outputColumns,
+            [leaArm, seaArm]
+        );
+
+        var abstractIdentityTable = new AbstractIdentityTableInfo(abstractResourceKey, identityTable);
+
+        var leaRelationalModel = new RelationalResourceModel(
+            leaResource,
+            schema,
+            ResourceStorageKind.RelationalTables,
+            leaTable,
+            [leaTable],
+            [],
+            []
+        );
+
+        var seaRelationalModel = new RelationalResourceModel(
+            seaResource,
+            schema,
+            ResourceStorageKind.RelationalTables,
+            seaTable,
+            [seaTable],
+            [],
+            []
+        );
+
+        // Auth hierarchy entities (alphabetical order)
+        var leaEntity = new AuthEdOrgEntity(
+            "LocalEducationAgency",
+            leaTableName,
+            organizationIdColumn,
+            [new AuthParentEdOrgFk(seaParentIdColumn)]
+        );
+
+        var seaEntity = new AuthEdOrgEntity("StateEducationAgency", seaTableName, organizationIdColumn, []);
+
+        var authHierarchy = new AuthEdOrgHierarchy([leaEntity, seaEntity]);
+
+        // Standard triggers
+        var superclassAlias = new SuperclassAliasInfo(
+            1,
+            "Ed-Fi",
+            "EducationOrganization",
+            [
+                new IdentityElementMapping(
+                    organizationIdColumn,
+                    "$.educationOrganizationId",
+                    new RelationalScalarType(ScalarKind.Int32)
+                ),
+            ]
+        );
+
+        List<DbTriggerInfo> triggers =
+        [
+            // DocumentStamping on LEA
+            new(
+                new DbTriggerName("TR_LocalEducationAgency_Stamp"),
+                leaTableName,
+                [documentIdColumn],
+                [organizationIdColumn],
+                new TriggerKindParameters.DocumentStamping()
+            ),
+            // AbstractIdentityMaintenance on LEA
+            new(
+                new DbTriggerName("TR_LocalEducationAgency_AbstractIdentity"),
+                leaTableName,
+                [documentIdColumn],
+                [organizationIdColumn],
+                new TriggerKindParameters.AbstractIdentityMaintenance(
+                    identityTableName,
+                    [new TriggerColumnMapping(organizationIdColumn, organizationIdColumn)],
+                    "Ed-Fi:LocalEducationAgency"
+                )
+            ),
+            // ReferentialIdentityMaintenance on LEA
+            new(
+                new DbTriggerName("TR_LocalEducationAgency_ReferentialIdentity"),
+                leaTableName,
+                [documentIdColumn],
+                [organizationIdColumn],
+                new TriggerKindParameters.ReferentialIdentityMaintenance(
+                    2,
+                    "Ed-Fi",
+                    "LocalEducationAgency",
+                    [
+                        new IdentityElementMapping(
+                            organizationIdColumn,
+                            "$.educationOrganizationId",
+                            new RelationalScalarType(ScalarKind.Int32)
+                        ),
+                    ],
+                    superclassAlias
+                )
+            ),
+            // Auth hierarchy triggers for LEA (hierarchical: INSERT + UPDATE + DELETE)
+            new(
+                new DbTriggerName("TR_LocalEducationAgency_AuthHierarchy_Delete"),
+                leaTableName,
+                [],
+                [],
+                new TriggerKindParameters.AuthHierarchyMaintenance(
+                    leaEntity,
+                    AuthHierarchyTriggerEvent.Delete
+                )
+            ),
+            new(
+                new DbTriggerName("TR_LocalEducationAgency_AuthHierarchy_Insert"),
+                leaTableName,
+                [],
+                [],
+                new TriggerKindParameters.AuthHierarchyMaintenance(
+                    leaEntity,
+                    AuthHierarchyTriggerEvent.Insert
+                )
+            ),
+            new(
+                new DbTriggerName("TR_LocalEducationAgency_AuthHierarchy_Update"),
+                leaTableName,
+                [],
+                [],
+                new TriggerKindParameters.AuthHierarchyMaintenance(
+                    leaEntity,
+                    AuthHierarchyTriggerEvent.Update
+                )
+            ),
+            // DocumentStamping on SEA
+            new(
+                new DbTriggerName("TR_StateEducationAgency_Stamp"),
+                seaTableName,
+                [documentIdColumn],
+                [organizationIdColumn],
+                new TriggerKindParameters.DocumentStamping()
+            ),
+            // AbstractIdentityMaintenance on SEA
+            new(
+                new DbTriggerName("TR_StateEducationAgency_AbstractIdentity"),
+                seaTableName,
+                [documentIdColumn],
+                [organizationIdColumn],
+                new TriggerKindParameters.AbstractIdentityMaintenance(
+                    identityTableName,
+                    [new TriggerColumnMapping(organizationIdColumn, organizationIdColumn)],
+                    "Ed-Fi:StateEducationAgency"
+                )
+            ),
+            // ReferentialIdentityMaintenance on SEA
+            new(
+                new DbTriggerName("TR_StateEducationAgency_ReferentialIdentity"),
+                seaTableName,
+                [documentIdColumn],
+                [organizationIdColumn],
+                new TriggerKindParameters.ReferentialIdentityMaintenance(
+                    3,
+                    "Ed-Fi",
+                    "StateEducationAgency",
+                    [
+                        new IdentityElementMapping(
+                            organizationIdColumn,
+                            "$.educationOrganizationId",
+                            new RelationalScalarType(ScalarKind.Int32)
+                        ),
+                    ],
+                    superclassAlias
+                )
+            ),
+            // Auth hierarchy triggers for SEA (leaf: INSERT + DELETE)
+            new(
+                new DbTriggerName("TR_StateEducationAgency_AuthHierarchy_Delete"),
+                seaTableName,
+                [],
+                [],
+                new TriggerKindParameters.AuthHierarchyMaintenance(
+                    seaEntity,
+                    AuthHierarchyTriggerEvent.Delete
+                )
+            ),
+            new(
+                new DbTriggerName("TR_StateEducationAgency_AuthHierarchy_Insert"),
+                seaTableName,
+                [],
+                [],
+                new TriggerKindParameters.AuthHierarchyMaintenance(
+                    seaEntity,
+                    AuthHierarchyTriggerEvent.Insert
+                )
+            ),
+        ];
+
+        // Auth covering index
+        var authIndex = new DbIndexInfo(
+            new DbIndexName("IX_EducationOrganizationIdToEducationOrganizationId_Target"),
+            AuthTableNames.EdOrgIdToEdOrgId,
+            KeyColumns: [AuthTableNames.TargetEdOrgId],
+            IsUnique: false,
+            Kind: DbIndexKind.Explicit,
+            IncludeColumns: [AuthTableNames.SourceEdOrgId]
+        );
+
+        return new DerivedRelationalModelSet(
+            GoldenEffectiveSchemaFixtureData.Create(
+                "auth-edorg-hierarchy",
+                [
+                    new SchemaComponentInfo(
+                        "ed-fi",
+                        "Ed-Fi",
+                        "1.0.0",
+                        false,
+                        "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+                    ),
+                ],
+                [abstractResourceKey, leaResourceKey, seaResourceKey]
+            ),
+            dialect,
+            [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
+            [
+                new ConcreteResourceModel(
+                    leaResourceKey,
+                    ResourceStorageKind.RelationalTables,
+                    leaRelationalModel
+                ),
+                new ConcreteResourceModel(
+                    seaResourceKey,
+                    ResourceStorageKind.RelationalTables,
+                    seaRelationalModel
+                ),
+            ],
+            [abstractIdentityTable],
+            [unionView],
+            [authIndex],
+            triggers,
+            authHierarchy
         );
     }
 }

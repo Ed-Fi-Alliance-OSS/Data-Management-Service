@@ -121,7 +121,8 @@ public sealed class MssqlDialect : SqlDialectBase
         DbTableName table,
         string indexName,
         IReadOnlyList<DbColumnName> columns,
-        bool isUnique = false
+        bool isUnique = false,
+        IReadOnlyList<DbColumnName>? includeColumns = null
     )
     {
         ArgumentNullException.ThrowIfNull(indexName);
@@ -139,6 +140,10 @@ public sealed class MssqlDialect : SqlDialectBase
         var escapedTable = table.Name.Replace("'", "''");
         var escapedIndex = indexName.Replace("'", "''");
 
+        var includeClause = includeColumns is { Count: > 0 }
+            ? $" INCLUDE ({string.Join(", ", includeColumns.Select(c => QuoteIdentifier(c.Value)))})"
+            : "";
+
         return $"""
             IF NOT EXISTS (
                 SELECT 1 FROM sys.indexes i
@@ -146,7 +151,7 @@ public sealed class MssqlDialect : SqlDialectBase
                 JOIN sys.schemas s ON t.schema_id = s.schema_id
                 WHERE s.name = N'{escapedSchema}' AND t.name = N'{escapedTable}' AND i.name = N'{escapedIndex}'
             )
-            CREATE {uniqueKeyword}INDEX {quotedIndex} ON {QualifyTable(table)} ({columnList});
+            CREATE {uniqueKeyword}INDEX {quotedIndex} ON {QualifyTable(table)} ({columnList}){includeClause};
             """;
     }
 

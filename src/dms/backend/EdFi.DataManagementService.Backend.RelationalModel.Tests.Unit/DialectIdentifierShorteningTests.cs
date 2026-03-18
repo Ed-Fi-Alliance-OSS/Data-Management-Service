@@ -153,6 +153,7 @@ public class Given_Pgsql_Identifier_Shortening
         var expectedTable = dialectRules.ShortenIdentifier(identifiers.TableName);
         var expectedKey = dialectRules.ShortenIdentifier(identifiers.KeyColumnName);
         var expectedIndex = dialectRules.ShortenIdentifier(identifiers.IndexName);
+        var expectedIncludeColumn = dialectRules.ShortenIdentifier(identifiers.IndexIncludeColumnName);
         var expectedTrigger = dialectRules.ShortenIdentifier(identifiers.TriggerName);
 
         var index = _scenario.Result.IndexesInCreateOrder.Single();
@@ -160,6 +161,8 @@ public class Given_Pgsql_Identifier_Shortening
         index.Table.Schema.Value.Should().Be(expectedSchema);
         index.Table.Name.Should().Be(expectedTable);
         index.KeyColumns.Single().Value.Should().Be(expectedKey);
+        index.IncludeColumns.Should().NotBeNull();
+        index.IncludeColumns!.Single().Value.Should().Be(expectedIncludeColumn);
 
         var trigger = _scenario.Result.TriggersInCreateOrder.Single();
         trigger.Name.Value.Should().Be(expectedTrigger);
@@ -365,6 +368,7 @@ public class Given_Mssql_Identifier_Shortening
         var expectedTable = dialectRules.ShortenIdentifier(identifiers.TableName);
         var expectedKey = dialectRules.ShortenIdentifier(identifiers.KeyColumnName);
         var expectedIndex = dialectRules.ShortenIdentifier(identifiers.IndexName);
+        var expectedIncludeColumn = dialectRules.ShortenIdentifier(identifiers.IndexIncludeColumnName);
         var expectedTrigger = dialectRules.ShortenIdentifier(identifiers.TriggerName);
 
         var index = _scenario.Result.IndexesInCreateOrder.Single();
@@ -372,6 +376,8 @@ public class Given_Mssql_Identifier_Shortening
         index.Table.Schema.Value.Should().Be(expectedSchema);
         index.Table.Name.Should().Be(expectedTable);
         index.KeyColumns.Single().Value.Should().Be(expectedKey);
+        index.IncludeColumns.Should().NotBeNull();
+        index.IncludeColumns!.Single().Value.Should().Be(expectedIncludeColumn);
 
         var trigger = _scenario.Result.TriggersInCreateOrder.Single();
         trigger.Name.Value.Should().Be(expectedTrigger);
@@ -794,6 +800,7 @@ internal sealed record ShorteningIdentifiers(
     string ForeignKeyConstraintName,
     string AllOrNoneConstraintName,
     string IndexName,
+    string IndexIncludeColumnName,
     string TriggerName,
     string AbstractTableName,
     string AbstractColumnName,
@@ -822,6 +829,7 @@ internal sealed record ShorteningIdentifiers(
             ForeignKeyConstraintName: BuildLongIdentifier(prefix, "ForeignKeyConstraint", length),
             AllOrNoneConstraintName: BuildLongIdentifier(prefix, "AllOrNoneConstraint", length),
             IndexName: BuildLongIdentifier(prefix, "Index", length),
+            IndexIncludeColumnName: BuildLongIdentifier(prefix, "IndexIncludeColumn", length),
             TriggerName: BuildLongIdentifier(prefix, "Trigger", length),
             AbstractTableName: BuildLongIdentifier(prefix, "AbstractTable", length),
             AbstractColumnName: BuildLongIdentifier(prefix, "AbstractColumn", length),
@@ -871,6 +879,7 @@ internal static class IdentifierShorteningAssertions
         var expectedForeign = dialectRules.ShortenIdentifier(identifiers.ForeignKeyConstraintName);
         var expectedAllNone = dialectRules.ShortenIdentifier(identifiers.AllOrNoneConstraintName);
         var expectedIndex = dialectRules.ShortenIdentifier(identifiers.IndexName);
+        var expectedIncludeColumn = dialectRules.ShortenIdentifier(identifiers.IndexIncludeColumnName);
         var expectedTrigger = dialectRules.ShortenIdentifier(identifiers.TriggerName);
         var expectedAbstractTable = dialectRules.ShortenIdentifier(identifiers.AbstractTableName);
         var expectedAbstractPrimaryKey = dialectRules.ShortenIdentifier(
@@ -932,6 +941,8 @@ internal static class IdentifierShorteningAssertions
         index.Table.Schema.Value.Should().Be(expectedSchema);
         index.Table.Name.Should().Be(expectedTable);
         index.KeyColumns.Single().Value.Should().Be(expectedKey);
+        index.IncludeColumns.Should().NotBeNull();
+        index.IncludeColumns!.Single().Value.Should().Be(expectedIncludeColumn);
 
         var trigger = result.TriggersInCreateOrder.Single();
         trigger.Name.Value.Should().Be(expectedTrigger);
@@ -1166,7 +1177,8 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
                 tableName,
                 [new DbColumnName(_identifiers.KeyColumnName)],
                 IsUnique: true,
-                DbIndexKind.UniqueConstraint
+                DbIndexKind.UniqueConstraint,
+                IncludeColumns: [new DbColumnName(_identifiers.IndexIncludeColumnName)]
             )
         );
 

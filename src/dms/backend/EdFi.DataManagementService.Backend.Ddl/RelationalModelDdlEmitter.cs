@@ -96,11 +96,17 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             .ThenBy(t => t.Name.Value, StringComparer.Ordinal)
             .ToList();
 
-        // Phase 1: Schemas
-        EmitSchemas(writer, schemas);
+        var authHierarchy = modelSet.AuthEdOrgHierarchy;
 
-        // Phase 2: Tables (PK/UK/CHECK only, no cross-table FKs)
+        // Phase 1: Schemas (includes auth schema when hierarchy is present)
+        var additionalSchemas = authHierarchy is { EntitiesInNameOrder.Count: > 0 }
+            ? [AuthTableNames.AuthSchema]
+            : Array.Empty<DbSchemaName>();
+        EmitSchemas(writer, schemas, additionalSchemas);
+
+        // Phase 2: Tables (PK/UK/CHECK only, no cross-table FKs; includes auth table)
         EmitTables(writer, concreteResources);
+        EmitAuthTable(writer, authHierarchy);
 
         // Phase 3: Abstract Identity Tables (must precede FKs that reference them)
         EmitAbstractIdentityTables(writer, abstractIdentityTables);
@@ -114,23 +120,33 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         // Phase 6: Abstract Union Views (must precede Triggers per design)
         EmitAbstractUnionViews(writer, abstractUnionViews);
 
-        // Phase 7: Triggers
+        // Phase 7: Triggers (includes auth hierarchy triggers)
         EmitTriggers(writer, triggers);
 
         return writer.ToString();
     }
 
     /// <summary>
-    /// Emits <c>CREATE SCHEMA IF NOT EXISTS</c> statements for each project schema.
+    /// Emits <c>CREATE SCHEMA IF NOT EXISTS</c> statements for each project schema
+    /// and any additional schemas (e.g., <c>auth</c>).
     /// </summary>
-    private void EmitSchemas(SqlWriter writer, IReadOnlyList<ProjectSchemaInfo> schemas)
+    private void EmitSchemas(
+        SqlWriter writer,
+        IReadOnlyList<ProjectSchemaInfo> schemas,
+        IReadOnlyList<DbSchemaName> additionalSchemas
+    )
     {
         foreach (var schema in schemas)
         {
             writer.AppendLine(_dialect.CreateSchemaIfNotExists(schema.PhysicalSchema));
         }
 
-        if (schemas.Count > 0)
+        foreach (var schema in additionalSchemas)
+        {
+            writer.AppendLine(_dialect.CreateSchemaIfNotExists(schema));
+        }
+
+        if (schemas.Count > 0 || additionalSchemas.Count > 0)
         {
             writer.AppendLine();
         }
@@ -145,13 +161,46 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         {
             // Descriptor resources use the shared dms.Descriptor table (emitted by core DDL).
             if (resource.StorageKind == ResourceStorageKind.SharedDescriptorTable)
+            {
                 continue;
+            }
 
             foreach (var table in resource.RelationalModel.TablesInDependencyOrder)
             {
                 EmitCreateTable(writer, table);
             }
         }
+    }
+
+    /// <summary>
+    /// Emits the <c>auth.EducationOrganizationIdToEducationOrganizationId</c> table when the auth hierarchy is present.
+    /// </summary>
+    private void EmitAuthTable(SqlWriter writer, AuthEdOrgHierarchy? authHierarchy)
+    {
+        if (authHierarchy is not { EntitiesInNameOrder.Count: > 0 })
+        {
+            return;
+        }
+
+        var authTable = AuthTableNames.EdOrgIdToEdOrgId;
+        var sourceCol = AuthTableNames.SourceEdOrgId;
+        var targetCol = AuthTableNames.TargetEdOrgId;
+
+        writer.AppendLine(_dialect.CreateTableHeader(authTable));
+        writer.AppendLine("(");
+        using (writer.Indent())
+        {
+            writer.AppendLine($"{_dialect.RenderColumnDefinition(sourceCol, "bigint", false)},");
+            writer.AppendLine($"{_dialect.RenderColumnDefinition(targetCol, "bigint", false)},");
+            writer.AppendLine(
+                _dialect.RenderNamedPrimaryKeyClause(
+                    "PK_EducationOrganizationIdToEducationOrganizationId",
+                    [sourceCol, targetCol]
+                )
+            );
+        }
+        writer.AppendLine(");");
+        writer.AppendLine();
     }
 
     /// <summary>
@@ -240,7 +289,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         foreach (var resource in resources)
         {
             if (resource.StorageKind == ResourceStorageKind.SharedDescriptorTable)
+            {
                 continue;
+            }
 
             foreach (var table in resource.RelationalModel.TablesInDependencyOrder)
             {
@@ -315,7 +366,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                     index.Table,
                     index.Name.Value,
                     index.KeyColumns,
-                    index.IsUnique
+                    index.IsUnique,
+                    index.IncludeColumns
                 )
             );
             writer.AppendLine();
@@ -336,6 +388,21 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
         foreach (var trigger in triggers)
         {
+            // Auth hierarchy triggers use AFTER timing with different scaffolding
+            // (RETURN NULL for PG, single-event per trigger).
+            if (trigger.Parameters is TriggerKindParameters.AuthHierarchyMaintenance auth)
+            {
+                if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
+                {
+                    EmitPgsqlAuthTrigger(writer, trigger, auth);
+                }
+                else
+                {
+                    EmitMssqlAuthTrigger(writer, trigger, auth);
+                }
+                continue;
+            }
+
             // Dispatch by dialect enum rather than pattern abstraction for trigger generation.
             // Adding a new dialect requires updating this site and: EmitDocumentStampingBody,
             // EmitReferentialIdentityBody, EmitAbstractIdentityBody, FormatNullOrTrueCheck,
@@ -468,6 +535,99 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     }
 
     /// <summary>
+    /// Emits a PostgreSQL auth hierarchy trigger (AFTER, row-level, RETURN NULL).
+    /// </summary>
+    private void EmitPgsqlAuthTrigger(
+        SqlWriter writer,
+        DbTriggerInfo trigger,
+        TriggerKindParameters.AuthHierarchyMaintenance auth
+    )
+    {
+        var schema = trigger.Table.Schema;
+        var funcName = _dialect.Rules.ShortenIdentifier($"TF_{trigger.Name.Value}");
+        var triggerEvent = auth.TriggerEvent switch
+        {
+            AuthHierarchyTriggerEvent.Insert => "INSERT",
+            AuthHierarchyTriggerEvent.Update => "UPDATE",
+            AuthHierarchyTriggerEvent.Delete => "DELETE",
+            _ => throw new ArgumentOutOfRangeException(nameof(auth.TriggerEvent)),
+        };
+
+        // Trigger function
+        writer.Append("CREATE OR REPLACE FUNCTION ");
+        writer.Append(Quote(schema));
+        writer.Append(".");
+        writer.Append(Quote(funcName));
+        writer.AppendLine("()");
+        writer.AppendLine("RETURNS TRIGGER AS $$");
+        writer.AppendLine("BEGIN");
+        using (writer.Indent())
+        {
+            AuthTriggerBodyEmitter.EmitBody(writer, _dialect, auth.Entity, auth.TriggerEvent);
+            writer.AppendLine("RETURN NULL;");
+        }
+        writer.AppendLine("END;");
+        writer.AppendLine("$$ LANGUAGE plpgsql;");
+        writer.AppendLine();
+
+        // Drop + Create trigger
+        writer.AppendLine(_dialect.DropTriggerIfExists(trigger.Table, trigger.Name.Value));
+        writer.Append("CREATE TRIGGER ");
+        writer.AppendLine(Quote(trigger.Name));
+        using (writer.Indent())
+        {
+            writer.Append($"AFTER {triggerEvent} ON ");
+            writer.AppendLine(Quote(trigger.Table));
+            writer.AppendLine("FOR EACH ROW");
+            writer.Append("EXECUTE FUNCTION ");
+            writer.Append(Quote(schema));
+            writer.Append(".");
+            writer.Append(Quote(funcName));
+            writer.AppendLine("();");
+        }
+        writer.AppendLine();
+    }
+
+    /// <summary>
+    /// Emits a SQL Server auth hierarchy trigger (AFTER, single-event).
+    /// </summary>
+    private void EmitMssqlAuthTrigger(
+        SqlWriter writer,
+        DbTriggerInfo trigger,
+        TriggerKindParameters.AuthHierarchyMaintenance auth
+    )
+    {
+        var schema = trigger.Table.Schema;
+        var triggerEvent = auth.TriggerEvent switch
+        {
+            AuthHierarchyTriggerEvent.Insert => "INSERT",
+            AuthHierarchyTriggerEvent.Update => "UPDATE",
+            AuthHierarchyTriggerEvent.Delete => "DELETE",
+            _ => throw new ArgumentOutOfRangeException(nameof(auth.TriggerEvent)),
+        };
+
+        writer.Append("CREATE OR ALTER TRIGGER ");
+        writer.Append(Quote(schema));
+        writer.Append(".");
+        writer.AppendLine(Quote(trigger.Name));
+        writer.Append("ON ");
+        writer.AppendLine(Quote(trigger.Table));
+        writer.AppendLine($"AFTER {triggerEvent}");
+        writer.AppendLine("AS");
+        writer.AppendLine("BEGIN");
+        using (writer.Indent())
+        {
+            writer.AppendLine("SET NOCOUNT ON;");
+            AuthTriggerBodyEmitter.EmitBody(writer, _dialect, auth.Entity, auth.TriggerEvent);
+        }
+        writer.AppendLine("END;");
+        // Close the batch so that the next trigger (or any subsequent DDL/DML
+        // concatenated after the relational model DDL) starts in a fresh batch.
+        writer.AppendLine("GO");
+        writer.AppendLine();
+    }
+
+    /// <summary>
     /// Emits the trigger body logic based on trigger kind.
     /// </summary>
     private void EmitTriggerBody(SqlWriter writer, DbTriggerInfo trigger)
@@ -486,6 +646,12 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             case TriggerKindParameters.IdentityPropagationFallback propagation:
                 EmitIdentityPropagationBody(writer, trigger, propagation);
                 break;
+            case TriggerKindParameters.AuthHierarchyMaintenance:
+                // Auth triggers are handled by dedicated scaffolding methods
+                // (EmitPgsqlAuthTrigger / EmitMssqlAuthTrigger), not this switch.
+                throw new InvalidOperationException(
+                    $"Auth hierarchy trigger '{trigger.Name.Value}' should not reach EmitTriggerBody."
+                );
             default:
                 throw new ArgumentOutOfRangeException(nameof(trigger.Parameters));
         }
@@ -498,9 +664,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     private void EmitDocumentStampingBody(SqlWriter writer, DbTriggerInfo trigger)
     {
         if (trigger.KeyColumns.Count != 1)
+        {
             throw new InvalidOperationException(
                 $"DocumentStamping trigger '{trigger.Name.Value}' requires exactly one key column, but has {trigger.KeyColumns.Count}."
             );
+        }
 
         var documentTable = Quote(DmsTableNames.Document);
         var sequenceName = FormatSequenceName();
@@ -795,7 +963,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         for (int i = 0; i < elements.Count; i++)
         {
             if (i > 0)
+            {
                 writer.Append(" || '#' || ");
+            }
             writer.Append("'$");
             writer.Append(SqlDialectBase.EscapeSingleQuote(elements[i].IdentityJsonPath));
             writer.Append("=' || ");
@@ -973,7 +1143,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         for (int i = 0; i < elements.Count; i++)
         {
             if (i > 0)
+            {
                 writer.Append(" + N'#' + ");
+            }
             writer.Append("N'$");
             writer.Append(SqlDialectBase.EscapeSingleQuote(elements[i].IdentityJsonPath));
             writer.Append("=' + ");
@@ -1123,7 +1295,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             for (int i = 0; i < mappings.Count; i++)
             {
                 if (i > 0)
+                {
                     writer.Append(", ");
+                }
                 writer.Append(Quote(mappings[i].TargetColumn));
                 writer.Append(" = EXCLUDED.");
                 writer.Append(Quote(mappings[i].TargetColumn));
@@ -1238,7 +1412,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         for (int i = 0; i < mappings.Count; i++)
         {
             if (i > 0)
+            {
                 writer.Append(", ");
+            }
             writer.Append("t.");
             writer.Append(Quote(mappings[i].TargetColumn));
             writer.Append(" = s.");
@@ -1321,7 +1497,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 for (int i = 0; i < referrer.ColumnMappings.Count; i++)
                 {
                     if (i > 0)
+                    {
                         writer.Append(", ");
+                    }
                     // TargetColumn = referrer's stored identity column (e.g., School_SchoolId)
                     // SourceColumn = trigger table's identity column (e.g., SchoolId)
                     writer.Append("r.");
@@ -1352,7 +1530,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 for (int i = 0; i < referrer.ColumnMappings.Count; i++)
                 {
                     if (i > 0)
+                    {
                         writer.Append(" OR ");
+                    }
                     var col = Quote(referrer.ColumnMappings[i].SourceColumn);
                     EmitMssqlNullSafeNotEqual(writer, "i", col, "d", col);
                 }
@@ -1376,7 +1556,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         for (int i = 0; i < identityProjectionColumns.Count; i++)
         {
             if (i > 0)
+            {
                 writer.Append(" OR ");
+            }
             var col = Quote(identityProjectionColumns[i]);
             writer.Append("OLD.");
             writer.Append(col);
@@ -1399,7 +1581,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         for (int i = 0; i < identityProjectionColumns.Count; i++)
         {
             if (i > 0)
+            {
                 writer.Append(" OR ");
+            }
             writer.Append("UPDATE(");
             writer.Append(Quote(identityProjectionColumns[i]));
             writer.Append(")");
@@ -1441,7 +1625,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         for (int i = 0; i < identityProjectionColumns.Count; i++)
         {
             if (i > 0)
+            {
                 writer.Append(" OR ");
+            }
             var col = Quote(identityProjectionColumns[i]);
             EmitMssqlNullSafeNotEqual(writer, "i", col, "d", col);
         }
@@ -1651,11 +1837,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             var arm = viewInfo.UnionArmsInOrder[i];
 
             if (arm.ProjectionExpressionsInSelectOrder.Count != viewInfo.OutputColumnsInSelectOrder.Count)
+            {
                 throw new InvalidOperationException(
                     $"Union arm from table '{arm.FromTable.Schema.Value}.{arm.FromTable.Name}' has "
                         + $"{arm.ProjectionExpressionsInSelectOrder.Count} projection expressions but the view expects "
                         + $"{viewInfo.OutputColumnsInSelectOrder.Count} output columns."
                 );
+            }
 
             if (i > 0)
             {
@@ -1668,7 +1856,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             for (int j = 0; j < arm.ProjectionExpressionsInSelectOrder.Count; j++)
             {
                 if (j > 0)
+                {
                     writer.Append(", ");
+                }
 
                 var expr = arm.ProjectionExpressionsInSelectOrder[j];
                 var outputColumn = viewInfo.OutputColumnsInSelectOrder[j];
