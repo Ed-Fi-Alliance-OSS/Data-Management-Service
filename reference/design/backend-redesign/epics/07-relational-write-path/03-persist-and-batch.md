@@ -32,22 +32,40 @@ Dependency note: `reference/design/backend-redesign/epics/DEPENDENCIES.md` is th
 - Respect dialect parameter limits and implement batching to avoid N+1 patterns.
 - Guard the no-op fast path by revalidating the observed `ContentVersion` before returning success; public `If-Match` header semantics remain owned by `DMS-1005`.
 
+## Shared Profile Scenario Baseline
+
+The runtime executor story and downstream test-migration stories should reuse the same compact scenario names when describing profile coverage:
+
+- `NoProfileWriteBehavior` — control case with no writable profile; proves the write path still behaves as the normal full-surface upsert/update path.
+- `FullSurfaceCollectionReorder` — no-profile/full-surface collection reorder; matched rows keep stable `CollectionItemId` values while `Ordinal` changes.
+- `ProfileVisibleRowUpdateWithHiddenRowPreservation` — profiled visible-row update/merge; hidden rows and hidden members are preserved. This scenario family includes no-previously-visible, interleaved update-plus-insert, nested collection, root-level extension child-collection, and collection-aligned extension child-collection variants.
+- `ProfileVisibleRowDeleteWithHiddenRowPreservation` — profiled visible-row delete; hidden rows survive untouched. This scenario family includes the delete-all-visible-while-hidden-rows-remain case.
+- `ProfileVisibleButAbsentNonCollectionScope` — profiled non-collection scope is visible but intentionally absent; separate-table scopes delete, while inlined scopes clear only visible bindings.
+- `ProfileHiddenInlinedColumnPreservation` — matched visible scope preserves hidden parent/root-row values through compiled-binding overlay.
+- `ProfileRootCreateRejectedWhenNonCreatable` — profiled `POST` create is rejected before insert DML when Core marks the root non-creatable.
+- `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable` — profiled new visible scope/item is rejected when Core marks it non-creatable; pair this with an update-allowed/create-denied case so existing visible data remains updatable.
+- `ProfileHiddenExtensionRowPreservation` — hidden `_ext` rows and hidden extension columns on matched visible `_ext` rows are preserved.
+- `ProfileHiddenExtensionChildCollectionPreservation` — hidden extension child collections at root-level or collection-aligned scopes are preserved while visible data merges normally.
+- `ProfileUnchangedWriteGuardedNoOp` — unchanged profiled write short-circuits as a guarded no-op without changing persisted state or update-tracking metadata.
+
 ## Acceptance Criteria
 
 - POST/PUT runs in a single transaction and either commits all changed rows or rolls back fully on failure.
-- `PUT` and POST-as-update short-circuit as successful no-ops when the comparable stored/writable rowset is unchanged.
+- `PUT` and POST-as-update short-circuit as successful no-ops when the comparable stored/writable rowset is unchanged, including the `ProfileUnchangedWriteGuardedNoOp` scenario.
 - No-op detection piggybacks on the existing current-state load and does not require a dedicated “did anything change?” roundtrip.
 - Before returning a no-op result, the executor revalidates that the observed `ContentVersion` is still current; stale compares are surfaced to the outer concurrency layer instead of returning success on stale state.
 - Collection/common-type rows preserve existing stable identity for matched rows and reserve new `CollectionItemId` values only for unmatched inserts.
+- No-profile collection writes retain stable-identity merge behavior, and `FullSurfaceCollectionReorder` proves an ordinal-only reorder updates matched rows in place instead of falling back to delete+insert.
 - Profile-scoped non-collection decisions consume Core-projected `StoredScopeStates`, and profile-scoped collection merges consume Core-projected `VisibleStoredCollectionRows` keyed by compiled scope identity; runtime execution does not evaluate writable-profile predicates in backend or infer hidden-vs-absent from `VisibleStoredBody` alone.
 - Profile-scoped collection/common-type/extension collection merges start from the current full sibling sequence for that scope instance, replace the visible-row subsequence with the merged visible rows in request order, preserve hidden rows in their existing relative gaps, append extra visible inserts after the last previously visible row for that scope instance (or at the end when there was no previously visible row), and renumber `Ordinal` contiguously.
-- Ordering coverage includes scope instances with no previously visible rows, delete-all-visible cases where hidden rows remain, visible updates plus inserts with hidden rows interleaved, nested collection scopes, root-level extension child collections, and collection-aligned extension child collections.
+- `ProfileVisibleRowUpdateWithHiddenRowPreservation` covers scope instances with no previously visible rows, visible updates plus inserts with hidden rows interleaved, nested collection scopes, root-level extension child collections, and collection-aligned extension child collections.
+- `ProfileVisibleRowDeleteWithHiddenRowPreservation` covers delete-all-visible cases where hidden rows remain.
 - Matched collection rows, matched visible non-collection rows/scopes, and matched visible extension rows preserve hidden values through compiled-binding overlay from current stored rows plus `HiddenMemberPaths`.
 - Matched visible scopes/items update successfully even when the same writable profile would reject creation of a brand-new visible scope/item because required members are hidden by the profile.
 - Hidden collection rows, hidden non-collection scopes, hidden inlined parent/root-row values, and hidden extension data are preserved under writable profiles.
-- Hidden `_ext` rows, collection-aligned extension rows, root-level extension child collections, and collection-aligned extension child collections follow the same preservation/merge rules as base data.
-- Visible-but-absent non-collection scopes delete separate-table rows or clear only the visible compiled bindings for inlined parent/root-row scopes according to the compiled mapping; hidden scopes are not treated as deletes.
-- Profile-scoped `POST` create and new visible scopes/items that Core marks non-creatable fail deterministically as profile-based policy/validation errors before insert DML commits.
+- `ProfileHiddenExtensionRowPreservation` and `ProfileHiddenExtensionChildCollectionPreservation` follow the same preservation/merge rules as base data.
+- `ProfileVisibleButAbsentNonCollectionScope` deletes separate-table rows or clears only the visible compiled bindings for inlined parent/root-row scopes according to the compiled mapping; hidden scopes are not treated as deletes.
+- `ProfileRootCreateRejectedWhenNonCreatable` and `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable` fail deterministically as profile-based policy/validation errors before insert DML commits.
 - Collection merge execution assumes upstream validation/compilation already rejected any persisted multi-item collection scope that lacks a non-empty compiled semantic identity from `arrayUniquenessConstraints`.
 - Bulk operations avoid N+1 insert/update patterns.
 - Implementation works on both PostgreSQL and SQL Server with appropriate batching/parameterization behavior.
@@ -65,17 +83,11 @@ Authorization is out of scope for this story, but the transaction and batching s
 5. Implement stable-identity collection/common-type merge execution using `ProfileAppliedWriteContext.VisibleStoredCollectionRows` and `ProfileAppliedWriteRequest.VisibleRequestCollectionItems`, including matched-row update via compiled-binding overlay, visible-row delete, hidden-member preservation, batched `CollectionItemId` reservation for inserts, and the rule that only unmatched visible items consult `Creatable` without backend-owned profile predicate evaluation.
 6. Implement deterministic post-merge `Ordinal` recomputation aligned to the no-op comparison path.
 7. Implement bulk insert batching with dialect-specific limits and strategies.
-8. Add integration tests that:
-   - write a changed resource with nested collections and verify row counts/keys after commit,
-   - exercise a profile-scoped update that preserves hidden stored data while updating visible rows, and
-   - exercise a profile-scoped collection merge where a scope instance has no previously visible row and assert new visible inserts append after the hidden rows for that scope instance,
-   - exercise a profile-scoped collection merge where all previously visible rows are deleted and hidden rows remain, and assert only the hidden rows survive with relative order preserved,
-   - exercise a profile-scoped collection merge with visible updates plus inserts and hidden rows interleaved, and assert deterministic hidden-gap ordering after `Ordinal` renumbering,
-   - exercise the same deterministic ordering rule on one nested collection scope, one root-level extension child collection scope, and one collection-aligned extension child collection scope,
-   - exercise profile-scoped non-collection handling for one separate-table scope and one inlined scope, including hidden-vs-visible-absent behavior and clear-only-visible-bindings behavior for the inlined scope,
-   - exercise hidden inlined parent/root-row value preservation on a matched visible scope,
-   - exercise hidden extension-column preservation on a matched visible `_ext` row,
-   - exercise a profiled update/no-op scenario with hidden `_ext` rows, root-level extension child collections, or collection-aligned extension child collections and assert they are preserved under the same merge rules as base data,
-   - prove a matched visible scope/item update succeeds even when the same profile would mark a brand-new visible scope/item as non-creatable because required members are hidden, and
-   - reject a profiled create or visible-scope/item insert when Core marks it non-creatable, and
-   - issue unchanged PUT / POST-as-update requests and verify no DML-visible state or update-tracking metadata changes (pgsql + mssql where available).
+8. Add integration tests that cover the shared profile scenario baseline above:
+   - `NoProfileWriteBehavior`, including one changed resource with nested collections and one `FullSurfaceCollectionReorder` case that proves matched rows keep stable identity while `Ordinal` changes,
+   - `ProfileVisibleRowUpdateWithHiddenRowPreservation`, including no-previously-visible, interleaved update-plus-insert, nested collection, root-level extension child-collection, and collection-aligned extension child-collection ordering variants,
+   - `ProfileVisibleRowDeleteWithHiddenRowPreservation`, including a delete-all-visible-while-hidden-rows-remain case,
+   - `ProfileVisibleButAbsentNonCollectionScope` plus `ProfileHiddenInlinedColumnPreservation`,
+   - `ProfileHiddenExtensionRowPreservation` plus `ProfileHiddenExtensionChildCollectionPreservation`,
+   - `ProfileRootCreateRejectedWhenNonCreatable` plus `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable`, including an update-allowed/create-denied pairing, and
+   - `ProfileUnchangedWriteGuardedNoOp` for unchanged PUT / POST-as-update requests with no DML-visible state or update-tracking changes (pgsql + mssql where available).
