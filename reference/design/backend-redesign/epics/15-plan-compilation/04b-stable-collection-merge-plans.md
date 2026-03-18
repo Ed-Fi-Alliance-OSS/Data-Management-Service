@@ -38,8 +38,10 @@ That is incompatible with profile-aware writes, which require:
 ### Stable-identity compilation
 
 - Write-plan compilation consumes the `CollectionItemId`-based relational model shape from `DMS-1100`.
+- `CollectionMergePlan.SemanticIdentityBindings` compile directly from the non-empty semantic identity already derived for the scope from `arrayUniquenessConstraints`; plan compilation does not invent a runtime fallback key.
 - Collection/common-type extension scope plans align to base-row stable identity rather than ancestor ordinals.
 - Plan metadata is sufficient for runtime code to compare current rows and post-merge rows without SQL parsing.
+- If the upstream relational model for a persisted multi-item collection scope does not expose a non-empty semantic identity, plan compilation fails deterministically instead of emitting a merge plan with ambiguous matching semantics.
 
 ### Compare-order and guarded no-op metadata
 
@@ -70,7 +72,7 @@ That is incompatible with profile-aware writes, which require:
 ## Tasks
 
 1. Extend the write-plan contract types to distinguish collection merge operations from non-root 1:1 delete-by-parent behavior, including the deterministic compare/no-op metadata required for stable-identity collection scopes.
-2. Update write-plan compilation to emit deterministic stable-identity collection DML/metadata from the `CollectionItemId`-based relational model, including the metadata needed to project hydrated current rows into write-plan compare order.
+2. Update write-plan compilation to emit deterministic stable-identity collection DML/metadata from the `CollectionItemId`-based relational model, including the metadata needed to project hydrated current rows into write-plan compare order and the non-empty semantic identity bindings already derived from `arrayUniquenessConstraints`.
 3. Preserve the existing non-root 1:1 scope contract while removing replace-semantics assumptions for collections and keeping non-collection presence/absence behavior intact.
 4. Update manifest emission, normalized DTO/codecs, and any pack-facing serialization for the revised contract and compare/no-op metadata.
 5. Add unit tests and golden fixtures that lock down stable-identity collection plan compilation, compare-order invariants, and no-op candidate projection behavior for both dialects.

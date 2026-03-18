@@ -176,7 +176,7 @@ Deep dive on derived mapping and the minimal `ApiSchema.json` additions: [flatte
 - `identityJsonPaths`: natural key extraction and uniqueness
 - `documentPathsMapping`: identifies references vs scalars vs descriptor paths, plus reference identity mapping
 - `decimalPropertyValidationInfos`: precision/scale for `decimal`
-- `arrayUniquenessConstraints`: required schema metadata for collection semantic identity / relational unique constraints. The metadata may be empty for some scopes, but any persisted multi-item collection scope in the supported design must still compile a non-empty semantic identity or fail validation/compilation.
+- `arrayUniquenessConstraints`: authoritative schema metadata for collection semantic identity / relational unique constraints. For a persisted multi-item collection scope, the compiled identity is the non-empty ordered member set resolved for that scope from this metadata. DMS does not fall back to ordinals, parent-only locators, or hidden/internal row ids, and supported models that cannot supply a non-empty compiled identity must fail validation/compilation.
 - `abstractResources`: abstract identity metadata for polymorphic reference targets (drives `{AbstractResource}Identity` tables and optional union views)
 - `isSubclass` + superclass metadata: drives insertion of superclass/abstract alias referential-id rows in `dms.ReferentialIdentity`
 - `queryFieldMapping`: defines queryable fields and their JSON paths/types; may map to:
@@ -338,7 +338,7 @@ Because FK cascades update referrers’ rows and triggers bump their representat
 Collection-write note:
 - For profile-constrained writes, backend determines the visible persisted rows by applying the writable profile to the current stored JSON and recomputing collection semantic keys from the projected stored items. Backend does not evaluate profile predicates itself.
 - Core MUST reject any writable profile definition that excludes a field required to compute the compiled semantic identity of a persisted multi-item collection scope.
-- Every persisted multi-item collection scope MUST compile a semantic identity; models that do not are outside the supported design and must fail before runtime merge execution.
+- Every persisted multi-item collection scope MUST compile a non-empty semantic identity from scope-resolved `arrayUniquenessConstraints`; supported DMS models are valid MetaEd-generated models with the relevant validator set applied, and any model that still cannot do this must fail before runtime merge execution.
 - Correctness for accepted profile writes still relies on the same `If-Match` / `ContentVersion` guard described above; no new API surface is required.
 
 ### Deadlock + retry policy

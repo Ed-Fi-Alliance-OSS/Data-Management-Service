@@ -25,6 +25,7 @@ Persist flattened row buffers to the database in a single transaction:
   - delete only omitted visible rows,
   - insert only new visible rows marked creatable by Core in `VisibleRequestCollectionItems`, and
   - preserve hidden rows and hidden columns/member values using contract metadata rather than inference from projected JSON alone.
+  - runtime execution consumes the non-empty compiled semantic identity emitted by E01/E15; it does not derive a fallback match key when that prerequisite is missing.
 - Recompute `Ordinal` using the deterministic post-merge sibling-order rule defined in the design docs.
 - Respect dialect parameter limits and implement batching to avoid N+1 patterns.
 - Guard the no-op fast path by revalidating the observed `ContentVersion` before returning success; public `If-Match` header semantics remain owned by `DMS-1005`.
@@ -44,6 +45,7 @@ Persist flattened row buffers to the database in a single transaction:
 - Hidden `_ext` rows, collection-aligned extension rows, and extension child collections follow the same preservation/merge rules as base data.
 - Visible-but-absent non-collection scopes delete separate-table rows or clear only the visible compiled bindings for inlined parent/root-row scopes according to the compiled mapping; hidden scopes are not treated as deletes.
 - Profile-scoped `POST` create and new visible scopes/items that Core marks non-creatable fail deterministically as profile-based policy/validation errors before insert DML commits.
+- Collection merge execution assumes upstream validation/compilation already rejected any persisted multi-item collection scope that lacks a non-empty compiled semantic identity from `arrayUniquenessConstraints`.
 - Bulk operations avoid N+1 insert/update patterns.
 - Implementation works on both PostgreSQL and SQL Server with appropriate batching/parameterization behavior.
 

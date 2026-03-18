@@ -113,8 +113,9 @@ For each project, create a physical schema derived from `ProjectEndpointName` (e
     - nested collections additionally store `ParentCollectionItemId`,
     - nested collections keep the denormalized root scope consistent via a composite FK from `(ParentCollectionItemId, ..._DocumentId)` to the parent collection row.
   - `Ordinal` preserves array order for reconstitution and is constrained uniquely within the parent scope.
-  - `arrayUniquenessConstraints` are required schema metadata and compile into semantic match keys / unique constraints for collection merges.
-  - Every persisted multi-item collection scope MUST compile a non-empty semantic identity; models that do not are outside the supported design and MUST fail validation/compilation rather than falling back at runtime.
+  - `arrayUniquenessConstraints` are the authoritative schema metadata for collection semantic identity and relational unique constraints.
+  - For a persisted multi-item collection scope, the compiled semantic identity is the non-empty ordered member set resolved for that scope from `arrayUniquenessConstraints`; DMS does not fall back to ordinals, parent-only locators, or hidden/internal row ids.
+  - The supported DMS boundary is valid MetaEd-generated models with the relevant validator set applied. If such a scope still cannot produce a non-empty compiled identity, validation/compilation fails before runtime write execution.
 
 - Abstract identity artifacts:
   - `{schema}.{AbstractResource}Identity` tables provide FK targets for polymorphic references with cascade support.

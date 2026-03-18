@@ -227,8 +227,11 @@ Related redesign discussion:
    - nested descendants and extension scope rows attach through stable base identities rather than ordinals.
 
 2. **Compiled semantic collection identity**
-   - every persisted multi-item collection scope in the supported design must compile a non-empty semantic identity,
-   - runtime merge behavior uses `(ParentScope, SemanticIdentity)` rather than blanket delete/reinsert.
+   - for a persisted multi-item collection scope, the compiled semantic identity is the non-empty ordered member set resolved for that scope from the applicable `resourceSchema.arrayUniquenessConstraints` entry after scope resolution and path-to-column binding,
+   - runtime merge behavior uses `(ParentScope, SemanticIdentity)` rather than blanket delete/reinsert,
+   - DMS does not synthesize fallback collection identity from `Ordinal`, `CollectionItemId`, or a parent-only locator,
+   - the supported DMS boundary is valid MetaEd-generated models with the relevant validator set applied; for common-backed collections this relies on validators such as `CommonPropertyCollectionTargetMustContainIdentity`, while `CommonPropertyMustNotContainIdentity` keeps the collection property itself out of the parent identity, and
+   - if compilation cannot derive that non-empty semantic identity for a persisted multi-item collection scope, validation/compilation MUST fail before runtime write execution.
 
 3. **Root and parent scope locators**
    - every collection table stores the root `..._DocumentId`,

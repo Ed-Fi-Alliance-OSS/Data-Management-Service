@@ -235,8 +235,11 @@ Note: C# types referenced below are defined in [7.3 Relational resource model](#
 
 5. Apply `arrayUniquenessConstraints`:
    - create UNIQUE constraints on child tables based on the specified JSONPaths (mapped to columns)
-   - compile a per-collection semantic match identity from those constraints
-   - every persisted multi-item collection scope MUST compile a non-empty semantic identity; models that do not are outside the supported design and MUST fail validation/compilation rather than falling back at runtime
+   - for each persisted multi-item collection scope, compile the semantic match identity from the applicable `arrayUniquenessConstraints` member set resolved to that scope; the compiled identity is the resulting non-empty ordered list of scope-relative bindings
+   - DMS does not synthesize collection identity from `Ordinal`, `CollectionItemId`, or a parent-only locator when that metadata is absent
+   - raw `arrayUniquenessConstraints` metadata may be empty only when no persisted multi-item collection scope in the effective schema requires semantic matching
+   - the supported DMS boundary is valid MetaEd-generated models with the relevant validator set applied; for example, common-backed collections rely on validators such as `CommonPropertyCollectionTargetMustContainIdentity` to ensure the target common exposes identity members
+   - if any persisted multi-item collection scope still cannot produce a non-empty semantic identity after that derivation, validation/compilation MUST fail before runtime merge execution
 
 6. Apply naming rules + `nameOverrides`:
    - resolve all table and column names deterministically
@@ -261,7 +264,7 @@ To preserve stable row identity across profile-scoped merges, nested descendants
 - Nested collection parent scope: `ParentCollectionItemId`
 - Nested parent/root consistency: `(ParentCollectionItemId, <Root>_DocumentId)` → parent `(CollectionItemId, <Root>_DocumentId)`
 - Sibling order: unique `(ParentScope, Ordinal)`
-- Semantic match identity: unique `(ParentScope, <compiled collection identity...>)`; in the supported design every persisted multi-item collection scope must compile a non-empty identity even though the raw `arrayUniquenessConstraints` metadata itself may be empty for some scopes
+- Semantic match identity: unique `(ParentScope, <compiled collection identity...>)`; `<compiled collection identity...>` is the non-empty ordered member set derived from the applicable `arrayUniquenessConstraints` entry for that scope, and DMS does not fall back to `Ordinal`, `CollectionItemId`, or parent-only matching when that metadata is missing
 
 Example:
 
