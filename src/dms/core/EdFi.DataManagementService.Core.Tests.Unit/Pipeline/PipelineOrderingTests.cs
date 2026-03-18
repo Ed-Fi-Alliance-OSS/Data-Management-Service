@@ -222,6 +222,43 @@ public class PipelineOrderingTests
                     "ValidateResourceKeySeedMiddleware must run before schema-dependent middleware"
                 );
         }
+
+        [Test]
+        public void It_contains_ResolveMappingSetMiddleware()
+        {
+            _stepTypes.Should().Contain(typeof(ResolveMappingSetMiddleware));
+        }
+
+        [Test]
+        public void It_places_resolve_mapping_set_after_resource_key_validation()
+        {
+            var resourceKeyIndex = _stepTypes.IndexOf(typeof(ValidateResourceKeySeedMiddleware));
+            var mappingSetIndex = _stepTypes.IndexOf(typeof(ResolveMappingSetMiddleware));
+
+            resourceKeyIndex.Should().BeGreaterThanOrEqualTo(0);
+            mappingSetIndex
+                .Should()
+                .BeGreaterThan(
+                    resourceKeyIndex,
+                    "ResolveMappingSetMiddleware must come after ValidateResourceKeySeedMiddleware"
+                );
+        }
+
+        [Test]
+        public void It_places_resolve_mapping_set_before_the_first_schema_dependent_step()
+        {
+            var mappingSetIndex = _stepTypes.IndexOf(typeof(ResolveMappingSetMiddleware));
+            var apiSchemaValidationIndex = _stepTypes.IndexOf(typeof(ApiSchemaValidationMiddleware));
+
+            mappingSetIndex.Should().BeGreaterThanOrEqualTo(0);
+            apiSchemaValidationIndex.Should().BeGreaterThanOrEqualTo(0);
+            mappingSetIndex
+                .Should()
+                .BeLessThan(
+                    apiSchemaValidationIndex,
+                    "ResolveMappingSetMiddleware must run before schema-dependent middleware"
+                );
+        }
     }
 
     [TestFixture]

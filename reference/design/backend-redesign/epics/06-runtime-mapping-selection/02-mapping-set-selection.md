@@ -175,7 +175,7 @@ Add tests in the appropriate `*.Tests.Unit` projects:
 3. **`ResolveMappingSetMiddleware` tests** (`Core.Tests.Unit`):
    - Happy path: fingerprint present → resolves mapping set → attaches to `RequestInfo`.
    - `UseRelationalBackend=false` → no-op, `next()` called, `MappingSet` remains null.
-   - Missing `DatabaseFingerprint` → 503.
+   - Missing `DatabaseFingerprint` (upstream middleware already short-circuited or is disabled) → no-op, `next()` called, `MappingSet` remains null.
    - Provider failure → 503 with actionable error.
 
 4. **`RuntimeMappingSetCompiler` tests** (`Backend.Plans.Tests.Unit`):

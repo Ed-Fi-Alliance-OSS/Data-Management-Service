@@ -14,7 +14,7 @@ public static class LogSanitizer
     /// <summary>
     /// Sanitizes a string for safe logging by allowing only safe characters.
     /// Uses a whitelist approach to prevent log injection and log forging attacks.
-    /// Allows: letters, digits, spaces, and safe punctuation (_-.:/)
+    /// Allows: letters, digits, spaces, and safe punctuation (_-.:/\)
     /// </summary>
     public static string Sanitize(string? input)
     {
@@ -26,13 +26,17 @@ public static class LogSanitizer
         return new string(
             input
                 .Where(c =>
-                    char.IsLetterOrDigit(c)
-                    || c == ' '
-                    || c == '_'
-                    || c == '-'
-                    || c == '.'
-                    || c == ':'
-                    || c == '/'
+                    !char.IsControl(c)
+                    && (
+                        char.IsLetterOrDigit(c)
+                        || c == ' '
+                        || c == '_'
+                        || c == '-'
+                        || c == '.'
+                        || c == ':'
+                        || c == '/'
+                        || c == '\\'
+                    )
                 )
                 .ToArray()
         );
