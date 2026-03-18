@@ -99,7 +99,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         var authHierarchy = modelSet.AuthEdOrgHierarchy;
 
         // Phase 1: Schemas (includes auth schema when hierarchy is present)
-        EmitSchemas(writer, schemas, authHierarchy);
+        var additionalSchemas = authHierarchy is { EntitiesInNameOrder.Count: > 0 }
+            ? [AuthTableNames.AuthSchema]
+            : Array.Empty<DbSchemaName>();
+        EmitSchemas(writer, schemas, additionalSchemas);
 
         // Phase 2: Tables (PK/UK/CHECK only, no cross-table FKs; includes auth table)
         EmitTables(writer, concreteResources);
@@ -124,13 +127,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     }
 
     /// <summary>
-    /// Emits <c>CREATE SCHEMA IF NOT EXISTS</c> statements for each project schema,
-    /// plus the <c>auth</c> schema when the auth hierarchy is present.
+    /// Emits <c>CREATE SCHEMA IF NOT EXISTS</c> statements for each project schema
+    /// and any additional schemas (e.g., <c>auth</c>).
     /// </summary>
     private void EmitSchemas(
         SqlWriter writer,
         IReadOnlyList<ProjectSchemaInfo> schemas,
-        AuthEdOrgHierarchy? authHierarchy
+        IReadOnlyList<DbSchemaName> additionalSchemas
     )
     {
         foreach (var schema in schemas)
@@ -138,12 +141,12 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.AppendLine(_dialect.CreateSchemaIfNotExists(schema.PhysicalSchema));
         }
 
-        if (authHierarchy is { EntitiesInNameOrder.Count: > 0 })
+        foreach (var schema in additionalSchemas)
         {
-            writer.AppendLine(_dialect.CreateSchemaIfNotExists(AuthTableNames.AuthSchema));
+            writer.AppendLine(_dialect.CreateSchemaIfNotExists(schema));
         }
 
-        if (schemas.Count > 0 || authHierarchy is { EntitiesInNameOrder.Count: > 0 })
+        if (schemas.Count > 0 || additionalSchemas.Count > 0)
         {
             writer.AppendLine();
         }

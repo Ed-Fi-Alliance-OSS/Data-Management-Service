@@ -3237,21 +3237,6 @@
   ],
   "indexes": [
     {
-      "name": "IX_EducationOrganizationIdToEducationOrganizationId_Source",
-      "table": {
-        "schema": "auth",
-        "name": "EducationOrganizationIdToEducationOrganizationId"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "SourceEducationOrganizationId"
-      ],
-      "include_columns": [
-        "TargetEducationOrganizationId"
-      ]
-    },
-    {
       "name": "IX_EducationOrganizationIdToEducationOrganizationId_Target",
       "table": {
         "schema": "auth",
@@ -30650,12 +30635,7 @@
       "identity_column": "CommunityProviderId",
       "parent_fks": [
         {
-          "fk_column": "CommunityOrganization_DocumentId",
-          "parent_table": {
-            "schema": "edfi",
-            "name": "CommunityOrganization"
-          },
-          "parent_identity_column": "CommunityOrganizationId"
+          "denormalized_parent_id_column": "CommunityOrganization_CommunityOrganizationId"
         }
       ]
     },
@@ -30673,12 +30653,7 @@
       "identity_column": "CommunityProviderId",
       "parent_fks": [
         {
-          "fk_column": "CommunityOrganization_DocumentId",
-          "parent_table": {
-            "schema": "edfi",
-            "name": "CommunityOrganization"
-          },
-          "parent_identity_column": "CommunityOrganizationId"
+          "denormalized_parent_id_column": "CommunityOrganization_CommunityOrganizationId"
         }
       ]
     },
@@ -30696,12 +30671,7 @@
       "identity_column": "CommunityProviderId",
       "parent_fks": [
         {
-          "fk_column": "CommunityOrganization_DocumentId",
-          "parent_table": {
-            "schema": "edfi",
-            "name": "CommunityOrganization"
-          },
-          "parent_identity_column": "CommunityOrganizationId"
+          "denormalized_parent_id_column": "CommunityOrganization_CommunityOrganizationId"
         }
       ]
     },
@@ -32298,12 +32268,7 @@
       "identity_column": "EducationServiceCenterId",
       "parent_fks": [
         {
-          "fk_column": "StateEducationAgency_DocumentId",
-          "parent_table": {
-            "schema": "edfi",
-            "name": "StateEducationAgency"
-          },
-          "parent_identity_column": "StateEducationAgencyId"
+          "denormalized_parent_id_column": "StateEducationAgency_StateEducationAgencyId"
         }
       ]
     },
@@ -32321,12 +32286,7 @@
       "identity_column": "EducationServiceCenterId",
       "parent_fks": [
         {
-          "fk_column": "StateEducationAgency_DocumentId",
-          "parent_table": {
-            "schema": "edfi",
-            "name": "StateEducationAgency"
-          },
-          "parent_identity_column": "StateEducationAgencyId"
+          "denormalized_parent_id_column": "StateEducationAgency_StateEducationAgencyId"
         }
       ]
     },
@@ -32344,12 +32304,7 @@
       "identity_column": "EducationServiceCenterId",
       "parent_fks": [
         {
-          "fk_column": "StateEducationAgency_DocumentId",
-          "parent_table": {
-            "schema": "edfi",
-            "name": "StateEducationAgency"
-          },
-          "parent_identity_column": "StateEducationAgencyId"
+          "denormalized_parent_id_column": "StateEducationAgency_StateEducationAgencyId"
         }
       ]
     },
@@ -33911,28 +33866,13 @@
       "identity_column": "LocalEducationAgencyId",
       "parent_fks": [
         {
-          "fk_column": "EducationServiceCenter_DocumentId",
-          "parent_table": {
-            "schema": "edfi",
-            "name": "EducationServiceCenter"
-          },
-          "parent_identity_column": "EducationServiceCenterId"
+          "denormalized_parent_id_column": "EducationServiceCenter_EducationServiceCenterId"
         },
         {
-          "fk_column": "ParentLocalEducationAgency_DocumentId",
-          "parent_table": {
-            "schema": "edfi",
-            "name": "LocalEducationAgency"
-          },
-          "parent_identity_column": "LocalEducationAgencyId"
+          "denormalized_parent_id_column": "ParentLocalEducationAgency_LocalEducationAgencyId"
         },
         {
-          "fk_column": "StateEducationAgency_DocumentId",
-          "parent_table": {
-            "schema": "edfi",
-            "name": "StateEducationAgency"
-          },
-          "parent_identity_column": "StateEducationAgencyId"
+          "denormalized_parent_id_column": "StateEducationAgency_StateEducationAgencyId"
         }
       ]
     },
@@ -33950,28 +33890,13 @@
       "identity_column": "LocalEducationAgencyId",
       "parent_fks": [
         {
-          "fk_column": "EducationServiceCenter_DocumentId",
-          "parent_table": {
-            "schema": "edfi",
-            "name": "EducationServiceCenter"
-          },
-          "parent_identity_column": "EducationServiceCenterId"
+          "denormalized_parent_id_column": "EducationServiceCenter_EducationServiceCenterId"
         },
         {
-          "fk_column": "ParentLocalEducationAgency_DocumentId",
-          "parent_table": {
-            "schema": "edfi",
-            "name": "LocalEducationAgency"
-          },
-          "parent_identity_column": "LocalEducationAgencyId"
+          "denormalized_parent_id_column": "ParentLocalEducationAgency_LocalEducationAgencyId"
         },
         {
-          "fk_column": "StateEducationAgency_DocumentId",
-          "parent_table": {
-            "schema": "edfi",
-            "name": "StateEducationAgency"
-          },
-          "parent_identity_column": "StateEducationAgencyId"
+          "denormalized_parent_id_column": "StateEducationAgency_StateEducationAgencyId"
         }
       ]
     },
@@ -33989,28 +33914,13 @@
       "identity_column": "LocalEducationAgencyId",
       "parent_fks": [
         {
-          "fk_column": "EducationServiceCenter_DocumentId",
-          "parent_table": {
-            "schema": "edfi",
-            "name": "EducationServiceCenter"
-          },
-          "parent_identity_column": "EducationServiceCenterId"
+          "denormalized_parent_id_column": "EducationServiceCenter_EducationServiceCenterId"
         },
         {
-          "fk_column": "ParentLocalEducationAgency_DocumentId",
-          "parent_table": {
-            "schema": "edfi",
-            "name": "LocalEducationAgency"
-          },
-          "parent_identity_column": "LocalEducationAgencyId"
+          "denormalized_parent_id_column": "ParentLocalEducationAgency_LocalEducationAgencyId"
         },
         {
-          "fk_column": "StateEducationAgency_DocumentId",
-          "parent_table": {
-            "schema": "edfi",
-            "name": "StateEducationAgency"
-          },
-          "parent_identity_column": "StateEducationAgencyId"
+          "denormalized_parent_id_column": "StateEducationAgency_StateEducationAgencyId"
         }
       ]
     },
@@ -34654,12 +34564,7 @@
       "identity_column": "OrganizationDepartmentId",
       "parent_fks": [
         {
-          "fk_column": "ParentEducationOrganization_DocumentId",
-          "parent_table": {
-            "schema": "edfi",
-            "name": "EducationOrganizationIdentity"
-          },
-          "parent_identity_column": "EducationOrganizationId"
+          "denormalized_parent_id_column": "ParentEducationOrganization_EducationOrganizationId"
         }
       ]
     },
@@ -34677,12 +34582,7 @@
       "identity_column": "OrganizationDepartmentId",
       "parent_fks": [
         {
-          "fk_column": "ParentEducationOrganization_DocumentId",
-          "parent_table": {
-            "schema": "edfi",
-            "name": "EducationOrganizationIdentity"
-          },
-          "parent_identity_column": "EducationOrganizationId"
+          "denormalized_parent_id_column": "ParentEducationOrganization_EducationOrganizationId"
         }
       ]
     },
@@ -34700,12 +34600,7 @@
       "identity_column": "OrganizationDepartmentId",
       "parent_fks": [
         {
-          "fk_column": "ParentEducationOrganization_DocumentId",
-          "parent_table": {
-            "schema": "edfi",
-            "name": "EducationOrganizationIdentity"
-          },
-          "parent_identity_column": "EducationOrganizationId"
+          "denormalized_parent_id_column": "ParentEducationOrganization_EducationOrganizationId"
         }
       ]
     },
@@ -35813,12 +35708,7 @@
       "identity_column": "SchoolId",
       "parent_fks": [
         {
-          "fk_column": "LocalEducationAgency_DocumentId",
-          "parent_table": {
-            "schema": "edfi",
-            "name": "LocalEducationAgency"
-          },
-          "parent_identity_column": "LocalEducationAgencyId"
+          "denormalized_parent_id_column": "LocalEducationAgency_LocalEducationAgencyId"
         }
       ]
     },
@@ -35836,12 +35726,7 @@
       "identity_column": "SchoolId",
       "parent_fks": [
         {
-          "fk_column": "LocalEducationAgency_DocumentId",
-          "parent_table": {
-            "schema": "edfi",
-            "name": "LocalEducationAgency"
-          },
-          "parent_identity_column": "LocalEducationAgencyId"
+          "denormalized_parent_id_column": "LocalEducationAgency_LocalEducationAgencyId"
         }
       ]
     },
@@ -35859,12 +35744,7 @@
       "identity_column": "SchoolId",
       "parent_fks": [
         {
-          "fk_column": "LocalEducationAgency_DocumentId",
-          "parent_table": {
-            "schema": "edfi",
-            "name": "LocalEducationAgency"
-          },
-          "parent_identity_column": "LocalEducationAgencyId"
+          "denormalized_parent_id_column": "LocalEducationAgency_LocalEducationAgencyId"
         }
       ]
     },

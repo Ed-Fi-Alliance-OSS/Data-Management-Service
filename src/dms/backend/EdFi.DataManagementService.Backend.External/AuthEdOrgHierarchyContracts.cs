@@ -37,31 +37,16 @@ public static class AuthTableNames
 }
 
 /// <summary>
-/// Describes a parent EducationOrganization FK column on a concrete EdOrg table.
-/// The FK column stores a <c>DocumentId</c> pointing to the parent entity. To resolve
-/// the parent's <c>EducationOrganizationId</c>, the trigger joins via
-/// <see cref="ParentTable"/>.<see cref="ParentIdentityColumn"/>.
+/// Describes a denormalized parent EducationOrganization identity column on a concrete
+/// EdOrg table. The column stores the parent's EducationOrganizationId directly, so
+/// triggers can reference it without joining the parent table.
 /// </summary>
-/// <param name="FkColumn">
-/// The <c>DocumentId</c>-based FK column on the concrete EdOrg table
-/// (e.g., <c>LocalEducationAgency_DocumentId</c>).
+/// <param name="DenormalizedParentIdColumn">
+/// The denormalized parent identity column on the concrete EdOrg table
+/// (e.g., <c>StateEducationAgency_EducationOrganizationId</c> on the
+/// <c>LocalEducationAgency</c> table).
 /// </param>
-/// <param name="ParentTable">
-/// The table to join for resolving the parent's EducationOrganizationId.
-/// For concrete parent references, this is the parent's resource table
-/// (e.g., <c>edfi.LocalEducationAgency</c>).
-/// For abstract parent references, this is the abstract identity table
-/// (e.g., <c>edfi.EducationOrganizationIdentity</c>).
-/// </param>
-/// <param name="ParentIdentityColumn">
-/// The <c>EducationOrganizationId</c> column on <see cref="ParentTable"/>
-/// used to resolve the parent's natural key for the auth hierarchy.
-/// </param>
-public sealed record AuthParentEdOrgFk(
-    DbColumnName FkColumn,
-    DbTableName ParentTable,
-    DbColumnName ParentIdentityColumn
-);
+public sealed record AuthParentEdOrgFk(DbColumnName DenormalizedParentIdColumn);
 
 /// <summary>
 /// Describes a concrete EducationOrganization entity for auth hierarchy trigger generation.

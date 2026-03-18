@@ -16,7 +16,6 @@ internal static class AuthTriggerBodyEmitter
     private static readonly DbTableName _authTable = AuthTableNames.EdOrgIdToEdOrgId;
     private static readonly DbColumnName _sourceCol = AuthTableNames.SourceEdOrgId;
     private static readonly DbColumnName _targetCol = AuthTableNames.TargetEdOrgId;
-    private static readonly DbColumnName _documentIdCol = new("DocumentId");
 
     /// <summary>
     /// Groups dialect-specific pseudo-table parameters for trigger body emission.
@@ -185,28 +184,17 @@ internal static class AuthTriggerBodyEmitter
     )
     {
         (string authTable, string source, string target, string idCol) = GetQuotedNames(dialect, entity);
-        string fkCol = Quote(dialect, fk.FkColumn);
-        string parentTable = Quote(dialect, fk.ParentTable);
-        string parentIdCol = Quote(dialect, fk.ParentIdentityColumn);
-        string docIdCol = Quote(dialect, _documentIdCol);
+        string denormCol = Quote(dialect, fk.DenormalizedParentIdColumn);
 
         if (dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
             writer.AppendLine($"SELECT tuples.{source}");
-            writer.AppendLine($"FROM {parentTable} AS parent");
+            writer.AppendLine($"FROM {authTable} AS tuples");
+            writer.AppendLine($"WHERE tuples.{target} = OLD.{denormCol}");
             using (writer.Indent())
             {
-                writer.AppendLine($"INNER JOIN {authTable} AS tuples");
-                using (writer.Indent())
-                {
-                    writer.AppendLine($"ON parent.{parentIdCol} = tuples.{target}");
-                }
-            }
-            writer.AppendLine($"WHERE parent.{docIdCol} = OLD.{fkCol}");
-            using (writer.Indent())
-            {
-                writer.AppendLine($"AND OLD.{fkCol} IS NOT NULL");
-                writer.AppendLine($"AND (NEW.{fkCol} IS NULL OR OLD.{fkCol} <> NEW.{fkCol})");
+                writer.AppendLine($"AND OLD.{denormCol} IS NOT NULL");
+                writer.AppendLine($"AND (NEW.{denormCol} IS NULL OR OLD.{denormCol} <> NEW.{denormCol})");
             }
         }
         else
@@ -220,21 +208,16 @@ internal static class AuthTriggerBodyEmitter
                 {
                     writer.AppendLine($"ON old.{idCol} = new.{idCol}");
                 }
-                writer.AppendLine($"INNER JOIN {parentTable} AS parent");
-                using (writer.Indent())
-                {
-                    writer.AppendLine($"ON parent.{docIdCol} = old.{fkCol}");
-                }
                 writer.AppendLine($"INNER JOIN {authTable} AS tuples");
                 using (writer.Indent())
                 {
-                    writer.AppendLine($"ON parent.{parentIdCol} = tuples.{target}");
+                    writer.AppendLine($"ON old.{denormCol} = tuples.{target}");
                 }
             }
-            writer.AppendLine($"WHERE old.{fkCol} IS NOT NULL");
+            writer.AppendLine($"WHERE old.{denormCol} IS NOT NULL");
             using (writer.Indent())
             {
-                writer.AppendLine($"AND (new.{fkCol} IS NULL OR old.{fkCol} <> new.{fkCol})");
+                writer.AppendLine($"AND (new.{denormCol} IS NULL OR old.{denormCol} <> new.{denormCol})");
             }
         }
     }
@@ -247,24 +230,13 @@ internal static class AuthTriggerBodyEmitter
     )
     {
         (string authTable, string source, string target, string idCol) = GetQuotedNames(dialect, entity);
-        string fkCol = Quote(dialect, fk.FkColumn);
-        string parentTable = Quote(dialect, fk.ParentTable);
-        string parentIdCol = Quote(dialect, fk.ParentIdentityColumn);
-        string docIdCol = Quote(dialect, _documentIdCol);
+        string denormCol = Quote(dialect, fk.DenormalizedParentIdColumn);
 
         if (dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
             writer.AppendLine($"SELECT tuples.{source}");
-            writer.AppendLine($"FROM {parentTable} AS parent");
-            using (writer.Indent())
-            {
-                writer.AppendLine($"INNER JOIN {authTable} AS tuples");
-                using (writer.Indent())
-                {
-                    writer.AppendLine($"ON parent.{parentIdCol} = tuples.{target}");
-                }
-            }
-            writer.AppendLine($"WHERE parent.{docIdCol} = NEW.{fkCol}");
+            writer.AppendLine($"FROM {authTable} AS tuples");
+            writer.AppendLine($"WHERE tuples.{target} = NEW.{denormCol}");
         }
         else
         {
@@ -272,15 +244,10 @@ internal static class AuthTriggerBodyEmitter
             writer.AppendLine("FROM inserted new");
             using (writer.Indent())
             {
-                writer.AppendLine($"INNER JOIN {parentTable} AS parent");
-                using (writer.Indent())
-                {
-                    writer.AppendLine($"ON parent.{docIdCol} = new.{fkCol}");
-                }
                 writer.AppendLine($"INNER JOIN {authTable} AS tuples");
                 using (writer.Indent())
                 {
-                    writer.AppendLine($"ON parent.{parentIdCol} = tuples.{target}");
+                    writer.AppendLine($"ON new.{denormCol} = tuples.{target}");
                 }
             }
         }
@@ -369,28 +336,17 @@ internal static class AuthTriggerBodyEmitter
     )
     {
         (string authTable, string source, string target, string idCol) = GetQuotedNames(dialect, entity);
-        string fkCol = Quote(dialect, fk.FkColumn);
-        string parentTable = Quote(dialect, fk.ParentTable);
-        string parentIdCol = Quote(dialect, fk.ParentIdentityColumn);
-        string docIdCol = Quote(dialect, _documentIdCol);
+        string denormCol = Quote(dialect, fk.DenormalizedParentIdColumn);
 
         if (dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
             writer.AppendLine($"SELECT tuples.{source}");
-            writer.AppendLine($"FROM {parentTable} AS parent");
-            using (writer.Indent())
-            {
-                writer.AppendLine($"INNER JOIN {authTable} AS tuples");
-                using (writer.Indent())
-                {
-                    writer.AppendLine($"ON parent.{parentIdCol} = tuples.{target}");
-                }
-            }
-            writer.AppendLine($"WHERE parent.{docIdCol} = NEW.{fkCol}");
+            writer.AppendLine($"FROM {authTable} AS tuples");
+            writer.AppendLine($"WHERE tuples.{target} = NEW.{denormCol}");
             using (writer.Indent())
             {
                 writer.AppendLine(
-                    $"AND ((OLD.{fkCol} IS NULL AND NEW.{fkCol} IS NOT NULL) OR OLD.{fkCol} <> NEW.{fkCol})"
+                    $"AND ((OLD.{denormCol} IS NULL AND NEW.{denormCol} IS NOT NULL) OR OLD.{denormCol} <> NEW.{denormCol})"
                 );
             }
         }
@@ -405,21 +361,16 @@ internal static class AuthTriggerBodyEmitter
                 {
                     writer.AppendLine($"ON new.{idCol} = old.{idCol}");
                 }
-                writer.AppendLine($"INNER JOIN {parentTable} AS parent");
-                using (writer.Indent())
-                {
-                    writer.AppendLine($"ON parent.{docIdCol} = new.{fkCol}");
-                }
                 writer.AppendLine($"INNER JOIN {authTable} AS tuples");
                 using (writer.Indent())
                 {
-                    writer.AppendLine($"ON parent.{parentIdCol} = tuples.{target}");
+                    writer.AppendLine($"ON new.{denormCol} = tuples.{target}");
                 }
             }
-            writer.AppendLine($"WHERE (old.{fkCol} IS NULL AND new.{fkCol} IS NOT NULL)");
+            writer.AppendLine($"WHERE (old.{denormCol} IS NULL AND new.{denormCol} IS NOT NULL)");
             using (writer.Indent())
             {
-                writer.AppendLine($"OR old.{fkCol} <> new.{fkCol}");
+                writer.AppendLine($"OR old.{denormCol} <> new.{denormCol}");
             }
         }
     }
@@ -587,27 +538,16 @@ internal static class AuthTriggerBodyEmitter
     )
     {
         (string authTable, string source, string target, string idCol) = GetQuotedNames(dialect, entity);
-        string fkCol = Quote(dialect, fk.FkColumn);
-        string parentTable = Quote(dialect, fk.ParentTable);
-        string parentIdCol = Quote(dialect, fk.ParentIdentityColumn);
-        string docIdCol = Quote(dialect, _documentIdCol);
+        string denormCol = Quote(dialect, fk.DenormalizedParentIdColumn);
 
         if (dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
             writer.AppendLine($"SELECT tuples.{source}");
-            writer.AppendLine($"FROM {parentTable} AS parent");
+            writer.AppendLine($"FROM {authTable} AS tuples");
+            writer.AppendLine($"WHERE tuples.{target} = {ctx.PgsqlRecord}.{denormCol}");
             using (writer.Indent())
             {
-                writer.AppendLine($"INNER JOIN {authTable} AS tuples");
-                using (writer.Indent())
-                {
-                    writer.AppendLine($"ON parent.{parentIdCol} = tuples.{target}");
-                }
-            }
-            writer.AppendLine($"WHERE parent.{docIdCol} = {ctx.PgsqlRecord}.{fkCol}");
-            using (writer.Indent())
-            {
-                writer.AppendLine($"AND {ctx.PgsqlRecord}.{fkCol} IS NOT NULL");
+                writer.AppendLine($"AND {ctx.PgsqlRecord}.{denormCol} IS NOT NULL");
             }
         }
         else
@@ -616,18 +556,13 @@ internal static class AuthTriggerBodyEmitter
             writer.AppendLine($"FROM {ctx.MssqlPseudoTable} {ctx.MssqlAlias}");
             using (writer.Indent())
             {
-                writer.AppendLine($"INNER JOIN {parentTable} AS parent");
-                using (writer.Indent())
-                {
-                    writer.AppendLine($"ON parent.{docIdCol} = {ctx.MssqlAlias}.{fkCol}");
-                }
                 writer.AppendLine($"INNER JOIN {authTable} AS tuples");
                 using (writer.Indent())
                 {
-                    writer.AppendLine($"ON parent.{parentIdCol} = tuples.{target}");
+                    writer.AppendLine($"ON {ctx.MssqlAlias}.{denormCol} = tuples.{target}");
                 }
             }
-            writer.AppendLine($"WHERE {ctx.MssqlAlias}.{fkCol} IS NOT NULL");
+            writer.AppendLine($"WHERE {ctx.MssqlAlias}.{denormCol} IS NOT NULL");
         }
     }
 

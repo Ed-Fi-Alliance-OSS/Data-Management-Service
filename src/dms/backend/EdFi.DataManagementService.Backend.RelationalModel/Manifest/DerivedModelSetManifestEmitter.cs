@@ -415,10 +415,10 @@ public static class DerivedModelSetManifestEmitter
                     foreach (var fk in auth.Entity.ParentEdOrgFks)
                     {
                         writer.WriteStartObject();
-                        writer.WriteString("fk_column", fk.FkColumn.Value);
-                        writer.WritePropertyName("parent_table");
-                        WriteTableReference(writer, fk.ParentTable);
-                        writer.WriteString("parent_identity_column", fk.ParentIdentityColumn.Value);
+                        writer.WriteString(
+                            "denormalized_parent_id_column",
+                            fk.DenormalizedParentIdColumn.Value
+                        );
                         writer.WriteEndObject();
                     }
                     writer.WriteEndArray();

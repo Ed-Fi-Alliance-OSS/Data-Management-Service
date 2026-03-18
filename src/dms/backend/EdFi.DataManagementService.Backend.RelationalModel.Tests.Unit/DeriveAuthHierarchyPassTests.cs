@@ -65,7 +65,9 @@ public class Given_Auth_Hierarchy_With_Leaf_And_Hierarchical_Entities
             e.EntityName == "LocalEducationAgency"
         );
         lea.ParentEdOrgFks.Should().HaveCount(1);
-        lea.ParentEdOrgFks[0].FkColumn.Value.Should().Contain("StateEducationAgency");
+        lea.ParentEdOrgFks[0]
+            .DenormalizedParentIdColumn.Value.Should()
+            .Be("StateEducationAgency_EducationOrganizationId");
     }
 
     [Test]
@@ -101,29 +103,14 @@ public class Given_Auth_Hierarchy_With_Leaf_And_Hierarchical_Entities
     }
 
     [Test]
-    public void It_should_add_two_covering_indexes()
+    public void It_should_add_target_covering_index()
     {
         var authIndexes = _result.IndexesInCreateOrder.Where(i => i.Table.Schema.Value == "auth");
-        authIndexes.Should().HaveCount(2);
-        authIndexes
-            .Select(i => i.Name.Value)
-            .Should()
-            .Contain("IX_EducationOrganizationIdToEducationOrganizationId_Source");
+        authIndexes.Should().HaveCount(1);
         authIndexes
             .Select(i => i.Name.Value)
             .Should()
             .Contain("IX_EducationOrganizationIdToEducationOrganizationId_Target");
-    }
-
-    [Test]
-    public void It_should_include_columns_on_source_index()
-    {
-        var sourceIndex = _result.IndexesInCreateOrder.Single(i =>
-            i.Name.Value == "IX_EducationOrganizationIdToEducationOrganizationId_Source"
-        );
-        sourceIndex.KeyColumns.Select(c => c.Value).Should().Equal("SourceEducationOrganizationId");
-        sourceIndex.IncludeColumns.Should().NotBeNull();
-        sourceIndex.IncludeColumns!.Select(c => c.Value).Should().Equal("TargetEducationOrganizationId");
     }
 
     [Test]

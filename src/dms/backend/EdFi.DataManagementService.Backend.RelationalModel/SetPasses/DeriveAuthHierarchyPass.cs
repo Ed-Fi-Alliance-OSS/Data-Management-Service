@@ -32,23 +32,12 @@ public sealed class DeriveAuthHierarchyPass : IRelationalModelSetPass
             return;
         }
 
-        // Add auth covering indexes to the index inventory.
-        // (Source) INCLUDE (Target) — used by non-inverted authorization strategies.
-        context.IndexInventory.Add(
-            new DbIndexInfo(
-                new DbIndexName("IX_EducationOrganizationIdToEducationOrganizationId_Source"),
-                AuthTableNames.EdOrgIdToEdOrgId,
-                KeyColumns: [AuthTableNames.SourceEdOrgId],
-                IsUnique: false,
-                Kind: DbIndexKind.Explicit,
-                IncludeColumns: [AuthTableNames.TargetEdOrgId]
-            )
-        );
-
+        // Add auth covering index to the index inventory.
         // (Target) INCLUDE (Source) — used by inverted authorization strategies.
+        // Note: The PK on (Source, Target) already covers Source-leading queries.
         context.IndexInventory.Add(
             new DbIndexInfo(
-                new DbIndexName("IX_EducationOrganizationIdToEducationOrganizationId_Target"),
+                new DbIndexName($"IX_{AuthTableNames.EdOrgIdToEdOrgId.Name}_Target"),
                 AuthTableNames.EdOrgIdToEdOrgId,
                 KeyColumns: [AuthTableNames.TargetEdOrgId],
                 IsUnique: false,
@@ -133,7 +122,7 @@ public sealed class DeriveAuthHierarchyPass : IRelationalModelSetPass
             edOrgUnionView.UnionArmsInOrder.Select(arm => arm.ConcreteMemberResourceKey.Resource)
         );
 
-        // Step 3: Find the abstract identity table for parent FK resolution.
+        // Step 3: Determine the abstract identity column (for the union view projection).
         var abstractIdentityTable =
             context.AbstractIdentityTablesInNameOrder.FirstOrDefault(t =>
                 t.AbstractResourceKey.Resource == abstractEdOrgResource
@@ -142,7 +131,6 @@ public sealed class DeriveAuthHierarchyPass : IRelationalModelSetPass
                 $"No abstract identity table found for '{abstractEdOrgResource.ResourceName}'."
             );
 
-        // Step 4: Determine the abstract identity column.
         var abstractIdentityColumn = (
             abstractIdentityTable.TableModel.Columns.FirstOrDefault(c =>
                 c.Kind == ColumnKind.Scalar && c.ColumnName.Value != "Discriminator"
@@ -152,7 +140,7 @@ public sealed class DeriveAuthHierarchyPass : IRelationalModelSetPass
             )
         ).ColumnName;
 
-        // Step 5: Build mapping from concrete member to entity-specific identity column.
+        // Step 4: Build mapping from concrete member to entity-specific identity column.
         var identityOutputIndex = edOrgUnionView
             .OutputColumnsInSelectOrder.Select((col, idx) => (col, idx))
             .First(x => x.col.ColumnName == abstractIdentityColumn)
@@ -167,12 +155,12 @@ public sealed class DeriveAuthHierarchyPass : IRelationalModelSetPass
                 ).ColumnName
         );
 
-        // Step 6: Build lookup of concrete resource models by qualified name.
+        // Step 5: Build lookup of concrete resource models by qualified name.
         var concreteResourcesByName = context
             .ConcreteResourcesInNameOrder.Where(cr => concreteMemberNames.Contains(cr.ResourceKey.Resource))
             .ToDictionary(cr => cr.ResourceKey.Resource);
 
-        // Step 7: Build an AuthEdOrgEntity for each concrete member.
+        // Step 6: Build an AuthEdOrgEntity for each concrete member.
         var entities = concreteMemberNames
             .Select(memberName =>
             {
@@ -186,33 +174,29 @@ public sealed class DeriveAuthHierarchyPass : IRelationalModelSetPass
                 var rootTable = concrete.RelationalModel.Root;
                 var entityIdentityColumn = concreteIdentityColumns[memberName];
 
-                var parentFks = rootTable
-                    .Columns.Where(col =>
-                        col.Kind == ColumnKind.DocumentFk
-                        && col.Storage is ColumnStorage.Stored
-                        && col.TargetResource.HasValue
+                // Use DocumentReferenceBindings to find the denormalized parent EdOrg identity
+                // columns directly on the root table, avoiding the need for parent table joins.
+                var parentFks = concrete
+                    .RelationalModel.DocumentReferenceBindings.Where(binding =>
+                        binding.Table == rootTable.Table
                         && IsEdOrgFamilyMember(
-                            col.TargetResource.Value,
+                            binding.TargetResource,
                             abstractEdOrgResource,
                             concreteMemberNames
                         )
                     )
-                    .Select(col => new AuthParentEdOrgFk(
-                        col.ColumnName,
-                        ResolveParentTable(
-                            col.TargetResource!.Value,
-                            abstractEdOrgResource,
-                            abstractIdentityTable,
-                            concreteResourcesByName
-                        ),
-                        ResolveParentIdentityColumn(
-                            col.TargetResource!.Value,
-                            abstractEdOrgResource,
-                            abstractIdentityColumn,
-                            concreteIdentityColumns
-                        )
-                    ))
-                    .OrderBy(fk => fk.FkColumn.Value, StringComparer.Ordinal)
+                    .Select(binding =>
+                    {
+                        if (binding.IdentityBindings.Count != 1)
+                        {
+                            throw new InvalidOperationException(
+                                $"Expected exactly one identity binding for EdOrg reference on "
+                                    + $"'{memberName.ResourceName}', but found {binding.IdentityBindings.Count}."
+                            );
+                        }
+                        return new AuthParentEdOrgFk(binding.IdentityBindings[0].Column);
+                    })
+                    .OrderBy(fk => fk.DenormalizedParentIdColumn.Value, StringComparer.Ordinal)
                     .ToList();
 
                 return new AuthEdOrgEntity(
@@ -235,51 +219,5 @@ public sealed class DeriveAuthHierarchyPass : IRelationalModelSetPass
     )
     {
         return target == abstractEdOrgResource || concreteMemberNames.Contains(target);
-    }
-
-    private static DbColumnName ResolveParentIdentityColumn(
-        QualifiedResourceName targetResource,
-        QualifiedResourceName abstractEdOrgResource,
-        DbColumnName abstractIdentityColumn,
-        Dictionary<QualifiedResourceName, DbColumnName> concreteIdentityColumns
-    )
-    {
-        if (targetResource == abstractEdOrgResource)
-        {
-            return abstractIdentityColumn;
-        }
-
-        if (!concreteIdentityColumns.TryGetValue(targetResource, out var concreteColumn))
-        {
-            throw new InvalidOperationException(
-                $"Parent FK targets concrete EdOrg '{targetResource.ResourceName}' "
-                    + "which was not found in the union view arms."
-            );
-        }
-
-        return concreteColumn;
-    }
-
-    private static DbTableName ResolveParentTable(
-        QualifiedResourceName targetResource,
-        QualifiedResourceName abstractEdOrgResource,
-        AbstractIdentityTableInfo abstractIdentityTable,
-        Dictionary<QualifiedResourceName, ConcreteResourceModel> concreteResourcesByName
-    )
-    {
-        if (targetResource == abstractEdOrgResource)
-        {
-            return abstractIdentityTable.TableModel.Table;
-        }
-
-        if (!concreteResourcesByName.TryGetValue(targetResource, out var concreteResource))
-        {
-            throw new InvalidOperationException(
-                $"Parent FK targets concrete EdOrg '{targetResource.ResourceName}' "
-                    + "which was not found in ConcreteResourcesInNameOrder."
-            );
-        }
-
-        return concreteResource.RelationalModel.Root.Table;
     }
 }

@@ -1418,23 +1418,16 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         for (var i = 0; i < fks.Count; i++)
         {
             var fk = fks[i];
-            var updatedFkColumn = ShortenColumn(fk.FkColumn, dialectRules);
-            var updatedParentTable = ShortenTable(fk.ParentTable, dialectRules);
-            var updatedParentIdColumn = ShortenColumn(fk.ParentIdentityColumn, dialectRules);
+            var updatedColumn = ShortenColumn(fk.DenormalizedParentIdColumn, dialectRules);
 
-            var fkChanged =
-                !updatedFkColumn.Equals(fk.FkColumn)
-                || !updatedParentTable.Equals(fk.ParentTable)
-                || !updatedParentIdColumn.Equals(fk.ParentIdentityColumn);
+            var fkChanged = !updatedColumn.Equals(fk.DenormalizedParentIdColumn);
 
             if (fkChanged)
             {
                 changed = true;
             }
 
-            updated[i] = fkChanged
-                ? new AuthParentEdOrgFk(updatedFkColumn, updatedParentTable, updatedParentIdColumn)
-                : fk;
+            updated[i] = fkChanged ? new AuthParentEdOrgFk(updatedColumn) : fk;
         }
 
         return changed ? updated : fks;
