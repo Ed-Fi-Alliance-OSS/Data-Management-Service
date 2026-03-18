@@ -28,6 +28,7 @@ This document is the API profiles deep dive for `overview.md`, focusing on:
 - [Minimum Core Write Contract](#minimum-core-write-contract)
 - [Scope and Row Address Derivation](#scope-and-row-address-derivation)
 - [Creatability Decision Model](#creatability-decision-model)
+- [Profile Write State Machine](#profile-write-state-machine)
 - [Hidden-Member Preservation Execution Model](#hidden-member-preservation-execution-model)
 - [Profile-Constrained Write Flow](#profile-constrained-write-flow)
 - [Collection Merge Rules Under Profiles](#collection-merge-rules-under-profiles)
@@ -540,6 +541,142 @@ Decision chain:
 - descendant extension child item is also non-creatable because its immediate visible parent neither exists nor is creatable in the same request
 Result: reject before inserting either the new middle-level row or the descendant extension row
 ```
+
+## Profile Write State Machine
+
+The contract surface is intentionally rich, but backend execution MUST reduce every profiled write target to a small finite dispatcher. After address derivation and visible-stored-state projection, each addressed root/scope/item MUST end in exactly one of these outcomes:
+
+- `Insert`
+- `Update`
+- `Delete/Clear`
+- `Preserve`
+- reject before DML because the request is attempting a non-creatable visible insert/create
+
+There are no other legal runtime outcomes. In particular, backend MUST NOT invent a fifth execution behavior such as "guess from filtered JSON", "treat hidden as absent", or "fall back to delete+insert for a matched visible row."
+
+### Concrete Scope Kinds Collapse to Execution Families
+
+The apparent cross-product of "7 scope kinds x 3 profile states x operation kind" is smaller at runtime because the compiled write path collapses concrete shapes into a few execution families:
+
+| Concrete addressed thing | Execution family | Identity basis | Legal outcomes |
+| --- | --- | --- | --- |
+| Root resource instance | Root | Existing document/root-row existence for the resource identity | `Insert`, `Update`, reject |
+| Root-adjacent 1:1 scope stored in its own table | Non-collection separate-table scope | `ScopeInstanceAddress` | `Insert`, `Update`, `Delete`, `Preserve`, reject |
+| Nested/common-type scope stored in its own table | Non-collection separate-table scope | `ScopeInstanceAddress` | `Insert`, `Update`, `Delete`, `Preserve`, reject |
+| Nested/common-type scope inlined into a parent/root row | Non-collection inlined scope | `ScopeInstanceAddress` plus the owning row selected by the compiled plan | materialize/update visible bindings, clear visible bindings, preserve hidden bindings, reject |
+| Base collection or common-type collection item | Collection row | `CollectionRowAddress` with compiled semantic identity | `Insert`, `Update`, `Delete`, `Preserve`, reject |
+| Resource-level or collection-aligned extension scope row | Non-collection separate-table scope | `ScopeInstanceAddress` | `Insert`, `Update`, `Delete`, `Preserve`, reject |
+| Extension child collection item | Collection row | `CollectionRowAddress` with compiled semantic identity | `Insert`, `Update`, `Delete`, `Preserve`, reject |
+
+`POST` versus `PUT` does not create a different child-scope state machine. It only changes whether the root resource is on the create path or the existing-document path before the same scope/item dispatcher runs underneath it.
+
+### Normative Decision Tree
+
+Backend MUST drive profiled writes through this decision tree after Core has produced `ProfileAppliedWriteRequest` and `ProfileAppliedWriteContext`:
+
+```mermaid
+flowchart TD
+    A[Classify addressed target] --> B{Root resource?}
+    B -->|Yes| C{Existing document/root row already selected?}
+    C -->|Yes| D[Update existing root]
+    C -->|No| E{RootResourceCreatable?}
+    E -->|Yes| F[Insert new root/document]
+    E -->|No| X[Reject before DML]
+
+    B -->|No| G{Collection row?}
+    G -->|Yes| H{Visible request item exists at this semantic identity?}
+    H -->|Yes| I{Visible stored row match exists?}
+    I -->|Yes| J[Update matched row in place]
+    I -->|No| K{VisibleRequestCollectionItem.Creatable?}
+    K -->|Yes| L[Insert new visible row]
+    K -->|No| X
+    H -->|No| M{Stored row is visible under the profile?}
+    M -->|Yes| N[Delete omitted visible row]
+    M -->|No| O[Preserve hidden row]
+
+    G -->|No| P{RequestScopeState.Visibility}
+    P -->|Hidden| Q[Preserve scope/bindings]
+    P -->|VisibleAbsent| R{Separate-table scope?}
+    R -->|Yes| S[Delete scoped row]
+    R -->|No| T[Clear visible bindings and preserve hidden ones]
+    P -->|VisiblePresent| U{Visible stored scope exists at the same address?}
+    U -->|Yes| V[Update existing scope in place]
+    U -->|No| W{RequestScopeState.Creatable?}
+    W -->|Yes| Y{Separate-table scope?}
+    Y -->|Yes| Z[Insert scoped row]
+    Y -->|No| AA[Materialize visible bindings in owning row]
+    W -->|No| X
+```
+
+Equivalent numbered procedure:
+
+1. Classify the addressed thing as `Root`, `Non-collection separate-table scope`, `Non-collection inlined scope`, or `Collection row`.
+2. Resolve the visible stored presence for that same `ScopeInstanceAddress` or `CollectionRowAddress`.
+3. If the target is a create attempt, consult the corresponding Core-owned creatability bit.
+4. Select exactly one of `Insert`, `Update`, `Delete/Clear`, `Preserve`, or reject before DML.
+5. Apply the family-specific execution semantics from the tables below.
+
+### Exhaustive Root Outcome Table
+
+| Root condition | `RootResourceCreatable` consulted? | Outcome |
+| --- | --- | --- |
+| No existing document/root row is selected for the resource identity | Yes | `Insert` when `true`; reject before creating `dms.Document` or root rows when `false` |
+| Existing document/root row is selected for the resource identity | No | `Update` the existing root and then dispatch descendant scopes/items by their families |
+
+Root execution has no profile-state-specific `Delete/Clear` or `Preserve` branch. Those semantics apply to descendant scopes/items inside the root update.
+
+### Exhaustive Non-Collection Scope Outcome Table
+
+For non-collection scopes, hidden branches care about whether a physical stored scope/row already exists. `VisiblePresent` and `VisibleAbsent` branches care about whether `StoredScopeStates` contains a `VisiblePresent` scope at the same `ScopeInstanceAddress`. Hidden stored data does not count as an existing visible scope for create/update/delete decisions.
+
+| Storage family | Request visibility | Stored condition | `Creatable` consulted? | Outcome |
+| --- | --- | --- | --- | --- |
+| Separate-table scope | `Hidden` | No stored row exists | No | `Preserve` absence; backend does not create or delete anything for that scope |
+| Separate-table scope | `Hidden` | Stored row exists | No | `Preserve` the existing scoped row unchanged |
+| Separate-table scope | `VisibleAbsent` | No visible stored scope exists | No | `Delete/Clear` is a no-op because there is no visible row to delete |
+| Separate-table scope | `VisibleAbsent` | Visible stored scope exists | No | `Delete` the existing scoped row |
+| Separate-table scope | `VisiblePresent` | No visible stored scope exists | Yes | `Insert` when `Creatable=true`; otherwise reject before DML |
+| Separate-table scope | `VisiblePresent` | Visible stored scope exists | No | `Update` the existing scoped row in place using hidden-member overlay |
+| Inlined scope | `Hidden` | No stored bindings currently materialized for that scope surface | No | `Preserve` the owning row unchanged for that scope surface |
+| Inlined scope | `Hidden` | Stored bindings exist for that scope surface | No | `Preserve` the existing hidden-governed bindings unchanged |
+| Inlined scope | `VisibleAbsent` | No visible stored scope exists | No | `Delete/Clear` means clear the visible compiled bindings for that scope surface; if they are already clear, the result is a no-op |
+| Inlined scope | `VisibleAbsent` | Visible stored scope exists | No | `Delete/Clear` means clear the visible compiled bindings for that scope surface and preserve bindings still governed by `HiddenMemberPaths` |
+| Inlined scope | `VisiblePresent` | No visible stored scope exists | Yes | materialize the visible bindings in the owning row when `Creatable=true`; otherwise reject before DML |
+| Inlined scope | `VisiblePresent` | Visible stored scope exists | No | `Update` the visible bindings in place using hidden-member overlay |
+
+The non-collection table is exhaustive for:
+
+- root-adjacent 1:1 separate-table scopes,
+- nested/common-type scopes stored separately,
+- nested/common-type scopes inlined into a parent/root row, and
+- resource-level or collection-aligned extension scope rows.
+
+### Exhaustive Collection Outcome Table
+
+For collection scopes, backend classifies each row candidate or stored row by compiled semantic identity within its stable parent instance.
+
+| Collection classification | `Creatable` consulted? | Outcome |
+| --- | --- | --- |
+| Visible request item matches a visible stored row at the same `CollectionRowAddress` | No | `Update` the matched row in place; preserve hidden-member-governed bindings on that row |
+| Visible request item has no visible stored-row match at the same parent address | Yes | `Insert` when `VisibleRequestCollectionItem.Creatable=true`; otherwise reject before DML |
+| Visible stored row has no visible request item match | No | `Delete` the omitted visible row |
+| Hidden stored row has no visible request item match | No | `Preserve` the hidden row unchanged |
+
+Additional collection-state clarifications:
+
+- A request item that fails writable profile value filtering is rejected by Core before it reaches this dispatcher. Backend never interprets that case as `Preserve` or `Delete`.
+- A semantic-identity change is not an in-place rename. It decomposes into `Delete` for the old visible row plus `Insert` for the new visible row, and the `Insert` branch still requires `Creatable=true`.
+- Hidden stored rows never suppress the create branch for a new visible request item. They remain on the `Preserve` path unless the same row is also visible and matched under the profile.
+
+### Dispatcher Invariants
+
+The state machine above is normative:
+
+- Exactly one execution family applies to any addressed root/scope/item instance.
+- Exactly one outcome applies after visibility, current visible state, and creatability are evaluated.
+- `Creatable` is consulted only on the create branch; it is never used to block updates to already visible matched data.
+- Hidden data always takes the `Preserve` branch, never the `Delete/Clear` branch.
+- Whole-document no-op detection MUST replay this same dispatcher and its post-merge synthesis rules rather than inventing compare-only semantics.
 
 ## Hidden-Member Preservation Execution Model
 
