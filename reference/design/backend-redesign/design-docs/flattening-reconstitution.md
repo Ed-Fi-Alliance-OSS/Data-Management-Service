@@ -652,6 +652,9 @@ High-level flow:
 - compare the current rowset to that post-merge rowset table-by-table using ordered stored/writable column values, and
 - if all comparable rows are equal, treat the request as a successful no-op and skip data-modifying SQL.
 
+Implementation rule:
+- whole-document no-op detection MUST reuse the same merge-ordering and post-merge rowset-synthesis logic as the real executor, either directly or through a shared helper built from the same executor-facing `TableWritePlan` / `CollectionMergePlan` metadata. Do not add a separate profile-specific compare-only merge implementation.
+
 Comparison rules:
 - Compare in **storage space**, not by raw JSON text. The comparison should use resolved `..._DocumentId` /
   `..._DescriptorId` values, canonical storage columns under key unification, row presence/absence for 1:1 scopes,

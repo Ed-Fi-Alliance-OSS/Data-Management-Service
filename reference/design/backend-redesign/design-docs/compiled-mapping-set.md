@@ -368,6 +368,7 @@ For a write request targeting resource `R`:
    - Use the current-document rows already materialized earlier in the request (for auth/reconstitution) and project
      them into comparable rowsets using the same table ordering and stored/writable column ordering as
      `TableWritePlan.ColumnBindings`, after applying the same profile-aware merge rules the normal executor would use.
+   - Guarded no-op comparison MUST reuse the same merge-ordering and post-merge rowset-synthesis logic as execution, either directly or through a shared helper built from the same `TableWritePlan` / `CollectionMergePlan` metadata; do not introduce a compare-only profile merge path that can drift from execution behavior.
    - Compare table-by-table, including:
      - non-collection scope state using `ProfileAppliedWriteContext.StoredScopeStates` (`VisiblePresent`, `VisibleAbsent`, `Hidden`) when profile filtering applies,
      - collection sibling ordering and membership after merge using `ProfileAppliedWriteContext.VisibleStoredCollectionRows` plus the same deterministic post-merge sibling-order rule as the normal executor, and

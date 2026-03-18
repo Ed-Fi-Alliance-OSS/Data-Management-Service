@@ -705,6 +705,8 @@ The same deterministic ordering rule must be used by:
 - the real write executor, and
 - whole-document no-op detection.
 
+That shared behavior MUST come from the same executor-facing merge metadata and rowset-synthesis logic. Backend MAY factor this as a common helper, but it MUST NOT introduce a separate profile-specific compare-only merge implementation for no-op detection that can drift from real execution semantics.
+
 Normative worked examples:
 
 Apply the same rule independently per compiled collection scope plus stable parent instance.
@@ -839,6 +841,7 @@ Related redesign discussion:
 - `ContentVersion` storage and stamping fields: [data-model.md:84](data-model.md#L84)
 
 - no-op comparison occurs in storage space after applying the same post-merge rules the real write path would use,
+- guarded no-op comparison MUST reuse the same merge-ordering and post-merge rowset-synthesis logic as the real executor, either by invoking the same helper or by sharing a helper built from the same `CollectionMergePlan` / `TableWritePlan` metadata,
 - profile-scoped comparison must account for:
   - visible vs hidden collection rows,
   - hidden columns on matched rows,

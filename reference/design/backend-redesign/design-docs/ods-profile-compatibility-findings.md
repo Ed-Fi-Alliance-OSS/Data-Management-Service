@@ -159,6 +159,8 @@ Because DMS explicitly supports only MetaEd-generated models with all validation
 
 Within the DMS support boundary, that means the specific scenario of a profile-scoped multi-item child collection with no semantic child identity is out of scope.
 
+That conclusion aligns with the normative rule in [profiles.md](profiles.md#data-model-and-compilation-prerequisites): if a persisted multi-item collection scope cannot supply a non-empty compiled semantic identity, validation/compilation must fail before runtime merge execution.
+
 ## Implication For DMS Design
 
 This implies that DMS should not let the empty-key fallback case define the main collection write contract.

@@ -12,6 +12,7 @@ Persist flattened row buffers to the database in a single transaction:
 Dependency note: `reference/design/backend-redesign/epics/DEPENDENCIES.md` is the canonical dependency map, and this story is on the `E15-S04b` / `DMS-1102` critical path. Runtime merge execution here consumes the retrofitted stable-identity collection merge-plan contract from `reference/design/backend-redesign/epics/15-plan-compilation/04b-stable-collection-merge-plans.md`; it must not be implemented against the older delete-by-parent / `Ordinal`-based collection plan shape.
 
 - For `PUT`, and for `POST` when upsert resolves to an existing document, compare the current persisted rowset to the post-merge rowset the executor would actually write and skip DML when they are identical.
+- Guarded no-op comparison must reuse the same merge-ordering and post-merge rowset-synthesis logic as the real executor, either directly or through a shared helper built from the same executor-facing merge metadata; do not introduce a compare-only profile merge implementation.
 - Insert/update `dms.Document` and resource root rows when a change exists, but reject profiled creates when Core marks the root resource instance non-creatable.
 - For non-collection scopes (root-adjacent, nested/common-type, and extension scopes), use normal visible-present / visible-absent semantics:
   - use `StoredScopeStates` keyed by compiled scope identity to distinguish visible-present, visible-absent, and hidden,
@@ -56,6 +57,7 @@ The runtime executor story and downstream test-migration stories should reuse th
 - POST/PUT runs in a single transaction and either commits all changed rows or rolls back fully on failure.
 - `PUT` and POST-as-update short-circuit as successful no-ops when the comparable stored/writable rowset is unchanged, including the `ProfileUnchangedWriteGuardedNoOp` scenario.
 - No-op detection piggybacks on the existing current-state load and does not require a dedicated “did anything change?” roundtrip.
+- Guarded no-op comparison reuses the same merge-ordering and post-merge rowset-synthesis logic as execution, either by invoking the same helper or a shared helper built from the same executor-facing metadata; runtime does not maintain a separate profile-specific compare-only merge path.
 - Before returning a no-op result, the executor revalidates that the observed `ContentVersion` is still current; stale compares are surfaced to the outer concurrency layer instead of returning success on stale state.
 - Collection/common-type rows preserve existing stable identity for matched rows and reserve new `CollectionItemId` values only for unmatched inserts.
 - No-profile collection writes retain stable-identity merge behavior, and `FullSurfaceCollectionReorder` proves an ordinal-only reorder updates matched rows in place instead of falling back to delete+insert.
@@ -81,7 +83,7 @@ Authorization is out of scope for this story, but the transaction and batching s
 
 ## Tasks
 
-1. Implement rowset comparison for existing-document update flows using the same stable-identity merge and post-merge ordering rules as the real executor.
+1. Implement rowset comparison for existing-document update flows by reusing the same stable-identity merge and post-merge ordering logic as the real executor, or a shared helper built from the same executor-facing merge metadata.
 2. Implement a guarded no-op fast path that revalidates the observed `ContentVersion` before short-circuiting and returns a stale-compare outcome to the outer concurrency layer when freshness is lost.
 3. Implement a write executor that applies the compiled `ResourceWritePlan` table-by-table in dependency order when a change exists, including pre-DML failure for non-creatable profiled root-resource creates and the rule that existing visible roots remain on the update path.
 4. Implement profile-aware non-collection scope handling for separate-table 1:1/extension scopes and inlined parent-row common-type/root-column data using `ProfileAppliedWriteContext.StoredScopeStates` plus `HiddenMemberPaths`, including compiled-binding overlay for matched visible scopes, clear-only-visible-bindings behavior for visible-absent inlined scopes, the distinction between create-of-new-visible-data and update-of-existing-visible-data, and deterministic binding-accounting validation for key-unified/presence/FK/descriptor bindings.
