@@ -442,6 +442,7 @@ CREATE TRIGGER "TR_Document_Journal"
     EXECUTE FUNCTION "dms"."TF_Document_Journal"();
 
 CREATE SCHEMA IF NOT EXISTS "edfi";
+CREATE SCHEMA IF NOT EXISTS "auth";
 
 CREATE TABLE IF NOT EXISTS "edfi"."AcademicWeek"
 (
@@ -7152,6 +7153,13 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveySectionResponseStaffTargetAssociation"
     CONSTRAINT "UX_SurveySectionResponseStaffTargetAssociation_NK" UNIQUE ("Staff_DocumentId", "SurveySectionResponse_DocumentId"),
     CONSTRAINT "CK_SurveySectionResponseStaffTargetAssociation_Staff_AllNone" CHECK (("Staff_DocumentId" IS NULL AND "Staff_StaffUniqueId" IS NULL) OR ("Staff_DocumentId" IS NOT NULL AND "Staff_StaffUniqueId" IS NOT NULL)),
     CONSTRAINT "CK_SurveySectionResponseStaffTargetAssociation_Surve_333f48f5b2" CHECK (("SurveySectionResponse_DocumentId" IS NULL AND "SurveySectionResponse_SurveyResponseReferenceNamespace" IS NULL AND "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier" IS NULL AND "SurveySectionResponse_SurveyResponseIdentifier" IS NULL AND "SurveySectionResponse_SurveySectionReferenceNamespace" IS NULL AND "SurveySectionResponse_SurveySectionReferenceSurveyIdentifier" IS NULL AND "SurveySectionResponse_SurveySectionTitle" IS NULL) OR ("SurveySectionResponse_DocumentId" IS NOT NULL AND "SurveySectionResponse_SurveyResponseReferenceNamespace" IS NOT NULL AND "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier" IS NOT NULL AND "SurveySectionResponse_SurveyResponseIdentifier" IS NOT NULL AND "SurveySectionResponse_SurveySectionReferenceNamespace" IS NOT NULL AND "SurveySectionResponse_SurveySectionReferenceSurveyIdentifier" IS NOT NULL AND "SurveySectionResponse_SurveySectionTitle" IS NOT NULL))
+);
+
+CREATE TABLE IF NOT EXISTS "auth"."EducationOrganizationIdToEducationOrganizationId"
+(
+    "SourceEducationOrganizationId" bigint NOT NULL,
+    "TargetEducationOrganizationId" bigint NOT NULL,
+    CONSTRAINT "PK_EducationOrganizationIdToEducationOrganizationId" PRIMARY KEY ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationIdentity"
@@ -30622,6 +30630,8 @@ BEGIN
     END IF;
 END $$;
 
+CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationIdToEducationOrganizationId_Target" ON "auth"."EducationOrganizationIdToEducationOrganizationId" ("TargetEducationOrganizationId") INCLUDE ("SourceEducationOrganizationId");
+
 CREATE INDEX IF NOT EXISTS "IX_AcademicWeek_School_DocumentId_School_SchoolId" ON "edfi"."AcademicWeek" ("School_DocumentId", "School_SchoolId");
 
 CREATE INDEX IF NOT EXISTS "IX_AccountabilityRating_EducationOrganization_Docume_948ccf647c" ON "edfi"."AccountabilityRating" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
@@ -33786,6 +33796,36 @@ BEFORE INSERT OR UPDATE ON "edfi"."CommunityOrganization"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_CommunityOrganization_AbstractIdentity"();
 
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityOrganization_AuthHierarchy_Delete"()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM "auth"."EducationOrganizationIdToEducationOrganizationId"
+    WHERE "SourceEducationOrganizationId" = OLD."CommunityOrganizationId" AND "TargetEducationOrganizationId" = OLD."CommunityOrganizationId";
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_CommunityOrganization_AuthHierarchy_Delete" ON "edfi"."CommunityOrganization";
+CREATE TRIGGER "TR_CommunityOrganization_AuthHierarchy_Delete"
+    AFTER DELETE ON "edfi"."CommunityOrganization"
+    FOR EACH ROW
+    EXECUTE FUNCTION "edfi"."TF_TR_CommunityOrganization_AuthHierarchy_Delete"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityOrganization_AuthHierarchy_Insert"()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO "auth"."EducationOrganizationIdToEducationOrganizationId" ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
+    VALUES (NEW."CommunityOrganizationId", NEW."CommunityOrganizationId");
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_CommunityOrganization_AuthHierarchy_Insert" ON "edfi"."CommunityOrganization";
+CREATE TRIGGER "TR_CommunityOrganization_AuthHierarchy_Insert"
+    AFTER INSERT ON "edfi"."CommunityOrganization"
+    FOR EACH ROW
+    EXECUTE FUNCTION "edfi"."TF_TR_CommunityOrganization_AuthHierarchy_Insert"();
+
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityOrganization_ReferentialIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
@@ -34030,6 +34070,120 @@ CREATE TRIGGER "TR_CommunityProvider_AbstractIdentity"
 BEFORE INSERT OR UPDATE ON "edfi"."CommunityProvider"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_CommunityProvider_AbstractIdentity"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityProvider_AuthHierarchy_Delete"()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM "auth"."EducationOrganizationIdToEducationOrganizationId"
+    WHERE ("SourceEducationOrganizationId", "TargetEducationOrganizationId") IN (
+        SELECT sources."SourceEducationOrganizationId", targets."TargetEducationOrganizationId"
+        FROM (
+            SELECT tuples."SourceEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+            WHERE tuples."TargetEducationOrganizationId" = OLD."CommunityOrganization_CommunityOrganizationId"
+                AND OLD."CommunityOrganization_CommunityOrganizationId" IS NOT NULL
+        ) AS sources
+        CROSS JOIN
+        (
+            SELECT tuples."TargetEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+            WHERE tuples."SourceEducationOrganizationId" = OLD."CommunityProviderId"
+        ) AS targets
+    );
+
+    DELETE FROM "auth"."EducationOrganizationIdToEducationOrganizationId"
+    WHERE "SourceEducationOrganizationId" = OLD."CommunityProviderId" AND "TargetEducationOrganizationId" = OLD."CommunityProviderId";
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_CommunityProvider_AuthHierarchy_Delete" ON "edfi"."CommunityProvider";
+CREATE TRIGGER "TR_CommunityProvider_AuthHierarchy_Delete"
+    AFTER DELETE ON "edfi"."CommunityProvider"
+    FOR EACH ROW
+    EXECUTE FUNCTION "edfi"."TF_TR_CommunityProvider_AuthHierarchy_Delete"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityProvider_AuthHierarchy_Insert"()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO "auth"."EducationOrganizationIdToEducationOrganizationId" ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
+    VALUES (NEW."CommunityProviderId", NEW."CommunityProviderId");
+
+    INSERT INTO "auth"."EducationOrganizationIdToEducationOrganizationId" ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
+    SELECT sources."SourceEducationOrganizationId", targets."TargetEducationOrganizationId"
+    FROM (
+        SELECT tuples."SourceEducationOrganizationId"
+        FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+        WHERE tuples."TargetEducationOrganizationId" = NEW."CommunityOrganization_CommunityOrganizationId"
+            AND NEW."CommunityOrganization_CommunityOrganizationId" IS NOT NULL
+    ) AS sources
+    CROSS JOIN
+    (
+        SELECT tuples."TargetEducationOrganizationId"
+        FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+        WHERE tuples."SourceEducationOrganizationId" = NEW."CommunityProviderId"
+    ) AS targets;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_CommunityProvider_AuthHierarchy_Insert" ON "edfi"."CommunityProvider";
+CREATE TRIGGER "TR_CommunityProvider_AuthHierarchy_Insert"
+    AFTER INSERT ON "edfi"."CommunityProvider"
+    FOR EACH ROW
+    EXECUTE FUNCTION "edfi"."TF_TR_CommunityProvider_AuthHierarchy_Insert"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityProvider_AuthHierarchy_Update"()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM "auth"."EducationOrganizationIdToEducationOrganizationId"
+    WHERE ("SourceEducationOrganizationId", "TargetEducationOrganizationId") IN (
+        SELECT sources."SourceEducationOrganizationId", targets."TargetEducationOrganizationId"
+        FROM (
+            SELECT tuples."SourceEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+            WHERE tuples."TargetEducationOrganizationId" = OLD."CommunityOrganization_CommunityOrganizationId"
+                AND OLD."CommunityOrganization_CommunityOrganizationId" IS NOT NULL
+                AND (NEW."CommunityOrganization_CommunityOrganizationId" IS NULL OR OLD."CommunityOrganization_CommunityOrganizationId" <> NEW."CommunityOrganization_CommunityOrganizationId")
+
+            EXCEPT
+
+            SELECT tuples."SourceEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+            WHERE tuples."TargetEducationOrganizationId" = NEW."CommunityOrganization_CommunityOrganizationId"
+        ) AS sources
+        CROSS JOIN
+        (
+            SELECT tuples."TargetEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+            WHERE tuples."SourceEducationOrganizationId" = NEW."CommunityProviderId"
+        ) AS targets
+    );
+
+    INSERT INTO "auth"."EducationOrganizationIdToEducationOrganizationId" ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
+    SELECT sources."SourceEducationOrganizationId", targets."TargetEducationOrganizationId"
+    FROM (
+        SELECT tuples."SourceEducationOrganizationId"
+        FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+        WHERE tuples."TargetEducationOrganizationId" = NEW."CommunityOrganization_CommunityOrganizationId"
+            AND ((OLD."CommunityOrganization_CommunityOrganizationId" IS NULL AND NEW."CommunityOrganization_CommunityOrganizationId" IS NOT NULL) OR OLD."CommunityOrganization_CommunityOrganizationId" <> NEW."CommunityOrganization_CommunityOrganizationId")
+    ) AS sources
+    CROSS JOIN
+    (
+        SELECT tuples."TargetEducationOrganizationId"
+        FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+        WHERE tuples."SourceEducationOrganizationId" = NEW."CommunityProviderId"
+    ) AS targets
+    ON CONFLICT ("SourceEducationOrganizationId", "TargetEducationOrganizationId") DO NOTHING;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_CommunityProvider_AuthHierarchy_Update" ON "edfi"."CommunityProvider";
+CREATE TRIGGER "TR_CommunityProvider_AuthHierarchy_Update"
+    AFTER UPDATE ON "edfi"."CommunityProvider"
+    FOR EACH ROW
+    EXECUTE FUNCTION "edfi"."TF_TR_CommunityProvider_AuthHierarchy_Update"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CommunityProvider_ReferentialIdentity"()
 RETURNS TRIGGER AS $func$
@@ -35798,6 +35952,36 @@ BEFORE INSERT OR UPDATE ON "edfi"."EducationOrganizationNetwork"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationNetwork_AbstractIdentity"();
 
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationOrganizationNetwork_AuthHierarchy_Delete"()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM "auth"."EducationOrganizationIdToEducationOrganizationId"
+    WHERE "SourceEducationOrganizationId" = OLD."EducationOrganizationNetworkId" AND "TargetEducationOrganizationId" = OLD."EducationOrganizationNetworkId";
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_EducationOrganizationNetwork_AuthHierarchy_Delete" ON "edfi"."EducationOrganizationNetwork";
+CREATE TRIGGER "TR_EducationOrganizationNetwork_AuthHierarchy_Delete"
+    AFTER DELETE ON "edfi"."EducationOrganizationNetwork"
+    FOR EACH ROW
+    EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationNetwork_AuthHierarchy_Delete"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationOrganizationNetwork_AuthHierarchy_Insert"()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO "auth"."EducationOrganizationIdToEducationOrganizationId" ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
+    VALUES (NEW."EducationOrganizationNetworkId", NEW."EducationOrganizationNetworkId");
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_EducationOrganizationNetwork_AuthHierarchy_Insert" ON "edfi"."EducationOrganizationNetwork";
+CREATE TRIGGER "TR_EducationOrganizationNetwork_AuthHierarchy_Insert"
+    AFTER INSERT ON "edfi"."EducationOrganizationNetwork"
+    FOR EACH ROW
+    EXECUTE FUNCTION "edfi"."TF_TR_EducationOrganizationNetwork_AuthHierarchy_Insert"();
+
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationOrganizationNetwork_ReferentialIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
@@ -36134,6 +36318,120 @@ CREATE TRIGGER "TR_EducationServiceCenter_AbstractIdentity"
 BEFORE INSERT OR UPDATE ON "edfi"."EducationServiceCenter"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_EducationServiceCenter_AbstractIdentity"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationServiceCenter_AuthHierarchy_Delete"()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM "auth"."EducationOrganizationIdToEducationOrganizationId"
+    WHERE ("SourceEducationOrganizationId", "TargetEducationOrganizationId") IN (
+        SELECT sources."SourceEducationOrganizationId", targets."TargetEducationOrganizationId"
+        FROM (
+            SELECT tuples."SourceEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+            WHERE tuples."TargetEducationOrganizationId" = OLD."StateEducationAgency_StateEducationAgencyId"
+                AND OLD."StateEducationAgency_StateEducationAgencyId" IS NOT NULL
+        ) AS sources
+        CROSS JOIN
+        (
+            SELECT tuples."TargetEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+            WHERE tuples."SourceEducationOrganizationId" = OLD."EducationServiceCenterId"
+        ) AS targets
+    );
+
+    DELETE FROM "auth"."EducationOrganizationIdToEducationOrganizationId"
+    WHERE "SourceEducationOrganizationId" = OLD."EducationServiceCenterId" AND "TargetEducationOrganizationId" = OLD."EducationServiceCenterId";
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_EducationServiceCenter_AuthHierarchy_Delete" ON "edfi"."EducationServiceCenter";
+CREATE TRIGGER "TR_EducationServiceCenter_AuthHierarchy_Delete"
+    AFTER DELETE ON "edfi"."EducationServiceCenter"
+    FOR EACH ROW
+    EXECUTE FUNCTION "edfi"."TF_TR_EducationServiceCenter_AuthHierarchy_Delete"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationServiceCenter_AuthHierarchy_Insert"()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO "auth"."EducationOrganizationIdToEducationOrganizationId" ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
+    VALUES (NEW."EducationServiceCenterId", NEW."EducationServiceCenterId");
+
+    INSERT INTO "auth"."EducationOrganizationIdToEducationOrganizationId" ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
+    SELECT sources."SourceEducationOrganizationId", targets."TargetEducationOrganizationId"
+    FROM (
+        SELECT tuples."SourceEducationOrganizationId"
+        FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+        WHERE tuples."TargetEducationOrganizationId" = NEW."StateEducationAgency_StateEducationAgencyId"
+            AND NEW."StateEducationAgency_StateEducationAgencyId" IS NOT NULL
+    ) AS sources
+    CROSS JOIN
+    (
+        SELECT tuples."TargetEducationOrganizationId"
+        FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+        WHERE tuples."SourceEducationOrganizationId" = NEW."EducationServiceCenterId"
+    ) AS targets;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_EducationServiceCenter_AuthHierarchy_Insert" ON "edfi"."EducationServiceCenter";
+CREATE TRIGGER "TR_EducationServiceCenter_AuthHierarchy_Insert"
+    AFTER INSERT ON "edfi"."EducationServiceCenter"
+    FOR EACH ROW
+    EXECUTE FUNCTION "edfi"."TF_TR_EducationServiceCenter_AuthHierarchy_Insert"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationServiceCenter_AuthHierarchy_Update"()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM "auth"."EducationOrganizationIdToEducationOrganizationId"
+    WHERE ("SourceEducationOrganizationId", "TargetEducationOrganizationId") IN (
+        SELECT sources."SourceEducationOrganizationId", targets."TargetEducationOrganizationId"
+        FROM (
+            SELECT tuples."SourceEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+            WHERE tuples."TargetEducationOrganizationId" = OLD."StateEducationAgency_StateEducationAgencyId"
+                AND OLD."StateEducationAgency_StateEducationAgencyId" IS NOT NULL
+                AND (NEW."StateEducationAgency_StateEducationAgencyId" IS NULL OR OLD."StateEducationAgency_StateEducationAgencyId" <> NEW."StateEducationAgency_StateEducationAgencyId")
+
+            EXCEPT
+
+            SELECT tuples."SourceEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+            WHERE tuples."TargetEducationOrganizationId" = NEW."StateEducationAgency_StateEducationAgencyId"
+        ) AS sources
+        CROSS JOIN
+        (
+            SELECT tuples."TargetEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+            WHERE tuples."SourceEducationOrganizationId" = NEW."EducationServiceCenterId"
+        ) AS targets
+    );
+
+    INSERT INTO "auth"."EducationOrganizationIdToEducationOrganizationId" ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
+    SELECT sources."SourceEducationOrganizationId", targets."TargetEducationOrganizationId"
+    FROM (
+        SELECT tuples."SourceEducationOrganizationId"
+        FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+        WHERE tuples."TargetEducationOrganizationId" = NEW."StateEducationAgency_StateEducationAgencyId"
+            AND ((OLD."StateEducationAgency_StateEducationAgencyId" IS NULL AND NEW."StateEducationAgency_StateEducationAgencyId" IS NOT NULL) OR OLD."StateEducationAgency_StateEducationAgencyId" <> NEW."StateEducationAgency_StateEducationAgencyId")
+    ) AS sources
+    CROSS JOIN
+    (
+        SELECT tuples."TargetEducationOrganizationId"
+        FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+        WHERE tuples."SourceEducationOrganizationId" = NEW."EducationServiceCenterId"
+    ) AS targets
+    ON CONFLICT ("SourceEducationOrganizationId", "TargetEducationOrganizationId") DO NOTHING;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_EducationServiceCenter_AuthHierarchy_Update" ON "edfi"."EducationServiceCenter";
+CREATE TRIGGER "TR_EducationServiceCenter_AuthHierarchy_Update"
+    AFTER UPDATE ON "edfi"."EducationServiceCenter"
+    FOR EACH ROW
+    EXECUTE FUNCTION "edfi"."TF_TR_EducationServiceCenter_AuthHierarchy_Update"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_EducationServiceCenter_ReferentialIdentity"()
 RETURNS TRIGGER AS $func$
@@ -38042,6 +38340,190 @@ BEFORE INSERT OR UPDATE ON "edfi"."LocalEducationAgency"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AbstractIdentity"();
 
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AuthHierarchy_Delete"()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM "auth"."EducationOrganizationIdToEducationOrganizationId"
+    WHERE ("SourceEducationOrganizationId", "TargetEducationOrganizationId") IN (
+        SELECT sources."SourceEducationOrganizationId", targets."TargetEducationOrganizationId"
+        FROM (
+            SELECT tuples."SourceEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+            WHERE tuples."TargetEducationOrganizationId" = OLD."EducationServiceCenter_EducationServiceCenterId"
+                AND OLD."EducationServiceCenter_EducationServiceCenterId" IS NOT NULL
+
+            UNION
+
+            SELECT tuples."SourceEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+            WHERE tuples."TargetEducationOrganizationId" = OLD."ParentLocalEducationAgency_LocalEducationAgencyId"
+                AND OLD."ParentLocalEducationAgency_LocalEducationAgencyId" IS NOT NULL
+
+            UNION
+
+            SELECT tuples."SourceEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+            WHERE tuples."TargetEducationOrganizationId" = OLD."StateEducationAgency_StateEducationAgencyId"
+                AND OLD."StateEducationAgency_StateEducationAgencyId" IS NOT NULL
+        ) AS sources
+        CROSS JOIN
+        (
+            SELECT tuples."TargetEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+            WHERE tuples."SourceEducationOrganizationId" = OLD."LocalEducationAgencyId"
+        ) AS targets
+    );
+
+    DELETE FROM "auth"."EducationOrganizationIdToEducationOrganizationId"
+    WHERE "SourceEducationOrganizationId" = OLD."LocalEducationAgencyId" AND "TargetEducationOrganizationId" = OLD."LocalEducationAgencyId";
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_LocalEducationAgency_AuthHierarchy_Delete" ON "edfi"."LocalEducationAgency";
+CREATE TRIGGER "TR_LocalEducationAgency_AuthHierarchy_Delete"
+    AFTER DELETE ON "edfi"."LocalEducationAgency"
+    FOR EACH ROW
+    EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AuthHierarchy_Delete"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AuthHierarchy_Insert"()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO "auth"."EducationOrganizationIdToEducationOrganizationId" ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
+    VALUES (NEW."LocalEducationAgencyId", NEW."LocalEducationAgencyId");
+
+    INSERT INTO "auth"."EducationOrganizationIdToEducationOrganizationId" ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
+    SELECT sources."SourceEducationOrganizationId", targets."TargetEducationOrganizationId"
+    FROM (
+        SELECT tuples."SourceEducationOrganizationId"
+        FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+        WHERE tuples."TargetEducationOrganizationId" = NEW."EducationServiceCenter_EducationServiceCenterId"
+            AND NEW."EducationServiceCenter_EducationServiceCenterId" IS NOT NULL
+
+        UNION
+
+        SELECT tuples."SourceEducationOrganizationId"
+        FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+        WHERE tuples."TargetEducationOrganizationId" = NEW."ParentLocalEducationAgency_LocalEducationAgencyId"
+            AND NEW."ParentLocalEducationAgency_LocalEducationAgencyId" IS NOT NULL
+
+        UNION
+
+        SELECT tuples."SourceEducationOrganizationId"
+        FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+        WHERE tuples."TargetEducationOrganizationId" = NEW."StateEducationAgency_StateEducationAgencyId"
+            AND NEW."StateEducationAgency_StateEducationAgencyId" IS NOT NULL
+    ) AS sources
+    CROSS JOIN
+    (
+        SELECT tuples."TargetEducationOrganizationId"
+        FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+        WHERE tuples."SourceEducationOrganizationId" = NEW."LocalEducationAgencyId"
+    ) AS targets;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_LocalEducationAgency_AuthHierarchy_Insert" ON "edfi"."LocalEducationAgency";
+CREATE TRIGGER "TR_LocalEducationAgency_AuthHierarchy_Insert"
+    AFTER INSERT ON "edfi"."LocalEducationAgency"
+    FOR EACH ROW
+    EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AuthHierarchy_Insert"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AuthHierarchy_Update"()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM "auth"."EducationOrganizationIdToEducationOrganizationId"
+    WHERE ("SourceEducationOrganizationId", "TargetEducationOrganizationId") IN (
+        SELECT sources."SourceEducationOrganizationId", targets."TargetEducationOrganizationId"
+        FROM (
+            SELECT tuples."SourceEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+            WHERE tuples."TargetEducationOrganizationId" = OLD."EducationServiceCenter_EducationServiceCenterId"
+                AND OLD."EducationServiceCenter_EducationServiceCenterId" IS NOT NULL
+                AND (NEW."EducationServiceCenter_EducationServiceCenterId" IS NULL OR OLD."EducationServiceCenter_EducationServiceCenterId" <> NEW."EducationServiceCenter_EducationServiceCenterId")
+
+            UNION
+
+            SELECT tuples."SourceEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+            WHERE tuples."TargetEducationOrganizationId" = OLD."ParentLocalEducationAgency_LocalEducationAgencyId"
+                AND OLD."ParentLocalEducationAgency_LocalEducationAgencyId" IS NOT NULL
+                AND (NEW."ParentLocalEducationAgency_LocalEducationAgencyId" IS NULL OR OLD."ParentLocalEducationAgency_LocalEducationAgencyId" <> NEW."ParentLocalEducationAgency_LocalEducationAgencyId")
+
+            UNION
+
+            SELECT tuples."SourceEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+            WHERE tuples."TargetEducationOrganizationId" = OLD."StateEducationAgency_StateEducationAgencyId"
+                AND OLD."StateEducationAgency_StateEducationAgencyId" IS NOT NULL
+                AND (NEW."StateEducationAgency_StateEducationAgencyId" IS NULL OR OLD."StateEducationAgency_StateEducationAgencyId" <> NEW."StateEducationAgency_StateEducationAgencyId")
+
+            EXCEPT
+
+            SELECT tuples."SourceEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+            WHERE tuples."TargetEducationOrganizationId" = NEW."EducationServiceCenter_EducationServiceCenterId"
+
+            EXCEPT
+
+            SELECT tuples."SourceEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+            WHERE tuples."TargetEducationOrganizationId" = NEW."ParentLocalEducationAgency_LocalEducationAgencyId"
+
+            EXCEPT
+
+            SELECT tuples."SourceEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+            WHERE tuples."TargetEducationOrganizationId" = NEW."StateEducationAgency_StateEducationAgencyId"
+        ) AS sources
+        CROSS JOIN
+        (
+            SELECT tuples."TargetEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+            WHERE tuples."SourceEducationOrganizationId" = NEW."LocalEducationAgencyId"
+        ) AS targets
+    );
+
+    INSERT INTO "auth"."EducationOrganizationIdToEducationOrganizationId" ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
+    SELECT sources."SourceEducationOrganizationId", targets."TargetEducationOrganizationId"
+    FROM (
+        SELECT tuples."SourceEducationOrganizationId"
+        FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+        WHERE tuples."TargetEducationOrganizationId" = NEW."EducationServiceCenter_EducationServiceCenterId"
+            AND ((OLD."EducationServiceCenter_EducationServiceCenterId" IS NULL AND NEW."EducationServiceCenter_EducationServiceCenterId" IS NOT NULL) OR OLD."EducationServiceCenter_EducationServiceCenterId" <> NEW."EducationServiceCenter_EducationServiceCenterId")
+
+        UNION
+
+        SELECT tuples."SourceEducationOrganizationId"
+        FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+        WHERE tuples."TargetEducationOrganizationId" = NEW."ParentLocalEducationAgency_LocalEducationAgencyId"
+            AND ((OLD."ParentLocalEducationAgency_LocalEducationAgencyId" IS NULL AND NEW."ParentLocalEducationAgency_LocalEducationAgencyId" IS NOT NULL) OR OLD."ParentLocalEducationAgency_LocalEducationAgencyId" <> NEW."ParentLocalEducationAgency_LocalEducationAgencyId")
+
+        UNION
+
+        SELECT tuples."SourceEducationOrganizationId"
+        FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+        WHERE tuples."TargetEducationOrganizationId" = NEW."StateEducationAgency_StateEducationAgencyId"
+            AND ((OLD."StateEducationAgency_StateEducationAgencyId" IS NULL AND NEW."StateEducationAgency_StateEducationAgencyId" IS NOT NULL) OR OLD."StateEducationAgency_StateEducationAgencyId" <> NEW."StateEducationAgency_StateEducationAgencyId")
+    ) AS sources
+    CROSS JOIN
+    (
+        SELECT tuples."TargetEducationOrganizationId"
+        FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+        WHERE tuples."SourceEducationOrganizationId" = NEW."LocalEducationAgencyId"
+    ) AS targets
+    ON CONFLICT ("SourceEducationOrganizationId", "TargetEducationOrganizationId") DO NOTHING;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_LocalEducationAgency_AuthHierarchy_Update" ON "edfi"."LocalEducationAgency";
+CREATE TRIGGER "TR_LocalEducationAgency_AuthHierarchy_Update"
+    AFTER UPDATE ON "edfi"."LocalEducationAgency"
+    FOR EACH ROW
+    EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AuthHierarchy_Update"();
+
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgency_ReferentialIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
@@ -38829,6 +39311,120 @@ BEFORE INSERT OR UPDATE ON "edfi"."OrganizationDepartment"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_OrganizationDepartment_AbstractIdentity"();
 
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_OrganizationDepartment_AuthHierarchy_Delete"()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM "auth"."EducationOrganizationIdToEducationOrganizationId"
+    WHERE ("SourceEducationOrganizationId", "TargetEducationOrganizationId") IN (
+        SELECT sources."SourceEducationOrganizationId", targets."TargetEducationOrganizationId"
+        FROM (
+            SELECT tuples."SourceEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+            WHERE tuples."TargetEducationOrganizationId" = OLD."ParentEducationOrganization_EducationOrganizationId"
+                AND OLD."ParentEducationOrganization_EducationOrganizationId" IS NOT NULL
+        ) AS sources
+        CROSS JOIN
+        (
+            SELECT tuples."TargetEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+            WHERE tuples."SourceEducationOrganizationId" = OLD."OrganizationDepartmentId"
+        ) AS targets
+    );
+
+    DELETE FROM "auth"."EducationOrganizationIdToEducationOrganizationId"
+    WHERE "SourceEducationOrganizationId" = OLD."OrganizationDepartmentId" AND "TargetEducationOrganizationId" = OLD."OrganizationDepartmentId";
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_OrganizationDepartment_AuthHierarchy_Delete" ON "edfi"."OrganizationDepartment";
+CREATE TRIGGER "TR_OrganizationDepartment_AuthHierarchy_Delete"
+    AFTER DELETE ON "edfi"."OrganizationDepartment"
+    FOR EACH ROW
+    EXECUTE FUNCTION "edfi"."TF_TR_OrganizationDepartment_AuthHierarchy_Delete"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_OrganizationDepartment_AuthHierarchy_Insert"()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO "auth"."EducationOrganizationIdToEducationOrganizationId" ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
+    VALUES (NEW."OrganizationDepartmentId", NEW."OrganizationDepartmentId");
+
+    INSERT INTO "auth"."EducationOrganizationIdToEducationOrganizationId" ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
+    SELECT sources."SourceEducationOrganizationId", targets."TargetEducationOrganizationId"
+    FROM (
+        SELECT tuples."SourceEducationOrganizationId"
+        FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+        WHERE tuples."TargetEducationOrganizationId" = NEW."ParentEducationOrganization_EducationOrganizationId"
+            AND NEW."ParentEducationOrganization_EducationOrganizationId" IS NOT NULL
+    ) AS sources
+    CROSS JOIN
+    (
+        SELECT tuples."TargetEducationOrganizationId"
+        FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+        WHERE tuples."SourceEducationOrganizationId" = NEW."OrganizationDepartmentId"
+    ) AS targets;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_OrganizationDepartment_AuthHierarchy_Insert" ON "edfi"."OrganizationDepartment";
+CREATE TRIGGER "TR_OrganizationDepartment_AuthHierarchy_Insert"
+    AFTER INSERT ON "edfi"."OrganizationDepartment"
+    FOR EACH ROW
+    EXECUTE FUNCTION "edfi"."TF_TR_OrganizationDepartment_AuthHierarchy_Insert"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_OrganizationDepartment_AuthHierarchy_Update"()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM "auth"."EducationOrganizationIdToEducationOrganizationId"
+    WHERE ("SourceEducationOrganizationId", "TargetEducationOrganizationId") IN (
+        SELECT sources."SourceEducationOrganizationId", targets."TargetEducationOrganizationId"
+        FROM (
+            SELECT tuples."SourceEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+            WHERE tuples."TargetEducationOrganizationId" = OLD."ParentEducationOrganization_EducationOrganizationId"
+                AND OLD."ParentEducationOrganization_EducationOrganizationId" IS NOT NULL
+                AND (NEW."ParentEducationOrganization_EducationOrganizationId" IS NULL OR OLD."ParentEducationOrganization_EducationOrganizationId" <> NEW."ParentEducationOrganization_EducationOrganizationId")
+
+            EXCEPT
+
+            SELECT tuples."SourceEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+            WHERE tuples."TargetEducationOrganizationId" = NEW."ParentEducationOrganization_EducationOrganizationId"
+        ) AS sources
+        CROSS JOIN
+        (
+            SELECT tuples."TargetEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+            WHERE tuples."SourceEducationOrganizationId" = NEW."OrganizationDepartmentId"
+        ) AS targets
+    );
+
+    INSERT INTO "auth"."EducationOrganizationIdToEducationOrganizationId" ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
+    SELECT sources."SourceEducationOrganizationId", targets."TargetEducationOrganizationId"
+    FROM (
+        SELECT tuples."SourceEducationOrganizationId"
+        FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+        WHERE tuples."TargetEducationOrganizationId" = NEW."ParentEducationOrganization_EducationOrganizationId"
+            AND ((OLD."ParentEducationOrganization_EducationOrganizationId" IS NULL AND NEW."ParentEducationOrganization_EducationOrganizationId" IS NOT NULL) OR OLD."ParentEducationOrganization_EducationOrganizationId" <> NEW."ParentEducationOrganization_EducationOrganizationId")
+    ) AS sources
+    CROSS JOIN
+    (
+        SELECT tuples."TargetEducationOrganizationId"
+        FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+        WHERE tuples."SourceEducationOrganizationId" = NEW."OrganizationDepartmentId"
+    ) AS targets
+    ON CONFLICT ("SourceEducationOrganizationId", "TargetEducationOrganizationId") DO NOTHING;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_OrganizationDepartment_AuthHierarchy_Update" ON "edfi"."OrganizationDepartment";
+CREATE TRIGGER "TR_OrganizationDepartment_AuthHierarchy_Update"
+    AFTER UPDATE ON "edfi"."OrganizationDepartment"
+    FOR EACH ROW
+    EXECUTE FUNCTION "edfi"."TF_TR_OrganizationDepartment_AuthHierarchy_Update"();
+
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_OrganizationDepartment_ReferentialIdentity"()
 RETURNS TRIGGER AS $func$
 BEGIN
@@ -39165,6 +39761,36 @@ CREATE TRIGGER "TR_PostSecondaryInstitution_AbstractIdentity"
 BEFORE INSERT OR UPDATE ON "edfi"."PostSecondaryInstitution"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_PostSecondaryInstitution_AbstractIdentity"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_PostSecondaryInstitution_AuthHierarchy_Delete"()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM "auth"."EducationOrganizationIdToEducationOrganizationId"
+    WHERE "SourceEducationOrganizationId" = OLD."PostSecondaryInstitutionId" AND "TargetEducationOrganizationId" = OLD."PostSecondaryInstitutionId";
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_PostSecondaryInstitution_AuthHierarchy_Delete" ON "edfi"."PostSecondaryInstitution";
+CREATE TRIGGER "TR_PostSecondaryInstitution_AuthHierarchy_Delete"
+    AFTER DELETE ON "edfi"."PostSecondaryInstitution"
+    FOR EACH ROW
+    EXECUTE FUNCTION "edfi"."TF_TR_PostSecondaryInstitution_AuthHierarchy_Delete"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_PostSecondaryInstitution_AuthHierarchy_Insert"()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO "auth"."EducationOrganizationIdToEducationOrganizationId" ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
+    VALUES (NEW."PostSecondaryInstitutionId", NEW."PostSecondaryInstitutionId");
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_PostSecondaryInstitution_AuthHierarchy_Insert" ON "edfi"."PostSecondaryInstitution";
+CREATE TRIGGER "TR_PostSecondaryInstitution_AuthHierarchy_Insert"
+    AFTER INSERT ON "edfi"."PostSecondaryInstitution"
+    FOR EACH ROW
+    EXECUTE FUNCTION "edfi"."TF_TR_PostSecondaryInstitution_AuthHierarchy_Insert"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_PostSecondaryInstitution_ReferentialIdentity"()
 RETURNS TRIGGER AS $func$
@@ -40086,6 +40712,120 @@ CREATE TRIGGER "TR_School_AbstractIdentity"
 BEFORE INSERT OR UPDATE ON "edfi"."School"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_School_AbstractIdentity"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_AuthHierarchy_Delete"()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM "auth"."EducationOrganizationIdToEducationOrganizationId"
+    WHERE ("SourceEducationOrganizationId", "TargetEducationOrganizationId") IN (
+        SELECT sources."SourceEducationOrganizationId", targets."TargetEducationOrganizationId"
+        FROM (
+            SELECT tuples."SourceEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+            WHERE tuples."TargetEducationOrganizationId" = OLD."LocalEducationAgency_LocalEducationAgencyId"
+                AND OLD."LocalEducationAgency_LocalEducationAgencyId" IS NOT NULL
+        ) AS sources
+        CROSS JOIN
+        (
+            SELECT tuples."TargetEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+            WHERE tuples."SourceEducationOrganizationId" = OLD."SchoolId"
+        ) AS targets
+    );
+
+    DELETE FROM "auth"."EducationOrganizationIdToEducationOrganizationId"
+    WHERE "SourceEducationOrganizationId" = OLD."SchoolId" AND "TargetEducationOrganizationId" = OLD."SchoolId";
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_School_AuthHierarchy_Delete" ON "edfi"."School";
+CREATE TRIGGER "TR_School_AuthHierarchy_Delete"
+    AFTER DELETE ON "edfi"."School"
+    FOR EACH ROW
+    EXECUTE FUNCTION "edfi"."TF_TR_School_AuthHierarchy_Delete"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_AuthHierarchy_Insert"()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO "auth"."EducationOrganizationIdToEducationOrganizationId" ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
+    VALUES (NEW."SchoolId", NEW."SchoolId");
+
+    INSERT INTO "auth"."EducationOrganizationIdToEducationOrganizationId" ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
+    SELECT sources."SourceEducationOrganizationId", targets."TargetEducationOrganizationId"
+    FROM (
+        SELECT tuples."SourceEducationOrganizationId"
+        FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+        WHERE tuples."TargetEducationOrganizationId" = NEW."LocalEducationAgency_LocalEducationAgencyId"
+            AND NEW."LocalEducationAgency_LocalEducationAgencyId" IS NOT NULL
+    ) AS sources
+    CROSS JOIN
+    (
+        SELECT tuples."TargetEducationOrganizationId"
+        FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+        WHERE tuples."SourceEducationOrganizationId" = NEW."SchoolId"
+    ) AS targets;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_School_AuthHierarchy_Insert" ON "edfi"."School";
+CREATE TRIGGER "TR_School_AuthHierarchy_Insert"
+    AFTER INSERT ON "edfi"."School"
+    FOR EACH ROW
+    EXECUTE FUNCTION "edfi"."TF_TR_School_AuthHierarchy_Insert"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_AuthHierarchy_Update"()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM "auth"."EducationOrganizationIdToEducationOrganizationId"
+    WHERE ("SourceEducationOrganizationId", "TargetEducationOrganizationId") IN (
+        SELECT sources."SourceEducationOrganizationId", targets."TargetEducationOrganizationId"
+        FROM (
+            SELECT tuples."SourceEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+            WHERE tuples."TargetEducationOrganizationId" = OLD."LocalEducationAgency_LocalEducationAgencyId"
+                AND OLD."LocalEducationAgency_LocalEducationAgencyId" IS NOT NULL
+                AND (NEW."LocalEducationAgency_LocalEducationAgencyId" IS NULL OR OLD."LocalEducationAgency_LocalEducationAgencyId" <> NEW."LocalEducationAgency_LocalEducationAgencyId")
+
+            EXCEPT
+
+            SELECT tuples."SourceEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+            WHERE tuples."TargetEducationOrganizationId" = NEW."LocalEducationAgency_LocalEducationAgencyId"
+        ) AS sources
+        CROSS JOIN
+        (
+            SELECT tuples."TargetEducationOrganizationId"
+            FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+            WHERE tuples."SourceEducationOrganizationId" = NEW."SchoolId"
+        ) AS targets
+    );
+
+    INSERT INTO "auth"."EducationOrganizationIdToEducationOrganizationId" ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
+    SELECT sources."SourceEducationOrganizationId", targets."TargetEducationOrganizationId"
+    FROM (
+        SELECT tuples."SourceEducationOrganizationId"
+        FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+        WHERE tuples."TargetEducationOrganizationId" = NEW."LocalEducationAgency_LocalEducationAgencyId"
+            AND ((OLD."LocalEducationAgency_LocalEducationAgencyId" IS NULL AND NEW."LocalEducationAgency_LocalEducationAgencyId" IS NOT NULL) OR OLD."LocalEducationAgency_LocalEducationAgencyId" <> NEW."LocalEducationAgency_LocalEducationAgencyId")
+    ) AS sources
+    CROSS JOIN
+    (
+        SELECT tuples."TargetEducationOrganizationId"
+        FROM "auth"."EducationOrganizationIdToEducationOrganizationId" AS tuples
+        WHERE tuples."SourceEducationOrganizationId" = NEW."SchoolId"
+    ) AS targets
+    ON CONFLICT ("SourceEducationOrganizationId", "TargetEducationOrganizationId") DO NOTHING;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_School_AuthHierarchy_Update" ON "edfi"."School";
+CREATE TRIGGER "TR_School_AuthHierarchy_Update"
+    AFTER UPDATE ON "edfi"."School"
+    FOR EACH ROW
+    EXECUTE FUNCTION "edfi"."TF_TR_School_AuthHierarchy_Update"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_ReferentialIdentity"()
 RETURNS TRIGGER AS $func$
@@ -41771,6 +42511,36 @@ CREATE TRIGGER "TR_StateEducationAgency_AbstractIdentity"
 BEFORE INSERT OR UPDATE ON "edfi"."StateEducationAgency"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StateEducationAgency_AbstractIdentity"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StateEducationAgency_AuthHierarchy_Delete"()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM "auth"."EducationOrganizationIdToEducationOrganizationId"
+    WHERE "SourceEducationOrganizationId" = OLD."StateEducationAgencyId" AND "TargetEducationOrganizationId" = OLD."StateEducationAgencyId";
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_StateEducationAgency_AuthHierarchy_Delete" ON "edfi"."StateEducationAgency";
+CREATE TRIGGER "TR_StateEducationAgency_AuthHierarchy_Delete"
+    AFTER DELETE ON "edfi"."StateEducationAgency"
+    FOR EACH ROW
+    EXECUTE FUNCTION "edfi"."TF_TR_StateEducationAgency_AuthHierarchy_Delete"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StateEducationAgency_AuthHierarchy_Insert"()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO "auth"."EducationOrganizationIdToEducationOrganizationId" ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
+    VALUES (NEW."StateEducationAgencyId", NEW."StateEducationAgencyId");
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_StateEducationAgency_AuthHierarchy_Insert" ON "edfi"."StateEducationAgency";
+CREATE TRIGGER "TR_StateEducationAgency_AuthHierarchy_Insert"
+    AFTER INSERT ON "edfi"."StateEducationAgency"
+    FOR EACH ROW
+    EXECUTE FUNCTION "edfi"."TF_TR_StateEducationAgency_AuthHierarchy_Insert"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StateEducationAgency_ReferentialIdentity"()
 RETURNS TRIGGER AS $func$
