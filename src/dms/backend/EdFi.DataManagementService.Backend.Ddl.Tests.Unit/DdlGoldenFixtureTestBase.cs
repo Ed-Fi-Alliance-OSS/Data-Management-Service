@@ -16,6 +16,7 @@ namespace EdFi.DataManagementService.Backend.Ddl.Tests.Unit;
 public abstract class DdlGoldenFixtureTestBase
 {
     private string _fixtureDirectory = default!;
+    private string _actualDir = default!;
     private FixtureConfig _config = default!;
     private FixtureCompareResult _result = default!;
 
@@ -28,26 +29,23 @@ public abstract class DdlGoldenFixtureTestBase
         _fixtureDirectory = Path.GetFullPath(ResolveFixtureDirectory(projectRoot));
 
         _config = FixtureConfigReader.Read(_fixtureDirectory);
-        FixtureRunner.Run(_fixtureDirectory);
+        _actualDir = FixtureRunner.Run(_fixtureDirectory);
         _result = FixtureComparer.Compare(_fixtureDirectory);
     }
 
     [Test]
     public void It_should_produce_actual_output_files()
     {
-        var actualDir = Path.Combine(_fixtureDirectory, "actual");
-        Directory.Exists(actualDir).Should().BeTrue("FixtureRunner should create actual/ directory");
-        Directory.GetFiles(actualDir).Should().NotBeEmpty("FixtureRunner should emit artifacts");
+        Directory.Exists(_actualDir).Should().BeTrue("FixtureRunner should create actual/ directory");
+        Directory.GetFiles(_actualDir).Should().NotBeEmpty("FixtureRunner should emit artifacts");
     }
 
     [Test]
     public void It_should_emit_dialect_sql_for_each_declared_dialect()
     {
-        var actualDir = Path.Combine(_fixtureDirectory, "actual");
-
         foreach (var dialect in _config.Dialects)
         {
-            File.Exists(Path.Combine(actualDir, $"{dialect}.sql"))
+            File.Exists(Path.Combine(_actualDir, $"{dialect}.sql"))
                 .Should()
                 .BeTrue($"dialect '{dialect}' is declared in fixture.json");
         }
@@ -56,15 +54,13 @@ public abstract class DdlGoldenFixtureTestBase
     [Test]
     public void It_should_emit_effective_schema_manifest()
     {
-        File.Exists(Path.Combine(_fixtureDirectory, "actual", "effective-schema.manifest.json"))
-            .Should()
-            .BeTrue();
+        File.Exists(Path.Combine(_actualDir, "effective-schema.manifest.json")).Should().BeTrue();
     }
 
     [Test]
     public void It_should_emit_ddl_manifest_when_configured()
     {
-        var exists = File.Exists(Path.Combine(_fixtureDirectory, "actual", "ddl.manifest.json"));
+        var exists = File.Exists(Path.Combine(_actualDir, "ddl.manifest.json"));
 
         if (_config.EmitDdlManifest)
         {
@@ -79,11 +75,9 @@ public abstract class DdlGoldenFixtureTestBase
     [Test]
     public void It_should_emit_relational_model_manifest_for_each_declared_dialect()
     {
-        var actualDir = Path.Combine(_fixtureDirectory, "actual");
-
         foreach (var dialect in _config.Dialects)
         {
-            File.Exists(Path.Combine(actualDir, $"relational-model.{dialect}.manifest.json"))
+            File.Exists(Path.Combine(_actualDir, $"relational-model.{dialect}.manifest.json"))
                 .Should()
                 .BeTrue($"dialect '{dialect}' is declared in fixture.json");
         }

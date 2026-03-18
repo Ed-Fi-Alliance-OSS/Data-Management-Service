@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -554,7 +555,6 @@ public class Given_A_Fixture_Json_With_Duplicate_Dialects
 [TestFixture]
 public class Given_A_Fixture_Json_With_Unknown_Fields
 {
-    private FixtureConfig _config = default!;
     private string _tempDir = default!;
 
     [SetUp]
@@ -566,7 +566,7 @@ public class Given_A_Fixture_Json_With_Unknown_Fields
 
         File.WriteAllText(Path.Combine(_tempDir, "inputs", "ApiSchema.json"), "{}");
 
-        // "emitDdlManfest" is a typo — unknown fields are silently ignored
+        // "emitDdlManfest" is a typo — unknown fields must be rejected
         File.WriteAllText(
             Path.Combine(_tempDir, "fixture.json"),
             """
@@ -578,8 +578,6 @@ public class Given_A_Fixture_Json_With_Unknown_Fields
             }
             """
         );
-
-        _config = FixtureConfigReader.Read(_tempDir);
     }
 
     [TearDown]
@@ -592,10 +590,10 @@ public class Given_A_Fixture_Json_With_Unknown_Fields
     }
 
     [Test]
-    public void It_should_silently_ignore_unknown_fields_and_use_defaults()
+    public void It_should_throw_on_unknown_fields_to_catch_typos()
     {
-        // "emitDdlManfest" (typo) is ignored — the actual field "emitDdlManifest" defaults to true
-        _config.EmitDdlManifest.Should().BeTrue();
+        var act = () => FixtureConfigReader.Read(_tempDir);
+        act.Should().Throw<JsonException>();
     }
 }
 
