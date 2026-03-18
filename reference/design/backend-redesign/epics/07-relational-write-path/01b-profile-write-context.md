@@ -16,6 +16,8 @@ This story introduces the request-scoped Core/backend profile hand-off needed be
 
 Backend must not re-evaluate profile member filters or collection-item value predicates itself, and assumes Core has already rejected invalid writable profiles that hide compiled semantic-identity members required for persisted collection merges.
 
+Coverage in this story should reuse the shared scenario names from `reference/design/backend-redesign/epics/13-test-migration/02-parity-and-fixtures.md` where applicable so contract tests line up with runtime and parity fixtures.
+
 ## Acceptance Criteria
 
 ### Request/context orchestration
@@ -69,11 +71,12 @@ Backend must not re-evaluate profile member filters or collection-item value pre
 ### Testing
 
 - Unit or integration tests cover:
-  - no-profile behavior,
-  - profile-scoped `POST` create behavior that checks root creatability without requiring current-state projection,
+  - `NoProfileWriteBehavior`,
+  - `ProfileRootCreateRejectedWhenNonCreatable` for profile-scoped `POST` create behavior that checks root creatability without requiring current-state projection,
   - profile-scoped update/upsert behavior that invokes the projector from a supplied current stored document, and
-  - visibility/creatability hand-off for at least one collection scope and one non-collection scope, including stable scope addressing, hidden-member preservation metadata, and one matched-row overlay case for hidden inlined or extension members, and
-  - one paired scenario proving an existing visible scope/item update remains allowed while the same profile marks a brand-new visible scope/item as non-creatable because required members are hidden.
+  - `ProfileVisibleRowUpdateWithHiddenRowPreservation` for at least one collection-scope visibility hand-off with stable scope addressing,
+  - `ProfileVisibleButAbsentNonCollectionScope` plus `ProfileHiddenInlinedColumnPreservation` or `ProfileHiddenExtensionRowPreservation` for non-collection visibility and hidden-member preservation metadata, including one matched-row overlay case for hidden inlined or extension members, and
+  - `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable` with the required update-allowed/create-denied pairing proving an existing visible scope/item update remains allowed while the same profile marks a brand-new visible scope/item as non-creatable because required members are hidden.
 
 ## Tasks
 
@@ -81,4 +84,4 @@ Backend must not re-evaluate profile member filters or collection-item value pre
 2. Thread `WritableRequestBody` into write-path flattening entry points without duplicating profile logic in backend.
 3. For `POST` requests that would create a new document, consult Core-supplied root creatability before creating `dms.Document` or root rows; for profile-scoped update/upsert flows, accept the current stored document from the separate write-side load/reconstitution step and invoke the Core-owned stored-state projector.
 4. Surface root/scope visibility, collection visibility details, hidden-member preservation metadata, and creatability metadata to downstream merge/no-op code so the executor can distinguish create-of-new-visible-data from update-of-existing-visible-data without re-evaluating profile rules.
-5. Add tests that prove the backend consumes the Core-owned contract without inferring hidden-vs-absent semantics from `WritableRequestBody` or `VisibleStoredBody` alone, including root-resource create rejection, one scope-addressed collection scenario, one matched-row hidden-member overlay scenario, and one update-allowed/create-denied pair.
+5. Add tests that prove the backend consumes the Core-owned contract without inferring hidden-vs-absent semantics from `WritableRequestBody` or `VisibleStoredBody` alone, using the shared scenario names where applicable: `ProfileRootCreateRejectedWhenNonCreatable`, one scope-addressed `ProfileVisibleRowUpdateWithHiddenRowPreservation` case, `ProfileVisibleButAbsentNonCollectionScope` plus `ProfileHiddenInlinedColumnPreservation` or `ProfileHiddenExtensionRowPreservation`, and one `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable` update-allowed/create-denied pair.

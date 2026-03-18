@@ -18,21 +18,9 @@ Add runtime integration tests that exercise the relational backend end-to-end:
 
 Tests run against provisioned PostgreSQL/SQL Server using docker compose (no Testcontainers).
 
-This story reuses the shared profile scenario baseline defined in `reference/design/backend-redesign/epics/07-relational-write-path/03-persist-and-batch.md`.
+This story runs the shared profile scenario matrix defined in `reference/design/backend-redesign/epics/13-test-migration/02-parity-and-fixtures.md` and reuses the scenario definitions from `reference/design/backend-redesign/epics/07-relational-write-path/03-persist-and-batch.md`.
 
-## Shared Profile Scenario Baseline
-
-- `NoProfileWriteBehavior`
-- `FullSurfaceCollectionReorder`
-- `ProfileVisibleRowUpdateWithHiddenRowPreservation`
-- `ProfileVisibleRowDeleteWithHiddenRowPreservation`
-- `ProfileVisibleButAbsentNonCollectionScope`
-- `ProfileHiddenInlinedColumnPreservation`
-- `ProfileRootCreateRejectedWhenNonCreatable`
-- `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable`
-- `ProfileHiddenExtensionRowPreservation`
-- `ProfileHiddenExtensionChildCollectionPreservation`
-- `ProfileUnchangedWriteGuardedNoOp`
+Fixture names and helper APIs in this story should use the shared scenario names from the matrix verbatim.
 
 ## Acceptance Criteria
 
@@ -41,7 +29,7 @@ This story reuses the shared profile scenario baseline defined in `reference/des
   - response JSON is correct after reconstitution,
   - reference validation works (missing refs fail),
   - delete conflicts are reported correctly,
-  - the shared profile scenario baseline above runs end-to-end,
+  - the shared profile scenario matrix from `02-parity-and-fixtures.md` runs end-to-end,
   - `NoProfileWriteBehavior` includes one `FullSurfaceCollectionReorder` case that proves semantic-identity-based row matching rather than request ordinal,
   - `ProfileVisibleRowUpdateWithHiddenRowPreservation` covers no-previously-visible, interleaved update-plus-insert, nested collection, and extension child-collection variants under the deterministic hidden-gap ordering rule,
   - `ProfileVisibleRowDeleteWithHiddenRowPreservation` covers the delete-all-visible-while-hidden-rows-remain case,
@@ -52,10 +40,10 @@ This story reuses the shared profile scenario baseline defined in `reference/des
 
 ## Tasks
 
-1. Create a set of small fixture schemas + sample payloads for CRUD and the shared profile scenario baseline above, explicitly carrying the ordering variants nested under `ProfileVisibleRowUpdateWithHiddenRowPreservation` and `ProfileVisibleRowDeleteWithHiddenRowPreservation`.
+1. Create a set of small fixture schemas + sample payloads for CRUD and the shared profile scenario matrix from `02-parity-and-fixtures.md`, explicitly carrying the ordering variants nested under `ProfileVisibleRowUpdateWithHiddenRowPreservation` and `ProfileVisibleRowDeleteWithHiddenRowPreservation`.
 2. Implement integration test helpers that:
    - provision DB,
    - run DMS with the relational backend,
    - execute HTTP requests with and without profile media types and assert responses/persisted state.
 3. Add a test category for integration tests and wire into CI as appropriate.
-4. Add fixtures/assertions covering the shared profile scenario baseline above, including semantic-identity-based visible-row matching rather than request ordinal, hidden-data preservation across base and `_ext` scopes, visible-vs-hidden non-collection behavior, update-allowed/create-denied pairings, and unchanged-write guarded no-op behavior.
+4. Add fixtures/assertions covering the shared profile scenario matrix from `02-parity-and-fixtures.md`, including semantic-identity-based visible-row matching rather than request ordinal, hidden-data preservation across base and `_ext` scopes, visible-vs-hidden non-collection behavior, update-allowed/create-denied pairings, and unchanged-write guarded no-op behavior.

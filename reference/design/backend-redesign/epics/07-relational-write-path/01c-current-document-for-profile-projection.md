@@ -18,6 +18,8 @@ This story owns the internal backend capability to:
 
 This is distinct from `E08`: public GET/query endpoints, paging, and readable-profile response projection remain read-path work. This story only delivers the write-path prerequisite needed by profiled merge and no-op execution.
 
+When this story adds profiled fixtures, it should reuse the shared scenario names from `reference/design/backend-redesign/epics/13-test-migration/02-parity-and-fixtures.md`, especially the nested and `_ext` variants already carried under the collection-preservation scenarios.
+
 ## Acceptance Criteria
 
 - For `PUT`, and for `POST` when upsert resolves to an existing document, backend can load the current relational rows for the target `DocumentId` before profile-constrained merge decisions are finalized.
@@ -30,7 +32,7 @@ This is distinct from `E08`: public GET/query endpoints, paging, and readable-pr
 - Reconstituted current JSON matches the stored document shape expected by Core's writable-profile projector and does not apply readable-profile filtering.
 - The current-state load is sufficient for Core to assemble the full stored-side profile contract required by profiled merge execution, not just `VisibleStoredBody`.
 - The write pipeline can reuse the same current-state load for profile projection and downstream merge/no-op comparison instead of issuing a second "load current document" roundtrip.
-- Unit or integration tests cover at least one nested + `_ext` fixture in a profiled update/upsert flow.
+- Unit or integration tests cover at least one nested + `_ext` fixture in a profiled update/upsert flow, reusing a nested or `_ext` variant from `ProfileVisibleRowUpdateWithHiddenRowPreservation` or `ProfileHiddenExtensionChildCollectionPreservation`.
 
 ## Tasks
 
@@ -38,4 +40,4 @@ This is distinct from `E08`: public GET/query endpoints, paging, and readable-pr
 2. Hydrate root/child/extension tables with deterministic ordering keyed by `DocumentId`, `CollectionItemId`, `ParentCollectionItemId`, and `BaseCollectionItemId` where collection/common-type extension scopes align to a base row.
 3. Reconstitute the full stored JSON document, including reference identity values, descriptor values, and `_ext` overlays, without applying readable-profile filtering.
 4. Surface the reconstituted current document to the profile write-context assembly path so Core can produce `VisibleStoredBody`, stored-scope visibility, visible stored collection-row metadata, and hidden-member preservation metadata.
-5. Add tests proving profiled update/upsert flows can project current stored state without relying on the public read pipeline.
+5. Add tests proving profiled update/upsert flows can project current stored state without relying on the public read pipeline, reusing shared nested or `_ext` scenario names where applicable.

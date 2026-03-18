@@ -36,6 +36,8 @@ Dependency note: `reference/design/backend-redesign/epics/DEPENDENCIES.md` is th
 
 The runtime executor story and downstream test-migration stories should reuse the same compact scenario names when describing profile coverage:
 
+`reference/design/backend-redesign/epics/13-test-migration/02-parity-and-fixtures.md` carries the compact feature-by-scenario matrix that maps these names to shared fixture and parity coverage. This story remains the source of truth for what each scenario means at runtime.
+
 - `NoProfileWriteBehavior` — control case with no writable profile; proves the write path still behaves as the normal full-surface upsert/update path.
 - `FullSurfaceCollectionReorder` — no-profile/full-surface collection reorder; matched rows keep stable `CollectionItemId` values while `Ordinal` changes.
 - `ProfileVisibleRowUpdateWithHiddenRowPreservation` — profiled visible-row update/merge; hidden rows and hidden members are preserved. This scenario family includes no-previously-visible, interleaved update-plus-insert, nested collection, root-level extension child-collection, and collection-aligned extension child-collection variants.
