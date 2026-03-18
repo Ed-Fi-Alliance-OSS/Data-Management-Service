@@ -60,6 +60,10 @@ public static class TestHelper
     public static void AddMappingSetResolutionServices(IServiceCollection services)
     {
         services.AddSingleton<IMappingSetProvider>(A.Fake<IMappingSetProvider>());
+        services.AddSingleton<IEnumerable<IRuntimeMappingSetCompiler>>(
+            Array.Empty<IRuntimeMappingSetCompiler>()
+        );
+        services.AddSingleton<IEffectiveSchemaSetProvider>(A.Fake<IEffectiveSchemaSetProvider>());
         services.AddSingleton<ResolveMappingSetMiddleware>();
         services.AddTransient<ILogger<ResolveMappingSetMiddleware>>(_ =>
             NullLogger<ResolveMappingSetMiddleware>.Instance

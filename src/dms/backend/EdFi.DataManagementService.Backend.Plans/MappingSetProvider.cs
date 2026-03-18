@@ -47,13 +47,15 @@ public sealed class MappingSetProvider : IMappingSetProvider
         return _cache.GetOrCreateAsync(key, cancellationToken);
     }
 
-    private async Task<MappingSet> LoadOrCompileAsync(MappingSetKey key)
+    private static string FormatKeyForMessage(MappingSetKey key) =>
+        $"EffectiveSchemaHash '{SanitizeForLog(key.EffectiveSchemaHash)}', "
+        + $"Dialect '{key.Dialect}', RelationalMappingVersion '{SanitizeForLog(key.RelationalMappingVersion)}'";
+
+    private async Task<MappingSet> LoadOrCompileAsync(MappingSetKey key, CancellationToken cancellationToken)
     {
         if (_options.PacksEnabled)
         {
-            var payload = await _packStore
-                .TryLoadPayloadAsync(key, CancellationToken.None)
-                .ConfigureAwait(false);
+            var payload = await _packStore.TryLoadPayloadAsync(key, cancellationToken).ConfigureAwait(false);
 
             if (payload is not null)
             {
@@ -71,8 +73,7 @@ public sealed class MappingSetProvider : IMappingSetProvider
                 catch (Exception ex)
                 {
                     throw new MappingSetUnavailableException(
-                        $"Failed to decode mapping pack for EffectiveSchemaHash '{SanitizeForLog(key.EffectiveSchemaHash)}', "
-                            + $"Dialect '{key.Dialect}', RelationalMappingVersion '{SanitizeForLog(key.RelationalMappingVersion)}'. "
+                        $"Failed to decode mapping pack for {FormatKeyForMessage(key)}. "
                             + "The pack file may be corrupt or incompatible with the current version.",
                         ex
                     );
@@ -82,8 +83,7 @@ public sealed class MappingSetProvider : IMappingSetProvider
             if (_options.PacksRequired)
             {
                 throw new MappingSetUnavailableException(
-                    $"Mapping pack is required but not found for EffectiveSchemaHash '{SanitizeForLog(key.EffectiveSchemaHash)}', "
-                        + $"Dialect '{key.Dialect}', RelationalMappingVersion '{SanitizeForLog(key.RelationalMappingVersion)}'. "
+                    $"Mapping pack is required but not found for {FormatKeyForMessage(key)}. "
                         + "Ensure a matching .mpack file is available in the configured pack root path, "
                         + "or set PacksRequired=false to allow runtime compilation fallback."
                 );
@@ -92,8 +92,7 @@ public sealed class MappingSetProvider : IMappingSetProvider
             if (!_options.AllowRuntimeCompileFallback)
             {
                 throw new MappingSetUnavailableException(
-                    $"Mapping pack not found for EffectiveSchemaHash '{SanitizeForLog(key.EffectiveSchemaHash)}', "
-                        + $"Dialect '{key.Dialect}', RelationalMappingVersion '{SanitizeForLog(key.RelationalMappingVersion)}', "
+                    $"Mapping pack not found for {FormatKeyForMessage(key)}, "
                         + "and runtime compilation fallback is disabled. "
                         + "Provide a matching .mpack file or enable AllowRuntimeCompileFallback."
                 );
@@ -106,10 +105,10 @@ public sealed class MappingSetProvider : IMappingSetProvider
             );
         }
 
-        return await RuntimeCompileAsync(key).ConfigureAwait(false);
+        return await RuntimeCompileAsync(key, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<MappingSet> RuntimeCompileAsync(MappingSetKey key)
+    private async Task<MappingSet> RuntimeCompileAsync(MappingSetKey key, CancellationToken cancellationToken)
     {
         if (!_compilersByDialect.TryGetValue(key.Dialect, out var compiler))
         {
@@ -127,6 +126,20 @@ public sealed class MappingSetProvider : IMappingSetProvider
             SanitizeForLog(key.RelationalMappingVersion)
         );
 
-        return await compiler.CompileAsync(key, CancellationToken.None).ConfigureAwait(false);
+        try
+        {
+            return await compiler.CompileAsync(key, cancellationToken).ConfigureAwait(false);
+        }
+        catch (MappingSetUnavailableException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw new MappingSetUnavailableException(
+                $"Runtime compilation failed for {FormatKeyForMessage(key)}.",
+                ex
+            );
+        }
     }
 }

@@ -33,6 +33,7 @@ public static class FailureResponse
     private static readonly string _databaseNotProvisionedType = $"{_typePrefix}:database-not-provisioned";
     private static readonly string _databaseFingerprintValidationErrorType =
         $"{_typePrefix}:database-fingerprint-validation-error";
+    private static readonly string _mappingSetUnavailableType = $"{_typePrefix}:mapping-set-unavailable";
     private static readonly string _resourceKeySeedValidationErrorType =
         $"{_typePrefix}:resource-key-seed-validation-error";
     private static readonly string _tagMismatchRequestTypePrefix = $"{_typePrefix}:optimistic-lock-failed";
@@ -274,6 +275,22 @@ public static class FailureResponse
         CreateBaseJsonObject(
             detail: detail,
             type: _databaseFingerprintValidationErrorType,
+            title: title,
+            status: 503,
+            correlationId: traceId.Value,
+            validationErrors: [],
+            errors: errors
+        );
+
+    public static JsonNode ForMappingSetUnavailable(
+        string title,
+        string detail,
+        string[] errors,
+        TraceId traceId
+    ) =>
+        CreateBaseJsonObject(
+            detail: detail,
+            type: _mappingSetUnavailableType,
             title: title,
             status: 503,
             correlationId: traceId.Value,

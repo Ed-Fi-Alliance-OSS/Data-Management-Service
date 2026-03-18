@@ -48,6 +48,12 @@ internal class ResolveMappingSetMiddleware(
         if (fingerprint == null)
         {
             // Fingerprint validation already short-circuited or is disabled.
+            // MappingSet will not be set — downstream steps must tolerate null.
+            logger.LogWarning(
+                "DatabaseFingerprint is null while UseRelationalBackend is enabled; "
+                    + "skipping mapping set resolution. TraceId: {TraceId}",
+                LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
+            );
             await next();
             return;
         }
@@ -63,7 +69,7 @@ internal class ResolveMappingSetMiddleware(
 
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 503,
-                Body: FailureResponse.ForDatabaseFingerprintValidationError(
+                Body: FailureResponse.ForMappingSetUnavailable(
                     MappingSetUnavailableTitle,
                     "No relational backend compiler is registered. "
                         + "Ensure a relational backend is configured.",
@@ -107,7 +113,7 @@ internal class ResolveMappingSetMiddleware(
 
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 503,
-                Body: FailureResponse.ForDatabaseFingerprintValidationError(
+                Body: FailureResponse.ForMappingSetUnavailable(
                     MappingSetUnavailableTitle,
                     "The compiled mapping set for this database is unavailable. "
                         + "Ensure the database is provisioned and mapping packs are available, "
@@ -133,7 +139,7 @@ internal class ResolveMappingSetMiddleware(
 
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 503,
-                Body: FailureResponse.ForDatabaseFingerprintValidationError(
+                Body: FailureResponse.ForMappingSetUnavailable(
                     MappingSetUnavailableTitle,
                     "An unexpected error occurred resolving the mapping set. "
                         + "Check server logs for details.",

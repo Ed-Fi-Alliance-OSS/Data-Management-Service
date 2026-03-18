@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Reflection;
-using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -88,14 +87,7 @@ public class PipelineOrderingTests
 
             TestHelper.AddResourceKeyValidationServices(services);
 
-            services.AddSingleton<IMappingSetProvider>(A.Fake<IMappingSetProvider>());
-            services.AddSingleton<IEnumerable<IRuntimeMappingSetCompiler>>(
-                Array.Empty<IRuntimeMappingSetCompiler>()
-            );
-            services.AddSingleton<ResolveMappingSetMiddleware>();
-            services.AddTransient<ILogger<ResolveMappingSetMiddleware>>(_ =>
-                NullLogger<ResolveMappingSetMiddleware>.Instance
-            );
+            TestHelper.AddMappingSetResolutionServices(services);
 
             services.AddSingleton<IProfileService>(A.Fake<IProfileService>());
             services.AddTransient<ProfileResolutionMiddleware>();
