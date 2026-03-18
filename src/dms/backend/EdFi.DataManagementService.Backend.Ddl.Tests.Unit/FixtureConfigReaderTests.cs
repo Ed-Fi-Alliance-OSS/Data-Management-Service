@@ -554,7 +554,6 @@ public class Given_A_Fixture_Json_With_Duplicate_Dialects
 [TestFixture]
 public class Given_A_Fixture_Json_Only_In_Inputs_Directory
 {
-    private FixtureConfig _config = default!;
     private string _tempDir = default!;
 
     [SetUp]
@@ -566,71 +565,13 @@ public class Given_A_Fixture_Json_Only_In_Inputs_Directory
 
         File.WriteAllText(Path.Combine(_tempDir, "inputs", "ApiSchema.json"), "{}");
 
+        // fixture.json only in inputs/ (not at fixture root) — should fail
         File.WriteAllText(
             Path.Combine(_tempDir, "inputs", "fixture.json"),
             """
             {
               "apiSchemaFiles": ["ApiSchema.json"],
               "dialects": ["pgsql"]
-            }
-            """
-        );
-
-        _config = FixtureConfigReader.Read(_tempDir);
-    }
-
-    [TearDown]
-    public void TearDown()
-    {
-        if (Directory.Exists(_tempDir))
-        {
-            Directory.Delete(_tempDir, recursive: true);
-        }
-    }
-
-    [Test]
-    public void It_should_parse_apiSchemaFiles()
-    {
-        _config.ApiSchemaFiles.Should().BeEquivalentTo("ApiSchema.json");
-    }
-
-    [Test]
-    public void It_should_parse_dialects()
-    {
-        _config.Dialects.Should().BeEquivalentTo("pgsql");
-    }
-}
-
-[TestFixture]
-public class Given_A_Fixture_Json_In_Both_Root_And_Inputs
-{
-    private string _tempDir = default!;
-
-    [SetUp]
-    public void Setup()
-    {
-        _tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-        Directory.CreateDirectory(_tempDir);
-        Directory.CreateDirectory(Path.Combine(_tempDir, "inputs"));
-
-        File.WriteAllText(Path.Combine(_tempDir, "inputs", "ApiSchema.json"), "{}");
-
-        File.WriteAllText(
-            Path.Combine(_tempDir, "fixture.json"),
-            """
-            {
-              "apiSchemaFiles": ["ApiSchema.json"],
-              "dialects": ["pgsql"]
-            }
-            """
-        );
-
-        File.WriteAllText(
-            Path.Combine(_tempDir, "inputs", "fixture.json"),
-            """
-            {
-              "apiSchemaFiles": ["ApiSchema.json"],
-              "dialects": ["mssql"]
             }
             """
         );
@@ -646,9 +587,9 @@ public class Given_A_Fixture_Json_In_Both_Root_And_Inputs
     }
 
     [Test]
-    public void It_should_throw_InvalidOperationException()
+    public void It_should_throw_FileNotFoundException()
     {
         var act = () => FixtureConfigReader.Read(_tempDir);
-        act.Should().Throw<InvalidOperationException>().WithMessage("*Ambiguous fixture.json*");
+        act.Should().Throw<FileNotFoundException>().WithMessage("*fixture.json*");
     }
 }

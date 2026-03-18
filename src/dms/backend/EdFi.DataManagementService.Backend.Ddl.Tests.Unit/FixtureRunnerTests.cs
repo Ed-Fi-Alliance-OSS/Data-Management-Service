@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.Tests.Common;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -10,31 +11,10 @@ namespace EdFi.DataManagementService.Backend.Ddl.Tests.Unit;
 
 internal static class FixtureTestHelper
 {
-    public static string FindProjectRoot()
-    {
-        var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
+    private const string CsprojFileName = "EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj";
 
-        while (directory is not null)
-        {
-            if (
-                File.Exists(
-                    Path.Combine(
-                        directory.FullName,
-                        "EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj"
-                    )
-                )
-            )
-            {
-                return directory.FullName;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            "Unable to locate EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj in parent directories."
-        );
-    }
+    public static string FindProjectRoot() =>
+        GoldenFixtureTestHelpers.FindProjectRoot(TestContext.CurrentContext.TestDirectory, CsprojFileName);
 }
 
 [TestFixture]
@@ -45,38 +25,10 @@ public class Given_FixtureRunner_With_Minimal_Fixture : DdlGoldenFixtureTestBase
 }
 
 [TestFixture]
-public class Given_FixtureRunner_With_EmitDdlManifest_False
+public class Given_FixtureRunner_With_EmitDdlManifest_False : DdlGoldenFixtureTestBase
 {
-    private string _fixtureDirectory = default!;
-
-    [OneTimeSetUp]
-    public void Setup()
-    {
-        var projectRoot = FixtureTestHelper.FindProjectRoot();
-        _fixtureDirectory = Path.Combine(projectRoot, "Fixtures", "small", "no-ddl-manifest");
-
-        FixtureRunner.Run(_fixtureDirectory);
-    }
-
-    [Test]
-    public void It_should_not_emit_ddl_manifest()
-    {
-        File.Exists(Path.Combine(_fixtureDirectory, "actual", "ddl.manifest.json")).Should().BeFalse();
-    }
-
-    [Test]
-    public void It_should_still_emit_effective_schema_manifest()
-    {
-        File.Exists(Path.Combine(_fixtureDirectory, "actual", "effective-schema.manifest.json"))
-            .Should()
-            .BeTrue();
-    }
-
-    [Test]
-    public void It_should_still_emit_dialect_sql()
-    {
-        File.Exists(Path.Combine(_fixtureDirectory, "actual", "pgsql.sql")).Should().BeTrue();
-    }
+    protected override string ResolveFixtureDirectory(string projectRoot) =>
+        Path.Combine(projectRoot, "Fixtures", "small", "no-ddl-manifest");
 }
 
 [TestFixture]

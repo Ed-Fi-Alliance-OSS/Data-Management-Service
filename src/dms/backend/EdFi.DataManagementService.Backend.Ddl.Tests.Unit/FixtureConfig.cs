@@ -39,27 +39,14 @@ public static class FixtureConfigReader
     /// <returns>A validated <see cref="FixtureConfig"/>.</returns>
     public static FixtureConfig Read(string fixtureDirectory)
     {
-        var rootPath = Path.Combine(fixtureDirectory, "fixture.json");
-        var inputsPath = Path.Combine(fixtureDirectory, "inputs", "fixture.json");
-        var rootExists = File.Exists(rootPath);
-        var inputsExists = File.Exists(inputsPath);
+        var fixturePath = Path.Combine(fixtureDirectory, "fixture.json");
 
-        if (rootExists && inputsExists)
-        {
-            throw new InvalidOperationException(
-                $"Ambiguous fixture.json: found in both '{fixtureDirectory}' and '{Path.Combine(fixtureDirectory, "inputs")}'. "
-                    + "Remove one to resolve the ambiguity."
-            );
-        }
-
-        if (!rootExists && !inputsExists)
+        if (!File.Exists(fixturePath))
         {
             throw new FileNotFoundException(
                 $"fixture.json not found in fixture directory: {fixtureDirectory}"
             );
         }
-
-        var fixturePath = rootExists ? rootPath : inputsPath;
 
         var json = File.ReadAllText(fixturePath);
         var config =

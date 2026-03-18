@@ -3,10 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -17,90 +17,15 @@ namespace EdFi.DataManagementService.Backend.Ddl.Tests.Unit;
 /// </summary>
 public abstract class DdlEmissionGoldenTestBase
 {
-    /// <summary>
-    /// Find project root by looking for the .csproj file.
-    /// </summary>
-    protected static string FindProjectRoot(string startDirectory)
-    {
-        var directory = new DirectoryInfo(startDirectory);
+    private const string _csprojFileName = "EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj";
 
-        while (directory is not null)
-        {
-            var candidate = Path.Combine(
-                directory.FullName,
-                "EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj"
-            );
-            if (File.Exists(candidate))
-            {
-                return directory.FullName;
-            }
+    protected static string FindProjectRoot(string startDirectory) =>
+        GoldenFixtureTestHelpers.FindProjectRoot(startDirectory, _csprojFileName);
 
-            directory = directory.Parent;
-        }
+    protected static string RunGitDiff(string expectedPath, string actualPath) =>
+        GoldenFixtureTestHelpers.RunGitDiff(expectedPath, actualPath);
 
-        throw new DirectoryNotFoundException(
-            "Unable to locate EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj in parent directories."
-        );
-    }
-
-    /// <summary>
-    /// Run git diff between expected and actual files.
-    /// </summary>
-    protected static string RunGitDiff(string expectedPath, string actualPath)
-    {
-        var startInfo = new ProcessStartInfo("git")
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-
-        startInfo.ArgumentList.Add("diff");
-        startInfo.ArgumentList.Add("--no-index");
-        startInfo.ArgumentList.Add("--ignore-space-at-eol");
-        startInfo.ArgumentList.Add("--ignore-cr-at-eol");
-        startInfo.ArgumentList.Add("--");
-        startInfo.ArgumentList.Add(expectedPath);
-        startInfo.ArgumentList.Add(actualPath);
-
-        using var process = new Process { StartInfo = startInfo };
-        process.Start();
-        var outputTask = process.StandardOutput.ReadToEndAsync();
-        var errorTask = process.StandardError.ReadToEndAsync();
-
-        if (!process.WaitForExit(30_000))
-        {
-            process.Kill();
-            process.WaitForExit();
-            throw new TimeoutException("git diff timed out after 30 seconds");
-        }
-
-        var output = outputTask.GetAwaiter().GetResult();
-        var error = errorTask.GetAwaiter().GetResult();
-
-        if (process.ExitCode == 0)
-        {
-            return string.Empty;
-        }
-
-        if (process.ExitCode == 1)
-        {
-            return output;
-        }
-
-        return string.IsNullOrWhiteSpace(error) ? output : $"{error}\n{output}".Trim();
-    }
-
-    /// <summary>
-    /// Check if UPDATE_GOLDENS environment variable is set.
-    /// </summary>
-    protected static bool ShouldUpdateGoldens()
-    {
-        var update = Environment.GetEnvironmentVariable("UPDATE_GOLDENS");
-
-        return string.Equals(update, "1", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(update, "true", StringComparison.OrdinalIgnoreCase);
-    }
+    protected static bool ShouldUpdateGoldens() => GoldenFixtureTestHelpers.ShouldUpdateGoldens();
 
     /// <summary>
     /// Emits DDL and writes the actual output file. Call this in SetUp (arrange + act).
