@@ -1,205 +1,124 @@
-# Recommended Improvements for Backend Profile Support
+# Recommended Improvements for Profile Support in the Backend Redesign
 
 ## Purpose
 
-This document lists recommended documentation and story updates for backend profile support in the backend redesign work.
-
-Scope:
-
-- profile-aware relational writes
-- profile-scoped collection merges
-- hidden data preservation
-- Core/backend contract clarity
-- test/story alignment for PostgreSQL and SQL Server
-
-Out of scope:
-
-- batch API design documents under `reference/design/batch-draft`
+This document lists the follow-up planning and documentation changes needed to make profile support implementation-ready for the backend redesign.
 
 ## Highest Priority Actions
 
-### 1. Define the concrete Core/backend profile write contract
+### 1. Add a Core profile delivery plan and surface it as a hard dependency
 
-Update the design docs so the profile write contract is explicit and normative, not just conceptual.
+Create a Core-owned spike story for creating a plan for the core side of profile support. An outcome of the spike should be to create stories for the plan.
+Put the spike in the relational write path epic.
 
-Recommended changes:
+That plan should explicitly cover:
 
-- Define a concrete request/context contract for profiled writes in `reference/design/backend-redesign/design-docs/profiles.md`.
-- Align the code-shaped contract example in `reference/design/backend-redesign/design-docs/flattening-reconstitution.md` to that richer contract.
-- Tighten `reference/design/backend-redesign/epics/07-relational-write-path/01b-profile-write-context.md` so implementation cannot stop at filtered JSON plus implicit behavior.
+- profile metadata loading and validation
+- readable vs writable profile selection
+- recursive request shaping and writable validation
+- stored-state projection for profiled writes
+- `ScopeInstanceAddress` and `CollectionRowAddress` derivation
+- creatability analysis
+- readable projection after full reconstitution
+- typed profile error classification
 
-The contract should explicitly include:
+Update the dependency plan so backend stories that consume Core profile outputs show a hard dependency on this Core work.
 
-- `WritableRequestBody`
-- a root-resource creatability decision for profiled creates
-- per-scope visibility state with three distinct outcomes:
-  - visible and present
-  - visible and absent
-  - hidden
-- a stable addressing scheme for scope instances that backend can line up with compiled scopes/table plans
-- collection visibility data sufficient to identify visible persisted rows by compiled semantic identity
-- the metadata required to preserve hidden columns and hidden inlined values on matched rows/scopes
+At minimum, that dependency should be visible for:
 
-### 2. Formalize hidden-column preservation
-
-The current design says hidden columns and hidden inlined values must be preserved, but it does not define the execution contract that makes this reliable.
-
-Recommended changes:
-
-- Add a normative rule for collection rows, non-collection scopes, and inlined parent/root-row columns.
-- Choose one explicit model and document it:
-  - Core supplies per-scope/per-member visibility metadata, or
-  - backend overlays visible request values onto stored row values using compiled bindings and current-state data
-- Define how backend distinguishes `hidden` from `visible-but-absent` for inlined common types and extension columns.
-- Update `reference/design/backend-redesign/epics/07-relational-write-path/03-persist-and-batch.md` to require tests for hidden inlined-column preservation, not just hidden row preservation.
-
-### 3. Formalize the creatability algorithm
-
-Creatability is currently assigned to Core, but the decision procedure is not defined precisely enough for future Core stories.
-
-Recommended changes:
-
-- Add a normative decision table or algorithm in `reference/design/backend-redesign/design-docs/profiles.md`.
-- Cover these cases explicitly:
-  - new resource instance
-  - new 1:1 child scope
-  - new collection item
-  - new nested/common-type scope
-  - new extension scope
-  - new extension collection item
-- Specify how hidden required members affect creatability.
-- Distinguish update-of-existing-visible-data from create-of-new-visible-data.
-- Include worked examples for accepted and rejected cases.
-
-### 4. Clarify semantic identity derivation and validation
-
-The docs require every persisted multi-item collection scope to compile a non-empty semantic identity, including cases where raw `arrayUniquenessConstraints` metadata may be empty, but the derivation rule is not stated clearly enough.
-
-Recommended changes:
-
-- State exactly how compiled collection identity is derived when raw `arrayUniquenessConstraints` metadata is empty.
-- If the supported path relies on MetaEd-derived identity semantics, say so directly and identify the relevant source metadata or validator assumptions.
-- If no non-empty semantic identity can be derived, require validation/compilation failure before runtime write execution.
-- Make the support boundary for MetaEd-generated models explicit in the design docs, not only in compatibility findings.
-
-## Important Clarifications
-
-### 5. Fix wording in transactions and concurrency
-
-The current language should make it unambiguous that backend uses a Core-projected stored body and does not evaluate profile predicates itself.
-
-Recommended changes:
-
-- Update `reference/design/backend-redesign/design-docs/transactions-and-concurrency.md` so it says backend derives visible stored rows from Core-projected stored state.
-- Keep the prohibition on backend-owned profile evaluation explicit.
-
-### 6. Expand deterministic hidden-gap ordering examples
-
-The normative rule exists, but additional examples would reduce implementation drift and test ambiguity.
-
-Recommended changes:
-
-- Add examples for:
-  - no previously visible row
-  - deleting all visible rows while hidden rows remain
-  - visible updates plus inserts with hidden rows interleaved
-  - nested collection scopes
-  - extension child collections
-- Reuse the same ordering language in:
-  - `reference/design/backend-redesign/design-docs/flattening-reconstitution.md`
-  - `reference/design/backend-redesign/design-docs/summary.md`
-  - story acceptance criteria where ordering is asserted
-
-### 7. Add explicit extension child table key examples
-
-The current rules imply the intended key shape, but an explicit example would remove ambiguity for downstream runtime work.
-
-Recommended changes:
-
-- Add one root-level extension child-collection example.
-- Add one collection-aligned extension child-collection example.
-- For each example, list the required keys explicitly:
-  - child row `CollectionItemId`
-  - root `..._DocumentId`
-  - parent-scope key aligned to the immediate stable parent identity
-
-### 8. Surface the E15 to E07 critical-path dependency in E07 docs
-
-The dependency is already captured centrally, but it should also be visible where the runtime write work is introduced.
-
-Recommended changes:
-
-- Keep `reference/design/backend-redesign/epics/DEPENDENCIES.md` as the source of truth.
-- Add a short note in `reference/design/backend-redesign/epics/07-relational-write-path/EPIC.md` and `reference/design/backend-redesign/epics/07-relational-write-path/03-persist-and-batch.md` that stable collection merge-plan work is a prerequisite for runtime merge execution.
-
-## Test and Story Enhancements
-
-### 9. Keep and refine the existing profile test scope
-
-The current story set already points in the right direction. The remaining work is to make the scenario set compact, explicit, and reusable.
-
-Recommended baseline scenarios:
-
-- no-profile write behavior
-- full-surface collection reorder
-- profiled visible-row update with hidden-row preservation
-- profiled visible-row delete with hidden-row preservation
-- profiled visible-but-absent non-collection scope behavior
-- hidden inlined-column preservation
-- profiled create rejection when the root is non-creatable
-- profiled visible-scope/item insert rejection when non-creatable
-- hidden `_ext` row preservation
-- hidden extension child-collection preservation
-- unchanged profiled writes with guarded no-op behavior
-
-### 10. Add a shared scenario matrix across docs and stories
-
-A small matrix would keep design docs, integration tests, and parity fixtures aligned.
-
-Recommended changes:
-
-- Add a compact feature-by-scenario matrix to one of the test-migration docs.
-- Reuse the same scenario names in:
-  - `reference/design/backend-redesign/epics/13-test-migration/01-backend-integration-tests.md`
-  - `reference/design/backend-redesign/epics/13-test-migration/02-parity-and-fixtures.md`
-  - relevant write-path stories
-
-### 11. Align names and examples across the design set
-
-The same contract and behavior should be described with the same names everywhere.
-
-Recommended changes:
-
-- Ensure `profiles.md`, `flattening-reconstitution.md`, `compiled-mapping-set.md`, and `summary.md` use the same terms for:
-  - `WritableRequestBody`
-  - `VisibleStoredBody`
-  - scope visibility states
-  - creatability
-  - deterministic post-merge ordering
-- Remove any code-shaped snippets that no longer reflect the intended contract.
-
-## Suggested File Updates
-
-Recommended primary update targets:
-
-- `reference/design/backend-redesign/design-docs/profiles.md`
-- `reference/design/backend-redesign/design-docs/flattening-reconstitution.md`
-- `reference/design/backend-redesign/design-docs/transactions-and-concurrency.md`
-- `reference/design/backend-redesign/design-docs/extensions.md`
-- `reference/design/backend-redesign/design-docs/summary.md`
 - `reference/design/backend-redesign/epics/07-relational-write-path/01b-profile-write-context.md`
-- `reference/design/backend-redesign/epics/07-relational-write-path/03-persist-and-batch.md`
-- `reference/design/backend-redesign/epics/07-relational-write-path/EPIC.md`
-- `reference/design/backend-redesign/epics/13-test-migration/01-backend-integration-tests.md`
-- `reference/design/backend-redesign/epics/13-test-migration/02-parity-and-fixtures.md`
+- `reference/design/backend-redesign/epics/07-relational-write-path/01c-current-document-for-profile-projection.md`
+- `reference/design/backend-redesign/epics/07-relational-write-path/05b-profile-error-classification.md`
+- `reference/design/backend-redesign/epics/08-relational-read-path/01-json-reconstitution.md`
+- `reference/design/backend-redesign/epics/DEPENDENCIES.md`
 
-## Exit Criteria Before Starting E07 Runtime Merge Execution
+### 2. Specify stable scope and row address derivation
 
-Before the runtime write-path executor work starts, the design and story set should answer all of the following clearly:
+Add a normative derivation algorithm for `ScopeInstanceAddress` and `CollectionRowAddress`.
 
-- What exact request/context contract does backend receive from Core for profiled writes?
-- How does the executor preserve hidden columns and hidden inlined data?
-- How is creatability decided for every scope and item type?
-- How is semantic collection identity compiled in all supported models?
-- How are extension child collections keyed under collection-aligned scopes?
-- What exact profile scenarios must pass on both PostgreSQL and SQL Server?
+The derivation should be defined from compiled scope metadata plus JSON data, not described only as a record shape.
+
+The algorithm should show:
+
+- how `JsonScope` is chosen
+- how ancestor collections are discovered
+- how ancestor collection instances are ordered
+- how compiled semantic-identity parts are read in compiled order
+- how request-side and stored-side address derivation stay aligned for nested collections and `_ext` scopes
+
+Add fail-fast diagnostics for contract mismatches at runtime.
+
+At minimum, backend should fail deterministically when:
+
+- Core emits an address whose `JsonScope` does not map to a compiled scope
+- Core emits an address whose ancestor chain cannot be matched to compiled collection ancestry
+- backend cannot line up a Core-emitted visible stored row or scope with the compiled plan shape expected for that resource
+
+### 3. Tighten the hidden-member preservation contract for key unification
+
+The design already states that `HiddenMemberPaths` governs preservation, including key-unified aliases and presence columns.
+
+It should go one step further and define a complete binding-accounting rule for profiled writes.
+
+For every compiled write binding in a profiled scope, the design should classify it as one of:
+
+- visible and writable
+- hidden and preserved
+- cleared when the scope is visible but absent
+- storage-managed and never directly written by the profile merge logic
+
+Document explicitly how `HiddenMemberPaths` applies to:
+
+- canonical storage columns introduced by key unification
+- generated or persisted alias columns
+- synthetic presence columns
+- FK and descriptor bindings derived from hidden members
+
+Add a defensive validation rule for profiled scope execution:
+
+- every compiled binding affected by a profiled scope must be accounted for by the visible surface, `HiddenMemberPaths`, clear-on-visible-absent behavior, or storage-managed handling
+
+### 4. Expand creatability guidance with a multi-level worked example
+
+The creatability rules are strong, but the examples are mostly single-hop cases.
+
+Add at least one three-level worked example that shows top-down creatability decisions across nested scopes.
+
+Recommended shape:
+
+- resource root
+- collection item or nested common-type scope
+- extension child collection beneath that parent
+
+The example should include a hidden required member at the middle level and show both outcomes:
+
+- an update to existing visible data that remains valid
+- an attempted create of new visible data that is rejected because a required member is hidden
+
+## Important Design Clarifications
+
+### 5. Require no-op detection to reuse merge rowset synthesis
+
+The current design already requires no-op detection to apply the same post-merge rules as execution.
+
+Make the implementation guidance explicit:
+
+- guarded no-op comparison should reuse the same merge-ordering and rowset-synthesis logic, or a shared helper built from the same executor-facing metadata
+- no independent profile-specific merge implementation should be introduced just for no-op detection
+
+### 6. Cross-reference empty-effective-key compatibility findings to the compilation failure rule
+
+Add a short cross-reference from `reference/design/backend-redesign/design-docs/ods-profile-compatibility-findings.md` to the rule in the profile design that invalid persisted multi-item collection scopes without non-empty semantic identity must fail before runtime merge execution.
+
+This keeps the compatibility memo and the normative runtime contract aligned.
+
+### 7. Clarify extension child table foreign-key chains and delete semantics
+
+The extension design already explains why a root-level extension child table can reuse the root `..._DocumentId` as both the root locator and the immediate parent key.
+
+Add one more level of clarity by documenting:
+
+- the FK chain for root-level extension child collections
+- the FK chain for collection-aligned extension child collections
+- how delete and cascade behavior works for each case
+- how nested extension child collections attach through `ParentCollectionItemId`
