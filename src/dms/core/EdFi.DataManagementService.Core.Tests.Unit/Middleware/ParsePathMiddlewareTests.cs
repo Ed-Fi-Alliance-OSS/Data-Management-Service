@@ -132,6 +132,7 @@ public class ParsePathMiddlewareTests
         );
 
         TestHelper.AddResourceKeyValidationServices(services);
+        TestHelper.AddMappingSetResolutionServices(services);
 
         services.AddSingleton<IProfileService>(A.Fake<IProfileService>());
         services.AddTransient<ProfileResolutionMiddleware>();
