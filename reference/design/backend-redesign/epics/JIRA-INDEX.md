@@ -76,7 +76,7 @@ This index links design documents under `reference/design/backend-redesign/epics
 - `DMS-980` — Relational Write Path (POST/PUT) — `reference/design/backend-redesign/epics/07-relational-write-path/EPIC.md`
   - `DMS-981` — Core Emits Concrete JSON Locations for Document References — `reference/design/backend-redesign/epics/07-relational-write-path/00-core-extraction-location.md`
   - `DMS-982` — Bulk Reference and Descriptor Resolution (Write-Time Validation) — `reference/design/backend-redesign/epics/07-relational-write-path/01-reference-and-descriptor-resolution.md`
-  - `TBD` — Core Profile Support Delivery Plan Spike — `reference/design/backend-redesign/epics/07-relational-write-path/01a-core-profile-delivery-plan.md`
+  - `DMS-1106` — Core Profile Support Delivery Plan Spike — `reference/design/backend-redesign/epics/07-relational-write-path/01a-core-profile-delivery-plan.md`
   - `DMS-1103` — Integrate the Core/Backend Profile Write Contract — `reference/design/backend-redesign/epics/07-relational-write-path/01b-profile-write-context.md`
   - `DMS-1105` — Load and Reconstitute the Current Stored Document for Profile Projection — `reference/design/backend-redesign/epics/07-relational-write-path/01c-current-document-for-profile-projection.md`
   - `DMS-983` — Flatten `WritableRequestBody` into Relational Row Buffers and Collection Candidates — `reference/design/backend-redesign/epics/07-relational-write-path/02-flattening-executor.md`

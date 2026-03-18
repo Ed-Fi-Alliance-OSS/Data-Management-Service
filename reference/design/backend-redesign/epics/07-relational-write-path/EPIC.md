@@ -33,7 +33,7 @@ Critical-path note: `reference/design/backend-redesign/epics/DEPENDENCIES.md` re
 
 - `DMS-981` — `00-core-extraction-location.md` — Core emits concrete JSON locations for document references
 - `DMS-982` — `01-reference-and-descriptor-resolution.md` — Bulk resolve `ReferentialId → DocumentId` and validate descriptors
-- `TBD` — `01a-core-profile-delivery-plan.md` — Core profile support delivery plan spike (creates the follow-on Core stories that block profiled write/read integration)
+- `DMS-1106` — `01a-core-profile-delivery-plan.md` — Core profile support delivery plan spike (creates the follow-on Core stories that block profiled write/read integration)
 - `DMS-1103` — `01b-profile-write-context.md` — Integrate the Core/backend profile write contract
 - `DMS-1105` — `01c-current-document-for-profile-projection.md` — Load/reconstitute the current stored document for profiled update/upserts
 - `DMS-983` — `02-flattening-executor.md` — Flatten `WritableRequestBody` into row buffers and collection candidates using compiled mapping

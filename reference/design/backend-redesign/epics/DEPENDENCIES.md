@@ -518,9 +518,9 @@ Recommended Jira link creation:
 | Soft | `E09-S01` | `DMS-997` | `09-identity-concurrency/01-referentialidentity-maintenance.md` | `E07-S01` | `DMS-982` | `07-relational-write-path/01-reference-and-descriptor-resolution.md` |
 | Hard | `E06-S02` | `DMS-977` | `06-runtime-mapping-selection/02-mapping-set-selection.md` | `E07-S01b` | `DMS-1103` | `07-relational-write-path/01b-profile-write-context.md` |
 | Hard | `E07-S01` | `DMS-982` | `07-relational-write-path/01-reference-and-descriptor-resolution.md` | `E07-S01b` | `DMS-1103` | `07-relational-write-path/01b-profile-write-context.md` |
-| Hard | `E07-S01a` | `TBD` | `07-relational-write-path/01a-core-profile-delivery-plan.md` | `E07-S01b` | `DMS-1103` | `07-relational-write-path/01b-profile-write-context.md` |
+| Hard | `E07-S01a` | `DMS-1106` | `07-relational-write-path/01a-core-profile-delivery-plan.md` | `E07-S01b` | `DMS-1103` | `07-relational-write-path/01b-profile-write-context.md` |
 | Hard | `E06-S02` | `DMS-977` | `06-runtime-mapping-selection/02-mapping-set-selection.md` | `E07-S01c` | `DMS-1105` | `07-relational-write-path/01c-current-document-for-profile-projection.md` |
-| Hard | `E07-S01a` | `TBD` | `07-relational-write-path/01a-core-profile-delivery-plan.md` | `E07-S01c` | `DMS-1105` | `07-relational-write-path/01c-current-document-for-profile-projection.md` |
+| Hard | `E07-S01a` | `DMS-1106` | `07-relational-write-path/01a-core-profile-delivery-plan.md` | `E07-S01c` | `DMS-1105` | `07-relational-write-path/01c-current-document-for-profile-projection.md` |
 | Hard | `E07-S01b` | `DMS-1103` | `07-relational-write-path/01b-profile-write-context.md` | `E07-S01c` | `DMS-1105` | `07-relational-write-path/01c-current-document-for-profile-projection.md` |
 | Hard | `E15-S05` | `DMS-1046` | `15-plan-compilation/05-read-plan-compiler-hydration.md` | `E07-S01c` | `DMS-1105` | `07-relational-write-path/01c-current-document-for-profile-projection.md` |
 | Hard | `E15-S06` | `DMS-1047` | `15-plan-compilation/06-projection-plan-compilers.md` | `E07-S01c` | `DMS-1105` | `07-relational-write-path/01c-current-document-for-profile-projection.md` |
@@ -539,7 +539,7 @@ Recommended Jira link creation:
 | Hard | `E07-S03` | `DMS-984` | `07-relational-write-path/03-persist-and-batch.md` | `E07-S04` | `DMS-985` | `07-relational-write-path/04-propagated-reference-identity-columns.md` |
 | Soft | `E01-S02` | `DMS-931` | `01-relational-model/02-naming-and-overrides.md` | `E07-S05` | `DMS-986` | `07-relational-write-path/05-write-error-mapping.md` |
 | Hard | `E07-S03` | `DMS-984` | `07-relational-write-path/03-persist-and-batch.md` | `E07-S05` | `DMS-986` | `07-relational-write-path/05-write-error-mapping.md` |
-| Hard | `E07-S01a` | `TBD` | `07-relational-write-path/01a-core-profile-delivery-plan.md` | `E07-S05b` | `DMS-1104` | `07-relational-write-path/05b-profile-error-classification.md` |
+| Hard | `E07-S01a` | `DMS-1106` | `07-relational-write-path/01a-core-profile-delivery-plan.md` | `E07-S05b` | `DMS-1104` | `07-relational-write-path/05b-profile-error-classification.md` |
 | Hard | `E07-S01b` | `DMS-1103` | `07-relational-write-path/01b-profile-write-context.md` | `E07-S05b` | `DMS-1104` | `07-relational-write-path/05b-profile-error-classification.md` |
 | Hard | `E07-S03` | `DMS-984` | `07-relational-write-path/03-persist-and-batch.md` | `E07-S05b` | `DMS-1104` | `07-relational-write-path/05b-profile-error-classification.md` |
 | Soft | `E01-S06` | `DMS-942` | `01-relational-model/06-descriptor-resource-mapping.md` | `E07-S06` | `DMS-987` | `07-relational-write-path/06-descriptor-writes.md` |
@@ -547,7 +547,7 @@ Recommended Jira link creation:
 | Hard | `E06-S02` | `DMS-977` | `06-runtime-mapping-selection/02-mapping-set-selection.md` | `E07-S06` | `DMS-987` | `07-relational-write-path/06-descriptor-writes.md` |
 | Hard | `E06-S02` | `DMS-977` | `06-runtime-mapping-selection/02-mapping-set-selection.md` | `E08-S00` | `DMS-989` | `08-relational-read-path/00-hydrate-multiresult.md` |
 | Soft | `E15-S05` | `DMS-1046` | `15-plan-compilation/05-read-plan-compiler-hydration.md` | `E08-S00` | `DMS-989` | `08-relational-read-path/00-hydrate-multiresult.md` |
-| Hard | `E07-S01a` | `TBD` | `07-relational-write-path/01a-core-profile-delivery-plan.md` | `E08-S01` | `DMS-990` | `08-relational-read-path/01-json-reconstitution.md` |
+| Hard | `E07-S01a` | `DMS-1106` | `07-relational-write-path/01a-core-profile-delivery-plan.md` | `E08-S01` | `DMS-990` | `08-relational-read-path/01-json-reconstitution.md` |
 | Hard | `E08-S00` | `DMS-989` | `08-relational-read-path/00-hydrate-multiresult.md` | `E08-S01` | `DMS-990` | `08-relational-read-path/01-json-reconstitution.md` |
 | Soft | `E01-S04` | `DMS-933` | `01-relational-model/04-abstract-union-views.md` | `E08-S02` | `DMS-991` | `08-relational-read-path/02-reference-identity-projection.md` |
 | Hard | `E02-S02` | `DMS-938` | `02-ddl-emission/02-project-and-resource-ddl.md` | `E08-S02` | `DMS-991` | `08-relational-read-path/02-reference-identity-projection.md` |
