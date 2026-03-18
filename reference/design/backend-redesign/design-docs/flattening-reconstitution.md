@@ -316,10 +316,13 @@ For a given request, backend already has:
   - resource referential id
   - descriptor references (with concrete JSON paths, including indices)
   - document references (referential ids + concrete reference-object JSON paths, including indices; grouped by wildcard path; requires addition of `DocumentReference.Path` as described below)
-- optional `ProfileAppliedWriteRequest` for profile-constrained update/upsert flows:
+- optional `ProfileAppliedWriteRequest` for profile-constrained writes:
   - `WritableRequestBody`: the request body after Core applies writable profile semantics and normal canonicalization
-- optional `ProfileAppliedWriteContext`, assembled inside the backend write pipeline after current-state load when profile-specific collection filtering applies:
+  - `RootResourceCreatable`: Core-owned create/no-create decision for a new root instance under the active writable profile
+  - `RequestScopeStates` / `VisibleRequestCollectionItems`: structured request-side visibility and creatability metadata keyed to compiled `JsonScope`
+- optional `ProfileAppliedWriteContext`, assembled inside the backend write pipeline after current-state load for profile-constrained update/upsert flows:
   - `VisibleStoredBody`: the current stored document after Core applies the same writable profile semantics used for `WritableRequestBody`
+  - `StoredScopeStates` / `VisibleStoredCollectionRows`: structured stored-state visibility and hidden-member preservation metadata keyed to compiled `JsonScope`
 
 ### 5.2 Reference & descriptor resolution (bulk)
 
@@ -400,27 +403,82 @@ Ownership-based authorization integration:
 
 Profile semantics stay in Core. Backend MUST NOT evaluate profile member filters, value filters, or profile media-type rules while matching/deleting collection rows.
 
-For writes constrained by a profile, Core supplies request-scoped write shaping, and backend assembles the current-state-dependent visibility context after it loads the stored document:
+For writes constrained by a profile, Core supplies request-scoped write shaping, and backend assembles the current-state-dependent visibility context after it loads the stored document. The backend-facing contract MUST be semantically equivalent to the contract defined in `profiles.md`:
 
 ```csharp
+public enum ProfileVisibilityKind
+{
+    VisiblePresent,
+    VisibleAbsent,
+    Hidden
+}
+
+public sealed record ScopeInstanceAddress(
+    string JsonScope,
+    ImmutableArray<AncestorCollectionInstance> AncestorCollectionInstances
+);
+
+public sealed record AncestorCollectionInstance(
+    string JsonScope,
+    ImmutableArray<SemanticIdentityPart> SemanticIdentityInOrder
+);
+
+public sealed record CollectionRowAddress(
+    string JsonScope,
+    ScopeInstanceAddress ParentAddress,
+    ImmutableArray<SemanticIdentityPart> SemanticIdentityInOrder
+);
+
+public sealed record SemanticIdentityPart(string RelativePath, JsonNode? Value, bool IsPresent);
+
+public sealed record RequestScopeState(
+    ScopeInstanceAddress Address,
+    ProfileVisibilityKind Visibility,
+    bool Creatable
+);
+
+public sealed record VisibleRequestCollectionItem(
+    CollectionRowAddress Address,
+    bool Creatable
+);
+
+public sealed record StoredScopeState(
+    ScopeInstanceAddress Address,
+    ProfileVisibilityKind Visibility,
+    ImmutableArray<string> HiddenMemberPaths
+);
+
+public sealed record VisibleStoredCollectionRow(
+    CollectionRowAddress Address,
+    ImmutableArray<string> HiddenMemberPaths
+);
+
 public sealed record ProfileAppliedWriteRequest(
-    JsonNode WritableRequestBody
+    JsonNode WritableRequestBody,
+    bool RootResourceCreatable,
+    ImmutableArray<RequestScopeState> RequestScopeStates,
+    ImmutableArray<VisibleRequestCollectionItem> VisibleRequestCollectionItems
 );
 
 public sealed record ProfileAppliedWriteContext(
-    JsonNode WritableRequestBody,
-    JsonNode VisibleStoredBody
+    ProfileAppliedWriteRequest Request,
+    JsonNode VisibleStoredBody,
+    ImmutableArray<StoredScopeState> StoredScopeStates,
+    ImmutableArray<VisibleStoredCollectionRow> VisibleStoredCollectionRows
 );
 ```
 
 Contract:
 
 - `ProfileAppliedWriteRequest.WritableRequestBody` is the request after Core applies the writable profile shape and the normal canonicalization rules.
+- `ProfileAppliedWriteRequest.RootResourceCreatable` is the Core-owned create/no-create decision backend must consult before creating `dms.Document` or root rows for a profile-constrained create.
 - Core MUST reject any writable profile definition that excludes a field required to compute the compiled semantic identity of a persisted multi-item collection scope.
 - Backend continues to own loading the current stored document as part of the normal update flow.
-- After that load, backend invokes a Core-owned projector/pure function to apply the same writable profile semantics to the current stored JSON and produce `VisibleStoredBody`.
-- Backend derives the visible persisted rows for each collection scope by traversing `VisibleStoredBody` and computing semantic keys with the same compiled collection-identity bindings used for request candidates.
-- Persisted rows whose semantic keys are absent from the projected stored body are hidden for that request and MUST be preserved by backend merge logic.
+- After that load, backend invokes a Core-owned projector/pure function to apply the same writable profile semantics to the current stored JSON and produce `VisibleStoredBody`, `StoredScopeStates`, and `VisibleStoredCollectionRows`.
+- Every `JsonScope` in the structured profile contract MUST align to the compiled `DbTableModel.JsonScope` / `TableWritePlan.TableModel.JsonScope` used by the executor.
+- `VisibleStoredCollectionRows` identifies visible persisted rows by compiled semantic identity in compiled member order. Backend MUST use that structured metadata, not array ordinals, to line up stored rows with request candidates.
+- `HiddenMemberPaths` identifies stored row/scope members that backend must preserve on matched rows/scopes, including hidden inlined members and extension members.
+- `VisibleStoredBody` remains the projected JSON view of currently visible stored state, but it is not by itself the executable merge contract for hidden-vs-absent or row-identity decisions.
 - This is an internal backend/Core contract only and MUST NOT change the public API surface.
 - When no profile-specific filtering applies, `ProfileAppliedWriteRequest` / `ProfileAppliedWriteContext` may be omitted and backend treats all current rows in each scope as visible.
 
@@ -440,8 +498,9 @@ Materialization is a two-phase process:
    - each candidate records its `JsonScope`, `OrdinalPath`, requested sibling order, scalar values, resolved FK values, and any extension subtrees
    - for each persisted multi-item collection scope, compute the candidate’s semantic key from the compiled paths
 2. After loading the current document graph for update flows, bind each candidate to storage:
-   - determine the visible persisted rows for each collection scope from `ProfileAppliedWriteContext.VisibleStoredBody` when present by traversing the projected stored JSON and recomputing semantic keys; otherwise treat all current rows in that scope as visible
+   - determine the visible persisted rows for each collection scope from `ProfileAppliedWriteContext.VisibleStoredCollectionRows` when present, keyed by compiled `JsonScope` plus stable parent address; otherwise treat all current rows in that scope as visible
    - match to an existing visible row by semantic key
+   - allow insert of an unmatched visible request candidate only when the matching `VisibleRequestCollectionItem` is marked creatable
    - matched rows keep their existing `CollectionItemId`
    - unmatched rows receive `CollectionItemId`s reserved in one batch from `dms.CollectionItemIdSequence` before DML generation
 
@@ -454,14 +513,16 @@ Within a single transaction:
 1. Write `dms.Document` and `dms.ReferentialIdentity`
 2. Write the resource root row (`INSERT` or `UPDATE`)
 3. For each non-root 1:1 scope:
-   - `InsertSql` when the scope is newly present
-   - `UpdateSql` when the scope already exists
-   - `DeleteByParentSql` when the scope is absent in the request
+   - `InsertSql` when the scope is visible and present, the row is newly present, and Core marked the scope creatable
+   - `UpdateSql` when the scope is visible and present and the scope already exists
+   - `DeleteByParentSql` when the scope is visible and absent
+   - preserve the scoped row or inlined stored values when the scope is hidden
 4. For each collection scope (depth-first, parent before child descendants):
    - load the current sibling set
-   - determine the visible stored rows for that scope from `ProfileAppliedWriteContext.VisibleStoredBody` when present by deriving visible semantic keys from the projected stored JSON; otherwise treat the full sibling set as visible
+   - determine the visible stored rows for that scope from `ProfileAppliedWriteContext.VisibleStoredCollectionRows` when present, keyed by compiled `JsonScope` and stable parent address; otherwise treat the full sibling set as visible
    - match incoming candidates using the compiled semantic collection identity
    - for profile-constrained merges, rely on semantic-key matching; Core must reject writable profiles that would hide fields required for that match
+   - insert unmatched visible request candidates only when Core marked the corresponding request collection item creatable
    - reserve any needed `CollectionItemId`s from `dms.CollectionItemIdSequence` for unmatched rows
    - update matched rows in place by `CollectionItemId`
    - delete omitted visible rows by `CollectionItemId`
@@ -485,16 +546,16 @@ Bulk insert options (non-codegen):
 Collection writes use merge semantics, not blanket delete-and-reinsert:
 
 - Every persisted multi-item collection scope MUST have a compiled semantic key; match by `(ParentScope, SemanticKey)`.
-- For profile-constrained writes, visible stored rows are the rows whose semantic keys appear in `ProfileAppliedWriteContext.VisibleStoredBody` for that scope, in caller-visible order.
+- For profile-constrained writes, visible stored rows are the rows enumerated in `ProfileAppliedWriteContext.VisibleStoredCollectionRows` for that collection scope and parent scope instance, in caller-visible order.
 - Core MUST reject any writable profile definition that excludes a field required to compute the semantic key of a persisted multi-item collection scope.
-- Hidden profile-scoped rows are persisted rows whose semantic keys are absent from `ProfileAppliedWriteContext.VisibleStoredBody`; they are never deleted or updated.
-- Hidden columns on matched rows are preserved because matched rows keep their existing `CollectionItemId`.
+- Hidden profile-scoped rows are current persisted rows for that collection scope instance that are not enumerated in `ProfileAppliedWriteContext.VisibleStoredCollectionRows`; they are never deleted or updated.
+- Hidden columns on matched rows are preserved using `HiddenMemberPaths` while matched rows keep their existing `CollectionItemId`.
 - A change to a semantic-key value is treated as `delete old row + insert new row`, not as an in-place rename.
 
 Order rules:
 
 - For semantic-key scopes, full-surface writes may reorder the full sibling set to the request order.
-- For semantic-key profile-scoped writes, start from the current full sibling sequence, identify the visible-row subsequence by semantic key from `ProfileAppliedWriteContext.VisibleStoredBody`, replace that visible subsequence with the merged visible rows in request order, preserve hidden rows in their existing relative gaps, append any extra visible inserts after the last previously visible row (or at the end when there was no previously visible row), and then renumber `Ordinal` contiguously.
+- For semantic-key profile-scoped writes, start from the current full sibling sequence, identify the visible-row subsequence from `ProfileAppliedWriteContext.VisibleStoredCollectionRows`, replace that visible subsequence with the merged visible rows in request order, preserve hidden rows in their existing relative gaps, append any extra visible inserts after the last previously visible row (or at the end when there was no previously visible row), and then renumber `Ordinal` contiguously.
 - Hidden rows keep their relative order when profile filtering applies.
 - The same deterministic post-merge sibling-order rule MUST be used by both write execution and whole-document no-op detection.
 
@@ -1912,7 +1973,7 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
         : _profileWriteContextProjector.Project(
             currentState.StoredJson,
             profileRequest);
-    var writableBody = profileContext?.WritableRequestBody ?? request.EdfiDoc;
+    var writableBody = profileRequest?.WritableRequestBody ?? request.EdfiDoc;
 
     // 5) Extract logical candidates from the writable request body.
     var candidateSet = _flattener.ExtractCandidates(

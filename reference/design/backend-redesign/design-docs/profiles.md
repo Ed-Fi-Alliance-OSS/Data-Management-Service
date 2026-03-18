@@ -165,7 +165,7 @@ Core is expected to own all of the following:
 
 8. **Stored-state projection for writes**
    - given the current stored JSON, apply the same writable profile semantics used for the request,
-   - produce the `VisibleStoredBody` used to determine which persisted data is visible to the caller.
+   - produce the `VisibleStoredBody` plus the structured stored-scope and stored-row metadata required by the write contract.
 
 9. **Visibility signaling for all scopes**
    - identify, for each compiled scope, whether it is:
@@ -177,7 +177,7 @@ Core is expected to own all of the following:
 
 10. **Collection visibility details**
     - provide enough information for backend to determine which persisted collection rows are visible for merge/delete.
-    - Core may supply this as projected JSON, structured scope metadata, or both, but the contract must be sufficient for deterministic matching by compiled semantic identity.
+    - Core MUST supply structured collection visibility metadata keyed to compiled scope identity; projected JSON may accompany that metadata, but it is not sufficient by itself.
 
 11. **Semantic identity compatibility validation**
     - Core must reject any writable profile definition that excludes a field required to compute the compiled semantic identity of a persisted multi-item collection scope.
@@ -250,33 +250,88 @@ Related redesign discussion:
 - current request/context assembly design: [flattening-reconstitution.md:399](flattening-reconstitution.md#L399)
 - summarized contract wording: [summary.md:159](summary.md#L159)
 
-For backend profile support to be correct across collection and non-collection scopes, the minimum contract must include more than filtered JSON alone.
+For backend profile support to be correct across collection and non-collection scopes, the minimum contract must be concrete and executable. Filtered JSON alone is insufficient.
 
-Core must provide, directly or indirectly, all of the following request-scoped information:
+The implementation does not have to use these exact C# types, but the backend-facing contract MUST be semantically equivalent to the following:
 
-- `WritableRequestBody`
-  - the request after normal canonicalization and writable profile shaping.
+```csharp
+public enum ProfileVisibilityKind
+{
+    VisiblePresent,
+    VisibleAbsent,
+    Hidden
+}
 
-- `VisibleStoredBody`
-  - the current stored document after applying the same writable profile semantics used for the request.
+public sealed record ScopeInstanceAddress(
+    string JsonScope,
+    ImmutableArray<AncestorCollectionInstance> AncestorCollectionInstances
+);
 
-- **Scope visibility**
-  - enough information to distinguish:
-    - visible-and-present request scopes,
-    - visible-but-absent request scopes, and
-    - hidden scopes.
-  - this must apply to root-adjacent 1:1 scopes, nested/common-type scopes, collection scopes, and extension scopes.
+public sealed record AncestorCollectionInstance(
+    string JsonScope,
+    ImmutableArray<SemanticIdentityPart> SemanticIdentityInOrder
+);
 
-- **Creatability**
-  - whether the active writable profile permits creating:
-    - a new resource instance,
-    - a new visible non-collection scope, or
-    - a new visible collection/common-type/extension item or scope.
+public sealed record CollectionRowAddress(
+    string JsonScope,
+    ScopeInstanceAddress ParentAddress,
+    ImmutableArray<SemanticIdentityPart> SemanticIdentityInOrder
+);
 
-- **Collection visibility details**
-  - enough information for backend to determine the visible persisted collection rows for each scope instance before merge/delete.
+public sealed record SemanticIdentityPart(string RelativePath, JsonNode? Value, bool IsPresent);
 
-The internal representation is not required to be a specific C# type, but it must be rich enough that backend never has to infer profile semantics from filtered JSON alone.
+public sealed record RequestScopeState(
+    ScopeInstanceAddress Address,
+    ProfileVisibilityKind Visibility,
+    bool Creatable
+);
+
+public sealed record VisibleRequestCollectionItem(
+    CollectionRowAddress Address,
+    bool Creatable
+);
+
+public sealed record StoredScopeState(
+    ScopeInstanceAddress Address,
+    ProfileVisibilityKind Visibility,
+    ImmutableArray<string> HiddenMemberPaths
+);
+
+public sealed record VisibleStoredCollectionRow(
+    CollectionRowAddress Address,
+    ImmutableArray<string> HiddenMemberPaths
+);
+
+public sealed record ProfileAppliedWriteRequest(
+    JsonNode WritableRequestBody,
+    bool RootResourceCreatable,
+    ImmutableArray<RequestScopeState> RequestScopeStates,
+    ImmutableArray<VisibleRequestCollectionItem> VisibleRequestCollectionItems
+);
+
+public sealed record ProfileAppliedWriteContext(
+    ProfileAppliedWriteRequest Request,
+    JsonNode VisibleStoredBody,
+    ImmutableArray<StoredScopeState> StoredScopeStates,
+    ImmutableArray<VisibleStoredCollectionRow> VisibleStoredCollectionRows
+);
+```
+
+Normative requirements:
+
+- `WritableRequestBody` is the request after normal canonicalization and writable-profile shaping.
+- `RootResourceCreatable` is a Core-owned decision that backend must consult before creating `dms.Document` or root rows for a profile-constrained create.
+- `RequestScopeStates` and `StoredScopeStates` MUST distinguish `VisiblePresent`, `VisibleAbsent`, and `Hidden` for every compiled non-collection scope instance that can affect write behavior, including root-adjacent 1:1 scopes, nested/common-type scopes, and `_ext` scopes.
+- `VisibleRequestCollectionItems` MUST include every visible submitted item for collection/common-type/extension collection scopes. If an item does not match an existing visible stored row, backend may insert it only when `Creatable=true`.
+- `VisibleStoredCollectionRows` MUST identify visible persisted rows by compiled semantic identity, not by array ordinal.
+- Every `JsonScope` in the contract MUST equal the compiled `DbTableModel.JsonScope` / `TableWritePlan.TableModel.JsonScope` for the addressed scope.
+- `AncestorCollectionInstances` MUST be ordered from the root-most collection ancestor to the immediate parent collection ancestor and MUST use compiled semantic identity so the address stays stable across caller-visible reordering.
+- `SemanticIdentityInOrder` MUST follow the compiled semantic-identity member order for that collection scope.
+- `HiddenMemberPaths` MUST be canonical scope-relative member paths that tell backend which stored values must be preserved on matched rows/scopes, including hidden scalar columns, hidden inlined common-type members, and hidden extension members.
+- `VisibleStoredBody` remains the projected JSON view of currently visible stored state, but backend MUST NOT infer hidden-vs-absent semantics or persisted row identity from projected JSON alone when the structured contract is available.
+- Core MUST reject any writable profile definition that excludes a field required to compute the compiled semantic identity of a persisted multi-item collection scope.
+
+This contract is internal to Core/backend. It MUST NOT change the public API surface.
 
 ## Profile-Constrained Write Flow
 
@@ -296,7 +351,7 @@ Related redesign discussion:
    - apply normal request canonicalization,
    - validate submitted data against writable profile rules,
    - reject invalid submitted collection items instead of silently pruning them,
-   - produce `ProfileAppliedWriteRequest`.
+   - produce `ProfileAppliedWriteRequest`, including root creatability, request-scope visibility, and visible submitted collection-item metadata.
 
 3. **Backend resolves references and authorization inputs**
    - resolve references/descriptors to `DocumentId`,
@@ -308,7 +363,7 @@ Related redesign discussion:
 5. **Backend invokes Core stored-state projection**
    - this is a backend-to-Core callback function invocation.
    - apply writable profile semantics to the current stored JSON,
-   - assemble `ProfileAppliedWriteContext` containing `VisibleStoredBody` and the additional visibility/creatability details required by this document.
+   - assemble `ProfileAppliedWriteContext` containing `VisibleStoredBody`, stored-scope visibility, and visible stored collection-row metadata.
 
 6. **Backend extracts request candidates**
    - flatten the `WritableRequestBody` into logical row candidates,
@@ -317,7 +372,8 @@ Related redesign discussion:
 7. **Backend binds candidates against current state**
    - for visible collection rows, match by compiled semantic identity,
    - for hidden collection rows, preserve them untouched,
-   - for non-collection scopes, use Core visibility information to distinguish hidden-from-profile vs visible-and-absent.
+   - for non-collection scopes, use Core visibility information to distinguish hidden-from-profile vs visible-and-absent, and
+   - for matched rows/scopes, preserve hidden members identified by `HiddenMemberPaths`.
 
 8. **Backend executes merge DML**
    - update matched rows in place,
