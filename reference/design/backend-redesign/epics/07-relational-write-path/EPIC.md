@@ -27,12 +27,13 @@ Core produces validated JSON + extracted references; the backend:
 
 Authorization remains out of scope; however, the roundtrip and transaction structures built in this epic should accommodate future authorization queries being batched into the same DB roundtrips. See `reference/design/backend-redesign/design-docs/auth.md` §"Performance improvements over ODS" for the expected roundtrip layout per operation.
 
-Critical-path note: `reference/design/backend-redesign/epics/DEPENDENCIES.md` remains the source of truth for story blocking, but runtime collection-merge execution in this epic does not start until `DMS-1102` / `E15-S04b` (`reference/design/backend-redesign/epics/15-plan-compilation/04b-stable-collection-merge-plans.md`) lands. `DMS-984` consumes that retrofitted merge-plan contract; it must not implement profile-aware stable-identity collection merge execution against the earlier delete-by-parent / `Ordinal`-based write-plan shape.
+Critical-path note: `reference/design/backend-redesign/epics/DEPENDENCIES.md` remains the source of truth for story blocking, but runtime collection-merge execution in this epic does not start until `DMS-1102` / `E15-S04b` (`reference/design/backend-redesign/epics/15-plan-compilation/04b-stable-collection-merge-plans.md`) lands. `DMS-984` consumes that retrofitted merge-plan contract; it must not implement profile-aware stable-identity collection merge execution against the earlier delete-by-parent / `Ordinal`-based write-plan shape. The profile-dependent backend stories in this epic, plus readable profile projection in `DMS-990`, are also blocked on `E07-S01a` / `01a-core-profile-delivery-plan.md`; backend must not guess the missing Core-side profile outputs.
 
 ## Stories
 
 - `DMS-981` — `00-core-extraction-location.md` — Core emits concrete JSON locations for document references
 - `DMS-982` — `01-reference-and-descriptor-resolution.md` — Bulk resolve `ReferentialId → DocumentId` and validate descriptors
+- `TBD` — `01a-core-profile-delivery-plan.md` — Core profile support delivery plan spike (creates the follow-on Core stories that block profiled write/read integration)
 - `DMS-1103` — `01b-profile-write-context.md` — Integrate the Core/backend profile write contract
 - `DMS-1105` — `01c-current-document-for-profile-projection.md` — Load/reconstitute the current stored document for profiled update/upserts
 - `DMS-983` — `02-flattening-executor.md` — Flatten `WritableRequestBody` into row buffers and collection candidates using compiled mapping

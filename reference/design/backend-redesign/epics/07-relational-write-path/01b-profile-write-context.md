@@ -8,6 +8,8 @@ Implement the backend-side orchestration for profile-constrained writes describe
 - `reference/design/backend-redesign/design-docs/overview.md`
 - `reference/design/backend-redesign/design-docs/flattening-reconstitution.md`
 
+Dependency note: this story is hard-blocked on `reference/design/backend-redesign/epics/07-relational-write-path/01a-core-profile-delivery-plan.md`, which plans the Core-owned outputs it consumes, including readable-vs-writable selection, stored-state projection, address derivation, creatability analysis, and typed profile failures.
+
 This story introduces the request-scoped Core/backend profile hand-off needed before profiled create and stable-identity merge execution:
 
 - Core may supply a `ProfileAppliedWriteRequest` containing `WritableRequestBody`, root-resource creatability, request-scope visibility, and visible request collection-item metadata,
@@ -29,6 +31,7 @@ Coverage in this story should reuse the shared scenario names from `reference/de
   - backend receives structured request-side scope/item visibility metadata rather than inferring behavior from filtered request JSON,
   - for update/upsert-to-existing flows, the contract accepts the current stored document produced by the separate write-side load/reconstitution step, and
   - backend invokes the Core-owned projector to obtain `ProfileAppliedWriteContext` without reinterpreting profile rules itself.
+  - request-side and stored-side scope/row addresses are consumed exactly as Core derived them from compiled scope metadata plus JSON data; backend does not derive alternate ordinal-based address shapes.
 
 ### Concrete contract coverage
 
@@ -54,10 +57,16 @@ Coverage in this story should reuse the shared scenario names from `reference/de
   - `RequestScopeState.Creatable` applies only when `Visibility=VisiblePresent` and no visible stored scope exists at that address, and
   - `VisibleRequestCollectionItem.Creatable` applies only when no visible stored row matches by compiled semantic identity.
 - Existing visible scopes/rows remain updatable even when `Creatable=false`; hidden stored data does not convert a create attempt into an update.
-- Every scope/item entry carries the compiled `JsonScope` plus a stable scope-instance address that uses ancestor collection semantic identities instead of request ordinals.
+- Every scope/item entry carries the compiled `JsonScope` plus a stable scope-instance/row address derived from compiled collection ancestry and compiled semantic-identity member order instead of request ordinals.
+- The emitted addresses follow the normative derivation algorithm in `reference/design/backend-redesign/design-docs/profiles.md` for both request-side and stored-side projection.
 - Visible stored collection-row entries expose semantic identity values in compiled order so backend can identify visible persisted rows by compiled semantic identity.
 - Stored-scope and stored-row entries expose `HiddenMemberPaths` metadata sufficient for backend to preserve hidden columns and hidden inlined values on matched rows/scopes.
 - The contract is sufficient for backend to overlay visible request/resolved values onto stored rows using compiled bindings; backend does not require Core to provide per-column visibility flags or rewritten storage rows.
+- Backend validates emitted `JsonScope`, ancestor collection ancestry, and semantic-identity part ordering against compiled scope metadata before using the contract.
+- Deterministic contract-mismatch diagnostics surface when:
+  - a Core-emitted `JsonScope` does not map to a compiled scope,
+  - a Core-emitted ancestor chain does not line up to compiled collection ancestry, or
+  - backend cannot line up a Core-emitted visible stored row/scope with the compiled plan shape expected for the resource.
 
 ### Core validation prerequisite
 
@@ -76,12 +85,14 @@ Coverage in this story should reuse the shared scenario names from `reference/de
   - profile-scoped update/upsert behavior that invokes the projector from a supplied current stored document, and
   - `ProfileVisibleRowUpdateWithHiddenRowPreservation` for at least one collection-scope visibility hand-off with stable scope addressing,
   - `ProfileVisibleButAbsentNonCollectionScope` plus `ProfileHiddenInlinedColumnPreservation` or `ProfileHiddenExtensionRowPreservation` for non-collection visibility and hidden-member preservation metadata, including one matched-row overlay case for hidden inlined or extension members, and
-  - `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable` with the required update-allowed/create-denied pairing proving an existing visible scope/item update remains allowed while the same profile marks a brand-new visible scope/item as non-creatable because required members are hidden.
+  - `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable` with the required update-allowed/create-denied pairing proving an existing visible scope/item update remains allowed while the same profile marks a brand-new visible scope/item as non-creatable because required members are hidden, and
+  - at least one deterministic contract-mismatch case for unknown `JsonScope`, ancestor-chain mismatch, or unalignable stored-side visibility metadata.
 
 ## Tasks
 
-1. Define the backend-facing abstractions used to receive optional `ProfileAppliedWriteRequest` and `ProfileAppliedWriteContext`, including request/stored scope states, visible request/stored collection metadata, stable scope addresses, and hidden-member preservation metadata that downstream executors can apply through compiled bindings.
+1. Define the backend-facing abstractions used to receive optional `ProfileAppliedWriteRequest` and `ProfileAppliedWriteContext`, including request/stored scope states, visible request/stored collection metadata, stable scope addresses, deterministic address-validation diagnostics, and hidden-member preservation metadata that downstream executors can apply through compiled bindings.
 2. Thread `WritableRequestBody` into write-path flattening entry points without duplicating profile logic in backend.
 3. For `POST` requests that would create a new document, consult Core-supplied root creatability before creating `dms.Document` or root rows; for profile-scoped update/upsert flows, accept the current stored document from the separate write-side load/reconstitution step and invoke the Core-owned stored-state projector.
 4. Surface root/scope visibility, collection visibility details, hidden-member preservation metadata, and creatability metadata to downstream merge/no-op code so the executor can distinguish create-of-new-visible-data from update-of-existing-visible-data without re-evaluating profile rules.
-5. Add tests that prove the backend consumes the Core-owned contract without inferring hidden-vs-absent semantics from `WritableRequestBody` or `VisibleStoredBody` alone, using the shared scenario names where applicable: `ProfileRootCreateRejectedWhenNonCreatable`, one scope-addressed `ProfileVisibleRowUpdateWithHiddenRowPreservation` case, `ProfileVisibleButAbsentNonCollectionScope` plus `ProfileHiddenInlinedColumnPreservation` or `ProfileHiddenExtensionRowPreservation`, and one `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable` update-allowed/create-denied pair.
+5. Validate Core-emitted scope/row addresses against compiled scope metadata before downstream merge/no-op code uses them, and emit deterministic contract-mismatch diagnostics instead of guessing from ordinals or filtered JSON.
+6. Add tests that prove the backend consumes the Core-owned contract without inferring hidden-vs-absent semantics from `WritableRequestBody` or `VisibleStoredBody` alone, using the shared scenario names where applicable: `ProfileRootCreateRejectedWhenNonCreatable`, one scope-addressed `ProfileVisibleRowUpdateWithHiddenRowPreservation` case, `ProfileVisibleButAbsentNonCollectionScope` plus `ProfileHiddenInlinedColumnPreservation` or `ProfileHiddenExtensionRowPreservation`, one `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable` update-allowed/create-denied pair, and one invalid-contract diagnostic case.

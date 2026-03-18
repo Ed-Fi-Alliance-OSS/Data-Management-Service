@@ -26,6 +26,7 @@ This document is the API profiles deep dive for `overview.md`, focusing on:
 - [Everything Backend Is Expected to Own](#everything-backend-is-expected-to-own)
 - [Data Model and Compilation Prerequisites](#data-model-and-compilation-prerequisites)
 - [Minimum Core Write Contract](#minimum-core-write-contract)
+- [Scope and Row Address Derivation](#scope-and-row-address-derivation)
 - [Creatability Decision Model](#creatability-decision-model)
 - [Hidden-Member Preservation Execution Model](#hidden-member-preservation-execution-model)
 - [Profile-Constrained Write Flow](#profile-constrained-write-flow)
@@ -171,7 +172,12 @@ Core is expected to own all of the following:
    - given the current stored JSON, apply the same writable profile semantics used for the request,
    - produce the `VisibleStoredBody` plus the structured stored-scope and stored-row metadata required by the write contract.
 
-9. **Visibility signaling for all scopes**
+9. **Stable scope and row address derivation**
+   - derive `ScopeInstanceAddress` and `CollectionRowAddress` from compiled scope metadata plus JSON data for both request-side and stored-side projection,
+   - use compiled `JsonScope`, compiled collection ancestry, and compiled semantic-identity member order rather than request ordinals or ad hoc JSON traversal, and
+   - keep request-side and stored-side address derivation aligned for nested collections and `_ext` scopes.
+
+10. **Visibility signaling for all scopes**
    - identify, for each compiled scope, whether it is:
      - visible and present,
      - visible and absent, or
@@ -179,24 +185,24 @@ Core is expected to own all of the following:
    - this must cover both collection and non-collection scopes.
    - filtered JSON alone is not sufficient because backend must distinguish "hidden" from "intentionally absent."
 
-10. **Collection visibility details**
+11. **Collection visibility details**
     - provide enough information for backend to determine which persisted collection rows are visible for merge/delete.
     - Core MUST supply structured collection visibility metadata keyed to compiled scope identity; projected JSON may accompany that metadata, but it is not sufficient by itself.
 
-11. **Semantic identity compatibility validation**
+12. **Semantic identity compatibility validation**
     - Core must reject any writable profile definition that excludes a field required to compute the compiled semantic identity of a persisted multi-item collection scope.
     - this is a Core-owned pre-runtime validation gate; backend write stories assume such invalid profiles never reach runtime merge execution.
     - perform this validation before runtime merge execution whenever possible.
 
-12. **Read projection**
+13. **Read projection**
     - apply readable profile semantics to GET/query responses,
     - keep readable shaping logic centralized in Core rather than duplicating it in backend serializers.
 
-13. **Extension profile semantics**
+14. **Extension profile semantics**
     - apply the same readable/writable filtering semantics to `_ext` data as to base resource data,
     - determine visibility and creatability for extension scopes and extension collection items.
 
-14. **Structured error classification**
+15. **Structured error classification**
     - distinguish invalid profile definitions, invalid profile usage, profile-based write validation failures, and creatability violations so the API layer can map them to consistent responses.
 
 ## Everything Backend Is Expected to Own
@@ -211,6 +217,7 @@ Backend is expected to own all of the following:
 - preserve hidden rows, hidden columns, and hidden scopes using Core-supplied visibility/creatability information,
 - execute relational DML and trigger-driven derived maintenance,
 - perform storage-space no-op detection using the same post-merge rules as the real write path,
+- validate Core-emitted scope/row addresses against compiled scope metadata and fail fast on contract mismatches before merge/readable-projection hand-off continues, and
 - enforce `If-Match` / `ContentVersion` concurrency behavior.
 
 ## Data Model and Compilation Prerequisites
@@ -336,11 +343,53 @@ Normative requirements:
 - Every `JsonScope` in the contract MUST equal the compiled `DbTableModel.JsonScope` / `TableWritePlan.TableModel.JsonScope` for the addressed scope.
 - `AncestorCollectionInstances` MUST be ordered from the root-most collection ancestor to the immediate parent collection ancestor and MUST use compiled semantic identity so the address stays stable across caller-visible reordering.
 - `SemanticIdentityInOrder` MUST follow the compiled semantic-identity member order for that collection scope.
+- Request-side and stored-side `ScopeInstanceAddress` / `CollectionRowAddress` derivation MUST follow the normative algorithm in [Scope and Row Address Derivation](#scope-and-row-address-derivation).
 - `HiddenMemberPaths` MUST be canonical scope-relative member paths that tell backend which stored values must be preserved on matched rows/scopes, including hidden scalar columns, hidden inlined common-type members, and hidden extension members.
 - `VisibleStoredBody` remains the projected JSON view of currently visible stored state, but backend MUST NOT infer hidden-vs-absent semantics or persisted row identity from projected JSON alone when the structured contract is available.
 - Core MUST reject any writable profile definition that excludes a field required to compute the compiled semantic identity of a persisted multi-item collection scope.
 
 This contract is internal to Core/backend. It MUST NOT change the public API surface.
+
+## Scope and Row Address Derivation
+
+`ScopeInstanceAddress` and `CollectionRowAddress` are executable contract keys, not descriptive record shapes. Core MUST derive them from compiled scope metadata plus JSON data using the same algorithm for request-side and stored-side projection, and backend MUST validate the emitted addresses against the compiled plan metadata before using them.
+
+Compiled metadata inputs:
+
+- `JsonScope`: the compiled `DbTableModel.JsonScope` / `TableWritePlan.TableModel.JsonScope` for the addressed scope.
+- `CollectionAncestorsInOrder`: the compiled collection scopes on the path to that scope, ordered from the root-most collection ancestor to the immediate parent collection ancestor.
+- `SemanticIdentityBindingsInOrder`: for every persisted multi-item collection scope, the compiled non-empty semantic identity bindings emitted in `CollectionMergePlan.SemanticIdentityBindings` order.
+- `ImmediateParentScope`: the compiled scope instance that directly owns the addressed scope or collection row. For top-level collections this is `$`; for nested/common-type and collection-aligned `_ext` scopes it is the aligned parent scope, not a request-ordinal path.
+
+Normative derivation algorithm:
+
+1. Resolve the compiled scope metadata for the addressed scope. The emitted `JsonScope` MUST be that compiled `JsonScope` exactly. Core MUST NOT emit caller-visible numeric indexes or synthesize alternate path strings.
+2. Derive `AncestorCollectionInstances` from `CollectionAncestorsInOrder`. For each ancestor collection scope:
+   - locate the concrete JSON collection item instance on the traversal path to the addressed node,
+   - read the ancestor collection scope's compiled semantic identity bindings from that item in compiled order, and
+   - emit `AncestorCollectionInstance(JsonScope, SemanticIdentityInOrder)` using the ancestor scope's compiled `JsonScope`.
+3. For each `SemanticIdentityPart`:
+   - `RelativePath` MUST equal the compiled binding's scope-relative path,
+   - `Value` MUST be the JSON value read at that relative path after normal request canonicalization or full stored-document reconstitution, and
+   - `IsPresent` MUST preserve missing-vs-explicit-null semantics for that same relative path.
+4. `ScopeInstanceAddress` for a non-collection scope instance is:
+   - the addressed scope's compiled `JsonScope`, and
+   - the derived `AncestorCollectionInstances`.
+   The root scope `$` therefore has an empty ancestor list.
+5. `CollectionRowAddress` for a visible collection row/item is:
+   - the collection scope's compiled `JsonScope`,
+   - `ParentAddress` equal to the `ScopeInstanceAddress` of the immediate containing scope instance, and
+   - `SemanticIdentityInOrder` equal to the addressed collection scope's own compiled semantic identity parts read from the collection item in compiled order.
+6. `_ext` segments participate as literal `JsonScope` segments, but they do not create ancestor collection instances by themselves. Only compiled collection scopes contribute ancestor entries. A collection-aligned extension child collection therefore reuses the aligned base collection instance as the relevant parent/ancestor context.
+7. Request-side derivation MUST use `WritableRequestBody`. Stored-side derivation MUST use the full current stored document before readable-profile projection. Both sides MUST use the same compiled metadata, ancestor discovery rules, and semantic-identity binding order so a visible scope/item resolves to the same address on both sides.
+
+Runtime validation and fail-fast diagnostics:
+
+- Backend MUST pre-index compiled scope metadata by `JsonScope` and validate every Core-emitted `ScopeInstanceAddress` and `CollectionRowAddress` before merge execution, no-op comparison, or readable-projection hand-off proceeds.
+- If Core emits an address whose `JsonScope` does not map to exactly one compiled scope of the expected kind, backend MUST fail deterministically with a profile contract mismatch diagnostic.
+- If Core emits an address whose ancestor chain length, ancestor `JsonScope`s, or per-ancestor semantic-identity part ordering cannot be matched to the compiled collection ancestry, backend MUST fail deterministically.
+- If backend cannot line up a Core-emitted visible stored row or visible stored scope with the compiled current-state shape expected for that resource scope, backend MUST fail deterministically rather than guessing from array order, filtered JSON, or delete+insert fallback behavior.
+- These diagnostics are internal contract failures. They MUST short-circuit before DML or readable response shaping continues, and they MUST NOT be downgraded to silent omission handling.
 
 ## Creatability Decision Model
 
@@ -734,6 +783,7 @@ Related redesign discussion:
 - invalid profile definitions fail metadata validation/compilation,
 - writable profiles that hide required semantic-identity fields fail validation/compilation rather than falling back at runtime,
 - invalid request usage of a readable vs writable profile fails before persistence logic runs,
+- Core/backend contract mismatches in emitted scope/row addresses or stored-side visibility metadata fail deterministically before DML or readable response shaping continues; backend does not guess or recover by ordinal,
 - submitted collection items that violate writable profile filters fail request validation,
 - attempts to create a new scope/item that the writable profile does not permit fail as a profile-based write validation/policy error,
 - creatability failures apply only to create-of-new-visible-data cases; matched visible scope/item updates remain valid even when the same profile would forbid creation of a brand-new visible instance because required members are hidden,

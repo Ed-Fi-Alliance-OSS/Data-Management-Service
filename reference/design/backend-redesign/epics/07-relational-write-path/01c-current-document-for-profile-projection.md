@@ -10,6 +10,8 @@ Align with:
 - `reference/design/backend-redesign/design-docs/flattening-reconstitution.md`
 - `reference/design/backend-redesign/design-docs/overview.md`
 
+Dependency note: this story is hard-blocked on `reference/design/backend-redesign/epics/07-relational-write-path/01a-core-profile-delivery-plan.md`, which plans the Core-owned stored-state projection and address-derivation work it hands off to.
+
 This story owns the internal backend capability to:
 
 - load the full current relational state for one existing document using compiled hydration/projection plans,
@@ -30,14 +32,15 @@ When this story adds profiled fixtures, it should reuse the shared scenario name
   - reference identity projection, and
   - descriptor projection.
 - Reconstituted current JSON matches the stored document shape expected by Core's writable-profile projector and does not apply readable-profile filtering.
+- The reconstituted current JSON preserves the collection ancestry and `_ext` placement Core needs to derive stored-side `ScopeInstanceAddress` and `CollectionRowAddress` values against compiled scope metadata for nested and extension-aligned scopes.
 - The current-state load is sufficient for Core to assemble the full stored-side profile contract required by profiled merge execution, not just `VisibleStoredBody`; specifically, it supports `StoredScopeStates` with `VisiblePresent` / `VisibleAbsent` / `Hidden`, `VisibleStoredCollectionRows`, and `HiddenMemberPaths`.
 - The write pipeline can reuse the same current-state load for profile projection and downstream merge/no-op comparison instead of issuing a second "load current document" roundtrip.
-- Unit or integration tests cover at least one nested + `_ext` fixture in a profiled update/upsert flow, reusing a nested or `_ext` variant from `ProfileVisibleRowUpdateWithHiddenRowPreservation` or `ProfileHiddenExtensionChildCollectionPreservation`.
+- Unit or integration tests cover at least one nested + `_ext` fixture in a profiled update/upsert flow, reusing a nested or `_ext` variant from `ProfileVisibleRowUpdateWithHiddenRowPreservation` or `ProfileHiddenExtensionChildCollectionPreservation`, and prove the stored-side projection can derive addresses aligned to compiled scope metadata.
 
 ## Tasks
 
 1. Implement the write-side current-state loader for a single existing document using the compiled hydration SQL and projection plans already selected for the active mapping set.
 2. Hydrate root/child/extension tables with deterministic ordering keyed by `DocumentId`, `CollectionItemId`, `ParentCollectionItemId`, and `BaseCollectionItemId` where collection/common-type extension scopes align to a base row.
 3. Reconstitute the full stored JSON document, including reference identity values, descriptor values, and `_ext` overlays, without applying readable-profile filtering.
-4. Surface the reconstituted current document to the profile write-context assembly path so Core can produce `VisibleStoredBody`, `StoredScopeStates`, `VisibleStoredCollectionRows`, and `HiddenMemberPaths`.
-5. Add tests proving profiled update/upsert flows can project current stored state without relying on the public read pipeline, reusing shared nested or `_ext` scenario names where applicable.
+4. Surface the reconstituted current document plus the compiled-scope metadata or adapter Core uses for address derivation to the profile write-context assembly path so Core can produce `VisibleStoredBody`, `StoredScopeStates`, `VisibleStoredCollectionRows`, and `HiddenMemberPaths`.
+5. Add tests proving profiled update/upsert flows can project current stored state without relying on the public read pipeline, reusing shared nested or `_ext` scenario names where applicable and verifying stored-side address derivation stays aligned with compiled scope metadata.

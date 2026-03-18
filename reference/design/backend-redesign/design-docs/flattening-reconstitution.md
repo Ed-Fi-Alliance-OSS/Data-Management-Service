@@ -481,7 +481,9 @@ Contract:
 - Backend continues to own loading the current stored document as part of the normal update flow.
 - After that load, backend invokes a Core-owned projector/pure function to apply the same writable profile semantics to the current stored JSON and produce `VisibleStoredBody`, `StoredScopeStates`, and `VisibleStoredCollectionRows`.
 - Every `JsonScope` in the structured profile contract MUST align to the compiled `DbTableModel.JsonScope` / `TableWritePlan.TableModel.JsonScope` used by the executor.
+- `ScopeInstanceAddress` and `CollectionRowAddress` MUST be derived from compiled scope metadata plus JSON data using the normative algorithm in `profiles.md`; backend MUST NOT rewrite them from request ordinals or ad hoc JSON traversal.
 - `VisibleStoredCollectionRows` identifies visible persisted rows by compiled semantic identity in compiled member order. Backend MUST use that structured metadata, not array ordinals, to line up stored rows with request candidates.
+- Backend MUST fail fast on contract mismatches such as unknown `JsonScope`, mismatched ancestor collection ancestry, or stored-side profile metadata that cannot be lined up to the compiled current-state shape.
 - `HiddenMemberPaths` identifies stored row/scope members that backend must preserve on matched rows/scopes, including hidden inlined members and extension members.
 - Hidden-member preservation uses a compiled-binding overlay model: for any matched stored row/scope that survives the write, backend overlays visible request-derived values onto current stored row values and keeps any binding governed by `HiddenMemberPaths`.
 - Hidden-vs-visible-absent for inlined common-type members comes from `StoredScopeStates` / `RequestScopeStates`, not from JSON object presence in `WritableRequestBody` or `VisibleStoredBody`.
