@@ -19,12 +19,12 @@ Persist flattened row buffers to the database in a single transaction:
   - when the visible-but-absent scope is inlined into parent storage, clear only the visible compiled bindings for that scope and preserve bindings governed by `HiddenMemberPaths`, and
   - preserve hidden scopes and hidden inlined columns/member values using `HiddenMemberPaths` metadata when the writable profile excludes them.
 - For collection/common-type/extension collection tables, use stable-identity merge semantics:
-  - determine the visible stored rows for the scope instance from `VisibleStoredCollectionRows` keyed by compiled `JsonScope` and stable parent address,
+  - determine the visible stored rows for the scope instance from Core-projected `VisibleStoredCollectionRows` keyed by compiled `JsonScope` and stable parent address,
   - match visible stored rows to request candidates by compiled semantic identity,
   - update matched rows in place using the same compiled-binding overlay model,
   - delete only omitted visible rows,
   - insert only new visible rows marked creatable by Core in `VisibleRequestCollectionItems`, and
-  - preserve hidden rows and hidden columns/member values using contract metadata rather than inference from projected JSON alone.
+  - preserve hidden rows and hidden columns/member values using contract metadata rather than inference from projected JSON alone or backend-owned profile evaluation.
   - runtime execution consumes the non-empty compiled semantic identity emitted by E01/E15; it does not derive a fallback match key when that prerequisite is missing.
 - Recompute `Ordinal` using the deterministic post-merge sibling-order rule defined in the design docs.
 - Respect dialect parameter limits and implement batching to avoid N+1 patterns.
@@ -37,7 +37,7 @@ Persist flattened row buffers to the database in a single transaction:
 - No-op detection piggybacks on the existing current-state load and does not require a dedicated “did anything change?” roundtrip.
 - Before returning a no-op result, the executor revalidates that the observed `ContentVersion` is still current; stale compares are surfaced to the outer concurrency layer instead of returning success on stale state.
 - Collection/common-type rows preserve existing stable identity for matched rows and reserve new `CollectionItemId` values only for unmatched inserts.
-- Profile-scoped non-collection decisions consume structured stored-scope visibility metadata, and profile-scoped collection merges consume structured stored-row metadata keyed by compiled scope identity rather than inferring hidden-vs-absent from `VisibleStoredBody` alone.
+- Profile-scoped non-collection decisions consume Core-projected `StoredScopeStates`, and profile-scoped collection merges consume Core-projected `VisibleStoredCollectionRows` keyed by compiled scope identity; runtime execution does not evaluate writable-profile predicates in backend or infer hidden-vs-absent from `VisibleStoredBody` alone.
 - Profile-scoped collection/common-type/extension collection merges preserve hidden rows in their existing relative gaps, append extra visible inserts after the last previously visible row for that scope instance, and renumber `Ordinal` contiguously.
 - Matched collection rows, matched visible non-collection rows/scopes, and matched visible extension rows preserve hidden values through compiled-binding overlay from current stored rows plus `HiddenMemberPaths`.
 - Matched visible scopes/items update successfully even when the same writable profile would reject creation of a brand-new visible scope/item because required members are hidden by the profile.
@@ -59,7 +59,7 @@ Authorization is out of scope for this story, but the transaction and batching s
 2. Implement a guarded no-op fast path that revalidates the observed `ContentVersion` before short-circuiting and returns a stale-compare outcome to the outer concurrency layer when freshness is lost.
 3. Implement a write executor that applies the compiled `ResourceWritePlan` table-by-table in dependency order when a change exists, including pre-DML failure for non-creatable profiled root-resource creates and the rule that existing visible roots remain on the update path.
 4. Implement profile-aware non-collection scope handling for separate-table 1:1/extension scopes and inlined parent-row common-type/root-column data using `ProfileAppliedWriteContext.StoredScopeStates` plus `HiddenMemberPaths`, including compiled-binding overlay for matched visible scopes, clear-only-visible-bindings behavior for visible-absent inlined scopes, and the distinction between create-of-new-visible-data and update-of-existing-visible-data.
-5. Implement stable-identity collection/common-type merge execution using `ProfileAppliedWriteContext.VisibleStoredCollectionRows` and `ProfileAppliedWriteRequest.VisibleRequestCollectionItems`, including matched-row update via compiled-binding overlay, visible-row delete, hidden-member preservation, batched `CollectionItemId` reservation for inserts, and the rule that only unmatched visible items consult `Creatable`.
+5. Implement stable-identity collection/common-type merge execution using `ProfileAppliedWriteContext.VisibleStoredCollectionRows` and `ProfileAppliedWriteRequest.VisibleRequestCollectionItems`, including matched-row update via compiled-binding overlay, visible-row delete, hidden-member preservation, batched `CollectionItemId` reservation for inserts, and the rule that only unmatched visible items consult `Creatable` without backend-owned profile predicate evaluation.
 6. Implement deterministic post-merge `Ordinal` recomputation aligned to the no-op comparison path.
 7. Implement bulk insert batching with dialect-specific limits and strategies.
 8. Add integration tests that:
