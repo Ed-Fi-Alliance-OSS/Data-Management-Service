@@ -208,6 +208,21 @@
   ],
   "indexes": [
     {
+      "name": "IX_EducationOrganizationIdToEducationOrganizationId_Target",
+      "table": {
+        "schema": "auth",
+        "name": "EducationOrganizationIdToEducationOrganizationId"
+      },
+      "kind": "Explicit",
+      "is_unique": false,
+      "key_columns": [
+        "TargetEducationOrganizationId"
+      ],
+      "include_columns": [
+        "SourceEducationOrganizationId"
+      ]
+    },
+    {
       "name": "PK_EducationOrganizationIdentity",
       "table": {
         "schema": "edfi",
@@ -320,6 +335,34 @@
       "discriminator_value": "Ed-Fi:LocalEducationAgency"
     },
     {
+      "name": "TR_LocalEducationAgency_AuthHierarchy_Delete",
+      "table": {
+        "schema": "edfi",
+        "name": "LocalEducationAgency"
+      },
+      "kind": "AuthHierarchyMaintenance",
+      "key_columns": [],
+      "identity_projection_columns": [],
+      "entity_name": "LocalEducationAgency",
+      "trigger_event": "Delete",
+      "identity_column": "LocalEducationAgencyId",
+      "parent_fks": []
+    },
+    {
+      "name": "TR_LocalEducationAgency_AuthHierarchy_Insert",
+      "table": {
+        "schema": "edfi",
+        "name": "LocalEducationAgency"
+      },
+      "kind": "AuthHierarchyMaintenance",
+      "key_columns": [],
+      "identity_projection_columns": [],
+      "entity_name": "LocalEducationAgency",
+      "trigger_event": "Insert",
+      "identity_column": "LocalEducationAgencyId",
+      "parent_fks": []
+    },
+    {
       "name": "TR_LocalEducationAgency_ReferentialIdentity",
       "table": {
         "schema": "edfi",
@@ -391,6 +434,34 @@
         }
       ],
       "discriminator_value": "Ed-Fi:School"
+    },
+    {
+      "name": "TR_School_AuthHierarchy_Delete",
+      "table": {
+        "schema": "edfi",
+        "name": "School"
+      },
+      "kind": "AuthHierarchyMaintenance",
+      "key_columns": [],
+      "identity_projection_columns": [],
+      "entity_name": "School",
+      "trigger_event": "Delete",
+      "identity_column": "SchoolId",
+      "parent_fks": []
+    },
+    {
+      "name": "TR_School_AuthHierarchy_Insert",
+      "table": {
+        "schema": "edfi",
+        "name": "School"
+      },
+      "kind": "AuthHierarchyMaintenance",
+      "key_columns": [],
+      "identity_projection_columns": [],
+      "entity_name": "School",
+      "trigger_event": "Insert",
+      "identity_column": "SchoolId",
+      "parent_fks": []
     },
     {
       "name": "TR_School_ReferentialIdentity",

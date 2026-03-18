@@ -442,6 +442,7 @@ CREATE TRIGGER "TR_Document_Journal"
     EXECUTE FUNCTION "dms"."TF_Document_Journal"();
 
 CREATE SCHEMA IF NOT EXISTS "edfi";
+CREATE SCHEMA IF NOT EXISTS "auth";
 
 CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgency"
 (
@@ -459,6 +460,13 @@ CREATE TABLE IF NOT EXISTS "edfi"."School"
     "SchoolId" integer NOT NULL,
     CONSTRAINT "PK_School" PRIMARY KEY ("DocumentId"),
     CONSTRAINT "UX_School_NK" UNIQUE ("SchoolId")
+);
+
+CREATE TABLE IF NOT EXISTS "auth"."EducationOrganizationIdToEducationOrganizationId"
+(
+    "SourceEducationOrganizationId" bigint NOT NULL,
+    "TargetEducationOrganizationId" bigint NOT NULL,
+    CONSTRAINT "PK_EducationOrganizationIdToEducationOrganizationId" PRIMARY KEY ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationIdentity"
@@ -522,6 +530,8 @@ BEGIN
     END IF;
 END $$;
 
+CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationIdToEducationOrganizationId_Target" ON "auth"."EducationOrganizationIdToEducationOrganizationId" ("TargetEducationOrganizationId") INCLUDE ("SourceEducationOrganizationId");
+
 CREATE OR REPLACE VIEW "edfi"."EducationOrganization_View" AS
 SELECT "DocumentId" AS "DocumentId", "LocalEducationAgencyId" AS "EducationOrganizationId", 'Ed-Fi:LocalEducationAgency'::varchar(256) AS "Discriminator"
 FROM "edfi"."LocalEducationAgency"
@@ -548,6 +558,36 @@ CREATE TRIGGER "TR_LocalEducationAgency_AbstractIdentity"
 BEFORE INSERT OR UPDATE ON "edfi"."LocalEducationAgency"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AbstractIdentity"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AuthHierarchy_Delete"()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM "auth"."EducationOrganizationIdToEducationOrganizationId"
+    WHERE "SourceEducationOrganizationId" = OLD."LocalEducationAgencyId" AND "TargetEducationOrganizationId" = OLD."LocalEducationAgencyId";
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_LocalEducationAgency_AuthHierarchy_Delete" ON "edfi"."LocalEducationAgency";
+CREATE TRIGGER "TR_LocalEducationAgency_AuthHierarchy_Delete"
+    AFTER DELETE ON "edfi"."LocalEducationAgency"
+    FOR EACH ROW
+    EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AuthHierarchy_Delete"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AuthHierarchy_Insert"()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO "auth"."EducationOrganizationIdToEducationOrganizationId" ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
+    VALUES (NEW."LocalEducationAgencyId", NEW."LocalEducationAgencyId");
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_LocalEducationAgency_AuthHierarchy_Insert" ON "edfi"."LocalEducationAgency";
+CREATE TRIGGER "TR_LocalEducationAgency_AuthHierarchy_Insert"
+    AFTER INSERT ON "edfi"."LocalEducationAgency"
+    FOR EACH ROW
+    EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AuthHierarchy_Insert"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgency_ReferentialIdentity"()
 RETURNS TRIGGER AS $func$
@@ -617,6 +657,36 @@ CREATE TRIGGER "TR_School_AbstractIdentity"
 BEFORE INSERT OR UPDATE ON "edfi"."School"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_School_AbstractIdentity"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_AuthHierarchy_Delete"()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM "auth"."EducationOrganizationIdToEducationOrganizationId"
+    WHERE "SourceEducationOrganizationId" = OLD."SchoolId" AND "TargetEducationOrganizationId" = OLD."SchoolId";
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_School_AuthHierarchy_Delete" ON "edfi"."School";
+CREATE TRIGGER "TR_School_AuthHierarchy_Delete"
+    AFTER DELETE ON "edfi"."School"
+    FOR EACH ROW
+    EXECUTE FUNCTION "edfi"."TF_TR_School_AuthHierarchy_Delete"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_AuthHierarchy_Insert"()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO "auth"."EducationOrganizationIdToEducationOrganizationId" ("SourceEducationOrganizationId", "TargetEducationOrganizationId")
+    VALUES (NEW."SchoolId", NEW."SchoolId");
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_School_AuthHierarchy_Insert" ON "edfi"."School";
+CREATE TRIGGER "TR_School_AuthHierarchy_Insert"
+    AFTER INSERT ON "edfi"."School"
+    FOR EACH ROW
+    EXECUTE FUNCTION "edfi"."TF_TR_School_AuthHierarchy_Insert"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_ReferentialIdentity"()
 RETURNS TRIGGER AS $func$

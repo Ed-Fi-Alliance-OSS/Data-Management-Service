@@ -408,6 +408,8 @@ GO
 
 IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'edfi')
     EXEC('CREATE SCHEMA [edfi]');
+IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'auth')
+    EXEC('CREATE SCHEMA [auth]');
 
 IF OBJECT_ID(N'edfi.LocalEducationAgency', N'U') IS NULL
 CREATE TABLE [edfi].[LocalEducationAgency]
@@ -427,6 +429,14 @@ CREATE TABLE [edfi].[School]
     [SchoolId] int NOT NULL,
     CONSTRAINT [PK_School] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_School_NK] UNIQUE ([SchoolId])
+);
+
+IF OBJECT_ID(N'auth.EducationOrganizationIdToEducationOrganizationId', N'U') IS NULL
+CREATE TABLE [auth].[EducationOrganizationIdToEducationOrganizationId]
+(
+    [SourceEducationOrganizationId] bigint NOT NULL,
+    [TargetEducationOrganizationId] bigint NOT NULL,
+    CONSTRAINT [PK_EducationOrganizationIdToEducationOrganizationId] PRIMARY KEY CLUSTERED ([SourceEducationOrganizationId], [TargetEducationOrganizationId])
 );
 
 IF OBJECT_ID(N'edfi.EducationOrganizationIdentity', N'U') IS NULL
@@ -473,6 +483,14 @@ REFERENCES [dms].[Document] ([DocumentId])
 ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'auth' AND t.name = N'EducationOrganizationIdToEducationOrganizationId' AND i.name = N'IX_EducationOrganizationIdToEducationOrganizationId_Target'
+)
+CREATE INDEX [IX_EducationOrganizationIdToEducationOrganizationId_Target] ON [auth].[EducationOrganizationIdToEducationOrganizationId] ([TargetEducationOrganizationId]) INCLUDE ([SourceEducationOrganizationId]);
+
 GO
 CREATE OR ALTER VIEW [edfi].[EducationOrganization_View] AS
 SELECT [DocumentId] AS [DocumentId], [LocalEducationAgencyId] AS [EducationOrganizationId], CAST(N'Ed-Fi:LocalEducationAgency' AS nvarchar(256)) AS [Discriminator]
@@ -510,6 +528,32 @@ BEGIN
         WHEN NOT MATCHED THEN INSERT ([DocumentId], [EducationOrganizationId], [Discriminator])
         VALUES (s.[DocumentId], s.[LocalEducationAgencyId], N'Ed-Fi:LocalEducationAgency');
     END
+END;
+GO
+
+CREATE OR ALTER TRIGGER [edfi].[TR_LocalEducationAgency_AuthHierarchy_Delete]
+ON [edfi].[LocalEducationAgency]
+AFTER DELETE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DELETE tuples
+    FROM [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
+        INNER JOIN deleted old
+            ON tuples.[SourceEducationOrganizationId] = old.[LocalEducationAgencyId]
+            AND tuples.[TargetEducationOrganizationId] = old.[LocalEducationAgencyId];
+END;
+GO
+
+CREATE OR ALTER TRIGGER [edfi].[TR_LocalEducationAgency_AuthHierarchy_Insert]
+ON [edfi].[LocalEducationAgency]
+AFTER INSERT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    INSERT INTO [auth].[EducationOrganizationIdToEducationOrganizationId] ([SourceEducationOrganizationId], [TargetEducationOrganizationId])
+    SELECT new.[LocalEducationAgencyId], new.[LocalEducationAgencyId]
+    FROM inserted new;
 END;
 GO
 
@@ -603,6 +647,32 @@ BEGIN
         WHEN NOT MATCHED THEN INSERT ([DocumentId], [EducationOrganizationId], [Discriminator])
         VALUES (s.[DocumentId], s.[SchoolId], N'Ed-Fi:School');
     END
+END;
+GO
+
+CREATE OR ALTER TRIGGER [edfi].[TR_School_AuthHierarchy_Delete]
+ON [edfi].[School]
+AFTER DELETE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DELETE tuples
+    FROM [auth].[EducationOrganizationIdToEducationOrganizationId] AS tuples
+        INNER JOIN deleted old
+            ON tuples.[SourceEducationOrganizationId] = old.[SchoolId]
+            AND tuples.[TargetEducationOrganizationId] = old.[SchoolId];
+END;
+GO
+
+CREATE OR ALTER TRIGGER [edfi].[TR_School_AuthHierarchy_Insert]
+ON [edfi].[School]
+AFTER INSERT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    INSERT INTO [auth].[EducationOrganizationIdToEducationOrganizationId] ([SourceEducationOrganizationId], [TargetEducationOrganizationId])
+    SELECT new.[SchoolId], new.[SchoolId]
+    FROM inserted new;
 END;
 GO
 
