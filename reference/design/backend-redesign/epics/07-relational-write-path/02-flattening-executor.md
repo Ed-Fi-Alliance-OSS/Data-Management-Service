@@ -27,12 +27,12 @@ Implement the write-time flattener described in `reference/design/backend-redesi
 - When a profile-applied request is supplied, the flattener uses `WritableRequestBody` exactly as provided and does not re-evaluate profile filters.
 - References inside nested collections are written to the correct child rows (using core-emitted concrete paths + ordinal path mapping).
 - `_ext` rows are emitted only when extension values exist for the scope.
-- Collection candidates carry the scope/request-order information needed for later binding to existing or newly reserved `CollectionItemId` values.
+- Collection candidates carry the scope/request-order information needed for later binding to existing or newly reserved `CollectionItemId` values, including root-level and collection-aligned extension child collections.
 - No general-purpose JSONPath engine is invoked per value in the hot loop.
 - Unit tests cover:
   - nested collections,
   - references at multiple depths,
-  - `_ext` at root and within a collection, and
+  - `_ext` at root, a root-level extension child collection, `_ext` within a collection, and a collection-aligned extension child collection, and
   - profile-applied request bodies flowing through flattening without backend-side filtering.
 
 ## Tasks

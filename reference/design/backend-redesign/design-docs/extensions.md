@@ -128,6 +128,8 @@ Arrays inside an extension subtree create extension child tables using the same 
 Naming follows the old pattern:
 - `{R}Extension{Suffix}` (or nested suffix) using PascalCase base names derived from the array property path.
 
+See [Example](#example-contact--sample-extension-resource--common-type) for explicit root-level and collection-aligned extension child-table key shapes.
+
 ### 4) References and descriptors inside extensions
 
 Extension fields may include:
@@ -172,6 +174,8 @@ Assume:
 - extension project endpoint name: `sample` → schema `sample`
 - base resource: `Contact`
 - base collection: `addresses[*]`
+- root-level extension child collection: `$._ext.sample.interventions[*]`
+- collection-aligned extension child collection: `$.addresses[*]._ext.sample.services[*]`
 
 Core tables:
 - `edfi.Contact`
@@ -180,3 +184,21 @@ Core tables:
 Sample extension tables:
 - `sample.ContactExtension` (resource-level extension fields under `$._ext.sample`)
 - `sample.ContactExtensionAddress` (extension fields under `$.addresses[*]._ext.sample`)
+- `sample.ContactExtensionIntervention` (root-level extension child collection under `$._ext.sample.interventions[*]`)
+- `sample.ContactExtensionAddressService` (collection-aligned extension child collection under `$.addresses[*]._ext.sample.services[*]`)
+
+Required keys for the extension child tables:
+
+1. Root-level extension child collection: `sample.ContactExtensionIntervention`
+   - `CollectionItemId`: stable child-row identity
+   - `Contact_DocumentId`: required root-scope key for the `Contact` document
+   - immediate parent-scope key: `Contact_DocumentId` again, because the parent scope is the root-level extension row `sample.ContactExtension(DocumentId)`
+   - `Ordinal`: sibling order within `$._ext.sample.interventions[*]`
+
+2. Collection-aligned extension child collection: `sample.ContactExtensionAddressService`
+   - `CollectionItemId`: stable child-row identity
+   - `Contact_DocumentId`: required root-scope key for the `Contact` document
+   - `BaseCollectionItemId`: required immediate parent-scope key, aligned to the stable base address row identity for `$.addresses[*]`
+   - `Ordinal`: sibling order within `$.addresses[*]._ext.sample.services[*]`
+
+In both cases, references and descriptors inside the extension child rows follow the same `..._DocumentId` / `..._DescriptorId` rules as core rows. If an extension child collection nests another extension child collection, the nested table keeps the root `Contact_DocumentId`, gets its own `CollectionItemId`, and uses `ParentCollectionItemId` to align to the immediate parent extension child row.

@@ -14,7 +14,7 @@ Derive extension table models for Ed-Fi-style extensions (`_ext`) as defined in 
 - Create extension tables in the extension project schema:
   - `{Resource}Extension` for resource-level extension fields (1:1 by `DocumentId`),
   - scope-aligned extension tables for `_ext` inside collections/common types,
-  - extension child tables for arrays under `_ext` using parent+ordinal keys.
+  - extension child tables for arrays under `_ext` using stable child keys plus the immediate stable parent locator (`..._DocumentId` for root-level `_ext` arrays, `BaseCollectionItemId` for collection/common-type-aligned `_ext` arrays).
 - Apply the same reference/descriptor binding rules inside extensions.
 
 Note: The current base-schema traversal (DMS-929) skips `_ext` during column derivation and enforces that all descriptor
@@ -33,10 +33,12 @@ This story contributes extension schemas/tables into the unified `DerivedRelatio
 ## Acceptance Criteria
 
 - Extension project schemas are created deterministically from resolved `ProjectEndpointName`.
-- Extension table keys align exactly to the base scope keys they extend (including ordinals).
+- Extension table keys align exactly to the stable base scope keys they extend:
+  - root-level `_ext` child collections use `CollectionItemId` plus the root `..._DocumentId`, with that same `..._DocumentId` column serving as the immediate parent locator,
+  - collection/common-type-aligned `_ext` child collections use `CollectionItemId`, the root `..._DocumentId`, and `BaseCollectionItemId` as the immediate parent locator.
 - Extension table naming follows the patterns described in `reference/design/backend-redesign/design-docs/extensions.md`.
 - Unknown `_ext` project keys fail fast at model compilation time.
-- A small fixture with `_ext` at root and inside a collection produces the expected extension table inventory.
+- A small fixture with `_ext` at root and inside a collection produces the expected extension table inventory, including one root-level extension child collection and one collection-aligned extension child collection.
 
 ## Tasks
 
@@ -45,7 +47,8 @@ This story contributes extension schemas/tables into the unified `DerivedRelatio
 3. Implement extension table derivation rules (root extension, scope extension, extension arrays).
 4. Integrate reference/descriptor binding into extension table derivation.
 5. Add unit tests for:
-   1. root `_ext` + collection `_ext`,
-   2. multiple extension projects,
-   3. unknown `_ext` key failure.
+   1. root `_ext` + root-level extension child collection,
+   2. collection `_ext` + collection-aligned extension child collection,
+   3. multiple extension projects,
+   4. unknown `_ext` key failure.
 6. Wire this derivation into the `DMS-1033` set-level builder as the whole-schema extension pass.

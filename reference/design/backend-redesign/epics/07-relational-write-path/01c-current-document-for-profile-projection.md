@@ -35,7 +35,7 @@ This is distinct from `E08`: public GET/query endpoints, paging, and readable-pr
 ## Tasks
 
 1. Implement the write-side current-state loader for a single existing document using the compiled hydration SQL and projection plans already selected for the active mapping set.
-2. Hydrate root/child/extension tables with deterministic ordering keyed by `DocumentId`, `CollectionItemId`, and `ParentCollectionItemId`.
+2. Hydrate root/child/extension tables with deterministic ordering keyed by `DocumentId`, `CollectionItemId`, `ParentCollectionItemId`, and `BaseCollectionItemId` where collection/common-type extension scopes align to a base row.
 3. Reconstitute the full stored JSON document, including reference identity values, descriptor values, and `_ext` overlays, without applying readable-profile filtering.
 4. Surface the reconstituted current document to the profile write-context assembly path so Core can produce `VisibleStoredBody`, stored-scope visibility, visible stored collection-row metadata, and hidden-member preservation metadata.
 5. Add tests proving profiled update/upsert flows can project current stored state without relying on the public read pipeline.

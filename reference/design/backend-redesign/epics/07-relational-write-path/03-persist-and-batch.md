@@ -39,11 +39,11 @@ Persist flattened row buffers to the database in a single transaction:
 - Collection/common-type rows preserve existing stable identity for matched rows and reserve new `CollectionItemId` values only for unmatched inserts.
 - Profile-scoped non-collection decisions consume Core-projected `StoredScopeStates`, and profile-scoped collection merges consume Core-projected `VisibleStoredCollectionRows` keyed by compiled scope identity; runtime execution does not evaluate writable-profile predicates in backend or infer hidden-vs-absent from `VisibleStoredBody` alone.
 - Profile-scoped collection/common-type/extension collection merges start from the current full sibling sequence for that scope instance, replace the visible-row subsequence with the merged visible rows in request order, preserve hidden rows in their existing relative gaps, append extra visible inserts after the last previously visible row for that scope instance (or at the end when there was no previously visible row), and renumber `Ordinal` contiguously.
-- Ordering coverage includes scope instances with no previously visible rows, delete-all-visible cases where hidden rows remain, visible updates plus inserts with hidden rows interleaved, nested collection scopes, and extension child collections.
+- Ordering coverage includes scope instances with no previously visible rows, delete-all-visible cases where hidden rows remain, visible updates plus inserts with hidden rows interleaved, nested collection scopes, root-level extension child collections, and collection-aligned extension child collections.
 - Matched collection rows, matched visible non-collection rows/scopes, and matched visible extension rows preserve hidden values through compiled-binding overlay from current stored rows plus `HiddenMemberPaths`.
 - Matched visible scopes/items update successfully even when the same writable profile would reject creation of a brand-new visible scope/item because required members are hidden by the profile.
 - Hidden collection rows, hidden non-collection scopes, hidden inlined parent/root-row values, and hidden extension data are preserved under writable profiles.
-- Hidden `_ext` rows, collection-aligned extension rows, and extension child collections follow the same preservation/merge rules as base data.
+- Hidden `_ext` rows, collection-aligned extension rows, root-level extension child collections, and collection-aligned extension child collections follow the same preservation/merge rules as base data.
 - Visible-but-absent non-collection scopes delete separate-table rows or clear only the visible compiled bindings for inlined parent/root-row scopes according to the compiled mapping; hidden scopes are not treated as deletes.
 - Profile-scoped `POST` create and new visible scopes/items that Core marks non-creatable fail deterministically as profile-based policy/validation errors before insert DML commits.
 - Collection merge execution assumes upstream validation/compilation already rejected any persisted multi-item collection scope that lacks a non-empty compiled semantic identity from `arrayUniquenessConstraints`.
@@ -69,11 +69,11 @@ Authorization is out of scope for this story, but the transaction and batching s
    - exercise a profile-scoped collection merge where a scope instance has no previously visible row and assert new visible inserts append after the hidden rows for that scope instance,
    - exercise a profile-scoped collection merge where all previously visible rows are deleted and hidden rows remain, and assert only the hidden rows survive with relative order preserved,
    - exercise a profile-scoped collection merge with visible updates plus inserts and hidden rows interleaved, and assert deterministic hidden-gap ordering after `Ordinal` renumbering,
-   - exercise the same deterministic ordering rule on one nested collection scope and one extension child collection scope,
+   - exercise the same deterministic ordering rule on one nested collection scope, one root-level extension child collection scope, and one collection-aligned extension child collection scope,
    - exercise profile-scoped non-collection handling for one separate-table scope and one inlined scope, including hidden-vs-visible-absent behavior and clear-only-visible-bindings behavior for the inlined scope,
    - exercise hidden inlined parent/root-row value preservation on a matched visible scope,
    - exercise hidden extension-column preservation on a matched visible `_ext` row,
-   - exercise a profiled update/no-op scenario with hidden `_ext` rows or extension child collections and assert they are preserved under the same merge rules as base data,
+   - exercise a profiled update/no-op scenario with hidden `_ext` rows, root-level extension child collections, or collection-aligned extension child collections and assert they are preserved under the same merge rules as base data,
    - prove a matched visible scope/item update succeeds even when the same profile would mark a brand-new visible scope/item as non-creatable because required members are hidden, and
    - reject a profiled create or visible-scope/item insert when Core marks it non-creatable, and
    - issue unchanged PUT / POST-as-update requests and verify no DML-visible state or update-tracking metadata changes (pgsql + mssql where available).

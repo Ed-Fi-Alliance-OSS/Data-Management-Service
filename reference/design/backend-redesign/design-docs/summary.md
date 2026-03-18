@@ -128,7 +128,7 @@ For each project, create a physical schema derived from `ProjectEndpointName` (e
 - Extension tables live in the extension project schema (e.g., `sample`, `tpdm`), not in the core schema.
 - Resource-level `_ext.{project}` becomes `{projectSchema}.{Resource}Extension` keyed by `DocumentId` (1:1) with FK to the base resource root.
 - `_ext` inside common types/collections becomes scope-aligned extension tables keyed to the stable identity of the base scope they extend (`DocumentId` for root scope, `CollectionItemId` for collection/common-type scopes).
-- Arrays inside `_ext` become extension child tables using the same `CollectionItemId` + parent-scope strategy as core collections.
+- Arrays inside `_ext` become extension child tables using the same stable-key strategy as core collections: always `CollectionItemId` plus the root `..._DocumentId`, with the immediate parent locator being that same `..._DocumentId` for root-level `_ext` arrays or `BaseCollectionItemId` for collection-aligned `_ext` arrays.
 - References/descriptors inside extensions follow the same FK rules as core mapping (`..._DocumentId` and `..._DescriptorId`).
 
 ## Derived mapping and plan compilation (no codegen)
