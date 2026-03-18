@@ -125,21 +125,6 @@ public static class FixtureComparer
             Directory.Delete(expectedDir, recursive: true);
         }
 
-        CopyDirectory(actualDir, expectedDir);
-    }
-
-    private static void CopyDirectory(string sourceDir, string targetDir)
-    {
-        Directory.CreateDirectory(targetDir);
-
-        foreach (var file in Directory.GetFiles(sourceDir))
-        {
-            File.Copy(file, Path.Combine(targetDir, Path.GetFileName(file)));
-        }
-
-        foreach (var dir in Directory.GetDirectories(sourceDir))
-        {
-            CopyDirectory(dir, Path.Combine(targetDir, Path.GetFileName(dir)));
-        }
+        GoldenFixtureTestHelpers.CopyDirectory(actualDir, expectedDir);
     }
 }

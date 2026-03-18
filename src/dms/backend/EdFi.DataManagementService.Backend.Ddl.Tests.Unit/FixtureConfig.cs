@@ -55,6 +55,14 @@ public static class FixtureConfigReader
 
         Validate(config, fixtureDirectory);
 
+        // Normalize dialect names to lowercase so consumers don't have to worry about case.
+        // FixtureRunner writes files using DialectLabel() which always returns lowercase,
+        // so assertions must also use lowercase dialect names.
+        config = config with
+        {
+            Dialects = config.Dialects.Select(d => d.ToLowerInvariant()).ToArray(),
+        };
+
         return config;
     }
 

@@ -45,7 +45,7 @@ public class Given_FixtureComparer_When_UpdateGoldens_Is_Set
 
         // Work on a temp copy so we never mutate the checked-in expected/ directory
         _tempFixtureDirectory = Path.Combine(Path.GetTempPath(), $"ddl-fixture-{Guid.NewGuid():N}");
-        CopyDirectory(sourceFixtureDirectory, _tempFixtureDirectory);
+        GoldenFixtureTestHelpers.CopyDirectory(sourceFixtureDirectory, _tempFixtureDirectory);
 
         FixtureRunner.Run(_tempFixtureDirectory);
 
@@ -101,20 +101,5 @@ public class Given_FixtureComparer_When_UpdateGoldens_Is_Set
             .ToList();
 
         expectedFiles.Should().BeEquivalentTo(actualFiles);
-    }
-
-    private static void CopyDirectory(string sourceDir, string targetDir)
-    {
-        Directory.CreateDirectory(targetDir);
-
-        foreach (var file in Directory.GetFiles(sourceDir))
-        {
-            File.Copy(file, Path.Combine(targetDir, Path.GetFileName(file)));
-        }
-
-        foreach (var dir in Directory.GetDirectories(sourceDir))
-        {
-            CopyDirectory(dir, Path.Combine(targetDir, Path.GetFileName(dir)));
-        }
     }
 }

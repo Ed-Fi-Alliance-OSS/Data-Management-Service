@@ -552,6 +552,100 @@ public class Given_A_Fixture_Json_With_Duplicate_Dialects
 }
 
 [TestFixture]
+public class Given_A_Fixture_Json_With_Unknown_Fields
+{
+    private FixtureConfig _config = default!;
+    private string _tempDir = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(_tempDir);
+        Directory.CreateDirectory(Path.Combine(_tempDir, "inputs"));
+
+        File.WriteAllText(Path.Combine(_tempDir, "inputs", "ApiSchema.json"), "{}");
+
+        // "emitDdlManfest" is a typo — unknown fields are silently ignored
+        File.WriteAllText(
+            Path.Combine(_tempDir, "fixture.json"),
+            """
+            {
+              "apiSchemaFiles": ["ApiSchema.json"],
+              "dialects": ["pgsql"],
+              "emitDdlManfest": false,
+              "someUnknownField": 42
+            }
+            """
+        );
+
+        _config = FixtureConfigReader.Read(_tempDir);
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        if (Directory.Exists(_tempDir))
+        {
+            Directory.Delete(_tempDir, recursive: true);
+        }
+    }
+
+    [Test]
+    public void It_should_silently_ignore_unknown_fields_and_use_defaults()
+    {
+        // "emitDdlManfest" (typo) is ignored — the actual field "emitDdlManifest" defaults to true
+        _config.EmitDdlManifest.Should().BeTrue();
+    }
+}
+
+[TestFixture]
+public class Given_A_Fixture_Json_With_Mixed_Case_Dialects
+{
+    private FixtureConfig _config = default!;
+    private string _tempDir = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        Directory.CreateDirectory(_tempDir);
+        Directory.CreateDirectory(Path.Combine(_tempDir, "inputs"));
+
+        File.WriteAllText(Path.Combine(_tempDir, "inputs", "ApiSchema.json"), "{}");
+
+        File.WriteAllText(
+            Path.Combine(_tempDir, "fixture.json"),
+            """
+            {
+              "apiSchemaFiles": ["ApiSchema.json"],
+              "dialects": ["Pgsql", "MSSQL"]
+            }
+            """
+        );
+
+        _config = FixtureConfigReader.Read(_tempDir);
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        if (Directory.Exists(_tempDir))
+        {
+            Directory.Delete(_tempDir, recursive: true);
+        }
+    }
+
+    [Test]
+    public void It_should_normalize_dialects_to_lowercase()
+    {
+        _config.Dialects.Should().BeEquivalentTo("pgsql", "mssql");
+        _config.Dialects[0].Should().Be("pgsql");
+        _config.Dialects[1].Should().Be("mssql");
+    }
+}
+
+[TestFixture]
 public class Given_A_Fixture_Json_Only_In_Inputs_Directory
 {
     private string _tempDir = default!;
