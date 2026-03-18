@@ -336,7 +336,7 @@ With stored representation stamps:
 Because FK cascades update referrers’ rows and triggers bump their representation stamps, indirect changes correctly cause `If-Match` failures on subsequently stale clients.
 
 Collection-write note:
-- For profile-constrained writes, backend loads/reconstitutes the current stored document and invokes the Core-owned projector to derive `ProfileAppliedWriteContext`, including `VisibleStoredBody`, `StoredScopeStates`, and `VisibleStoredCollectionRows`.
+- For profile-constrained writes, backend loads/reconstitutes the current stored document and invokes the Core-owned projector with the same mapping-set-scoped compiled-scope catalog used for address derivation to derive `ProfileAppliedWriteContext`, including `VisibleStoredBody`, `StoredScopeStates`, and `VisibleStoredCollectionRows`.
 - Backend determines the visible persisted rows for merge/delete from `StoredScopeStates` / `VisibleStoredCollectionRows` in that Core-projected stored-state contract, using the compiled semantic-identity values already supplied there. Backend MUST NOT evaluate writable-profile member filters or collection-item value predicates itself, and MUST NOT infer hidden-vs-visible-absent from `VisibleStoredBody` alone.
 - Core MUST reject any writable profile definition that excludes a field required to compute the compiled semantic identity of a persisted multi-item collection scope.
 - Every persisted multi-item collection scope MUST compile a non-empty semantic identity from scope-resolved `arrayUniquenessConstraints`; supported DMS models are valid MetaEd-generated models with the relevant validator set applied, and any model that still cannot do this must fail before runtime merge execution.

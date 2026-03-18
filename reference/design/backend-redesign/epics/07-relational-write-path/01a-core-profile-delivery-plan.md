@@ -25,13 +25,15 @@ The spike turns the ownership statements in `reference/design/backend-redesign/d
   - creatability analysis,
   - readable projection after full reconstitution, and
   - typed profile error classification.
-- The plan defines the shared compiled-scope metadata, adapter, or equivalent contract Core will use to derive request-side and stored-side addresses from compiled scope metadata plus JSON data.
+- The plan defines the shared mapping-set-scoped compiled-scope catalog, adapter, or equivalent contract Core will use to derive request-side and stored-side addresses from compiled scope metadata plus JSON data without depending directly on backend `TableWritePlan` / `CollectionMergePlan` types.
+- The plan specifies the minimum contract surface for that adapter, including `JsonScope`, scope kind, immediate parent scope, collection ancestors, semantic identity relative paths in compiled order, and the canonical scope-relative member-path vocabulary used for `SemanticIdentityPart.RelativePath` and `HiddenMemberPaths`.
+- The plan states that Core emits `HiddenMemberPaths` in that canonical vocabulary, while backend resolves those paths to physical bindings through its own compiled write metadata.
 - The plan produces a concrete follow-on story inventory and sequencing for the Core work needed by the blocked backend/read-path stories above.
 - The dependency map and affected backend/read-path stories show this spike as a hard prerequisite instead of assuming the Core outputs already exist.
 
 ## Tasks
 
 1. Break the Core-owned profile surface into concrete implementation slices across request shaping, stored-state projection, readable projection, address derivation, creatability, and error classification.
-2. Define the shared compiled-scope metadata/adapter Core needs so request-side and stored-side address derivation align with backend compiled plans.
+2. Define the shared compiled-scope metadata/adapter Core needs so request-side and stored-side address derivation, canonical member-path emission, and `HiddenMemberPaths` generation align with backend compiled plans without exposing backend runtime plan internals directly.
 3. Produce the follow-on story inventory and recommended sequencing for the Core work required by profiled writes and readable-profile projection.
 4. Update the dependency notes in the blocked backend/read-path stories so they point to this spike explicitly.

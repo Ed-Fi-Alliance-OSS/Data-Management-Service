@@ -160,7 +160,7 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
    - Profile-constrained collection writes additionally require request-scoped profile write shaping:
      - Core supplies `ProfileAppliedWriteRequest.WritableRequestBody`, `RootResourceCreatable`, `RequestScopeStates`, and `VisibleRequestCollectionItems`,
      - `RequestScopeStates` uses the canonical scope-visibility states `VisiblePresent`, `VisibleAbsent`, and `Hidden`,
-     - backend then loads the current stored document and invokes a Core-owned projector to derive `ProfileAppliedWriteContext.VisibleStoredBody`, `StoredScopeStates`, and `VisibleStoredCollectionRows`, and
+     - backend then loads the current stored document and invokes a Core-owned projector with the same mapping-set-scoped compiled-scope catalog used for address derivation to derive `ProfileAppliedWriteContext.VisibleStoredBody`, `StoredScopeStates`, and `VisibleStoredCollectionRows`, and
      - Core MUST reject any writable profile definition that excludes a field required to compute the compiled semantic identity of a persisted multi-item collection scope.
 
 2. **Bulk reference and descriptor resolution**

@@ -174,7 +174,7 @@ Core is expected to own all of the following:
    - produce the `VisibleStoredBody` plus the structured stored-scope and stored-row metadata required by the write contract.
 
 9. **Stable scope and row address derivation**
-   - derive `ScopeInstanceAddress` and `CollectionRowAddress` from compiled scope metadata plus JSON data for both request-side and stored-side projection,
+   - derive `ScopeInstanceAddress` and `CollectionRowAddress` from the shared compiled-scope adapter plus JSON data for both request-side and stored-side projection,
    - use compiled `JsonScope`, compiled collection ancestry, and compiled semantic-identity member order rather than request ordinals or ad hoc JSON traversal, and
    - keep request-side and stored-side address derivation aligned for nested collections and `_ext` scopes.
 
@@ -218,7 +218,7 @@ Backend is expected to own all of the following:
 - preserve hidden rows, hidden columns, and hidden scopes using Core-supplied visibility/creatability information,
 - execute relational DML and trigger-driven derived maintenance,
 - perform storage-space no-op detection using the same post-merge rules as the real write path,
-- validate Core-emitted scope/row addresses against compiled scope metadata and fail fast on contract mismatches before merge/readable-projection hand-off continues, and
+- validate Core-emitted scope/row addresses against the selected compiled-scope adapter and compiled metadata, and fail fast on contract mismatches before merge/readable-projection hand-off continues, and
 - enforce `If-Match` / `ContentVersion` concurrency behavior.
 
 ## Data Model and Compilation Prerequisites
@@ -352,26 +352,55 @@ Normative requirements:
 
 This contract is internal to Core/backend. It MUST NOT change the public API surface.
 
+## Shared Compiled-Scope Adapter
+
+The ownership boundary for profile support is:
+
+- Backend/runtime plan compilation remains the source of truth for `DbTableModel`, `TableWritePlan`, `CollectionMergePlan`, hydration/reconstitution plans, and all SQL/DML binding metadata.
+- Core MUST NOT take a direct dependency on those backend plan types or on storage-binding internals to derive addresses, readable/writable profile projections, or `HiddenMemberPaths`.
+- Instead, the selected mapping set MUST expose an immutable resource-scoped compiled-scope catalog or equivalent adapter built from the same compiled plans. The concrete implementation can be a DTO graph, interface, or generated adapter; the required semantics are normative even if the type name is not.
+- Core consumes only that narrowed adapter for request-side/stored-side address derivation and canonical member-path vocabulary. Backend continues to use its full compiled plans for binding accounting, DML generation, and runtime validation.
+
+Minimum adapter surface per compiled scope:
+
+| Adapter field | Required semantics |
+| --- | --- |
+| `JsonScope` | Exact compiled scope identifier used by `DbTableModel.JsonScope` / `TableWritePlan.TableModel.JsonScope` |
+| `ScopeKind` | Distinguishes `Root`, `NonCollection`, and `Collection` so Core knows whether to emit `ScopeInstanceAddress` or `CollectionRowAddress` |
+| `ImmediateParentJsonScope` | Compiled parent scope that directly owns this scope/item; collection-aligned `_ext` scopes point at the aligned base scope rather than an ordinal path |
+| `CollectionAncestorsInOrder` | Compiled collection scopes on the path from the root-most collection ancestor to the immediate parent collection ancestor |
+| `SemanticIdentityRelativePathsInOrder` | For persisted multi-item collection scopes, the non-empty compiled semantic identity member paths in `CollectionMergePlan.SemanticIdentityBindings` order |
+| `CanonicalScopeRelativeMemberPaths` | Canonical scope-relative member-path vocabulary Core uses when emitting `SemanticIdentityPart.RelativePath` and `HiddenMemberPaths` |
+
+Lifecycle and validation rules:
+
+- Backend MUST build the adapter from the same selected mapping set/resource plan instance used for write execution and read/write reconstitution; Core and backend MUST therefore operate over the same compiled scope vocabulary.
+- The adapter is an internal runtime contract. It MAY be cached, serialized, or code-generated with the mapping set, but it MUST stay version-aligned with the compiled plans it was derived from.
+- Core MUST emit `SemanticIdentityPart.RelativePath` and `HiddenMemberPaths` only in the canonical scope-relative vocabulary published by the adapter. Core MUST NOT synthesize alternate relative path strings ad hoc.
+- Backend MUST validate Core-emitted addresses and canonical member paths against its locally selected compiled plans and fail deterministically on drift rather than attempting best-effort coercion.
+- `HiddenMemberPaths` remains a Core-owned output. Backend resolves those canonical member paths to physical bindings through `TableWritePlan`, `CollectionMergePlan`, `KeyUnificationWritePlan`, and related compiled metadata it already owns.
+- This keeps the ownership boundary narrow: Core needs compiled scope shape and canonical path vocabulary, but it does not need direct knowledge of column bindings, FK bindings, key-unification storage columns, `Ordinal` handling, or SQL plan shapes.
+
 ## Scope and Row Address Derivation
 
-`ScopeInstanceAddress` and `CollectionRowAddress` are executable contract keys, not descriptive record shapes. Core MUST derive them from compiled scope metadata plus JSON data using the same algorithm for request-side and stored-side projection, and backend MUST validate the emitted addresses against the compiled plan metadata before using them.
+`ScopeInstanceAddress` and `CollectionRowAddress` are executable contract keys, not descriptive record shapes. Core MUST derive them from the shared compiled-scope adapter plus JSON data using the same algorithm for request-side and stored-side projection, and backend MUST validate the emitted addresses against the compiled plan metadata before using them.
 
-Compiled metadata inputs:
+Compiled-scope adapter inputs:
 
 - `JsonScope`: the compiled `DbTableModel.JsonScope` / `TableWritePlan.TableModel.JsonScope` for the addressed scope.
 - `CollectionAncestorsInOrder`: the compiled collection scopes on the path to that scope, ordered from the root-most collection ancestor to the immediate parent collection ancestor.
-- `SemanticIdentityBindingsInOrder`: for every persisted multi-item collection scope, the compiled non-empty semantic identity bindings emitted in `CollectionMergePlan.SemanticIdentityBindings` order.
-- `ImmediateParentScope`: the compiled scope instance that directly owns the addressed scope or collection row. For top-level collections this is `$`; for nested/common-type and collection-aligned `_ext` scopes it is the aligned parent scope, not a request-ordinal path.
+- `SemanticIdentityRelativePathsInOrder`: for every persisted multi-item collection scope, the compiled non-empty semantic identity member paths emitted in `CollectionMergePlan.SemanticIdentityBindings` order.
+- `ImmediateParentJsonScope`: the compiled scope instance that directly owns the addressed scope or collection row. For top-level collections this is `$`; for nested/common-type and collection-aligned `_ext` scopes it is the aligned parent scope, not a request-ordinal path.
 
 Normative derivation algorithm:
 
-1. Resolve the compiled scope metadata for the addressed scope. The emitted `JsonScope` MUST be that compiled `JsonScope` exactly. Core MUST NOT emit caller-visible numeric indexes or synthesize alternate path strings.
+1. Resolve the compiled scope descriptor for the addressed scope from the shared adapter. The emitted `JsonScope` MUST be that compiled `JsonScope` exactly. Core MUST NOT emit caller-visible numeric indexes or synthesize alternate path strings.
 2. Derive `AncestorCollectionInstances` from `CollectionAncestorsInOrder`. For each ancestor collection scope:
    - locate the concrete JSON collection item instance on the traversal path to the addressed node,
-   - read the ancestor collection scope's compiled semantic identity bindings from that item in compiled order, and
+   - read the ancestor collection scope's semantic identity relative paths from that item in compiled order, and
    - emit `AncestorCollectionInstance(JsonScope, SemanticIdentityInOrder)` using the ancestor scope's compiled `JsonScope`.
 3. For each `SemanticIdentityPart`:
-   - `RelativePath` MUST equal the compiled binding's scope-relative path,
+   - `RelativePath` MUST equal the adapter-published canonical scope-relative path for that semantic identity member,
    - `Value` MUST be the JSON value read at that relative path after normal request canonicalization or full stored-document reconstitution, and
    - `IsPresent` MUST preserve missing-vs-explicit-null semantics for that same relative path.
 4. `ScopeInstanceAddress` for a non-collection scope instance is:
@@ -383,7 +412,7 @@ Normative derivation algorithm:
    - `ParentAddress` equal to the `ScopeInstanceAddress` of the immediate containing scope instance, and
    - `SemanticIdentityInOrder` equal to the addressed collection scope's own compiled semantic identity parts read from the collection item in compiled order.
 6. `_ext` segments participate as literal `JsonScope` segments, but they do not create ancestor collection instances by themselves. Only compiled collection scopes contribute ancestor entries. A collection-aligned extension child collection therefore reuses the aligned base collection instance as the relevant parent/ancestor context.
-7. Request-side derivation MUST use `WritableRequestBody`. Stored-side derivation MUST use the full current stored document before readable-profile projection. Both sides MUST use the same compiled metadata, ancestor discovery rules, and semantic-identity binding order so a visible scope/item resolves to the same address on both sides.
+7. Request-side derivation MUST use `WritableRequestBody`. Stored-side derivation MUST use the full current stored document before readable-profile projection. Both sides MUST use the same shared adapter, ancestor discovery rules, and semantic-identity member order so a visible scope/item resolves to the same address on both sides.
 
 Runtime validation and fail-fast diagnostics:
 
@@ -741,7 +770,7 @@ backend MUST assign exactly one of the following outcomes:
 
 How `HiddenMemberPaths` maps to compiled bindings:
 
-- `HiddenMemberPaths` is expressed in canonical scope-relative member paths, not in physical column names. Backend resolves those paths through compiled write-plan metadata before classifying bindings.
+- `HiddenMemberPaths` is emitted by Core in the canonical scope-relative vocabulary published by the shared compiled-scope adapter, not in physical column names. Backend resolves those paths through compiled write-plan metadata before classifying bindings.
 - A direct scalar/member binding is governed by its own scope-relative path.
 - A document-reference FK binding and any propagated/reference-identity storage bindings derived from that reference are governed by the reference member paths that produced them. Hidden reference members therefore preserve both the FK column and any derived storage bindings.
 - A descriptor FK binding is governed by the descriptor member path that produced the resolved `..._DescriptorId`.
