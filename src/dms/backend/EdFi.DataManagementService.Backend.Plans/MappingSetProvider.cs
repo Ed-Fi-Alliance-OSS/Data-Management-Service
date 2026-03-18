@@ -137,7 +137,7 @@ public sealed class MappingSetProvider : IMappingSetProvider
         catch (Exception ex)
         {
             throw new MappingSetUnavailableException(
-                $"Runtime compilation failed for {FormatKeyForMessage(key)}.",
+                $"Runtime compilation failed for {FormatKeyForMessage(key)}: {ex.Message}",
                 ex
             );
         }
