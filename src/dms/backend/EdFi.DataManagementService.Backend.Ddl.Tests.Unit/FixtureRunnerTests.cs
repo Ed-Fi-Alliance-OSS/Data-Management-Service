@@ -69,6 +69,7 @@ public class Given_FixtureRunner_With_EmitDdlManifest_False
     public void It_should_still_emit_dialect_sql()
     {
         File.Exists(Path.Combine(_fixtureDirectory, "actual", "pgsql.sql")).Should().BeTrue();
+        File.Exists(Path.Combine(_fixtureDirectory, "actual", "mssql.sql")).Should().BeTrue();
     }
 }
 

@@ -1,5 +1,5 @@
 {
   "apiSchemaFiles": ["ApiSchema.json"],
-  "dialects": ["pgsql"],
+  "dialects": ["pgsql", "mssql"],
   "emitDdlManifest": false
 }
