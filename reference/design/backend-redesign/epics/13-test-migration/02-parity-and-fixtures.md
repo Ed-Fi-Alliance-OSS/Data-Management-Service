@@ -35,6 +35,7 @@ Variant families carried under the shared scenario names:
 
 - `ProfileVisibleRowUpdateWithHiddenRowPreservation`: no-previously-visible rows, interleaved update-plus-insert, nested collection scope, root-level extension child collection, and collection-aligned extension child collection.
 - `ProfileVisibleRowDeleteWithHiddenRowPreservation`: delete-all-visible-while-hidden-rows-remain.
+- `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable`: new visible 1:1 scope, nested/common-type scope, collection/common-type item, extension scope, extension collection item, and a three-level chain where an existing visible middle-level parent still allows descendant update/create while a new visible middle-level parent is rejected because a required member is hidden and therefore blocks descendant extension-child creation.
 
 Story alignment:
 
@@ -52,8 +53,8 @@ Story alignment:
   - update-tracking metadata behavior (`_etag/_lastModifiedDate/ChangeVersion` served from stored stamps),
   - paging determinism,
   - `NoProfileWriteBehavior`, including `FullSurfaceCollectionReorder` with semantic-identity-based visible-row matching rather than request ordinal,
-  - hidden-data preservation, hidden inlined-member preservation, hidden extension-column preservation on matched visible rows, and delete/clear behavior for profiled non-collection scopes across `ProfileVisibleRowUpdateWithHiddenRowPreservation`, `ProfileVisibleRowDeleteWithHiddenRowPreservation`, `ProfileVisibleButAbsentNonCollectionScope`, `ProfileHiddenInlinedColumnPreservation`, `ProfileHiddenExtensionRowPreservation`, and `ProfileHiddenExtensionChildCollectionPreservation`, and
-  - the distinction between update-of-existing-visible-data and create-of-new-visible-data for profiled non-collection scopes and collection items, including `ProfileRootCreateRejectedWhenNonCreatable` and `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable`, and
+  - hidden-data preservation, hidden inlined-member preservation, hidden extension-column preservation on matched visible rows, key-unified canonical storage preservation, synthetic presence-flag preservation, hidden reference/descriptor FK preservation, and delete/clear behavior for profiled non-collection scopes across `ProfileVisibleRowUpdateWithHiddenRowPreservation`, `ProfileVisibleRowDeleteWithHiddenRowPreservation`, `ProfileVisibleButAbsentNonCollectionScope`, `ProfileHiddenInlinedColumnPreservation`, `ProfileHiddenExtensionRowPreservation`, and `ProfileHiddenExtensionChildCollectionPreservation`, and
+  - the distinction between update-of-existing-visible-data and create-of-new-visible-data for profiled non-collection scopes and collection items, including `ProfileRootCreateRejectedWhenNonCreatable` and `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable`, plus the three-level parent-create-denied/child-denied chain, and
   - the deterministic profile-scoped sibling-order rule "start from the current full sibling sequence for that scope instance, replace the visible-row subsequence with the merged visible rows in request order, preserve hidden rows in their existing relative gaps, append extra visible inserts after the last previously visible row for that scope instance (or at the end when there was no previously visible row), and renumber `Ordinal` contiguously", including the ordering variants nested under `ProfileVisibleRowUpdateWithHiddenRowPreservation` and `ProfileVisibleRowDeleteWithHiddenRowPreservation`, and
   - `ProfileUnchangedWriteGuardedNoOp`, and
   - profile-based validation/creatability failure semantics.
@@ -62,6 +63,6 @@ Story alignment:
 
 ## Tasks
 
-1. Define and maintain the shared profile scenario matrix above as the canonical feature-by-scenario fixture map, including the ordering variants nested under `ProfileVisibleRowUpdateWithHiddenRowPreservation` and `ProfileVisibleRowDeleteWithHiddenRowPreservation`.
+1. Define and maintain the shared profile scenario matrix above as the canonical feature-by-scenario fixture map, including the ordering variants nested under `ProfileVisibleRowUpdateWithHiddenRowPreservation` and `ProfileVisibleRowDeleteWithHiddenRowPreservation`, plus the creatability variants nested under `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable`.
 2. Implement a harness that runs each test case against both engines and compares results.
-3. Add documentation for expected/allowed differences and how to add new parity cases using the shared scenario names, including which ordering variants belong under `ProfileVisibleRowUpdateWithHiddenRowPreservation` and `ProfileVisibleRowDeleteWithHiddenRowPreservation`.
+3. Add documentation for expected/allowed differences and how to add new parity cases using the shared scenario names, including which ordering variants belong under `ProfileVisibleRowUpdateWithHiddenRowPreservation` and `ProfileVisibleRowDeleteWithHiddenRowPreservation`, and which creatability variants belong under `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable`.

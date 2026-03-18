@@ -345,6 +345,7 @@ Normative requirements:
 - `SemanticIdentityInOrder` MUST follow the compiled semantic-identity member order for that collection scope.
 - Request-side and stored-side `ScopeInstanceAddress` / `CollectionRowAddress` derivation MUST follow the normative algorithm in [Scope and Row Address Derivation](#scope-and-row-address-derivation).
 - `HiddenMemberPaths` MUST be canonical scope-relative member paths that tell backend which stored values must be preserved on matched rows/scopes, including hidden scalar columns, hidden inlined common-type members, and hidden extension members.
+- For any profiled matched row/scope that remains in storage, `HiddenMemberPaths` plus compiled write-plan metadata MUST let backend classify every non-storage-managed binding affected by that scope as exactly one of: visible and writable, hidden and preserved, cleared because the scope is visible but absent, or storage-managed. This accounting rule applies to canonical key-unification storage columns, synthetic presence flags, and FK/descriptor bindings derived from profiled members; generated `UnifiedAlias` columns remain indirect/read-only and are accounted for through their canonical/presence bindings rather than direct writes.
 - `VisibleStoredBody` remains the projected JSON view of currently visible stored state, but backend MUST NOT infer hidden-vs-absent semantics or persisted row identity from projected JSON alone when the structured contract is available.
 - Core MUST reject any writable profile definition that excludes a field required to compute the compiled semantic identity of a persisted multi-item collection scope.
 
@@ -406,7 +407,7 @@ Normative rules:
 - Creatability MUST be evaluated top-down. A child scope/item is not creatable unless its immediate visible parent instance already exists in stored state or is itself creatable in the same request.
 - Creation-required members are the writable-profile-controlled request members needed to materialize a valid new visible stored instance for that root/scope/item. They include:
   - required members of the root/scope/item under the effective schema,
-  - required members of any newly visible nested/common-type scope that must also be created as part of the same request, and
+  - required members of any newly visible nested/common-type or extension scope/item that must also be created as part of the same request, and
   - compiled semantic-identity members for persisted multi-item collections.
 - Storage-managed values such as `DocumentId`, `CollectionItemId`, `ParentCollectionItemId`, timestamps, and `ContentVersion` are not creation-required members for this algorithm.
 - A creation-required member hidden by the writable profile makes the create attempt non-creatable.
@@ -503,6 +504,43 @@ Case B: extension child collection item requires serviceDescriptor but the profi
 Result: submitted new visible extension collection item is non-creatable and must be rejected
 ```
 
+5. Top-down creatability across an existing root, a middle collection item, and a descendant extension child collection.
+
+```text
+Existing visible root resource: $.studentProgramAssociation
+Middle collection scope: $.programs[*]
+Compiled semantic identity: programName
+Required middle-level members: programName, beginDate
+Extension child collection: $.programs[*]._ext.project.services[*]
+Required child members: serviceDescriptor
+
+Writable profile exposes:
+- root members needed to target the existing resource
+- middle level: programName
+- extension child level: serviceDescriptor, dosage
+
+Writable profile hides:
+- middle level: beginDate
+
+Case A: existing visible middle-level item already exists
+Stored visible $.programs[*] row exists for programName="Tutoring" with hidden beginDate=2024-08-20
+Request targets programName="Tutoring" and adds/updates serviceDescriptor="Counseling"
+Decision chain:
+- root already exists -> update path
+- $.programs[*](programName="Tutoring") matches visible stored data -> update path even though beginDate is hidden
+- descendant extension child item is evaluated under an existing visible parent; if its own required members are visible/supplied, create or update is allowed
+Result: request is valid
+
+Case B: request tries to create a new visible middle-level item
+Request submits programName="Mentoring" plus descendant serviceDescriptor="Coaching"
+No visible stored $.programs[*] row matches programName="Mentoring"
+Decision chain:
+- root already exists -> update path
+- $.programs[*](programName="Mentoring") is a create attempt, but beginDate is hidden by the profile -> non-creatable
+- descendant extension child item is also non-creatable because its immediate visible parent neither exists nor is creatable in the same request
+Result: reject before inserting either the new middle-level row or the descendant extension row
+```
+
 ## Hidden-Member Preservation Execution Model
 
 This design chooses one explicit backend execution model for hidden-member preservation:
@@ -516,7 +554,7 @@ Normative rules:
 - **Matched collection rows**
   - backend starts from the current stored row identified by the matched `CollectionItemId`,
   - overlays visible request/resolved values onto that row using compiled bindings, and
-  - preserves any binding governed by `HiddenMemberPaths`, including FK columns, presence columns, and key-unification aliases derived from hidden members.
+  - preserves any binding governed by `HiddenMemberPaths`, including FK columns, presence columns, and key-unification canonical/presence bindings derived from hidden members.
 
 - **Matched visible non-collection scopes stored in separate tables**
   - backend updates the existing row using the same compiled-binding overlay model,
@@ -537,6 +575,47 @@ Normative rules:
 - **Scope-state authority**
   - `RequestScopeStates` / `StoredScopeStates` are the authoritative source for `VisiblePresent`, `VisibleAbsent`, and `Hidden`,
   - `WritableRequestBody` and `VisibleStoredBody` are insufficient by themselves to decide whether omission means "clear/delete" or "preserve hidden data."
+
+### Compiled Binding Accounting
+
+The preservation model is enforced against compiled write bindings, not against raw JSON member enumeration.
+
+For every compiled binding on:
+- a matched visible row/scope that stays in storage, or
+- an inlined scope whose state is `VisibleAbsent`,
+backend MUST assign exactly one of the following outcomes:
+
+- **Visible and writable**
+  - the binding is driven by the visible request surface for that scope instance and is written from request/resolved/precomputed values.
+  - this includes canonical key-unification storage bindings when at least one visible member path in the corresponding unification class is being written.
+
+- **Hidden and preserved**
+  - the binding is governed only by hidden member paths for that scope instance, so backend copies the current stored value unchanged.
+  - this includes hidden reference FK bindings, hidden descriptor FK bindings, canonical key-unification storage columns fed only by hidden members, and synthetic presence columns whose governing member path is hidden.
+
+- **Cleared when the scope is visible but absent**
+  - the scope state is `VisibleAbsent` and normal `PUT` semantics clear that binding because it belongs only to the visible surface being removed.
+  - for separate-table scopes, deleting the row satisfies this outcome for that row's non-storage-managed bindings.
+  - if a storage binding is also governed by a preserved hidden member path (for example a shared canonical key-unification column), it is not cleared; it falls under hidden-and-preserved instead.
+
+- **Storage-managed**
+  - the binding is owned by executor/storage mechanics rather than by profile member visibility.
+  - examples include row identity/locator columns (`DocumentId`, `CollectionItemId`, `ParentCollectionItemId`, `BaseCollectionItemId`), recomputed `Ordinal`, and document/version/stamp columns.
+
+How `HiddenMemberPaths` maps to compiled bindings:
+
+- `HiddenMemberPaths` is expressed in canonical scope-relative member paths, not in physical column names. Backend resolves those paths through compiled write-plan metadata before classifying bindings.
+- A direct scalar/member binding is governed by its own scope-relative path.
+- A document-reference FK binding and any propagated/reference-identity storage bindings derived from that reference are governed by the reference member paths that produced them. Hidden reference members therefore preserve both the FK column and any derived storage bindings.
+- A descriptor FK binding is governed by the descriptor member path that produced the resolved `..._DescriptorId`.
+- A key-unification canonical storage binding is governed by the full member set in the corresponding `KeyUnificationWritePlan`. Hidden aliases are never written directly; they are preserved indirectly through the canonical storage binding and its presence gates.
+- A synthetic `..._Present` binding is governed by the optional member path whose presence it tracks: visible/present writes recompute it, hidden members preserve it, and visible-absent clears it when no preserved hidden member path still governs the same storage state.
+- Generated/computed `UnifiedAlias` columns MUST NOT appear in direct profiled DML. If a dialect persists them physically, they are still accounted for indirectly through the canonical storage column plus optional presence column that defines the alias expression.
+
+Defensive validation:
+
+- Before merge DML proceeds for a profiled matched row/scope, backend MUST prove every affected compiled binding is accounted for by exactly one of the four outcomes above.
+- An unaccounted or multiply-accounted binding is a deterministic profile-runtime failure, not a reason to guess from filtered JSON, omit a column write, or fall back to delete+insert behavior.
 
 ## Profile-Constrained Write Flow
 
@@ -578,7 +657,8 @@ Related redesign discussion:
    - for visible collection rows, match by compiled semantic identity,
    - for hidden collection rows, preserve them untouched,
    - for non-collection scopes, use Core visibility information to distinguish hidden-from-profile vs visible-and-absent, and
-   - for matched rows/scopes, overlay visible request-derived values onto current stored row values while preserving bindings identified by `HiddenMemberPaths`.
+   - for matched rows/scopes, overlay visible request-derived values onto current stored row values while preserving bindings identified by `HiddenMemberPaths`, and
+   - classify every affected compiled binding as visible-and-writable, hidden-and-preserved, clear-on-visible-absent, or storage-managed, failing fast if any binding cannot be accounted for deterministically.
 
 8. **Backend executes merge DML**
    - update matched rows in place,
@@ -702,7 +782,7 @@ Related redesign discussion:
 - **Visible and absent 1:1 or common-type scope**
   - backend applies normal `PUT` semantics:
     - delete the persisted scoped row when the request intentionally omits it, or
-    - when that scope is inlined into a parent row, clear only the visible compiled bindings for that scope and preserve bindings governed by `HiddenMemberPaths`.
+    - when that scope is inlined into a parent row, clear only the visible compiled bindings for that scope after binding accounting, and preserve bindings still governed by `HiddenMemberPaths` (for example shared canonical key-unification storage or hidden reference/descriptor bindings).
 
 - **Visible and present 1:1 or common-type scope**
   - backend inserts or updates the scoped row/columns as normal,
