@@ -63,14 +63,27 @@ public sealed class MappingSetProvider : IMappingSetProvider
                     key.Dialect,
                     SanitizeForLog(key.RelationalMappingVersion)
                 );
-                return MappingSet.FromPayload(payload);
+
+                try
+                {
+                    return MappingSet.FromPayload(payload);
+                }
+                catch (Exception ex)
+                {
+                    throw new MappingSetUnavailableException(
+                        $"Failed to decode mapping pack for EffectiveSchemaHash '{SanitizeForLog(key.EffectiveSchemaHash)}', "
+                            + $"Dialect '{key.Dialect}', RelationalMappingVersion '{SanitizeForLog(key.RelationalMappingVersion)}'. "
+                            + "The pack file may be corrupt or incompatible with the current version.",
+                        ex
+                    );
+                }
             }
 
             if (_options.PacksRequired)
             {
                 throw new MappingSetUnavailableException(
-                    $"Mapping pack is required but not found for EffectiveSchemaHash '{key.EffectiveSchemaHash}', "
-                        + $"Dialect '{key.Dialect}', RelationalMappingVersion '{key.RelationalMappingVersion}'. "
+                    $"Mapping pack is required but not found for EffectiveSchemaHash '{SanitizeForLog(key.EffectiveSchemaHash)}', "
+                        + $"Dialect '{key.Dialect}', RelationalMappingVersion '{SanitizeForLog(key.RelationalMappingVersion)}'. "
                         + "Ensure a matching .mpack file is available in the configured pack root path, "
                         + "or set PacksRequired=false to allow runtime compilation fallback."
                 );
@@ -79,8 +92,8 @@ public sealed class MappingSetProvider : IMappingSetProvider
             if (!_options.AllowRuntimeCompileFallback)
             {
                 throw new MappingSetUnavailableException(
-                    $"Mapping pack not found for EffectiveSchemaHash '{key.EffectiveSchemaHash}', "
-                        + $"Dialect '{key.Dialect}', RelationalMappingVersion '{key.RelationalMappingVersion}', "
+                    $"Mapping pack not found for EffectiveSchemaHash '{SanitizeForLog(key.EffectiveSchemaHash)}', "
+                        + $"Dialect '{key.Dialect}', RelationalMappingVersion '{SanitizeForLog(key.RelationalMappingVersion)}', "
                         + "and runtime compilation fallback is disabled. "
                         + "Provide a matching .mpack file or enable AllowRuntimeCompileFallback."
                 );
@@ -102,6 +115,7 @@ public sealed class MappingSetProvider : IMappingSetProvider
         {
             throw new MappingSetUnavailableException(
                 $"No runtime mapping set compiler is registered for dialect '{key.Dialect}'. "
+                    + $"Requested EffectiveSchemaHash '{SanitizeForLog(key.EffectiveSchemaHash)}'. "
                     + "Ensure the backend for the target dialect is configured."
             );
         }

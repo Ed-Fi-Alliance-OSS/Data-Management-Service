@@ -348,6 +348,12 @@ public class PipelineOrderingTests
         }
 
         [Test]
+        public void It_omits_ResolveMappingSetMiddleware()
+        {
+            _stepTypes.Should().NotContain(typeof(ResolveMappingSetMiddleware));
+        }
+
+        [Test]
         public void It_places_fingerprint_validation_before_schema_dependent_middleware()
         {
             var fingerprintIndex = _stepTypes.IndexOf(typeof(ValidateDatabaseFingerprintMiddleware));

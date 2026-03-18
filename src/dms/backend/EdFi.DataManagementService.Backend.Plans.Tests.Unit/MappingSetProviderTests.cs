@@ -82,7 +82,7 @@ public class Given_MappingSetProvider
     public class Given_PacksEnabled_And_Pack_Found : Given_MappingSetProvider
     {
         [Test]
-        public async Task It_attempts_pack_decode_via_FromPayload()
+        public async Task It_wraps_decode_failure_in_MappingSetUnavailableException()
         {
             var packStore = new TestPackStore(new MappingPackPayload());
 
@@ -93,11 +93,14 @@ public class Given_MappingSetProvider
 
             var act = () => provider.GetOrCreateAsync(_testKey, CancellationToken.None);
 
-            // FromPayload is not yet implemented (deferred to DMS-968), so it throws.
-            // This verifies the pack-loading path is taken when a pack is found.
-            await act.Should()
-                .ThrowAsync<NotSupportedException>()
-                .WithMessage("*AOT mapping-pack decode is not implemented*");
+            // FromPayload is not yet implemented (deferred to DMS-968), so it throws
+            // NotSupportedException internally. MappingSetProvider wraps decode failures
+            // in MappingSetUnavailableException so the middleware can give actionable guidance.
+            var ex = await act.Should()
+                .ThrowAsync<MappingSetUnavailableException>()
+                .WithMessage("*Failed to decode mapping pack*");
+
+            ex.And.InnerException.Should().BeOfType<NotSupportedException>();
         }
     }
 

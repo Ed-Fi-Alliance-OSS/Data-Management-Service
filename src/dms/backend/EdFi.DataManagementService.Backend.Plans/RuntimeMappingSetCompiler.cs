@@ -6,6 +6,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.RelationalModel.Build;
+using static EdFi.DataManagementService.Backend.External.LogSanitizer;
 
 namespace EdFi.DataManagementService.Backend.Plans;
 
@@ -37,10 +38,7 @@ public sealed class RuntimeMappingSetCompiler(
     }
 
     /// <inheritdoc />
-    public Task<MappingSet> CompileAsync(
-        MappingSetKey expectedKey,
-        CancellationToken cancellationToken
-    )
+    public Task<MappingSet> CompileAsync(MappingSetKey expectedKey, CancellationToken cancellationToken)
     {
         var effectiveSchemaSet = GetCurrentEffectiveSchemaSet();
         var actualKey = CreateKey(effectiveSchemaSet.EffectiveSchema);
@@ -88,7 +86,7 @@ public sealed class RuntimeMappingSetCompiler(
 
     private static string FormatKey(MappingSetKey key)
     {
-        return $"{key.EffectiveSchemaHash}/{key.Dialect}/{key.RelationalMappingVersion}";
+        return $"{SanitizeForLog(key.EffectiveSchemaHash)}/{key.Dialect}/{SanitizeForLog(key.RelationalMappingVersion)}";
     }
 
     private static EffectiveSchemaSet CloneEffectiveSchemaSet(EffectiveSchemaSet original)
