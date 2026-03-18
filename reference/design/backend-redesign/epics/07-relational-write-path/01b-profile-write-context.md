@@ -12,7 +12,7 @@ This story introduces the request-scoped Core/backend profile hand-off needed be
 
 - Core may supply a `ProfileAppliedWriteRequest` containing `WritableRequestBody`, root-resource creatability, request-scope visibility, and visible request collection-item metadata,
 - for `POST` requests that would create a new document, backend consults a Core-owned root-creatability decision before inserting `dms.Document` or root rows,
-- for update/upsert-to-existing flows, backend accepts the separately loaded current stored document and invokes a Core-owned projector to obtain `ProfileAppliedWriteContext`, including `VisibleStoredBody`, stored-scope visibility, and visible stored collection-row metadata required by the merge executor.
+- for update/upsert-to-existing flows, backend accepts the separately loaded current stored document and invokes a Core-owned projector to obtain `ProfileAppliedWriteContext`, including `VisibleStoredBody`, stored-scope visibility, visible stored collection-row metadata, and hidden-member preservation metadata required by the merge executor's compiled-binding overlay behavior.
 
 Backend must not re-evaluate profile member filters or collection-item value predicates itself, and assumes Core has already rejected invalid writable profiles that hide compiled semantic-identity members required for persisted collection merges.
 
@@ -50,6 +50,7 @@ Backend must not re-evaluate profile member filters or collection-item value pre
 - Every scope/item entry carries the compiled `JsonScope` plus a stable scope-instance address that uses ancestor collection semantic identities instead of request ordinals.
 - Visible stored collection-row entries expose semantic identity values in compiled order so backend can identify visible persisted rows by compiled semantic identity.
 - Stored-scope and stored-row entries expose `HiddenMemberPaths` metadata sufficient for backend to preserve hidden columns and hidden inlined values on matched rows/scopes.
+- The contract is sufficient for backend to overlay visible request/resolved values onto stored rows using compiled bindings; backend does not require Core to provide per-column visibility flags or rewritten storage rows.
 
 ### Core validation prerequisite
 
@@ -66,12 +67,12 @@ Backend must not re-evaluate profile member filters or collection-item value pre
   - no-profile behavior,
   - profile-scoped `POST` create behavior that checks root creatability without requiring current-state projection,
   - profile-scoped update/upsert behavior that invokes the projector from a supplied current stored document, and
-  - visibility/creatability hand-off for at least one collection scope and one non-collection scope, including stable scope addressing and hidden-member preservation metadata.
+  - visibility/creatability hand-off for at least one collection scope and one non-collection scope, including stable scope addressing, hidden-member preservation metadata, and one matched-row overlay case for hidden inlined or extension members.
 
 ## Tasks
 
-1. Define the backend-facing abstractions used to receive optional `ProfileAppliedWriteRequest` and `ProfileAppliedWriteContext`, including request/stored scope states, visible request/stored collection metadata, stable scope addresses, and hidden-member preservation metadata.
+1. Define the backend-facing abstractions used to receive optional `ProfileAppliedWriteRequest` and `ProfileAppliedWriteContext`, including request/stored scope states, visible request/stored collection metadata, stable scope addresses, and hidden-member preservation metadata that downstream executors can apply through compiled bindings.
 2. Thread `WritableRequestBody` into write-path flattening entry points without duplicating profile logic in backend.
 3. For `POST` requests that would create a new document, consult Core-supplied root creatability before creating `dms.Document` or root rows; for profile-scoped update/upsert flows, accept the current stored document from the separate write-side load/reconstitution step and invoke the Core-owned stored-state projector.
-4. Surface root/scope visibility, collection visibility details, hidden-member preservation metadata, and creatability metadata to downstream merge/no-op code.
-5. Add tests that prove the backend consumes the Core-owned contract without inferring hidden-vs-absent semantics from `WritableRequestBody` or `VisibleStoredBody` alone, including root-resource create rejection and one scope-addressed collection scenario.
+4. Surface root/scope visibility, collection visibility details, hidden-member preservation metadata, and creatability metadata to downstream merge/no-op code so matched rows/scopes can use the compiled-binding overlay model.
+5. Add tests that prove the backend consumes the Core-owned contract without inferring hidden-vs-absent semantics from `WritableRequestBody` or `VisibleStoredBody` alone, including root-resource create rejection, one scope-addressed collection scenario, and one matched-row hidden-member overlay scenario.

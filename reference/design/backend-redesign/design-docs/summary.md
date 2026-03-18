@@ -176,7 +176,7 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
      - for profile-constrained writes, the write pipeline derives visible persisted collection rows from the profile-projected stored document; backend does not evaluate profile filters itself,
      - match by the compiled semantic identity,
      - allocate new `CollectionItemId`s from `dms.CollectionItemIdSequence` for unmatched rows,
-     - preserve hidden profile rows/columns and stable `CollectionItemId`s for matched rows,
+     - preserve hidden profile rows/columns by overlaying visible values onto current stored rows using `HiddenMemberPaths`, while matched rows keep stable `CollectionItemId`s,
      - batch inserts for newly created collection rows and recompute `Ordinal` with the same deterministic post-merge ordering rule used for no-op detection.
    - Write extension tables similarly (root extension rows only when extension values exist; scope-aligned rows for nested extension sites).
    - For each document reference site, write the stable `..._DocumentId` FK column (resolved from `dms.ReferentialIdentity`) and the referenced identity-part values to the table’s canonical stored columns (the per-site binding columns used for query/reconstitution may be generated/persisted aliases under key unification). Composite FKs enforce consistency.

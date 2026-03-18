@@ -148,10 +148,10 @@ During write materialization, extension row buffers are produced alongside core 
 1. Traverse the JSON once (as in the core flattener).
 2. Whenever an `_ext.{p}` subtree is encountered at a table scope, materialize the corresponding extension row for that scope.
 3. Apply the same merge strategy as the core collection writer:
-   - matched extension-scope rows keep their stable base identity,
+   - matched extension-scope rows keep their stable base identity and overlay visible request/resolved values onto stored row values using compiled bindings plus `HiddenMemberPaths`,
    - new extension child rows receive new `CollectionItemId`s,
    - omitted visible extension child rows are deleted,
-   - hidden profile-scoped extension data is preserved.
+   - hidden profile-scoped extension rows and hidden extension columns on matched rows are preserved.
 
 This keeps extension semantics aligned with the core collection merge rules and avoids exposing per-element IDs in the API surface.
 

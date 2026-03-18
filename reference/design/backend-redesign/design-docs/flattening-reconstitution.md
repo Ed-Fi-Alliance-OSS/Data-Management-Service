@@ -478,6 +478,9 @@ Contract:
 - Every `JsonScope` in the structured profile contract MUST align to the compiled `DbTableModel.JsonScope` / `TableWritePlan.TableModel.JsonScope` used by the executor.
 - `VisibleStoredCollectionRows` identifies visible persisted rows by compiled semantic identity in compiled member order. Backend MUST use that structured metadata, not array ordinals, to line up stored rows with request candidates.
 - `HiddenMemberPaths` identifies stored row/scope members that backend must preserve on matched rows/scopes, including hidden inlined members and extension members.
+- Hidden-member preservation uses a compiled-binding overlay model: for any matched stored row/scope that survives the write, backend overlays visible request-derived values onto current stored row values and keeps any binding governed by `HiddenMemberPaths`.
+- Hidden-vs-visible-absent for inlined common-type members comes from `StoredScopeStates` / `RequestScopeStates`, not from JSON object presence in `WritableRequestBody` or `VisibleStoredBody`.
+- `_ext` scopes follow the same model; because the redesign stores `_ext` in separate extension tables, scope visibility governs row delete/preserve decisions while `HiddenMemberPaths` governs column preservation within matched visible extension rows.
 - `VisibleStoredBody` remains the projected JSON view of currently visible stored state, but it is not by itself the executable merge contract for hidden-vs-absent or row-identity decisions.
 - This is an internal backend/Core contract only and MUST NOT change the public API surface.
 - When no profile-specific filtering applies, `ProfileAppliedWriteRequest` / `ProfileAppliedWriteContext` may be omitted and backend treats all current rows in each scope as visible.
@@ -514,8 +517,9 @@ Within a single transaction:
 2. Write the resource root row (`INSERT` or `UPDATE`)
 3. For each non-root 1:1 scope:
    - `InsertSql` when the scope is visible and present, the row is newly present, and Core marked the scope creatable
-   - `UpdateSql` when the scope is visible and present and the scope already exists
+   - `UpdateSql` when the scope is visible and present and the scope already exists; build the final row by overlaying visible request/resolved values onto the stored row using compiled bindings plus `HiddenMemberPaths`
    - `DeleteByParentSql` when the scope is visible and absent
+   - when the scope is inlined into the parent/root row and is visible and absent, clear only the visible compiled bindings for that scope and preserve bindings governed by `HiddenMemberPaths`
    - preserve the scoped row or inlined stored values when the scope is hidden
 4. For each collection scope (depth-first, parent before child descendants):
    - load the current sibling set
@@ -524,7 +528,7 @@ Within a single transaction:
    - for profile-constrained merges, rely on semantic-key matching; Core must reject writable profiles that would hide fields required for that match
    - insert unmatched visible request candidates only when Core marked the corresponding request collection item creatable
    - reserve any needed `CollectionItemId`s from `dms.CollectionItemIdSequence` for unmatched rows
-   - update matched rows in place by `CollectionItemId`
+   - update matched rows in place by `CollectionItemId`, using the same compiled-binding overlay model to preserve bindings governed by `HiddenMemberPaths`
    - delete omitted visible rows by `CollectionItemId`
    - bulk insert newly created rows
    - recompute `Ordinal` for the stored sibling set using the deterministic post-merge sibling-order rule below
@@ -549,7 +553,7 @@ Collection writes use merge semantics, not blanket delete-and-reinsert:
 - For profile-constrained writes, visible stored rows are the rows enumerated in `ProfileAppliedWriteContext.VisibleStoredCollectionRows` for that collection scope and parent scope instance, in caller-visible order.
 - Core MUST reject any writable profile definition that excludes a field required to compute the semantic key of a persisted multi-item collection scope.
 - Hidden profile-scoped rows are current persisted rows for that collection scope instance that are not enumerated in `ProfileAppliedWriteContext.VisibleStoredCollectionRows`; they are never deleted or updated.
-- Hidden columns on matched rows are preserved using `HiddenMemberPaths` while matched rows keep their existing `CollectionItemId`.
+- Hidden columns on matched rows are preserved by overlaying visible request-derived values onto the stored row while matched rows keep their existing `CollectionItemId`.
 - A change to a semantic-key value is treated as `delete old row + insert new row`, not as an in-place rename.
 
 Order rules:

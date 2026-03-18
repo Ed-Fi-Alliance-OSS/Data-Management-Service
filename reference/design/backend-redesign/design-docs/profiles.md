@@ -26,6 +26,7 @@ This document is the API profiles deep dive for `overview.md`, focusing on:
 - [Everything Backend Is Expected to Own](#everything-backend-is-expected-to-own)
 - [Data Model and Compilation Prerequisites](#data-model-and-compilation-prerequisites)
 - [Minimum Core Write Contract](#minimum-core-write-contract)
+- [Hidden-Member Preservation Execution Model](#hidden-member-preservation-execution-model)
 - [Profile-Constrained Write Flow](#profile-constrained-write-flow)
 - [Collection Merge Rules Under Profiles](#collection-merge-rules-under-profiles)
 - [Non-Collection Scope Rules Under Profiles](#non-collection-scope-rules-under-profiles)
@@ -333,6 +334,41 @@ Normative requirements:
 
 This contract is internal to Core/backend. It MUST NOT change the public API surface.
 
+## Hidden-Member Preservation Execution Model
+
+This design chooses one explicit backend execution model for hidden-member preservation:
+
+- Core supplies scope visibility plus canonical scope-relative `HiddenMemberPaths`.
+- Backend preserves hidden stored values by overlaying visible request-derived values onto current stored row values using compiled write-plan bindings and current-state rows.
+- Backend does not receive per-column visibility booleans from Core and MUST NOT infer hidden-vs-absent semantics from filtered JSON.
+
+Normative rules:
+
+- **Matched collection rows**
+  - backend starts from the current stored row identified by the matched `CollectionItemId`,
+  - overlays visible request/resolved values onto that row using compiled bindings, and
+  - preserves any binding governed by `HiddenMemberPaths`, including FK columns, presence columns, and key-unification aliases derived from hidden members.
+
+- **Matched visible non-collection scopes stored in separate tables**
+  - backend updates the existing row using the same compiled-binding overlay model,
+  - preserves columns governed by `HiddenMemberPaths`, and
+  - deletes the row only when the scope state is `VisibleAbsent`.
+
+- **Inlined parent/root-row scopes**
+  - the parent/root row is updated in place,
+  - when the inlined scope is `VisiblePresent`, backend overlays visible request/resolved values and preserves bindings governed by `HiddenMemberPaths`,
+  - when the inlined scope is `VisibleAbsent`, backend clears only the compiled bindings belonging to the visible scope surface and preserves bindings governed by `HiddenMemberPaths`, and
+  - when the inlined scope is `Hidden`, backend preserves those bindings unchanged.
+
+- **Extension scopes and extension columns**
+  - `_ext` scopes use the same model as base scopes,
+  - hidden-vs-visible-absent for extensions is a scope-row decision because the redesign stores `_ext` in separate extension tables rather than inlining extension columns into base tables, and
+  - columns on matched visible extension rows preserve hidden members through the same compiled-binding overlay model.
+
+- **Scope-state authority**
+  - `RequestScopeStates` / `StoredScopeStates` are the authoritative source for `VisiblePresent`, `VisibleAbsent`, and `Hidden`,
+  - `WritableRequestBody` and `VisibleStoredBody` are insufficient by themselves to decide whether omission means "clear/delete" or "preserve hidden data."
+
 ## Profile-Constrained Write Flow
 
 The write flow under a writable profile is:
@@ -373,7 +409,7 @@ Related redesign discussion:
    - for visible collection rows, match by compiled semantic identity,
    - for hidden collection rows, preserve them untouched,
    - for non-collection scopes, use Core visibility information to distinguish hidden-from-profile vs visible-and-absent, and
-   - for matched rows/scopes, preserve hidden members identified by `HiddenMemberPaths`.
+   - for matched rows/scopes, overlay visible request-derived values onto current stored row values while preserving bindings identified by `HiddenMemberPaths`.
 
 8. **Backend executes merge DML**
    - update matched rows in place,
@@ -402,7 +438,7 @@ Related redesign discussion:
 - backend matches visible stored rows to request candidates by compiled semantic identity,
 - matched rows keep their existing `CollectionItemId`,
 - hidden rows are never deleted or updated,
-- hidden columns on matched rows are preserved because the update targets the existing row identity,
+- hidden columns on matched rows are preserved by applying the compiled-binding overlay model to the existing row identity,
 - a change to the semantic identity is treated as `delete old visible row + insert new visible row`, not as an in-place rename,
 - unmatched visible inserts require Core to have marked the scope/item creatable.
 
@@ -436,10 +472,11 @@ Related redesign discussion:
 - **Visible and absent 1:1 or common-type scope**
   - backend applies normal `PUT` semantics:
     - delete the persisted scoped row when the request intentionally omits it, or
-    - clear the corresponding stored values when that scope is inlined into a parent row.
+    - when that scope is inlined into a parent row, clear only the visible compiled bindings for that scope and preserve bindings governed by `HiddenMemberPaths`.
 
 - **Visible and present 1:1 or common-type scope**
   - backend inserts or updates the scoped row/columns as normal,
+  - when updating an existing row/scope, backend uses the compiled-binding overlay model so hidden members remain stored,
   - creation of a newly present scope requires Core to mark that scope creatable.
 
 This same distinction is required for:
@@ -463,7 +500,7 @@ Implications:
 - resource-level `_ext.{project}` rows keyed by `DocumentId` must be preserved when hidden by the writable profile,
 - collection/common-type extension scope rows keyed by the base `CollectionItemId` must be preserved when hidden,
 - extension child collections use the same visible-row merge/delete rules as core collections,
-- hidden extension columns on matched rows are preserved,
+- hidden extension columns on matched rows are preserved through the same compiled-binding overlay model used for base rows,
 - creatability for extension scopes and extension child rows is Core-owned,
 - backend must not special-case `_ext` as "always replace" while applying merge semantics to base data.
 
