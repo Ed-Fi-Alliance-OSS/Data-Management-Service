@@ -79,7 +79,7 @@ public class Given_MappingSetProvider
     }
 
     [TestFixture]
-    public class Given_PacksEnabled_And_Pack_Found : Given_MappingSetProvider
+    public class Given_Enabled_And_Pack_Found : Given_MappingSetProvider
     {
         [Test]
         public async Task It_wraps_decode_failure_in_MappingSetUnavailableException()
@@ -87,7 +87,7 @@ public class Given_MappingSetProvider
             var packStore = new TestPackStore(new MappingPackPayload());
 
             var provider = CreateProvider(
-                options: new MappingSetProviderOptions { PacksEnabled = true },
+                options: new MappingSetProviderOptions { Enabled = true },
                 packStore: packStore
             );
 
@@ -105,7 +105,7 @@ public class Given_MappingSetProvider
     }
 
     [TestFixture]
-    public class Given_PacksEnabled_Is_False : Given_MappingSetProvider
+    public class Given_Enabled_Is_False : Given_MappingSetProvider
     {
         [Test]
         public async Task It_skips_pack_store_and_compiles_at_runtime()
@@ -122,7 +122,7 @@ public class Given_MappingSetProvider
             );
 
             var provider = CreateProvider(
-                options: new MappingSetProviderOptions { PacksEnabled = false },
+                options: new MappingSetProviderOptions { Enabled = false },
                 compiler: compiler
             );
 
@@ -134,7 +134,7 @@ public class Given_MappingSetProvider
     }
 
     [TestFixture]
-    public class Given_PacksEnabled_And_Pack_Not_Found_And_Fallback_Allowed : Given_MappingSetProvider
+    public class Given_Enabled_And_Pack_Not_Found_And_Fallback_Allowed : Given_MappingSetProvider
     {
         [Test]
         public async Task It_falls_back_to_runtime_compilation()
@@ -143,11 +143,7 @@ public class Given_MappingSetProvider
             var compiler = new TestRuntimeCompiler(_testKey, () => Task.FromResult(expectedMappingSet));
 
             var provider = CreateProvider(
-                options: new MappingSetProviderOptions
-                {
-                    PacksEnabled = true,
-                    AllowRuntimeCompileFallback = true,
-                },
+                options: new MappingSetProviderOptions { Enabled = true, AllowRuntimeCompileFallback = true },
                 packStore: new NoOpMappingPackStore(),
                 compiler: compiler
             );
@@ -159,13 +155,13 @@ public class Given_MappingSetProvider
     }
 
     [TestFixture]
-    public class Given_PacksEnabled_And_PacksRequired_And_Pack_Not_Found : Given_MappingSetProvider
+    public class Given_Enabled_And_Required_And_Pack_Not_Found : Given_MappingSetProvider
     {
         [Test]
         public async Task It_throws_MappingSetUnavailableException()
         {
             var provider = CreateProvider(
-                options: new MappingSetProviderOptions { PacksEnabled = true, PacksRequired = true },
+                options: new MappingSetProviderOptions { Enabled = true, Required = true },
                 packStore: new NoOpMappingPackStore()
             );
 
@@ -178,7 +174,7 @@ public class Given_MappingSetProvider
     }
 
     [TestFixture]
-    public class Given_PacksEnabled_And_Fallback_Not_Allowed_And_Pack_Not_Found : Given_MappingSetProvider
+    public class Given_Enabled_And_Fallback_Not_Allowed_And_Pack_Not_Found : Given_MappingSetProvider
     {
         [Test]
         public async Task It_throws_MappingSetUnavailableException()
@@ -186,8 +182,8 @@ public class Given_MappingSetProvider
             var provider = CreateProvider(
                 options: new MappingSetProviderOptions
                 {
-                    PacksEnabled = true,
-                    PacksRequired = false,
+                    Enabled = true,
+                    Required = false,
                     AllowRuntimeCompileFallback = false,
                 },
                 packStore: new NoOpMappingPackStore()
@@ -207,7 +203,7 @@ public class Given_MappingSetProvider
         [Test]
         public async Task It_throws_MappingSetUnavailableException()
         {
-            var provider = CreateProvider(options: new MappingSetProviderOptions { PacksEnabled = false });
+            var provider = CreateProvider(options: new MappingSetProviderOptions { Enabled = false });
 
             var act = () => provider.GetOrCreateAsync(_testKey, CancellationToken.None);
 
@@ -242,6 +238,115 @@ public class Given_MappingSetProvider
             first.Should().BeSameAs(expectedMappingSet);
             second.Should().BeSameAs(expectedMappingSet);
             compileCount.Should().Be(1);
+        }
+    }
+
+    [TestFixture]
+    public class Given_Enabled_And_Pack_Found_Diagnostics : Given_MappingSetProvider
+    {
+        [Test]
+        public async Task It_includes_key_diagnostics_on_decode_failure()
+        {
+            var packStore = new TestPackStore(new MappingPackPayload());
+            var provider = CreateProvider(
+                options: new MappingSetProviderOptions { Enabled = true },
+                packStore: packStore
+            );
+
+            var act = () => provider.GetOrCreateAsync(_testKey, CancellationToken.None);
+
+            var ex = (await act.Should().ThrowAsync<MappingSetUnavailableException>()).And;
+
+            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.EffectiveSchemaHash));
+            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.Dialect.ToString()));
+            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.RelationalMappingVersion));
+        }
+    }
+
+    [TestFixture]
+    public class Given_Enabled_And_Required_And_Pack_Not_Found_Diagnostics : Given_MappingSetProvider
+    {
+        [Test]
+        public async Task It_includes_key_diagnostics_when_pack_required_but_missing()
+        {
+            var provider = CreateProvider(
+                options: new MappingSetProviderOptions { Enabled = true, Required = true },
+                packStore: new NoOpMappingPackStore()
+            );
+
+            var act = () => provider.GetOrCreateAsync(_testKey, CancellationToken.None);
+
+            var ex = (await act.Should().ThrowAsync<MappingSetUnavailableException>()).And;
+
+            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.EffectiveSchemaHash));
+            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.Dialect.ToString()));
+            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.RelationalMappingVersion));
+            ex.Diagnostics.Should().Contain(d => d.Contains("required but not found"));
+        }
+    }
+
+    [TestFixture]
+    public class Given_No_Compiler_Registered_Diagnostics : Given_MappingSetProvider
+    {
+        [Test]
+        public async Task It_includes_key_diagnostics_when_no_compiler()
+        {
+            var provider = CreateProvider(options: new MappingSetProviderOptions { Enabled = false });
+
+            var act = () => provider.GetOrCreateAsync(_testKey, CancellationToken.None);
+
+            var ex = (await act.Should().ThrowAsync<MappingSetUnavailableException>()).And;
+
+            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.EffectiveSchemaHash));
+            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.Dialect.ToString()));
+            ex.Diagnostics.Should().Contain(d => d.Contains("no compiler registered"));
+        }
+    }
+
+    [TestFixture]
+    public class Given_Runtime_Compilation_Failure_Diagnostics : Given_MappingSetProvider
+    {
+        [Test]
+        public async Task It_includes_key_diagnostics_when_compilation_fails()
+        {
+            var compiler = new TestRuntimeCompiler(
+                _testKey,
+                () => throw new InvalidOperationException("simulated compile error")
+            );
+            var provider = CreateProvider(compiler: compiler);
+
+            var act = () => provider.GetOrCreateAsync(_testKey, CancellationToken.None);
+
+            var ex = (await act.Should().ThrowAsync<MappingSetUnavailableException>()).And;
+
+            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.EffectiveSchemaHash));
+            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.Dialect.ToString()));
+            ex.Diagnostics.Should().Contain(d => d.Contains("simulated compile error"));
+        }
+    }
+
+    [TestFixture]
+    public class Given_Failure_For_One_Key_Does_Not_Block_Another : Given_MappingSetProvider
+    {
+        [Test]
+        public async Task It_succeeds_for_key_B_after_key_A_fails()
+        {
+            var keyA = new MappingSetKey(new string('a', 64), SqlDialect.Pgsql, "v1");
+            var keyB = new MappingSetKey(new string('b', 64), SqlDialect.Pgsql, "v1");
+            var expectedMappingSet = CreateTestMappingSet(keyB);
+
+            var compiler = new TestRuntimeCompiler(keyB, () => Task.FromResult(expectedMappingSet));
+
+            // No compiler for keyA's dialect match, but the compiler only accepts keyB.
+            // keyA will fail because the compiler rejects mismatched keys.
+            var provider = CreateProvider(compiler: compiler);
+
+            var actA = () => provider.GetOrCreateAsync(keyA, CancellationToken.None);
+            await actA.Should().ThrowAsync<MappingSetUnavailableException>();
+
+            // keyB should succeed despite keyA's failure
+            var result = await provider.GetOrCreateAsync(keyB, CancellationToken.None);
+            result.Should().BeSameAs(expectedMappingSet);
         }
     }
 

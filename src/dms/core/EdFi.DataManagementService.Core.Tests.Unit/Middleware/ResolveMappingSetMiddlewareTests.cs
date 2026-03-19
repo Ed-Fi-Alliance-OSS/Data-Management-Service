@@ -433,4 +433,82 @@ public class ResolveMappingSetMiddlewareTests
                 .Contain("No relational backend compiler is registered");
         }
     }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Provider_Throws_With_Diagnostics : ResolveMappingSetMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var compiler = CreateFakeCompiler();
+            var (middleware, mappingSetProvider) = CreateMiddleware(
+                useRelationalBackend: true,
+                compiler: compiler
+            );
+            _requestInfo = CreateRequestInfo(fingerprint: CreateFingerprint());
+
+            A.CallTo(() =>
+                    mappingSetProvider.GetOrCreateAsync(
+                        A<MappingSetKey>.Ignored,
+                        A<CancellationToken>.Ignored
+                    )
+                )
+                .Throws(
+                    new MappingSetUnavailableException(
+                        "Mapping pack is required but not found.",
+                        [
+                            $"EffectiveSchemaHash: {_testHash}",
+                            "Dialect: Pgsql",
+                            "RelationalMappingVersion: v1",
+                            "Pack status: required but not found",
+                            "Suggested action: Provide a matching .mpack file or set Required=false.",
+                        ]
+                    )
+                );
+
+            await middleware.Execute(_requestInfo, () => Task.CompletedTask);
+        }
+
+        [Test]
+        public void It_returns_503()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(503);
+        }
+
+        [Test]
+        public void It_includes_exception_message_as_detail()
+        {
+            _requestInfo
+                .FrontendResponse.Body!.ToString()
+                .Should()
+                .Contain("Mapping pack is required but not found.");
+        }
+
+        [Test]
+        public void It_includes_effective_schema_hash_in_errors()
+        {
+            _requestInfo.FrontendResponse.Body!.ToString().Should().Contain(_testHash);
+        }
+
+        [Test]
+        public void It_includes_dialect_in_errors()
+        {
+            _requestInfo.FrontendResponse.Body!.ToString().Should().Contain("Dialect: Pgsql");
+        }
+
+        [Test]
+        public void It_includes_mapping_version_in_errors()
+        {
+            _requestInfo.FrontendResponse.Body!.ToString().Should().Contain("RelationalMappingVersion: v1");
+        }
+
+        [Test]
+        public void It_includes_pack_status_in_errors()
+        {
+            _requestInfo.FrontendResponse.Body!.ToString().Should().Contain("required but not found");
+        }
+    }
 }

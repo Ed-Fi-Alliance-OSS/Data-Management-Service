@@ -115,13 +115,8 @@ internal class ResolveMappingSetMiddleware(
                 StatusCode: 503,
                 Body: FailureResponse.ForMappingSetUnavailable(
                     MappingSetUnavailableTitle,
-                    "The compiled mapping set for this database is unavailable. "
-                        + "Ensure the database is provisioned and mapping packs are available, "
-                        + "or that runtime compilation is enabled. Check server logs for details.",
-                    [
-                        "The compiled mapping set for this database is unavailable. "
-                            + "Check server logs for details.",
-                    ],
+                    ex.Message,
+                    [.. ex.Diagnostics],
                     requestInfo.FrontendRequest.TraceId
                 ),
                 Headers: []

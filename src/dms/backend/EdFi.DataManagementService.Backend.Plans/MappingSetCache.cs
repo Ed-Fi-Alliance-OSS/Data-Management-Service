@@ -6,16 +6,24 @@
 using System.Collections.Concurrent;
 using System.Threading;
 using EdFi.DataManagementService.Backend.External;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using static EdFi.DataManagementService.Backend.External.LogSanitizer;
 
 namespace EdFi.DataManagementService.Backend.Plans;
 
 /// <summary>
 /// Process-local cache of compiled mapping sets keyed by <see cref="MappingSetKey" />.
 /// </summary>
-public sealed class MappingSetCache(Func<MappingSetKey, CancellationToken, Task<MappingSet>> compileAsync)
+public sealed class MappingSetCache(
+    Func<MappingSetKey, CancellationToken, Task<MappingSet>> compileAsync,
+    ILogger? logger = null
+)
 {
     private readonly Func<MappingSetKey, CancellationToken, Task<MappingSet>> _compileAsync =
         compileAsync ?? throw new ArgumentNullException(nameof(compileAsync));
+
+    private readonly ILogger _logger = logger ?? NullLogger.Instance;
 
     private readonly ConcurrentDictionary<MappingSetKey, CacheEntry> _cache = new();
 
@@ -37,6 +45,14 @@ public sealed class MappingSetCache(Func<MappingSetKey, CancellationToken, Task<
         if (ReferenceEquals(cacheEntry, createdEntry))
         {
             cacheEntry.StartCompilation(key, _compileAsync, _cache);
+        }
+        else
+        {
+            _logger.LogDebug(
+                "Mapping set cache hit for EffectiveSchemaHash {EffectiveSchemaHash}, Dialect {Dialect}",
+                SanitizeForLog(key.EffectiveSchemaHash),
+                key.Dialect
+            );
         }
 
         return await cacheEntry.WaitAsync(cancellationToken).ConfigureAwait(false);

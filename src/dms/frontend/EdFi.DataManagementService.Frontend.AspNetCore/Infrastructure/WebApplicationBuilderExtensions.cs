@@ -7,6 +7,8 @@ using System.Net;
 using System.Threading.RateLimiting;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Deploy;
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -61,7 +63,8 @@ public static class WebApplicationBuilderExtensions
             .AddSingleton<
                 IValidateOptions<Frontend.AspNetCore.Configuration.AppSettings>,
                 AppSettingsValidator
-            >();
+            >()
+            .AddSingleton<IValidateOptions<MappingSetProviderOptions>, MappingSetProviderOptionsValidator>();
 
         if (webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
         {
@@ -183,7 +186,7 @@ public static class WebApplicationBuilderExtensions
             logger.Information(
                 "Injecting PostgreSQL as the primary backend datastore with per-request connection strings"
             );
-            webAppBuilder.Services.AddPostgresqlDatastore();
+            webAppBuilder.Services.AddPostgresqlDatastore(webAppBuilder.Configuration);
             webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Old.Postgresql.Deploy.DatabaseDeploy>();
             webAppBuilder.Services.AddSingleton<
                 IDatabaseFingerprintReader,

@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Old.Postgresql.Operation;
 using EdFi.DataManagementService.Old.Postgresql.Startup;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -22,10 +23,13 @@ public static class PostgresqlServiceExtensions
     /// <summary>
     /// The Postgresql backend datastore configuration with per-request connection string support
     /// </summary>
-    public static IServiceCollection AddPostgresqlDatastore(this IServiceCollection services)
+    public static IServiceCollection AddPostgresqlDatastore(
+        this IServiceCollection services,
+        IConfiguration configuration
+    )
     {
         // Mapping set compilation pipeline (generic, dialect-neutral)
-        services.Configure<MappingSetProviderOptions>(_ => { });
+        services.Configure<MappingSetProviderOptions>(configuration.GetSection("MappingPacks"));
         services.AddSingleton<MappingSetCompiler>();
         services.AddSingleton<IMappingPackStore, NoOpMappingPackStore>();
         services.AddSingleton<IRuntimeMappingSetCompiler>(sp =>

@@ -38,7 +38,7 @@ public sealed class MappingSetProvider : IMappingSetProvider
             compilers ?? throw new ArgumentNullException(nameof(compilers))
         ).ToFrozenDictionary(c => c.Dialect);
 
-        _cache = new MappingSetCache(LoadOrCompileAsync);
+        _cache = new MappingSetCache(LoadOrCompileAsync, _logger);
     }
 
     /// <inheritdoc />
@@ -51,9 +51,16 @@ public sealed class MappingSetProvider : IMappingSetProvider
         $"EffectiveSchemaHash '{SanitizeForLog(key.EffectiveSchemaHash)}', "
         + $"Dialect '{key.Dialect}', RelationalMappingVersion '{SanitizeForLog(key.RelationalMappingVersion)}'";
 
+    private static string[] BuildKeyDiagnostics(MappingSetKey key) =>
+        [
+            $"EffectiveSchemaHash: {key.EffectiveSchemaHash}",
+            $"Dialect: {key.Dialect}",
+            $"RelationalMappingVersion: {key.RelationalMappingVersion}",
+        ];
+
     private async Task<MappingSet> LoadOrCompileAsync(MappingSetKey key, CancellationToken cancellationToken)
     {
-        if (_options.PacksEnabled)
+        if (_options.Enabled)
         {
             var payload = await _packStore.TryLoadPayloadAsync(key, cancellationToken).ConfigureAwait(false);
 
@@ -75,26 +82,51 @@ public sealed class MappingSetProvider : IMappingSetProvider
                     throw new MappingSetUnavailableException(
                         $"Failed to decode mapping pack for {FormatKeyForMessage(key)}. "
                             + "The pack file may be corrupt or incompatible with the current version.",
+                        [
+                            .. BuildKeyDiagnostics(key),
+                            "Pack status: found but failed to decode",
+                            "Suggested action: Rebuild the .mpack file or enable AllowRuntimeCompileFallback.",
+                        ],
                         ex
                     );
                 }
             }
 
-            if (_options.PacksRequired)
+            if (_options.Required)
             {
+                _logger.LogWarning(
+                    "Mapping pack required but not found for EffectiveSchemaHash {EffectiveSchemaHash}, Dialect {Dialect}, RelationalMappingVersion {RelationalMappingVersion}",
+                    SanitizeForLog(key.EffectiveSchemaHash),
+                    key.Dialect,
+                    SanitizeForLog(key.RelationalMappingVersion)
+                );
+
                 throw new MappingSetUnavailableException(
-                    $"Mapping pack is required but not found for {FormatKeyForMessage(key)}. "
-                        + "Ensure a matching .mpack file is available in the configured pack root path, "
-                        + "or set PacksRequired=false to allow runtime compilation fallback."
+                    $"Mapping pack is required but not found for {FormatKeyForMessage(key)}.",
+                    [
+                        .. BuildKeyDiagnostics(key),
+                        "Pack status: required but not found",
+                        "Suggested action: Provide a matching .mpack file or set Required=false.",
+                    ]
                 );
             }
 
             if (!_options.AllowRuntimeCompileFallback)
             {
+                _logger.LogWarning(
+                    "Mapping pack not found and runtime compilation fallback is disabled for EffectiveSchemaHash {EffectiveSchemaHash}, Dialect {Dialect}",
+                    SanitizeForLog(key.EffectiveSchemaHash),
+                    key.Dialect
+                );
+
                 throw new MappingSetUnavailableException(
                     $"Mapping pack not found for {FormatKeyForMessage(key)}, "
-                        + "and runtime compilation fallback is disabled. "
-                        + "Provide a matching .mpack file or enable AllowRuntimeCompileFallback."
+                        + "and runtime compilation fallback is disabled.",
+                    [
+                        .. BuildKeyDiagnostics(key),
+                        "Pack status: not found, fallback disabled",
+                        "Suggested action: Provide a matching .mpack file or enable AllowRuntimeCompileFallback.",
+                    ]
                 );
             }
 
@@ -113,9 +145,12 @@ public sealed class MappingSetProvider : IMappingSetProvider
         if (!_compilersByDialect.TryGetValue(key.Dialect, out var compiler))
         {
             throw new MappingSetUnavailableException(
-                $"No runtime mapping set compiler is registered for dialect '{key.Dialect}'. "
-                    + $"Requested EffectiveSchemaHash '{SanitizeForLog(key.EffectiveSchemaHash)}'. "
-                    + "Ensure the backend for the target dialect is configured."
+                $"No runtime mapping set compiler is registered for dialect '{key.Dialect}'.",
+                [
+                    .. BuildKeyDiagnostics(key),
+                    "Compiler status: no compiler registered for dialect",
+                    "Suggested action: Ensure the backend for the target dialect is configured.",
+                ]
             );
         }
 
@@ -128,7 +163,16 @@ public sealed class MappingSetProvider : IMappingSetProvider
 
         try
         {
-            return await compiler.CompileAsync(key, cancellationToken).ConfigureAwait(false);
+            var result = await compiler.CompileAsync(key, cancellationToken).ConfigureAwait(false);
+
+            _logger.LogInformation(
+                "Runtime mapping set compiled successfully for EffectiveSchemaHash {EffectiveSchemaHash}, Dialect {Dialect}, RelationalMappingVersion {RelationalMappingVersion}",
+                SanitizeForLog(key.EffectiveSchemaHash),
+                key.Dialect,
+                SanitizeForLog(key.RelationalMappingVersion)
+            );
+
+            return result;
         }
         catch (MappingSetUnavailableException)
         {
@@ -138,6 +182,11 @@ public sealed class MappingSetProvider : IMappingSetProvider
         {
             throw new MappingSetUnavailableException(
                 $"Runtime compilation failed for {FormatKeyForMessage(key)}: {ex.Message}",
+                [
+                    .. BuildKeyDiagnostics(key),
+                    $"Compilation error: {ex.Message}",
+                    "Suggested action: Check server logs for the full stack trace.",
+                ],
                 ex
             );
         }

@@ -201,7 +201,8 @@ public class PostgresqlRuntimeMappingInitializationTests
         services.AddSingleton<IApiSchemaInputNormalizer, ApiSchemaInputNormalizer>();
         services.AddSingleton<IEffectiveSchemaHashProvider, EffectiveSchemaHashProvider>();
         services.AddSingleton<IResourceKeySeedProvider, ResourceKeySeedProvider>();
-        services.AddPostgresqlDatastore();
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection([]).Build();
+        services.AddPostgresqlDatastore(configuration);
         services.AddSingleton(dmsInstanceProvider);
         services.AddSingleton(databaseMetadataReader);
 
@@ -1314,7 +1315,7 @@ public class PostgresqlRuntimeMappingInitializationTests
                     configuration.GetSection("DeadlockRetry"),
                     false
                 )
-                .AddPostgresqlDatastore()
+                .AddPostgresqlDatastore(configuration)
                 .AddPostgresqlQueryHandler();
         }
 
