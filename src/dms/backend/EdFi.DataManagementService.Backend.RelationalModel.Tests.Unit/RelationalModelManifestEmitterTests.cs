@@ -156,6 +156,109 @@ public class Given_A_Relational_Model_Manifest_Emitter
     }
 
     /// <summary>
+    /// It should emit explicit stable-identity metadata for root and collection tables.
+    /// </summary>
+    [Test]
+    public void It_should_emit_explicit_identity_metadata_for_root_and_collection_tables()
+    {
+        var root =
+            JsonNode.Parse(_manifest) as JsonObject
+            ?? throw new InvalidOperationException("Expected manifest to be a JSON object.");
+        var tables =
+            root["tables"] as JsonArray
+            ?? throw new InvalidOperationException("Expected tables to be a JSON array.");
+
+        var rootTable = GetTableNode(tables, "School");
+        var rootIdentityMetadata = GetIdentityMetadata(rootTable);
+
+        rootIdentityMetadata["table_kind"]!.GetValue<string>().Should().Be(nameof(DbTableKind.Root));
+        GetStringArray(rootIdentityMetadata, "physical_row_identity_columns").Should().Equal("DocumentId");
+        GetStringArray(rootIdentityMetadata, "root_scope_locator_columns").Should().Equal("DocumentId");
+        GetStringArray(rootIdentityMetadata, "immediate_parent_scope_locator_columns").Should().BeEmpty();
+        GetIdentityBindings(rootIdentityMetadata).Should().BeEmpty();
+
+        var addressTable = GetTableNode(tables, "SchoolAddress");
+        var addressIdentityMetadata = GetIdentityMetadata(addressTable);
+
+        addressIdentityMetadata["table_kind"]!.GetValue<string>().Should().Be(nameof(DbTableKind.Collection));
+        GetStringArray(addressIdentityMetadata, "physical_row_identity_columns")
+            .Should()
+            .Equal("CollectionItemId");
+        GetStringArray(addressIdentityMetadata, "root_scope_locator_columns")
+            .Should()
+            .Equal("School_DocumentId");
+        GetStringArray(addressIdentityMetadata, "immediate_parent_scope_locator_columns")
+            .Should()
+            .Equal("School_DocumentId");
+        GetIdentityBindings(addressIdentityMetadata).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// It should emit semantic identity bindings in compiled order.
+    /// </summary>
+    [Test]
+    public void It_should_emit_semantic_identity_bindings_in_compiled_order()
+    {
+        var resourceModel = _buildResult.ResourceModel;
+        var addressTable = resourceModel.TablesInDependencyOrder.Single(table =>
+            table.Table.Name == "SchoolAddress"
+        );
+
+        var updatedAddressTable = addressTable with
+        {
+            IdentityMetadata = addressTable.IdentityMetadata with
+            {
+                SemanticIdentityBindings =
+                [
+                    new CollectionSemanticIdentityBinding(
+                        JsonPathExpressionCompiler.Compile("$.streetNumberName"),
+                        new DbColumnName("StreetNumberName")
+                    ),
+                    new CollectionSemanticIdentityBinding(
+                        JsonPathExpressionCompiler.Compile("$.city"),
+                        new DbColumnName("City")
+                    ),
+                ],
+            },
+        };
+
+        var updatedTables = resourceModel
+            .TablesInDependencyOrder.Select(table =>
+                table.Table.Equals(addressTable.Table) ? updatedAddressTable : table
+            )
+            .ToArray();
+
+        var manifest = RelationalModelManifestEmitter.Emit(
+            resourceModel with
+            {
+                TablesInDependencyOrder = updatedTables,
+            },
+            _buildResult.ExtensionSites
+        );
+
+        var root =
+            JsonNode.Parse(manifest) as JsonObject
+            ?? throw new InvalidOperationException("Expected manifest to be a JSON object.");
+        var tables =
+            root["tables"] as JsonArray
+            ?? throw new InvalidOperationException("Expected tables to be a JSON array.");
+        var manifestAddressTable = GetTableNode(tables, "SchoolAddress");
+        var addressIdentityMetadata = GetIdentityMetadata(manifestAddressTable);
+        var semanticIdentityBindings =
+            addressIdentityMetadata["semantic_identity_bindings"] as JsonArray
+            ?? throw new InvalidOperationException("Expected semantic_identity_bindings to be a JSON array.");
+
+        semanticIdentityBindings
+            .Select(binding => binding?["relative_path"]?.GetValue<string>())
+            .Should()
+            .Equal("$.streetNumberName", "$.city");
+        semanticIdentityBindings
+            .Select(binding => binding?["column"]?.GetValue<string>())
+            .Should()
+            .Equal("StreetNumberName", "City");
+    }
+
+    /// <summary>
     /// It should emit default key-unification metadata.
     /// </summary>
     [Test]
@@ -871,13 +974,7 @@ public class Given_A_Relational_Model_Manifest_Emitter
     /// </summary>
     private static IReadOnlyList<string> GetColumnNames(JsonArray tables, string tableName)
     {
-        var table =
-            tables
-                .Select(tableNode => tableNode as JsonObject)
-                .Single(tableNode =>
-                    string.Equals(tableNode?["name"]?.GetValue<string>(), tableName, StringComparison.Ordinal)
-                )
-            ?? throw new InvalidOperationException($"Expected table '{tableName}'.");
+        var table = GetTableNode(tables, tableName);
 
         var columns =
             table["columns"] as JsonArray
@@ -888,6 +985,53 @@ public class Given_A_Relational_Model_Manifest_Emitter
             .Where(name => name is not null)
             .Select(name => name!)
             .ToArray();
+    }
+
+    /// <summary>
+    /// Gets a table node by name.
+    /// </summary>
+    private static JsonObject GetTableNode(JsonArray tables, string tableName)
+    {
+        return tables
+                .Select(tableNode => tableNode as JsonObject)
+                .Single(tableNode =>
+                    string.Equals(tableNode?["name"]?.GetValue<string>(), tableName, StringComparison.Ordinal)
+                )
+            ?? throw new InvalidOperationException($"Expected table '{tableName}'.");
+    }
+
+    /// <summary>
+    /// Gets the identity metadata object from a table node.
+    /// </summary>
+    private static JsonObject GetIdentityMetadata(JsonObject table)
+    {
+        return table["identity_metadata"] as JsonObject
+            ?? throw new InvalidOperationException("Expected identity_metadata to be a JSON object.");
+    }
+
+    /// <summary>
+    /// Gets a string array property.
+    /// </summary>
+    private static IReadOnlyList<string> GetStringArray(JsonObject parent, string propertyName)
+    {
+        var items =
+            parent[propertyName] as JsonArray
+            ?? throw new InvalidOperationException($"Expected {propertyName} to be a JSON array.");
+
+        return items
+            .Select(item => item?.GetValue<string>())
+            .Where(item => item is not null)
+            .Select(item => item!)
+            .ToArray();
+    }
+
+    /// <summary>
+    /// Gets semantic-identity bindings from identity metadata.
+    /// </summary>
+    private static JsonArray GetIdentityBindings(JsonObject identityMetadata)
+    {
+        return identityMetadata["semantic_identity_bindings"] as JsonArray
+            ?? throw new InvalidOperationException("Expected semantic_identity_bindings to be a JSON array.");
     }
 }
 

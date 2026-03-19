@@ -2212,6 +2212,13 @@
           }
         ],
         "key_unification_classes": [],
+        "identity_metadata": {
+          "table_kind": "Unspecified",
+          "physical_row_identity_columns": [],
+          "root_scope_locator_columns": [],
+          "immediate_parent_scope_locator_columns": [],
+          "semantic_identity_bindings": []
+        },
         "constraints": [
           {
             "kind": "Unique",
@@ -2364,6 +2371,13 @@
           }
         ],
         "key_unification_classes": [],
+        "identity_metadata": {
+          "table_kind": "Unspecified",
+          "physical_row_identity_columns": [],
+          "root_scope_locator_columns": [],
+          "immediate_parent_scope_locator_columns": [],
+          "semantic_identity_bindings": []
+        },
         "constraints": [
           {
             "kind": "Unique",
@@ -48526,6 +48540,17 @@
             }
           ],
           "key_unification_classes": [],
+          "identity_metadata": {
+            "table_kind": "Root",
+            "physical_row_identity_columns": [
+              "DocumentId"
+            ],
+            "root_scope_locator_columns": [
+              "DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [],
+            "semantic_identity_bindings": []
+          },
           "descriptor_fk_deduplications": [],
           "constraints": [
             {
@@ -48721,6 +48746,19 @@
             }
           ],
           "key_unification_classes": [],
+          "identity_metadata": {
+            "table_kind": "Collection",
+            "physical_row_identity_columns": [
+              "CollectionItemId"
+            ],
+            "root_scope_locator_columns": [
+              "AssessmentAdministration_DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [
+              "AssessmentAdministration_DocumentId"
+            ],
+            "semantic_identity_bindings": []
+          },
           "descriptor_fk_deduplications": [],
           "constraints": [
             {
@@ -48854,6 +48892,24 @@
             }
           ],
           "key_unification_classes": [],
+          "identity_metadata": {
+            "table_kind": "Collection",
+            "physical_row_identity_columns": [
+              "CollectionItemId"
+            ],
+            "root_scope_locator_columns": [
+              "AssessmentAdministration_DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [
+              "AssessmentAdministration_DocumentId"
+            ],
+            "semantic_identity_bindings": [
+              {
+                "relative_path": "$.beginDate",
+                "column": "AssessmentAdministrationBeginDate"
+              }
+            ]
+          },
           "descriptor_fk_deduplications": [],
           "constraints": [
             {
@@ -49438,6 +49494,17 @@
               ]
             }
           ],
+          "identity_metadata": {
+            "table_kind": "Root",
+            "physical_row_identity_columns": [
+              "DocumentId"
+            ],
+            "root_scope_locator_columns": [
+              "DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [],
+            "semantic_identity_bindings": []
+          },
           "descriptor_fk_deduplications": [
             {
               "storage_column": "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId",
@@ -49727,6 +49794,24 @@
             }
           ],
           "key_unification_classes": [],
+          "identity_metadata": {
+            "table_kind": "Collection",
+            "physical_row_identity_columns": [
+              "CollectionItemId"
+            ],
+            "root_scope_locator_columns": [
+              "ProgramEvaluationElement_DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [
+              "ProgramEvaluationElement_DocumentId"
+            ],
+            "semantic_identity_bindings": [
+              {
+                "relative_path": "$.ratingLevelDescriptor",
+                "column": "RatingLevelDescriptor_DescriptorId"
+              }
+            ]
+          },
           "descriptor_fk_deduplications": [],
           "constraints": [
             {
@@ -50349,6 +50434,17 @@
               ]
             }
           ],
+          "identity_metadata": {
+            "table_kind": "Root",
+            "physical_row_identity_columns": [
+              "DocumentId"
+            ],
+            "root_scope_locator_columns": [
+              "DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [],
+            "semantic_identity_bindings": []
+          },
           "descriptor_fk_deduplications": [],
           "constraints": [
             {
@@ -50660,6 +50756,24 @@
             }
           ],
           "key_unification_classes": [],
+          "identity_metadata": {
+            "table_kind": "Collection",
+            "physical_row_identity_columns": [
+              "CollectionItemId"
+            ],
+            "root_scope_locator_columns": [
+              "StudentAssessmentRegistration_DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [
+              "StudentAssessmentRegistration_DocumentId"
+            ],
+            "semantic_identity_bindings": [
+              {
+                "relative_path": "$.accommodationDescriptor",
+                "column": "AccommodationDescriptor_DescriptorId"
+              }
+            ]
+          },
           "descriptor_fk_deduplications": [],
           "constraints": [
             {
@@ -50787,6 +50901,24 @@
             }
           ],
           "key_unification_classes": [],
+          "identity_metadata": {
+            "table_kind": "Collection",
+            "physical_row_identity_columns": [
+              "CollectionItemId"
+            ],
+            "root_scope_locator_columns": [
+              "StudentAssessmentRegistration_DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [
+              "StudentAssessmentRegistration_DocumentId"
+            ],
+            "semantic_identity_bindings": [
+              {
+                "relative_path": "$.customizationKey",
+                "column": "CustomizationKey"
+              }
+            ]
+          },
           "descriptor_fk_deduplications": [],
           "constraints": [
             {
@@ -51534,6 +51666,17 @@
               ]
             }
           ],
+          "identity_metadata": {
+            "table_kind": "Root",
+            "physical_row_identity_columns": [
+              "DocumentId"
+            ],
+            "root_scope_locator_columns": [
+              "DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [],
+            "semantic_identity_bindings": []
+          },
           "descriptor_fk_deduplications": [],
           "constraints": [
             {
@@ -51948,6 +52091,19 @@
             }
           ],
           "key_unification_classes": [],
+          "identity_metadata": {
+            "table_kind": "RootExtension",
+            "physical_row_identity_columns": [
+              "DocumentId"
+            ],
+            "root_scope_locator_columns": [
+              "DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [
+              "DocumentId"
+            ],
+            "semantic_identity_bindings": []
+          },
           "descriptor_fk_deduplications": [],
           "constraints": [
             {
@@ -52081,6 +52237,19 @@
             }
           ],
           "key_unification_classes": [],
+          "identity_metadata": {
+            "table_kind": "Collection",
+            "physical_row_identity_columns": [
+              "CollectionItemId"
+            ],
+            "root_scope_locator_columns": [
+              "StudentSchoolAssociation_DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [
+              "StudentSchoolAssociation_DocumentId"
+            ],
+            "semantic_identity_bindings": []
+          },
           "descriptor_fk_deduplications": [],
           "constraints": [
             {
@@ -52218,6 +52387,24 @@
             }
           ],
           "key_unification_classes": [],
+          "identity_metadata": {
+            "table_kind": "Collection",
+            "physical_row_identity_columns": [
+              "CollectionItemId"
+            ],
+            "root_scope_locator_columns": [
+              "StudentSchoolAssociation_DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [
+              "StudentSchoolAssociation_DocumentId"
+            ],
+            "semantic_identity_bindings": [
+              {
+                "relative_path": "$.educationPlanDescriptor",
+                "column": "EducationPlanDescriptor_DescriptorId"
+              }
+            ]
+          },
           "descriptor_fk_deduplications": [],
           "constraints": [
             {

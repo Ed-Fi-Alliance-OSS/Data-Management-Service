@@ -15,7 +15,7 @@
       "Update or add emitter and manifest-ordering unit coverage for the new metadata surface.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Identifier Rewrites And Canonical Ordering",

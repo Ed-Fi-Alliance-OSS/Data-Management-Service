@@ -65,6 +65,32 @@ internal static class ManifestWriterHelpers
     }
 
     /// <summary>
+    /// Writes explicit stable-identity metadata for a table.
+    /// </summary>
+    internal static void WriteIdentityMetadata(
+        Utf8JsonWriter writer,
+        DbTableIdentityMetadata identityMetadata
+    )
+    {
+        writer.WriteStartObject();
+        writer.WriteString("table_kind", identityMetadata.TableKind.ToString());
+        writer.WritePropertyName("physical_row_identity_columns");
+        WriteColumnNameList(writer, identityMetadata.PhysicalRowIdentityColumns);
+        writer.WritePropertyName("root_scope_locator_columns");
+        WriteColumnNameList(writer, identityMetadata.RootScopeLocatorColumns);
+        writer.WritePropertyName("immediate_parent_scope_locator_columns");
+        WriteColumnNameList(writer, identityMetadata.ImmediateParentScopeLocatorColumns);
+        writer.WritePropertyName("semantic_identity_bindings");
+        writer.WriteStartArray();
+        foreach (var binding in identityMetadata.SemanticIdentityBindings)
+        {
+            WriteSemanticIdentityBinding(writer, binding);
+        }
+        writer.WriteEndArray();
+        writer.WriteEndObject();
+    }
+
+    /// <summary>
     /// Writes column storage metadata.
     /// </summary>
     internal static void WriteColumnStorage(Utf8JsonWriter writer, ColumnStorage storage)
@@ -308,6 +334,9 @@ internal static class ManifestWriterHelpers
         }
         writer.WriteEndArray();
 
+        writer.WritePropertyName("identity_metadata");
+        WriteIdentityMetadata(writer, table.IdentityMetadata);
+
         if (descriptorFkDeduplicationsByTable is not null)
         {
             writer.WritePropertyName("descriptor_fk_deduplications");
@@ -329,6 +358,20 @@ internal static class ManifestWriterHelpers
         }
         writer.WriteEndArray();
 
+        writer.WriteEndObject();
+    }
+
+    /// <summary>
+    /// Writes one semantic-identity member binding.
+    /// </summary>
+    private static void WriteSemanticIdentityBinding(
+        Utf8JsonWriter writer,
+        CollectionSemanticIdentityBinding binding
+    )
+    {
+        writer.WriteStartObject();
+        writer.WriteString("relative_path", binding.RelativePath.Canonical);
+        writer.WriteString("column", binding.ColumnName.Value);
         writer.WriteEndObject();
     }
 
