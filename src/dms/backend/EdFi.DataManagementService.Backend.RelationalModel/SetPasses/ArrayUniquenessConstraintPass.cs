@@ -176,12 +176,12 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
                     columnsByTable,
                     resource,
                     out var table,
-                    out var uniqueColumns,
+                    out var compiledIdentity,
                     out scopeFailure
                 )
             )
             {
-                AddArrayUniquenessConstraint(mutation, table, uniqueColumns);
+                AddArrayUniquenessConstraint(mutation, table, compiledIdentity, resource);
                 continue;
             }
 
@@ -204,12 +204,12 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
                         columnsByTable,
                         resource,
                         out var alignedTable,
-                        out var alignedColumns,
+                        out var alignedIdentity,
                         out alignedFailure
                     )
                 )
                 {
-                    AddArrayUniquenessConstraint(mutation, alignedTable, alignedColumns);
+                    AddArrayUniquenessConstraint(mutation, alignedTable, alignedIdentity, resource);
                     continue;
                 }
             }
@@ -318,21 +318,47 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
     private static void AddArrayUniquenessConstraint(
         ResourceMutation mutation,
         DbTableModel table,
-        IReadOnlyList<DbColumnName> uniqueColumns
+        CompiledArrayUniqueness compiledIdentity,
+        QualifiedResourceName resource
     )
     {
         var tableAccumulator = mutation.GetTableAccumulator(table, mutation.Entry.Model.ResourceKey.Resource);
+        var existingIdentityMetadata = tableAccumulator.IdentityMetadata;
+
+        if (compiledIdentity.SemanticIdentityBindings.Length == 0)
+        {
+            throw new InvalidOperationException(
+                $"arrayUniquenessConstraints scope '{table.JsonScope.Canonical}' on resource "
+                    + $"'{FormatResource(resource)}' did not compile any semantic identity bindings."
+            );
+        }
+
+        if (existingIdentityMetadata.SemanticIdentityBindings.Count == 0)
+        {
+            // Keep the first applicable binding set deterministically; a follow-on validation task will
+            // fail fast on supported models that still resolve ambiguously for the same persisted scope.
+            tableAccumulator.IdentityMetadata = existingIdentityMetadata with
+            {
+                SemanticIdentityBindings = compiledIdentity.SemanticIdentityBindings,
+            };
+            mutation.MarkTableMutated(table);
+        }
 
         if (
             !ContainsUniqueConstraint(
                 tableAccumulator.Constraints,
                 tableAccumulator.Definition.Table,
-                uniqueColumns
+                compiledIdentity.UniqueColumns
             )
         )
         {
-            var uniqueName = ConstraintNaming.BuildArrayUniquenessName(table.Table, uniqueColumns);
-            tableAccumulator.AddConstraint(new TableConstraint.Unique(uniqueName, uniqueColumns));
+            var uniqueName = ConstraintNaming.BuildArrayUniquenessName(
+                table.Table,
+                compiledIdentity.UniqueColumns
+            );
+            tableAccumulator.AddConstraint(
+                new TableConstraint.Unique(uniqueName, compiledIdentity.UniqueColumns)
+            );
             mutation.MarkTableMutated(table);
         }
     }
@@ -350,18 +376,18 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
         string scope,
         QualifiedResourceName resource,
         out DbTableModel table,
-        out DbColumnName[] uniqueColumns,
+        out CompiledArrayUniqueness compiledIdentity,
         out Exception? failure
     )
     {
         table = default!;
-        uniqueColumns = Array.Empty<DbColumnName>();
+        compiledIdentity = new CompiledArrayUniqueness([], []);
         failure = null;
 
         var orderedCandidates = candidates
             .OrderBy(candidate => candidate.Table.ToString(), StringComparer.Ordinal)
             .ToArray();
-        List<(DbTableModel Table, DbColumnName[] Columns)> matches = [];
+        List<(DbTableModel Table, CompiledArrayUniqueness Identity)> matches = [];
         List<Exception> failures = [];
 
         foreach (var candidate in orderedCandidates)
@@ -387,7 +413,7 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
         if (matches.Count == 1)
         {
             table = matches[0].Table;
-            uniqueColumns = matches[0].Columns;
+            compiledIdentity = matches[0].Identity;
             return true;
         }
 
@@ -447,14 +473,14 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
         IDictionary<DbTableName, IReadOnlyDictionary<string, DbColumnName>> columnsByTable,
         QualifiedResourceName resource,
         out DbTableModel table,
-        out DbColumnName[] uniqueColumns,
+        out CompiledArrayUniqueness compiledIdentity,
         out Exception? failure
     )
     {
         if (!tablesByScope.TryGetValue(scope, out var candidates))
         {
             table = default!;
-            uniqueColumns = Array.Empty<DbColumnName>();
+            compiledIdentity = new CompiledArrayUniqueness([], []);
             failure = null;
             return false;
         }
@@ -468,7 +494,7 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
             scope,
             resource,
             out table,
-            out uniqueColumns,
+            out compiledIdentity,
             out failure
         );
     }
@@ -522,9 +548,10 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
 
     /// <summary>
     /// Builds the deterministic unique column list for an array uniqueness constraint: parent key parts first,
-    /// then resolved constraint columns.
+    /// then resolved constraint columns. Semantic-identity bindings preserve the declared path order even when
+    /// multiple identity members resolve to the same physical column.
     /// </summary>
-    private static DbColumnName[] BuildArrayUniquenessColumns(
+    private static CompiledArrayUniqueness BuildArrayUniquenessColumns(
         DbTableModel table,
         IReadOnlyList<JsonPathExpression> paths,
         IReadOnlyDictionary<string, DocumentReferenceBinding> referenceBindingsByIdentityPath,
@@ -537,6 +564,7 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
 
         HashSet<string> seenColumns = new(StringComparer.Ordinal);
         List<DbColumnName> uniqueColumns = new(parentKeyColumns.Length + paths.Count);
+        List<CollectionSemanticIdentityBinding> semanticIdentityBindings = new(paths.Count);
 
         foreach (var keyColumn in parentKeyColumns)
         {
@@ -553,10 +581,17 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
                 columnsByTable,
                 resource
             );
+
+            semanticIdentityBindings.Add(
+                new CollectionSemanticIdentityBinding(
+                    DeriveScopeRelativePath(table.JsonScope, path),
+                    columnName
+                )
+            );
             AddUniqueColumn(columnName, uniqueColumns, seenColumns);
         }
 
-        return uniqueColumns.ToArray();
+        return new CompiledArrayUniqueness(uniqueColumns.ToArray(), semanticIdentityBindings.ToArray());
     }
 
     /// <summary>
@@ -634,6 +669,69 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
     }
 
     /// <summary>
+    /// Derives a table-scope-relative JSON path by stripping the owning table scope prefix from an absolute
+    /// constraint path.
+    /// </summary>
+    private static JsonPathExpression DeriveScopeRelativePath(
+        JsonPathExpression jsonScope,
+        JsonPathExpression path
+    )
+    {
+        if (!IsPrefixOf(jsonScope.Segments, path.Segments))
+        {
+            throw new InvalidOperationException(
+                $"Cannot derive scope-relative semantic identity path for '{path.Canonical}': "
+                    + $"scope '{jsonScope.Canonical}' is not a prefix."
+            );
+        }
+
+        var relativeSegments = path.Segments.Skip(jsonScope.Segments.Count).ToArray();
+
+        if (relativeSegments.Any(segment => segment is JsonPathSegment.AnyArrayElement))
+        {
+            throw new InvalidOperationException(
+                $"Cannot derive scope-relative semantic identity path for '{path.Canonical}' under "
+                    + $"scope '{jsonScope.Canonical}': stripped path contains '[*]'."
+            );
+        }
+
+        return JsonPathExpressionCompiler.FromSegments(relativeSegments);
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when <paramref name="prefix"/> matches the left-most path segments.
+    /// </summary>
+    private static bool IsPrefixOf(IReadOnlyList<JsonPathSegment> prefix, IReadOnlyList<JsonPathSegment> path)
+    {
+        if (prefix.Count > path.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < prefix.Count; index++)
+        {
+            var prefixSegment = prefix[index];
+            var pathSegment = path[index];
+
+            if (prefixSegment.GetType() != pathSegment.GetType())
+            {
+                return false;
+            }
+
+            if (
+                prefixSegment is JsonPathSegment.Property prefixProperty
+                && pathSegment is JsonPathSegment.Property pathProperty
+                && !string.Equals(prefixProperty.Name, pathProperty.Name, StringComparison.Ordinal)
+            )
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// Resolves a constraint path relative to its optional base path.
     /// </summary>
     private static JsonPathExpression ResolveConstraintPath(
@@ -660,4 +758,16 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
         var combinedSegments = basePath.Segments.Concat(relativePath.Segments).ToArray();
         return JsonPathExpressionCompiler.FromSegments(combinedSegments);
     }
+
+    /// <summary>
+    /// Captures the unique-constraint columns and ordered semantic-identity bindings compiled for one scope.
+    /// </summary>
+    /// <param name="UniqueColumns">The deduplicated unique-constraint columns, including parent locator parts.</param>
+    /// <param name="SemanticIdentityBindings">
+    /// The ordered semantic-identity bindings in declared path order.
+    /// </param>
+    private sealed record CompiledArrayUniqueness(
+        DbColumnName[] UniqueColumns,
+        CollectionSemanticIdentityBinding[] SemanticIdentityBindings
+    );
 }

@@ -60,7 +60,7 @@
       "Add or update relational-model tests that cover top-level collections, nested collections, collection-aligned `_ext` scopes, root-level extension child collections, collection-aligned extension child collections, and nested extension child collections with the new metadata surface.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Semantic Identity Validation",

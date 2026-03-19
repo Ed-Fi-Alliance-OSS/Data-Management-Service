@@ -1573,6 +1573,23 @@ public class Given_Array_Uniqueness_Constraint_Derivation
     }
 
     /// <summary>
+    /// It should compile ordered semantic identity bindings for top-level collections.
+    /// </summary>
+    [Test]
+    public void It_should_compile_ordered_semantic_identity_bindings_for_top_level_collections()
+    {
+        _addressTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.RelativePath.Canonical)
+            .Should()
+            .Equal("$.schoolReference.schoolId", "$.schoolReference.educationOrganizationId");
+
+        _addressTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.ColumnName.Value)
+            .Should()
+            .Equal("School_DocumentId", "School_DocumentId");
+    }
+
+    /// <summary>
     /// It should include parent key parts for nested arrays.
     /// </summary>
     [Test]
@@ -1585,6 +1602,23 @@ public class Given_Array_Uniqueness_Constraint_Derivation
             .Should()
             .Equal("ParentCollectionItemId", "BeginDate");
         uniqueConstraint.Columns.Should().NotContain(column => column.Value == "Ordinal");
+    }
+
+    /// <summary>
+    /// It should compile scope-relative semantic identity bindings for nested collections.
+    /// </summary>
+    [Test]
+    public void It_should_compile_scope_relative_semantic_identity_bindings_for_nested_collections()
+    {
+        _periodTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.RelativePath.Canonical)
+            .Should()
+            .Equal("$.beginDate");
+
+        _periodTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.ColumnName.Value)
+            .Should()
+            .Equal("BeginDate");
     }
 }
 
@@ -1951,6 +1985,23 @@ public class Given_Extension_Array_Uniqueness_Constraint_Alignment
             .Should()
             .Equal("ParentCollectionItemId", "BeginDate");
     }
+
+    /// <summary>
+    /// It should compile scope-relative semantic identity bindings onto the aligned base table.
+    /// </summary>
+    [Test]
+    public void It_should_compile_scope_relative_semantic_identity_bindings_onto_the_aligned_base_table()
+    {
+        _periodTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.RelativePath.Canonical)
+            .Should()
+            .Equal("$.beginDate");
+
+        _periodTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.ColumnName.Value)
+            .Should()
+            .Equal("BeginDate");
+    }
 }
 
 /// <summary>
@@ -2006,6 +2057,203 @@ public class Given_Extension_Array_Uniqueness_Constraint_With_Missing_Base_Table
 
         exception.Message.Should().Contain("$._ext.sample.missing[*]");
         exception.Message.Should().Contain("Contact");
+    }
+}
+
+/// <summary>
+/// Test fixture for semantic identity metadata on extension child collections.
+/// </summary>
+[TestFixture]
+public class Given_Extension_Child_Array_Uniqueness_Constraint_Derivation
+{
+    private DbTableModel _interventionTable = default!;
+    private DbTableModel _sponsorReferenceTable = default!;
+    private DbTableModel _visitTable = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema = ExtensionTableTestSchemaBuilder.BuildCoreProjectSchema();
+        var extensionProjectSchema = BuildExtensionProjectSchemaWithChildArrayUniquenessConstraints();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var extensionProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            extensionProjectSchema,
+            isExtensionProject: true
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(
+            new[] { coreProject, extensionProject }
+        );
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new ExtensionTableDerivationPass(),
+                new ReferenceBindingPass(),
+                new RootIdentityConstraintPass(),
+                new ReferenceConstraintPass(),
+                new ArrayUniquenessConstraintPass(),
+            }
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        var schoolModel = result
+            .ConcreteResourcesInNameOrder.Single(model =>
+                model.ResourceKey.Resource.ProjectName == "Ed-Fi"
+                && model.ResourceKey.Resource.ResourceName == "School"
+            )
+            .RelationalModel;
+
+        _interventionTable = schoolModel.TablesInDependencyOrder.Single(table =>
+            table.Table.Name == "SchoolExtensionIntervention"
+        );
+        _visitTable = schoolModel.TablesInDependencyOrder.Single(table =>
+            table.Table.Name == "SchoolExtensionInterventionVisit"
+        );
+        _sponsorReferenceTable = schoolModel.TablesInDependencyOrder.Single(table =>
+            table.Table.Name == "SchoolExtensionAddressSponsorReference"
+        );
+    }
+
+    /// <summary>
+    /// It should compile semantic identity bindings for root-level extension child collections.
+    /// </summary>
+    [Test]
+    public void It_should_compile_semantic_identity_bindings_for_root_level_extension_child_collections()
+    {
+        _interventionTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.RelativePath.Canonical)
+            .Should()
+            .Equal("$.interventionCode");
+
+        _interventionTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.ColumnName.Value)
+            .Should()
+            .Equal("InterventionCode");
+    }
+
+    /// <summary>
+    /// It should compile semantic identity bindings for nested extension child collections.
+    /// </summary>
+    [Test]
+    public void It_should_compile_semantic_identity_bindings_for_nested_extension_child_collections()
+    {
+        _visitTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.RelativePath.Canonical)
+            .Should()
+            .Equal("$.visitCode");
+
+        _visitTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.ColumnName.Value)
+            .Should()
+            .Equal("VisitCode");
+    }
+
+    /// <summary>
+    /// It should compile semantic identity bindings for collection-aligned extension child collections.
+    /// </summary>
+    [Test]
+    public void It_should_compile_semantic_identity_bindings_for_collection_aligned_extension_child_collections()
+    {
+        _sponsorReferenceTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.RelativePath.Canonical)
+            .Should()
+            .Equal("$.programReference.programName");
+
+        _sponsorReferenceTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.ColumnName.Value)
+            .Should()
+            .Equal("Program_DocumentId");
+    }
+
+    private static JsonObject BuildExtensionProjectSchemaWithChildArrayUniquenessConstraints()
+    {
+        var extensionProjectSchema = ExtensionTableTestSchemaBuilder.BuildExtensionProjectSchema();
+        var schoolSchema = RequireObject(
+            RequireObject(extensionProjectSchema["resourceSchemas"], "resourceSchemas")["schools"],
+            "resourceSchemas.schools"
+        );
+        var jsonSchemaForInsert = RequireObject(
+            schoolSchema["jsonSchemaForInsert"],
+            "resourceSchemas.schools.jsonSchemaForInsert"
+        );
+        var sampleProperties = RequireObject(
+            RequireObject(
+                RequireObject(
+                    RequireObject(
+                        RequireObject(jsonSchemaForInsert["properties"], "jsonSchemaForInsert.properties")[
+                            "_ext"
+                        ],
+                        "jsonSchemaForInsert.properties._ext"
+                    )["properties"],
+                    "jsonSchemaForInsert.properties._ext.properties"
+                )["sample"],
+                "jsonSchemaForInsert.properties._ext.properties.sample"
+            )["properties"],
+            "jsonSchemaForInsert.properties._ext.properties.sample.properties"
+        );
+
+        sampleProperties["interventions"] = new JsonObject
+        {
+            ["type"] = "array",
+            ["items"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["interventionCode"] = new JsonObject { ["type"] = "string", ["maxLength"] = 20 },
+                    ["visits"] = new JsonObject
+                    {
+                        ["type"] = "array",
+                        ["items"] = new JsonObject
+                        {
+                            ["type"] = "object",
+                            ["properties"] = new JsonObject
+                            {
+                                ["visitCode"] = new JsonObject { ["type"] = "string", ["maxLength"] = 20 },
+                            },
+                        },
+                    },
+                },
+            },
+        };
+
+        schoolSchema["arrayUniquenessConstraints"] = new JsonArray
+        {
+            new JsonObject
+            {
+                ["paths"] = new JsonArray { "$._ext.sample.interventions[*].interventionCode" },
+                ["nestedConstraints"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["basePath"] = "$._ext.sample.interventions[*]",
+                        ["paths"] = new JsonArray { "$.visits[*].visitCode" },
+                    },
+                },
+            },
+            new JsonObject
+            {
+                ["paths"] = new JsonArray
+                {
+                    "$._ext.sample.addresses[*]._ext.sample.sponsorReferences[*].programReference.programName",
+                },
+            },
+        };
+
+        return extensionProjectSchema;
+    }
+
+    private static JsonObject RequireObject(JsonNode? node, string path)
+    {
+        return node as JsonObject
+            ?? throw new InvalidOperationException($"Expected '{path}' to be a JSON object.");
     }
 }
 
