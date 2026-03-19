@@ -9,7 +9,7 @@ jira_url: https://edfi.atlassian.net/browse/DMS-990
 
 Implement JSON reconstitution from hydrated relational rows:
 
-- Dependency note: readable profile projection in this story is hard-blocked on `reference/design/backend-redesign/epics/07-relational-write-path/01a-core-profile-delivery-plan.md`, which plans the Core-owned readable-profile output this story invokes.
+- Dependency note: readable profile projection in this story is hard-blocked on Core profile story C7 (`reference/design/backend-redesign/epics/07-relational-write-path/01a-c7-readable-profile-projection.md`), which implements the Core-owned readable projector this story invokes after full reconstitution.
 - Rebuild the JSON structure for the resource using the compiled reconstitution plan.
 - Preserve array ordering using `Ordinal` columns.
 - Attach nested collections and scope-aligned extension rows using stable parent row identity.
@@ -24,7 +24,7 @@ Implement JSON reconstitution from hydrated relational rows:
   - collections and nested collections (order preserved),
   - `_ext` at root and within collection elements.
 - Reconstitution does not emit `_ext` when there are no extension values.
-- Backend does not reimplement readable profile filtering; readable profiles are applied by Core after full reconstitution using the Core-owned contract planned by `01a-core-profile-delivery-plan.md`.
+- Backend does not reimplement readable profile filtering; readable profiles are applied by Core after full reconstitution using the Core-owned readable projector from C7 (`01a-c7-readable-profile-projection.md`).
 - Unit/integration tests validate reconstitution for at least one “nested + ext” fixture.
 
 ## Tasks

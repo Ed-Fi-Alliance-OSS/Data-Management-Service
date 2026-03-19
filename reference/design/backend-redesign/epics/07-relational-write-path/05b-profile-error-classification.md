@@ -10,7 +10,7 @@ This companion story covers the profile-specific failures required by:
 - `reference/design/backend-redesign/design-docs/overview.md`
 - `reference/design/backend-redesign/design-docs/transactions-and-concurrency.md`
 
-Dependency note: this story is hard-blocked on `reference/design/backend-redesign/epics/07-relational-write-path/01a-core-profile-delivery-plan.md`, which plans the Core-owned typed failures and contract surfaces it classifies.
+Dependency note: this story is hard-blocked on Core profile story C8 (`01a-c8-typed-profile-error-classification.md`), which defines the typed profile error categories this story classifies and maps to DMS error shapes.
 
 It is distinct from `DMS-986`, which remains limited to database exception classification and mapping.
 

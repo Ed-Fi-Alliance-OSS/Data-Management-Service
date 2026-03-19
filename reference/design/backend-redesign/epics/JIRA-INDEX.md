@@ -77,6 +77,14 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `DMS-981` — Core Emits Concrete JSON Locations for Document References — `reference/design/backend-redesign/epics/07-relational-write-path/00-core-extraction-location.md`
   - `DMS-982` — Bulk Reference and Descriptor Resolution (Write-Time Validation) — `reference/design/backend-redesign/epics/07-relational-write-path/01-reference-and-descriptor-resolution.md`
   - `DMS-1106` — Core Profile Support Delivery Plan Spike — `reference/design/backend-redesign/epics/07-relational-write-path/01a-core-profile-delivery-plan.md`
+  - `TBD` — Shared Compiled-Scope Adapter Contract + Address Derivation Engine (C1) — `reference/design/backend-redesign/epics/07-relational-write-path/01a-c1-compiled-scope-adapter-and-address-derivation.md`
+  - `TBD` — Semantic Identity Compatibility Validation (C2) — `reference/design/backend-redesign/epics/07-relational-write-path/01a-c2-semantic-identity-compatibility-validation.md`
+  - `TBD` — Request-Side Visibility Classification + Writable Request Shaping (C3) — `reference/design/backend-redesign/epics/07-relational-write-path/01a-c3-request-visibility-and-writable-shaping.md`
+  - `TBD` — Request-Side Creatability Analysis + Duplicate Collection-Item Validation (C4) — `reference/design/backend-redesign/epics/07-relational-write-path/01a-c4-request-creatability-and-collection-validation.md`
+  - `TBD` — Assemble ProfileAppliedWriteRequest (C5) — `reference/design/backend-redesign/epics/07-relational-write-path/01a-c5-assemble-profile-applied-write-request.md`
+  - `TBD` — Stored-State Projection + HiddenMemberPaths Computation (C6) — `reference/design/backend-redesign/epics/07-relational-write-path/01a-c6-stored-state-projection-and-hidden-member-paths.md`
+  - `TBD` — Readable Profile Projection After Reconstitution (C7) — `reference/design/backend-redesign/epics/07-relational-write-path/01a-c7-readable-profile-projection.md`
+  - `TBD` — Typed Profile Error Classification (C8) — `reference/design/backend-redesign/epics/07-relational-write-path/01a-c8-typed-profile-error-classification.md`
   - `DMS-1103` — Integrate the Core/Backend Profile Write Contract — `reference/design/backend-redesign/epics/07-relational-write-path/01b-profile-write-context.md`
   - `DMS-1105` — Load and Reconstitute the Current Stored Document for Profile Projection — `reference/design/backend-redesign/epics/07-relational-write-path/01c-current-document-for-profile-projection.md`
   - `DMS-983` — Flatten `WritableRequestBody` into Relational Row Buffers and Collection Candidates — `reference/design/backend-redesign/epics/07-relational-write-path/02-flattening-executor.md`

@@ -37,6 +37,20 @@ The spike turns the ownership statements in `reference/design/backend-redesign/d
 - The plan produces a concrete follow-on story inventory and sequencing for the Core work needed by the blocked backend/read-path stories above.
 - The dependency map and affected backend/read-path stories show this spike as a hard prerequisite instead of assuming the Core outputs already exist.
 
+## Deliverables
+
+The delivery plan document and follow-on story files are:
+
+- **Delivery plan:** `reference/design/backend-redesign/design-docs/core-profile-delivery-plan.md`
+- **C1:** `01a-c1-compiled-scope-adapter-and-address-derivation.md` — Shared Compiled-Scope Adapter Contract + Address Derivation Engine (Tier 0)
+- **C2:** `01a-c2-semantic-identity-compatibility-validation.md` — Semantic Identity Compatibility Validation (Tier 0)
+- **C3:** `01a-c3-request-visibility-and-writable-shaping.md` — Request-Side Visibility Classification + Writable Request Shaping (Tier 1)
+- **C4:** `01a-c4-request-creatability-and-collection-validation.md` — Request-Side Creatability Analysis + Duplicate Collection-Item Validation (Tier 1)
+- **C5:** `01a-c5-assemble-profile-applied-write-request.md` — Assemble ProfileAppliedWriteRequest (Tier 1)
+- **C6:** `01a-c6-stored-state-projection-and-hidden-member-paths.md` — Stored-State Projection + HiddenMemberPaths Computation (Tier 2)
+- **C7:** `01a-c7-readable-profile-projection.md` — Readable Profile Projection After Reconstitution (Tier 3)
+- **C8:** `01a-c8-typed-profile-error-classification.md` — Typed Profile Error Classification (Tier 3)
+
 ## Tasks
 
 1. Break the Core-owned profile surface into concrete implementation slices across request shaping, stored-state projection, readable projection, address derivation, duplicate visible collection-item validation by compiled semantic identity, creatability, and error classification.

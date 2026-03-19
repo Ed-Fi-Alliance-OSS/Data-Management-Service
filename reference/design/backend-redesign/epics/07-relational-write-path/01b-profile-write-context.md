@@ -8,7 +8,10 @@ Implement the backend-side orchestration for profile-constrained writes describe
 - `reference/design/backend-redesign/design-docs/overview.md`
 - `reference/design/backend-redesign/design-docs/flattening-reconstitution.md`
 
-Dependency note: this story is hard-blocked on `reference/design/backend-redesign/epics/07-relational-write-path/01a-core-profile-delivery-plan.md`, which plans the Core-owned outputs it consumes, including readable-vs-writable selection, stored-state projection, address derivation, creatability analysis, and typed profile failures.
+Dependency note: this story is hard-blocked on the following Core profile stories produced by the delivery plan spike (`01a-core-profile-delivery-plan.md`):
+- C1 (`01a-c1-compiled-scope-adapter-and-address-derivation.md`) — provides the shared compiled-scope adapter contract and address derivation engine,
+- C5 (`01a-c5-assemble-profile-applied-write-request.md`) — produces `ProfileAppliedWriteRequest`, and
+- C6 (`01a-c6-stored-state-projection-and-hidden-member-paths.md`) — produces `ProfileAppliedWriteContext` including stored-state projection and `HiddenMemberPaths`.
 
 This story introduces the request-scoped Core/backend profile hand-off needed before profiled create and stable-identity merge execution:
 
