@@ -1,0 +1,75 @@
+[
+  {
+    "category": "Contracts",
+    "description": "Extend the relational-model contracts to represent stable collection identity explicitly instead of inferring it from ordinal-shaped primary keys. Update `src/dms/backend/EdFi.DataManagementService.Backend.External/RelationalModelTypes.cs` and `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Naming/RelationalNameConventions.cs` to add the stable collection naming primitives (`CollectionItemId`, `ParentCollectionItemId`, `BaseCollectionItemId`) and explicit table metadata for physical row identity, root-scope locators, immediate parent-scope locators, and compiled semantic identity members. Acceptance: downstream consumers can distinguish root tables, persisted collection tables, root-scope `_ext` tables, collection-aligned `_ext` scope tables, and extension child collections without reverse-engineering ordinal semantics from key shape or column names alone.",
+    "steps-to-verify": [
+      "Add unit coverage for the new naming helpers, table metadata, and manifest serialization surface so the new contract is deterministic.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Core Collections",
+    "description": "Refactor `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/Steps/DeriveTableScopesAndKeysStep.cs` so array-backed persisted scopes use stable collection keys. Top-level collection/common-type tables must expose `CollectionItemId` as the PK, keep `<Root>_DocumentId` as a non-key locator, and keep `Ordinal` as sibling-order state only. Nested collection/common-type tables must additionally expose `ParentCollectionItemId` and use `(ParentCollectionItemId, <Root>_DocumentId)` parent/root consistency instead of ancestor ordinal key parts. Acceptance: root-table behavior stays unchanged, array-backed persisted scopes no longer model `(RootDocumentId, ancestor ordinals, Ordinal)` as the PK, and this story does not introduce any new separate-table non-array common-type scopes.",
+    "steps-to-verify": [
+      "Update `DeriveTableScopesAndKeysStepTests` to assert `CollectionItemId` / `ParentCollectionItemId` shape for top-level and nested collections, including root-locator column presence and FK targeting.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Extensions",
+    "description": "Refactor `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ExtensionTableDerivationPass.cs` so collection/common-type `_ext` tables align to stable base-row identity. Collection-aligned extension scope tables must use `BaseCollectionItemId` as the PK, carry `<Root>_DocumentId` as a non-key locator, and emit a composite FK `(BaseCollectionItemId, <Root>_DocumentId)` to the base collection row. Root-level extension child collections must use `CollectionItemId` plus the root document locator; collection-aligned extension child collections must use composite parent/root consistency through the aligned extension scope; nested extension child collections must switch to `ParentCollectionItemId` when their immediate parent is another extension child row. Acceptance: no collection-aligned `_ext` scope or child collection uses ancestor ordinals as physical row identity, and child collection parent chains match the story Q&A exactly.",
+    "steps-to-verify": [
+      "Update `ExtensionTableDerivationTests` to cover root `_ext`, collection-aligned `_ext`, and nested extension child collections with the new key/FK shapes.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Semantic Identity",
+    "description": "Upgrade `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ArrayUniquenessConstraintPass.cs` and any supporting validation/extraction code so every persisted multi-item collection scope compiles an explicit non-empty semantic identity from `arrayUniquenessConstraints`. Store the ordered semantic-identity bindings in relational-model metadata for base collections and collection-aligned `_ext` scopes, and fail fast when a supported model cannot produce that identity. Acceptance: the model never falls back to `Ordinal`, `CollectionItemId`, or a parent-only locator for semantic matching; positive fixtures are updated to satisfy the rule; negative coverage exists only where the test explicitly asserts the fail-fast diagnostic.",
+    "steps-to-verify": [
+      "Add or update relational-model tests that cover top-level collections, nested collections, collection-aligned `_ext` scopes, and the fail-fast path when semantic identity is missing.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Constraint Inventory",
+    "description": "Update the derived constraint/index/trigger inventory to consume the new stable-identity metadata. This includes PKs on `CollectionItemId` / `BaseCollectionItemId`, sibling-order uniques on `(ParentScope, Ordinal)`, semantic-identity uniques on `(ParentScope, compiled identity...)`, composite parent/root consistency FKs, and trigger inventory that resolves the stamping `DocumentId` locator from explicit table metadata instead of assuming every non-root table has a document-id key column. Acceptance: `ConstraintNaming`, `DeriveIndexInventoryPass`, and `DeriveTriggerInventoryPass` all compile deterministic inventories for stable collection identity and collection-aligned `_ext` tables without depending on ordinal-based child PKs.",
+    "steps-to-verify": [
+      "Update `ConstraintDerivationRelationalModelSetPassTests`, `DeriveIndexInventoryPassTests`, and `DeriveTriggerInventoryPassTests` to assert the new PK/UK/FK/index/trigger shapes.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Fixture Cleanup",
+    "description": "Clean up supported-model fixtures so the new semantic-identity rule is enforced immediately. Update authoritative DS/sample inputs and any positive hand-authored fixtures that represent supported models so every persisted multi-item scope has valid semantic-identity metadata, and add a focused hand-authored nested plus collection-aligned `_ext` fixture together with a negative missing-semantic-identity fixture. Acceptance: authoritative schemas compile as supported models under the new rule, the focused hand-authored fixture exercises nested plus `_ext` stable-key shapes quickly, and the negative fixture asserts the new diagnostic rather than silently compiling.",
+    "steps-to-verify": [
+      "Update the relevant fixture inputs under `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/Fixtures` and `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Fixtures` so the positive/negative split is explicit.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Goldens",
+    "description": "Refresh relational-model manifests and authoritative goldens to reflect stable collection identity, explicit semantic-identity metadata, and collection-aligned `_ext` key changes. This includes `RelationalModelManifestEmitter`, `DerivedModelSetManifestEmitter`, identifier-shortening/canonical-ordering rewrites for the new metadata references, and the authoritative expected files under the DS/sample fixture directories. Acceptance: the authoritative relational-model and derived-model manifests, plus any focused fixture manifests added for this story, are deterministic and match the updated stable-identity contract.",
+    "steps-to-verify": [
+      "Update the expected JSON artifacts under `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/Fixtures/authoritative` and any new focused fixture directories.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Plan Compatibility",
+    "description": "Do the bare minimum temporary plan-compiler compatibility refactors so the branch stays green after the relational-model changes. Update `src/dms/backend/EdFi.DataManagementService.Backend.Plans/RelationalResourceModelCompileValidator.cs`, `src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanCompiler.cs`, `src/dms/backend/EdFi.DataManagementService.Backend.Plans/ReadPlanCompiler.cs`, the plan test builders, and mapping-set manifest emitters to use explicit stable-identity metadata for collection-table classification, hydration ordering, and parent-scope locator bindings instead of assuming ordinal-based child PKs. Acceptance: read-plan hydration orders child rows by root locator plus immediate parent locator plus `Ordinal`, write-plan compilation no longer decides collection behavior from `Ordinal` being in the PK, and any temporary compatibility logic is marked with code comments pointing to the follow-on plan stories that will replace it with full stable-merge behavior.",
+    "steps-to-verify": [
+      "Update the relevant plan unit tests (`ReadPlanCompilerTests`, `Given_WritePlanCompiler_*`, `SharedInvalidKeyShapeTestCases`) and the runtime plan golden fixtures so they assert the temporary stable-key-compatible behavior.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  }
+]
