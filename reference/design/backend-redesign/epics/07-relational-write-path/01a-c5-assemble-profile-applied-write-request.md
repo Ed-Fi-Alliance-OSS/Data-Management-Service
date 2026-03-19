@@ -29,7 +29,7 @@ This story produces the `ProfileAppliedWriteRequest` that backend consumes in `E
   - `RootResourceCreatable` from C4,
   - `RequestScopeStates` from C3 with `Creatable` flags populated by C4, and
   - `VisibleRequestCollectionItems` from C4.
-- When no writable profile applies, no `ProfileAppliedWriteRequest` is produced (backend treats all scopes as visible).
+- When no writable profile applies, no `ProfileAppliedWriteRequest` is produced (backend treats all scopes as visible). See "No-Profile Passthrough Path" in the delivery plan: the absence of a profile contract bypasses the entire profile write state machine — creatability analysis, hidden-member preservation, and binding-accounting are all skipped. Backend does NOT produce a degenerate "all visible" contract.
 - The assembled contract is semantically equivalent to the shape defined in `profiles.md` §"Minimum Core Write Contract".
 - Integration test: given a writable profile definition + compiled-scope adapter + request JSON, the full assembly pipeline (C3 → C4 → C5) produces the correct composite `ProfileAppliedWriteRequest`.
 - The no-profile path is tested: absence of a writable profile produces no request contract.

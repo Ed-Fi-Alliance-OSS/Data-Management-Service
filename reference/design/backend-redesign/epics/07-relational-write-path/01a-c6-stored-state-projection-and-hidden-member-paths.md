@@ -45,6 +45,7 @@ Core emits `HiddenMemberPaths` in the canonical scope-relative vocabulary publis
 - `VisibleStoredCollectionRows` entries are emitted for every visible persisted collection row with:
   - `Address` — `CollectionRowAddress` derived from stored JSON, identifying the row by compiled semantic identity, and
   - `HiddenMemberPaths` — canonical scope-relative paths of hidden members for that row.
+- `VisibleStoredCollectionRows` serves a dual purpose: it provides `HiddenMemberPaths` for matched rows AND it enables backend's delete signaling. A visible stored row present in `VisibleStoredCollectionRows` but absent from the request's `VisibleRequestCollectionItems` (by `CollectionRowAddress`) signals backend to delete that row. Hidden rows are never surfaced in `VisibleStoredCollectionRows` and are unconditionally preserved.
 
 ### HiddenMemberPaths
 
@@ -60,6 +61,10 @@ Core emits `HiddenMemberPaths` in the canonical scope-relative vocabulary publis
   - `StoredScopeStates`, and
   - `VisibleStoredCollectionRows`.
 
+### No-Profile Passthrough
+
+When no writable profile applies, C6 is not invoked. No `ProfileAppliedWriteContext` is assembled. Backend uses its existing non-profiled write path unchanged. See "No-Profile Passthrough Path" in the delivery plan.
+
 ### Extension Semantics
 
 - Extension scopes (`_ext` at root and within collection/common-type elements) follow the same stored-state projection rules as base data.
@@ -72,6 +77,7 @@ Core emits `HiddenMemberPaths` in the canonical scope-relative vocabulary publis
 - Nested collection rows produce correct `VisibleStoredCollectionRow` entries with semantic identity.
 - `HiddenMemberPaths` use the canonical vocabulary from the adapter.
 - At least one matched-row overlay case verifying `HiddenMemberPaths` sufficiency for binding accounting.
+- A visible stored collection row with no matching request item is correctly included in `VisibleStoredCollectionRows`, enabling backend's delete-vs-preserve decision: backend deletes visible stored rows that have no matching request item, while hidden rows (not in `VisibleStoredCollectionRows`) are preserved.
 - Extension scope stored-state projection follows base-data rules.
 
 ## Tasks

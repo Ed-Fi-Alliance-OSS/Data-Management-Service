@@ -42,6 +42,7 @@ This story produces the request-side outputs needed by C4 (creatability), C5 (as
 - Collection item value filtering evaluates writable-profile predicates on visible collection items and rejects submitted items that fail profile value filters as validation failures rather than silently pruning them.
 - Extension scopes (`_ext` at root and within collection/common-type elements) follow the same visibility and filtering rules as base resource data.
 - `RequestScopeState` entries cover root-adjacent 1:1 scopes, nested/common-type scopes, and `_ext` scopes.
+- For every visible submitted collection item, a `VisibleRequestCollectionItem` entry (without `Creatable` flag) is emitted with `Address` — `CollectionRowAddress` derived using C1's engine. C3 enumerates these while walking the request body for shaping; C4 enriches them with creatability flags.
 - Unit tests cover:
   - shaping for root, 1:1, collection, nested, and `_ext` scopes,
   - `IncludeOnly`, `ExcludeOnly`, and `IncludeAll` filter modes,
@@ -54,5 +55,6 @@ This story produces the request-side outputs needed by C4 (creatability), C5 (as
 1. Implement request-side visibility classification: walk all compiled scopes from the adapter and classify each as `VisiblePresent`, `VisibleAbsent`, or `Hidden` based on the writable profile definition and request body.
 2. Implement recursive member filtering across root, embedded objects, collections, common types, and extensions for `IncludeOnly`, `ExcludeOnly`, and `IncludeAll` modes.
 3. Implement collection item value filtering that evaluates writable-profile predicates on visible items and produces validation failures for items that fail.
-4. Produce `WritableRequestBody` (filtered/canonicalized request JSON) and `RequestScopeState` entries for all non-collection scopes, deriving addresses using the C1 adapter.
-5. Add tests covering all scope types, filter modes, visibility states, value filter rejection, and `_ext` behavior.
+4. Enumerate visible collection items from the shaped request body, deriving `CollectionRowAddress` for each using C1's address derivation engine. Emit `VisibleRequestCollectionItem` entries (without `Creatable`) for C4 to enrich.
+5. Produce `WritableRequestBody` (filtered/canonicalized request JSON) and `RequestScopeState` entries for all non-collection scopes, deriving addresses using the C1 adapter.
+6. Add tests covering all scope types, filter modes, visibility states, value filter rejection, collection item enumeration, and `_ext` behavior.

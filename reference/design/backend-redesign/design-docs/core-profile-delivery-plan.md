@@ -13,8 +13,10 @@ It translates the ownership statements in `reference/design/backend-redesign/des
 
 - [Overview](#overview)
 - [Current State Assessment](#current-state-assessment)
+- [Profile Definition Input Contract](#profile-definition-input-contract)
 - [Shared Compiled-Scope Adapter Contract](#shared-compiled-scope-adapter-contract)
 - [Core Contract Types](#core-contract-types)
+- [No-Profile Passthrough Path](#no-profile-passthrough-path)
 - [Implementation Slices](#implementation-slices)
 - [Follow-On Story Inventory](#follow-on-story-inventory)
 - [Sequencing and Dependency Graph](#sequencing-and-dependency-graph)
@@ -72,6 +74,25 @@ The boundary is defined in `profiles.md` §"Ownership Boundary":
 
 ---
 
+## Profile Definition Input Contract
+
+### Assumed Shape
+
+All Core profile stories (C2–C8) take a "writable profile definition" or "readable profile definition" as input. This is the resolved profile metadata describing which members, collections, and extensions are included/excluded for the applicable profile. The assumed shape is the existing `ProfileDefinition` produced by Core's current profile metadata loading infrastructure.
+
+### Resolution Path
+
+Existing Core infrastructure already handles:
+- Matching an inbound request to its applicable profile (by resource name and content type),
+- Loading the profile XML definition,
+- Parsing it into the structured `ProfileDefinition` consumed by downstream logic.
+
+### Prerequisite, Not a New Story
+
+Adapting the existing profile loading to produce a `ProfileDefinition` compatible with the new adapter-based contract (if any adaptation is needed) is a prerequisite task within the existing infrastructure, not a new story in this plan. The C2–C8 stories assume this input is available and correctly resolved. If the existing loading infrastructure requires changes to work with the compiled-scope adapter vocabulary, those changes are scoped to the integration layer and do not alter the Core profile semantics defined in `profiles.md`.
+
+---
+
 ## Shared Compiled-Scope Adapter Contract
 
 ### Contract Definition
@@ -94,6 +115,14 @@ Per `profiles.md` §"Shared Compiled-Scope Adapter", the selected mapping set mu
 - Backend builds the adapter from the same selected mapping set/resource plan instance used for write execution and read/write reconstitution.
 - The adapter is an internal runtime contract. It may be cached, serialized, or code-generated with the mapping set, but it must stay version-aligned with the compiled plans it was derived from.
 - Core and backend operate over the same compiled scope vocabulary.
+
+### Construction Responsibility
+
+C1 delivers the adapter contract types, the address derivation engine, and a test-only adapter factory (constructing adapter instances from hand-built test metadata). The production adapter factory — which populates adapter instances from the selected mapping set's `TableWritePlan`, `CollectionMergePlan`, and `DbTableModel` — is backend's responsibility. This factory is owned by DMS-1103 (`E07-S01b`) or a prerequisite task within it. C1 does not depend on backend compiled-plan types; backend depends on C1's contract types.
+
+### Storage Topology Is Backend-Only
+
+The adapter's `ScopeKind` distinguishes `Root`, `NonCollection`, and `Collection` but intentionally does not surface inlined-vs-separate-table storage topology. `profiles.md` defines different execution families for separate-table and inlined scopes, but this distinction is resolved by backend from its own `TableWritePlan` metadata at DML execution time. Core does not need it — Core emits visibility classification and `HiddenMemberPaths` for all `NonCollection` scopes uniformly. The adapter intentionally does not expose storage topology.
 
 ### Vocabulary Split
 
@@ -159,6 +188,14 @@ All normative requirements are defined in `profiles.md` §"Minimum Core Write Co
 
 ---
 
+## No-Profile Passthrough Path
+
+When no writable profile applies to a request, Core produces no `ProfileAppliedWriteRequest` and no `ProfileAppliedWriteContext`. Backend uses its existing non-profiled write path unchanged — the profile write state machine (creatability analysis, hidden-member preservation, binding-accounting) is bypassed entirely. Backend does NOT need to produce a degenerate "all visible" contract. The absence of a Core profile contract is the signal to use the standard non-profiled path.
+
+Similarly, when no readable profile applies, the full reconstituted JSON is returned without readable-profile projection.
+
+---
+
 ## Implementation Slices
 
 ### C1: Shared Compiled-Scope Adapter Contract + Address Derivation Engine
@@ -210,12 +247,14 @@ All normative requirements are defined in `profiles.md` §"Minimum Core Write Co
 **Outputs:**
 - `WritableRequestBody` (filtered/canonicalized request JSON)
 - `RequestScopeState` entries for all non-collection scopes with `VisiblePresent` / `VisibleAbsent` / `Hidden` visibility
+- `VisibleRequestCollectionItem` entries (without `Creatable` flag) for each visible collection item, with `CollectionRowAddress` derived using C1's engine — C4 enriches these with creatability
 - Per-scope visibility classification
 
 **Test expectations:**
 - Shaping for root, 1:1, collection, nested, and `_ext` scopes
 - `IncludeOnly`, `ExcludeOnly`, and `IncludeAll` filter modes
 - Correct visibility classification for present, absent, and hidden scopes
+- `VisibleAbsent` scopes are correctly classified when a writable-profile-visible scope has no data in the request, enabling backend to clear stored data for that scope
 - Extension scopes follow the same visibility rules as base data
 
 **Story file:** `reference/design/backend-redesign/epics/07-relational-write-path/01a-c3-request-visibility-and-writable-shaping.md`
@@ -227,9 +266,10 @@ All normative requirements are defined in `profiles.md` §"Minimum Core Write Co
 **Inputs:**
 - Compiled scope adapter from C1
 - Writable profile definition
-- Visibility classification from C3
+- Visibility classification and `VisibleRequestCollectionItem` entries (without `Creatable`) from C3
 - Semantic identity compatibility from C2
-- Request JSON + stored-side scope/item metadata
+- Effective schema metadata (existing Core infrastructure) — for creation-required member determination
+- Stored-side existence information: the orchestrating caller supplies a lightweight address-level lookup answering "does a visible stored scope/item exist at this address?" This uses C1's address derivation engine against the full stored document combined with C3's visibility rules. C4 does NOT require the full C6 stored-state projection.
 
 **Outputs:**
 - `RootResourceCreatable` decision
@@ -285,6 +325,7 @@ All normative requirements are defined in `profiles.md` §"Minimum Core Write Co
 - `HiddenMemberPaths` emitted for hidden scalars, hidden references, hidden extension members
 - Nested collection rows produce correct `VisibleStoredCollectionRow` entries with semantic identity
 - `HiddenMemberPaths` use canonical vocabulary from `CanonicalScopeRelativeMemberPaths`
+- Visible stored collection rows with no matching request item are included in `VisibleStoredCollectionRows`, enabling backend delete-vs-preserve decisions
 - Extension scopes follow the same rules as base data
 
 **Story file:** `reference/design/backend-redesign/epics/07-relational-write-path/01a-c6-stored-state-projection-and-hidden-member-paths.md`
@@ -339,11 +380,11 @@ All normative requirements are defined in `profiles.md` §"Minimum Core Write Co
 | Story | Title | Tier | Dependencies | Unblocks |
 | --- | --- | --- | --- | --- |
 | C1 | Shared Compiled-Scope Adapter Contract + Address Derivation Engine | 0 | — | C2, C3, C6, C7 |
-| C2 | Semantic Identity Compatibility Validation | 0 | C1 | C4 |
+| C2 | Semantic Identity Compatibility Validation | 1 | C1 | C4 |
 | C3 | Request-Side Visibility Classification + Writable Request Shaping | 1 | C1 | C4, C5, C6, C8 |
-| C4 | Request-Side Creatability Analysis + Duplicate Collection-Item Validation | 1 | C1, C2, C3 | C5, C8 |
-| C5 | Assemble ProfileAppliedWriteRequest | 1 | C3, C4 | C6, DMS-1103 (via C6) |
-| C6 | Stored-State Projection + HiddenMemberPaths Computation | 2 | C1, C3, C5 | DMS-1103, DMS-1105 |
+| C4 | Request-Side Creatability Analysis + Duplicate Collection-Item Validation | 2 | C1, C2, C3 | C5, C8 |
+| C5 | Assemble ProfileAppliedWriteRequest | 2 | C3, C4 | C6, DMS-1103 (via C6) |
+| C6 | Stored-State Projection + HiddenMemberPaths Computation | 3 | C1, C3, C5 | DMS-1103, DMS-1105 |
 | C7 | Readable Profile Projection After Reconstitution | 3 | C1 | DMS-990 |
 | C8 | Typed Profile Error Classification | 3 | C3, C4 | DMS-1104 |
 
@@ -385,7 +426,7 @@ All normative requirements are defined in `profiles.md` §"Minimum Core Write Co
 - Jira: TBD
 
 **C8** — `01a-c8-typed-profile-error-classification.md`
-- Description: Define and implement typed profile error categories for the six failure classes.
+- Description: Define the typed failure type hierarchy for all six error categories. Implement detection logic for categories 1–4 (invalid profile definition, invalid profile usage, writable-profile validation failure, creatability violation). Categories 5–6 (contract mismatch, binding-accounting failure) are type definitions only — backend implements detection.
 - Acceptance criteria: Each category produces correct typed failure; matched visible updates are not misclassified.
 - Jira: TBD
 
@@ -398,17 +439,23 @@ All normative requirements are defined in `profiles.md` §"Minimum Core Write Co
 ```
 C1 ──┬──> C2 ──> C4 ──┬──> C5 ──> C6 ──> [DMS-1103, DMS-1105]
      │              ↑  │
-     └──> C3 ──────┘  └──> C8 ──> [DMS-1104]
+     ├──> C3 ──────┘   └──> C8 ──> [DMS-1104]
      │
      └──> C7 ──> [DMS-990]
+
+Additional edges not shown above (would create crossing lines):
+  C1 ──> C6  (adapter for stored-side address derivation)
+  C1 ──> C7  (adapter for readable scope identification)
+  C3 ──> C6  (shared visibility classification rules)
+  C3 ──> C8  (writable validation failures feed error classification)
 ```
 
 ### Tiers
 
-- **Tier 0 (Foundation):** C1, C2 — adapter contract and compatibility validation
-- **Tier 1 (Request Side):** C3, C4, C5 — request shaping, creatability, assembly
-- **Tier 2 (Stored Side):** C6 — stored-state projection and context assembly
-- **Tier 3 (Cross-Cutting):** C7, C8 — readable projection and error classification (parallel with Tier 2)
+- **Tier 0 (Foundation):** C1 — adapter contract and address derivation
+- **Tier 1 (Validation + Shaping):** C2, C3 — semantic identity compatibility validation and request-side visibility/shaping (parallel after C1)
+- **Tier 2 (Request Assembly):** C4, C5 — creatability analysis and request assembly (after C2+C3)
+- **Tier 3 (Stored Side + Cross-Cutting):** C6, C7, C8 — stored-state projection, readable projection, and error classification (C7 and C8 can start earlier based on their minimal dependencies, but all are Tier 3 for scheduling simplicity)
 
 ### Minimum Unblock Path
 

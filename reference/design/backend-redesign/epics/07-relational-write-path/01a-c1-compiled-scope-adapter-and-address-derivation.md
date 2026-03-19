@@ -30,6 +30,12 @@ Define the adapter contract types per `profiles.md` §"Shared Compiled-Scope Ada
 - `SemanticIdentityRelativePathsInOrder` — compiled non-empty semantic identity member paths for persisted multi-item collection scopes
 - `CanonicalScopeRelativeMemberPaths` — canonical vocabulary for `SemanticIdentityPart.RelativePath` and `HiddenMemberPaths`
 
+Note: `ScopeKind` intentionally does not distinguish inlined-vs-separate-table storage topology. That distinction is a backend-only concern resolved from `TableWritePlan` metadata at execution time. Core emits visibility and `HiddenMemberPaths` uniformly for all `NonCollection` scopes regardless of storage topology.
+
+### Construction Responsibility
+
+C1 delivers the contract types, the derivation engine, and a test-only adapter factory. The production adapter factory (populating from `TableWritePlan` / `CollectionMergePlan` / `DbTableModel` in the selected mapping set) is backend's responsibility, owned by DMS-1103 (`E07-S01b`) or a prerequisite task within it. C1's contract types do not reference backend compiled-plan types.
+
 ### Address Derivation Engine
 
 Implement the normative 7-step algorithm from `profiles.md` §"Scope and Row Address Derivation":

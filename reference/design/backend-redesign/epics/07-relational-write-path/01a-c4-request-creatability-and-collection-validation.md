@@ -19,7 +19,8 @@ Delivery plan: `reference/design/backend-redesign/design-docs/core-profile-deliv
 Depends on:
 - C1 (`01a-c1-compiled-scope-adapter-and-address-derivation.md`) — adapter for address derivation
 - C2 (`01a-c2-semantic-identity-compatibility-validation.md`) — assumes incompatible profiles are already rejected
-- C3 (`01a-c3-request-visibility-and-writable-shaping.md`) — consumes visibility classification
+- C3 (`01a-c3-request-visibility-and-writable-shaping.md`) — consumes visibility classification and `VisibleRequestCollectionItem` entries (without `Creatable`)
+- Effective schema metadata (existing Core infrastructure) — provides non-nullable/no-default member information for creation-required member determination
 
 **Core responsibility coverage:**
 - #5 (writable request validation — duplicate collection items)
@@ -33,13 +34,27 @@ Creatability is the Core-owned answer to "can we create a new visible instance h
 
 Submitted visible collection/common-type/extension collection items that collide on compiled semantic identity within the same stable parent address must be rejected before backend flattening, merge planning, or DML begins.
 
+### Stored-Side Existence Input
+
+C4 requires stored-side existence information to determine creatability (create vs update). This is NOT the full C6 stored-state projection — it is a lightweight address-level existence check: "does a visible stored scope or collection row exist at this address?" The orchestrating caller derives this by running C1's address derivation engine against the full stored document and applying C3's writable-profile visibility rules. C4 receives this as an input parameter (e.g., a predicate or lookup keyed by address), not by depending on C6.
+
+### Creation-Required Members Definition
+
+Creation-required members are determined as follows:
+
+- **Effective schema required members**: non-nullable members without a default value, as defined by the effective schema metadata (existing Core infrastructure).
+- **Plus compiled semantic-identity members**: members listed in `SemanticIdentityRelativePathsInOrder` from the compiled-scope adapter (C1). These must be present for collection row identity derivation.
+- **Minus storage-managed values**: `DocumentId`, `CollectionItemId`, timestamps, and other values managed by the persistence layer are excluded.
+
+The effective schema metadata is an existing Core infrastructure input, not produced by this story.
+
 ## Acceptance Criteria
 
 ### Creatability
 
 - `RootResourceCreatable` is emitted for profile-constrained creates per the normative decision procedure.
 - `RequestScopeState.Creatable` is populated for each non-collection scope:
-  - `true` only when `Visibility=VisiblePresent`, no visible stored scope exists at the same address, and all creation-required members are exposed by the writable profile.
+  - `true` only when `Visibility=VisiblePresent`, the caller-supplied stored-side existence lookup reports no visible stored scope at the same address, and all creation-required members (per the definition above) are exposed by the writable profile.
   - `false` for `VisibleAbsent` and `Hidden` scopes.
 - `VisibleRequestCollectionItem` entries are emitted for every visible submitted collection item with:
   - `Address` — `CollectionRowAddress` derived using C1,

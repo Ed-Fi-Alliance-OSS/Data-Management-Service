@@ -8,6 +8,8 @@ jira: TBD
 
 Define and implement typed profile error categories that distinguish invalid profile definitions, invalid usage, writable validation failures, creatability violations, Core/backend contract mismatches, and binding-accounting failures.
 
+C8 defines the type hierarchy for all six error categories but only implements detection logic for categories 1–4 (invalid profile definition, invalid profile usage, writable-profile validation failure, creatability violation). Categories 5 (Core/backend contract mismatch) and 6 (binding-accounting failure) are type definitions only — backend stories DMS-1103 (contract mismatch) and DMS-1104 (binding-accounting) implement their detection logic.
+
 Align with:
 
 - `reference/design/backend-redesign/design-docs/profiles.md` §"Everything DMS Core Is Expected to Own" responsibility #15
@@ -57,6 +59,6 @@ The typed failure contract must distinguish:
 ## Tasks
 
 1. Define the typed failure contract with discriminated categories for the six error classes, including enough diagnostic detail for each to be actionable.
-2. Integrate error production into the C2 (compatibility validation), C3 (request shaping/validation), and C4 (creatability/duplicate validation) pipelines.
-3. Define the contract-mismatch and binding-accounting failure shapes for backend to emit when Core-emitted addresses or member paths do not match compiled metadata.
+2. Integrate detection logic for categories 1–4 into the C2 (compatibility validation), C3 (request shaping/validation), and C4 (creatability/duplicate validation) pipelines.
+3. Define the type shapes for categories 5 (contract mismatch) and 6 (binding-accounting failure) as type definitions only. Backend stories DMS-1103 and DMS-1104 implement the detection logic for these categories.
 4. Add tests covering each error category, the creatability violation scenarios from the shared profile scenario matrix, and the matched-visible-update-allowed case.
