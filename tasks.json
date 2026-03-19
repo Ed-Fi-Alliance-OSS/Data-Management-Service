@@ -24,7 +24,7 @@
       "Add or update unit coverage that exercises identifier shortening and canonical ordering for the stable-identity metadata references.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Core Collections",

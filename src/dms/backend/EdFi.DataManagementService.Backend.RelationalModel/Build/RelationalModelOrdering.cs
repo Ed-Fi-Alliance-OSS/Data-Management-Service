@@ -27,16 +27,23 @@ internal static class RelationalModelOrdering
     {
         var keyColumnOrder = BuildKeyColumnOrder(table.Key.Columns);
         var orderedColumns = OrderColumns(table, keyColumnOrder, referenceGroups);
+        var columnOrderLookup = BuildColumnOrderLookup(orderedColumns);
 
         var orderedConstraints = table
             .Constraints.OrderBy(GetConstraintGroup)
             .ThenBy(GetConstraintName, StringComparer.Ordinal)
             .ToArray();
+        var canonicalIdentityMetadata = CanonicalizeIdentityMetadata(
+            table.Table,
+            table.IdentityMetadata,
+            columnOrderLookup
+        );
 
         return table with
         {
             Columns = orderedColumns,
             Constraints = orderedConstraints,
+            IdentityMetadata = canonicalIdentityMetadata,
         };
     }
 
@@ -155,6 +162,165 @@ internal static class RelationalModelOrdering
         throw new InvalidOperationException(
             $"Detected circular unified alias column dependencies while canonicalizing "
                 + $"table '{table.Table}': {string.Join(", ", blockedColumns)}."
+        );
+    }
+
+    /// <summary>
+    /// Builds a lookup from column name to canonical ordinal within the ordered table column list.
+    /// </summary>
+    private static IReadOnlyDictionary<string, int> BuildColumnOrderLookup(
+        IReadOnlyList<DbColumnModel> orderedColumns
+    )
+    {
+        Dictionary<string, int> orderLookup = new(StringComparer.Ordinal);
+
+        for (var index = 0; index < orderedColumns.Count; index++)
+        {
+            orderLookup[orderedColumns[index].ColumnName.Value] = index;
+        }
+
+        return orderLookup;
+    }
+
+    /// <summary>
+    /// Canonicalizes stable-identity metadata collections to match final table column ordering while preserving
+    /// the compiled semantic-binding sequence.
+    /// </summary>
+    private static DbTableIdentityMetadata CanonicalizeIdentityMetadata(
+        DbTableName table,
+        DbTableIdentityMetadata identityMetadata,
+        IReadOnlyDictionary<string, int> columnOrderLookup
+    )
+    {
+        var orderedPhysicalRowIdentityColumns = CanonicalizeMetadataColumns(
+            table,
+            "physical row identity",
+            identityMetadata.PhysicalRowIdentityColumns,
+            columnOrderLookup,
+            out var physicalRowIdentityColumnsChanged
+        );
+        var orderedRootScopeLocatorColumns = CanonicalizeMetadataColumns(
+            table,
+            "root scope locator",
+            identityMetadata.RootScopeLocatorColumns,
+            columnOrderLookup,
+            out var rootScopeLocatorColumnsChanged
+        );
+        var orderedImmediateParentScopeLocatorColumns = CanonicalizeMetadataColumns(
+            table,
+            "immediate parent scope locator",
+            identityMetadata.ImmediateParentScopeLocatorColumns,
+            columnOrderLookup,
+            out var immediateParentScopeLocatorColumnsChanged
+        );
+        var canonicalSemanticIdentityBindings = CanonicalizeSemanticIdentityBindings(
+            table,
+            identityMetadata.SemanticIdentityBindings,
+            columnOrderLookup
+        );
+
+        if (
+            !physicalRowIdentityColumnsChanged
+            && !rootScopeLocatorColumnsChanged
+            && !immediateParentScopeLocatorColumnsChanged
+        )
+        {
+            return identityMetadata;
+        }
+
+        return identityMetadata with
+        {
+            PhysicalRowIdentityColumns = orderedPhysicalRowIdentityColumns,
+            RootScopeLocatorColumns = orderedRootScopeLocatorColumns,
+            ImmediateParentScopeLocatorColumns = orderedImmediateParentScopeLocatorColumns,
+            SemanticIdentityBindings = canonicalSemanticIdentityBindings,
+        };
+    }
+
+    /// <summary>
+    /// Orders one identity-metadata column collection to match the table's canonical column order.
+    /// </summary>
+    private static IReadOnlyList<DbColumnName> CanonicalizeMetadataColumns(
+        DbTableName table,
+        string metadataRole,
+        IReadOnlyList<DbColumnName> columns,
+        IReadOnlyDictionary<string, int> columnOrderLookup,
+        out bool changed
+    )
+    {
+        changed = false;
+
+        if (columns.Count == 0)
+        {
+            return columns;
+        }
+
+        foreach (var column in columns)
+        {
+            GetCanonicalColumnOrdinal(table, metadataRole, column, columnOrderLookup);
+        }
+
+        if (columns.Count == 1)
+        {
+            return columns;
+        }
+
+        var orderedColumns = columns
+            .OrderBy(column => GetCanonicalColumnOrdinal(table, metadataRole, column, columnOrderLookup))
+            .ThenBy(column => column.Value, StringComparer.Ordinal)
+            .ToArray();
+
+        changed = !orderedColumns.SequenceEqual(columns);
+
+        return changed ? orderedColumns : columns;
+    }
+
+    /// <summary>
+    /// Validates semantic-identity binding column references against the canonical table columns while
+    /// preserving the compiled binding order.
+    /// </summary>
+    private static IReadOnlyList<CollectionSemanticIdentityBinding> CanonicalizeSemanticIdentityBindings(
+        DbTableName table,
+        IReadOnlyList<CollectionSemanticIdentityBinding> semanticIdentityBindings,
+        IReadOnlyDictionary<string, int> columnOrderLookup
+    )
+    {
+        if (semanticIdentityBindings.Count == 0)
+        {
+            return semanticIdentityBindings;
+        }
+
+        foreach (var binding in semanticIdentityBindings)
+        {
+            GetCanonicalColumnOrdinal(
+                table,
+                $"semantic identity binding '{binding.RelativePath.Canonical}'",
+                binding.ColumnName,
+                columnOrderLookup
+            );
+        }
+
+        return semanticIdentityBindings;
+    }
+
+    /// <summary>
+    /// Returns the canonical ordered-column ordinal for one metadata column reference.
+    /// </summary>
+    private static int GetCanonicalColumnOrdinal(
+        DbTableName table,
+        string metadataRole,
+        DbColumnName column,
+        IReadOnlyDictionary<string, int> columnOrderLookup
+    )
+    {
+        if (columnOrderLookup.TryGetValue(column.Value, out var ordinal))
+        {
+            return ordinal;
+        }
+
+        throw new InvalidOperationException(
+            $"Stable identity metadata {metadataRole} column '{column.Value}' on table '{table}' "
+                + "does not exist in the table column list."
         );
     }
 
