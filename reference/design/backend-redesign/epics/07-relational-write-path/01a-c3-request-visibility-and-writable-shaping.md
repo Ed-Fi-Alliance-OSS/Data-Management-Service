@@ -17,7 +17,7 @@ Delivery plan: `reference/design/backend-redesign/design-docs/core-profile-deliv
 
 Depends on: C1 (`01a-c1-compiled-scope-adapter-and-address-derivation.md`) — consumes adapter for address derivation and canonical vocabulary.
 
-**Integration note:** This story assumes the existing profile loading infrastructure produces a `ProfileDefinition` compatible with the adapter-based contract (see delivery plan §"Profile Definition Input Contract"). If adaptation of the existing loading infrastructure to the adapter vocabulary turns out to be non-trivial during implementation, scope that work as a task within this story or escalate to a new story.
+**Integration note:** This story assumes the existing profile loading infrastructure produces a `ProfileDefinition` compatible with the adapter-based contract. C1 task 5 assesses this compatibility and documents any required changes. If C1 identifies non-trivial adaptation, this story incorporates that work or escalates to a new story.
 
 **Core responsibility coverage:**
 - #2 (readable/writable profile selection)
@@ -28,6 +28,10 @@ Depends on: C1 (`01a-c1-compiled-scope-adapter-and-address-derivation.md`) — c
 - #14 (extension profile semantics — request side)
 
 This story produces the request-side outputs needed by C4 (creatability), C5 (assembly), C6 (stored-side projection uses the same visibility rules), and C8 (error classification).
+
+### Shared Visibility Classification Primitive
+
+C3's scope-level visibility classification logic (given a writable profile definition + compiled scope adapter, classify each scope as `VisiblePresent` / `VisibleAbsent` / `Hidden`) must be exposed as a **reusable primitive**, not inlined into C3's request-shaping pipeline. Both C5 (stored-side existence lookup construction) and C6 (stored-state projection) apply the same classification rules to the stored document. A single shared implementation prevents divergence between creatability decisions and the eventual write contract.
 
 ## Acceptance Criteria
 
@@ -54,7 +58,7 @@ This story produces the request-side outputs needed by C4 (creatability), C5 (as
 
 ## Tasks
 
-1. Implement request-side visibility classification: walk all compiled scopes from the adapter and classify each as `VisiblePresent`, `VisibleAbsent`, or `Hidden` based on the writable profile definition and request body.
+1. Implement visibility classification as a reusable shared primitive: given a writable profile definition, a compiled scope adapter, and a JSON document (request or stored), classify each compiled scope as `VisiblePresent`, `VisibleAbsent`, or `Hidden`. This primitive is consumed by C3 (request side), C5 (stored-side existence lookup), and C6 (stored-state projection).
 2. Implement recursive member filtering across root, embedded objects, collections, common types, and extensions for `IncludeOnly`, `ExcludeOnly`, and `IncludeAll` modes.
 3. Implement collection item value filtering that evaluates writable-profile predicates on visible items and produces validation failures for items that fail.
 4. Enumerate visible collection items from the shaped request body, deriving `CollectionRowAddress` for each using C1's address derivation engine. Emit `VisibleRequestCollectionItem` entries (without `Creatable`) for C4 to enrich.

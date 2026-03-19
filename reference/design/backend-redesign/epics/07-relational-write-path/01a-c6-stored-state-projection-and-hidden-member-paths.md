@@ -82,7 +82,7 @@ When no writable profile applies, C6 is not invoked. No `ProfileAppliedWriteCont
 
 ## Tasks
 
-1. Implement stored-side visibility classification: apply the same writable-profile rules as C3 to the full current stored JSON to classify each scope.
+1. Implement stored-side visibility classification using C3's shared visibility classification primitive (see C3 §"Shared Visibility Classification Primitive"). When C5 has already classified stored scopes for the existence lookup, C6 must extend those intermediate results (adding `HiddenMemberPaths`) rather than reclassifying from scratch. This is required by profiles.md §"Creatability Decision Model": creatability must be evaluated against the same visible stored state as the write contract. Reclassifying independently risks divergence.
 2. Implement `HiddenMemberPaths` computation: for each hidden member in a visible scope/row, emit the canonical scope-relative path from the adapter vocabulary.
 3. Produce `VisibleStoredBody`, `StoredScopeStates`, and `VisibleStoredCollectionRows`.
 4. Assemble `ProfileAppliedWriteContext(Request, VisibleStoredBody, StoredScopeStates, VisibleStoredCollectionRows)`.

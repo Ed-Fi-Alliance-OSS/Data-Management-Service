@@ -71,3 +71,4 @@ Implement the normative 7-step algorithm from `profiles.md` §"Scope and Row Add
 2. Define the address types: `ScopeInstanceAddress`, `CollectionRowAddress`, `AncestorCollectionInstance`, `SemanticIdentityPart`.
 3. Implement the normative 7-step address derivation algorithm that takes a compiled scope descriptor + JSON data and produces addresses.
 4. Add tests proving correct derivation for root, 1:1, collection, nested collection, and `_ext` scopes against a test adapter, including request-side/stored-side alignment verification.
+5. Assess compatibility between the existing `ProfileDefinition` shape and the adapter contract's canonical vocabulary. Document whether the existing profile loading infrastructure can produce definitions that C2–C8 can consume directly, or whether adaptation is needed. If adaptation is non-trivial, document the required changes and their scope so that C3 can incorporate them or escalate to a new story.

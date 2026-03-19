@@ -87,9 +87,9 @@ Existing Core infrastructure already handles:
 - Loading the profile XML definition,
 - Parsing it into the structured `ProfileDefinition` consumed by downstream logic.
 
-### Prerequisite, Not a New Story
+### Compatibility Assessment (Owned by C1)
 
-Adapting the existing profile loading to produce a `ProfileDefinition` compatible with the new adapter-based contract (if any adaptation is needed) is a prerequisite task within the existing infrastructure, not a new story in this plan. The C2–C8 stories assume this input is available and correctly resolved. If the existing loading infrastructure requires changes to work with the compiled-scope adapter vocabulary, those changes are scoped to the integration layer and do not alter the Core profile semantics defined in `profiles.md`.
+C1 defines the adapter contract and canonical vocabulary. As part of C1, the implementer must assess whether the existing `ProfileDefinition` shape is sufficient for the adapter-based contract or whether adaptation is needed. C1 includes a concrete task for this assessment (see C1 task 5). If adaptation is non-trivial, C1's output must document the required changes and their scope, so that C3 (the first consumer of both `ProfileDefinition` and the adapter) can incorporate them. The C2–C8 stories assume this input is available and correctly resolved.
 
 ---
 
@@ -378,7 +378,7 @@ If the profile had hidden `calendarTypeDescriptor` (required) within `$.calendar
 - `WritableRequestBody` (filtered/canonicalized request JSON)
 - `RequestScopeState` entries for all non-collection scopes with `VisiblePresent` / `VisibleAbsent` / `Hidden` visibility
 - `VisibleRequestCollectionItem` entries (without `Creatable` flag) for each visible collection item, with `CollectionRowAddress` derived using C1's engine — C4 enriches these with creatability
-- Per-scope visibility classification
+- **Shared visibility classification primitive**: a reusable function that classifies compiled scopes against any JSON document (request or stored). C5 and C6 consume this primitive for stored-side classification, ensuring one implementation governs both creatability decisions and the eventual write contract.
 
 **Test expectations:**
 - Shaping for root, 1:1, collection, nested, and `_ext` scopes
@@ -434,12 +434,13 @@ If the profile had hidden `calendarTypeDescriptor` (required) within `$.calendar
 C5 owns the end-to-end call sequence for the Core profile write pipeline. The individual steps (C2, C3, C4, C6) are pure functions; C5 is the orchestrator that calls them in the correct order and threads intermediate results between them:
 
 1. If no writable profile applies, short-circuit: produce no `ProfileAppliedWriteRequest` and no `ProfileAppliedWriteContext`. Backend uses its non-profiled write path.
-2. Run C2 (semantic identity compatibility validation) against the writable profile + adapter. If the profile is invalid, fail with a C8 typed error.
-3. Run C3 (request-side visibility + shaping) to produce `WritableRequestBody`, `RequestScopeStates` (without creatability), and `VisibleRequestCollectionItem` entries (without `Creatable`).
-4. Build the stored-side existence lookup for C4: if this is an update/upsert-to-existing flow, run C1's address derivation engine against the full stored document and apply C3's visibility rules to produce a predicate answering "does a visible stored scope/item exist at this address?" For a create (POST with no existing document), the lookup reports "nothing exists."
-5. Run C4 (creatability + duplicate validation) with the existence lookup, producing `RootResourceCreatable`, enriched `RequestScopeStates` with `Creatable` flags, and enriched `VisibleRequestCollectionItems` with `Creatable` flags.
-6. Assemble `ProfileAppliedWriteRequest` from the C3 + C4 outputs.
-7. For update/upsert flows: invoke C6 (stored-state projection) with the full stored document + adapter + writable profile + the assembled `ProfileAppliedWriteRequest`. C6 produces stored-side outputs and assembles the complete `ProfileAppliedWriteContext` (C6 owns context assembly; C5 owns calling C6 at the right point in the pipeline).
+2. Profile-mode validation: validate that the resolved profile is appropriate for the current operation (e.g., writable profile for POST/PUT). If mismatched, fail with a C8 category-2 "invalid profile usage" error.
+3. Run C2 (semantic identity compatibility validation) against the writable profile + adapter. If the profile is invalid, fail with a C8 typed error.
+4. Run C3 (request-side visibility + shaping) to produce `WritableRequestBody`, `RequestScopeStates` (without creatability), and `VisibleRequestCollectionItem` entries (without `Creatable`).
+5. Build the stored-side existence lookup for C4: if this is an update/upsert-to-existing flow, run C1's address derivation engine against the full stored document and apply C3's shared visibility classification primitive to produce a predicate answering "does a visible stored scope/item exist at this address?" For a create (POST with no existing document), the lookup reports "nothing exists." Preserve intermediate classified-scope results for C6.
+6. Run C4 (creatability + duplicate validation) with the existence lookup, producing `RootResourceCreatable`, enriched `RequestScopeStates` with `Creatable` flags, and enriched `VisibleRequestCollectionItems` with `Creatable` flags.
+7. Assemble `ProfileAppliedWriteRequest` from the C3 + C4 outputs.
+8. For update/upsert flows: invoke C6 (stored-state projection) with the full stored document + adapter + writable profile + the assembled `ProfileAppliedWriteRequest` + intermediate classified-scope results from step 5. C6 extends those results (adding `HiddenMemberPaths`) and assembles the complete `ProfileAppliedWriteContext` (C6 owns context assembly; C5 owns calling C6 at the right point in the pipeline).
 
 **Test expectations:**
 - Integration test: full pipeline from profile definition + adapter + request JSON produces correct composite contract
@@ -526,19 +527,19 @@ C5 owns the end-to-end call sequence for the Core profile write pipeline. The in
 | Story | Title | Tier | Dependencies | Unblocks |
 | --- | --- | --- | --- | --- |
 | C1 | Shared Compiled-Scope Adapter Contract + Address Derivation Engine | 0 | — | C2, C3, C6, C7 |
-| C2 | Semantic Identity Compatibility Validation | 1 | C1 | C4 |
+| C2 | Semantic Identity Compatibility Validation | 1 | C1 | C4, C5, C8 |
 | C3 | Request-Side Visibility Classification + Writable Request Shaping | 1 | C1 | C4, C5, C6, C8 |
 | C4 | Request-Side Creatability Analysis + Duplicate Collection-Item Validation | 2 | C1, C2, C3 | C5, C8 |
-| C5 | Orchestrate Profile Write Pipeline + Assemble ProfileAppliedWriteRequest | 2 | C1, C2, C3, C4 | C6, DMS-1103 (via C6) |
+| C5 | Orchestrate Profile Write Pipeline + Assemble ProfileAppliedWriteRequest | 2 | C1, C2, C3, C4 | C6, C8, DMS-1103 (via C6) |
 | C6 | Stored-State Projection + HiddenMemberPaths Computation | 3 | C1, C3, C5 | DMS-1103, DMS-1105 |
 | C7 | Readable Profile Projection After Reconstitution | 3 | C1 | DMS-990 |
-| C8 | Typed Profile Error Classification | 3 | C3, C4 | DMS-1104 |
+| C8 | Typed Profile Error Classification | 3 | C2, C3, C4, C5 | DMS-1104 |
 
 ### Per-Story Details
 
 **C1** — `01a-c1-compiled-scope-adapter-and-address-derivation.md`
-- Description: Define the shared compiled-scope adapter contract types and implement the normative address derivation algorithm from `profiles.md` §"Scope and Row Address Derivation".
-- Acceptance criteria: Adapter surface matches profiles.md §"Shared Compiled-Scope Adapter" exactly; derivation produces correct addresses for root, 1:1, collection, nested collection, and `_ext` scopes.
+- Description: Define the shared compiled-scope adapter contract types and implement the normative address derivation algorithm from `profiles.md` §"Scope and Row Address Derivation". Assess compatibility between the existing `ProfileDefinition` and the adapter contract's canonical vocabulary.
+- Acceptance criteria: Adapter surface matches profiles.md §"Shared Compiled-Scope Adapter" exactly; derivation produces correct addresses for root, 1:1, collection, nested collection, and `_ext` scopes; `ProfileDefinition` compatibility assessment is documented.
 - Jira: TBD
 
 **C2** — `01a-c2-semantic-identity-compatibility-validation.md`
@@ -557,8 +558,8 @@ C5 owns the end-to-end call sequence for the Core profile write pipeline. The in
 - Jira: TBD
 
 **C5** — `01a-c5-assemble-profile-applied-write-request.md`
-- Description: Orchestrate the Core profile write pipeline (C2 → C3 → existence lookup → C4 → assembly → C6) and assemble `ProfileAppliedWriteRequest` and `ProfileAppliedWriteContext`. Owns the call sequence, the stored-side existence lookup construction (using C1's address derivation) for C4, and the no-profile short-circuit.
-- Acceptance criteria: Full pipeline from profile + adapter + request JSON produces the correct composite contract; orchestration correctly threads intermediate results between C2, C3, C4, and C6; no-profile path short-circuits cleanly.
+- Description: Orchestrate the Core profile write pipeline (profile-mode validation → C2 → C3 → existence lookup → C4 → assembly → C6) and assemble `ProfileAppliedWriteRequest` and `ProfileAppliedWriteContext`. Owns the call sequence, profile-mode validation (C8 category 2 detection), the stored-side existence lookup construction (using C1's address derivation) for C4, and the no-profile short-circuit.
+- Acceptance criteria: Full pipeline from profile + adapter + request JSON produces the correct composite contract; profile-mode validation rejects mismatched profile/operation combinations; orchestration correctly threads intermediate results between C2, C3, C4, and C6; no-profile path short-circuits cleanly. C5's update-flow tests use a mock C6 until C6 lands.
 - Jira: TBD
 
 **C6** — `01a-c6-stored-state-projection-and-hidden-member-paths.md`
@@ -572,8 +573,8 @@ C5 owns the end-to-end call sequence for the Core profile write pipeline. The in
 - Jira: TBD
 
 **C8** — `01a-c8-typed-profile-error-classification.md`
-- Description: Define the typed failure type hierarchy for all six error categories. Implement detection logic for categories 1–4 (invalid profile definition, invalid profile usage, writable-profile validation failure, creatability violation). Categories 5–6 (contract mismatch, binding-accounting failure) are type definitions only — backend implements detection.
-- Acceptance criteria: Each category produces correct typed failure; matched visible updates are not misclassified.
+- Description: Define the typed failure type hierarchy for all six error categories. Integrate detection logic for categories 1–4: category 1 into C2, category 2 into C5 (profile-mode validation), category 3 into C3, category 4 into C4. Categories 5–6 (contract mismatch, binding-accounting failure) are type definitions only — backend implements detection.
+- Acceptance criteria: Each Core-detected category (1–4) produces correct typed failure; type shapes for categories 5–6 are instantiable; matched visible updates are not misclassified.
 - Jira: TBD
 
 ---
@@ -594,8 +595,10 @@ Additional edges not shown above (would create crossing lines):
   C1 ──> C6  (adapter for stored-side address derivation)
   C1 ──> C7  (adapter for readable scope identification)
   C2 ──> C5  (C5 directly invokes C2 as an orchestration step)
+  C2 ──> C8  (C8 integrates typed error production into C2's reject path)
   C3 ──> C6  (shared visibility classification rules)
   C3 ──> C8  (writable validation failures feed error classification)
+  C5 ──> C8  (profile-mode validation error integration)
 ```
 
 ### Tiers
@@ -645,6 +648,7 @@ New dependency edges:
 | Hard | `E07-S01a-C1` | `E07-S01a-C5` | C5 uses C1's address derivation engine for stored-side existence lookup construction |
 | Hard | `E07-S01a-C2` | `E07-S01a-C4` | C4 assumes semantic identity compatibility is validated |
 | Hard | `E07-S01a-C2` | `E07-S01a-C5` | C5 directly invokes C2 as an orchestration step |
+| Hard | `E07-S01a-C2` | `E07-S01a-C8` | C8 integrates typed error production into C2's reject path (category 1) |
 | Hard | `E07-S01a-C3` | `E07-S01a-C4` | C4 consumes visibility classification from C3 |
 | Hard | `E07-S01a-C3` | `E07-S01a-C5` | C5 consumes `WritableRequestBody` and `RequestScopeStates` from C3 |
 | Hard | `E07-S01a-C3` | `E07-S01a-C6` | C6 uses the same visibility classification rules as C3 |
@@ -652,6 +656,7 @@ New dependency edges:
 | Hard | `E07-S01a-C4` | `E07-S01a-C5` | C5 consumes creatability and collection items from C4 |
 | Hard | `E07-S01a-C4` | `E07-S01a-C8` | C8 classifies creatability violations from C4 |
 | Hard | `E07-S01a-C5` | `E07-S01a-C6` | C6 includes the assembled request in the write context |
+| Hard | `E07-S01a-C5` | `E07-S01a-C8` | C8 integrates profile-mode validation error (category 2) into C5's orchestration gate |
 | Hard | `E07-S01a-C6` | `E07-S01b` | DMS-1103 consumes `ProfileAppliedWriteContext` from C6 |
 | Hard | `E07-S01a-C6` | `E07-S01c` | DMS-1105 hands off to C6 for stored-state projection |
 | Hard | `E07-S01a-C7` | `E08-S01` | DMS-990 invokes the readable projector from C7 |
@@ -677,7 +682,7 @@ Every one of the 15 Core responsibilities from `profiles.md` §"Everything DMS C
 | # | Responsibility | Covered by |
 | --- | --- | --- |
 | 1 | Profile metadata loading and validation | C2 (compatibility validation), existing Core infrastructure |
-| 2 | Readable vs writable profile interpretation | C3 (request-side selection) |
+| 2 | Readable vs writable profile interpretation | Existing Core infrastructure (profile selection/loading), C5 (profile-mode validation gate), C3 (applies selected profile) |
 | 3 | Recursive member filtering | C3 (request shaping) |
 | 4 | Recursive collection item value filtering | C3 (request shaping), C4 (duplicate validation) |
 | 5 | Writable request validation | C4 (duplicate collection-item validation) |

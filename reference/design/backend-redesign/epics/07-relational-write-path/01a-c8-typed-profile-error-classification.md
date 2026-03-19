@@ -8,7 +8,7 @@ jira: TBD
 
 Define and implement typed profile error categories that distinguish invalid profile definitions, invalid usage, writable validation failures, creatability violations, Core/backend contract mismatches, and binding-accounting failures.
 
-C8 defines the type hierarchy for all six error categories but only implements detection logic for categories 1–4 (invalid profile definition, invalid profile usage, writable-profile validation failure, creatability violation). Categories 5 (Core/backend contract mismatch) and 6 (binding-accounting failure) are type definitions only — backend stories DMS-1103 (contract mismatch) and DMS-1104 (binding-accounting) implement their detection logic.
+C8 defines the type hierarchy for all six error categories but only implements detection logic for categories 1–4 (invalid profile definition, invalid profile usage, writable-profile validation failure, creatability violation). Detection is integrated into the stories that own the relevant processing: category 1 into C2, category 2 into C5 (profile-mode validation gate), category 3 into C3, category 4 into C4. Categories 5 (Core/backend contract mismatch) and 6 (binding-accounting failure) are type definitions only — backend stories DMS-1103 (contract mismatch) and DMS-1104 (binding-accounting) implement their detection logic.
 
 Align with:
 
@@ -18,8 +18,10 @@ Align with:
 Delivery plan: `reference/design/backend-redesign/design-docs/core-profile-delivery-plan.md`
 
 Depends on:
-- C3 (`01a-c3-request-visibility-and-writable-shaping.md`) — produces writable validation failures
-- C4 (`01a-c4-request-creatability-and-collection-validation.md`) — produces creatability violations and duplicate rejections
+- C2 (`01a-c2-semantic-identity-compatibility-validation.md`) — C8 integrates typed error production into C2's reject path (category 1)
+- C3 (`01a-c3-request-visibility-and-writable-shaping.md`) — produces writable validation failures (category 3)
+- C4 (`01a-c4-request-creatability-and-collection-validation.md`) — produces creatability violations and duplicate rejections (category 4)
+- C5 (`01a-c5-assemble-profile-applied-write-request.md`) — C8 integrates profile-mode validation error production into C5's orchestration gate (category 2)
 
 **Core responsibility coverage:** #15 (structured error classification)
 
@@ -58,6 +60,6 @@ The typed failure contract must distinguish:
 ## Tasks
 
 1. Define the typed failure contract with discriminated categories for the six error classes, including enough diagnostic detail for each to be actionable.
-2. Integrate detection logic for categories 1–4 into the C2 (compatibility validation), C3 (request shaping/validation), and C4 (creatability/duplicate validation) pipelines.
+2. Integrate detection logic for categories 1–4: category 1 into C2 (compatibility validation), category 2 into C5 (profile-mode validation gate), category 3 into C3 (request shaping/validation), category 4 into C4 (creatability/duplicate validation).
 3. Define the type shapes for categories 5 (contract mismatch) and 6 (binding-accounting failure) as type definitions only. Backend stories DMS-1103 and DMS-1104 implement the detection logic for these categories.
 4. Add tests covering each error category, the creatability violation scenarios from the shared profile scenario matrix, and the matched-visible-update-allowed case.
