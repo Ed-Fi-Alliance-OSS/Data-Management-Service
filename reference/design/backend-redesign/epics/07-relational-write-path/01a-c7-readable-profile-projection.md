@@ -15,13 +15,13 @@ Align with:
 
 Delivery plan: `reference/design/backend-redesign/design-docs/core-profile-delivery-plan.md`
 
-Depends on: C1 (`01a-c1-compiled-scope-adapter-and-address-derivation.md`) — adapter for scope identification.
+Depends on: None. The readable projector is driven by the `ProfileDefinition`'s member inclusion rules applied to reconstituted JSON. It does not require the compiled-scope adapter from C1 — the adapter is a write-side concern for address derivation and canonical vocabulary. If during implementation the projector turns out to need adapter-based scope identification (e.g., for complex extension scope structures), this dependency can be re-added.
 
 **Core responsibility coverage:**
 - #13 (read projection)
 - #14 (extension profile semantics — reads)
 
-This story unblocks `DMS-990` (`reference/design/backend-redesign/epics/08-relational-read-path/01-json-reconstitution.md`), which invokes this projector after full JSON reconstitution. It depends only on C1 and can run in parallel with all write-side work (C2–C6, C8).
+This story unblocks `DMS-990` (`reference/design/backend-redesign/epics/08-relational-read-path/01-json-reconstitution.md`), which invokes this projector after full JSON reconstitution. It has no C-story dependencies and can start immediately, in parallel with all other work (C1–C6, C8).
 
 ## Acceptance Criteria
 

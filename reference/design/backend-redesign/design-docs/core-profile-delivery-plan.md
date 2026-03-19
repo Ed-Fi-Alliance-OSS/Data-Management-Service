@@ -378,7 +378,7 @@ If the profile had hidden `calendarTypeDescriptor` (required) within `$.calendar
 - `WritableRequestBody` (filtered/canonicalized request JSON)
 - `RequestScopeState` entries for all non-collection scopes with `VisiblePresent` / `VisibleAbsent` / `Hidden` visibility
 - `VisibleRequestCollectionItem` entries (without `Creatable` flag) for each visible collection item, with `CollectionRowAddress` derived using C1's engine — C4 enriches these with creatability
-- **Shared visibility classification primitive**: a reusable function that classifies compiled scopes against any JSON document (request or stored). C5 and C6 consume this primitive for stored-side classification, ensuring one implementation governs both creatability decisions and the eventual write contract.
+- **Shared visibility classification primitive**: a reusable function operating at two levels — scope-level visibility (`VisiblePresent` / `VisibleAbsent` / `Hidden` per compiled scope) and collection item value filtering (per-row visibility within visible collection scopes). A stored collection row that fails the profile's item value filter is not visible for existence or projection purposes. C5 and C6 consume this primitive for stored-side classification, ensuring one implementation governs both creatability decisions and the eventual write contract.
 
 **Test expectations:**
 - Shaping for root, 1:1, collection, nested, and `_ext` scopes
@@ -410,6 +410,7 @@ If the profile had hidden `calendarTypeDescriptor` (required) within `$.calendar
 **Test expectations:**
 - Three-level chain creatability (existing root → middle collection → descendant extension child collection)
 - Update-allowed/create-denied pairing: existing visible scope update remains allowed while new visible scope creation is rejected because required members are hidden
+- Descendant-blocks-parent: newly visible parent is non-creatable when a required newly visible descendant is non-creatable
 - Duplicate visible collection items by compiled semantic identity within the same stable parent are rejected
 - Storage-managed values are not treated as creation-required members
 
@@ -526,13 +527,13 @@ C5 owns the end-to-end call sequence for the Core profile write pipeline. The in
 
 | Story | Title | Tier | Dependencies | Unblocks |
 | --- | --- | --- | --- | --- |
-| C1 | Shared Compiled-Scope Adapter Contract + Address Derivation Engine | 0 | — | C2, C3, C6, C7 |
+| C1 | Shared Compiled-Scope Adapter Contract + Address Derivation Engine | 0 | — | C2, C3, C4, C5, C6 |
 | C2 | Semantic Identity Compatibility Validation | 1 | C1 | C4, C5, C8 |
 | C3 | Request-Side Visibility Classification + Writable Request Shaping | 1 | C1 | C4, C5, C6, C8 |
 | C4 | Request-Side Creatability Analysis + Duplicate Collection-Item Validation | 2 | C1, C2, C3 | C5, C8 |
 | C5 | Orchestrate Profile Write Pipeline + Assemble ProfileAppliedWriteRequest | 2 | C1, C2, C3, C4 | C6, C8, DMS-1103 (via C6) |
 | C6 | Stored-State Projection + HiddenMemberPaths Computation | 3 | C1, C3, C5 | DMS-1103, DMS-1105 |
-| C7 | Readable Profile Projection After Reconstitution | 3 | C1 | DMS-990 |
+| C7 | Readable Profile Projection After Reconstitution | 0 | — | DMS-990 |
 | C8 | Typed Profile Error Classification | 3 | C2, C3, C4, C5 | DMS-1104 |
 
 ### Per-Story Details
@@ -568,7 +569,7 @@ C5 owns the end-to-end call sequence for the Core profile write pipeline. The in
 - Jira: TBD
 
 **C7** — `01a-c7-readable-profile-projection.md`
-- Description: Implement readable profile projection applied after full relational reconstitution. Backend does not reimplement.
+- Description: Implement readable profile projection applied after full relational reconstitution. Backend does not reimplement. No C-story dependencies — can start immediately in parallel with all other work.
 - Acceptance criteria: Correct readable projection for all scope types including `_ext`; backend invokes Core projector.
 - Jira: TBD
 
@@ -587,13 +588,12 @@ C5 owns the end-to-end call sequence for the Core profile write pipeline. The in
 C1 ──┬──> C2 ──> C4 ──┬──> C5 ──> C6 ──> [DMS-1103, DMS-1105]
      │              ↑  │
      ├──> C3 ──────┘   └──> C8 ──> [DMS-1104]
-     │
-     └──> C7 ──> [DMS-990]
+
+C7 ──> [DMS-990]  (no C-story dependencies — can start immediately)
 
 Additional edges not shown above (would create crossing lines):
   C1 ──> C5  (adapter for stored-side existence lookup construction)
   C1 ──> C6  (adapter for stored-side address derivation)
-  C1 ──> C7  (adapter for readable scope identification)
   C2 ──> C5  (C5 directly invokes C2 as an orchestration step)
   C2 ──> C8  (C8 integrates typed error production into C2's reject path)
   C3 ──> C6  (shared visibility classification rules)
@@ -603,10 +603,10 @@ Additional edges not shown above (would create crossing lines):
 
 ### Tiers
 
-- **Tier 0 (Foundation):** C1 — adapter contract and address derivation
+- **Tier 0 (Foundation + Independent):** C1 — adapter contract and address derivation; C7 — readable profile projection (no C-story dependencies, can start immediately)
 - **Tier 1 (Validation + Shaping):** C2, C3 — semantic identity compatibility validation and request-side visibility/shaping (parallel after C1)
 - **Tier 2 (Request Assembly):** C4, C5 — creatability analysis and request assembly (after C2+C3)
-- **Tier 3 (Stored Side + Cross-Cutting):** C6, C7, C8 — stored-state projection, readable projection, and error classification (C7 and C8 can start earlier based on their minimal dependencies, but all are Tier 3 for scheduling simplicity)
+- **Tier 3 (Stored Side + Error Classification):** C6 — stored-state projection; C8 — error classification (no stored-side dependency; can start in parallel with C6 once Tier 2 completes)
 
 ### Minimum Unblock Path
 
@@ -616,18 +616,20 @@ The shortest path to unblock the four hard-blocked backend stories:
 2. **C3** → Request-side visibility and shaping (depends on C1)
 3. **C2** → Semantic identity compatibility validation (depends on C1, can parallel with C3)
 4. **C4** → Creatability + duplicate validation (depends on C1, C2, C3)
-5. **C5** → Orchestrate pipeline + assemble `ProfileAppliedWriteRequest` (depends on C3, C4)
+5. **C5** → Orchestrate pipeline + assemble `ProfileAppliedWriteRequest` (depends on C1, C2, C3, C4)
 6. **C6** → Stored-state projection + `ProfileAppliedWriteContext` (depends on C1, C3, C5) — **unblocks DMS-1103 and DMS-1105**
 
-Then in parallel:
-- **C8** → Error classification (depends on C3, C4) — **unblocks DMS-1104**
-- **C7** → Readable projection (depends on C1 only) — **unblocks DMS-990**
+In parallel from the start:
+- **C7** → Readable projection (no C-story dependencies) — **unblocks DMS-990 as soon as C7 is complete**
+
+In parallel after Tier 2:
+- **C8** → Error classification (depends on C2, C3, C4, C5) — **unblocks DMS-1104**
 
 ### Parallelization Opportunities
 
+- C7 has no C-story dependencies and can start immediately, in parallel with all other work. This is the fastest path to unblock DMS-990.
 - C2 and C3 can run in parallel after C1 completes.
-- C7 depends only on C1 and can run in parallel with all write-side work (C2–C6).
-- C8 depends on C3 and C4, so it can start once Tier 1 request-side work completes, in parallel with C6.
+- C8 depends on C2, C3, C4, and C5, so it can start once Tier 2 completes, in parallel with C6.
 
 ---
 
@@ -644,7 +646,7 @@ New dependency edges:
 | Hard | `E07-S01a-C1` | `E07-S01a-C2` | C2 consumes adapter from C1 |
 | Hard | `E07-S01a-C1` | `E07-S01a-C3` | C3 consumes adapter from C1 for address derivation |
 | Hard | `E07-S01a-C1` | `E07-S01a-C6` | C6 consumes adapter from C1 for stored-side derivation |
-| Hard | `E07-S01a-C1` | `E07-S01a-C7` | C7 consumes adapter from C1 for readable projection |
+| Hard | `E07-S01a-C1` | `E07-S01a-C4` | C4 consumes adapter from C1 for address derivation |
 | Hard | `E07-S01a-C1` | `E07-S01a-C5` | C5 uses C1's address derivation engine for stored-side existence lookup construction |
 | Hard | `E07-S01a-C2` | `E07-S01a-C4` | C4 assumes semantic identity compatibility is validated |
 | Hard | `E07-S01a-C2` | `E07-S01a-C5` | C5 directly invokes C2 as an orchestration step |
@@ -685,7 +687,7 @@ Every one of the 15 Core responsibilities from `profiles.md` §"Everything DMS C
 | 2 | Readable vs writable profile interpretation | Existing Core infrastructure (profile selection/loading), C5 (profile-mode validation gate), C3 (applies selected profile) |
 | 3 | Recursive member filtering | C3 (request shaping) |
 | 4 | Recursive collection item value filtering | C3 (request shaping), C4 (duplicate validation) |
-| 5 | Writable request validation | C4 (duplicate collection-item validation) |
+| 5 | Writable request validation | C3 (value filter rejection), C4 (duplicate collection-item validation) |
 | 6 | Creatability analysis | C4 (full top-down creatability) |
 | 7 | Writable request shaping | C3 (produce `WritableRequestBody`), C5 (assemble full request) |
 | 8 | Stored-state projection for writes | C6 (stored-state projection + context assembly) |

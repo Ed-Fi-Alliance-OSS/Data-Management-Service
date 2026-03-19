@@ -31,7 +31,12 @@ This story produces the request-side outputs needed by C4 (creatability), C5 (as
 
 ### Shared Visibility Classification Primitive
 
-C3's scope-level visibility classification logic (given a writable profile definition + compiled scope adapter, classify each scope as `VisiblePresent` / `VisibleAbsent` / `Hidden`) must be exposed as a **reusable primitive**, not inlined into C3's request-shaping pipeline. Both C5 (stored-side existence lookup construction) and C6 (stored-state projection) apply the same classification rules to the stored document. A single shared implementation prevents divergence between creatability decisions and the eventual write contract.
+C3's visibility classification logic must be exposed as a **reusable primitive** at two levels, not inlined into C3's request-shaping pipeline:
+
+1. **Scope-level visibility:** Given a writable profile definition + compiled scope adapter, classify each compiled scope as `VisiblePresent` / `VisibleAbsent` / `Hidden`.
+2. **Collection item value filtering:** For collection rows within a visible scope, apply the profile's item value filter predicates. A stored row in a visible collection that fails the value filter is **not visible** for existence or projection purposes — it must not suppress create decisions or appear in `VisibleStoredCollectionRows`.
+
+Both C5 (stored-side existence lookup construction) and C6 (stored-state projection) apply these same rules to the stored document. A single shared implementation prevents divergence between creatability decisions and the eventual write contract.
 
 ## Acceptance Criteria
 
@@ -58,7 +63,7 @@ C3's scope-level visibility classification logic (given a writable profile defin
 
 ## Tasks
 
-1. Implement visibility classification as a reusable shared primitive: given a writable profile definition, a compiled scope adapter, and a JSON document (request or stored), classify each compiled scope as `VisiblePresent`, `VisibleAbsent`, or `Hidden`. This primitive is consumed by C3 (request side), C5 (stored-side existence lookup), and C6 (stored-state projection).
+1. Implement visibility classification as a reusable shared primitive with two levels: (a) scope-level — given a writable profile definition, a compiled scope adapter, and a JSON document (request or stored), classify each compiled scope as `VisiblePresent`, `VisibleAbsent`, or `Hidden`; (b) collection item value filtering — for rows within visible collection scopes, apply the profile's item value filter predicates to determine per-row visibility. A stored row in a visible collection that fails the value filter is not visible. This primitive is consumed by C3 (request side), C5 (stored-side existence lookup), and C6 (stored-state projection).
 2. Implement recursive member filtering across root, embedded objects, collections, common types, and extensions for `IncludeOnly`, `ExcludeOnly`, and `IncludeAll` modes.
 3. Implement collection item value filtering that evaluates writable-profile predicates on visible items and produces validation failures for items that fail.
 4. Enumerate visible collection items from the shaped request body, deriving `CollectionRowAddress` for each using C1's address derivation engine. Emit `VisibleRequestCollectionItem` entries (without `Creatable`) for C4 to enrich.

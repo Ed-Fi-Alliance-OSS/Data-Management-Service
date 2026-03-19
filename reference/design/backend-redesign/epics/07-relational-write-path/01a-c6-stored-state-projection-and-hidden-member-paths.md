@@ -42,7 +42,7 @@ Core emits `HiddenMemberPaths` in the canonical scope-relative vocabulary publis
   - `Address` — `ScopeInstanceAddress` derived from stored JSON using the C1 adapter,
   - `Visibility` — `VisiblePresent`, `VisibleAbsent`, or `Hidden`, and
   - `HiddenMemberPaths` — canonical scope-relative paths of members hidden by the writable profile.
-- `VisibleStoredCollectionRows` entries are emitted for every visible persisted collection row with:
+- `VisibleStoredCollectionRows` entries are emitted for every visible persisted collection row that passes the profile's item value filter (see C3 §"Shared Visibility Classification Primitive"). A stored row in a visible collection that fails the value filter is not visible and must not appear in `VisibleStoredCollectionRows`. Entries include:
   - `Address` — `CollectionRowAddress` derived from stored JSON, identifying the row by compiled semantic identity, and
   - `HiddenMemberPaths` — canonical scope-relative paths of hidden members for that row.
 - `VisibleStoredCollectionRows` serves a dual purpose: it provides `HiddenMemberPaths` for matched rows AND it enables backend's delete signaling. A visible stored row present in `VisibleStoredCollectionRows` but absent from the request's `VisibleRequestCollectionItems` (by `CollectionRowAddress`) signals backend to delete that row. Hidden rows are never surfaced in `VisibleStoredCollectionRows` and are unconditionally preserved.
