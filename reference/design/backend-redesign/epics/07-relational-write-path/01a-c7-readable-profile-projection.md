@@ -47,5 +47,5 @@ This story unblocks `DMS-990` (`reference/design/backend-redesign/epics/08-relat
 
 1. Implement the readable profile projector that walks the reconstituted JSON and applies readable-profile member filtering recursively across root, embedded objects, collections, common types, and extensions.
 2. Ensure hidden data is removed and absent sections produce no output.
-3. Ensure backend invocation point passes full reconstituted JSON to this projector when a readable profile applies, without introducing a parallel backend-owned filtering path.
+3. Expose the projector as a callable entry point that DMS-990 invokes after reconstitution. The projector API must accept full reconstituted JSON and a readable profile definition, returning the filtered result. Wiring the invocation into the backend read path is owned by DMS-990, not this story.
 4. Add tests validating readable projection for representative fixtures covering scalar hiding, collection hiding, `_ext` hiding, and round-trip correctness.

@@ -15,6 +15,8 @@ Align with:
 Delivery plan: `reference/design/backend-redesign/design-docs/core-profile-delivery-plan.md`
 
 Depends on:
+- C1 (`01a-c1-compiled-scope-adapter-and-address-derivation.md`) — adapter for stored-side existence lookup construction (step 4)
+- C2 (`01a-c2-semantic-identity-compatibility-validation.md`) — C5 directly invokes C2 as an orchestration step (step 2)
 - C3 (`01a-c3-request-visibility-and-writable-shaping.md`) — `WritableRequestBody`, `RequestScopeStates` (without creatability)
 - C4 (`01a-c4-request-creatability-and-collection-validation.md`) — `RootResourceCreatable`, creatability flags, `VisibleRequestCollectionItems`
 

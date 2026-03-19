@@ -512,9 +512,10 @@ C5 owns the end-to-end call sequence for the Core profile write pipeline. The in
   - Binding-accounting failure (e.g., profiled binding cannot be classified)
 
 **Test expectations:**
-- Each category produces correct typed failure
+- Each Core-detected category (1–4) produces correct typed failure
 - Failures short-circuit before DML
 - Matched visible scope/item updates are not misclassified as creatability failures
+- Type shapes for categories 5–6 can be instantiated with representative diagnostic detail
 
 **Story file:** `reference/design/backend-redesign/epics/07-relational-write-path/01a-c8-typed-profile-error-classification.md`
 
@@ -528,7 +529,7 @@ C5 owns the end-to-end call sequence for the Core profile write pipeline. The in
 | C2 | Semantic Identity Compatibility Validation | 1 | C1 | C4 |
 | C3 | Request-Side Visibility Classification + Writable Request Shaping | 1 | C1 | C4, C5, C6, C8 |
 | C4 | Request-Side Creatability Analysis + Duplicate Collection-Item Validation | 2 | C1, C2, C3 | C5, C8 |
-| C5 | Orchestrate Profile Write Pipeline + Assemble ProfileAppliedWriteRequest | 2 | C3, C4 | C6, DMS-1103 (via C6) |
+| C5 | Orchestrate Profile Write Pipeline + Assemble ProfileAppliedWriteRequest | 2 | C1, C2, C3, C4 | C6, DMS-1103 (via C6) |
 | C6 | Stored-State Projection + HiddenMemberPaths Computation | 3 | C1, C3, C5 | DMS-1103, DMS-1105 |
 | C7 | Readable Profile Projection After Reconstitution | 3 | C1 | DMS-990 |
 | C8 | Typed Profile Error Classification | 3 | C3, C4 | DMS-1104 |
@@ -556,8 +557,8 @@ C5 owns the end-to-end call sequence for the Core profile write pipeline. The in
 - Jira: TBD
 
 **C5** — `01a-c5-assemble-profile-applied-write-request.md`
-- Description: Orchestrate the Core profile write pipeline (C2 → C3 → existence lookup → C4 → assembly → C6) and assemble `ProfileAppliedWriteRequest` and `ProfileAppliedWriteContext`. Owns the call sequence, the stored-side existence lookup construction for C4, and the no-profile short-circuit.
-- Acceptance criteria: Full pipeline from profile + adapter + request JSON produces the correct composite contract; orchestration correctly threads intermediate results between C3, C4, and C6; no-profile path short-circuits cleanly.
+- Description: Orchestrate the Core profile write pipeline (C2 → C3 → existence lookup → C4 → assembly → C6) and assemble `ProfileAppliedWriteRequest` and `ProfileAppliedWriteContext`. Owns the call sequence, the stored-side existence lookup construction (using C1's address derivation) for C4, and the no-profile short-circuit.
+- Acceptance criteria: Full pipeline from profile + adapter + request JSON produces the correct composite contract; orchestration correctly threads intermediate results between C2, C3, C4, and C6; no-profile path short-circuits cleanly.
 - Jira: TBD
 
 **C6** — `01a-c6-stored-state-projection-and-hidden-member-paths.md`
@@ -589,8 +590,10 @@ C1 ──┬──> C2 ──> C4 ──┬──> C5 ──> C6 ──> [DMS-11
      └──> C7 ──> [DMS-990]
 
 Additional edges not shown above (would create crossing lines):
+  C1 ──> C5  (adapter for stored-side existence lookup construction)
   C1 ──> C6  (adapter for stored-side address derivation)
   C1 ──> C7  (adapter for readable scope identification)
+  C2 ──> C5  (C5 directly invokes C2 as an orchestration step)
   C3 ──> C6  (shared visibility classification rules)
   C3 ──> C8  (writable validation failures feed error classification)
 ```
@@ -639,7 +642,9 @@ New dependency edges:
 | Hard | `E07-S01a-C1` | `E07-S01a-C3` | C3 consumes adapter from C1 for address derivation |
 | Hard | `E07-S01a-C1` | `E07-S01a-C6` | C6 consumes adapter from C1 for stored-side derivation |
 | Hard | `E07-S01a-C1` | `E07-S01a-C7` | C7 consumes adapter from C1 for readable projection |
+| Hard | `E07-S01a-C1` | `E07-S01a-C5` | C5 uses C1's address derivation engine for stored-side existence lookup construction |
 | Hard | `E07-S01a-C2` | `E07-S01a-C4` | C4 assumes semantic identity compatibility is validated |
+| Hard | `E07-S01a-C2` | `E07-S01a-C5` | C5 directly invokes C2 as an orchestration step |
 | Hard | `E07-S01a-C3` | `E07-S01a-C4` | C4 consumes visibility classification from C3 |
 | Hard | `E07-S01a-C3` | `E07-S01a-C5` | C5 consumes `WritableRequestBody` and `RequestScopeStates` from C3 |
 | Hard | `E07-S01a-C3` | `E07-S01a-C6` | C6 uses the same visibility classification rules as C3 |

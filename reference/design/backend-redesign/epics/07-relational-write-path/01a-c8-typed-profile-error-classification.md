@@ -47,14 +47,13 @@ The typed failure contract must distinguish:
 
 ### Testing
 
-- Each of the six error categories produces the correct typed failure.
+- Each of the four Core-detected error categories (1–4) produces the correct typed failure.
 - Creatability violations include:
   - `ProfileRootCreateRejectedWhenNonCreatable`,
   - `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable` for 1:1, nested/common-type, collection, extension scope, and extension collection item, and
   - the three-level parent-create-denied/child-denied chain.
 - Matched visible scope/item update that remains allowed under the same profile is not misclassified.
-- At least one contract-mismatch case (unknown `JsonScope`, ancestor-chain mismatch, or unalignable stored-side visibility).
-- At least one binding-accounting failure case.
+- Type shapes for categories 5 (contract mismatch) and 6 (binding-accounting failure) can be instantiated with representative diagnostic detail, validating the type definitions that backend stories DMS-1103 and DMS-1104 will use for detection.
 
 ## Tasks
 

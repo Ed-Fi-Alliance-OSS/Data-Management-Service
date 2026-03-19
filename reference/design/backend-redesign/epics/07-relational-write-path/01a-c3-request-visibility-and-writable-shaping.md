@@ -17,6 +17,8 @@ Delivery plan: `reference/design/backend-redesign/design-docs/core-profile-deliv
 
 Depends on: C1 (`01a-c1-compiled-scope-adapter-and-address-derivation.md`) — consumes adapter for address derivation and canonical vocabulary.
 
+**Integration note:** This story assumes the existing profile loading infrastructure produces a `ProfileDefinition` compatible with the adapter-based contract (see delivery plan §"Profile Definition Input Contract"). If adaptation of the existing loading infrastructure to the adapter vocabulary turns out to be non-trivial during implementation, scope that work as a task within this story or escalate to a new story.
+
 **Core responsibility coverage:**
 - #2 (readable/writable profile selection)
 - #3 (recursive member filtering)
