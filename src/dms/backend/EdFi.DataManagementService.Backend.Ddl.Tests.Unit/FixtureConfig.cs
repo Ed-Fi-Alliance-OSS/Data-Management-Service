@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
 namespace EdFi.DataManagementService.Backend.Ddl.Tests.Unit;
@@ -51,6 +52,22 @@ public static class FixtureConfigReader
         }
 
         var json = File.ReadAllText(fixturePath);
+
+        // Strip underscore-prefixed keys (used as comments) before strict deserialization
+        var node = JsonNode.Parse(
+            json,
+            documentOptions: new() { CommentHandling = JsonCommentHandling.Skip }
+        );
+        if (node is JsonObject obj)
+        {
+            foreach (var key in obj.Select(p => p.Key).Where(k => k.StartsWith('_')).ToList())
+            {
+                obj.Remove(key);
+            }
+
+            json = obj.ToJsonString();
+        }
+
         var config =
             JsonSerializer.Deserialize<FixtureConfig>(json, _jsonOptions)
             ?? throw new InvalidOperationException($"Failed to deserialize fixture.json: {fixturePath}");

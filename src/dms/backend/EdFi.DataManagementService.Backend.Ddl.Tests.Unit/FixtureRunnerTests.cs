@@ -25,6 +25,34 @@ public class Given_FixtureRunner_With_Minimal_Fixture : DdlGoldenFixtureTestBase
 }
 
 [TestFixture]
+public class Given_FixtureRunner_With_Nested_Fixture : DdlGoldenFixtureTestBase
+{
+    protected override string ResolveFixtureDirectory(string projectRoot) =>
+        Path.Combine(projectRoot, "Fixtures", "small", "nested");
+}
+
+[TestFixture]
+public class Given_FixtureRunner_With_Polymorphic_Fixture : DdlGoldenFixtureTestBase
+{
+    protected override string ResolveFixtureDirectory(string projectRoot) =>
+        Path.Combine(projectRoot, "Fixtures", "small", "polymorphic");
+}
+
+[TestFixture]
+public class Given_FixtureRunner_With_Ext_Fixture : DdlGoldenFixtureTestBase
+{
+    protected override string ResolveFixtureDirectory(string projectRoot) =>
+        Path.Combine(projectRoot, "Fixtures", "small", "ext");
+}
+
+[TestFixture]
+public class Given_FixtureRunner_With_NamingStress_Fixture : DdlGoldenFixtureTestBase
+{
+    protected override string ResolveFixtureDirectory(string projectRoot) =>
+        Path.Combine(projectRoot, "Fixtures", "small", "naming-stress");
+}
+
+[TestFixture]
 public class Given_FixtureRunner_With_EmitDdlManifest_False : DdlGoldenFixtureTestBase
 {
     protected override string ResolveFixtureDirectory(string projectRoot) =>

@@ -1,0 +1,239 @@
+{
+  "dialect": "pgsql",
+  "effective_schema_hash": "58c74e3ea486c17d14eef5dd678f7e6e520ebf96bef95a26c8ae994c60d8f389",
+  "relational_mapping_version": "v1",
+  "projects": [
+    {
+      "project_endpoint_name": "ed-fi",
+      "project_name": "Ed-Fi",
+      "project_version": "5.0.0",
+      "is_extension": false,
+      "physical_schema": "edfi"
+    }
+  ],
+  "resources": [
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "NamingStressItem",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    }
+  ],
+  "abstract_identity_tables": [],
+  "abstract_union_views": [],
+  "indexes": [
+    {
+      "name": "PK_NamingStressItem",
+      "table": {
+        "schema": "edfi",
+        "name": "NamingStressItem"
+      },
+      "kind": "PrimaryKey",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_NamingStressItem_NK",
+      "table": {
+        "schema": "edfi",
+        "name": "NamingStressItem"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "NamingStressItemId"
+      ]
+    }
+  ],
+  "triggers": [
+    {
+      "name": "TR_NamingStressItem_ReferentialIdentity",
+      "table": {
+        "schema": "edfi",
+        "name": "NamingStressItem"
+      },
+      "kind": "ReferentialIdentityMaintenance",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "NamingStressItemId"
+      ],
+      "resource_key_id": 1,
+      "project_name": "Ed-Fi",
+      "resource_name": "NamingStressItem",
+      "identity_elements": [
+        {
+          "column": "NamingStressItemId",
+          "identity_json_path": "$.namingStressItemId"
+        }
+      ]
+    },
+    {
+      "name": "TR_NamingStressItem_Stamp",
+      "table": {
+        "schema": "edfi",
+        "name": "NamingStressItem"
+      },
+      "kind": "DocumentStamping",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "NamingStressItemId"
+      ]
+    }
+  ],
+  "resource_details": [
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "NamingStressItem"
+      },
+      "physical_schema": "edfi",
+      "storage_kind": "RelationalTables",
+      "tables": [
+        {
+          "schema": "edfi",
+          "name": "NamingStressItem",
+          "scope": "$",
+          "key_columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart"
+            }
+          ],
+          "columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "NamingStressItemId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": "$.namingStressItemId",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "Order",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.order",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ShortName",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 60
+              },
+              "is_nullable": true,
+              "source_path": "$.shortName",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgre_026b941dbf",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 100
+              },
+              "is_nullable": true,
+              "source_path": "$.thisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThree",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgre_e2f35e760a",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 100
+              },
+              "is_nullable": true,
+              "source_path": "$.thisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThreeX",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "VeryLongIdentifierNameThatExceedsSixtyThreeCharacter_21402e5f2e",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 100
+              },
+              "is_nullable": true,
+              "source_path": "$.veryLongIdentifierNameThatExceedsSixtyThreeCharactersInPostgreSQL",
+              "storage": {
+                "kind": "Stored"
+              }
+            }
+          ],
+          "key_unification_classes": [],
+          "descriptor_fk_deduplications": [],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_NamingStressItem_NK",
+              "columns": [
+                "NamingStressItemId"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_NamingStressItem_Document",
+              "columns": [
+                "DocumentId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Document"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            }
+          ]
+        }
+      ],
+      "key_unification_equality_constraints": {
+        "applied": [],
+        "redundant": [],
+        "ignored": [],
+        "ignored_by_reason": {},
+        "skipped": []
+      },
+      "document_reference_bindings": [],
+      "descriptor_edge_sources": [],
+      "extension_sites": []
+    }
+  ]
+}

@@ -1,0 +1,153 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Ed-Fi",
+    "projectEndpointName": "ed-fi",
+    "projectVersion": "5.0.0",
+    "isExtensionProject": false,
+    "description": "Nested collections fixture: School -> SchoolAddress -> SchoolAddressPhoneNumber",
+    "abstractResources": {},
+    "caseInsensitiveEndpointNameMapping": {
+      "schools": "schools",
+      "addresstypedescriptors": "addressTypeDescriptors"
+    },
+    "educationOrganizationHierarchy": {},
+    "educationOrganizationTypes": [],
+    "resourceNameMapping": {
+      "School": "schools",
+      "AddressTypeDescriptor": "addressTypeDescriptors"
+    },
+    "resourceSchemas": {
+      "schools": {
+        "resourceName": "School",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [
+          "$.schoolId"
+        ],
+        "documentPathsMapping": {
+          "SchoolId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.schoolId"
+          },
+          "Addresses[*].Street": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": true,
+            "path": "$.addresses[*].street"
+          },
+          "Addresses[*].PhoneNumbers[*].PhoneNumber": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": true,
+            "path": "$.addresses[*].phoneNumbers[*].phoneNumber"
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "schoolId": {
+              "type": "integer"
+            },
+            "addresses": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "street": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "phoneNumbers": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "phoneNumber": {
+                          "type": "string",
+                          "maxLength": 20
+                        }
+                      },
+                      "required": [
+                        "phoneNumber"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "street"
+                ]
+              }
+            }
+          },
+          "required": [
+            "schoolId"
+          ]
+        }
+      },
+      "addressTypeDescriptors": {
+        "resourceName": "AddressTypeDescriptor",
+        "isDescriptor": true,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [
+          "$.namespace",
+          "$.codeValue"
+        ],
+        "documentPathsMapping": {
+          "Namespace": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.namespace"
+          },
+          "CodeValue": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.codeValue"
+          },
+          "ShortDescription": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": true,
+            "path": "$.shortDescription"
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "namespace": {
+              "type": "string",
+              "maxLength": 255
+            },
+            "codeValue": {
+              "type": "string",
+              "maxLength": 50
+            },
+            "shortDescription": {
+              "type": "string",
+              "maxLength": 75
+            }
+          },
+          "required": [
+            "namespace",
+            "codeValue",
+            "shortDescription"
+          ]
+        }
+      }
+    }
+  }
+}

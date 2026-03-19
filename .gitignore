@@ -456,4 +456,4 @@ tmpclaude*
 **/Fixtures/**/actual/
 
 # Allow ApiSchema.json inside fixture inputs (overrides apiSchema*.json rule)
-!**/Fixtures/**/inputs/ApiSchema.json
+!**/Fixtures/**/inputs/ApiSchema*.json
