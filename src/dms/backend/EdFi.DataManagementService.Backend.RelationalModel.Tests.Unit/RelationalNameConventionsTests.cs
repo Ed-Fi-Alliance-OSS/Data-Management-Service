@@ -89,3 +89,23 @@ public class Given_A_Collection_Name_Ending_In_Ses
         _baseName.Should().Be("Address");
     }
 }
+
+/// <summary>
+/// Test fixture for the reserved stable collection identity column names.
+/// </summary>
+[TestFixture]
+public class Given_Stable_Collection_Identity_Column_Names
+{
+    /// <summary>
+    /// It should expose the reserved stable collection row identity names.
+    /// </summary>
+    [Test]
+    public void It_should_expose_the_reserved_stable_collection_row_identity_names()
+    {
+        RelationalNameConventions.CollectionItemIdColumnName.Value.Should().Be("CollectionItemId");
+        RelationalNameConventions
+            .ParentCollectionItemIdColumnName.Value.Should()
+            .Be("ParentCollectionItemId");
+        RelationalNameConventions.BaseCollectionItemIdColumnName.Value.Should().Be("BaseCollectionItemId");
+    }
+}

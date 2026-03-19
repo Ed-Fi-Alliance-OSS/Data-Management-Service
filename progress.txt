@@ -1,0 +1,5 @@
+2026-03-19
+- completed: Contracts; story: reference/design/backend-redesign/epics/01-relational-model/11-stable-collection-row-identity.md
+- decisions: add ColumnKind.CollectionKey; add DbTableKind + DbTableIdentityMetadata + CollectionSemanticIdentityBinding; keep DbTableModel ctor stable, use init-only IdentityMetadata so downstream tasks can populate metadata without widespread callsite churn
+- files: src/dms/backend/EdFi.DataManagementService.Backend.External/RelationalModelTypes.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Naming/RelationalNameConventions.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/RelationalNameConventionsTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DbTableModelIdentityMetadataContractTests.cs; tasks.json
+- notes: baseline relational-model failures were stale build outputs missing JsonPath.Net at runtime; dotnet clean fixed loop before task work. next: builder/passes must populate IdentityMetadata and stable-key columns

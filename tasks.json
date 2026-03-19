@@ -6,13 +6,22 @@
       "Add unit coverage for the new naming helpers and table metadata invariants so the new contract is deterministic.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Manifest Emitters",
     "description": "Update `RelationalModelManifestEmitter`, `DerivedModelSetManifestEmitter`, and supporting manifest writer and ordering helpers to serialize the new stable-identity metadata deterministically. This includes row-identity columns, root-scope locators, immediate parent-scope locators, semantic-identity bindings, and any identifier-shortening or canonical-ordering rewrites needed for those new references. Acceptance: manifest emission reflects the updated stable-identity contract without relying on key-shape inference.",
     "steps-to-verify": [
       "Update or add emitter and manifest-ordering unit coverage for the new metadata surface.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Identifier Rewrites And Canonical Ordering",
+    "description": "Update `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ApplyDialectIdentifierShorteningPass.cs` and the final canonical-ordering path so the new stable-identity metadata is rewritten and ordered correctly after dialect shortening. This includes row-identity columns, root-scope locators, immediate parent-scope locators, semantic-identity bindings, and any new manifest/contract references introduced by this story. Acceptance: dialect-shortened models never carry stale table or column references in stable-identity metadata, and canonical ordering remains deterministic for that metadata surface.",
+    "steps-to-verify": [
+      "Add or update unit coverage that exercises identifier shortening and canonical ordering for the stable-identity metadata references.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
     "completed": false
@@ -46,9 +55,9 @@
   },
   {
     "category": "Semantic Identity Metadata",
-    "description": "Upgrade `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ArrayUniquenessConstraintPass.cs` and supporting resolution code so every persisted multi-item scope compiles an explicit ordered semantic-identity binding set from `arrayUniquenessConstraints` and stores it in relational-model metadata. Cover base collections, collection-aligned `_ext` scopes, root-level extension child collections, and nested extension child collections. Acceptance: the compiled model never falls back to `Ordinal`, `CollectionItemId`, or a parent-only locator for semantic matching metadata.",
+    "description": "Upgrade `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ArrayUniquenessConstraintPass.cs` and supporting resolution code so every persisted multi-item scope compiles an explicit ordered semantic-identity binding set from `arrayUniquenessConstraints` and stores it in relational-model metadata. Cover base collections, collection-aligned `_ext` scopes, root-level extension child collections, collection-aligned extension child collections, and nested extension child collections. Acceptance: the compiled model never falls back to `Ordinal`, `CollectionItemId`, or a parent-only locator for semantic matching metadata.",
     "steps-to-verify": [
-      "Add or update relational-model tests that cover top-level collections, nested collections, collection-aligned `_ext` scopes, root-level extension child collections, and nested extension child collections with the new metadata surface.",
+      "Add or update relational-model tests that cover top-level collections, nested collections, collection-aligned `_ext` scopes, root-level extension child collections, collection-aligned extension child collections, and nested extension child collections with the new metadata surface.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
     "completed": false
@@ -101,9 +110,9 @@
   },
   {
     "category": "Focused Stable-Key Fixtures",
-    "description": "Add focused hand-authored fixtures for nested collections plus collection-aligned `_ext` scopes, together with a negative missing-semantic-identity fixture whose only purpose is asserting the new fail-fast diagnostic. Acceptance: the focused positive fixture exercises the new stable-key shapes quickly and the negative fixture fails for the expected reason rather than silently compiling.",
+    "description": "Add focused hand-authored fixtures for nested collections, collection-aligned `_ext` scopes, root-level extension child collections, and collection-aligned extension child collections, together with a negative missing-semantic-identity fixture whose only purpose is asserting the new fail-fast diagnostic. Acceptance: the focused positive fixtures exercise the new stable-key shapes quickly, including the distinct extension child parent-chain variants, and the negative fixture fails for the expected reason rather than silently compiling.",
     "steps-to-verify": [
-      "Add the focused positive and negative fixtures under the relational-model and plan test fixture directories, with the positive and negative split made explicit.",
+      "Add the focused positive and negative fixtures under the relational-model and plan test fixture directories, with the positive and negative split made explicit and with root-level versus collection-aligned extension child coverage called out clearly.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
     ],

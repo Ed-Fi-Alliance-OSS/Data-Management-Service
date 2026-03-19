@@ -79,6 +79,11 @@ public enum ColumnKind
     Ordinal,
 
     /// <summary>
+    /// The stable physical row identifier for a persisted collection or extension child collection row.
+    /// </summary>
+    CollectionKey,
+
+    /// <summary>
     /// A key-part column inherited from an ancestor scope (e.g., root document id and parent ordinals).
     /// </summary>
     ParentKeyPart,
@@ -233,7 +238,7 @@ public sealed record RelationalResourceModel(
 /// The owning JSONPath scope for rows in this table (e.g., <c>$</c> for the root table or
 /// <c>$.addresses[*]</c> for a collection table).
 /// </param>
-/// <param name="Key">The primary key definition (root document id + ordinals as needed).</param>
+/// <param name="Key">The primary key definition for the physical row.</param>
 /// <param name="Columns">All columns in the table, including key parts and derived scalar/FK columns.</param>
 /// <param name="Constraints">Derived constraints (FKs, unique constraints, etc.).</param>
 public sealed record DbTableModel(
@@ -248,7 +253,93 @@ public sealed record DbTableModel(
     /// Per-table key-unification classes in deterministic order.
     /// </summary>
     public IReadOnlyList<KeyUnificationClass> KeyUnificationClasses { get; init; } = [];
+
+    /// <summary>
+    /// Explicit table identity metadata used by downstream consumers to distinguish physical row identity,
+    /// root-scope locators, immediate parent-scope locators, and semantic-identity bindings without
+    /// inferring them from key shape or column naming conventions.
+    /// </summary>
+    public DbTableIdentityMetadata IdentityMetadata { get; init; } = DbTableIdentityMetadata.Empty;
 }
+
+/// <summary>
+/// Classifies the physical role of a derived table.
+/// </summary>
+public enum DbTableKind
+{
+    /// <summary>
+    /// No explicit classification has been assigned yet.
+    /// </summary>
+    Unspecified,
+
+    /// <summary>
+    /// The resource root table at JSON scope <c>$</c>.
+    /// </summary>
+    Root,
+
+    /// <summary>
+    /// A persisted collection or separate-table common-type table in the base resource graph.
+    /// </summary>
+    Collection,
+
+    /// <summary>
+    /// A root-scope extension table aligned to the resource root row.
+    /// </summary>
+    RootExtension,
+
+    /// <summary>
+    /// A collection/common-type extension scope table aligned to the owning base collection row.
+    /// </summary>
+    CollectionExtensionScope,
+
+    /// <summary>
+    /// A persisted extension child collection table under an <c>_ext</c> scope.
+    /// </summary>
+    ExtensionCollection,
+}
+
+/// <summary>
+/// Explicit physical identity metadata for one derived table.
+/// </summary>
+/// <param name="TableKind">The physical role of the table in the derived model.</param>
+/// <param name="PhysicalRowIdentityColumns">
+/// The columns whose values identify the persisted physical row independently of sibling ordering.
+/// </param>
+/// <param name="RootScopeLocatorColumns">
+/// The columns that locate the owning root document scope for this table's rows.
+/// </param>
+/// <param name="ImmediateParentScopeLocatorColumns">
+/// The columns that locate the immediately owning scope row for this table's rows.
+/// Empty only for resource root tables.
+/// </param>
+/// <param name="SemanticIdentityBindings">
+/// The ordered semantic-identity bindings for persisted multi-item collection scopes.
+/// </param>
+public sealed record DbTableIdentityMetadata(
+    DbTableKind TableKind,
+    IReadOnlyList<DbColumnName> PhysicalRowIdentityColumns,
+    IReadOnlyList<DbColumnName> RootScopeLocatorColumns,
+    IReadOnlyList<DbColumnName> ImmediateParentScopeLocatorColumns,
+    IReadOnlyList<CollectionSemanticIdentityBinding> SemanticIdentityBindings
+)
+{
+    /// <summary>
+    /// Empty identity metadata for tables that have not been classified yet.
+    /// </summary>
+    public static DbTableIdentityMetadata Empty { get; } = new(DbTableKind.Unspecified, [], [], [], []);
+}
+
+/// <summary>
+/// Maps one compiled semantic-identity member path to its physical storage column.
+/// </summary>
+/// <param name="RelativePath">
+/// The canonical scope-relative JSONPath for the semantic-identity member, in compiled order.
+/// </param>
+/// <param name="ColumnName">The physical storage column that binds the semantic-identity member.</param>
+public sealed record CollectionSemanticIdentityBinding(
+    JsonPathExpression RelativePath,
+    DbColumnName ColumnName
+);
 
 /// <summary>
 /// Describes one key-unification class on a table.

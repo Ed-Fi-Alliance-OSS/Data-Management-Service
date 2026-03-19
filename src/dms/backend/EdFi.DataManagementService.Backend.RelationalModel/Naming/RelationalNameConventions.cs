@@ -15,7 +15,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.Naming;
 /// <list type="bullet">
 /// <item><description>Schema names are normalized to lowercase ASCII letters/digits (with a leading letter).</description></item>
 /// <item><description>Property and collection segments are transformed into PascalCase identifiers.</description></item>
-/// <item><description>Collection tables and key parts follow the root+ordinals conventions in the redesign docs.</description></item>
+/// <item><description>Stable collection row-identity and scope-locator columns use the redesign's reserved names.</description></item>
 /// </list>
 /// </summary>
 public static class RelationalNameConventions
@@ -39,6 +39,21 @@ public static class RelationalNameConventions
     /// The standard <c>Ordinal</c> column name used by collection tables to preserve array ordering.
     /// </summary>
     public static DbColumnName OrdinalColumnName { get; } = new("Ordinal");
+
+    /// <summary>
+    /// The standard stable row-identity column name used by persisted collection and extension child tables.
+    /// </summary>
+    public static DbColumnName CollectionItemIdColumnName { get; } = new("CollectionItemId");
+
+    /// <summary>
+    /// The standard immediate-parent locator column name used by nested collection tables.
+    /// </summary>
+    public static DbColumnName ParentCollectionItemIdColumnName { get; } = new("ParentCollectionItemId");
+
+    /// <summary>
+    /// The standard base-row locator column name used by collection-aligned extension scope tables.
+    /// </summary>
+    public static DbColumnName BaseCollectionItemIdColumnName { get; } = new("BaseCollectionItemId");
 
     /// <summary>
     /// Normalizes a project endpoint name into a physical schema identifier.
