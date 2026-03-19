@@ -28,7 +28,7 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `DMS-1033` — Build `DerivedRelationalModelSet` from the Effective Schema Set — `reference/design/backend-redesign/epics/01-relational-model/08-derived-relational-model-set-builder.md`
   - `DMS-1035` — Common-type extensions (`_ext` attachment to commons) — `reference/design/backend-redesign/epics/01-relational-model/09-common-extensions.md`
   - `DMS-1042` — Key Unification (Canonical Columns + Generated Aliases; Presence-Gated When Optional) — `reference/design/backend-redesign/epics/01-relational-model/10-key-unification.md`
-  - `DMS-1100` — Derive Stable Collection Row Identity and Parent-Scope Keys — `reference/design/backend-redesign/epics/01-relational-model/11-stable-collection-row-identity.md`
+  - `DMS-1103` — Derive Stable Collection Row Identity and Parent-Scope Keys — `reference/design/backend-redesign/epics/01-relational-model/11-stable-collection-row-identity.md`
 
 - `DMS-935` — DDL Emission (PostgreSQL + SQL Server) — `reference/design/backend-redesign/epics/02-ddl-emission/EPIC.md`
   - `DMS-936` — SQL Dialect Abstraction + Writer — `reference/design/backend-redesign/epics/02-ddl-emission/00-dialect-abstraction.md`
@@ -38,7 +38,7 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `DMS-940` — SQL Canonicalization + Deterministic Ordering for DDL — `reference/design/backend-redesign/epics/02-ddl-emission/04-sql-canonicalization.md`
   - `DMS-943` — Emit ODS-Parity `dms.Descriptor` DDL (Descriptor Resources Stored in `dms`) — `reference/design/backend-redesign/epics/02-ddl-emission/05-descriptor-ddl.md`
   - `DMS-946` — Engine UUIDv5 Helper Function (PostgreSQL + SQL Server) — `reference/design/backend-redesign/epics/02-ddl-emission/06-uuidv5-function.md`
-  - `DMS-1101` — Emit Stable Collection Row Identity DDL (Sequence, PKs, FKs, Constraints) — `reference/design/backend-redesign/epics/02-ddl-emission/07-stable-collection-row-identity-ddl.md`
+  - `DMS-1107` — Emit Stable Collection Row Identity DDL (Sequence, PKs, FKs, Constraints) — `reference/design/backend-redesign/epics/02-ddl-emission/07-stable-collection-row-identity-ddl.md`
 
 - `DMS-948` — Provisioning Workflow (Create-Only) — `reference/design/backend-redesign/epics/03-provisioning-workflow/EPIC.md`
   - `DMS-950` — CLI Command — `ddl emit` — `reference/design/backend-redesign/epics/03-provisioning-workflow/00-ddl-emit-command.md`
@@ -85,7 +85,7 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `DMS-1118` — Stored-State Projection + HiddenMemberPaths Computation (C6) — `reference/design/backend-redesign/epics/07-relational-write-path/01a-c6-stored-state-projection-and-hidden-member-paths.md`
   - `DMS-1113` — Readable Profile Projection After Reconstitution (C7) — `reference/design/backend-redesign/epics/07-relational-write-path/01a-c7-readable-profile-projection.md`
   - `DMS-1112` — Typed Profile Error Classification (C8) — `reference/design/backend-redesign/epics/07-relational-write-path/01a-c8-typed-profile-error-classification.md`
-  - `DMS-1103` — Integrate the Core/Backend Profile Write Contract — `reference/design/backend-redesign/epics/07-relational-write-path/01b-profile-write-context.md`
+  - `DMS-1106` — Integrate the Core/Backend Profile Write Contract — `reference/design/backend-redesign/epics/07-relational-write-path/01b-profile-write-context.md`
   - `DMS-1105` — Load and Reconstitute the Current Stored Document for Profile Projection — `reference/design/backend-redesign/epics/07-relational-write-path/01c-current-document-for-profile-projection.md`
   - `DMS-983` — Flatten `WritableRequestBody` into Relational Row Buffers and Collection Candidates — `reference/design/backend-redesign/epics/07-relational-write-path/02-flattening-executor.md`
   - `DMS-984` — Persist Row Buffers with Stable-Identity Merge Semantics (Batching, Limits, Transactions) — `reference/design/backend-redesign/epics/07-relational-write-path/03-persist-and-batch.md`
@@ -146,6 +146,7 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `DMS-1044` — Plan Contracts + Deterministic Bindings (Parameter Naming, Ordering, Metadata) — `reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md`
   - `DMS-1028` — Thin Slice — Runtime Plan Compilation + Caching (Root-Only) — `reference/design/backend-redesign/epics/15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md`
   - `DMS-1045` — Compile Write Plans for Child/Extension Tables (Replace Semantics + Batching) — `reference/design/backend-redesign/epics/15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md`
-  - `DMS-1102` — Retrofit Write Plans for Stable-Identity Collection Merge Semantics — `reference/design/backend-redesign/epics/15-plan-compilation/04b-stable-collection-merge-plans.md`
+  - `DMS-1108` — Retrofit Write Plans for Stable-Identity Collection Merge Semantics — `reference/design/backend-redesign/epics/15-plan-compilation/04b-stable-collection-merge-plans.md`
   - `DMS-1046` — Compile Hydration Read Plans (`SelectByKeysetSql`) for All Tables — `reference/design/backend-redesign/epics/15-plan-compilation/05-read-plan-compiler-hydration.md`
   - `DMS-1047` — Compile Projection Plans (Reference Identity + Descriptor URI) — `reference/design/backend-redesign/epics/15-plan-compilation/06-projection-plan-compilers.md`
+  - `DMS-1109` — Startup Failure Status Surfacing — `reference/design/backend-redesign/epics/15-plan-compilation/startup-failure-status-surfacing.md`

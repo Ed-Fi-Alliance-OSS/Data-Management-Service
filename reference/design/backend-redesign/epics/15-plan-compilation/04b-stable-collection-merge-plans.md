@@ -1,3 +1,8 @@
+---
+jira: DMS-1108
+jira_url: https://edfi.atlassian.net/browse/DMS-1108
+---
+
 # Story: Retrofit Write Plans for Stable-Identity Collection Merge Semantics
 
 ## Description
@@ -37,7 +42,7 @@ That is incompatible with profile-aware writes, which require:
 
 ### Stable-identity compilation
 
-- Write-plan compilation consumes the `CollectionItemId`-based relational model shape from `DMS-1100`.
+- Write-plan compilation consumes the `CollectionItemId`-based relational model shape from `DMS-1103`.
 - `CollectionMergePlan.SemanticIdentityBindings` compile directly from the non-empty semantic identity already derived for the scope from `arrayUniquenessConstraints`; plan compilation does not invent a runtime fallback key.
 - Collection/common-type extension scope plans align to base-row stable identity rather than ancestor ordinals.
 - Plan metadata is sufficient for runtime code to compare current rows and post-merge rows without SQL parsing.

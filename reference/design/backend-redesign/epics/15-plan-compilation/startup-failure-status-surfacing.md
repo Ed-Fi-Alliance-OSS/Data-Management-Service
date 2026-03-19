@@ -1,3 +1,8 @@
+---
+jira: DMS-1109
+jira_url: https://edfi.atlassian.net/browse/DMS-1109
+---
+
 # Startup Failure Status Surfacing
 
 Story context: `reference/design/backend-redesign/epics/15-plan-compilation/06-projection-plan-compilers.md`

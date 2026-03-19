@@ -9,7 +9,7 @@ jira_url: https://edfi.atlassian.net/browse/DMS-984
 
 Persist flattened row buffers to the database in a single transaction:
 
-Dependency note: `reference/design/backend-redesign/epics/DEPENDENCIES.md` is the canonical dependency map, and this story is on the `E15-S04b` / `DMS-1102` critical path. Runtime merge execution here consumes the retrofitted stable-identity collection merge-plan contract from `reference/design/backend-redesign/epics/15-plan-compilation/04b-stable-collection-merge-plans.md`; it must not be implemented against the older delete-by-parent / `Ordinal`-based collection plan shape.
+Dependency note: `reference/design/backend-redesign/epics/DEPENDENCIES.md` is the canonical dependency map, and this story is on the `E15-S04b` / `DMS-1108` critical path. Runtime merge execution here consumes the retrofitted stable-identity collection merge-plan contract from `reference/design/backend-redesign/epics/15-plan-compilation/04b-stable-collection-merge-plans.md`; it must not be implemented against the older delete-by-parent / `Ordinal`-based collection plan shape.
 
 - For `PUT`, and for `POST` when upsert resolves to an existing document, compare the current persisted rowset to the post-merge rowset the executor would actually write and skip DML when they are identical.
 - Guarded no-op comparison must reuse the same merge-ordering and post-merge rowset-synthesis logic as the real executor, either directly or through a shared helper built from the same executor-facing merge metadata; do not introduce a compare-only profile merge implementation.

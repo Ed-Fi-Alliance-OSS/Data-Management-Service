@@ -1,3 +1,8 @@
+---
+jira: DMS-1103
+jira_url: https://edfi.atlassian.net/browse/DMS-1103
+---
+
 # Story: Derive Stable Collection Row Identity and Parent-Scope Keys
 
 ## Description

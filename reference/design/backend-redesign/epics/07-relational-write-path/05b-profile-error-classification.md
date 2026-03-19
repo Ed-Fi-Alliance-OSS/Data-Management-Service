@@ -1,3 +1,8 @@
+---
+jira: DMS-1104
+jira_url: https://edfi.atlassian.net/browse/DMS-1104
+---
+
 # Story: Classify and Map Profile Write Failures to DMS Error Shapes
 
 ## Description

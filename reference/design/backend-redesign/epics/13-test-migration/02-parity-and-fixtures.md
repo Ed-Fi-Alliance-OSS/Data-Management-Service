@@ -11,7 +11,7 @@ Ensure the relational redesign behaves consistently across PostgreSQL and SQL Se
 
 - Same fixtures and test cases run against both dialects, including the shared profile scenario baseline from `reference/design/backend-redesign/epics/07-relational-write-path/03-persist-and-batch.md`.
 - Differences are intentional and documented (e.g., error messages where dialect limits differ).
-- This story owns the compact shared profile scenario matrix that keeps `DMS-1103`, `DMS-1105`, `DMS-984`, `DMS-1104`, `DMS-1022`, and `DMS-1023` aligned on fixture names and coverage expectations.
+- This story owns the compact shared profile scenario matrix that keeps `DMS-1106`, `DMS-1105`, `DMS-984`, `DMS-1104`, `DMS-1022`, and `DMS-1023` aligned on fixture names and coverage expectations.
 
 ## Shared Profile Scenario Matrix
 
@@ -39,7 +39,7 @@ Variant families carried under the shared scenario names:
 
 Story alignment:
 
-- `DMS-1103` consumes the contract-heavy scenarios: `ProfileVisibleRowUpdateWithHiddenRowPreservation`, `ProfileVisibleButAbsentNonCollectionScope`, `ProfileHiddenInlinedColumnPreservation`, `ProfileRootCreateRejectedWhenNonCreatable`, and `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable`.
+- `DMS-1106` consumes the contract-heavy scenarios: `ProfileVisibleRowUpdateWithHiddenRowPreservation`, `ProfileVisibleButAbsentNonCollectionScope`, `ProfileHiddenInlinedColumnPreservation`, `ProfileRootCreateRejectedWhenNonCreatable`, and `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable`.
 - `DMS-1105` reuses nested and `_ext` fixtures from `ProfileVisibleRowUpdateWithHiddenRowPreservation` and `ProfileHiddenExtensionChildCollectionPreservation`.
 - `DMS-984` owns runtime execution for the full scenario set.
 - `DMS-1104` owns the failure semantics for `ProfileRootCreateRejectedWhenNonCreatable` and `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable`, plus invalid usage/forbidden-data cases that are not separate matrix scenarios.
@@ -58,7 +58,7 @@ Story alignment:
   - the deterministic profile-scoped sibling-order rule "start from the current full sibling sequence for that scope instance, replace the visible-row subsequence with the merged visible rows in request order, preserve hidden rows in their existing relative gaps, append extra visible inserts after the last previously visible row for that scope instance (or at the end when there was no previously visible row), and renumber `Ordinal` contiguously", including the ordering variants nested under `ProfileVisibleRowUpdateWithHiddenRowPreservation` and `ProfileVisibleRowDeleteWithHiddenRowPreservation`, and
   - `ProfileUnchangedWriteGuardedNoOp`, and
   - profile-based validation/creatability failure semantics.
-- The matrix above is the source of truth for shared fixture identifiers and scenario naming reused by `DMS-1103`, `DMS-1105`, `DMS-984`, `DMS-1104`, and `DMS-1022`.
+- The matrix above is the source of truth for shared fixture identifiers and scenario naming reused by `DMS-1106`, `DMS-1105`, `DMS-984`, `DMS-1104`, and `DMS-1022`.
 - Any dialect-specific differences are explicitly documented and tested.
 
 ## Tasks

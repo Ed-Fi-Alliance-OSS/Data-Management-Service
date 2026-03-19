@@ -1,3 +1,8 @@
+---
+jira: DMS-1105
+jira_url: https://edfi.atlassian.net/browse/DMS-1105
+---
+
 # Story: Load and Reconstitute the Current Stored Document for Profile Projection
 
 ## Description

@@ -1,10 +1,15 @@
+---
+jira: DMS-1107
+jira_url: https://edfi.atlassian.net/browse/DMS-1107
+---
+
 # Story: Emit Stable Collection Row Identity DDL (Sequence, PKs, FKs, Constraints)
 
 ## Description
 
 Retrofit DDL emission to match the stable collection-row identity model introduced for profile-compatible writes.
 
-This story applies the relational-model changes from `DMS-1100` to emitted PostgreSQL and SQL Server DDL per:
+This story applies the relational-model changes from `DMS-1103` to emitted PostgreSQL and SQL Server DDL per:
 
 - `reference/design/backend-redesign/design-docs/data-model.md`
 - `reference/design/backend-redesign/design-docs/extensions.md`
