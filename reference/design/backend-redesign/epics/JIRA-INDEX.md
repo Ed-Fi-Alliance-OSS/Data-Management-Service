@@ -81,7 +81,7 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `TBD` — Semantic Identity Compatibility Validation (C2) — `reference/design/backend-redesign/epics/07-relational-write-path/01a-c2-semantic-identity-compatibility-validation.md`
   - `TBD` — Request-Side Visibility Classification + Writable Request Shaping (C3) — `reference/design/backend-redesign/epics/07-relational-write-path/01a-c3-request-visibility-and-writable-shaping.md`
   - `TBD` — Request-Side Creatability Analysis + Duplicate Collection-Item Validation (C4) — `reference/design/backend-redesign/epics/07-relational-write-path/01a-c4-request-creatability-and-collection-validation.md`
-  - `TBD` — Assemble ProfileAppliedWriteRequest (C5) — `reference/design/backend-redesign/epics/07-relational-write-path/01a-c5-assemble-profile-applied-write-request.md`
+  - `TBD` — Orchestrate Profile Write Pipeline + Assemble ProfileAppliedWriteRequest (C5) — `reference/design/backend-redesign/epics/07-relational-write-path/01a-c5-assemble-profile-applied-write-request.md`
   - `TBD` — Stored-State Projection + HiddenMemberPaths Computation (C6) — `reference/design/backend-redesign/epics/07-relational-write-path/01a-c6-stored-state-projection-and-hidden-member-paths.md`
   - `TBD` — Readable Profile Projection After Reconstitution (C7) — `reference/design/backend-redesign/epics/07-relational-write-path/01a-c7-readable-profile-projection.md`
   - `TBD` — Typed Profile Error Classification (C8) — `reference/design/backend-redesign/epics/07-relational-write-path/01a-c8-typed-profile-error-classification.md`

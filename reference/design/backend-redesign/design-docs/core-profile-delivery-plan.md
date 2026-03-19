@@ -196,6 +196,136 @@ Similarly, when no readable profile applies, the full reconstituted JSON is retu
 
 ---
 
+## Shared Reference Fixture
+
+This section traces a single concrete example through the Core profile pipeline to illustrate how each story's inputs and outputs connect. All C1–C8 stories should include at least one test case derived from this fixture.
+
+### Resource Structure
+
+Use a resource with the following compiled scopes (representative of an Ed-Fi resource like StudentSchoolAssociation):
+
+```
+Resource: StudentSchoolAssociation
+
+Root members:
+  studentReference.studentUniqueId  (required)
+  schoolReference.schoolId          (required)
+  entryDate                         (required)
+  entryTypeDescriptor               (optional)
+
+1:1 child scope — $.calendarReference:
+  calendarCode                      (required)
+  calendarTypeDescriptor            (required)
+
+Collection scope — $.classPeriods[*]:
+  Semantic identity: [classPeriodName]
+  classPeriodName                   (required, identity)
+  officialAttendancePeriod          (optional)
+```
+
+### Writable Profile Definition
+
+Profile "RestrictedAssociation-Write":
+- **Exposes:** `studentReference`, `schoolReference`, `entryDate`, `classPeriods.classPeriodName`
+- **Hides:** `entryTypeDescriptor`, entire `$.calendarReference` scope, `classPeriods.officialAttendancePeriod`
+
+### Compiled Scope Adapter (C1)
+
+| JsonScope | ScopeKind | ImmediateParentJsonScope | CollectionAncestorsInOrder | SemanticIdentityRelativePathsInOrder | CanonicalScopeRelativeMemberPaths |
+| --- | --- | --- | --- | --- | --- |
+| `$` | Root | — | [] | — | [`studentReference.studentUniqueId`, `schoolReference.schoolId`, `entryDate`, `entryTypeDescriptor`] |
+| `$.calendarReference` | NonCollection | `$` | [] | — | [`calendarCode`, `calendarTypeDescriptor`] |
+| `$.classPeriods` | Collection | `$` | [] | [`classPeriodName`] | [`classPeriodName`, `officialAttendancePeriod`] |
+
+Address derivation examples:
+- Root `$`: `ScopeInstanceAddress("$", [])`
+- Calendar: `ScopeInstanceAddress("$.calendarReference", [])`
+- ClassPeriod "Morning": `CollectionRowAddress("$.classPeriods", ScopeInstanceAddress("$", []), [SemanticIdentityPart("classPeriodName", "Morning", true)])`
+
+### Semantic Identity Compatibility (C2)
+
+`$.classPeriods` identity = `[classPeriodName]`. The profile exposes `classPeriodName` → validation **passes**. (If the profile hid `classPeriodName`, C2 would reject with a structured error identifying the scope and hidden identity field.)
+
+### Request-Side Visibility + Shaping (C3)
+
+Given request body:
+```json
+{
+  "studentReference": { "studentUniqueId": "S001" },
+  "schoolReference": { "schoolId": 100 },
+  "entryDate": "2025-09-01",
+  "entryTypeDescriptor": "uri://ed-fi.org/EntryType#Transfer",
+  "calendarReference": { "calendarCode": "CAL1", "calendarTypeDescriptor": "uri://..." },
+  "classPeriods": [
+    { "classPeriodName": "Morning", "officialAttendancePeriod": true }
+  ]
+}
+```
+
+**WritableRequestBody** (after profile shaping — hidden members removed):
+```json
+{
+  "studentReference": { "studentUniqueId": "S001" },
+  "schoolReference": { "schoolId": 100 },
+  "entryDate": "2025-09-01",
+  "classPeriods": [
+    { "classPeriodName": "Morning" }
+  ]
+}
+```
+
+**RequestScopeStates:**
+
+| Address | Visibility | Creatable (pending C4) |
+| --- | --- | --- |
+| `ScopeInstanceAddress("$", [])` | VisiblePresent | — |
+| `ScopeInstanceAddress("$.calendarReference", [])` | Hidden | — |
+
+**VisibleRequestCollectionItems** (without Creatable):
+
+| Address | Creatable (pending C4) |
+| --- | --- |
+| `CollectionRowAddress("$.classPeriods", root, [("classPeriodName","Morning",true)])` | — |
+
+### Creatability (C4)
+
+**Scenario A — POST creating a new resource:**
+- Stored-side existence lookup: nothing exists.
+- Root required members: `studentReference`, `schoolReference`, `entryDate` — all exposed → `RootResourceCreatable=true`.
+- `$.calendarReference`: Hidden → `Creatable=false` (not evaluated for creation).
+- `$.classPeriods` "Morning": no stored row matches. Creation-required = `classPeriodName` (identity, exposed). `officialAttendancePeriod` is optional → `Creatable=true`.
+
+**Scenario B — PUT updating an existing resource (calendarReference exists in stored state):**
+- Stored-side existence lookup: root exists, `$.calendarReference` exists (but Hidden), classPeriods "Morning" exists.
+- Root: existing → update path, `RootResourceCreatable` not consulted.
+- `$.calendarReference`: Hidden → preserve path (backend preserves stored data).
+- `$.classPeriods` "Morning": visible stored row matches → update path, `Creatable=false` but update allowed.
+
+### Stored-State Projection + HiddenMemberPaths (C6) — Update Scenario
+
+Full stored JSON includes all members. After writable-profile projection:
+
+**StoredScopeStates:**
+
+| Address | Visibility | HiddenMemberPaths |
+| --- | --- | --- |
+| `ScopeInstanceAddress("$", [])` | VisiblePresent | [`entryTypeDescriptor`] |
+| `ScopeInstanceAddress("$.calendarReference", [])` | Hidden | [`calendarCode`, `calendarTypeDescriptor`] |
+
+**VisibleStoredCollectionRows:**
+
+| Address | HiddenMemberPaths |
+| --- | --- |
+| `CollectionRowAddress("$.classPeriods", root, [("classPeriodName","Morning",true)])` | [`officialAttendancePeriod`] |
+
+Backend uses `HiddenMemberPaths` to preserve `entryTypeDescriptor` at root and `officialAttendancePeriod` on the matched classPeriods row.
+
+### Error Classification (C8)
+
+If the profile had hidden `calendarTypeDescriptor` (required) within `$.calendarReference` and the scope was visible-present with no stored data, C4 would set `Creatable=false`. C8 classifies this as a **creatability violation**: "new visible scope `$.calendarReference` cannot be created because required member `calendarTypeDescriptor` is hidden by profile RestrictedAssociation-Write."
+
+---
+
 ## Implementation Slices
 
 ### C1: Shared Compiled-Scope Adapter Contract + Address Derivation Engine
@@ -285,22 +415,37 @@ Similarly, when no readable profile applies, the full reconstituted JSON is retu
 
 **Story file:** `reference/design/backend-redesign/epics/07-relational-write-path/01a-c4-request-creatability-and-collection-validation.md`
 
-### C5: Assemble ProfileAppliedWriteRequest
+### C5: Orchestrate Profile Write Pipeline + Assemble ProfileAppliedWriteRequest
 
-**Responsibility mapping:** #7 (final assembly of the request-side contract)
+**Responsibility mapping:** #7 (final assembly of the request-side contract), pipeline orchestration
 
 **Inputs:**
-- `WritableRequestBody` from C3
-- `RootResourceCreatable` from C4
-- `RequestScopeStates` from C3 + C4
-- `VisibleRequestCollectionItems` from C4
+- Canonicalized request body
+- Writable profile definition (or absence thereof)
+- Compiled scope adapter from C1
+- Full current stored JSON (for update/upsert flows — from backend's write-side current-document loader)
 
 **Outputs:**
 - `ProfileAppliedWriteRequest(WritableRequestBody, RootResourceCreatable, RequestScopeStates, VisibleRequestCollectionItems)`
+- For update/upsert flows: `ProfileAppliedWriteContext` (C5 invokes C6, which produces and returns the complete context)
+
+**Orchestration responsibility:**
+
+C5 owns the end-to-end call sequence for the Core profile write pipeline. The individual steps (C2, C3, C4, C6) are pure functions; C5 is the orchestrator that calls them in the correct order and threads intermediate results between them:
+
+1. If no writable profile applies, short-circuit: produce no `ProfileAppliedWriteRequest` and no `ProfileAppliedWriteContext`. Backend uses its non-profiled write path.
+2. Run C2 (semantic identity compatibility validation) against the writable profile + adapter. If the profile is invalid, fail with a C8 typed error.
+3. Run C3 (request-side visibility + shaping) to produce `WritableRequestBody`, `RequestScopeStates` (without creatability), and `VisibleRequestCollectionItem` entries (without `Creatable`).
+4. Build the stored-side existence lookup for C4: if this is an update/upsert-to-existing flow, run C1's address derivation engine against the full stored document and apply C3's visibility rules to produce a predicate answering "does a visible stored scope/item exist at this address?" For a create (POST with no existing document), the lookup reports "nothing exists."
+5. Run C4 (creatability + duplicate validation) with the existence lookup, producing `RootResourceCreatable`, enriched `RequestScopeStates` with `Creatable` flags, and enriched `VisibleRequestCollectionItems` with `Creatable` flags.
+6. Assemble `ProfileAppliedWriteRequest` from the C3 + C4 outputs.
+7. For update/upsert flows: invoke C6 (stored-state projection) with the full stored document + adapter + writable profile + the assembled `ProfileAppliedWriteRequest`. C6 produces stored-side outputs and assembles the complete `ProfileAppliedWriteContext` (C6 owns context assembly; C5 owns calling C6 at the right point in the pipeline).
 
 **Test expectations:**
-- Integration test: full assembly from profile definition + adapter + request JSON produces correct composite contract
+- Integration test: full pipeline from profile definition + adapter + request JSON produces correct composite contract
 - No-profile path returns no request (backend treats all scopes as visible)
+- Update flow: stored-side existence lookup correctly feeds C4 creatability decisions
+- The orchestration correctly threads C3 outputs into C4 and C6
 
 **Story file:** `reference/design/backend-redesign/epics/07-relational-write-path/01a-c5-assemble-profile-applied-write-request.md`
 
@@ -383,7 +528,7 @@ Similarly, when no readable profile applies, the full reconstituted JSON is retu
 | C2 | Semantic Identity Compatibility Validation | 1 | C1 | C4 |
 | C3 | Request-Side Visibility Classification + Writable Request Shaping | 1 | C1 | C4, C5, C6, C8 |
 | C4 | Request-Side Creatability Analysis + Duplicate Collection-Item Validation | 2 | C1, C2, C3 | C5, C8 |
-| C5 | Assemble ProfileAppliedWriteRequest | 2 | C3, C4 | C6, DMS-1103 (via C6) |
+| C5 | Orchestrate Profile Write Pipeline + Assemble ProfileAppliedWriteRequest | 2 | C3, C4 | C6, DMS-1103 (via C6) |
 | C6 | Stored-State Projection + HiddenMemberPaths Computation | 3 | C1, C3, C5 | DMS-1103, DMS-1105 |
 | C7 | Readable Profile Projection After Reconstitution | 3 | C1 | DMS-990 |
 | C8 | Typed Profile Error Classification | 3 | C3, C4 | DMS-1104 |
@@ -411,8 +556,8 @@ Similarly, when no readable profile applies, the full reconstituted JSON is retu
 - Jira: TBD
 
 **C5** — `01a-c5-assemble-profile-applied-write-request.md`
-- Description: Thin integration story composing C3 + C4 outputs into `ProfileAppliedWriteRequest`.
-- Acceptance criteria: Full assembly from profile + adapter + request JSON produces the correct composite contract.
+- Description: Orchestrate the Core profile write pipeline (C2 → C3 → existence lookup → C4 → assembly → C6) and assemble `ProfileAppliedWriteRequest` and `ProfileAppliedWriteContext`. Owns the call sequence, the stored-side existence lookup construction for C4, and the no-profile short-circuit.
+- Acceptance criteria: Full pipeline from profile + adapter + request JSON produces the correct composite contract; orchestration correctly threads intermediate results between C3, C4, and C6; no-profile path short-circuits cleanly.
 - Jira: TBD
 
 **C6** — `01a-c6-stored-state-projection-and-hidden-member-paths.md`
@@ -465,7 +610,7 @@ The shortest path to unblock the four hard-blocked backend stories:
 2. **C3** → Request-side visibility and shaping (depends on C1)
 3. **C2** → Semantic identity compatibility validation (depends on C1, can parallel with C3)
 4. **C4** → Creatability + duplicate validation (depends on C1, C2, C3)
-5. **C5** → Assemble `ProfileAppliedWriteRequest` (depends on C3, C4)
+5. **C5** → Orchestrate pipeline + assemble `ProfileAppliedWriteRequest` (depends on C3, C4)
 6. **C6** → Stored-state projection + `ProfileAppliedWriteContext` (depends on C1, C3, C5) — **unblocks DMS-1103 and DMS-1105**
 
 Then in parallel:
