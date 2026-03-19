@@ -98,7 +98,7 @@ public class Given_MappingSetProviderOptionsValidator
         : Given_MappingSetProviderOptionsValidator
     {
         [Test]
-        public void It_fails_validation()
+        public void It_passes_validation()
         {
             var result = _validator.Validate(
                 null,
@@ -110,11 +110,7 @@ public class Given_MappingSetProviderOptionsValidator
                 }
             );
 
-            result.Failed.Should().BeTrue();
-            result
-                .FailureMessage.Should()
-                .Contain("AllowRuntimeCompileFallback is false")
-                .And.Contain("Required is false");
+            result.Succeeded.Should().BeTrue();
         }
     }
 }

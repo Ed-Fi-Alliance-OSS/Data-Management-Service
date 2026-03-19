@@ -24,15 +24,6 @@ public sealed class MappingSetProviderOptionsValidator : IValidateOptions<Mappin
             );
         }
 
-        if (options.Enabled && !options.Required && !options.AllowRuntimeCompileFallback)
-        {
-            return ValidateOptionsResult.Fail(
-                "MappingPacks:Enabled is true and MappingPacks:AllowRuntimeCompileFallback is false, "
-                    + "but MappingPacks:Required is false. "
-                    + "Set Required=true or enable AllowRuntimeCompileFallback."
-            );
-        }
-
         if (!Enum.IsDefined(options.CacheMode))
         {
             return ValidateOptionsResult.Fail(
