@@ -535,6 +535,7 @@ internal static class MappingSetManifestJsonEmitter
             ColumnKind.DocumentFk => "document_fk",
             ColumnKind.DescriptorFk => "descriptor_fk",
             ColumnKind.Ordinal => "ordinal",
+            ColumnKind.CollectionKey => "collection_key",
             ColumnKind.ParentKeyPart => "parent_key_part",
             _ => throw new ArgumentOutOfRangeException(
                 nameof(columnKind),

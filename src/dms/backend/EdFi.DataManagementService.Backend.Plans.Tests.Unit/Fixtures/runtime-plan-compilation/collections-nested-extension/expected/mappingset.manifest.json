@@ -99,9 +99,9 @@
                   "schema": "sample",
                   "name": "SchoolExtensionAddress"
                 },
-                "insert_sql_sha256": "8fd639ed4b8f064addb51fa289ec1bf1a835d45983d1fec403fdaf69b2c785c8",
-                "update_sql_sha256": null,
-                "delete_by_parent_sql_sha256": "8c202607a81873da936df3dd5813d0642cb5906a9582e6ebc1e6cd6f3fa76498",
+                "insert_sql_sha256": "8eddb86d0bba5ed2e2118d97262a4210fe51d372af87297a78c80aad9c759908",
+                "update_sql_sha256": "79765c07c96e719ffd98ba9daef5515d9ef980298e341c7bcc5cf051a5b99cb0",
+                "delete_by_parent_sql_sha256": "b29da3d009f8355363db23f361400b34b25af5057f34a42d5ec70598edc82faf",
                 "bulk_insert_batching": {
                   "max_rows_per_batch": 700,
                   "parameters_per_row": 3,
@@ -109,20 +109,20 @@
                 },
                 "column_bindings_in_order": [
                   {
-                    "column_name": "School_DocumentId",
+                    "column_name": "BaseCollectionItemId",
                     "column_kind": "parent_key_part",
-                    "parameter_name": "school_DocumentId",
+                    "parameter_name": "baseCollectionItemId",
                     "write_value_source": {
                       "kind": "parent_key_part",
                       "index": 0
                     }
                   },
                   {
-                    "column_name": "Ordinal",
-                    "column_kind": "ordinal",
-                    "parameter_name": "ordinal",
+                    "column_name": "School_DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "school_DocumentId",
                     "write_value_source": {
-                      "kind": "ordinal"
+                      "kind": "document_id"
                     }
                   },
                   {
@@ -143,22 +143,21 @@
                   "schema": "edfi",
                   "name": "SchoolAddress"
                 },
-                "insert_sql_sha256": "879376a4de5dc771dae9d8583e12e79c8edfec1ef1707b7ccd41fff46e310f38",
+                "insert_sql_sha256": "987cc4fcbf85fa5817ccc9040514e3145892585283be6a605c7c95af210642e2",
                 "update_sql_sha256": null,
                 "delete_by_parent_sql_sha256": "cfa72015c203e5ff45702425136f9c79b580fe9367f3917fe39c8bc55710293d",
                 "bulk_insert_batching": {
-                  "max_rows_per_batch": 700,
-                  "parameters_per_row": 3,
+                  "max_rows_per_batch": 525,
+                  "parameters_per_row": 4,
                   "max_parameters_per_command": 2100
                 },
                 "column_bindings_in_order": [
                   {
-                    "column_name": "School_DocumentId",
-                    "column_kind": "parent_key_part",
-                    "parameter_name": "school_DocumentId",
+                    "column_name": "CollectionItemId",
+                    "column_kind": "collection_key",
+                    "parameter_name": "collectionItemId",
                     "write_value_source": {
-                      "kind": "parent_key_part",
-                      "index": 0
+                      "kind": "precomputed"
                     }
                   },
                   {
@@ -167,6 +166,14 @@
                     "parameter_name": "ordinal",
                     "write_value_source": {
                       "kind": "ordinal"
+                    }
+                  },
+                  {
+                    "column_name": "School_DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "school_DocumentId",
+                    "write_value_source": {
+                      "kind": "document_id"
                     }
                   },
                   {
@@ -187,39 +194,30 @@
                   "schema": "sample",
                   "name": "SchoolExtensionAddressPeriod"
                 },
-                "insert_sql_sha256": "0c209d5c2cb144c181c109621ddff57fef38b0bd47caca408458e523e6670d33",
-                "update_sql_sha256": null,
-                "delete_by_parent_sql_sha256": "7e22b97f747299cf410860342bc91a9dc6d8db542a823a8f8dd00e32b511fc9a",
+                "insert_sql_sha256": "e7770c66b752f3ea2ca5aa325f9bb7f1adf6c1926046460966ef15d128e0834f",
+                "update_sql_sha256": "557f6ad50408538a29110915717d55e3a6e900712ae971d4f9dcc3e17f01777d",
+                "delete_by_parent_sql_sha256": "62ffd31b3feab54a808e894a128492960a9d97be6c8ec9cf8f9b145e88f60a32",
                 "bulk_insert_batching": {
-                  "max_rows_per_batch": 525,
-                  "parameters_per_row": 4,
+                  "max_rows_per_batch": 700,
+                  "parameters_per_row": 3,
                   "max_parameters_per_command": 2100
                 },
                 "column_bindings_in_order": [
                   {
-                    "column_name": "School_DocumentId",
+                    "column_name": "BaseCollectionItemId",
                     "column_kind": "parent_key_part",
-                    "parameter_name": "school_DocumentId",
+                    "parameter_name": "baseCollectionItemId",
                     "write_value_source": {
                       "kind": "parent_key_part",
                       "index": 0
                     }
                   },
                   {
-                    "column_name": "AddressOrdinal",
+                    "column_name": "School_DocumentId",
                     "column_kind": "parent_key_part",
-                    "parameter_name": "addressOrdinal",
+                    "parameter_name": "school_DocumentId",
                     "write_value_source": {
-                      "kind": "parent_key_part",
-                      "index": 1
-                    }
-                  },
-                  {
-                    "column_name": "Ordinal",
-                    "column_kind": "ordinal",
-                    "parameter_name": "ordinal",
-                    "write_value_source": {
-                      "kind": "ordinal"
+                      "kind": "document_id"
                     }
                   },
                   {
@@ -240,31 +238,21 @@
                   "schema": "edfi",
                   "name": "SchoolAddressPeriod"
                 },
-                "insert_sql_sha256": "8b702ff69d8a48b08834e1c6a863a2e559dd7ff05c5ebc36704917d77e15dcdd",
+                "insert_sql_sha256": "b212c5a9e665d28648ca37456f89fdbe032ea918f134639232502b29ad83aed9",
                 "update_sql_sha256": null,
-                "delete_by_parent_sql_sha256": "42bbda1e3cace75b4aa21f0b7442bac4d9eb118c580ee24ea43e60b18e07a288",
+                "delete_by_parent_sql_sha256": "d3b5a5c4f6f9db330b387a0509fe1fb5a3fb76cd6075d3f7ad13d58b491bf79f",
                 "bulk_insert_batching": {
-                  "max_rows_per_batch": 525,
-                  "parameters_per_row": 4,
+                  "max_rows_per_batch": 420,
+                  "parameters_per_row": 5,
                   "max_parameters_per_command": 2100
                 },
                 "column_bindings_in_order": [
                   {
-                    "column_name": "School_DocumentId",
-                    "column_kind": "parent_key_part",
-                    "parameter_name": "school_DocumentId",
+                    "column_name": "CollectionItemId",
+                    "column_kind": "collection_key",
+                    "parameter_name": "collectionItemId",
                     "write_value_source": {
-                      "kind": "parent_key_part",
-                      "index": 0
-                    }
-                  },
-                  {
-                    "column_name": "AddressOrdinal",
-                    "column_kind": "parent_key_part",
-                    "parameter_name": "addressOrdinal",
-                    "write_value_source": {
-                      "kind": "parent_key_part",
-                      "index": 1
+                      "kind": "precomputed"
                     }
                   },
                   {
@@ -273,6 +261,23 @@
                     "parameter_name": "ordinal",
                     "write_value_source": {
                       "kind": "ordinal"
+                    }
+                  },
+                  {
+                    "column_name": "ParentCollectionItemId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "parentCollectionItemId",
+                    "write_value_source": {
+                      "kind": "parent_key_part",
+                      "index": 0
+                    }
+                  },
+                  {
+                    "column_name": "School_DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "school_DocumentId",
+                    "write_value_source": {
+                      "kind": "document_id"
                     }
                   },
                   {
@@ -330,15 +335,15 @@
                   "schema": "sample",
                   "name": "SchoolExtensionAddress"
                 },
-                "select_by_keyset_sql_sha256": "cfa6bc718cdae2fc3cd9d6863e5ad3427d234202a7affb4d2a1e3b15967fa3db",
+                "select_by_keyset_sql_sha256": "dfc172d0fd62794e1c6de277d7e0484e006a8642d1a67c8180e047466841e575",
                 "select_list_columns_in_order": [
+                  "BaseCollectionItemId",
                   "School_DocumentId",
-                  "Ordinal",
                   "Zone"
                 ],
                 "order_by_key_columns_in_order": [
                   "School_DocumentId",
-                  "Ordinal"
+                  "BaseCollectionItemId"
                 ]
               },
               {
@@ -346,10 +351,11 @@
                   "schema": "edfi",
                   "name": "SchoolAddress"
                 },
-                "select_by_keyset_sql_sha256": "f7a36ed15aca8a7eefa53508eb872a21663a0b21674e4bf78162407dd648fdca",
+                "select_by_keyset_sql_sha256": "f07db8ae6f3b7924ec6d24b91e102805a7ac17b2f9c6c947b1804bc3ed0b71cb",
                 "select_list_columns_in_order": [
-                  "School_DocumentId",
+                  "CollectionItemId",
                   "Ordinal",
+                  "School_DocumentId",
                   "City"
                 ],
                 "order_by_key_columns_in_order": [
@@ -362,17 +368,15 @@
                   "schema": "sample",
                   "name": "SchoolExtensionAddressPeriod"
                 },
-                "select_by_keyset_sql_sha256": "aa803f67cedfbfecc574944672a6fc6e60adbf2e22c568f641a6384f28dd938b",
+                "select_by_keyset_sql_sha256": "923c2679a7d4fbe3f4c560ba9f7c4c25fb6f5f7f3adaae4c5723d005d5d97c3f",
                 "select_list_columns_in_order": [
+                  "BaseCollectionItemId",
                   "School_DocumentId",
-                  "AddressOrdinal",
-                  "Ordinal",
                   "Track"
                 ],
                 "order_by_key_columns_in_order": [
                   "School_DocumentId",
-                  "AddressOrdinal",
-                  "Ordinal"
+                  "BaseCollectionItemId"
                 ]
               },
               {
@@ -380,16 +384,17 @@
                   "schema": "edfi",
                   "name": "SchoolAddressPeriod"
                 },
-                "select_by_keyset_sql_sha256": "a4fde100f439ad420d306b74000c497a087d3d54da14a25b379d0430f0304296",
+                "select_by_keyset_sql_sha256": "dbf8a405b7c1691266ffae45718d13b0431ec0b43159cc63309cfa9d74f63425",
                 "select_list_columns_in_order": [
-                  "School_DocumentId",
-                  "AddressOrdinal",
+                  "CollectionItemId",
                   "Ordinal",
+                  "ParentCollectionItemId",
+                  "School_DocumentId",
                   "PeriodName"
                 ],
                 "order_by_key_columns_in_order": [
                   "School_DocumentId",
-                  "AddressOrdinal",
+                  "ParentCollectionItemId",
                   "Ordinal"
                 ]
               }
@@ -499,9 +504,9 @@
                   "schema": "sample",
                   "name": "SchoolExtensionAddress"
                 },
-                "insert_sql_sha256": "6fdcd70329b43a31cf95d185025b330101ebff9858ada4f6bc48d850d9852945",
-                "update_sql_sha256": null,
-                "delete_by_parent_sql_sha256": "01e596b8b662f9c18797a6f1bf7cc8e05c58f8062f4fa002bd695907cf16672a",
+                "insert_sql_sha256": "522587b2bb7c4beb88df191329f36dd3c3e474ec6d31f948088154cd64d1ef27",
+                "update_sql_sha256": "cdc4feed5db16a18e7f70bd54a1b0b36d5ffc6af145b0b86bd567d1a38bb4647",
+                "delete_by_parent_sql_sha256": "a7f08ff77fca49a9b22de358aaa5302b3726558544042972a5d01e38475720bc",
                 "bulk_insert_batching": {
                   "max_rows_per_batch": 1000,
                   "parameters_per_row": 3,
@@ -509,20 +514,20 @@
                 },
                 "column_bindings_in_order": [
                   {
-                    "column_name": "School_DocumentId",
+                    "column_name": "BaseCollectionItemId",
                     "column_kind": "parent_key_part",
-                    "parameter_name": "school_DocumentId",
+                    "parameter_name": "baseCollectionItemId",
                     "write_value_source": {
                       "kind": "parent_key_part",
                       "index": 0
                     }
                   },
                   {
-                    "column_name": "Ordinal",
-                    "column_kind": "ordinal",
-                    "parameter_name": "ordinal",
+                    "column_name": "School_DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "school_DocumentId",
                     "write_value_source": {
-                      "kind": "ordinal"
+                      "kind": "document_id"
                     }
                   },
                   {
@@ -543,22 +548,21 @@
                   "schema": "edfi",
                   "name": "SchoolAddress"
                 },
-                "insert_sql_sha256": "602405e056310fb0083719bc60169fc3fc59733d932b17506a7f7401b229e060",
+                "insert_sql_sha256": "61ea175a37cd45cf0260cd5f3660f5e3134238e9407ceb86496028fd71aa8bda",
                 "update_sql_sha256": null,
                 "delete_by_parent_sql_sha256": "8f4b35307b54ede81fadc454935cef8e413c939bbc51d7f981b2570345758c97",
                 "bulk_insert_batching": {
                   "max_rows_per_batch": 1000,
-                  "parameters_per_row": 3,
+                  "parameters_per_row": 4,
                   "max_parameters_per_command": 65535
                 },
                 "column_bindings_in_order": [
                   {
-                    "column_name": "School_DocumentId",
-                    "column_kind": "parent_key_part",
-                    "parameter_name": "school_DocumentId",
+                    "column_name": "CollectionItemId",
+                    "column_kind": "collection_key",
+                    "parameter_name": "collectionItemId",
                     "write_value_source": {
-                      "kind": "parent_key_part",
-                      "index": 0
+                      "kind": "precomputed"
                     }
                   },
                   {
@@ -567,6 +571,14 @@
                     "parameter_name": "ordinal",
                     "write_value_source": {
                       "kind": "ordinal"
+                    }
+                  },
+                  {
+                    "column_name": "School_DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "school_DocumentId",
+                    "write_value_source": {
+                      "kind": "document_id"
                     }
                   },
                   {
@@ -587,39 +599,30 @@
                   "schema": "sample",
                   "name": "SchoolExtensionAddressPeriod"
                 },
-                "insert_sql_sha256": "be92ef501fe93e6a19b903ce01149f05b8d3853ac03468110285fda4cdee9ae7",
-                "update_sql_sha256": null,
-                "delete_by_parent_sql_sha256": "382a49ed7dbc3c629f774b6a44445ac8e9d9efe42b2a960ffda0bea7515af49e",
+                "insert_sql_sha256": "4b48ffab3a974e65bb86ddbe8cac40e7ce241382b72b43412889e200504242b4",
+                "update_sql_sha256": "344d35fdd5cba92915f3576ed29698281817bfd3c716dbbf3117e8d0a6b137dc",
+                "delete_by_parent_sql_sha256": "594a18ab7c9f350d8fc2cd0242e74cfd736000edbf8e47fca4dd265c24a44214",
                 "bulk_insert_batching": {
                   "max_rows_per_batch": 1000,
-                  "parameters_per_row": 4,
+                  "parameters_per_row": 3,
                   "max_parameters_per_command": 65535
                 },
                 "column_bindings_in_order": [
                   {
-                    "column_name": "School_DocumentId",
+                    "column_name": "BaseCollectionItemId",
                     "column_kind": "parent_key_part",
-                    "parameter_name": "school_DocumentId",
+                    "parameter_name": "baseCollectionItemId",
                     "write_value_source": {
                       "kind": "parent_key_part",
                       "index": 0
                     }
                   },
                   {
-                    "column_name": "AddressOrdinal",
+                    "column_name": "School_DocumentId",
                     "column_kind": "parent_key_part",
-                    "parameter_name": "addressOrdinal",
+                    "parameter_name": "school_DocumentId",
                     "write_value_source": {
-                      "kind": "parent_key_part",
-                      "index": 1
-                    }
-                  },
-                  {
-                    "column_name": "Ordinal",
-                    "column_kind": "ordinal",
-                    "parameter_name": "ordinal",
-                    "write_value_source": {
-                      "kind": "ordinal"
+                      "kind": "document_id"
                     }
                   },
                   {
@@ -640,31 +643,21 @@
                   "schema": "edfi",
                   "name": "SchoolAddressPeriod"
                 },
-                "insert_sql_sha256": "fc3844890e74a9216d7735059935d4a39e9ce804b52d7be54f1183db759e5ac0",
+                "insert_sql_sha256": "36423059e58a33ec168dc965e94bbdd67958ab6664737cb5e885fde74e0695b0",
                 "update_sql_sha256": null,
-                "delete_by_parent_sql_sha256": "c826b5efbb66d7799e9999815c7453a76ae72eb796b078c7e471624bcee302a0",
+                "delete_by_parent_sql_sha256": "0fecc9c6a40da053d3983dd9dfcbe4a294765b9fdf4b1cb01072e7881b24024f",
                 "bulk_insert_batching": {
                   "max_rows_per_batch": 1000,
-                  "parameters_per_row": 4,
+                  "parameters_per_row": 5,
                   "max_parameters_per_command": 65535
                 },
                 "column_bindings_in_order": [
                   {
-                    "column_name": "School_DocumentId",
-                    "column_kind": "parent_key_part",
-                    "parameter_name": "school_DocumentId",
+                    "column_name": "CollectionItemId",
+                    "column_kind": "collection_key",
+                    "parameter_name": "collectionItemId",
                     "write_value_source": {
-                      "kind": "parent_key_part",
-                      "index": 0
-                    }
-                  },
-                  {
-                    "column_name": "AddressOrdinal",
-                    "column_kind": "parent_key_part",
-                    "parameter_name": "addressOrdinal",
-                    "write_value_source": {
-                      "kind": "parent_key_part",
-                      "index": 1
+                      "kind": "precomputed"
                     }
                   },
                   {
@@ -673,6 +666,23 @@
                     "parameter_name": "ordinal",
                     "write_value_source": {
                       "kind": "ordinal"
+                    }
+                  },
+                  {
+                    "column_name": "ParentCollectionItemId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "parentCollectionItemId",
+                    "write_value_source": {
+                      "kind": "parent_key_part",
+                      "index": 0
+                    }
+                  },
+                  {
+                    "column_name": "School_DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "school_DocumentId",
+                    "write_value_source": {
+                      "kind": "document_id"
                     }
                   },
                   {
@@ -730,15 +740,15 @@
                   "schema": "sample",
                   "name": "SchoolExtensionAddress"
                 },
-                "select_by_keyset_sql_sha256": "fea1faedb5af4e085aeb910f2295fba097fee791d17d5d9c201e1721ecd2c1c5",
+                "select_by_keyset_sql_sha256": "27a3a8f4dde6fdf7363ce336ca2c7f770f51c6f1abaaf09971b17869f5ec86d0",
                 "select_list_columns_in_order": [
+                  "BaseCollectionItemId",
                   "School_DocumentId",
-                  "Ordinal",
                   "Zone"
                 ],
                 "order_by_key_columns_in_order": [
                   "School_DocumentId",
-                  "Ordinal"
+                  "BaseCollectionItemId"
                 ]
               },
               {
@@ -746,10 +756,11 @@
                   "schema": "edfi",
                   "name": "SchoolAddress"
                 },
-                "select_by_keyset_sql_sha256": "314746d66eb4c0d9e0b77ee72503ebdb3db36d821623755414b036bd43aa3dc6",
+                "select_by_keyset_sql_sha256": "a2b834672562b9bcb68322a01e0fc732f4134febe1617fc42c9d56e8501d87ef",
                 "select_list_columns_in_order": [
-                  "School_DocumentId",
+                  "CollectionItemId",
                   "Ordinal",
+                  "School_DocumentId",
                   "City"
                 ],
                 "order_by_key_columns_in_order": [
@@ -762,17 +773,15 @@
                   "schema": "sample",
                   "name": "SchoolExtensionAddressPeriod"
                 },
-                "select_by_keyset_sql_sha256": "c7e895bde1eb04ca7c2b1f641beee69e9fac4ce013dae8a879175f754eee03f0",
+                "select_by_keyset_sql_sha256": "b8b96552c0bea1e072c6efbd945e686abbe72b0bc77c6b9530a71440f9371f2b",
                 "select_list_columns_in_order": [
+                  "BaseCollectionItemId",
                   "School_DocumentId",
-                  "AddressOrdinal",
-                  "Ordinal",
                   "Track"
                 ],
                 "order_by_key_columns_in_order": [
                   "School_DocumentId",
-                  "AddressOrdinal",
-                  "Ordinal"
+                  "BaseCollectionItemId"
                 ]
               },
               {
@@ -780,16 +789,17 @@
                   "schema": "edfi",
                   "name": "SchoolAddressPeriod"
                 },
-                "select_by_keyset_sql_sha256": "b4b48a5a683592522c3b67087a0d01afffef6fdda0f4568a15b01735b683ee17",
+                "select_by_keyset_sql_sha256": "926288cd46ec444c861aef1acae47566367414d170dce05d0b0915530d1283ec",
                 "select_list_columns_in_order": [
-                  "School_DocumentId",
-                  "AddressOrdinal",
+                  "CollectionItemId",
                   "Ordinal",
+                  "ParentCollectionItemId",
+                  "School_DocumentId",
                   "PeriodName"
                 ],
                 "order_by_key_columns_in_order": [
                   "School_DocumentId",
-                  "AddressOrdinal",
+                  "ParentCollectionItemId",
                   "Ordinal"
                 ]
               }

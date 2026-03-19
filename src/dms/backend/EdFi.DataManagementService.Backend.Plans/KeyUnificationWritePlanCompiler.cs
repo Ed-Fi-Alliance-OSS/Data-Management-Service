@@ -138,7 +138,10 @@ internal static class KeyUnificationWritePlanCompiler
     {
         return bindingsInColumnOrder
             .Select((binding, index) => (binding, index))
-            .Where(static tuple => tuple.binding.Source is WriteValueSource.Precomputed)
+            .Where(tuple =>
+                tuple.binding.Source is WriteValueSource.Precomputed
+                && tuple.binding.Column.Kind is not ColumnKind.CollectionKey
+            )
             .Select(static tuple => tuple.index)
             .ToArray();
     }

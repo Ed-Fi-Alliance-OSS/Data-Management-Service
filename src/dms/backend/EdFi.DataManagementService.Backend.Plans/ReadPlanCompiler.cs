@@ -181,6 +181,29 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
         IReadOnlyDictionary<DbColumnName, int> columnOrdinalByName
     )
     {
+        if (RelationalResourceModelCompileValidator.UsesExplicitIdentityMetadata(tableModel))
+        {
+            _ = RelationalResourceModelCompileValidator.ResolveRootScopeLocatorColumnOrThrow(
+                tableModel,
+                "read plan",
+                rootScopeLocatorColumn =>
+                {
+                    ThrowIfMissingHydrationColumn(tableModel, columnOrdinalByName, rootScopeLocatorColumn);
+                }
+            );
+
+            _ = RelationalResourceModelCompileValidator.ResolveHydrationOrderingColumnsOrThrow(
+                tableModel,
+                "read plan",
+                orderingColumn =>
+                {
+                    ThrowIfMissingHydrationColumn(tableModel, columnOrdinalByName, orderingColumn);
+                }
+            );
+
+            return;
+        }
+
         RelationalResourceModelCompileValidator.ValidateDeterministicTableKeyShapeOrThrow(
             tableModel,
             "read plan",
@@ -194,6 +217,20 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
                 }
             }
         );
+    }
+
+    private static void ThrowIfMissingHydrationColumn(
+        DbTableModel tableModel,
+        IReadOnlyDictionary<DbColumnName, int> columnOrdinalByName,
+        DbColumnName column
+    )
+    {
+        if (!columnOrdinalByName.ContainsKey(column))
+        {
+            throw new InvalidOperationException(
+                $"Cannot compile read plan for '{tableModel.Table}': required hydration column '{column.Value}' does not exist in table columns."
+            );
+        }
     }
 
     /// <summary>
@@ -334,7 +371,16 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
         }
 
         var keysetAlias = PlanNamingConventions.GetFixedAlias(PlanSqlAliasRole.Keyset);
-        var rootDocumentIdKeyColumn = tableModel.Key.Columns[0].ColumnName;
+        var rootDocumentIdKeyColumn =
+            RelationalResourceModelCompileValidator.ResolveRootScopeLocatorColumnOrThrow(
+                tableModel,
+                "read plan"
+            );
+        var hydrationOrderingColumns =
+            RelationalResourceModelCompileValidator.ResolveHydrationOrderingColumnsOrThrow(
+                tableModel,
+                "read plan"
+            );
         var writer = new SqlWriter(_sqlDialect);
 
         writer.AppendLine("SELECT");
@@ -368,12 +414,12 @@ public sealed class ReadPlanCompiler(SqlDialect dialect)
 
         using (writer.Indent())
         {
-            for (var index = 0; index < tableModel.Key.Columns.Count; index++)
+            for (var index = 0; index < hydrationOrderingColumns.Count; index++)
             {
-                AppendQualifiedColumn(writer, tableAlias, tableModel.Key.Columns[index].ColumnName);
+                AppendQualifiedColumn(writer, tableAlias, hydrationOrderingColumns[index]);
                 writer.Append(" ASC");
 
-                if (index + 1 < tableModel.Key.Columns.Count)
+                if (index + 1 < hydrationOrderingColumns.Count)
                 {
                     writer.AppendLine(",");
                 }

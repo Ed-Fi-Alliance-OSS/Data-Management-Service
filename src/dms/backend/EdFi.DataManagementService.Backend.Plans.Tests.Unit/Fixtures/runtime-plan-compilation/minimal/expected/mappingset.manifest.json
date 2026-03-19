@@ -427,22 +427,21 @@
                   "schema": "edfi",
                   "name": "StudentAddressCollectionAddress"
                 },
-                "insert_sql_sha256": "a321fd434fc09a949cee5c81ff32e62070edfc10083b7a770c00e28729f7bccd",
+                "insert_sql_sha256": "e59cfd487d01b3ec584577172ae955fa572d06c6e4f67a36c3ae78cd290aad23",
                 "update_sql_sha256": null,
                 "delete_by_parent_sql_sha256": "195e055cc593232ccf44663ada89016e2e4813c51241970ddf2c53d00fb2faf3",
                 "bulk_insert_batching": {
-                  "max_rows_per_batch": 525,
-                  "parameters_per_row": 4,
+                  "max_rows_per_batch": 420,
+                  "parameters_per_row": 5,
                   "max_parameters_per_command": 2100
                 },
                 "column_bindings_in_order": [
                   {
-                    "column_name": "StudentAddressCollection_DocumentId",
-                    "column_kind": "parent_key_part",
-                    "parameter_name": "studentAddressCollection_DocumentId",
+                    "column_name": "CollectionItemId",
+                    "column_kind": "collection_key",
+                    "parameter_name": "collectionItemId",
                     "write_value_source": {
-                      "kind": "parent_key_part",
-                      "index": 0
+                      "kind": "precomputed"
                     }
                   },
                   {
@@ -451,6 +450,14 @@
                     "parameter_name": "ordinal",
                     "write_value_source": {
                       "kind": "ordinal"
+                    }
+                  },
+                  {
+                    "column_name": "StudentAddressCollection_DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "studentAddressCollection_DocumentId",
+                    "write_value_source": {
+                      "kind": "document_id"
                     }
                   },
                   {
@@ -503,10 +510,11 @@
                   "schema": "edfi",
                   "name": "StudentAddressCollectionAddress"
                 },
-                "select_by_keyset_sql_sha256": "65a3123ebc58dbd1a49c3693d94c9bec600629266a2d13b19127721ec9733e5c",
+                "select_by_keyset_sql_sha256": "3268d4429e6880043b38a13ac1dfb9683475b0b1e5a30e569f5a280820fcc252",
                 "select_list_columns_in_order": [
-                  "StudentAddressCollection_DocumentId",
+                  "CollectionItemId",
                   "Ordinal",
+                  "StudentAddressCollection_DocumentId",
                   "AddressType",
                   "City"
                 ],
@@ -949,22 +957,21 @@
                   "schema": "edfi",
                   "name": "StudentAddressCollectionAddress"
                 },
-                "insert_sql_sha256": "3429fde4f6cfdc6cb12be0c86e28d739de8a7742ee1b63c52b054737b294ff1f",
+                "insert_sql_sha256": "90535e996ae1af35fbeaff2d2657b93edc10979cdd34d8dbf0889f9db1f47840",
                 "update_sql_sha256": null,
                 "delete_by_parent_sql_sha256": "d2a64519493e1e01940a6bee249fff75b58e4bfd196aa3f8d6a3b0a40a9cc9bd",
                 "bulk_insert_batching": {
                   "max_rows_per_batch": 1000,
-                  "parameters_per_row": 4,
+                  "parameters_per_row": 5,
                   "max_parameters_per_command": 65535
                 },
                 "column_bindings_in_order": [
                   {
-                    "column_name": "StudentAddressCollection_DocumentId",
-                    "column_kind": "parent_key_part",
-                    "parameter_name": "studentAddressCollection_DocumentId",
+                    "column_name": "CollectionItemId",
+                    "column_kind": "collection_key",
+                    "parameter_name": "collectionItemId",
                     "write_value_source": {
-                      "kind": "parent_key_part",
-                      "index": 0
+                      "kind": "precomputed"
                     }
                   },
                   {
@@ -973,6 +980,14 @@
                     "parameter_name": "ordinal",
                     "write_value_source": {
                       "kind": "ordinal"
+                    }
+                  },
+                  {
+                    "column_name": "StudentAddressCollection_DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "studentAddressCollection_DocumentId",
+                    "write_value_source": {
+                      "kind": "document_id"
                     }
                   },
                   {
@@ -1025,10 +1040,11 @@
                   "schema": "edfi",
                   "name": "StudentAddressCollectionAddress"
                 },
-                "select_by_keyset_sql_sha256": "956c0b28dadcbedfabee68ffacd952c2dcf22cc7667966cb1a19a780b0273fad",
+                "select_by_keyset_sql_sha256": "ce0d3fa214d211e9c6c56af170ea04ea26f71009bcfdb7d898291677d0508baa",
                 "select_list_columns_in_order": [
-                  "StudentAddressCollection_DocumentId",
+                  "CollectionItemId",
                   "Ordinal",
+                  "StudentAddressCollection_DocumentId",
                   "AddressType",
                   "City"
                 ],
