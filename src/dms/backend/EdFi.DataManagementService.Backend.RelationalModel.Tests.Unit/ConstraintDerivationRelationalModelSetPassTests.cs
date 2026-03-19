@@ -10,6 +10,16 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+internal static class ConstraintDerivationAssertionHelpers
+{
+    internal static TableConstraint.Unique FindUniqueConstraint(DbTableModel table, params string[] columns)
+    {
+        return table
+            .Constraints.OfType<TableConstraint.Unique>()
+            .Single(constraint => constraint.Columns.Select(column => column.Value).SequenceEqual(columns));
+    }
+}
+
 /// <summary>
 /// Test fixture for root unique constraint derivation.
 /// </summary>
@@ -39,6 +49,7 @@ public class Given_Root_Unique_Constraint_Derivation
                 new RootIdentityConstraintPass(),
                 new ReferenceConstraintPass(),
                 new ArrayUniquenessConstraintPass(),
+                new StableCollectionConstraintPass(),
             }
         );
 
@@ -204,6 +215,7 @@ public class Given_Incomplete_Reference_Identity_Mapping
                 new RootIdentityConstraintPass(),
                 new ReferenceConstraintPass(),
                 new ArrayUniquenessConstraintPass(),
+                new StableCollectionConstraintPass(),
             }
         );
 
@@ -1538,6 +1550,7 @@ public class Given_Array_Uniqueness_Constraint_Derivation
                 new RootIdentityConstraintPass(),
                 new ReferenceConstraintPass(),
                 new ArrayUniquenessConstraintPass(),
+                new StableCollectionConstraintPass(),
             }
         );
 
@@ -1563,13 +1576,53 @@ public class Given_Array_Uniqueness_Constraint_Derivation
     [Test]
     public void It_should_map_reference_identity_paths_to_document_id()
     {
-        var uniqueConstraint = _addressTable.Constraints.OfType<TableConstraint.Unique>().Single();
+        var uniqueConstraint = ConstraintDerivationAssertionHelpers.FindUniqueConstraint(
+            _addressTable,
+            "BusRoute_DocumentId",
+            "School_DocumentId"
+        );
 
         uniqueConstraint
             .Columns.Select(column => column.Value)
             .Should()
             .Equal("BusRoute_DocumentId", "School_DocumentId");
         uniqueConstraint.Columns.Should().NotContain(column => column.Value == "Ordinal");
+    }
+
+    /// <summary>
+    /// It should add sibling-order uniqueness for top-level collections.
+    /// </summary>
+    [Test]
+    public void It_should_add_sibling_order_uniqueness_for_top_level_collections()
+    {
+        var uniqueConstraint = ConstraintDerivationAssertionHelpers.FindUniqueConstraint(
+            _addressTable,
+            "BusRoute_DocumentId",
+            "Ordinal"
+        );
+
+        uniqueConstraint
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal("BusRoute_DocumentId", "Ordinal");
+    }
+
+    /// <summary>
+    /// It should add parent/root target uniqueness for collection rows with nested children.
+    /// </summary>
+    [Test]
+    public void It_should_add_parent_root_target_uniqueness_for_collection_rows_with_nested_children()
+    {
+        var uniqueConstraint = ConstraintDerivationAssertionHelpers.FindUniqueConstraint(
+            _addressTable,
+            "CollectionItemId",
+            "BusRoute_DocumentId"
+        );
+
+        uniqueConstraint
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal("CollectionItemId", "BusRoute_DocumentId");
     }
 
     /// <summary>
@@ -1595,7 +1648,11 @@ public class Given_Array_Uniqueness_Constraint_Derivation
     [Test]
     public void It_should_include_parent_key_parts_for_nested_arrays()
     {
-        var uniqueConstraint = _periodTable.Constraints.OfType<TableConstraint.Unique>().Single();
+        var uniqueConstraint = ConstraintDerivationAssertionHelpers.FindUniqueConstraint(
+            _periodTable,
+            "ParentCollectionItemId",
+            "BeginDate"
+        );
 
         uniqueConstraint
             .Columns.Select(column => column.Value)
@@ -1652,6 +1709,7 @@ public class Given_Nested_Array_Uniqueness_Constraint_Derivation
                 new RootIdentityConstraintPass(),
                 new ReferenceConstraintPass(),
                 new ArrayUniquenessConstraintPass(),
+                new StableCollectionConstraintPass(),
             }
         );
 
@@ -1677,7 +1735,11 @@ public class Given_Nested_Array_Uniqueness_Constraint_Derivation
     [Test]
     public void It_should_include_parent_key_parts_for_nested_constraints()
     {
-        var uniqueConstraint = _periodTable.Constraints.OfType<TableConstraint.Unique>().Single();
+        var uniqueConstraint = ConstraintDerivationAssertionHelpers.FindUniqueConstraint(
+            _periodTable,
+            "ParentCollectionItemId",
+            "BeginDate"
+        );
 
         uniqueConstraint
             .Columns.Select(column => column.Value)
@@ -1686,12 +1748,52 @@ public class Given_Nested_Array_Uniqueness_Constraint_Derivation
     }
 
     /// <summary>
+    /// It should add sibling-order uniqueness for nested collections.
+    /// </summary>
+    [Test]
+    public void It_should_add_sibling_order_uniqueness_for_nested_collections()
+    {
+        var uniqueConstraint = ConstraintDerivationAssertionHelpers.FindUniqueConstraint(
+            _periodTable,
+            "ParentCollectionItemId",
+            "Ordinal"
+        );
+
+        uniqueConstraint
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal("ParentCollectionItemId", "Ordinal");
+    }
+
+    /// <summary>
+    /// It should add parent/root target uniqueness for nested collection rows with children.
+    /// </summary>
+    [Test]
+    public void It_should_add_parent_root_target_uniqueness_for_nested_collection_rows_with_children()
+    {
+        var uniqueConstraint = ConstraintDerivationAssertionHelpers.FindUniqueConstraint(
+            _periodTable,
+            "CollectionItemId",
+            "BusRoute_DocumentId"
+        );
+
+        uniqueConstraint
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal("CollectionItemId", "BusRoute_DocumentId");
+    }
+
+    /// <summary>
     /// It should include parent key parts for deeper nested constraints.
     /// </summary>
     [Test]
     public void It_should_include_parent_key_parts_for_deeper_nested_constraints()
     {
-        var uniqueConstraint = _sessionTable.Constraints.OfType<TableConstraint.Unique>().Single();
+        var uniqueConstraint = ConstraintDerivationAssertionHelpers.FindUniqueConstraint(
+            _sessionTable,
+            "ParentCollectionItemId",
+            "SessionName"
+        );
 
         uniqueConstraint
             .Columns.Select(column => column.Value)
@@ -1727,6 +1829,7 @@ public class Given_Unmappable_Array_Uniqueness_Path
                 new RootIdentityConstraintPass(),
                 new ReferenceConstraintPass(),
                 new ArrayUniquenessConstraintPass(),
+                new StableCollectionConstraintPass(),
             }
         );
 
@@ -1978,7 +2081,11 @@ public class Given_Extension_Array_Uniqueness_Constraint_Alignment
     [Test]
     public void It_should_align_extension_scoped_constraints_to_base_tables()
     {
-        var uniqueConstraint = _periodTable.Constraints.OfType<TableConstraint.Unique>().Single();
+        var uniqueConstraint = ConstraintDerivationAssertionHelpers.FindUniqueConstraint(
+            _periodTable,
+            "ParentCollectionItemId",
+            "BeginDate"
+        );
 
         uniqueConstraint
             .Columns.Select(column => column.Value)
@@ -2098,6 +2205,7 @@ public class Given_Extension_Child_Array_Uniqueness_Constraint_Derivation
                 new RootIdentityConstraintPass(),
                 new ReferenceConstraintPass(),
                 new ArrayUniquenessConstraintPass(),
+                new StableCollectionConstraintPass(),
             }
         );
 

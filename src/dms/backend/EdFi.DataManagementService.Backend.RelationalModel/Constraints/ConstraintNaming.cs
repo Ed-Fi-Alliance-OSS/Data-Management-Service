@@ -41,6 +41,14 @@ internal static class ConstraintNaming
     /// </summary>
     internal static string BuildArrayUniquenessName(DbTableName table, IReadOnlyList<DbColumnName> columns)
     {
+        return BuildColumnUniqueName(table, columns);
+    }
+
+    /// <summary>
+    /// Builds a unique constraint name from an ordered set of participating columns.
+    /// </summary>
+    internal static string BuildColumnUniqueName(DbTableName table, IReadOnlyList<DbColumnName> columns)
+    {
         var tokens = BuildColumnTokens(columns);
         return BuildName("UX", table, tokens);
     }
