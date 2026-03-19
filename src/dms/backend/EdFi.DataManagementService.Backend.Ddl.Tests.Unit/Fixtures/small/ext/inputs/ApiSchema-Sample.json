@@ -1,0 +1,70 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Sample",
+    "projectEndpointName": "sample",
+    "projectVersion": "1.0.0",
+    "isExtensionProject": true,
+    "description": "Ext fixture Sample extension project for DDL golden tests",
+    "abstractResources": {},
+    "caseInsensitiveEndpointNameMapping": {},
+    "educationOrganizationHierarchy": {},
+    "educationOrganizationTypes": [],
+    "resourceNameMapping": {},
+    "resourceSchemas": {
+      "schoolExtensions": {
+        "resourceName": "School",
+        "isDescriptor": false,
+        "isResourceExtension": true,
+        "isSubclass": false,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [],
+        "documentPathsMapping": {},
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "_ext": {
+              "type": "object",
+              "properties": {
+                "sample": {
+                  "type": "object",
+                  "properties": {
+                    "extensionData": {
+                      "type": "string",
+                      "maxLength": 200
+                    },
+                    "addresses": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "_ext": {
+                            "type": "object",
+                            "properties": {
+                              "sample": {
+                                "type": "object",
+                                "properties": {
+                                  "addressExtData": {
+                                    "type": "string",
+                                    "maxLength": 100
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

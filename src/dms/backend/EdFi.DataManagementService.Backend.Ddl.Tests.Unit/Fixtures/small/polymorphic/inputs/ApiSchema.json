@@ -1,0 +1,131 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Ed-Fi",
+    "projectEndpointName": "ed-fi",
+    "projectVersion": "5.0.0",
+    "isExtensionProject": false,
+    "description": "Polymorphic fixture for DDL golden tests - EducationOrganization abstract with School and LocalEducationAgency subclasses",
+    "abstractResources": {
+      "EducationOrganization": {
+        "identityJsonPaths": [
+          "$.educationOrganizationId"
+        ]
+      }
+    },
+    "caseInsensitiveEndpointNameMapping": {
+      "schools": "schools",
+      "localeducationagencies": "localEducationAgencies"
+    },
+    "educationOrganizationHierarchy": {
+      "EducationOrganization": {},
+      "LocalEducationAgency": {},
+      "School": {
+        "LocalEducationAgency": "$.localEducationAgencyReference.localEducationAgencyId"
+      }
+    },
+    "educationOrganizationTypes": [
+      "LocalEducationAgency",
+      "School",
+      "EducationOrganization"
+    ],
+    "resourceNameMapping": {
+      "School": "schools",
+      "LocalEducationAgency": "localEducationAgencies"
+    },
+    "resourceSchemas": {
+      "schools": {
+        "resourceName": "School",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": true,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [
+          "$.schoolId"
+        ],
+        "documentPathsMapping": {
+          "EducationOrganizationId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.educationOrganizationId"
+          },
+          "SchoolId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.schoolId"
+          }
+        },
+        "subclassType": "domainEntity",
+        "superclassIdentityJsonPath": "$.educationOrganizationId",
+        "superclassProjectName": "Ed-Fi",
+        "superclassResourceName": "EducationOrganization",
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "schoolId": {
+              "type": "integer"
+            },
+            "educationOrganizationId": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "schoolId",
+            "educationOrganizationId"
+          ]
+        }
+      },
+      "localEducationAgencies": {
+        "resourceName": "LocalEducationAgency",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": true,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [
+          "$.localEducationAgencyId"
+        ],
+        "documentPathsMapping": {
+          "EducationOrganizationId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.educationOrganizationId"
+          },
+          "LocalEducationAgencyId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.localEducationAgencyId"
+          }
+        },
+        "subclassType": "domainEntity",
+        "superclassIdentityJsonPath": "$.educationOrganizationId",
+        "superclassProjectName": "Ed-Fi",
+        "superclassResourceName": "EducationOrganization",
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "localEducationAgencyId": {
+              "type": "integer"
+            },
+            "educationOrganizationId": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "localEducationAgencyId",
+            "educationOrganizationId"
+          ]
+        }
+      }
+    }
+  }
+}

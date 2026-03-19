@@ -1,0 +1,24 @@
+{
+  "api_schema_format_version": "1.0.0",
+  "relational_mapping_version": "v1",
+  "effective_schema_hash": "58c74e3ea486c17d14eef5dd678f7e6e520ebf96bef95a26c8ae994c60d8f389",
+  "resource_key_count": 1,
+  "resource_key_seed_hash": "ecd1439457b6f0560a20df2668b314e42dcf6079592558c4695f2b299dfbc301",
+  "schema_components": [
+    {
+      "project_endpoint_name": "ed-fi",
+      "project_name": "Ed-Fi",
+      "project_version": "5.0.0",
+      "is_extension_project": false,
+      "project_hash": "7b86bfc7255354c4bdfff91cd0eb3f8a4cc65242dfb041c95b9826877beb5562"
+    }
+  ],
+  "resource_keys": [
+    {
+      "resource_key_id": 1,
+      "project_name": "Ed-Fi",
+      "resource_name": "NamingStressItem",
+      "resource_version": "5.0.0"
+    }
+  ]
+}

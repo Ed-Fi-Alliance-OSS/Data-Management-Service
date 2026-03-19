@@ -1,0 +1,74 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Ed-Fi",
+    "projectEndpointName": "ed-fi",
+    "projectVersion": "1.0.0",
+    "isExtensionProject": false,
+    "description": "Ext fixture core project for DDL golden tests",
+    "abstractResources": {},
+    "caseInsensitiveEndpointNameMapping": {
+      "schools": "schools"
+    },
+    "educationOrganizationHierarchy": {},
+    "educationOrganizationTypes": [],
+    "resourceNameMapping": {
+      "School": "schools"
+    },
+    "resourceSchemas": {
+      "schools": {
+        "resourceName": "School",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "isSchoolYearEnumeration": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [
+          "$.schoolId"
+        ],
+        "documentPathsMapping": {
+          "SchoolId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.schoolId"
+          },
+          "AddressStreet": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "path": "$.addresses[*].street"
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "schoolId": {
+              "type": "integer"
+            },
+            "addresses": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "street": {
+                    "type": "string",
+                    "maxLength": 100
+                  }
+                },
+                "required": [
+                  "street"
+                ]
+              }
+            }
+          },
+          "required": [
+            "schoolId"
+          ]
+        }
+      }
+    }
+  }
+}

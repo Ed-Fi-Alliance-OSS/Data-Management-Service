@@ -1,0 +1,709 @@
+{
+  "dialect": "mssql",
+  "effective_schema_hash": "aed2277170a95207e1cf932e9e24744cd2b944999e8b42a1fa0c8678eda2ab50",
+  "relational_mapping_version": "v1",
+  "projects": [
+    {
+      "project_endpoint_name": "ed-fi",
+      "project_name": "Ed-Fi",
+      "project_version": "5.0.0",
+      "is_extension": false,
+      "physical_schema": "edfi"
+    }
+  ],
+  "resources": [
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "LocalEducationAgency",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "School",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    }
+  ],
+  "abstract_identity_tables": [
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "EducationOrganization"
+      },
+      "table": {
+        "schema": "edfi",
+        "name": "EducationOrganizationIdentity",
+        "scope": "$",
+        "key_columns": [
+          {
+            "name": "DocumentId",
+            "kind": "ParentKeyPart"
+          }
+        ],
+        "columns": [
+          {
+            "name": "DocumentId",
+            "kind": "ParentKeyPart",
+            "type": {
+              "kind": "Int64"
+            },
+            "is_nullable": false,
+            "source_path": null,
+            "storage": {
+              "kind": "Stored"
+            }
+          },
+          {
+            "name": "EducationOrganizationId",
+            "kind": "Scalar",
+            "type": {
+              "kind": "Int32"
+            },
+            "is_nullable": false,
+            "source_path": "$.educationOrganizationId",
+            "storage": {
+              "kind": "Stored"
+            }
+          },
+          {
+            "name": "Discriminator",
+            "kind": "Scalar",
+            "type": {
+              "kind": "String",
+              "max_length": 256
+            },
+            "is_nullable": false,
+            "source_path": null,
+            "storage": {
+              "kind": "Stored"
+            }
+          }
+        ],
+        "key_unification_classes": [],
+        "constraints": [
+          {
+            "kind": "Unique",
+            "name": "UX_EducationOrganizationIdentity_NK",
+            "columns": [
+              "EducationOrganizationId"
+            ]
+          },
+          {
+            "kind": "Unique",
+            "name": "UX_EducationOrganizationIdentity_RefKey",
+            "columns": [
+              "DocumentId",
+              "EducationOrganizationId"
+            ]
+          },
+          {
+            "kind": "ForeignKey",
+            "name": "FK_EducationOrganizationIdentity_Document",
+            "columns": [
+              "DocumentId"
+            ],
+            "target_table": {
+              "schema": "dms",
+              "name": "Document"
+            },
+            "target_columns": [
+              "DocumentId"
+            ],
+            "on_delete": "Cascade",
+            "on_update": "NoAction"
+          }
+        ]
+      }
+    }
+  ],
+  "abstract_union_views": [
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "EducationOrganization"
+      },
+      "view_name": {
+        "schema": "edfi",
+        "name": "EducationOrganization_View"
+      },
+      "output_columns": [
+        {
+          "column_name": "DocumentId",
+          "type": {
+            "kind": "Int64"
+          },
+          "source_path": null,
+          "target_resource": null
+        },
+        {
+          "column_name": "EducationOrganizationId",
+          "type": {
+            "kind": "Int32"
+          },
+          "source_path": "$.educationOrganizationId",
+          "target_resource": null
+        },
+        {
+          "column_name": "Discriminator",
+          "type": {
+            "kind": "String",
+            "max_length": 256
+          },
+          "source_path": null,
+          "target_resource": null
+        }
+      ],
+      "union_arms": [
+        {
+          "concrete_member": {
+            "project_name": "Ed-Fi",
+            "resource_name": "LocalEducationAgency"
+          },
+          "from_table": {
+            "schema": "edfi",
+            "name": "LocalEducationAgency"
+          },
+          "projection_expressions": [
+            {
+              "kind": "SourceColumn",
+              "column_name": "DocumentId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "LocalEducationAgencyId"
+            },
+            {
+              "kind": "StringLiteral",
+              "value": "Ed-Fi:LocalEducationAgency"
+            }
+          ]
+        },
+        {
+          "concrete_member": {
+            "project_name": "Ed-Fi",
+            "resource_name": "School"
+          },
+          "from_table": {
+            "schema": "edfi",
+            "name": "School"
+          },
+          "projection_expressions": [
+            {
+              "kind": "SourceColumn",
+              "column_name": "DocumentId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "SchoolId"
+            },
+            {
+              "kind": "StringLiteral",
+              "value": "Ed-Fi:School"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "indexes": [
+    {
+      "name": "IX_EducationOrganizationIdToEducationOrganizationId_Target",
+      "table": {
+        "schema": "auth",
+        "name": "EducationOrganizationIdToEducationOrganizationId"
+      },
+      "kind": "Explicit",
+      "is_unique": false,
+      "key_columns": [
+        "TargetEducationOrganizationId"
+      ],
+      "include_columns": [
+        "SourceEducationOrganizationId"
+      ]
+    },
+    {
+      "name": "PK_EducationOrganizationIdentity",
+      "table": {
+        "schema": "edfi",
+        "name": "EducationOrganizationIdentity"
+      },
+      "kind": "PrimaryKey",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_EducationOrganizationIdentity_NK",
+      "table": {
+        "schema": "edfi",
+        "name": "EducationOrganizationIdentity"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "EducationOrganizationId"
+      ]
+    },
+    {
+      "name": "UX_EducationOrganizationIdentity_RefKey",
+      "table": {
+        "schema": "edfi",
+        "name": "EducationOrganizationIdentity"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentId",
+        "EducationOrganizationId"
+      ]
+    },
+    {
+      "name": "PK_LocalEducationAgency",
+      "table": {
+        "schema": "edfi",
+        "name": "LocalEducationAgency"
+      },
+      "kind": "PrimaryKey",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_LocalEducationAgency_NK",
+      "table": {
+        "schema": "edfi",
+        "name": "LocalEducationAgency"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "LocalEducationAgencyId"
+      ]
+    },
+    {
+      "name": "PK_School",
+      "table": {
+        "schema": "edfi",
+        "name": "School"
+      },
+      "kind": "PrimaryKey",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_School_NK",
+      "table": {
+        "schema": "edfi",
+        "name": "School"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "SchoolId"
+      ]
+    }
+  ],
+  "triggers": [
+    {
+      "name": "TR_LocalEducationAgency_AbstractIdentity",
+      "table": {
+        "schema": "edfi",
+        "name": "LocalEducationAgency"
+      },
+      "kind": "AbstractIdentityMaintenance",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "LocalEducationAgencyId"
+      ],
+      "target_table": {
+        "schema": "edfi",
+        "name": "EducationOrganizationIdentity"
+      },
+      "target_column_mappings": [
+        {
+          "source_column": "LocalEducationAgencyId",
+          "target_column": "EducationOrganizationId"
+        }
+      ],
+      "discriminator_value": "Ed-Fi:LocalEducationAgency"
+    },
+    {
+      "name": "TR_LocalEducationAgency_AuthHierarchy_Delete",
+      "table": {
+        "schema": "edfi",
+        "name": "LocalEducationAgency"
+      },
+      "kind": "AuthHierarchyMaintenance",
+      "key_columns": [],
+      "identity_projection_columns": [],
+      "entity_name": "LocalEducationAgency",
+      "trigger_event": "Delete",
+      "identity_column": "LocalEducationAgencyId",
+      "parent_fks": []
+    },
+    {
+      "name": "TR_LocalEducationAgency_AuthHierarchy_Insert",
+      "table": {
+        "schema": "edfi",
+        "name": "LocalEducationAgency"
+      },
+      "kind": "AuthHierarchyMaintenance",
+      "key_columns": [],
+      "identity_projection_columns": [],
+      "entity_name": "LocalEducationAgency",
+      "trigger_event": "Insert",
+      "identity_column": "LocalEducationAgencyId",
+      "parent_fks": []
+    },
+    {
+      "name": "TR_LocalEducationAgency_ReferentialIdentity",
+      "table": {
+        "schema": "edfi",
+        "name": "LocalEducationAgency"
+      },
+      "kind": "ReferentialIdentityMaintenance",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "LocalEducationAgencyId"
+      ],
+      "resource_key_id": 2,
+      "project_name": "Ed-Fi",
+      "resource_name": "LocalEducationAgency",
+      "identity_elements": [
+        {
+          "column": "LocalEducationAgencyId",
+          "identity_json_path": "$.localEducationAgencyId"
+        }
+      ],
+      "superclass_alias": {
+        "resource_key_id": 1,
+        "project_name": "Ed-Fi",
+        "resource_name": "EducationOrganization",
+        "identity_elements": [
+          {
+            "column": "LocalEducationAgencyId",
+            "identity_json_path": "$.educationOrganizationId"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TR_LocalEducationAgency_Stamp",
+      "table": {
+        "schema": "edfi",
+        "name": "LocalEducationAgency"
+      },
+      "kind": "DocumentStamping",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "LocalEducationAgencyId"
+      ]
+    },
+    {
+      "name": "TR_School_AbstractIdentity",
+      "table": {
+        "schema": "edfi",
+        "name": "School"
+      },
+      "kind": "AbstractIdentityMaintenance",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "SchoolId"
+      ],
+      "target_table": {
+        "schema": "edfi",
+        "name": "EducationOrganizationIdentity"
+      },
+      "target_column_mappings": [
+        {
+          "source_column": "SchoolId",
+          "target_column": "EducationOrganizationId"
+        }
+      ],
+      "discriminator_value": "Ed-Fi:School"
+    },
+    {
+      "name": "TR_School_AuthHierarchy_Delete",
+      "table": {
+        "schema": "edfi",
+        "name": "School"
+      },
+      "kind": "AuthHierarchyMaintenance",
+      "key_columns": [],
+      "identity_projection_columns": [],
+      "entity_name": "School",
+      "trigger_event": "Delete",
+      "identity_column": "SchoolId",
+      "parent_fks": []
+    },
+    {
+      "name": "TR_School_AuthHierarchy_Insert",
+      "table": {
+        "schema": "edfi",
+        "name": "School"
+      },
+      "kind": "AuthHierarchyMaintenance",
+      "key_columns": [],
+      "identity_projection_columns": [],
+      "entity_name": "School",
+      "trigger_event": "Insert",
+      "identity_column": "SchoolId",
+      "parent_fks": []
+    },
+    {
+      "name": "TR_School_ReferentialIdentity",
+      "table": {
+        "schema": "edfi",
+        "name": "School"
+      },
+      "kind": "ReferentialIdentityMaintenance",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "SchoolId"
+      ],
+      "resource_key_id": 3,
+      "project_name": "Ed-Fi",
+      "resource_name": "School",
+      "identity_elements": [
+        {
+          "column": "SchoolId",
+          "identity_json_path": "$.schoolId"
+        }
+      ],
+      "superclass_alias": {
+        "resource_key_id": 1,
+        "project_name": "Ed-Fi",
+        "resource_name": "EducationOrganization",
+        "identity_elements": [
+          {
+            "column": "SchoolId",
+            "identity_json_path": "$.educationOrganizationId"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TR_School_Stamp",
+      "table": {
+        "schema": "edfi",
+        "name": "School"
+      },
+      "kind": "DocumentStamping",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "SchoolId"
+      ]
+    }
+  ],
+  "resource_details": [
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "LocalEducationAgency"
+      },
+      "physical_schema": "edfi",
+      "storage_kind": "RelationalTables",
+      "tables": [
+        {
+          "schema": "edfi",
+          "name": "LocalEducationAgency",
+          "scope": "$",
+          "key_columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart"
+            }
+          ],
+          "columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "EducationOrganizationId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": "$.educationOrganizationId",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "LocalEducationAgencyId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": "$.localEducationAgencyId",
+              "storage": {
+                "kind": "Stored"
+              }
+            }
+          ],
+          "key_unification_classes": [],
+          "descriptor_fk_deduplications": [],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_LocalEducationAgency_NK",
+              "columns": [
+                "LocalEducationAgencyId"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_LocalEducationAgency_Document",
+              "columns": [
+                "DocumentId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Document"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            }
+          ]
+        }
+      ],
+      "key_unification_equality_constraints": {
+        "applied": [],
+        "redundant": [],
+        "ignored": [],
+        "ignored_by_reason": {},
+        "skipped": []
+      },
+      "document_reference_bindings": [],
+      "descriptor_edge_sources": [],
+      "extension_sites": []
+    },
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "School"
+      },
+      "physical_schema": "edfi",
+      "storage_kind": "RelationalTables",
+      "tables": [
+        {
+          "schema": "edfi",
+          "name": "School",
+          "scope": "$",
+          "key_columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart"
+            }
+          ],
+          "columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "EducationOrganizationId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": "$.educationOrganizationId",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "SchoolId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": "$.schoolId",
+              "storage": {
+                "kind": "Stored"
+              }
+            }
+          ],
+          "key_unification_classes": [],
+          "descriptor_fk_deduplications": [],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_School_NK",
+              "columns": [
+                "SchoolId"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_School_Document",
+              "columns": [
+                "DocumentId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Document"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            }
+          ]
+        }
+      ],
+      "key_unification_equality_constraints": {
+        "applied": [],
+        "redundant": [],
+        "ignored": [],
+        "ignored_by_reason": {},
+        "skipped": []
+      },
+      "document_reference_bindings": [],
+      "descriptor_edge_sources": [],
+      "extension_sites": []
+    }
+  ]
+}

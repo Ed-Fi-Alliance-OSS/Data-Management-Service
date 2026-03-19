@@ -1,0 +1,464 @@
+{
+  "dialect": "pgsql",
+  "effective_schema_hash": "5464f0003fb92177178525a569b613631de3e2c2062a6e9ceffebc08a08a9b72",
+  "relational_mapping_version": "v1",
+  "projects": [
+    {
+      "project_endpoint_name": "ed-fi",
+      "project_name": "Ed-Fi",
+      "project_version": "1.0.0",
+      "is_extension": false,
+      "physical_schema": "edfi"
+    },
+    {
+      "project_endpoint_name": "sample",
+      "project_name": "Sample",
+      "project_version": "1.0.0",
+      "is_extension": true,
+      "physical_schema": "sample"
+    }
+  ],
+  "resources": [
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "School",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    }
+  ],
+  "abstract_identity_tables": [],
+  "abstract_union_views": [],
+  "indexes": [
+    {
+      "name": "PK_School",
+      "table": {
+        "schema": "edfi",
+        "name": "School"
+      },
+      "kind": "PrimaryKey",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentId"
+      ]
+    },
+    {
+      "name": "UX_School_NK",
+      "table": {
+        "schema": "edfi",
+        "name": "School"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "SchoolId"
+      ]
+    },
+    {
+      "name": "PK_SchoolAddress",
+      "table": {
+        "schema": "edfi",
+        "name": "SchoolAddress"
+      },
+      "kind": "PrimaryKey",
+      "is_unique": true,
+      "key_columns": [
+        "School_DocumentId",
+        "Ordinal"
+      ]
+    },
+    {
+      "name": "PK_SchoolExtension",
+      "table": {
+        "schema": "sample",
+        "name": "SchoolExtension"
+      },
+      "kind": "PrimaryKey",
+      "is_unique": true,
+      "key_columns": [
+        "DocumentId"
+      ]
+    },
+    {
+      "name": "PK_SchoolExtensionAddress",
+      "table": {
+        "schema": "sample",
+        "name": "SchoolExtensionAddress"
+      },
+      "kind": "PrimaryKey",
+      "is_unique": true,
+      "key_columns": [
+        "School_DocumentId",
+        "Ordinal"
+      ]
+    }
+  ],
+  "triggers": [
+    {
+      "name": "TR_School_ReferentialIdentity",
+      "table": {
+        "schema": "edfi",
+        "name": "School"
+      },
+      "kind": "ReferentialIdentityMaintenance",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "SchoolId"
+      ],
+      "resource_key_id": 1,
+      "project_name": "Ed-Fi",
+      "resource_name": "School",
+      "identity_elements": [
+        {
+          "column": "SchoolId",
+          "identity_json_path": "$.schoolId"
+        }
+      ]
+    },
+    {
+      "name": "TR_School_Stamp",
+      "table": {
+        "schema": "edfi",
+        "name": "School"
+      },
+      "kind": "DocumentStamping",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": [
+        "SchoolId"
+      ]
+    },
+    {
+      "name": "TR_SchoolAddress_Stamp",
+      "table": {
+        "schema": "edfi",
+        "name": "SchoolAddress"
+      },
+      "kind": "DocumentStamping",
+      "key_columns": [
+        "School_DocumentId"
+      ],
+      "identity_projection_columns": []
+    },
+    {
+      "name": "TR_SchoolExtension_Stamp",
+      "table": {
+        "schema": "sample",
+        "name": "SchoolExtension"
+      },
+      "kind": "DocumentStamping",
+      "key_columns": [
+        "DocumentId"
+      ],
+      "identity_projection_columns": []
+    },
+    {
+      "name": "TR_SchoolExtensionAddress_Stamp",
+      "table": {
+        "schema": "sample",
+        "name": "SchoolExtensionAddress"
+      },
+      "kind": "DocumentStamping",
+      "key_columns": [
+        "School_DocumentId"
+      ],
+      "identity_projection_columns": []
+    }
+  ],
+  "resource_details": [
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "School"
+      },
+      "physical_schema": "edfi",
+      "storage_kind": "RelationalTables",
+      "tables": [
+        {
+          "schema": "edfi",
+          "name": "School",
+          "scope": "$",
+          "key_columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart"
+            }
+          ],
+          "columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "SchoolId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": "$.schoolId",
+              "storage": {
+                "kind": "Stored"
+              }
+            }
+          ],
+          "key_unification_classes": [],
+          "descriptor_fk_deduplications": [],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_School_NK",
+              "columns": [
+                "SchoolId"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_School_Document",
+              "columns": [
+                "DocumentId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Document"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            }
+          ]
+        },
+        {
+          "schema": "sample",
+          "name": "SchoolExtension",
+          "scope": "$._ext.sample",
+          "key_columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart"
+            }
+          ],
+          "columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ExtensionData",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 200
+              },
+              "is_nullable": true,
+              "source_path": "$._ext.sample.extensionData",
+              "storage": {
+                "kind": "Stored"
+              }
+            }
+          ],
+          "key_unification_classes": [],
+          "descriptor_fk_deduplications": [],
+          "constraints": [
+            {
+              "kind": "ForeignKey",
+              "name": "FK_SchoolExtension_School",
+              "columns": [
+                "DocumentId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "School"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            }
+          ]
+        },
+        {
+          "schema": "sample",
+          "name": "SchoolExtensionAddress",
+          "scope": "$._ext.sample.addresses[*]._ext.sample",
+          "key_columns": [
+            {
+              "name": "School_DocumentId",
+              "kind": "ParentKeyPart"
+            },
+            {
+              "name": "Ordinal",
+              "kind": "Ordinal"
+            }
+          ],
+          "columns": [
+            {
+              "name": "School_DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "Ordinal",
+              "kind": "Ordinal",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "AddressExtData",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 100
+              },
+              "is_nullable": true,
+              "source_path": "$._ext.sample.addresses[*]._ext.sample.addressExtData",
+              "storage": {
+                "kind": "Stored"
+              }
+            }
+          ],
+          "key_unification_classes": [],
+          "descriptor_fk_deduplications": [],
+          "constraints": [
+            {
+              "kind": "ForeignKey",
+              "name": "FK_SchoolExtensionAddress_SchoolAddress",
+              "columns": [
+                "School_DocumentId",
+                "Ordinal"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "SchoolAddress"
+              },
+              "target_columns": [
+                "School_DocumentId",
+                "Ordinal"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            }
+          ]
+        },
+        {
+          "schema": "edfi",
+          "name": "SchoolAddress",
+          "scope": "$.addresses[*]",
+          "key_columns": [
+            {
+              "name": "School_DocumentId",
+              "kind": "ParentKeyPart"
+            },
+            {
+              "name": "Ordinal",
+              "kind": "Ordinal"
+            }
+          ],
+          "columns": [
+            {
+              "name": "School_DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "Ordinal",
+              "kind": "Ordinal",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "Street",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 100
+              },
+              "is_nullable": false,
+              "source_path": "$.addresses[*].street",
+              "storage": {
+                "kind": "Stored"
+              }
+            }
+          ],
+          "key_unification_classes": [],
+          "descriptor_fk_deduplications": [],
+          "constraints": [
+            {
+              "kind": "ForeignKey",
+              "name": "FK_SchoolAddress_School",
+              "columns": [
+                "School_DocumentId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "School"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            }
+          ]
+        }
+      ],
+      "key_unification_equality_constraints": {
+        "applied": [],
+        "redundant": [],
+        "ignored": [],
+        "ignored_by_reason": {},
+        "skipped": []
+      },
+      "document_reference_bindings": [],
+      "descriptor_edge_sources": [],
+      "extension_sites": []
+    }
+  ]
+}

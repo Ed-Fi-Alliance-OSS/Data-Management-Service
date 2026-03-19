@@ -1,0 +1,9 @@
+{
+  "apiSchemaFiles": ["ApiSchema.json"],
+  "dialects": ["pgsql", "mssql"],
+  "emitDdlManifest": true,
+  "_notes": [
+    "nameOverride ('ShortName' -> 'override_short_name' in ApiSchema.json): nameOverride affects reference binding (how the field is resolved in cross-resource references), not DDL column naming. The generated column name is still derived from the JSON path ('shortName'), so the DDL output does not visibly change due to nameOverride. This fixture verifies that nameOverride fields are handled without error and without unintended column renames.",
+    "Collision-pair design ('ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThree' and 'ThisIsAVeryLongFieldNameThatWillBeTruncatedByPostgreSQLAtSixtyThreeX'): These two field names are identical for the first 63 characters and differ only at position 64 (the trailing 'X'). PostgreSQL silently truncates identifiers to 63 bytes, which would cause both columns to map to the same name without disambiguation. The DDL generator must detect this collision and produce distinct, unambiguous column names for both fields."
+  ]
+}
