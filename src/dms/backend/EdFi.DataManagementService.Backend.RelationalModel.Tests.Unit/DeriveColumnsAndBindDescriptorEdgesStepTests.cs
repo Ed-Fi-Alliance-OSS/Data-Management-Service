@@ -280,7 +280,7 @@ public class Given_A_Descriptor_Scalar_Array
         _table
             .Columns.Select(column => column.ColumnName.Value)
             .Should()
-            .Equal("School_DocumentId", "Ordinal", "GradeLevelDescriptor_DescriptorId");
+            .Equal("CollectionItemId", "School_DocumentId", "Ordinal", "GradeLevelDescriptor_DescriptorId");
 
         var descriptorColumn = _table.Columns.Single(column => column.Kind == ColumnKind.DescriptorFk);
 

@@ -151,7 +151,8 @@ public class Given_A_Relational_Model_Manifest_Emitter
         rootColumns.Should().StartWith("DocumentId");
 
         var addressColumns = GetColumnNames(tables, "SchoolAddress");
-        addressColumns.Should().StartWith("School_DocumentId", "Ordinal");
+        addressColumns[0].Should().Be("CollectionItemId");
+        addressColumns.Should().Contain("School_DocumentId");
     }
 
     /// <summary>

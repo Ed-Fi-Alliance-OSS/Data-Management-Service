@@ -1583,7 +1583,7 @@ public class Given_Array_Uniqueness_Constraint_Derivation
         uniqueConstraint
             .Columns.Select(column => column.Value)
             .Should()
-            .Equal("BusRoute_DocumentId", "AddressOrdinal", "BeginDate");
+            .Equal("ParentCollectionItemId", "BeginDate");
         uniqueConstraint.Columns.Should().NotContain(column => column.Value == "Ordinal");
     }
 }
@@ -1648,7 +1648,7 @@ public class Given_Nested_Array_Uniqueness_Constraint_Derivation
         uniqueConstraint
             .Columns.Select(column => column.Value)
             .Should()
-            .Equal("BusRoute_DocumentId", "AddressOrdinal", "BeginDate");
+            .Equal("ParentCollectionItemId", "BeginDate");
     }
 
     /// <summary>
@@ -1662,7 +1662,7 @@ public class Given_Nested_Array_Uniqueness_Constraint_Derivation
         uniqueConstraint
             .Columns.Select(column => column.Value)
             .Should()
-            .Equal("BusRoute_DocumentId", "AddressOrdinal", "PeriodOrdinal", "SessionName");
+            .Equal("ParentCollectionItemId", "SessionName");
     }
 }
 
@@ -1949,7 +1949,7 @@ public class Given_Extension_Array_Uniqueness_Constraint_Alignment
         uniqueConstraint
             .Columns.Select(column => column.Value)
             .Should()
-            .Equal("Contact_DocumentId", "AddressOrdinal", "BeginDate");
+            .Equal("ParentCollectionItemId", "BeginDate");
     }
 }
 

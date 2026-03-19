@@ -3465,8 +3465,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Assessment_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -3552,6 +3551,18 @@
       ]
     },
     {
+      "name": "IX_AssessmentAdministrationAssessmentBatteryPart_Ass_261139981f",
+      "table": {
+        "schema": "edfi",
+        "name": "AssessmentAdministrationAssessmentBatteryPart"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "AssessmentAdministration_DocumentId"
+      ]
+    },
+    {
       "name": "IX_AssessmentAdministrationAssessmentBatteryPart_Ass_eb3b6a414e",
       "table": {
         "schema": "edfi",
@@ -3575,8 +3586,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "AssessmentAdministration_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -3647,7 +3657,7 @@
       ]
     },
     {
-      "name": "PK_AssessmentAdministrationParticipationAdministrati_e047dbf194",
+      "name": "PK_AssessmentAdministrationParticipationAdministrati_34716c11e4",
       "table": {
         "schema": "edfi",
         "name": "AssessmentAdministrationParticipationAdministrationP_c63833eb57"
@@ -3655,8 +3665,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "AssessmentAdministrationParticipation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -3682,8 +3691,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "AssessmentAdministration_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -3720,8 +3728,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Assessment_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -3746,8 +3753,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Assessment_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -3818,6 +3824,18 @@
       ]
     },
     {
+      "name": "IX_AssessmentBatteryPartObjectiveAssessment_Assessme_85f4c85249",
+      "table": {
+        "schema": "edfi",
+        "name": "AssessmentBatteryPartObjectiveAssessment"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "AssessmentBatteryPart_DocumentId"
+      ]
+    },
+    {
       "name": "IX_AssessmentBatteryPartObjectiveAssessment_Objectiv_7aa71ac21f",
       "table": {
         "schema": "edfi",
@@ -3841,8 +3859,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "AssessmentBatteryPart_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -3866,8 +3883,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Assessment_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -3950,6 +3966,18 @@
       ]
     },
     {
+      "name": "IX_AssessmentItemLearningStandard_AssessmentItem_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "AssessmentItemLearningStandard"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "AssessmentItem_DocumentId"
+      ]
+    },
+    {
       "name": "IX_AssessmentItemLearningStandard_LearningStandard_D_c452f3d7ad",
       "table": {
         "schema": "edfi",
@@ -3971,8 +3999,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "AssessmentItem_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -3984,8 +4011,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "AssessmentItem_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -4022,8 +4048,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Assessment_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -4084,8 +4109,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Assessment_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -4123,8 +4147,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Assessment_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -4161,8 +4184,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Assessment_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -4176,6 +4198,18 @@
       "key_columns": [
         "Assessment_DocumentId",
         "PlatformTypeDescriptor_DescriptorId"
+      ]
+    },
+    {
+      "name": "IX_AssessmentProgram_Assessment_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "AssessmentProgram"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "Assessment_DocumentId"
       ]
     },
     {
@@ -4214,8 +4248,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Assessment_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -4251,8 +4284,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Assessment_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -4335,6 +4367,18 @@
       ]
     },
     {
+      "name": "IX_AssessmentScoreRangeLearningStandardLearningStand_9abee2ecb5",
+      "table": {
+        "schema": "edfi",
+        "name": "AssessmentScoreRangeLearningStandardLearningStandard"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "AssessmentScoreRangeLearningStandard_DocumentId"
+      ]
+    },
+    {
       "name": "IX_AssessmentScoreRangeLearningStandardLearningStand_d563784bff",
       "table": {
         "schema": "edfi",
@@ -4356,8 +4400,19 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "AssessmentScoreRangeLearningStandard_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
+      ]
+    },
+    {
+      "name": "IX_AssessmentSection_Assessment_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "AssessmentSection"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "Assessment_DocumentId"
       ]
     },
     {
@@ -4386,8 +4441,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Assessment_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -4450,8 +4504,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "BalanceSheetDimension_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -4506,6 +4559,18 @@
       ]
     },
     {
+      "name": "IX_BellScheduleClassPeriod_BellSchedule_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "BellScheduleClassPeriod"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "BellSchedule_DocumentId"
+      ]
+    },
+    {
       "name": "IX_BellScheduleClassPeriod_ClassPeriod_DocumentId_Cl_5e988a8315",
       "table": {
         "schema": "edfi",
@@ -4528,8 +4593,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "BellSchedule_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -4541,8 +4605,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "BellSchedule_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -4579,8 +4642,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "BellSchedule_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -4752,8 +4814,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "CalendarDate_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -4790,8 +4851,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Calendar_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -5006,8 +5066,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "ChartOfAccount_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -5084,8 +5143,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "ClassPeriod_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -5191,6 +5249,18 @@
       ]
     },
     {
+      "name": "IX_CohortProgram_Cohort_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "CohortProgram"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "Cohort_DocumentId"
+      ]
+    },
+    {
       "name": "IX_CohortProgram_ProgramProgram_DocumentId_ProgramPr_8646255645",
       "table": {
         "schema": "edfi",
@@ -5226,8 +5296,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Cohort_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -5324,8 +5393,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "CommunityOrganization_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -5346,6 +5414,19 @@
       ]
     },
     {
+      "name": "IX_CommunityOrganizationAddressPeriod_ParentCollecti_6aa8425e21",
+      "table": {
+        "schema": "edfi",
+        "name": "CommunityOrganizationAddressPeriod"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "CommunityOrganization_DocumentId"
+      ]
+    },
+    {
       "name": "PK_CommunityOrganizationAddressPeriod",
       "table": {
         "schema": "edfi",
@@ -5354,13 +5435,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "CommunityOrganization_DocumentId",
-        "AddressOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_CommunityOrganizationAddressPeriod_AddressOrdinal_66e9921271",
+      "name": "UX_CommunityOrganizationAddressPeriod_BeginDate_Pare_6b654353f5",
       "table": {
         "schema": "edfi",
         "name": "CommunityOrganizationAddressPeriod"
@@ -5368,8 +5447,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "CommunityOrganization_DocumentId",
-        "AddressOrdinal",
+        "ParentCollectionItemId",
         "BeginDate"
       ]
     },
@@ -5394,8 +5472,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "CommunityOrganization_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -5432,8 +5509,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "CommunityOrganization_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -5494,8 +5570,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "CommunityOrganization_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -5512,6 +5587,19 @@
       ]
     },
     {
+      "name": "IX_CommunityOrganizationIndicatorPeriod_ParentCollec_9e62b652f1",
+      "table": {
+        "schema": "edfi",
+        "name": "CommunityOrganizationIndicatorPeriod"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "CommunityOrganization_DocumentId"
+      ]
+    },
+    {
       "name": "PK_CommunityOrganizationIndicatorPeriod",
       "table": {
         "schema": "edfi",
@@ -5520,13 +5608,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "CommunityOrganization_DocumentId",
-        "IndicatorOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_CommunityOrganizationIndicatorPeriod_BeginDate_In_0f3699d61f",
+      "name": "UX_CommunityOrganizationIndicatorPeriod_BeginDate_Pa_6def6f30d6",
       "table": {
         "schema": "edfi",
         "name": "CommunityOrganizationIndicatorPeriod"
@@ -5534,8 +5620,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "CommunityOrganization_DocumentId",
-        "IndicatorOrdinal",
+        "ParentCollectionItemId",
         "BeginDate"
       ]
     },
@@ -5560,8 +5645,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "CommunityOrganization_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -5610,8 +5694,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "CommunityOrganization_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -5770,8 +5853,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "CommunityProvider_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -5792,6 +5874,19 @@
       ]
     },
     {
+      "name": "IX_CommunityProviderAddressPeriod_ParentCollectionIt_480a9a5eaa",
+      "table": {
+        "schema": "edfi",
+        "name": "CommunityProviderAddressPeriod"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "CommunityProvider_DocumentId"
+      ]
+    },
+    {
       "name": "PK_CommunityProviderAddressPeriod",
       "table": {
         "schema": "edfi",
@@ -5800,13 +5895,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "CommunityProvider_DocumentId",
-        "AddressOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_CommunityProviderAddressPeriod_AddressOrdinal_Beg_a48c838b35",
+      "name": "UX_CommunityProviderAddressPeriod_BeginDate_ParentCo_8c16445a37",
       "table": {
         "schema": "edfi",
         "name": "CommunityProviderAddressPeriod"
@@ -5814,8 +5907,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "CommunityProvider_DocumentId",
-        "AddressOrdinal",
+        "ParentCollectionItemId",
         "BeginDate"
       ]
     },
@@ -5840,8 +5932,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "CommunityProvider_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -5878,8 +5969,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "CommunityProvider_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -5940,8 +6030,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "CommunityProvider_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -5958,6 +6047,19 @@
       ]
     },
     {
+      "name": "IX_CommunityProviderIndicatorPeriod_ParentCollection_a22d09009d",
+      "table": {
+        "schema": "edfi",
+        "name": "CommunityProviderIndicatorPeriod"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "CommunityProvider_DocumentId"
+      ]
+    },
+    {
       "name": "PK_CommunityProviderIndicatorPeriod",
       "table": {
         "schema": "edfi",
@@ -5966,13 +6068,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "CommunityProvider_DocumentId",
-        "IndicatorOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_CommunityProviderIndicatorPeriod_BeginDate_Indica_3b986e391c",
+      "name": "UX_CommunityProviderIndicatorPeriod_BeginDate_Parent_664ac1d165",
       "table": {
         "schema": "edfi",
         "name": "CommunityProviderIndicatorPeriod"
@@ -5980,8 +6080,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "CommunityProvider_DocumentId",
-        "IndicatorOrdinal",
+        "ParentCollectionItemId",
         "BeginDate"
       ]
     },
@@ -6006,8 +6105,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "CommunityProvider_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -6056,8 +6154,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "CommunityProvider_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -6334,8 +6431,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Contact_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -6356,6 +6452,19 @@
       ]
     },
     {
+      "name": "IX_ContactAddressPeriod_ParentCollectionItemId_Conta_4010624d8b",
+      "table": {
+        "schema": "edfi",
+        "name": "ContactAddressPeriod"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "Contact_DocumentId"
+      ]
+    },
+    {
       "name": "PK_ContactAddressPeriod",
       "table": {
         "schema": "edfi",
@@ -6364,13 +6473,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Contact_DocumentId",
-        "AddressOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_ContactAddressPeriod_AddressOrdinal_BeginDate_Con_804d3ddc1b",
+      "name": "UX_ContactAddressPeriod_BeginDate_ParentCollectionItemId",
       "table": {
         "schema": "edfi",
         "name": "ContactAddressPeriod"
@@ -6378,8 +6485,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "Contact_DocumentId",
-        "AddressOrdinal",
+        "ParentCollectionItemId",
         "BeginDate"
       ]
     },
@@ -6404,8 +6510,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Contact_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -6455,8 +6560,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Contact_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -6493,8 +6597,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Contact_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -6523,6 +6626,19 @@
       ]
     },
     {
+      "name": "IX_ContactLanguageUs_ParentCollectionItemId_Contact_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "ContactLanguageUs"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "Contact_DocumentId"
+      ]
+    },
+    {
       "name": "PK_ContactLanguageUs",
       "table": {
         "schema": "edfi",
@@ -6531,13 +6647,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Contact_DocumentId",
-        "LanguageOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_ContactLanguageUs_LanguageOrdinal_Contact_Documen_e9c6b31698",
+      "name": "UX_ContactLanguageUs_ParentCollectionItemId_Language_cef7c35816",
       "table": {
         "schema": "edfi",
         "name": "ContactLanguageUs"
@@ -6545,8 +6659,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "Contact_DocumentId",
-        "LanguageOrdinal",
+        "ParentCollectionItemId",
         "LanguageUseDescriptor_DescriptorId"
       ]
     },
@@ -6571,8 +6684,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Contact_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -6633,8 +6745,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Contact_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -6672,8 +6783,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Contact_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -6823,8 +6933,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Course_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -6861,8 +6970,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Course_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -6899,8 +7007,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Course_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -6914,6 +7021,18 @@
       "key_columns": [
         "Course_DocumentId",
         "CourseIdentificationSystemDescriptor_DescriptorId"
+      ]
+    },
+    {
+      "name": "IX_CourseLearningStandard_Course_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "CourseLearningStandard"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "Course_DocumentId"
       ]
     },
     {
@@ -6938,8 +7057,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Course_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -6963,8 +7081,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Course_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -7001,8 +7118,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Course_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -7123,8 +7239,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "CourseOffering_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -7161,8 +7276,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "CourseOffering_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -7199,8 +7313,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "CourseOffering_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -7391,8 +7504,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "CourseTranscript_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -7429,8 +7541,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "CourseTranscript_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -7474,6 +7585,18 @@
       ]
     },
     {
+      "name": "IX_CourseTranscriptCourseProgram_CourseTranscript_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "CourseTranscriptCourseProgram"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "CourseTranscript_DocumentId"
+      ]
+    },
+    {
       "name": "PK_CourseTranscriptCourseProgram",
       "table": {
         "schema": "edfi",
@@ -7482,8 +7605,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "CourseTranscript_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -7507,8 +7629,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "CourseTranscript_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -7545,8 +7666,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "CourseTranscript_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -7583,8 +7703,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "CourseTranscript_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -7598,6 +7717,18 @@
       "key_columns": [
         "CourseTranscript_DocumentId",
         "AwardDate"
+      ]
+    },
+    {
+      "name": "IX_CourseTranscriptSection_CourseTranscript_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "CourseTranscriptSection"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "CourseTranscript_DocumentId"
       ]
     },
     {
@@ -7626,8 +7757,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "CourseTranscript_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -7750,8 +7880,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Credential_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -7776,8 +7905,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Credential_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -7814,8 +7942,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Credential_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -7928,8 +8055,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "DescriptorMapping_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -8043,8 +8169,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "DisciplineAction_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -8058,6 +8183,18 @@
       "key_columns": [
         "DisciplineAction_DocumentId",
         "DisciplineDescriptor_DescriptorId"
+      ]
+    },
+    {
+      "name": "IX_DisciplineActionStaff_DisciplineAction_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "DisciplineActionStaff"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "DisciplineAction_DocumentId"
       ]
     },
     {
@@ -8082,8 +8219,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "DisciplineAction_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -8100,6 +8236,18 @@
         "StudentDisciplineIncidentBehaviorAssociation_IncidentIdentifier",
         "StudentDisciplineIncidentBehaviorAssociation_SchoolId",
         "StudentDisciplineIncidentBehaviorAssociation_StudentUniqueId"
+      ]
+    },
+    {
+      "name": "IX_DisciplineActionStudentDisciplineIncidentBehavior_e10567d688",
+      "table": {
+        "schema": "edfi",
+        "name": "DisciplineActionStudentDisciplineIncidentBehaviorAssociation"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "DisciplineAction_DocumentId"
       ]
     },
     {
@@ -8123,8 +8271,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "DisciplineAction_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -8224,8 +8371,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "DisciplineIncident_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -8262,8 +8408,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "DisciplineIncident_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -8302,8 +8447,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "DisciplineIncident_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -8426,8 +8570,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "EducationContent_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -8464,8 +8607,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "EducationContent_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -8490,8 +8632,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "EducationContent_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -8521,6 +8662,18 @@
       ]
     },
     {
+      "name": "IX_EducationContentDerivativeSourceEducationContent__f101ccbdc7",
+      "table": {
+        "schema": "edfi",
+        "name": "EducationContentDerivativeSourceEducationContent"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "EducationContent_DocumentId"
+      ]
+    },
+    {
       "name": "PK_EducationContentDerivativeSourceEducationContent",
       "table": {
         "schema": "edfi",
@@ -8529,8 +8682,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "EducationContent_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -8542,8 +8694,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "EducationContent_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -8568,8 +8719,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "EducationContent_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -8606,8 +8756,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "EducationContent_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -8818,8 +8967,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "EducationOrganizationNetwork_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -8840,6 +8988,19 @@
       ]
     },
     {
+      "name": "IX_EducationOrganizationNetworkAddressPeriod_ParentC_114960f234",
+      "table": {
+        "schema": "edfi",
+        "name": "EducationOrganizationNetworkAddressPeriod"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "EducationOrganizationNetwork_DocumentId"
+      ]
+    },
+    {
       "name": "PK_EducationOrganizationNetworkAddressPeriod",
       "table": {
         "schema": "edfi",
@@ -8848,13 +9009,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "EducationOrganizationNetwork_DocumentId",
-        "AddressOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_EducationOrganizationNetworkAddressPeriod_Address_1a55c0a94c",
+      "name": "UX_EducationOrganizationNetworkAddressPeriod_BeginDa_12fda0fddb",
       "table": {
         "schema": "edfi",
         "name": "EducationOrganizationNetworkAddressPeriod"
@@ -8862,8 +9021,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "EducationOrganizationNetwork_DocumentId",
-        "AddressOrdinal",
+        "ParentCollectionItemId",
         "BeginDate"
       ]
     },
@@ -8939,8 +9097,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "EducationOrganizationNetwork_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -8977,8 +9134,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "EducationOrganizationNetwork_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -9039,8 +9195,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "EducationOrganizationNetwork_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -9057,6 +9212,19 @@
       ]
     },
     {
+      "name": "IX_EducationOrganizationNetworkIndicatorPeriod_Paren_ee23069fb8",
+      "table": {
+        "schema": "edfi",
+        "name": "EducationOrganizationNetworkIndicatorPeriod"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "EducationOrganizationNetwork_DocumentId"
+      ]
+    },
+    {
       "name": "PK_EducationOrganizationNetworkIndicatorPeriod",
       "table": {
         "schema": "edfi",
@@ -9065,13 +9233,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "EducationOrganizationNetwork_DocumentId",
-        "IndicatorOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_EducationOrganizationNetworkIndicatorPeriod_Begin_d20d820174",
+      "name": "UX_EducationOrganizationNetworkIndicatorPeriod_Begin_0de42e0694",
       "table": {
         "schema": "edfi",
         "name": "EducationOrganizationNetworkIndicatorPeriod"
@@ -9079,8 +9245,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "EducationOrganizationNetwork_DocumentId",
-        "IndicatorOrdinal",
+        "ParentCollectionItemId",
         "BeginDate"
       ]
     },
@@ -9105,8 +9270,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "EducationOrganizationNetwork_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -9155,8 +9319,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "EducationOrganizationNetwork_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -9330,8 +9493,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "EducationServiceCenter_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -9352,6 +9514,19 @@
       ]
     },
     {
+      "name": "IX_EducationServiceCenterAddressPeriod_ParentCollect_d3aed3c8a5",
+      "table": {
+        "schema": "edfi",
+        "name": "EducationServiceCenterAddressPeriod"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "EducationServiceCenter_DocumentId"
+      ]
+    },
+    {
       "name": "PK_EducationServiceCenterAddressPeriod",
       "table": {
         "schema": "edfi",
@@ -9360,13 +9535,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "EducationServiceCenter_DocumentId",
-        "AddressOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_EducationServiceCenterAddressPeriod_AddressOrdina_b984eaf6f4",
+      "name": "UX_EducationServiceCenterAddressPeriod_BeginDate_Par_9c2d53142d",
       "table": {
         "schema": "edfi",
         "name": "EducationServiceCenterAddressPeriod"
@@ -9374,8 +9547,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "EducationServiceCenter_DocumentId",
-        "AddressOrdinal",
+        "ParentCollectionItemId",
         "BeginDate"
       ]
     },
@@ -9400,8 +9572,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "EducationServiceCenter_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -9438,8 +9609,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "EducationServiceCenter_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -9500,8 +9670,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "EducationServiceCenter_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -9518,6 +9687,19 @@
       ]
     },
     {
+      "name": "IX_EducationServiceCenterIndicatorPeriod_ParentColle_fc5991af5b",
+      "table": {
+        "schema": "edfi",
+        "name": "EducationServiceCenterIndicatorPeriod"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "EducationServiceCenter_DocumentId"
+      ]
+    },
+    {
       "name": "PK_EducationServiceCenterIndicatorPeriod",
       "table": {
         "schema": "edfi",
@@ -9526,13 +9708,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "EducationServiceCenter_DocumentId",
-        "IndicatorOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_EducationServiceCenterIndicatorPeriod_BeginDate_I_6b1c95bf55",
+      "name": "UX_EducationServiceCenterIndicatorPeriod_BeginDate_P_f506a62274",
       "table": {
         "schema": "edfi",
         "name": "EducationServiceCenterIndicatorPeriod"
@@ -9540,8 +9720,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "EducationServiceCenter_DocumentId",
-        "IndicatorOrdinal",
+        "ParentCollectionItemId",
         "BeginDate"
       ]
     },
@@ -9566,8 +9745,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "EducationServiceCenter_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -9616,8 +9794,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "EducationServiceCenter_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -9837,8 +10014,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "FunctionDimension_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -9914,8 +10090,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "FundDimension_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -10119,8 +10294,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Grade_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -10233,6 +10407,18 @@
       ]
     },
     {
+      "name": "IX_GradebookEntryLearningStandard_GradebookEntry_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "GradebookEntryLearningStandard"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "GradebookEntry_DocumentId"
+      ]
+    },
+    {
       "name": "IX_GradebookEntryLearningStandard_LearningStandard_D_c894497c5d",
       "table": {
         "schema": "edfi",
@@ -10254,8 +10440,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "GradebookEntry_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -10451,8 +10636,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "GraduationPlan_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -10483,6 +10667,19 @@
       ]
     },
     {
+      "name": "IX_GraduationPlanCreditsByCoursCours_ParentCollectio_3ca0b1bd77",
+      "table": {
+        "schema": "edfi",
+        "name": "GraduationPlanCreditsByCoursCours"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "GraduationPlan_DocumentId"
+      ]
+    },
+    {
       "name": "PK_GraduationPlanCreditsByCoursCours",
       "table": {
         "schema": "edfi",
@@ -10491,9 +10688,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "GraduationPlan_DocumentId",
-        "CreditsByCoursOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -10529,8 +10724,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "GraduationPlan_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -10579,8 +10773,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "GraduationPlan_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -10655,8 +10848,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "GraduationPlan_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -10685,6 +10877,19 @@
       ]
     },
     {
+      "name": "IX_GraduationPlanRequiredAssessmentScore_ParentColle_6344b15e70",
+      "table": {
+        "schema": "edfi",
+        "name": "GraduationPlanRequiredAssessmentScore"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "GraduationPlan_DocumentId"
+      ]
+    },
+    {
       "name": "IX_GraduationPlanRequiredAssessmentScore_ResultDatat_34d8007272",
       "table": {
         "schema": "edfi",
@@ -10705,13 +10910,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "GraduationPlan_DocumentId",
-        "RequiredAssessmentOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_GraduationPlanRequiredAssessmentScore_RequiredAss_173a5aab54",
+      "name": "UX_GraduationPlanRequiredAssessmentScore_ParentColle_7db2e3c45e",
       "table": {
         "schema": "edfi",
         "name": "GraduationPlanRequiredAssessmentScore"
@@ -10719,8 +10922,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "GraduationPlan_DocumentId",
-        "RequiredAssessmentOrdinal",
+        "ParentCollectionItemId",
         "AssessmentReportingMethodDescriptor_DescriptorId"
       ]
     },
@@ -10821,8 +11023,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Intervention_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -10859,8 +11060,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Intervention_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -10897,8 +11097,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Intervention_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -10928,6 +11127,18 @@
       ]
     },
     {
+      "name": "IX_InterventionEducationContent_Intervention_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "InterventionEducationContent"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "Intervention_DocumentId"
+      ]
+    },
+    {
       "name": "PK_InterventionEducationContent",
       "table": {
         "schema": "edfi",
@@ -10936,8 +11147,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Intervention_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -10955,6 +11165,18 @@
       ]
     },
     {
+      "name": "IX_InterventionInterventionPrescription_Intervention_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "InterventionInterventionPrescription"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "Intervention_DocumentId"
+      ]
+    },
+    {
       "name": "PK_InterventionInterventionPrescription",
       "table": {
         "schema": "edfi",
@@ -10963,8 +11185,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Intervention_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -10976,8 +11197,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Intervention_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -11002,8 +11222,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Intervention_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -11041,8 +11260,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Intervention_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -11155,8 +11373,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "InterventionPrescription_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -11193,8 +11410,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "InterventionPrescription_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -11231,8 +11447,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "InterventionPrescription_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -11262,6 +11477,18 @@
       ]
     },
     {
+      "name": "IX_InterventionPrescriptionEducationContent_Interven_754b4c6dd8",
+      "table": {
+        "schema": "edfi",
+        "name": "InterventionPrescriptionEducationContent"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "InterventionPrescription_DocumentId"
+      ]
+    },
+    {
       "name": "PK_InterventionPrescriptionEducationContent",
       "table": {
         "schema": "edfi",
@@ -11270,8 +11497,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "InterventionPrescription_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -11283,8 +11509,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "InterventionPrescription_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -11321,8 +11546,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "InterventionPrescription_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -11347,8 +11571,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "InterventionPrescription_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -11362,6 +11585,18 @@
       "key_columns": [
         "InterventionPrescription_DocumentId",
         "Uri"
+      ]
+    },
+    {
+      "name": "IX_InterventionStaff_Intervention_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "InterventionStaff"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "Intervention_DocumentId"
       ]
     },
     {
@@ -11386,8 +11621,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Intervention_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -11501,8 +11735,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "InterventionStudy_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -11539,8 +11772,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "InterventionStudy_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -11570,6 +11802,18 @@
       ]
     },
     {
+      "name": "IX_InterventionStudyEducationContent_InterventionStu_fd9cca7247",
+      "table": {
+        "schema": "edfi",
+        "name": "InterventionStudyEducationContent"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "InterventionStudy_DocumentId"
+      ]
+    },
+    {
       "name": "PK_InterventionStudyEducationContent",
       "table": {
         "schema": "edfi",
@@ -11578,8 +11822,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "InterventionStudy_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -11639,8 +11882,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "InterventionStudy_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -11667,8 +11909,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "InterventionStudy_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -11705,8 +11946,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "InterventionStudy_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -11743,8 +11983,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "InterventionStudy_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -11769,8 +12008,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "InterventionStudy_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -11795,8 +12033,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Intervention_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -11932,8 +12169,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "LearningStandard_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -11958,8 +12194,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "LearningStandard_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -12060,8 +12295,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "LearningStandard_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -12086,8 +12320,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "LearningStandard_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -12194,8 +12427,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "LocalAccount_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -12539,8 +12771,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "LocalEducationAgency_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -12601,8 +12832,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "LocalEducationAgency_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -12623,6 +12853,19 @@
       ]
     },
     {
+      "name": "IX_LocalEducationAgencyAddressPeriod_ParentCollectio_9cf4585ef5",
+      "table": {
+        "schema": "edfi",
+        "name": "LocalEducationAgencyAddressPeriod"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "LocalEducationAgency_DocumentId"
+      ]
+    },
+    {
       "name": "PK_LocalEducationAgencyAddressPeriod",
       "table": {
         "schema": "edfi",
@@ -12631,13 +12874,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "LocalEducationAgency_DocumentId",
-        "AddressOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_LocalEducationAgencyAddressPeriod_AddressOrdinal__0fd8ff26fd",
+      "name": "UX_LocalEducationAgencyAddressPeriod_BeginDate_Paren_fae61676f7",
       "table": {
         "schema": "edfi",
         "name": "LocalEducationAgencyAddressPeriod"
@@ -12645,8 +12886,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "LocalEducationAgency_DocumentId",
-        "AddressOrdinal",
+        "ParentCollectionItemId",
         "BeginDate"
       ]
     },
@@ -12671,8 +12911,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "LocalEducationAgency_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -12697,8 +12936,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "LocalEducationAgency_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -12735,8 +12973,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "LocalEducationAgency_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -12797,8 +13034,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "LocalEducationAgency_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -12815,6 +13051,19 @@
       ]
     },
     {
+      "name": "IX_LocalEducationAgencyIndicatorPeriod_ParentCollect_fdb78f11d5",
+      "table": {
+        "schema": "edfi",
+        "name": "LocalEducationAgencyIndicatorPeriod"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "LocalEducationAgency_DocumentId"
+      ]
+    },
+    {
       "name": "PK_LocalEducationAgencyIndicatorPeriod",
       "table": {
         "schema": "edfi",
@@ -12823,13 +13072,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "LocalEducationAgency_DocumentId",
-        "IndicatorOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_LocalEducationAgencyIndicatorPeriod_BeginDate_Ind_ecf719d682",
+      "name": "UX_LocalEducationAgencyIndicatorPeriod_BeginDate_Par_e00a9d2ee9",
       "table": {
         "schema": "edfi",
         "name": "LocalEducationAgencyIndicatorPeriod"
@@ -12837,8 +13084,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "LocalEducationAgency_DocumentId",
-        "IndicatorOrdinal",
+        "ParentCollectionItemId",
         "BeginDate"
       ]
     },
@@ -12863,8 +13109,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "LocalEducationAgency_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -12913,8 +13158,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "LocalEducationAgency_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -13160,8 +13404,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "ObjectDimension_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -13274,6 +13517,18 @@
       ]
     },
     {
+      "name": "IX_ObjectiveAssessmentAssessmentItem_ObjectiveAssess_3682e80df9",
+      "table": {
+        "schema": "edfi",
+        "name": "ObjectiveAssessmentAssessmentItem"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ObjectiveAssessment_DocumentId"
+      ]
+    },
+    {
       "name": "PK_ObjectiveAssessmentAssessmentItem",
       "table": {
         "schema": "edfi",
@@ -13282,8 +13537,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "ObjectiveAssessment_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -13300,6 +13554,18 @@
       ]
     },
     {
+      "name": "IX_ObjectiveAssessmentLearningStandard_ObjectiveAsse_73ce00d9d9",
+      "table": {
+        "schema": "edfi",
+        "name": "ObjectiveAssessmentLearningStandard"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ObjectiveAssessment_DocumentId"
+      ]
+    },
+    {
       "name": "PK_ObjectiveAssessmentLearningStandard",
       "table": {
         "schema": "edfi",
@@ -13308,8 +13574,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "ObjectiveAssessment_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -13357,8 +13622,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "ObjectiveAssessment_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -13408,8 +13672,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "ObjectiveAssessment_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -13532,8 +13795,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "OpenStaffPosition_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -13570,8 +13832,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "OpenStaffPosition_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -13647,8 +13908,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "OperationalUnitDimension_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -13770,8 +14030,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "OrganizationDepartment_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -13792,6 +14051,19 @@
       ]
     },
     {
+      "name": "IX_OrganizationDepartmentAddressPeriod_ParentCollect_b350b6d2ef",
+      "table": {
+        "schema": "edfi",
+        "name": "OrganizationDepartmentAddressPeriod"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "OrganizationDepartment_DocumentId"
+      ]
+    },
+    {
       "name": "PK_OrganizationDepartmentAddressPeriod",
       "table": {
         "schema": "edfi",
@@ -13800,13 +14072,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "OrganizationDepartment_DocumentId",
-        "AddressOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_OrganizationDepartmentAddressPeriod_AddressOrdina_5b104d25d3",
+      "name": "UX_OrganizationDepartmentAddressPeriod_BeginDate_Par_4838277049",
       "table": {
         "schema": "edfi",
         "name": "OrganizationDepartmentAddressPeriod"
@@ -13814,8 +14084,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "OrganizationDepartment_DocumentId",
-        "AddressOrdinal",
+        "ParentCollectionItemId",
         "BeginDate"
       ]
     },
@@ -13840,8 +14109,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "OrganizationDepartment_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -13878,8 +14146,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "OrganizationDepartment_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -13940,8 +14207,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "OrganizationDepartment_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -13958,6 +14224,19 @@
       ]
     },
     {
+      "name": "IX_OrganizationDepartmentIndicatorPeriod_ParentColle_6550b2ce6a",
+      "table": {
+        "schema": "edfi",
+        "name": "OrganizationDepartmentIndicatorPeriod"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "OrganizationDepartment_DocumentId"
+      ]
+    },
+    {
       "name": "PK_OrganizationDepartmentIndicatorPeriod",
       "table": {
         "schema": "edfi",
@@ -13966,13 +14245,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "OrganizationDepartment_DocumentId",
-        "IndicatorOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_OrganizationDepartmentIndicatorPeriod_BeginDate_I_c1800ddd04",
+      "name": "UX_OrganizationDepartmentIndicatorPeriod_BeginDate_P_d6d8a14a45",
       "table": {
         "schema": "edfi",
         "name": "OrganizationDepartmentIndicatorPeriod"
@@ -13980,8 +14257,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "OrganizationDepartment_DocumentId",
-        "IndicatorOrdinal",
+        "ParentCollectionItemId",
         "BeginDate"
       ]
     },
@@ -14006,8 +14282,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "OrganizationDepartment_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -14056,8 +14331,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "OrganizationDepartment_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -14306,8 +14580,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "PostSecondaryInstitution_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -14328,6 +14601,19 @@
       ]
     },
     {
+      "name": "IX_PostSecondaryInstitutionAddressPeriod_ParentColle_f104119516",
+      "table": {
+        "schema": "edfi",
+        "name": "PostSecondaryInstitutionAddressPeriod"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "PostSecondaryInstitution_DocumentId"
+      ]
+    },
+    {
       "name": "PK_PostSecondaryInstitutionAddressPeriod",
       "table": {
         "schema": "edfi",
@@ -14336,13 +14622,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "PostSecondaryInstitution_DocumentId",
-        "AddressOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_PostSecondaryInstitutionAddressPeriod_AddressOrdi_04ad3fddeb",
+      "name": "UX_PostSecondaryInstitutionAddressPeriod_BeginDate_P_8e1e07571b",
       "table": {
         "schema": "edfi",
         "name": "PostSecondaryInstitutionAddressPeriod"
@@ -14350,8 +14634,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "PostSecondaryInstitution_DocumentId",
-        "AddressOrdinal",
+        "ParentCollectionItemId",
         "BeginDate"
       ]
     },
@@ -14376,8 +14659,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "PostSecondaryInstitution_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -14414,8 +14696,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "PostSecondaryInstitution_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -14476,8 +14757,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "PostSecondaryInstitution_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -14494,6 +14774,19 @@
       ]
     },
     {
+      "name": "IX_PostSecondaryInstitutionIndicatorPeriod_ParentCol_2f6540959c",
+      "table": {
+        "schema": "edfi",
+        "name": "PostSecondaryInstitutionIndicatorPeriod"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "PostSecondaryInstitution_DocumentId"
+      ]
+    },
+    {
       "name": "PK_PostSecondaryInstitutionIndicatorPeriod",
       "table": {
         "schema": "edfi",
@@ -14502,13 +14795,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "PostSecondaryInstitution_DocumentId",
-        "IndicatorOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_PostSecondaryInstitutionIndicatorPeriod_BeginDate_63b2f065b7",
+      "name": "UX_PostSecondaryInstitutionIndicatorPeriod_BeginDate_7be64b0e9c",
       "table": {
         "schema": "edfi",
         "name": "PostSecondaryInstitutionIndicatorPeriod"
@@ -14516,8 +14807,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "PostSecondaryInstitution_DocumentId",
-        "IndicatorOrdinal",
+        "ParentCollectionItemId",
         "BeginDate"
       ]
     },
@@ -14542,8 +14832,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "PostSecondaryInstitution_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -14592,8 +14881,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "PostSecondaryInstitution_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -14630,8 +14918,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "PostSecondaryInstitution_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -14734,8 +15021,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Program_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -14811,8 +15097,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "ProgramDimension_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -15050,8 +15335,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "ProgramEvaluationElement_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -15088,8 +15372,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "ProgramEvaluation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -15224,8 +15507,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "ProgramEvaluationObjective_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -15255,6 +15537,18 @@
       ]
     },
     {
+      "name": "IX_ProgramLearningStandard_Program_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "ProgramLearningStandard"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "Program_DocumentId"
+      ]
+    },
+    {
       "name": "PK_ProgramLearningStandard",
       "table": {
         "schema": "edfi",
@@ -15263,8 +15557,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Program_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -15288,8 +15581,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Program_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -15365,8 +15657,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "ProjectDimension_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -15527,6 +15818,18 @@
       ]
     },
     {
+      "name": "IX_ReportCardGrade_ReportCard_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "ReportCardGrade"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ReportCard_DocumentId"
+      ]
+    },
+    {
       "name": "PK_ReportCardGrade",
       "table": {
         "schema": "edfi",
@@ -15535,8 +15838,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "ReportCard_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -15560,8 +15862,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "ReportCard_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -15575,6 +15876,18 @@
       "key_columns": [
         "ReportCard_DocumentId",
         "GradePointAverageTypeDescriptor_DescriptorId"
+      ]
+    },
+    {
+      "name": "IX_ReportCardStudentCompetencyObjective_ReportCard_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "ReportCardStudentCompetencyObjective"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ReportCard_DocumentId"
       ]
     },
     {
@@ -15630,8 +15943,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "ReportCard_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -15740,6 +16052,18 @@
       ]
     },
     {
+      "name": "IX_RestraintEventProgram_RestraintEvent_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "RestraintEventProgram"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "RestraintEvent_DocumentId"
+      ]
+    },
+    {
       "name": "PK_RestraintEventProgram",
       "table": {
         "schema": "edfi",
@@ -15748,8 +16072,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "RestraintEvent_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -15773,8 +16096,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "RestraintEvent_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -15994,8 +16316,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "School_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -16016,6 +16337,19 @@
       ]
     },
     {
+      "name": "IX_SchoolAddressPeriod_ParentCollectionItemId_School_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "SchoolAddressPeriod"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "School_DocumentId"
+      ]
+    },
+    {
       "name": "PK_SchoolAddressPeriod",
       "table": {
         "schema": "edfi",
@@ -16024,13 +16358,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "School_DocumentId",
-        "AddressOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_SchoolAddressPeriod_AddressOrdinal_BeginDate_Scho_59b19f56bb",
+      "name": "UX_SchoolAddressPeriod_BeginDate_ParentCollectionItemId",
       "table": {
         "schema": "edfi",
         "name": "SchoolAddressPeriod"
@@ -16038,8 +16370,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "School_DocumentId",
-        "AddressOrdinal",
+        "ParentCollectionItemId",
         "BeginDate"
       ]
     },
@@ -16064,8 +16395,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "School_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -16102,8 +16432,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "School_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -16140,8 +16469,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "School_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -16178,8 +16506,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "School_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -16240,8 +16567,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "School_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -16258,6 +16584,19 @@
       ]
     },
     {
+      "name": "IX_SchoolIndicatorPeriod_ParentCollectionItemId_Scho_c989d4508b",
+      "table": {
+        "schema": "edfi",
+        "name": "SchoolIndicatorPeriod"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "School_DocumentId"
+      ]
+    },
+    {
       "name": "PK_SchoolIndicatorPeriod",
       "table": {
         "schema": "edfi",
@@ -16266,13 +16605,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "School_DocumentId",
-        "IndicatorOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_SchoolIndicatorPeriod_BeginDate_IndicatorOrdinal__b65c807fa2",
+      "name": "UX_SchoolIndicatorPeriod_BeginDate_ParentCollectionItemId",
       "table": {
         "schema": "edfi",
         "name": "SchoolIndicatorPeriod"
@@ -16280,8 +16617,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "School_DocumentId",
-        "IndicatorOrdinal",
+        "ParentCollectionItemId",
         "BeginDate"
       ]
     },
@@ -16306,8 +16642,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "School_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -16356,8 +16691,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "School_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -16659,8 +16993,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Section_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -16691,6 +17024,18 @@
       ]
     },
     {
+      "name": "IX_SectionClassPeriod_Section_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "SectionClassPeriod"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "Section_DocumentId"
+      ]
+    },
+    {
       "name": "PK_SectionClassPeriod",
       "table": {
         "schema": "edfi",
@@ -16699,8 +17044,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Section_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -16724,8 +17068,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Section_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -16762,8 +17105,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Section_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -16807,6 +17149,18 @@
       ]
     },
     {
+      "name": "IX_SectionProgram_Section_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "SectionProgram"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "Section_DocumentId"
+      ]
+    },
+    {
       "name": "PK_SectionProgram",
       "table": {
         "schema": "edfi",
@@ -16815,8 +17169,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Section_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -16913,6 +17266,18 @@
       ]
     },
     {
+      "name": "IX_SessionAcademicWeek_Session_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "SessionAcademicWeek"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "Session_DocumentId"
+      ]
+    },
+    {
       "name": "PK_SessionAcademicWeek",
       "table": {
         "schema": "edfi",
@@ -16921,8 +17286,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Session_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -16954,6 +17318,18 @@
       ]
     },
     {
+      "name": "IX_SessionGradingPeriod_Session_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "SessionGradingPeriod"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "Session_DocumentId"
+      ]
+    },
+    {
       "name": "PK_SessionGradingPeriod",
       "table": {
         "schema": "edfi",
@@ -16962,8 +17338,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Session_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -17026,8 +17401,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "SourceDimension_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -17226,8 +17600,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Staff_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -17248,6 +17621,19 @@
       ]
     },
     {
+      "name": "IX_StaffAddressPeriod_ParentCollectionItemId_Staff_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "StaffAddressPeriod"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "Staff_DocumentId"
+      ]
+    },
+    {
       "name": "PK_StaffAddressPeriod",
       "table": {
         "schema": "edfi",
@@ -17256,13 +17642,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Staff_DocumentId",
-        "AddressOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_StaffAddressPeriod_AddressOrdinal_BeginDate_Staff_DocumentId",
+      "name": "UX_StaffAddressPeriod_BeginDate_ParentCollectionItemId",
       "table": {
         "schema": "edfi",
         "name": "StaffAddressPeriod"
@@ -17270,8 +17654,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "Staff_DocumentId",
-        "AddressOrdinal",
+        "ParentCollectionItemId",
         "BeginDate"
       ]
     },
@@ -17296,8 +17679,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Staff_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -17393,6 +17775,18 @@
       ]
     },
     {
+      "name": "IX_StaffCredential_Staff_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "StaffCredential"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "Staff_DocumentId"
+      ]
+    },
+    {
       "name": "PK_StaffCredential",
       "table": {
         "schema": "edfi",
@@ -17401,8 +17795,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Staff_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -17470,7 +17863,7 @@
       ]
     },
     {
-      "name": "PK_StaffDisciplineIncidentAssociationDisciplineIncid_35e25c4046",
+      "name": "PK_StaffDisciplineIncidentAssociationDisciplineIncid_b1d039c192",
       "table": {
         "schema": "edfi",
         "name": "StaffDisciplineIncidentAssociationDisciplineIncident_7fa4beae77"
@@ -17478,8 +17871,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StaffDisciplineIncidentAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -17739,8 +18131,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StaffEducationOrganizationContactAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -17777,8 +18168,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StaffEducationOrganizationContactAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -17947,8 +18337,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Staff_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -17986,8 +18375,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Staff_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -18048,8 +18436,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Staff_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -18099,8 +18486,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Staff_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -18137,8 +18523,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Staff_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -18167,6 +18552,19 @@
       ]
     },
     {
+      "name": "IX_StaffLanguageUs_ParentCollectionItemId_Staff_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "StaffLanguageUs"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "Staff_DocumentId"
+      ]
+    },
+    {
       "name": "PK_StaffLanguageUs",
       "table": {
         "schema": "edfi",
@@ -18175,13 +18573,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Staff_DocumentId",
-        "LanguageOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_StaffLanguageUs_LanguageOrdinal_LanguageUseDescri_e8fbfe1576",
+      "name": "UX_StaffLanguageUs_ParentCollectionItemId_LanguageUs_dc5ed9d73f",
       "table": {
         "schema": "edfi",
         "name": "StaffLanguageUs"
@@ -18189,8 +18585,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "Staff_DocumentId",
-        "LanguageOrdinal",
+        "ParentCollectionItemId",
         "LanguageUseDescriptor_DescriptorId"
       ]
     },
@@ -18266,8 +18661,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Staff_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -18328,8 +18722,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Staff_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -18433,8 +18826,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Staff_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -18483,8 +18875,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Staff_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -18601,8 +18992,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StaffSchoolAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -18639,8 +19029,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StaffSchoolAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -18745,8 +19134,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Staff_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -18784,8 +19172,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Staff_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -18822,8 +19209,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Staff_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -18910,8 +19296,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StateEducationAgency_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -18972,8 +19357,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StateEducationAgency_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -18994,6 +19378,19 @@
       ]
     },
     {
+      "name": "IX_StateEducationAgencyAddressPeriod_ParentCollectio_03eb7349ce",
+      "table": {
+        "schema": "edfi",
+        "name": "StateEducationAgencyAddressPeriod"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "StateEducationAgency_DocumentId"
+      ]
+    },
+    {
       "name": "PK_StateEducationAgencyAddressPeriod",
       "table": {
         "schema": "edfi",
@@ -19002,13 +19399,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StateEducationAgency_DocumentId",
-        "AddressOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_StateEducationAgencyAddressPeriod_AddressOrdinal__a6ac01f354",
+      "name": "UX_StateEducationAgencyAddressPeriod_BeginDate_Paren_1f01ecf9f0",
       "table": {
         "schema": "edfi",
         "name": "StateEducationAgencyAddressPeriod"
@@ -19016,8 +19411,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "StateEducationAgency_DocumentId",
-        "AddressOrdinal",
+        "ParentCollectionItemId",
         "BeginDate"
       ]
     },
@@ -19042,8 +19436,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StateEducationAgency_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -19068,8 +19461,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StateEducationAgency_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -19106,8 +19498,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StateEducationAgency_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -19168,8 +19559,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StateEducationAgency_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -19186,6 +19576,19 @@
       ]
     },
     {
+      "name": "IX_StateEducationAgencyIndicatorPeriod_ParentCollect_60a11db9c8",
+      "table": {
+        "schema": "edfi",
+        "name": "StateEducationAgencyIndicatorPeriod"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "StateEducationAgency_DocumentId"
+      ]
+    },
+    {
       "name": "PK_StateEducationAgencyIndicatorPeriod",
       "table": {
         "schema": "edfi",
@@ -19194,13 +19597,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StateEducationAgency_DocumentId",
-        "IndicatorOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_StateEducationAgencyIndicatorPeriod_BeginDate_Ind_3b454cf448",
+      "name": "UX_StateEducationAgencyIndicatorPeriod_BeginDate_Par_203a864e1f",
       "table": {
         "schema": "edfi",
         "name": "StateEducationAgencyIndicatorPeriod"
@@ -19208,8 +19609,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "StateEducationAgency_DocumentId",
-        "IndicatorOrdinal",
+        "ParentCollectionItemId",
         "BeginDate"
       ]
     },
@@ -19234,8 +19634,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StateEducationAgency_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -19284,8 +19683,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StateEducationAgency_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -19587,8 +19985,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentAcademicRecord_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -19650,8 +20047,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentAcademicRecord_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -19689,8 +20085,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentAcademicRecord_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -19739,8 +20134,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentAcademicRecord_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -19787,6 +20181,18 @@
       ]
     },
     {
+      "name": "IX_StudentAcademicRecordReportCard_StudentAcademicRe_a91f0a1821",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentAcademicRecordReportCard"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "StudentAcademicRecord_DocumentId"
+      ]
+    },
+    {
       "name": "PK_StudentAcademicRecordReportCard",
       "table": {
         "schema": "edfi",
@@ -19795,8 +20201,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentAcademicRecord_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -20011,8 +20416,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentAssessment_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -20144,8 +20548,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentAssessment_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -20194,8 +20597,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentAssessment_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -20385,8 +20787,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentAssessmentRegistration_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -20411,8 +20812,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentAssessmentRegistration_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -20499,7 +20899,7 @@
       ]
     },
     {
-      "name": "PK_StudentAssessmentRegistrationBatteryPartAssociati_499096f3cb",
+      "name": "PK_StudentAssessmentRegistrationBatteryPartAssociati_ba8c62cd84",
       "table": {
         "schema": "edfi",
         "name": "StudentAssessmentRegistrationBatteryPartAssociationA_c87694eb5a"
@@ -20507,8 +20907,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentAssessmentRegistrationBatteryPartAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -20557,8 +20956,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentAssessment_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -20598,8 +20996,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentAssessment_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -20640,6 +21037,19 @@
       ]
     },
     {
+      "name": "IX_StudentAssessmentStudentObjectiveAssessmentPerfor_60228f2e1e",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentAssessmentStudentObjectiveAssessmentPerformanceLevel"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "StudentAssessment_DocumentId"
+      ]
+    },
+    {
       "name": "PK_StudentAssessmentStudentObjectiveAssessmentPerformanceLevel",
       "table": {
         "schema": "edfi",
@@ -20648,13 +21058,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentAssessment_DocumentId",
-        "StudentObjectiveAssessmentOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_StudentAssessmentStudentObjectiveAssessmentPerfor_8e891fa9e2",
+      "name": "UX_StudentAssessmentStudentObjectiveAssessmentPerfor_3a706a3d47",
       "table": {
         "schema": "edfi",
         "name": "StudentAssessmentStudentObjectiveAssessmentPerformanceLevel"
@@ -20662,8 +21070,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "StudentAssessment_DocumentId",
-        "StudentObjectiveAssessmentOrdinal",
+        "ParentCollectionItemId",
         "AssessmentReportingMethodDescriptor_DescriptorId",
         "PerformanceLevelDescriptor_DescriptorId"
       ]
@@ -20693,6 +21100,19 @@
       ]
     },
     {
+      "name": "IX_StudentAssessmentStudentObjectiveAssessmentScoreR_cef8b8adde",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentAssessmentStudentObjectiveAssessmentScoreResult"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "StudentAssessment_DocumentId"
+      ]
+    },
+    {
       "name": "PK_StudentAssessmentStudentObjectiveAssessmentScoreResult",
       "table": {
         "schema": "edfi",
@@ -20701,13 +21121,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentAssessment_DocumentId",
-        "StudentObjectiveAssessmentOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_StudentAssessmentStudentObjectiveAssessmentScoreR_4c8a16c372",
+      "name": "UX_StudentAssessmentStudentObjectiveAssessmentScoreR_8bbed93e07",
       "table": {
         "schema": "edfi",
         "name": "StudentAssessmentStudentObjectiveAssessmentScoreResult"
@@ -20715,8 +21133,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "StudentAssessment_DocumentId",
-        "StudentObjectiveAssessmentOrdinal",
+        "ParentCollectionItemId",
         "AssessmentReportingMethodDescriptor_DescriptorId"
       ]
     },
@@ -20845,8 +21262,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentCTEProgramAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -20883,8 +21299,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentCTEProgramAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -20972,6 +21387,18 @@
       ]
     },
     {
+      "name": "IX_StudentCohortAssociationSection_StudentCohortAsso_f6f950b43a",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentCohortAssociationSection"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "StudentCohortAssociation_DocumentId"
+      ]
+    },
+    {
       "name": "PK_StudentCohortAssociationSection",
       "table": {
         "schema": "edfi",
@@ -20980,8 +21407,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentCohortAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -21141,6 +21567,18 @@
       ]
     },
     {
+      "name": "IX_StudentCompetencyObjectiveGeneralStudentProgramAs_dfed26e23e",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentCompetencyObjectiveGeneralStudentProgramAssociation"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "StudentCompetencyObjective_DocumentId"
+      ]
+    },
+    {
       "name": "PK_StudentCompetencyObjectiveGeneralStudentProgramAssociation",
       "table": {
         "schema": "edfi",
@@ -21149,8 +21587,19 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentCompetencyObjective_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
+      ]
+    },
+    {
+      "name": "IX_StudentCompetencyObjectiveStudentSectionAssociati_245ab65b41",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentCompetencyObjectiveStudentSectionAssociation"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "StudentCompetencyObjective_DocumentId"
       ]
     },
     {
@@ -21181,8 +21630,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentCompetencyObjective_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -21344,7 +21792,7 @@
       ]
     },
     {
-      "name": "PK_StudentDisciplineIncidentBehaviorAssociationDisci_6d6c34c1d3",
+      "name": "PK_StudentDisciplineIncidentBehaviorAssociationDisci_258569bb58",
       "table": {
         "schema": "edfi",
         "name": "StudentDisciplineIncidentBehaviorAssociationDiscipli_ae6a215eae"
@@ -21352,8 +21800,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentDisciplineIncidentBehaviorAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -21390,8 +21837,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentDisciplineIncidentBehaviorAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -21472,7 +21918,7 @@
       ]
     },
     {
-      "name": "PK_StudentDisciplineIncidentNonOffenderAssociationDi_344e40918e",
+      "name": "PK_StudentDisciplineIncidentNonOffenderAssociationDi_226794a78f",
       "table": {
         "schema": "edfi",
         "name": "StudentDisciplineIncidentNonOffenderAssociationDisci_4c979a9f6d"
@@ -21480,8 +21926,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentDisciplineIncidentNonOffenderAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -21575,7 +22020,7 @@
       ]
     },
     {
-      "name": "PK_StudentEducationOrganizationAssessmentAccommodati_91855c7297",
+      "name": "PK_StudentEducationOrganizationAssessmentAccommodati_641f4fa5b8",
       "table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationAssessmentAccommodationG_d1d10af462"
@@ -21583,8 +22028,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssessmentAccommodation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -21818,8 +22262,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -21840,6 +22283,19 @@
       ]
     },
     {
+      "name": "IX_StudentEducationOrganizationAssociationAddressPer_7f7de14569",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentEducationOrganizationAssociationAddressPeriod"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "StudentEducationOrganizationAssociation_DocumentId"
+      ]
+    },
+    {
       "name": "PK_StudentEducationOrganizationAssociationAddressPeriod",
       "table": {
         "schema": "edfi",
@@ -21848,13 +22304,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "AddressOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_StudentEducationOrganizationAssociationAddressPer_20ef014fd8",
+      "name": "UX_StudentEducationOrganizationAssociationAddressPer_ed6092677a",
       "table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationAssociationAddressPeriod"
@@ -21862,8 +22316,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "AddressOrdinal",
+        "ParentCollectionItemId",
         "BeginDate"
       ]
     },
@@ -21888,8 +22341,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -21951,8 +22403,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -22002,8 +22453,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -22032,6 +22482,19 @@
       ]
     },
     {
+      "name": "IX_StudentEducationOrganizationAssociationDisability_070f6c39eb",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentEducationOrganizationAssociationDisabilityDesignation"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "StudentEducationOrganizationAssociation_DocumentId"
+      ]
+    },
+    {
       "name": "PK_StudentEducationOrganizationAssociationDisabilityDesignation",
       "table": {
         "schema": "edfi",
@@ -22040,13 +22503,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "DisabilityOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_StudentEducationOrganizationAssociationDisability_6ba56eae41",
+      "name": "UX_StudentEducationOrganizationAssociationDisability_0c3481bbdd",
       "table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationAssociationDisabilityDesignation"
@@ -22054,8 +22515,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "DisabilityOrdinal",
+        "ParentCollectionItemId",
         "DisabilityDesignationDescriptor_DescriptorId"
       ]
     },
@@ -22093,8 +22553,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -22131,8 +22590,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -22182,8 +22640,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -22220,8 +22677,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -22235,6 +22691,19 @@
       "key_columns": [
         "StudentEducationOrganizationAssociation_DocumentId",
         "LanguageDescriptor_DescriptorId"
+      ]
+    },
+    {
+      "name": "IX_StudentEducationOrganizationAssociationLanguageUs_451b6546b9",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentEducationOrganizationAssociationLanguageUs"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "StudentEducationOrganizationAssociation_DocumentId"
       ]
     },
     {
@@ -22258,13 +22727,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "LanguageOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_StudentEducationOrganizationAssociationLanguageUs_55af30e9dc",
+      "name": "UX_StudentEducationOrganizationAssociationLanguageUs_577d5ed0da",
       "table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationAssociationLanguageUs"
@@ -22272,8 +22739,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "LanguageOrdinal",
+        "ParentCollectionItemId",
         "LanguageUseDescriptor_DescriptorId"
       ]
     },
@@ -22298,8 +22764,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -22316,7 +22781,20 @@
       ]
     },
     {
-      "name": "PK_StudentEducationOrganizationAssociationStudentCha_b81caf9cc8",
+      "name": "IX_StudentEducationOrganizationAssociationStudentCha_9da524c027",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentEducationOrganizationAssociationStudentCharac_a18fcf0ac3"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "StudentEducationOrganizationAssociation_DocumentId"
+      ]
+    },
+    {
+      "name": "PK_StudentEducationOrganizationAssociationStudentCha_9fa7a38fd3",
       "table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationAssociationStudentCharac_a18fcf0ac3"
@@ -22324,13 +22802,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "StudentCharacteristicOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_StudentEducationOrganizationAssociationStudentCha_43a2d89162",
+      "name": "UX_StudentEducationOrganizationAssociationStudentCha_18690f5a18",
       "table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationAssociationStudentCharac_a18fcf0ac3"
@@ -22338,8 +22814,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "StudentCharacteristicOrdinal",
+        "ParentCollectionItemId",
         "BeginDate"
       ]
     },
@@ -22364,8 +22839,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -22394,7 +22868,7 @@
       ]
     },
     {
-      "name": "PK_StudentEducationOrganizationAssociationStudentIde_132d466057",
+      "name": "PK_StudentEducationOrganizationAssociationStudentIde_77441e658e",
       "table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationAssociationStudentIdenti_c15030660d"
@@ -22402,8 +22876,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -22429,8 +22902,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -22447,7 +22919,20 @@
       ]
     },
     {
-      "name": "PK_StudentEducationOrganizationAssociationStudentInd_2078f3e3e8",
+      "name": "IX_StudentEducationOrganizationAssociationStudentInd_60ef3eeb54",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentEducationOrganizationAssociationStudentIndicatorPeriod"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "StudentEducationOrganizationAssociation_DocumentId"
+      ]
+    },
+    {
+      "name": "PK_StudentEducationOrganizationAssociationStudentInd_af5f22558b",
       "table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationAssociationStudentIndicatorPeriod"
@@ -22455,13 +22940,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "StudentIndicatorOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_StudentEducationOrganizationAssociationStudentInd_db41a05d86",
+      "name": "UX_StudentEducationOrganizationAssociationStudentInd_7222a39bd5",
       "table": {
         "schema": "edfi",
         "name": "StudentEducationOrganizationAssociationStudentIndicatorPeriod"
@@ -22469,8 +22952,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "StudentIndicatorOrdinal",
+        "ParentCollectionItemId",
         "BeginDate"
       ]
     },
@@ -22495,8 +22977,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -22534,8 +23015,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -22776,8 +23256,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentHealth_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -22794,6 +23273,19 @@
       ]
     },
     {
+      "name": "IX_StudentHealthAdditionalImmunizationDate_ParentCol_55c7491026",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentHealthAdditionalImmunizationDate"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "StudentHealth_DocumentId"
+      ]
+    },
+    {
       "name": "PK_StudentHealthAdditionalImmunizationDate",
       "table": {
         "schema": "edfi",
@@ -22802,13 +23294,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentHealth_DocumentId",
-        "AdditionalImmunizationOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_StudentHealthAdditionalImmunizationDate_Additiona_839687d86d",
+      "name": "UX_StudentHealthAdditionalImmunizationDate_Immunizat_59aee851e8",
       "table": {
         "schema": "edfi",
         "name": "StudentHealthAdditionalImmunizationDate"
@@ -22816,8 +23306,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "StudentHealth_DocumentId",
-        "AdditionalImmunizationOrdinal",
+        "ParentCollectionItemId",
         "ImmunizationDate"
       ]
     },
@@ -22842,8 +23331,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentHealth_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -22860,6 +23348,19 @@
       ]
     },
     {
+      "name": "IX_StudentHealthRequiredImmunizationDate_ParentColle_ba182f2b4a",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentHealthRequiredImmunizationDate"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "StudentHealth_DocumentId"
+      ]
+    },
+    {
       "name": "PK_StudentHealthRequiredImmunizationDate",
       "table": {
         "schema": "edfi",
@@ -22868,13 +23369,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentHealth_DocumentId",
-        "RequiredImmunizationOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_StudentHealthRequiredImmunizationDate_Immunizatio_92c8ed3824",
+      "name": "UX_StudentHealthRequiredImmunizationDate_Immunizatio_a08b53de9c",
       "table": {
         "schema": "edfi",
         "name": "StudentHealthRequiredImmunizationDate"
@@ -22882,8 +23381,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "StudentHealth_DocumentId",
-        "RequiredImmunizationOrdinal",
+        "ParentCollectionItemId",
         "ImmunizationDate"
       ]
     },
@@ -23012,8 +23510,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentHomelessProgramAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -23050,8 +23547,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentHomelessProgramAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -23113,8 +23609,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Student_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -23254,8 +23749,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentInterventionAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -23493,7 +23987,7 @@
       ]
     },
     {
-      "name": "PK_StudentLanguageInstructionProgramAssociationEngli_0e9832e6ce",
+      "name": "PK_StudentLanguageInstructionProgramAssociationEngli_4e9cf6c8c7",
       "table": {
         "schema": "edfi",
         "name": "StudentLanguageInstructionProgramAssociationEnglishL_1ac620866d"
@@ -23501,8 +23995,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentLanguageInstructionProgramAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -23531,7 +24024,7 @@
       ]
     },
     {
-      "name": "PK_StudentLanguageInstructionProgramAssociationLangu_5b8e79b881",
+      "name": "PK_StudentLanguageInstructionProgramAssociationLangu_7abe5fdb0d",
       "table": {
         "schema": "edfi",
         "name": "StudentLanguageInstructionProgramAssociationLanguage_268e074917"
@@ -23539,8 +24032,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentLanguageInstructionProgramAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -23569,7 +24061,7 @@
       ]
     },
     {
-      "name": "PK_StudentLanguageInstructionProgramAssociationProgr_2a77371231",
+      "name": "PK_StudentLanguageInstructionProgramAssociationProgr_8049a937ea",
       "table": {
         "schema": "edfi",
         "name": "StudentLanguageInstructionProgramAssociationProgramP_e14347f302"
@@ -23577,8 +24069,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentLanguageInstructionProgramAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -23712,7 +24203,7 @@
       ]
     },
     {
-      "name": "PK_StudentMigrantEducationProgramAssociationMigrantE_3d794786ad",
+      "name": "PK_StudentMigrantEducationProgramAssociationMigrantE_160f1c5883",
       "table": {
         "schema": "edfi",
         "name": "StudentMigrantEducationProgramAssociationMigrantEduc_d9dcd7857a"
@@ -23720,8 +24211,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentMigrantEducationProgramAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -23750,7 +24240,7 @@
       ]
     },
     {
-      "name": "PK_StudentMigrantEducationProgramAssociationProgramP_2350f87340",
+      "name": "PK_StudentMigrantEducationProgramAssociationProgramP_d937c6d8e5",
       "table": {
         "schema": "edfi",
         "name": "StudentMigrantEducationProgramAssociationProgramPart_491e79dcd2"
@@ -23758,8 +24248,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentMigrantEducationProgramAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -23917,7 +24406,7 @@
       ]
     },
     {
-      "name": "PK_StudentNeglectedOrDelinquentProgramAssociationNeg_fc88729966",
+      "name": "PK_StudentNeglectedOrDelinquentProgramAssociationNeg_a4bad704bb",
       "table": {
         "schema": "edfi",
         "name": "StudentNeglectedOrDelinquentProgramAssociationNeglec_5202518bb9"
@@ -23925,8 +24414,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentNeglectedOrDelinquentProgramAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -23955,7 +24443,7 @@
       ]
     },
     {
-      "name": "PK_StudentNeglectedOrDelinquentProgramAssociationPro_30823634b0",
+      "name": "PK_StudentNeglectedOrDelinquentProgramAssociationPro_75944d5832",
       "table": {
         "schema": "edfi",
         "name": "StudentNeglectedOrDelinquentProgramAssociationProgra_162f874239"
@@ -23963,8 +24451,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentNeglectedOrDelinquentProgramAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -24002,8 +24489,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Student_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -24064,8 +24550,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Student_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -24213,8 +24698,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentProgramAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -24252,8 +24736,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentProgramAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -24502,8 +24985,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentProgramEvaluation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -24595,8 +25077,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentProgramEvaluation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -24688,8 +25169,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentProgramEvaluation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -24965,6 +25445,18 @@
       ]
     },
     {
+      "name": "IX_StudentSchoolAssociationAlternativeGraduationPlan_57999a2fd3",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentSchoolAssociationAlternativeGraduationPlan"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "StudentSchoolAssociation_DocumentId"
+      ]
+    },
+    {
       "name": "IX_StudentSchoolAssociationAlternativeGraduationPlan_f98099f2dd",
       "table": {
         "schema": "edfi",
@@ -24985,8 +25477,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentSchoolAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -25010,8 +25501,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentSchoolAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -25213,7 +25703,7 @@
       ]
     },
     {
-      "name": "PK_StudentSchoolFoodServiceProgramAssociationProgram_9980dd36c2",
+      "name": "PK_StudentSchoolFoodServiceProgramAssociationProgram_999dedfacb",
       "table": {
         "schema": "edfi",
         "name": "StudentSchoolFoodServiceProgramAssociationProgramPar_cd6be86d47"
@@ -25221,8 +25711,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentSchoolFoodServiceProgramAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -25252,7 +25741,7 @@
       ]
     },
     {
-      "name": "PK_StudentSchoolFoodServiceProgramAssociationSchoolF_2a5ab065b3",
+      "name": "PK_StudentSchoolFoodServiceProgramAssociationSchoolF_2bb6cebf35",
       "table": {
         "schema": "edfi",
         "name": "StudentSchoolFoodServiceProgramAssociationSchoolFood_85a0eb098c"
@@ -25260,8 +25749,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentSchoolFoodServiceProgramAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -25394,7 +25882,7 @@
       ]
     },
     {
-      "name": "PK_StudentSection504ProgramAssociationProgramPartici_4afb2449a9",
+      "name": "PK_StudentSection504ProgramAssociationProgramPartici_9aedb7d9ac",
       "table": {
         "schema": "edfi",
         "name": "StudentSection504ProgramAssociationProgramParticipationStatus"
@@ -25402,8 +25890,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentSection504ProgramAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -25584,6 +26071,18 @@
       ]
     },
     {
+      "name": "IX_StudentSectionAssociationProgram_StudentSectionAs_c5df16f878",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentSectionAssociationProgram"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "StudentSectionAssociation_DocumentId"
+      ]
+    },
+    {
       "name": "PK_StudentSectionAssociationProgram",
       "table": {
         "schema": "edfi",
@@ -25592,8 +26091,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentSectionAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -25680,6 +26178,18 @@
       ]
     },
     {
+      "name": "IX_StudentSectionAttendanceEventClassPeriod_StudentS_c302d4c0a0",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentSectionAttendanceEventClassPeriod"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "StudentSectionAttendanceEvent_DocumentId"
+      ]
+    },
+    {
       "name": "PK_StudentSectionAttendanceEventClassPeriod",
       "table": {
         "schema": "edfi",
@@ -25688,8 +26198,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentSectionAttendanceEvent_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -25841,8 +26350,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentSpecialEducationProgramAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -25871,7 +26379,20 @@
       ]
     },
     {
-      "name": "PK_StudentSpecialEducationProgramAssociationDisabili_0dfcf6ae5f",
+      "name": "IX_StudentSpecialEducationProgramAssociationDisabili_eb07dbe4ec",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentSpecialEducationProgramAssociationDisabilityDesignation"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "StudentSpecialEducationProgramAssociation_DocumentId"
+      ]
+    },
+    {
+      "name": "PK_StudentSpecialEducationProgramAssociationDisabili_06b4a409e7",
       "table": {
         "schema": "edfi",
         "name": "StudentSpecialEducationProgramAssociationDisabilityDesignation"
@@ -25879,13 +26400,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentSpecialEducationProgramAssociation_DocumentId",
-        "DisabilityOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_StudentSpecialEducationProgramAssociationDisabili_a801e23354",
+      "name": "UX_StudentSpecialEducationProgramAssociationDisabili_1996e0cd9e",
       "table": {
         "schema": "edfi",
         "name": "StudentSpecialEducationProgramAssociationDisabilityDesignation"
@@ -25893,8 +26412,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "StudentSpecialEducationProgramAssociation_DocumentId",
-        "DisabilityOrdinal",
+        "ParentCollectionItemId",
         "DisabilityDesignationDescriptor_DescriptorId"
       ]
     },
@@ -25911,7 +26429,7 @@
       ]
     },
     {
-      "name": "PK_StudentSpecialEducationProgramAssociationProgramP_713a92697a",
+      "name": "PK_StudentSpecialEducationProgramAssociationProgramP_69fdcdbb35",
       "table": {
         "schema": "edfi",
         "name": "StudentSpecialEducationProgramAssociationProgramPart_63017127ef"
@@ -25919,8 +26437,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentSpecialEducationProgramAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -25959,8 +26476,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentSpecialEducationProgramAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -25977,6 +26493,19 @@
       ]
     },
     {
+      "name": "IX_StudentSpecialEducationProgramAssociationSpecialE_2d80214f4c",
+      "table": {
+        "schema": "edfi",
+        "name": "StudentSpecialEducationProgramAssociationSpecialEduc_8dcc58d3fd"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "StudentSpecialEducationProgramAssociation_DocumentId"
+      ]
+    },
+    {
       "name": "IX_StudentSpecialEducationProgramAssociationSpecialE_97abf2be71",
       "table": {
         "schema": "edfi",
@@ -25990,7 +26519,7 @@
       ]
     },
     {
-      "name": "PK_StudentSpecialEducationProgramAssociationSpecialE_ed811c4b16",
+      "name": "PK_StudentSpecialEducationProgramAssociationSpecialE_a4b7c2e86d",
       "table": {
         "schema": "edfi",
         "name": "StudentSpecialEducationProgramAssociationSpecialEduc_8dcc58d3fd"
@@ -25998,13 +26527,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentSpecialEducationProgramAssociation_DocumentId",
-        "SpecialEducationProgramServiceOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_StudentSpecialEducationProgramAssociationSpecialE_82fbf69f77",
+      "name": "UX_StudentSpecialEducationProgramAssociationSpecialE_4725864b3d",
       "table": {
         "schema": "edfi",
         "name": "StudentSpecialEducationProgramAssociationSpecialEduc_8dcc58d3fd"
@@ -26012,8 +26539,7 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "StudentSpecialEducationProgramAssociation_DocumentId",
-        "SpecialEducationProgramServiceOrdinal",
+        "ParentCollectionItemId",
         "SpecialEducationProgramServiceServiceProviderStaff_DocumentId"
       ]
     },
@@ -26030,7 +26556,7 @@
       ]
     },
     {
-      "name": "PK_StudentSpecialEducationProgramAssociationSpecialE_3952616718",
+      "name": "PK_StudentSpecialEducationProgramAssociationSpecialE_7db1250361",
       "table": {
         "schema": "edfi",
         "name": "StudentSpecialEducationProgramAssociationSpecialEduc_a51ff9be2b"
@@ -26038,8 +26564,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentSpecialEducationProgramAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -26300,7 +26825,7 @@
       ]
     },
     {
-      "name": "PK_StudentTitleIPartAProgramAssociationProgramPartic_7c937851bb",
+      "name": "PK_StudentTitleIPartAProgramAssociationProgramPartic_a54edeb274",
       "table": {
         "schema": "edfi",
         "name": "StudentTitleIPartAProgramAssociationProgramParticipationStatus"
@@ -26308,8 +26833,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentTitleIPartAProgramAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -26339,7 +26863,7 @@
       ]
     },
     {
-      "name": "PK_StudentTitleIPartAProgramAssociationTitleIPartAPr_9681153f2e",
+      "name": "PK_StudentTitleIPartAProgramAssociationTitleIPartAPr_9f4993934e",
       "table": {
         "schema": "edfi",
         "name": "StudentTitleIPartAProgramAssociationTitleIPartAProgramService"
@@ -26347,8 +26871,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentTitleIPartAProgramAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -26472,8 +26995,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentTransportation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -26510,8 +27032,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentTransportation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -26548,8 +27069,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Student_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -26866,8 +27386,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "SurveyQuestion_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -26947,8 +27466,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "SurveyQuestion_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -26973,8 +27491,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "SurveyQuestionResponse_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -26999,8 +27516,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "SurveyQuestionResponse_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -27236,8 +27752,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "SurveyResponse_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -27666,8 +28181,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "BusRoute_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -27681,6 +28195,18 @@
       "key_columns": [
         "BusRoute_DocumentId",
         "BusYear"
+      ]
+    },
+    {
+      "name": "IX_BusRouteProgram_BusRoute_DocumentId",
+      "table": {
+        "schema": "sample",
+        "name": "BusRouteProgram"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "BusRoute_DocumentId"
       ]
     },
     {
@@ -27719,8 +28245,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "BusRoute_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -27732,8 +28257,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "BusRoute_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -27758,8 +28282,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "BusRoute_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -27796,8 +28319,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "BusRoute_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -27851,6 +28373,19 @@
       ]
     },
     {
+      "name": "IX_ContactExtensionAddress_BaseCollectionItemId_Cont_be1abe2331",
+      "table": {
+        "schema": "sample",
+        "name": "ContactExtensionAddress"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "BaseCollectionItemId",
+        "Contact_DocumentId"
+      ]
+    },
+    {
       "name": "PK_ContactExtensionAddress",
       "table": {
         "schema": "sample",
@@ -27859,8 +28394,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Contact_DocumentId",
-        "Ordinal"
+        "BaseCollectionItemId"
       ]
     },
     {
@@ -28291,8 +28825,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentArtProgramAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -28329,8 +28862,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentArtProgramAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -28355,8 +28887,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentArtProgramAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -28393,8 +28924,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentArtProgramAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -28432,8 +28962,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentArtProgramAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -28458,8 +28987,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentArtProgramAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -28750,6 +29278,19 @@
       ]
     },
     {
+      "name": "IX_StudentEducationOrganizationAssociationExtensionA_8656c377e6",
+      "table": {
+        "schema": "sample",
+        "name": "StudentEducationOrganizationAssociationExtensionAddress"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "BaseCollectionItemId",
+        "StudentEducationOrganizationAssociation_DocumentId"
+      ]
+    },
+    {
       "name": "PK_StudentEducationOrganizationAssociationExtensionAddress",
       "table": {
         "schema": "sample",
@@ -28758,8 +29299,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "Ordinal"
+        "BaseCollectionItemId"
       ]
     },
     {
@@ -28831,7 +29371,20 @@
       ]
     },
     {
-      "name": "PK_StudentEducationOrganizationAssociationExtensionS_c5c4da26da",
+      "name": "IX_StudentEducationOrganizationAssociationExtensionS_615c95f97b",
+      "table": {
+        "schema": "sample",
+        "name": "StudentEducationOrganizationAssociationExtensionStud_bc907717e8"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "BaseCollectionItemId",
+        "StudentEducationOrganizationAssociation_DocumentId"
+      ]
+    },
+    {
+      "name": "PK_StudentEducationOrganizationAssociationExtensionS_ec37b7cc33",
       "table": {
         "schema": "sample",
         "name": "StudentEducationOrganizationAssociationExtensionStud_bc907717e8"
@@ -28839,8 +29392,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "Ordinal"
+        "BaseCollectionItemId"
       ]
     },
     {
@@ -29097,8 +29649,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentGraduationPlanAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -29123,8 +29674,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentGraduationPlanAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -29149,8 +29699,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentGraduationPlanAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -29175,8 +29724,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentGraduationPlanAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -29201,8 +29749,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentGraduationPlanAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -29216,6 +29763,18 @@
       "key_columns": [
         "StudentGraduationPlanAssociation_DocumentId",
         "IndustryCredential"
+      ]
+    },
+    {
+      "name": "IX_StudentGraduationPlanAssociationStudentContactAss_27df403c98",
+      "table": {
+        "schema": "sample",
+        "name": "StudentGraduationPlanAssociationStudentContactAssociation"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "StudentGraduationPlanAssociation_DocumentId"
       ]
     },
     {
@@ -29241,8 +29800,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentGraduationPlanAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -29254,8 +29812,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentGraduationPlanAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -43280,15 +43837,23 @@
           "scope": "$.assessmentBatteryParts[*]",
           "key_columns": [
             {
-              "name": "AssessmentAdministration_DocumentId",
-              "kind": "ParentKeyPart"
-            },
-            {
-              "name": "Ordinal",
-              "kind": "Ordinal"
+              "name": "CollectionItemId",
+              "kind": "CollectionKey"
             }
           ],
           "columns": [
+            {
+              "name": "CollectionItemId",
+              "kind": "CollectionKey",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
             {
               "name": "AssessmentAdministration_DocumentId",
               "kind": "ParentKeyPart",
@@ -43424,15 +43989,23 @@
           "scope": "$.periods[*]",
           "key_columns": [
             {
-              "name": "AssessmentAdministration_DocumentId",
-              "kind": "ParentKeyPart"
-            },
-            {
-              "name": "Ordinal",
-              "kind": "Ordinal"
+              "name": "CollectionItemId",
+              "kind": "CollectionKey"
             }
           ],
           "columns": [
+            {
+              "name": "CollectionItemId",
+              "kind": "CollectionKey",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
             {
               "name": "AssessmentAdministration_DocumentId",
               "kind": "ParentKeyPart",
@@ -44265,18 +44838,14 @@
           "scope": "$.programEvaluationLevels[*]",
           "key_columns": [
             {
-              "name": "ProgramEvaluationElement_DocumentId",
-              "kind": "ParentKeyPart"
-            },
-            {
-              "name": "Ordinal",
-              "kind": "Ordinal"
+              "name": "CollectionItemId",
+              "kind": "CollectionKey"
             }
           ],
           "columns": [
             {
-              "name": "ProgramEvaluationElement_DocumentId",
-              "kind": "ParentKeyPart",
+              "name": "CollectionItemId",
+              "kind": "CollectionKey",
               "type": {
                 "kind": "Int64"
               },
@@ -44291,6 +44860,18 @@
               "kind": "Ordinal",
               "type": {
                 "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ProgramEvaluationElement_DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
               },
               "is_nullable": false,
               "source_path": null,
@@ -45210,18 +45791,14 @@
           "scope": "$.assessmentAccommodations[*]",
           "key_columns": [
             {
-              "name": "StudentAssessmentRegistration_DocumentId",
-              "kind": "ParentKeyPart"
-            },
-            {
-              "name": "Ordinal",
-              "kind": "Ordinal"
+              "name": "CollectionItemId",
+              "kind": "CollectionKey"
             }
           ],
           "columns": [
             {
-              "name": "StudentAssessmentRegistration_DocumentId",
-              "kind": "ParentKeyPart",
+              "name": "CollectionItemId",
+              "kind": "CollectionKey",
               "type": {
                 "kind": "Int64"
               },
@@ -45236,6 +45813,18 @@
               "kind": "Ordinal",
               "type": {
                 "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "StudentAssessmentRegistration_DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
               },
               "is_nullable": false,
               "source_path": null,
@@ -45307,18 +45896,14 @@
           "scope": "$.assessmentCustomizations[*]",
           "key_columns": [
             {
-              "name": "StudentAssessmentRegistration_DocumentId",
-              "kind": "ParentKeyPart"
-            },
-            {
-              "name": "Ordinal",
-              "kind": "Ordinal"
+              "name": "CollectionItemId",
+              "kind": "CollectionKey"
             }
           ],
           "columns": [
             {
-              "name": "StudentAssessmentRegistration_DocumentId",
-              "kind": "ParentKeyPart",
+              "name": "CollectionItemId",
+              "kind": "CollectionKey",
               "type": {
                 "kind": "Int64"
               },
@@ -45333,6 +45918,18 @@
               "kind": "Ordinal",
               "type": {
                 "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "StudentAssessmentRegistration_DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
               },
               "is_nullable": false,
               "source_path": null,
@@ -46563,18 +47160,14 @@
           "scope": "$.alternativeGraduationPlans[*]",
           "key_columns": [
             {
-              "name": "StudentSchoolAssociation_DocumentId",
-              "kind": "ParentKeyPart"
-            },
-            {
-              "name": "Ordinal",
-              "kind": "Ordinal"
+              "name": "CollectionItemId",
+              "kind": "CollectionKey"
             }
           ],
           "columns": [
             {
-              "name": "StudentSchoolAssociation_DocumentId",
-              "kind": "ParentKeyPart",
+              "name": "CollectionItemId",
+              "kind": "CollectionKey",
               "type": {
                 "kind": "Int64"
               },
@@ -46589,6 +47182,18 @@
               "kind": "Ordinal",
               "type": {
                 "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "StudentSchoolAssociation_DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
               },
               "is_nullable": false,
               "source_path": null,
@@ -46720,18 +47325,14 @@
           "scope": "$.educationPlans[*]",
           "key_columns": [
             {
-              "name": "StudentSchoolAssociation_DocumentId",
-              "kind": "ParentKeyPart"
-            },
-            {
-              "name": "Ordinal",
-              "kind": "Ordinal"
+              "name": "CollectionItemId",
+              "kind": "CollectionKey"
             }
           ],
           "columns": [
             {
-              "name": "StudentSchoolAssociation_DocumentId",
-              "kind": "ParentKeyPart",
+              "name": "CollectionItemId",
+              "kind": "CollectionKey",
               "type": {
                 "kind": "Int64"
               },
@@ -46746,6 +47347,18 @@
               "kind": "Ordinal",
               "type": {
                 "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "StudentSchoolAssociation_DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
               },
               "is_nullable": false,
               "source_path": null,

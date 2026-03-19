@@ -36,6 +36,17 @@ public static class RelationalNameConventions
     }
 
     /// <summary>
+    /// Returns <c>true</c> when the column name represents stable collection-row identity or an immediate
+    /// collection-scope locator based on that identity.
+    /// </summary>
+    public static bool IsCollectionIdentityColumn(DbColumnName columnName)
+    {
+        return columnName.Equals(CollectionItemIdColumnName)
+            || columnName.Equals(ParentCollectionItemIdColumnName)
+            || columnName.Equals(BaseCollectionItemIdColumnName);
+    }
+
+    /// <summary>
     /// The standard <c>Ordinal</c> column name used by collection tables to preserve array ordering.
     /// </summary>
     public static DbColumnName OrdinalColumnName { get; } = new("Ordinal");

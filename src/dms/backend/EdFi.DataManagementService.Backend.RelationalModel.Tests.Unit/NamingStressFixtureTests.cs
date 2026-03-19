@@ -96,9 +96,9 @@ public class Given_A_Naming_Stress_Fixture
         var nestedTable = _personModel.TablesInDependencyOrder.Single(table =>
             table.Table.Name == "PersonSiteWindow"
         );
-        var keyColumns = nestedTable.Key.Columns.Select(column => column.ColumnName.Value).ToArray();
+        var columnNames = nestedTable.Columns.Select(column => column.ColumnName.Value).ToArray();
 
-        keyColumns.Should().Contain("SiteOrdinal");
+        columnNames.Should().Contain("ParentCollectionItemId");
     }
 
     /// <summary>

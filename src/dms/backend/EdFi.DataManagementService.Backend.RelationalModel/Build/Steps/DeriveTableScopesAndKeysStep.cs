@@ -11,8 +11,9 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.Build.Steps;
 /// Derives the base set of relational table scopes from <c>resourceSchema.jsonSchemaForInsert</c>.
 ///
 /// This step is responsible for creating the root table (<c>$</c>) and one child table per array path
-/// (including nested arrays). Child table primary keys are a composite of the root document id,
-/// ancestor ordinals, and the current <c>Ordinal</c> column.
+/// (including nested arrays). Persisted collection tables use stable internal row identity:
+/// <c>CollectionItemId</c> as the PK, the root <c>..._DocumentId</c> as a non-key locator on every
+/// collection table, and <c>ParentCollectionItemId</c> on nested collections.
 ///
 /// Object schemas are treated as inline containers and do not create new tables. The <c>_ext</c> property
 /// is intentionally skipped here and handled by extension-specific mapping steps.
@@ -147,7 +148,10 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
             ),
         ];
 
-        var table = new DbTableModel(tableName, jsonScope, key, columns, constraints);
+        var table = new DbTableModel(tableName, jsonScope, key, columns, constraints)
+        {
+            IdentityMetadata = BuildRootTableIdentityMetadata(),
+        };
 
         collisionDetector?.RegisterTable(
             tableName,
@@ -196,7 +200,10 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
             ),
         ];
 
-        var table = new DbTableModel(_descriptorTableName, jsonScope, key, columns, constraints);
+        var table = new DbTableModel(_descriptorTableName, jsonScope, key, columns, constraints)
+        {
+            IdentityMetadata = BuildRootTableIdentityMetadata(),
+        };
 
         return new TableScope(table, [], []);
     }
@@ -434,8 +441,8 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
     }
 
     /// <summary>
-    /// Creates a child table for an array scope, including a composite PK and a cascading FK to its parent
-    /// table.
+    /// Creates a child table for an array scope, including the stable collection PK, root/parent locator
+    /// columns, and a cascading FK to its parent scope.
     /// </summary>
     private static TableScope CreateChildTable(
         DbSchemaName schemaName,
@@ -448,18 +455,18 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         string resourceLabel
     )
     {
+        var isNestedCollection = parentTable.CollectionBaseNames.Count > 0;
         var tableName = new DbTableName(
             schemaName,
             BuildCollectionTableName(rootBaseName, collectionBaseNames)
         );
-        var key = BuildChildTableKey(tableName, rootBaseName, collectionBaseNames);
+        var key = BuildChildTableKey(tableName);
         var originalTableName = BuildCollectionTableName(rootBaseName, defaultCollectionBaseNames);
-        var originalKey = BuildChildTableKey(
-            new DbTableName(schemaName, originalTableName),
-            rootBaseName,
-            defaultCollectionBaseNames
-        );
-        var parentKeyColumns = BuildParentKeyColumnNames(rootBaseName, parentTable.CollectionBaseNames);
+        var identityMetadata = BuildCollectionTableIdentityMetadata(rootBaseName, isNestedCollection);
+        var columns = BuildCollectionTableColumns(rootBaseName, isNestedCollection);
+        var originalColumns = BuildCollectionTableColumns(rootBaseName, isNestedCollection);
+        var foreignKeyColumns = BuildParentForeignKeyColumns(identityMetadata, parentTable.Table);
+        var targetColumns = BuildParentForeignKeyTargetColumns(parentTable.Table);
 
         var fkName = ConstraintNaming.BuildForeignKeyName(tableName, parentTable.Table.Table.Name);
 
@@ -467,15 +474,17 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         [
             new TableConstraint.ForeignKey(
                 fkName,
-                parentKeyColumns,
+                foreignKeyColumns,
                 parentTable.Table.Table,
-                parentTable.Table.Key.Columns.Select(column => column.ColumnName).ToArray(),
+                targetColumns,
                 OnDelete: ReferentialAction.Cascade
             ),
         ];
 
-        var columns = BuildKeyColumns(key.Columns);
-        var table = new DbTableModel(tableName, jsonScope, key, columns, constraints);
+        var table = new DbTableModel(tableName, jsonScope, key, columns, constraints)
+        {
+            IdentityMetadata = identityMetadata,
+        };
 
         collisionDetector?.RegisterTable(
             tableName,
@@ -483,10 +492,10 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
             BuildTableOrigin(tableName, resourceLabel, jsonScope)
         );
 
-        for (var index = 0; index < key.Columns.Count; index++)
+        for (var index = 0; index < columns.Length; index++)
         {
-            var finalColumn = key.Columns[index].ColumnName;
-            var originalColumn = originalKey.Columns[index].ColumnName;
+            var finalColumn = columns[index].ColumnName;
+            var originalColumn = originalColumns[index].ColumnName;
 
             collisionDetector?.RegisterColumn(
                 tableName,
@@ -511,54 +520,14 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
     }
 
     /// <summary>
-    /// Builds the child-table PK columns: root document id, ancestor ordinals, and the current
-    /// <c>Ordinal</c>.
+    /// Builds the child-table PK column: stable collection row identity.
     /// </summary>
-    private static TableKey BuildChildTableKey(
-        DbTableName tableName,
-        string rootBaseName,
-        IReadOnlyList<string> collectionBaseNames
-    )
+    private static TableKey BuildChildTableKey(DbTableName tableName)
     {
-        List<DbKeyColumn> keyColumns =
-        [
-            new DbKeyColumn(
-                RelationalNameConventions.RootDocumentIdColumnName(rootBaseName),
-                ColumnKind.ParentKeyPart
-            ),
-        ];
-
-        for (var index = 0; index < collectionBaseNames.Count - 1; index++)
-        {
-            keyColumns.Add(
-                new DbKeyColumn(
-                    RelationalNameConventions.ParentCollectionOrdinalColumnName(collectionBaseNames[index]),
-                    ColumnKind.ParentKeyPart
-                )
-            );
-        }
-
-        keyColumns.Add(new DbKeyColumn(RelationalNameConventions.OrdinalColumnName, ColumnKind.Ordinal));
-
-        return new TableKey(ConstraintNaming.BuildPrimaryKeyName(tableName), keyColumns.ToArray());
-    }
-
-    /// <summary>
-    /// Builds the FK column list for a child table by projecting the parent's key parts onto the child.
-    /// </summary>
-    private static DbColumnName[] BuildParentKeyColumnNames(
-        string rootBaseName,
-        IReadOnlyList<string> parentCollectionBaseNames
-    )
-    {
-        List<DbColumnName> keyColumns = [RelationalNameConventions.RootDocumentIdColumnName(rootBaseName)];
-
-        foreach (var collectionBaseName in parentCollectionBaseNames)
-        {
-            keyColumns.Add(RelationalNameConventions.ParentCollectionOrdinalColumnName(collectionBaseName));
-        }
-
-        return keyColumns.ToArray();
+        return new TableKey(
+            ConstraintNaming.BuildPrimaryKeyName(tableName),
+            [new DbKeyColumn(RelationalNameConventions.CollectionItemIdColumnName, ColumnKind.CollectionKey)]
+        );
     }
 
     /// <summary>
@@ -604,15 +573,136 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
     }
 
     /// <summary>
+    /// Builds the root-scope identity metadata for root and shared descriptor tables.
+    /// </summary>
+    private static DbTableIdentityMetadata BuildRootTableIdentityMetadata()
+    {
+        return new DbTableIdentityMetadata(
+            DbTableKind.Root,
+            [RelationalNameConventions.DocumentIdColumnName],
+            [RelationalNameConventions.DocumentIdColumnName],
+            [],
+            []
+        );
+    }
+
+    /// <summary>
+    /// Builds the stable-identity metadata for a base collection table.
+    /// </summary>
+    private static DbTableIdentityMetadata BuildCollectionTableIdentityMetadata(
+        string rootBaseName,
+        bool isNestedCollection
+    )
+    {
+        var rootDocumentIdColumn = RelationalNameConventions.RootDocumentIdColumnName(rootBaseName);
+        var immediateParentColumns = isNestedCollection
+            ? new[] { RelationalNameConventions.ParentCollectionItemIdColumnName }
+            : new[] { rootDocumentIdColumn };
+
+        return new DbTableIdentityMetadata(
+            DbTableKind.Collection,
+            [RelationalNameConventions.CollectionItemIdColumnName],
+            [rootDocumentIdColumn],
+            immediateParentColumns,
+            []
+        );
+    }
+
+    /// <summary>
+    /// Builds the seeded column inventory for a collection table, including stable-identity and locator columns.
+    /// </summary>
+    private static DbColumnModel[] BuildCollectionTableColumns(string rootBaseName, bool isNestedCollection)
+    {
+        List<DbColumnModel> columns =
+        [
+            CreateKeyColumn(RelationalNameConventions.CollectionItemIdColumnName, ColumnKind.CollectionKey),
+            CreateKeyColumn(
+                RelationalNameConventions.RootDocumentIdColumnName(rootBaseName),
+                ColumnKind.ParentKeyPart
+            ),
+        ];
+
+        if (isNestedCollection)
+        {
+            columns.Add(
+                CreateKeyColumn(
+                    RelationalNameConventions.ParentCollectionItemIdColumnName,
+                    ColumnKind.ParentKeyPart
+                )
+            );
+        }
+
+        columns.Add(CreateKeyColumn(RelationalNameConventions.OrdinalColumnName, ColumnKind.Ordinal));
+
+        return columns.ToArray();
+    }
+
+    /// <summary>
+    /// Builds the child-to-parent FK column list from explicit identity metadata.
+    /// </summary>
+    private static DbColumnName[] BuildParentForeignKeyColumns(
+        DbTableIdentityMetadata childIdentityMetadata,
+        DbTableModel parentTable
+    )
+    {
+        if (parentTable.IdentityMetadata.TableKind == DbTableKind.Root)
+        {
+            return childIdentityMetadata.ImmediateParentScopeLocatorColumns.ToArray();
+        }
+
+        return
+        [
+            .. childIdentityMetadata.ImmediateParentScopeLocatorColumns,
+            .. childIdentityMetadata.RootScopeLocatorColumns,
+        ];
+    }
+
+    /// <summary>
+    /// Builds the target column list for the child-to-parent FK from explicit parent identity metadata.
+    /// </summary>
+    private static DbColumnName[] BuildParentForeignKeyTargetColumns(DbTableModel parentTable)
+    {
+        if (parentTable.IdentityMetadata.TableKind == DbTableKind.Root)
+        {
+            return parentTable.IdentityMetadata.PhysicalRowIdentityColumns.ToArray();
+        }
+
+        return
+        [
+            .. parentTable.IdentityMetadata.PhysicalRowIdentityColumns,
+            .. parentTable.IdentityMetadata.RootScopeLocatorColumns,
+        ];
+    }
+
+    /// <summary>
+    /// Creates one seeded system column using the standard scalar-type conventions for key and locator roles.
+    /// </summary>
+    private static DbColumnModel CreateKeyColumn(DbColumnName columnName, ColumnKind columnKind)
+    {
+        var keyColumn = new DbKeyColumn(columnName, columnKind);
+
+        return new DbColumnModel(
+            columnName,
+            columnKind,
+            ResolveKeyColumnScalarType(keyColumn),
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+    }
+
+    /// <summary>
     /// Resolves the scalar type used for key columns (document ids are <c>bigint</c>, ordinals are
-    /// <c>int</c>).
+    /// <c>int</c>, and stable collection identities are <c>bigint</c>).
     /// </summary>
     private static RelationalScalarType ResolveKeyColumnScalarType(DbKeyColumn keyColumn)
     {
         return keyColumn.Kind switch
         {
             ColumnKind.Ordinal => new RelationalScalarType(ScalarKind.Int32),
+            ColumnKind.CollectionKey => new RelationalScalarType(ScalarKind.Int64),
             ColumnKind.ParentKeyPart => RelationalNameConventions.IsDocumentIdColumn(keyColumn.ColumnName)
+            || RelationalNameConventions.IsCollectionIdentityColumn(keyColumn.ColumnName)
                 ? new RelationalScalarType(ScalarKind.Int64)
                 : new RelationalScalarType(ScalarKind.Int32),
             ColumnKind.DocumentFk => new RelationalScalarType(ScalarKind.Int64),

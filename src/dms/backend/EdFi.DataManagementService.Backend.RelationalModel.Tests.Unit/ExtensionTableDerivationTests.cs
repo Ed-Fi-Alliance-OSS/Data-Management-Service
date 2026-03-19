@@ -21,7 +21,6 @@ public class Given_Extension_Table_Derivation
     private DbTableModel _schoolExtensionAddress = default!;
     private DbTableModel _schoolExtensionSponsor = default!;
     private DbTableModel _schoolBaseRoot = default!;
-    private DbTableModel _schoolBaseAddress = default!;
 
     /// <summary>
     /// Sets up the test fixture.
@@ -63,9 +62,6 @@ public class Given_Extension_Table_Derivation
         _schoolBaseRoot = _schoolModel.TablesInDependencyOrder.Single(table =>
             table.Table.Schema.Value == "edfi" && table.Table.Name == "School"
         );
-        _schoolBaseAddress = _schoolModel.TablesInDependencyOrder.Single(table =>
-            table.Table.Schema.Value == "edfi" && table.Table.Name == "SchoolAddress"
-        );
         _schoolExtensionRoot = _schoolModel.TablesInDependencyOrder.Single(table =>
             table.Table.Schema.Value == "sample" && table.Table.Name == "SchoolExtension"
         );
@@ -105,7 +101,14 @@ public class Given_Extension_Table_Derivation
         _schoolExtensionAddress
             .Key.Columns.Select(column => column.ColumnName.Value)
             .Should()
-            .Equal(_schoolBaseAddress.Key.Columns.Select(column => column.ColumnName.Value));
+            .Equal(RelationalNameConventions.BaseCollectionItemIdColumnName.Value);
+        _schoolExtensionAddress
+            .Columns.Select(column => column.ColumnName.Value)
+            .Should()
+            .Contain(
+                RelationalNameConventions.BaseCollectionItemIdColumnName.Value,
+                RelationalNameConventions.RootDocumentIdColumnName("School").Value
+            );
 
         _schoolExtensionSponsor
             .Key.Columns.Select(column => column.ColumnName.Value)
@@ -268,14 +271,10 @@ public class Given_Multiple_Extension_Projects_Extending_Same_Resource
     [Test]
     public void It_should_key_sample_extension_address_by_base_address_keys()
     {
-        var baseAddress = _schoolModel.TablesInDependencyOrder.Single(table =>
-            table.Table.Schema.Value == "edfi" && table.Table.Name == "SchoolAddress"
-        );
-
         _sampleExtensionAddress
             .Key.Columns.Select(column => column.ColumnName.Value)
             .Should()
-            .Equal(baseAddress.Key.Columns.Select(column => column.ColumnName.Value));
+            .Equal(RelationalNameConventions.BaseCollectionItemIdColumnName.Value);
     }
 
     [Test]

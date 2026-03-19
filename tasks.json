@@ -33,7 +33,7 @@
       "Update `DeriveTableScopesAndKeysStepTests` to assert `CollectionItemId` and `ParentCollectionItemId` shape for top-level and nested collections, including root-locator column presence and FK targeting.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Extension Scope Alignment",

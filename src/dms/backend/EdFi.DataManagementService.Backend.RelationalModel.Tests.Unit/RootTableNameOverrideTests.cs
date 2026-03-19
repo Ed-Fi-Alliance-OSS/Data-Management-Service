@@ -45,16 +45,16 @@ public class Given_A_RootTableNameOverride
     }
 
     /// <summary>
-    /// It should update root key-part column names based on the override.
+    /// It should update root locator column names based on the override.
     /// </summary>
     [Test]
-    public void It_should_update_root_key_part_column_names()
+    public void It_should_update_root_locator_column_names()
     {
         var model = _derivedModelSet.ConcreteResourcesInNameOrder.Single().RelationalModel;
 
         var addressTable = model.TablesInDependencyOrder.Single(table => table.Table.Name == "PersonAddress");
-        var keyColumnNames = addressTable.Key.Columns.Select(column => column.ColumnName.Value).ToArray();
+        var columnNames = addressTable.Columns.Select(column => column.ColumnName.Value).ToArray();
 
-        keyColumnNames.Should().Contain("Person_DocumentId");
+        columnNames.Should().Contain("Person_DocumentId");
     }
 }

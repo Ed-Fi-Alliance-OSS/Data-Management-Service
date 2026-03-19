@@ -533,10 +533,7 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
         QualifiedResourceName resource
     )
     {
-        var parentKeyColumns = table
-            .Key.Columns.Where(column => column.Kind == ColumnKind.ParentKeyPart)
-            .Select(column => column.ColumnName)
-            .ToArray();
+        var parentKeyColumns = ResolveParentScopeColumns(table);
 
         HashSet<string> seenColumns = new(StringComparer.Ordinal);
         List<DbColumnName> uniqueColumns = new(parentKeyColumns.Length + paths.Count);
@@ -560,6 +557,23 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
         }
 
         return uniqueColumns.ToArray();
+    }
+
+    /// <summary>
+    /// Resolves the immediate parent-scope locator columns for semantic uniqueness. Stable-key tables surface
+    /// this explicitly through identity metadata; older table shapes fall back to parent-key columns.
+    /// </summary>
+    private static DbColumnName[] ResolveParentScopeColumns(DbTableModel table)
+    {
+        if (table.IdentityMetadata.ImmediateParentScopeLocatorColumns.Count > 0)
+        {
+            return table.IdentityMetadata.ImmediateParentScopeLocatorColumns.ToArray();
+        }
+
+        return table
+            .Key.Columns.Where(column => column.Kind == ColumnKind.ParentKeyPart)
+            .Select(column => column.ColumnName)
+            .ToArray();
     }
 
     /// <summary>
