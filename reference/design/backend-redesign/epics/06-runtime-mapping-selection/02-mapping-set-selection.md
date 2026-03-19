@@ -60,9 +60,9 @@ Define the provider abstractions that coordinate mapping set selection. All inte
     `ISqlDialectRules`.
 
 - **`MappingSetProviderOptions`** — minimal configuration POCO.
-  - `bool PacksEnabled` (default `false`)
-  - `bool PacksRequired` (default `false`)
-  - `string? PackRootPath` (default `null`)
+  - `bool Enabled` (default `false`)
+  - `bool Required` (default `false`)
+  - `string? RootPath` (default `null`)
   - `bool AllowRuntimeCompileFallback` (default `true`)
   - DMS-978 will add the full configuration surface (appsettings binding, environment
     variables, validation). This task provides sensible defaults for compile-only mode.
@@ -73,12 +73,12 @@ Implement the core coordinator in
 `src/dms/backend/EdFi.DataManagementService.Backend.Plans/`:
 
 1. Check `MappingSetProviderOptions`:
-   - If `PacksEnabled`, call `IMappingPackStore.TryLoadPayloadAsync(key)`.
+   - If `Enabled`, call `IMappingPackStore.TryLoadPayloadAsync(key)`.
    - If pack found → validate envelope fields, decode payload, construct `MappingSet` via
      `MappingSet.FromPayload(...)` (placeholder; real decode deferred to DMS-968).
    - If pack missing and `AllowRuntimeCompileFallback` → delegate to
      `IRuntimeMappingSetCompiler.CompileAsync(key)`.
-   - If pack missing and `PacksRequired` → throw with actionable error (DB hash, expected
+   - If pack missing and `Required` → throw with actionable error (DB hash, expected
      dialect/version, "pack required but not found").
 2. All results flow through the existing `MappingSetCache` for single-flight,
    concurrency-safe caching.
@@ -162,8 +162,8 @@ Add tests in the appropriate `*.Tests.Unit` projects:
 1. **`MappingSetProvider` tests** (`Backend.Plans.Tests.Unit`):
    - Pack found → returns pack-decoded mapping set (stubbed).
    - Pack missing + `AllowRuntimeCompileFallback=true` → delegates to runtime compiler.
-   - Pack missing + `PacksRequired=true` → throws with actionable error.
-   - `PacksEnabled=false` → skips pack store, goes straight to runtime compiler.
+   - Pack missing + `Required=true` → throws with actionable error.
+   - `Enabled=false` → skips pack store, goes straight to runtime compiler.
 
 2. **Cache concurrency tests** (`Backend.Plans.Tests.Unit`):
    - Multiple concurrent `GetOrCreateAsync` calls for same key → single compilation

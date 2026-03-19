@@ -27,10 +27,11 @@ public sealed class MappingSetCache(
     private readonly ILogger _logger = logger ?? NullLogger.Instance;
 
     /// <summary>
-    /// How long a faulted entry stays in cache before eviction, preventing retry storms
-    /// on permanently-failing keys. Defaults to 30 seconds.
+    /// How long a faulted entry stays in cache before eviction. Defaults to zero
+    /// (immediate eviction) so the next call retries, per the design spec.
+    /// Callers may pass a non-zero value to prevent retry storms on permanently-failing keys.
     /// </summary>
-    private readonly TimeSpan _failureCooldown = failureCooldown ?? TimeSpan.FromSeconds(30);
+    private readonly TimeSpan _failureCooldown = failureCooldown ?? TimeSpan.Zero;
 
     private readonly ConcurrentDictionary<MappingSetKey, CacheEntry> _cache = new();
 
@@ -93,9 +94,9 @@ public sealed class MappingSetCache(
         }
 
         /// <summary>
-        /// Compiles a mapping set. On failure, the faulted entry stays in cache for
-        /// <paramref name="failureCooldown"/> to prevent retry storms, then is evicted
-        /// so a fresh retry can happen.
+        /// Compiles a mapping set. On failure, the faulted entry is evicted after
+        /// <paramref name="failureCooldown"/> (default zero = immediate) so a fresh
+        /// retry can happen.
         /// </summary>
         private async Task CompileAndPublishAsync(
             MappingSetKey key,
