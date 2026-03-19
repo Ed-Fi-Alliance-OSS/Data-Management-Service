@@ -85,9 +85,7 @@ public class Given_MappingSetCache
             .ThrowAsync<InvalidOperationException>()
             .WithMessage("failed to compile mapping set");
 
-        // Allow the fire-and-forget eviction (Task.Delay(Zero)) to complete.
-        await Task.Delay(50);
-
+        // With zero cooldown, eviction is synchronous — retry works immediately.
         var secondResult = await cache.GetOrCreateAsync(key, CancellationToken.None);
         secondResult.Should().BeSameAs(compiledMappingSet);
 
@@ -143,9 +141,7 @@ public class Given_MappingSetCache
 
         compileInvocationCount.Should().Be(1);
 
-        // Allow the fire-and-forget eviction (Task.Delay(Zero)) to complete.
-        await Task.Delay(50);
-
+        // With zero cooldown, eviction is synchronous — retry works immediately.
         var retryResult = await cache.GetOrCreateAsync(key, CancellationToken.None);
         retryResult.Should().BeSameAs(compiledMappingSet);
         compileInvocationCount.Should().Be(2);

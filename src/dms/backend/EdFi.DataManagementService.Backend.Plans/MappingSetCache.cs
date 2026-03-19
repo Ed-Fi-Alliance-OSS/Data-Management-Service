@@ -120,11 +120,19 @@ public sealed class MappingSetCache(
             }
             catch (Exception ex)
             {
-                // Keep the faulted entry in cache for the cooldown period so that
-                // concurrent/subsequent requests see the cached failure immediately
-                // instead of triggering redundant compilation attempts.
                 _completionSource.TrySetException(ex);
-                _ = EvictAfterCooldownAsync(key, cache, failureCooldown);
+
+                if (failureCooldown <= TimeSpan.Zero)
+                {
+                    // Evict synchronously so the very next call retries immediately.
+                    cache.TryRemove(new KeyValuePair<MappingSetKey, CacheEntry>(key, this));
+                }
+                else
+                {
+                    // Keep the faulted entry cached for the cooldown period to prevent
+                    // retry storms, then evict so a fresh retry can happen.
+                    _ = EvictAfterCooldownAsync(key, cache, failureCooldown);
+                }
             }
         }
 
