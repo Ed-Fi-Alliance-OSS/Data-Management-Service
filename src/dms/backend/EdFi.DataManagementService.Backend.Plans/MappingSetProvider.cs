@@ -38,7 +38,11 @@ public sealed class MappingSetProvider : IMappingSetProvider
             compilers ?? throw new ArgumentNullException(nameof(compilers))
         ).ToFrozenDictionary(c => c.Dialect);
 
-        _cache = new MappingSetCache(LoadOrCompileAsync, _logger);
+        _cache = new MappingSetCache(
+            LoadOrCompileAsync,
+            _logger,
+            TimeSpan.FromSeconds(_options.FailureCooldownSeconds)
+        );
     }
 
     /// <inheritdoc />

@@ -39,6 +39,13 @@ public sealed class MappingSetProviderOptions
     public bool AllowRuntimeCompileFallback { get; set; } = true;
 
     /// <summary>
+    /// How many seconds a faulted cache entry stays before eviction. Zero (the default)
+    /// means immediate eviction so the next request retries. Set to a positive value
+    /// to prevent retry storms on permanently-failing keys.
+    /// </summary>
+    public int FailureCooldownSeconds { get; set; }
+
+    /// <summary>
     /// Caching strategy for compiled mapping sets. Currently only <see cref="MappingSetCacheMode.InMemory"/>
     /// is supported. Reserved for future Redis/database-resident cache modes.
     /// Has no runtime effect until a second cache implementation is added.

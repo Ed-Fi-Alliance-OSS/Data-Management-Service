@@ -397,7 +397,10 @@ public class Given_MappingSetProvider
                 }
             );
 
-            var provider = CreateProvider(compiler: compiler);
+            var provider = CreateProvider(
+                options: new MappingSetProviderOptions { FailureCooldownSeconds = 30 },
+                compiler: compiler
+            );
 
             // First call triggers compilation, which fails
             var act1 = () => provider.GetOrCreateAsync(_testKey, CancellationToken.None);
