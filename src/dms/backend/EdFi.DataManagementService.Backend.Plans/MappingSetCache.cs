@@ -17,13 +17,20 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// </summary>
 public sealed class MappingSetCache(
     Func<MappingSetKey, CancellationToken, Task<MappingSet>> compileAsync,
-    ILogger? logger = null
+    ILogger? logger = null,
+    TimeSpan? failureCooldown = null
 )
 {
     private readonly Func<MappingSetKey, CancellationToken, Task<MappingSet>> _compileAsync =
         compileAsync ?? throw new ArgumentNullException(nameof(compileAsync));
 
     private readonly ILogger _logger = logger ?? NullLogger.Instance;
+
+    /// <summary>
+    /// How long a faulted entry stays in cache before eviction, preventing retry storms
+    /// on permanently-failing keys. Defaults to 30 seconds.
+    /// </summary>
+    private readonly TimeSpan _failureCooldown = failureCooldown ?? TimeSpan.FromSeconds(30);
 
     private readonly ConcurrentDictionary<MappingSetKey, CacheEntry> _cache = new();
 
@@ -44,7 +51,7 @@ public sealed class MappingSetCache(
 
         if (ReferenceEquals(cacheEntry, createdEntry))
         {
-            cacheEntry.StartCompilation(key, _compileAsync, _cache);
+            cacheEntry.StartCompilation(key, _compileAsync, _cache, _failureCooldown);
         }
         else
         {
@@ -71,7 +78,8 @@ public sealed class MappingSetCache(
         public void StartCompilation(
             MappingSetKey key,
             Func<MappingSetKey, CancellationToken, Task<MappingSet>> compileAsync,
-            ConcurrentDictionary<MappingSetKey, CacheEntry> cache
+            ConcurrentDictionary<MappingSetKey, CacheEntry> cache,
+            TimeSpan failureCooldown
         )
         {
             ArgumentNullException.ThrowIfNull(compileAsync);
@@ -81,16 +89,19 @@ public sealed class MappingSetCache(
                 throw new InvalidOperationException("Cache entry compilation was already started.");
             }
 
-            _ = CompileAndPublishAsync(key, compileAsync, cache);
+            _ = CompileAndPublishAsync(key, compileAsync, cache, failureCooldown);
         }
 
         /// <summary>
-        /// Compiles a mapping set and evicts the cache entry if compilation fails so subsequent calls can retry.
+        /// Compiles a mapping set. On failure, the faulted entry stays in cache for
+        /// <paramref name="failureCooldown"/> to prevent retry storms, then is evicted
+        /// so a fresh retry can happen.
         /// </summary>
         private async Task CompileAndPublishAsync(
             MappingSetKey key,
             Func<MappingSetKey, CancellationToken, Task<MappingSet>> compileAsync,
-            ConcurrentDictionary<MappingSetKey, CacheEntry> cache
+            ConcurrentDictionary<MappingSetKey, CacheEntry> cache,
+            TimeSpan failureCooldown
         )
         {
             try
@@ -102,14 +113,28 @@ public sealed class MappingSetCache(
             }
             catch (OperationCanceledException ex)
             {
+                // Cancellation is transient — evict immediately so retries can start fresh.
                 cache.TryRemove(new KeyValuePair<MappingSetKey, CacheEntry>(key, this));
                 _completionSource.TrySetCanceled(ex.CancellationToken);
             }
             catch (Exception ex)
             {
-                cache.TryRemove(new KeyValuePair<MappingSetKey, CacheEntry>(key, this));
+                // Keep the faulted entry in cache for the cooldown period so that
+                // concurrent/subsequent requests see the cached failure immediately
+                // instead of triggering redundant compilation attempts.
                 _completionSource.TrySetException(ex);
+                _ = EvictAfterCooldownAsync(key, cache, failureCooldown);
             }
+        }
+
+        private static async Task EvictAfterCooldownAsync(
+            MappingSetKey key,
+            ConcurrentDictionary<MappingSetKey, CacheEntry> cache,
+            TimeSpan cooldown
+        )
+        {
+            await Task.Delay(cooldown).ConfigureAwait(false);
+            cache.TryRemove(key, out _);
         }
     }
 }

@@ -273,6 +273,99 @@ public class ResolveMappingSetMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_Fingerprint_Present_Verifies_Exact_Key_Construction : ResolveMappingSetMiddlewareTests
+    {
+        private MappingSetKey _capturedKey;
+        private IMappingSetProvider _mappingSetProvider = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var compiler = CreateFakeCompiler();
+            var (middleware, mappingSetProvider) = CreateMiddleware(
+                useRelationalBackend: true,
+                compiler: compiler
+            );
+            _mappingSetProvider = mappingSetProvider;
+
+            var fingerprint = CreateFingerprint(hash: _testHash);
+            var requestInfo = CreateRequestInfo(fingerprint: fingerprint);
+
+            A.CallTo(() =>
+                    mappingSetProvider.GetOrCreateAsync(
+                        A<MappingSetKey>.Ignored,
+                        A<CancellationToken>.Ignored
+                    )
+                )
+                .Invokes((MappingSetKey key, CancellationToken _) => _capturedKey = key)
+                .Returns(
+                    new MappingSet(
+                        Key: new MappingSetKey(_testHash, SqlDialect.Pgsql, "v1"),
+                        Model: new DerivedRelationalModelSet(
+                            EffectiveSchema: new EffectiveSchemaInfo(
+                                "1.0",
+                                "v1",
+                                _testHash,
+                                0,
+                                new byte[32],
+                                [],
+                                []
+                            ),
+                            Dialect: SqlDialect.Pgsql,
+                            ProjectSchemasInEndpointOrder: [],
+                            ConcreteResourcesInNameOrder: [],
+                            AbstractIdentityTablesInNameOrder: [],
+                            AbstractUnionViewsInNameOrder: [],
+                            IndexesInCreateOrder: [],
+                            TriggersInCreateOrder: []
+                        ),
+                        WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
+                        ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
+                        ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>(),
+                        ResourceKeyById: new Dictionary<short, ResourceKeyEntry>()
+                    )
+                );
+
+            await middleware.Execute(requestInfo, () => Task.CompletedTask);
+        }
+
+        [Test]
+        public void It_uses_fingerprint_effective_schema_hash()
+        {
+            _capturedKey.EffectiveSchemaHash.Should().Be(_testHash);
+        }
+
+        [Test]
+        public void It_uses_compiler_dialect()
+        {
+            _capturedKey.Dialect.Should().Be(SqlDialect.Pgsql);
+        }
+
+        [Test]
+        public void It_uses_effective_schema_relational_mapping_version()
+        {
+            _capturedKey.RelationalMappingVersion.Should().Be("v1");
+        }
+
+        [Test]
+        public void It_calls_provider_exactly_once()
+        {
+            A.CallTo(() =>
+                    _mappingSetProvider.GetOrCreateAsync(
+                        A<MappingSetKey>.That.Matches(k =>
+                            k.EffectiveSchemaHash == _testHash
+                            && k.Dialect == SqlDialect.Pgsql
+                            && k.RelationalMappingVersion == "v1"
+                        ),
+                        A<CancellationToken>.Ignored
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_Provider_Throws_MappingSetUnavailableException : ResolveMappingSetMiddlewareTests
     {
         private RequestInfo _requestInfo = No.RequestInfo();

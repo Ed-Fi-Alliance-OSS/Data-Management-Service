@@ -40,7 +40,8 @@ public sealed class MappingSetProviderOptions
 
     /// <summary>
     /// Caching strategy for compiled mapping sets. Currently only <see cref="MappingSetCacheMode.InMemory"/>
-    /// is supported.
+    /// is supported. Reserved for future Redis/database-resident cache modes.
+    /// Has no runtime effect until a second cache implementation is added.
     /// </summary>
     public MappingSetCacheMode CacheMode { get; set; } = MappingSetCacheMode.InMemory;
 }

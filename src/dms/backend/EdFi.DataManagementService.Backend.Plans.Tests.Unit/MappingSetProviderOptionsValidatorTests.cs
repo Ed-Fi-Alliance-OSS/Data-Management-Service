@@ -92,4 +92,29 @@ public class Given_MappingSetProviderOptionsValidator
             result.Succeeded.Should().BeTrue();
         }
     }
+
+    [TestFixture]
+    public class Given_Enabled_Without_Required_And_Fallback_Disabled
+        : Given_MappingSetProviderOptionsValidator
+    {
+        [Test]
+        public void It_fails_validation()
+        {
+            var result = _validator.Validate(
+                null,
+                new MappingSetProviderOptions
+                {
+                    Enabled = true,
+                    Required = false,
+                    AllowRuntimeCompileFallback = false,
+                }
+            );
+
+            result.Failed.Should().BeTrue();
+            result
+                .FailureMessage.Should()
+                .Contain("AllowRuntimeCompileFallback is false")
+                .And.Contain("Required is false");
+        }
+    }
 }

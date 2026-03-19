@@ -350,6 +350,76 @@ public class Given_MappingSetProvider
         }
     }
 
+    [TestFixture]
+    public class Given_Pack_Decode_Failure_For_One_Key_Does_Not_Block_Another : Given_MappingSetProvider
+    {
+        [Test]
+        public async Task It_succeeds_for_key_B_via_runtime_compile_after_key_A_pack_decode_fails()
+        {
+            var keyA = new MappingSetKey(new string('a', 64), SqlDialect.Pgsql, "v1");
+            var keyB = new MappingSetKey(new string('b', 64), SqlDialect.Pgsql, "v1");
+            var expectedMappingSet = CreateTestMappingSet(keyB);
+
+            // Pack store returns a payload only for keyA (which will fail to decode
+            // since MappingSet.FromPayload is not implemented).
+            var packStore = new SelectivePackStore(keyA, new MappingPackPayload());
+            var compiler = new TestRuntimeCompiler(keyB, () => Task.FromResult(expectedMappingSet));
+
+            var provider = CreateProvider(
+                options: new MappingSetProviderOptions { Enabled = true, AllowRuntimeCompileFallback = true },
+                packStore: packStore,
+                compiler: compiler
+            );
+
+            // keyA: pack found but decode fails → MappingSetUnavailableException
+            var actA = () => provider.GetOrCreateAsync(keyA, CancellationToken.None);
+            await actA.Should().ThrowAsync<MappingSetUnavailableException>();
+
+            // keyB: no pack → falls back to runtime compile → succeeds
+            var result = await provider.GetOrCreateAsync(keyB, CancellationToken.None);
+            result.Should().BeSameAs(expectedMappingSet);
+        }
+    }
+
+    [TestFixture]
+    public class Given_Failure_Cooldown_Prevents_Retry_Storm : Given_MappingSetProvider
+    {
+        [Test]
+        public async Task It_returns_cached_failure_within_cooldown_period()
+        {
+            var compileCount = 0;
+            var compiler = new TestRuntimeCompiler(
+                _testKey,
+                () =>
+                {
+                    Interlocked.Increment(ref compileCount);
+                    throw new InvalidOperationException("simulated compile error");
+                }
+            );
+
+            var provider = CreateProvider(compiler: compiler);
+
+            // First call triggers compilation, which fails
+            var act1 = () => provider.GetOrCreateAsync(_testKey, CancellationToken.None);
+            await act1.Should().ThrowAsync<MappingSetUnavailableException>();
+
+            // Second call within cooldown should see cached failure, not recompile
+            var act2 = () => provider.GetOrCreateAsync(_testKey, CancellationToken.None);
+            await act2.Should().ThrowAsync<MappingSetUnavailableException>();
+
+            compileCount.Should().Be(1, "compilation should happen only once within cooldown period");
+        }
+    }
+
+    private sealed class SelectivePackStore(MappingSetKey targetKey, MappingPackPayload payload)
+        : IMappingPackStore
+    {
+        public Task<MappingPackPayload?> TryLoadPayloadAsync(
+            MappingSetKey key,
+            CancellationToken cancellationToken
+        ) => Task.FromResult(key == targetKey ? payload : null);
+    }
+
     private sealed class TestPackStore(MappingPackPayload? payload) : IMappingPackStore
     {
         public Task<MappingPackPayload?> TryLoadPayloadAsync(
