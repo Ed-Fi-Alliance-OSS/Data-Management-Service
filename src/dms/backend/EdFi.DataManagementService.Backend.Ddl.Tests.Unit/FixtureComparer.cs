@@ -3,8 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Diagnostics;
 using System.Text;
+using EdFi.DataManagementService.Backend.Tests.Common;
 
 namespace EdFi.DataManagementService.Backend.Ddl.Tests.Unit;
 
@@ -40,7 +40,7 @@ public static class FixtureComparer
             );
         }
 
-        if (updateGoldens ?? ShouldUpdateGoldens())
+        if (updateGoldens ?? GoldenFixtureTestHelpers.ShouldUpdateGoldens())
         {
             UpdateGoldens(expectedDir, actualDir);
             return new FixtureCompareResult(true, "Golden files updated from actual/.");
@@ -81,7 +81,7 @@ public static class FixtureComparer
                 continue;
             }
 
-            var diff = RunGitDiff(expectedPath, actualPath);
+            var diff = GoldenFixtureTestHelpers.RunGitDiff(expectedPath, actualPath);
 
             if (!string.IsNullOrWhiteSpace(diff))
             {
@@ -117,14 +117,6 @@ public static class FixtureComparer
             : new FixtureCompareResult(false, message);
     }
 
-    private static bool ShouldUpdateGoldens()
-    {
-        var update = Environment.GetEnvironmentVariable("UPDATE_GOLDENS");
-
-        return string.Equals(update, "1", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(update, "true", StringComparison.OrdinalIgnoreCase);
-    }
-
     private static void UpdateGoldens(string expectedDir, string actualDir)
     {
         // Clean and recreate expected/ from actual/
@@ -133,68 +125,6 @@ public static class FixtureComparer
             Directory.Delete(expectedDir, recursive: true);
         }
 
-        CopyDirectory(actualDir, expectedDir);
-    }
-
-    private static void CopyDirectory(string sourceDir, string targetDir)
-    {
-        Directory.CreateDirectory(targetDir);
-
-        foreach (var file in Directory.GetFiles(sourceDir))
-        {
-            File.Copy(file, Path.Combine(targetDir, Path.GetFileName(file)));
-        }
-
-        foreach (var dir in Directory.GetDirectories(sourceDir))
-        {
-            CopyDirectory(dir, Path.Combine(targetDir, Path.GetFileName(dir)));
-        }
-    }
-
-    private static string RunGitDiff(string expectedPath, string actualPath)
-    {
-        var startInfo = new ProcessStartInfo("git")
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-
-        startInfo.ArgumentList.Add("diff");
-        startInfo.ArgumentList.Add("--no-index");
-        startInfo.ArgumentList.Add("--ignore-space-at-eol");
-        startInfo.ArgumentList.Add("--ignore-cr-at-eol");
-        startInfo.ArgumentList.Add("--");
-        startInfo.ArgumentList.Add(expectedPath);
-        startInfo.ArgumentList.Add(actualPath);
-
-        using var process = new Process();
-        process.StartInfo = startInfo;
-        process.Start();
-        var outputTask = process.StandardOutput.ReadToEndAsync();
-        var errorTask = process.StandardError.ReadToEndAsync();
-
-        if (!process.WaitForExit(30_000))
-        {
-            process.Kill();
-            process.WaitForExit();
-            throw new TimeoutException("git diff timed out after 30 seconds");
-        }
-
-        var output = outputTask.GetAwaiter().GetResult();
-        var error = errorTask.GetAwaiter().GetResult();
-
-        // Exit code 0 = no diff, 1 = diff found, other = error
-        if (process.ExitCode == 0)
-        {
-            return string.Empty;
-        }
-
-        if (process.ExitCode == 1)
-        {
-            return output;
-        }
-
-        return string.IsNullOrWhiteSpace(error) ? output : $"{error}\n{output}".Trim();
+        GoldenFixtureTestHelpers.CopyDirectory(actualDir, expectedDir);
     }
 }

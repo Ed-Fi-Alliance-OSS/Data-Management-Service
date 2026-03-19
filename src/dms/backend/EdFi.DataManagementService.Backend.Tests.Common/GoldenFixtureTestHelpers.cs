@@ -43,11 +43,16 @@ public static class GoldenFixtureTestHelpers
         // Read both streams concurrently to prevent deadlocks under heavy diff output.
         var outputTask = process.StandardOutput.ReadToEndAsync();
         var errorTask = process.StandardError.ReadToEndAsync();
-        process.WaitForExit();
-        Task.WaitAll(outputTask, errorTask);
 
-        var output = outputTask.Result;
-        var error = errorTask.Result;
+        if (!process.WaitForExit(30_000))
+        {
+            process.Kill();
+            process.WaitForExit();
+            throw new TimeoutException("git diff timed out after 30 seconds");
+        }
+
+        var output = outputTask.GetAwaiter().GetResult();
+        var error = errorTask.GetAwaiter().GetResult();
 
         if (process.ExitCode == 0)
         {
@@ -70,6 +75,24 @@ public static class GoldenFixtureTestHelpers
     public static string FindProjectRoot(string startDirectory, string projectFileName)
     {
         return FindDirectoryContainingFile(startDirectory, projectFileName);
+    }
+
+    public static void CopyDirectory(string sourceDir, string targetDir)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceDir);
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetDir);
+
+        Directory.CreateDirectory(targetDir);
+
+        foreach (var file in Directory.GetFiles(sourceDir))
+        {
+            File.Copy(file, Path.Combine(targetDir, Path.GetFileName(file)));
+        }
+
+        foreach (var dir in Directory.GetDirectories(sourceDir))
+        {
+            CopyDirectory(dir, Path.Combine(targetDir, Path.GetFileName(dir)));
+        }
     }
 
     private static string FindDirectoryContainingFile(string startDirectory, string fileName)

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.Tests.Common;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -10,110 +11,52 @@ namespace EdFi.DataManagementService.Backend.Ddl.Tests.Unit;
 
 internal static class FixtureTestHelper
 {
-    public static string FindProjectRoot()
-    {
-        var directory = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
+    private const string CsprojFileName = "EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj";
 
-        while (directory is not null)
-        {
-            if (
-                File.Exists(
-                    Path.Combine(
-                        directory.FullName,
-                        "EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj"
-                    )
-                )
-            )
-            {
-                return directory.FullName;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            "Unable to locate EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj in parent directories."
-        );
-    }
+    public static string FindProjectRoot() =>
+        GoldenFixtureTestHelpers.FindProjectRoot(TestContext.CurrentContext.TestDirectory, CsprojFileName);
 }
 
 [TestFixture]
-public class Given_FixtureRunner_With_EmitDdlManifest_False
+public class Given_FixtureRunner_With_Minimal_Fixture : DdlGoldenFixtureTestBase
 {
-    private string _fixtureDirectory = default!;
-
-    [OneTimeSetUp]
-    public void Setup()
-    {
-        var projectRoot = FixtureTestHelper.FindProjectRoot();
-        _fixtureDirectory = Path.Combine(projectRoot, "Fixtures", "small", "no-ddl-manifest");
-
-        FixtureRunner.Run(_fixtureDirectory);
-    }
-
-    [Test]
-    public void It_should_not_emit_ddl_manifest()
-    {
-        File.Exists(Path.Combine(_fixtureDirectory, "actual", "ddl.manifest.json")).Should().BeFalse();
-    }
-
-    [Test]
-    public void It_should_still_emit_effective_schema_manifest()
-    {
-        File.Exists(Path.Combine(_fixtureDirectory, "actual", "effective-schema.manifest.json"))
-            .Should()
-            .BeTrue();
-    }
-
-    [Test]
-    public void It_should_still_emit_dialect_sql()
-    {
-        File.Exists(Path.Combine(_fixtureDirectory, "actual", "pgsql.sql")).Should().BeTrue();
-        File.Exists(Path.Combine(_fixtureDirectory, "actual", "mssql.sql")).Should().BeTrue();
-    }
+    protected override string ResolveFixtureDirectory(string projectRoot) =>
+        Path.Combine(projectRoot, "Fixtures", "small", "minimal");
 }
 
-[TestFixture("minimal")]
-[TestFixture("nested")]
-[TestFixture("polymorphic")]
-[TestFixture("ext")]
-[TestFixture("naming-stress")]
-public class Given_FixtureRunner_With_Small_Fixture(string fixtureName)
+[TestFixture]
+public class Given_FixtureRunner_With_Nested_Fixture : DdlGoldenFixtureTestBase
 {
-    private string _fixtureDirectory = default!;
-    private FixtureCompareResult _result = default!;
+    protected override string ResolveFixtureDirectory(string projectRoot) =>
+        Path.Combine(projectRoot, "Fixtures", "small", "nested");
+}
 
-    [OneTimeSetUp]
-    public void Setup()
-    {
-        var projectRoot = FixtureTestHelper.FindProjectRoot();
-        _fixtureDirectory = Path.Combine(projectRoot, "Fixtures", "small", fixtureName);
+[TestFixture]
+public class Given_FixtureRunner_With_Polymorphic_Fixture : DdlGoldenFixtureTestBase
+{
+    protected override string ResolveFixtureDirectory(string projectRoot) =>
+        Path.Combine(projectRoot, "Fixtures", "small", "polymorphic");
+}
 
-        FixtureRunner.Run(_fixtureDirectory);
-        _result = FixtureComparer.Compare(_fixtureDirectory);
-    }
+[TestFixture]
+public class Given_FixtureRunner_With_Ext_Fixture : DdlGoldenFixtureTestBase
+{
+    protected override string ResolveFixtureDirectory(string projectRoot) =>
+        Path.Combine(projectRoot, "Fixtures", "small", "ext");
+}
 
-    [Test]
-    public void It_should_match_expected_output()
-    {
-        _result
-            .Passed.Should()
-            .BeTrue(
-                $"expected/ and actual/ should match. Set UPDATE_GOLDENS=1 to regenerate.\n\n{_result.Message}"
-            );
-    }
+[TestFixture]
+public class Given_FixtureRunner_With_NamingStress_Fixture : DdlGoldenFixtureTestBase
+{
+    protected override string ResolveFixtureDirectory(string projectRoot) =>
+        Path.Combine(projectRoot, "Fixtures", "small", "naming-stress");
+}
 
-    [Test]
-    public void It_should_emit_all_expected_artifacts()
-    {
-        var actualDir = Path.Combine(_fixtureDirectory, "actual");
-        File.Exists(Path.Combine(actualDir, "effective-schema.manifest.json")).Should().BeTrue();
-        File.Exists(Path.Combine(actualDir, "relational-model.pgsql.manifest.json")).Should().BeTrue();
-        File.Exists(Path.Combine(actualDir, "relational-model.mssql.manifest.json")).Should().BeTrue();
-        File.Exists(Path.Combine(actualDir, "pgsql.sql")).Should().BeTrue();
-        File.Exists(Path.Combine(actualDir, "mssql.sql")).Should().BeTrue();
-        File.Exists(Path.Combine(actualDir, "ddl.manifest.json")).Should().BeTrue();
-    }
+[TestFixture]
+public class Given_FixtureRunner_With_EmitDdlManifest_False : DdlGoldenFixtureTestBase
+{
+    protected override string ResolveFixtureDirectory(string projectRoot) =>
+        Path.Combine(projectRoot, "Fixtures", "small", "no-ddl-manifest");
 }
 
 [TestFixture]
@@ -130,7 +73,7 @@ public class Given_FixtureComparer_When_UpdateGoldens_Is_Set
 
         // Work on a temp copy so we never mutate the checked-in expected/ directory
         _tempFixtureDirectory = Path.Combine(Path.GetTempPath(), $"ddl-fixture-{Guid.NewGuid():N}");
-        CopyDirectory(sourceFixtureDirectory, _tempFixtureDirectory);
+        GoldenFixtureTestHelpers.CopyDirectory(sourceFixtureDirectory, _tempFixtureDirectory);
 
         FixtureRunner.Run(_tempFixtureDirectory);
 
@@ -186,20 +129,5 @@ public class Given_FixtureComparer_When_UpdateGoldens_Is_Set
             .ToList();
 
         expectedFiles.Should().BeEquivalentTo(actualFiles);
-    }
-
-    private static void CopyDirectory(string sourceDir, string targetDir)
-    {
-        Directory.CreateDirectory(targetDir);
-
-        foreach (var file in Directory.GetFiles(sourceDir))
-        {
-            File.Copy(file, Path.Combine(targetDir, Path.GetFileName(file)));
-        }
-
-        foreach (var dir in Directory.GetDirectories(sourceDir))
-        {
-            CopyDirectory(dir, Path.Combine(targetDir, Path.GetFileName(dir)));
-        }
     }
 }

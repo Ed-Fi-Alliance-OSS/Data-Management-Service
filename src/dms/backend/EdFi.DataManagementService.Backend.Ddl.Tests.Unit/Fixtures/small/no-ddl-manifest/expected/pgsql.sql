@@ -191,6 +191,19 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
+        WHERE conname = 'CK_EffectiveSchema_ApiSchemaFormatVersion_NotBlank'
+        AND conrelid = to_regclass('"dms"."EffectiveSchema"')
+    )
+    THEN
+        ALTER TABLE "dms"."EffectiveSchema"
+        ADD CONSTRAINT "CK_EffectiveSchema_ApiSchemaFormatVersion_NotBlank" CHECK (btrim("ApiSchemaFormatVersion") <> '');
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
         WHERE conname = 'CK_EffectiveSchema_ResourceKeySeedHash_Length'
         AND conrelid = to_regclass('"dms"."EffectiveSchema"')
     )
@@ -559,16 +572,20 @@ INSERT INTO "dms"."EffectiveSchema" ("EffectiveSchemaSingletonId", "ApiSchemaFor
 VALUES (1, '1.0.0', 'e68eb06e75b829edd10633e1077b04a29f02c23dba8cf704aaefbbb08706d4fe', 1, '\xCBA2C51987BF6B657F9C898F28F22A073C0EDA05B26EB5A33497AF52CE1DD492'::bytea)
 ON CONFLICT ("EffectiveSchemaSingletonId") DO NOTHING;
 
--- EffectiveSchema validation (ResourceKeyCount + ResourceKeySeedHash)
+-- EffectiveSchema validation (ApiSchemaFormatVersion + ResourceKeyCount + ResourceKeySeedHash)
 DO $$
 DECLARE
+    _stored_api_schema_format_version text;
     _stored_count smallint;
     _stored_hash bytea;
 BEGIN
-    SELECT "ResourceKeyCount", "ResourceKeySeedHash" INTO _stored_count, _stored_hash
+    SELECT "ApiSchemaFormatVersion", "ResourceKeyCount", "ResourceKeySeedHash" INTO _stored_api_schema_format_version, _stored_count, _stored_hash
     FROM "dms"."EffectiveSchema"
     WHERE "EffectiveSchemaSingletonId" = 1;
     IF _stored_count IS NOT NULL THEN
+        IF _stored_api_schema_format_version IS NULL OR btrim(_stored_api_schema_format_version) = '' THEN
+            RAISE EXCEPTION 'dms.EffectiveSchema.ApiSchemaFormatVersion must not be empty.';
+        END IF;
         IF _stored_count <> 1 THEN
             RAISE EXCEPTION 'dms.EffectiveSchema ResourceKeyCount mismatch: expected 1, found %', _stored_count;
         END IF;
