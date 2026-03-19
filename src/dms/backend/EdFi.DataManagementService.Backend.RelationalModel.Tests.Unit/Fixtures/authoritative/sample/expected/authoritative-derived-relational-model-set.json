@@ -32663,19 +32663,6 @@
       ]
     },
     {
-      "name": "IX_ContactExtensionAddress_BaseCollectionItemId_Cont_be1abe2331",
-      "table": {
-        "schema": "sample",
-        "name": "ContactExtensionAddress"
-      },
-      "kind": "ForeignKeySupport",
-      "is_unique": false,
-      "key_columns": [
-        "BaseCollectionItemId",
-        "Contact_DocumentId"
-      ]
-    },
-    {
       "name": "PK_ContactExtensionAddress",
       "table": {
         "schema": "sample",
@@ -32688,6 +32675,32 @@
       ]
     },
     {
+      "name": "UX_ContactExtensionAddress_BaseCollectionItemId_Cont_3f60679c7b",
+      "table": {
+        "schema": "sample",
+        "name": "ContactExtensionAddress"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "BaseCollectionItemId",
+        "Contact_DocumentId"
+      ]
+    },
+    {
+      "name": "IX_ContactExtensionAddressSchoolDistrict_BaseCollect_67e9be25bf",
+      "table": {
+        "schema": "sample",
+        "name": "ContactExtensionAddressSchoolDistrict"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "BaseCollectionItemId",
+        "Contact_DocumentId"
+      ]
+    },
+    {
       "name": "PK_ContactExtensionAddressSchoolDistrict",
       "table": {
         "schema": "sample",
@@ -32696,13 +32709,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Contact_DocumentId",
-        "AddressOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_ContactExtensionAddressSchoolDistrict_AddressOrdi_d5b7efa780",
+      "name": "UX_ContactExtensionAddressSchoolDistrict_BaseCollect_9902a3d6d5",
       "table": {
         "schema": "sample",
         "name": "ContactExtensionAddressSchoolDistrict"
@@ -32710,9 +32721,34 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "Contact_DocumentId",
-        "AddressOrdinal",
+        "BaseCollectionItemId",
+        "Ordinal"
+      ]
+    },
+    {
+      "name": "UX_ContactExtensionAddressSchoolDistrict_BaseCollect_e302d1fe5f",
+      "table": {
+        "schema": "sample",
+        "name": "ContactExtensionAddressSchoolDistrict"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "BaseCollectionItemId",
         "SchoolDistrict"
+      ]
+    },
+    {
+      "name": "IX_ContactExtensionAddressTerm_BaseCollectionItemId__1cfef0b015",
+      "table": {
+        "schema": "sample",
+        "name": "ContactExtensionAddressTerm"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "BaseCollectionItemId",
+        "Contact_DocumentId"
       ]
     },
     {
@@ -32736,13 +32772,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Contact_DocumentId",
-        "AddressOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_ContactExtensionAddressTerm_AddressOrdinal_Contac_4f6739bbca",
+      "name": "UX_ContactExtensionAddressTerm_BaseCollectionItemId_Ordinal",
       "table": {
         "schema": "sample",
         "name": "ContactExtensionAddressTerm"
@@ -32750,8 +32784,20 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "Contact_DocumentId",
-        "AddressOrdinal",
+        "BaseCollectionItemId",
+        "Ordinal"
+      ]
+    },
+    {
+      "name": "UX_ContactExtensionAddressTerm_BaseCollectionItemId__6adb2ae374",
+      "table": {
+        "schema": "sample",
+        "name": "ContactExtensionAddressTerm"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "BaseCollectionItemId",
         "TermDescriptor_DescriptorId"
       ]
     },
@@ -32764,8 +32810,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Contact_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -32782,6 +32827,19 @@
       ]
     },
     {
+      "name": "UX_ContactExtensionAuthor_Ordinal_Contact_DocumentId",
+      "table": {
+        "schema": "sample",
+        "name": "ContactExtensionAuthor"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "Contact_DocumentId",
+        "Ordinal"
+      ]
+    },
+    {
       "name": "PK_ContactExtensionCeilingHeight",
       "table": {
         "schema": "sample",
@@ -32790,8 +32848,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Contact_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -32805,6 +32862,19 @@
       "key_columns": [
         "Contact_DocumentId",
         "CeilingHeight"
+      ]
+    },
+    {
+      "name": "UX_ContactExtensionCeilingHeight_Ordinal_Contact_DocumentId",
+      "table": {
+        "schema": "sample",
+        "name": "ContactExtensionCeilingHeight"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "Contact_DocumentId",
+        "Ordinal"
       ]
     },
     {
@@ -32829,6 +32899,18 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
+        "CollectionItemId"
+      ]
+    },
+    {
+      "name": "UX_ContactExtensionEducationContent_Ordinal_Contact_DocumentId",
+      "table": {
+        "schema": "sample",
+        "name": "ContactExtensionEducationContent"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
         "Contact_DocumentId",
         "Ordinal"
       ]
@@ -32842,8 +32924,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Contact_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -32857,6 +32938,19 @@
       "key_columns": [
         "Contact_DocumentId",
         "FavoriteBookTitle"
+      ]
+    },
+    {
+      "name": "UX_ContactExtensionFavoriteBookTitle_Ordinal_Contact_DocumentId",
+      "table": {
+        "schema": "sample",
+        "name": "ContactExtensionFavoriteBookTitle"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "Contact_DocumentId",
+        "Ordinal"
       ]
     },
     {
@@ -32896,6 +32990,18 @@
         "name": "ContactExtensionStudentProgramAssociation"
       },
       "kind": "PrimaryKey",
+      "is_unique": true,
+      "key_columns": [
+        "CollectionItemId"
+      ]
+    },
+    {
+      "name": "UX_ContactExtensionStudentProgramAssociation_Ordinal_10395359a5",
+      "table": {
+        "schema": "sample",
+        "name": "ContactExtensionStudentProgramAssociation"
+      },
+      "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
         "Contact_DocumentId",
@@ -32948,6 +33054,18 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
+        "CollectionItemId"
+      ]
+    },
+    {
+      "name": "UX_SchoolExtensionDirectlyOwnedBus_Ordinal_School_DocumentId",
+      "table": {
+        "schema": "sample",
+        "name": "SchoolExtensionDirectlyOwnedBus"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
         "School_DocumentId",
         "Ordinal"
       ]
@@ -32971,6 +33089,18 @@
         "name": "StaffExtensionPet"
       },
       "kind": "PrimaryKey",
+      "is_unique": true,
+      "key_columns": [
+        "CollectionItemId"
+      ]
+    },
+    {
+      "name": "UX_StaffExtensionPet_Ordinal_Staff_DocumentId",
+      "table": {
+        "schema": "sample",
+        "name": "StaffExtensionPet"
+      },
+      "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
         "Staff_DocumentId",
@@ -33442,8 +33572,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentContactAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -33460,6 +33589,19 @@
       ]
     },
     {
+      "name": "UX_StudentContactAssociationExtensionDiscipline_Ordi_5211a171c4",
+      "table": {
+        "schema": "sample",
+        "name": "StudentContactAssociationExtensionDiscipline"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "StudentContactAssociation_DocumentId",
+        "Ordinal"
+      ]
+    },
+    {
       "name": "PK_StudentContactAssociationExtensionFavoriteBookTitle",
       "table": {
         "schema": "sample",
@@ -33468,8 +33610,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentContactAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -33486,6 +33627,19 @@
       ]
     },
     {
+      "name": "UX_StudentContactAssociationExtensionFavoriteBookTit_afefd54f9f",
+      "table": {
+        "schema": "sample",
+        "name": "StudentContactAssociationExtensionFavoriteBookTitle"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "StudentContactAssociation_DocumentId",
+        "Ordinal"
+      ]
+    },
+    {
       "name": "PK_StudentContactAssociationExtensionHoursPerWeek",
       "table": {
         "schema": "sample",
@@ -33494,8 +33648,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentContactAssociation_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -33512,12 +33665,37 @@
       ]
     },
     {
+      "name": "UX_StudentContactAssociationExtensionHoursPerWeek_Or_9b823ca726",
+      "table": {
+        "schema": "sample",
+        "name": "StudentContactAssociationExtensionHoursPerWeek"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "StudentContactAssociation_DocumentId",
+        "Ordinal"
+      ]
+    },
+    {
       "name": "PK_StudentContactAssociationExtensionPagesRead",
       "table": {
         "schema": "sample",
         "name": "StudentContactAssociationExtensionPagesRead"
       },
       "kind": "PrimaryKey",
+      "is_unique": true,
+      "key_columns": [
+        "CollectionItemId"
+      ]
+    },
+    {
+      "name": "UX_StudentContactAssociationExtensionPagesRead_Ordin_9a16aff444",
+      "table": {
+        "schema": "sample",
+        "name": "StudentContactAssociationExtensionPagesRead"
+      },
+      "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
         "StudentContactAssociation_DocumentId",
@@ -33566,12 +33744,24 @@
       ]
     },
     {
-      "name": "PK_StudentContactAssociationExtensionStaffEducationO_84c7800e5d",
+      "name": "PK_StudentContactAssociationExtensionStaffEducationO_3a8cfc2f54",
       "table": {
         "schema": "sample",
         "name": "StudentContactAssociationExtensionStaffEducationOrga_709a93ba3a"
       },
       "kind": "PrimaryKey",
+      "is_unique": true,
+      "key_columns": [
+        "CollectionItemId"
+      ]
+    },
+    {
+      "name": "UX_StudentContactAssociationExtensionStaffEducationO_d3dd2afa79",
+      "table": {
+        "schema": "sample",
+        "name": "StudentContactAssociationExtensionStaffEducationOrga_709a93ba3a"
+      },
+      "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
         "StudentContactAssociation_DocumentId",
@@ -33618,7 +33808,20 @@
       ]
     },
     {
-      "name": "PK_StudentEducationOrganizationAssociationExtensionA_63ddd66d51",
+      "name": "IX_StudentEducationOrganizationAssociationExtensionA_dd36c86c93",
+      "table": {
+        "schema": "sample",
+        "name": "StudentEducationOrganizationAssociationExtensionAddr_5c87dfa8dc"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "BaseCollectionItemId",
+        "StudentEducationOrganizationAssociation_DocumentId"
+      ]
+    },
+    {
+      "name": "PK_StudentEducationOrganizationAssociationExtensionA_d71e2db775",
       "table": {
         "schema": "sample",
         "name": "StudentEducationOrganizationAssociationExtensionAddr_5c87dfa8dc"
@@ -33626,13 +33829,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "AddressOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_StudentEducationOrganizationAssociationExtensionA_b9e3556da3",
+      "name": "UX_StudentEducationOrganizationAssociationExtensionA_2d2fc2b551",
       "table": {
         "schema": "sample",
         "name": "StudentEducationOrganizationAssociationExtensionAddr_5c87dfa8dc"
@@ -33640,22 +33841,21 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "AddressOrdinal",
-        "SchoolDistrict"
+        "BaseCollectionItemId",
+        "Ordinal"
       ]
     },
     {
-      "name": "IX_StudentEducationOrganizationAssociationExtensionA_8656c377e6",
+      "name": "UX_StudentEducationOrganizationAssociationExtensionA_e0927af790",
       "table": {
         "schema": "sample",
-        "name": "StudentEducationOrganizationAssociationExtensionAddress"
+        "name": "StudentEducationOrganizationAssociationExtensionAddr_5c87dfa8dc"
       },
-      "kind": "ForeignKeySupport",
-      "is_unique": false,
+      "kind": "UniqueConstraint",
+      "is_unique": true,
       "key_columns": [
         "BaseCollectionItemId",
-        "StudentEducationOrganizationAssociation_DocumentId"
+        "SchoolDistrict"
       ]
     },
     {
@@ -33668,6 +33868,32 @@
       "is_unique": true,
       "key_columns": [
         "BaseCollectionItemId"
+      ]
+    },
+    {
+      "name": "UX_StudentEducationOrganizationAssociationExtensionA_27f1b8e591",
+      "table": {
+        "schema": "sample",
+        "name": "StudentEducationOrganizationAssociationExtensionAddress"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "BaseCollectionItemId",
+        "StudentEducationOrganizationAssociation_DocumentId"
+      ]
+    },
+    {
+      "name": "IX_StudentEducationOrganizationAssociationExtensionA_3ae65243ee",
+      "table": {
+        "schema": "sample",
+        "name": "StudentEducationOrganizationAssociationExtensionAddressTerm"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "BaseCollectionItemId",
+        "StudentEducationOrganizationAssociation_DocumentId"
       ]
     },
     {
@@ -33691,13 +33917,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "AddressOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_StudentEducationOrganizationAssociationExtensionA_f11c96e2be",
+      "name": "UX_StudentEducationOrganizationAssociationExtensionA_0f3a586729",
       "table": {
         "schema": "sample",
         "name": "StudentEducationOrganizationAssociationExtensionAddressTerm"
@@ -33705,13 +33929,38 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "AddressOrdinal",
+        "BaseCollectionItemId",
         "TermDescriptor_DescriptorId"
       ]
     },
     {
-      "name": "PK_StudentEducationOrganizationAssociationExtensionS_89402c3ea8",
+      "name": "UX_StudentEducationOrganizationAssociationExtensionA_c5e8afe910",
+      "table": {
+        "schema": "sample",
+        "name": "StudentEducationOrganizationAssociationExtensionAddressTerm"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "BaseCollectionItemId",
+        "Ordinal"
+      ]
+    },
+    {
+      "name": "IX_StudentEducationOrganizationAssociationExtensionS_f1a15b6d97",
+      "table": {
+        "schema": "sample",
+        "name": "StudentEducationOrganizationAssociationExtensionStud_40660db350"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "BaseCollectionItemId",
+        "StudentEducationOrganizationAssociation_DocumentId"
+      ]
+    },
+    {
+      "name": "PK_StudentEducationOrganizationAssociationExtensionS_5945da8ca7",
       "table": {
         "schema": "sample",
         "name": "StudentEducationOrganizationAssociationExtensionStud_40660db350"
@@ -33719,13 +33968,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "StudentCharacteristicOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_StudentEducationOrganizationAssociationExtensionS_4810b03914",
+      "name": "UX_StudentEducationOrganizationAssociationExtensionS_095f72a7d2",
       "table": {
         "schema": "sample",
         "name": "StudentEducationOrganizationAssociationExtensionStud_40660db350"
@@ -33733,22 +33980,21 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "StudentEducationOrganizationAssociation_DocumentId",
-        "StudentCharacteristicOrdinal",
+        "BaseCollectionItemId",
         "BeginDate"
       ]
     },
     {
-      "name": "IX_StudentEducationOrganizationAssociationExtensionS_615c95f97b",
+      "name": "UX_StudentEducationOrganizationAssociationExtensionS_fb8c8b2825",
       "table": {
         "schema": "sample",
-        "name": "StudentEducationOrganizationAssociationExtensionStud_bc907717e8"
+        "name": "StudentEducationOrganizationAssociationExtensionStud_40660db350"
       },
-      "kind": "ForeignKeySupport",
-      "is_unique": false,
+      "kind": "UniqueConstraint",
+      "is_unique": true,
       "key_columns": [
         "BaseCollectionItemId",
-        "StudentEducationOrganizationAssociation_DocumentId"
+        "Ordinal"
       ]
     },
     {
@@ -33761,6 +34007,19 @@
       "is_unique": true,
       "key_columns": [
         "BaseCollectionItemId"
+      ]
+    },
+    {
+      "name": "UX_StudentEducationOrganizationAssociationExtensionS_39b1cee52c",
+      "table": {
+        "schema": "sample",
+        "name": "StudentEducationOrganizationAssociationExtensionStud_bc907717e8"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "BaseCollectionItemId",
+        "StudentEducationOrganizationAssociation_DocumentId"
       ]
     },
     {
@@ -33784,8 +34043,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Student_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
@@ -33800,6 +34058,19 @@
         "Student_DocumentId",
         "MimimumTankVolume",
         "PetName"
+      ]
+    },
+    {
+      "name": "UX_StudentExtensionAquaticPet_Ordinal_Student_DocumentId",
+      "table": {
+        "schema": "sample",
+        "name": "StudentExtensionAquaticPet"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "Student_DocumentId",
+        "Ordinal"
       ]
     },
     {
@@ -33823,8 +34094,20 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Student_DocumentId",
-        "Ordinal"
+        "CollectionItemId"
+      ]
+    },
+    {
+      "name": "UX_StudentExtensionFavoriteBook_CollectionItemId_Stu_6e75c9f976",
+      "table": {
+        "schema": "sample",
+        "name": "StudentExtensionFavoriteBook"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "CollectionItemId",
+        "Student_DocumentId"
       ]
     },
     {
@@ -33841,6 +34124,19 @@
       ]
     },
     {
+      "name": "UX_StudentExtensionFavoriteBook_Ordinal_Student_DocumentId",
+      "table": {
+        "schema": "sample",
+        "name": "StudentExtensionFavoriteBook"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "Student_DocumentId",
+        "Ordinal"
+      ]
+    },
+    {
       "name": "IX_StudentExtensionFavoriteBookArtMedia_ArtMediumDes_d8b75cf7ae",
       "table": {
         "schema": "sample",
@@ -33853,6 +34149,19 @@
       ]
     },
     {
+      "name": "IX_StudentExtensionFavoriteBookArtMedia_ParentCollec_e1b45cd018",
+      "table": {
+        "schema": "sample",
+        "name": "StudentExtensionFavoriteBookArtMedia"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ParentCollectionItemId",
+        "Student_DocumentId"
+      ]
+    },
+    {
       "name": "PK_StudentExtensionFavoriteBookArtMedia",
       "table": {
         "schema": "sample",
@@ -33861,13 +34170,11 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "Student_DocumentId",
-        "FavoriteBookOrdinal",
-        "Ordinal"
+        "CollectionItemId"
       ]
     },
     {
-      "name": "UX_StudentExtensionFavoriteBookArtMedia_FavoriteBook_79f2ba2363",
+      "name": "UX_StudentExtensionFavoriteBookArtMedia_Ordinal_Pare_83c33e891c",
       "table": {
         "schema": "sample",
         "name": "StudentExtensionFavoriteBookArtMedia"
@@ -33875,8 +34182,20 @@
       "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
-        "Student_DocumentId",
-        "FavoriteBookOrdinal",
+        "ParentCollectionItemId",
+        "Ordinal"
+      ]
+    },
+    {
+      "name": "UX_StudentExtensionFavoriteBookArtMedia_ParentCollec_c2ca66df44",
+      "table": {
+        "schema": "sample",
+        "name": "StudentExtensionFavoriteBookArtMedia"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "ParentCollectionItemId",
         "ArtMediumDescriptor_DescriptorId"
       ]
     },
@@ -33887,6 +34206,18 @@
         "name": "StudentExtensionPet"
       },
       "kind": "PrimaryKey",
+      "is_unique": true,
+      "key_columns": [
+        "CollectionItemId"
+      ]
+    },
+    {
+      "name": "UX_StudentExtensionPet_Ordinal_Student_DocumentId",
+      "table": {
+        "schema": "sample",
+        "name": "StudentExtensionPet"
+      },
+      "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
         "Student_DocumentId",
@@ -34342,12 +34673,24 @@
       ]
     },
     {
-      "name": "PK_StudentSectionAssociationExtensionRelatedGeneralS_ea03011126",
+      "name": "PK_StudentSectionAssociationExtensionRelatedGeneralS_9eacdab11d",
       "table": {
         "schema": "sample",
         "name": "StudentSectionAssociationExtensionRelatedGeneralStud_00521721f5"
       },
       "kind": "PrimaryKey",
+      "is_unique": true,
+      "key_columns": [
+        "CollectionItemId"
+      ]
+    },
+    {
+      "name": "UX_StudentSectionAssociationExtensionRelatedGeneralS_d89b85350f",
+      "table": {
+        "schema": "sample",
+        "name": "StudentSectionAssociationExtensionRelatedGeneralStud_00521721f5"
+      },
+      "kind": "UniqueConstraint",
       "is_unique": true,
       "key_columns": [
         "StudentSectionAssociation_DocumentId",

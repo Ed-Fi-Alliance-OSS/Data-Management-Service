@@ -51,7 +51,7 @@
       "Update `ExtensionTableDerivationTests` to cover root `_ext` child collections, collection-aligned `_ext` child collections, and nested extension child collections with the new key and FK shapes.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Semantic Identity Metadata",

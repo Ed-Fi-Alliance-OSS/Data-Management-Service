@@ -19,6 +19,8 @@ public class Given_Extension_Table_Derivation
     private RelationalResourceModel _schoolModel = default!;
     private DbTableModel _schoolExtensionRoot = default!;
     private DbTableModel _schoolExtensionAddress = default!;
+    private DbTableModel _schoolExtensionIntervention = default!;
+    private DbTableModel _schoolExtensionInterventionVisit = default!;
     private DbTableModel _schoolExtensionSponsor = default!;
     private DbTableModel _schoolBaseRoot = default!;
 
@@ -68,6 +70,12 @@ public class Given_Extension_Table_Derivation
         _schoolExtensionAddress = _schoolModel.TablesInDependencyOrder.Single(table =>
             table.Table.Schema.Value == "sample" && table.Table.Name == "SchoolExtensionAddress"
         );
+        _schoolExtensionIntervention = _schoolModel.TablesInDependencyOrder.Single(table =>
+            table.Table.Schema.Value == "sample" && table.Table.Name == "SchoolExtensionIntervention"
+        );
+        _schoolExtensionInterventionVisit = _schoolModel.TablesInDependencyOrder.Single(table =>
+            table.Table.Schema.Value == "sample" && table.Table.Name == "SchoolExtensionInterventionVisit"
+        );
         _schoolExtensionSponsor = _schoolModel.TablesInDependencyOrder.Single(table =>
             table.Table.Schema.Value == "sample"
             && table.Table.Name == "SchoolExtensionAddressSponsorReference"
@@ -82,6 +90,10 @@ public class Given_Extension_Table_Derivation
     {
         _schoolExtensionRoot.JsonScope.Canonical.Should().Be("$._ext.sample");
         _schoolExtensionAddress.JsonScope.Canonical.Should().Be("$._ext.sample.addresses[*]._ext.sample");
+        _schoolExtensionIntervention.JsonScope.Canonical.Should().Be("$._ext.sample.interventions[*]");
+        _schoolExtensionInterventionVisit
+            .JsonScope.Canonical.Should()
+            .Be("$._ext.sample.interventions[*].visits[*]");
         _schoolExtensionSponsor
             .JsonScope.Canonical.Should()
             .Be("$._ext.sample.addresses[*]._ext.sample.sponsorReferences[*]");
@@ -93,6 +105,8 @@ public class Given_Extension_Table_Derivation
     [Test]
     public void It_should_align_extension_keys_to_base_scopes()
     {
+        var rootDocumentIdColumn = RelationalNameConventions.RootDocumentIdColumnName("School").Value;
+
         _schoolExtensionRoot
             .Key.Columns.Select(column => column.ColumnName.Value)
             .Should()
@@ -105,15 +119,48 @@ public class Given_Extension_Table_Derivation
         _schoolExtensionAddress
             .Columns.Select(column => column.ColumnName.Value)
             .Should()
+            .Contain(RelationalNameConventions.BaseCollectionItemIdColumnName.Value, rootDocumentIdColumn);
+
+        _schoolExtensionIntervention
+            .Key.Columns.Select(column => column.ColumnName.Value)
+            .Should()
+            .Equal(RelationalNameConventions.CollectionItemIdColumnName.Value);
+        _schoolExtensionIntervention
+            .Columns.Select(column => column.ColumnName.Value)
+            .Should()
             .Contain(
-                RelationalNameConventions.BaseCollectionItemIdColumnName.Value,
-                RelationalNameConventions.RootDocumentIdColumnName("School").Value
+                RelationalNameConventions.CollectionItemIdColumnName.Value,
+                rootDocumentIdColumn,
+                RelationalNameConventions.OrdinalColumnName.Value
             );
 
         _schoolExtensionSponsor
             .Key.Columns.Select(column => column.ColumnName.Value)
             .Should()
-            .Equal("School_DocumentId", "AddressOrdinal", "Ordinal");
+            .Equal(RelationalNameConventions.CollectionItemIdColumnName.Value);
+        _schoolExtensionSponsor
+            .Columns.Select(column => column.ColumnName.Value)
+            .Should()
+            .Contain(
+                RelationalNameConventions.CollectionItemIdColumnName.Value,
+                rootDocumentIdColumn,
+                RelationalNameConventions.BaseCollectionItemIdColumnName.Value,
+                RelationalNameConventions.OrdinalColumnName.Value
+            );
+
+        _schoolExtensionInterventionVisit
+            .Key.Columns.Select(column => column.ColumnName.Value)
+            .Should()
+            .Equal(RelationalNameConventions.CollectionItemIdColumnName.Value);
+        _schoolExtensionInterventionVisit
+            .Columns.Select(column => column.ColumnName.Value)
+            .Should()
+            .Contain(
+                RelationalNameConventions.CollectionItemIdColumnName.Value,
+                rootDocumentIdColumn,
+                RelationalNameConventions.ParentCollectionItemIdColumnName.Value,
+                RelationalNameConventions.OrdinalColumnName.Value
+            );
     }
 
     /// <summary>
@@ -137,6 +184,81 @@ public class Given_Extension_Table_Derivation
         addressFk.TargetTable.Schema.Value.Should().Be("edfi");
         addressFk.TargetTable.Name.Should().Be("SchoolAddress");
         addressFk.OnDelete.Should().Be(ReferentialAction.Cascade);
+    }
+
+    /// <summary>
+    /// It should create cascade FKs to extension parent scopes for extension child collections.
+    /// </summary>
+    [Test]
+    public void It_should_create_cascade_fks_to_extension_parent_scopes()
+    {
+        var interventionFk = _schoolExtensionIntervention
+            .Constraints.OfType<TableConstraint.ForeignKey>()
+            .Single(constraint => constraint.TargetTable.Name == "SchoolExtension");
+
+        interventionFk.Columns.Select(column => column.Value).Should().Equal("School_DocumentId");
+        interventionFk.TargetColumns.Select(column => column.Value).Should().Equal("DocumentId");
+        interventionFk.OnDelete.Should().Be(ReferentialAction.Cascade);
+
+        var sponsorFk = _schoolExtensionSponsor
+            .Constraints.OfType<TableConstraint.ForeignKey>()
+            .Single(constraint => constraint.TargetTable.Name == "SchoolExtensionAddress");
+
+        sponsorFk
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal("BaseCollectionItemId", "School_DocumentId");
+        sponsorFk
+            .TargetColumns.Select(column => column.Value)
+            .Should()
+            .Equal("BaseCollectionItemId", "School_DocumentId");
+        sponsorFk.OnDelete.Should().Be(ReferentialAction.Cascade);
+
+        var visitFk = _schoolExtensionInterventionVisit
+            .Constraints.OfType<TableConstraint.ForeignKey>()
+            .Single(constraint => constraint.TargetTable.Name == "SchoolExtensionIntervention");
+
+        visitFk
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal("ParentCollectionItemId", "School_DocumentId");
+        visitFk
+            .TargetColumns.Select(column => column.Value)
+            .Should()
+            .Equal("CollectionItemId", "School_DocumentId");
+        visitFk.OnDelete.Should().Be(ReferentialAction.Cascade);
+    }
+
+    /// <summary>
+    /// It should expose extension child identity metadata explicitly.
+    /// </summary>
+    [Test]
+    public void It_should_expose_extension_child_identity_metadata_explicitly()
+    {
+        _schoolExtensionIntervention.IdentityMetadata.TableKind.Should().Be(DbTableKind.ExtensionCollection);
+        _schoolExtensionIntervention
+            .IdentityMetadata.PhysicalRowIdentityColumns.Select(column => column.Value)
+            .Should()
+            .Equal(RelationalNameConventions.CollectionItemIdColumnName.Value);
+        _schoolExtensionIntervention
+            .IdentityMetadata.RootScopeLocatorColumns.Select(column => column.Value)
+            .Should()
+            .Equal("School_DocumentId");
+        _schoolExtensionIntervention
+            .IdentityMetadata.ImmediateParentScopeLocatorColumns.Select(column => column.Value)
+            .Should()
+            .Equal("School_DocumentId");
+
+        _schoolExtensionSponsor.IdentityMetadata.TableKind.Should().Be(DbTableKind.ExtensionCollection);
+        _schoolExtensionSponsor
+            .IdentityMetadata.ImmediateParentScopeLocatorColumns.Select(column => column.Value)
+            .Should()
+            .Equal(RelationalNameConventions.BaseCollectionItemIdColumnName.Value);
+
+        _schoolExtensionInterventionVisit
+            .IdentityMetadata.ImmediateParentScopeLocatorColumns.Select(column => column.Value)
+            .Should()
+            .Equal(RelationalNameConventions.ParentCollectionItemIdColumnName.Value);
     }
 
     /// <summary>
@@ -726,6 +848,26 @@ internal static class ExtensionTableTestSchemaBuilder
                 },
             },
         };
+        var interventionItems = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["interventionCode"] = new JsonObject { ["type"] = "string", ["maxLength"] = 20 },
+                ["visits"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["items"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["visitCode"] = new JsonObject { ["type"] = "string", ["maxLength"] = 20 },
+                        },
+                    },
+                },
+            },
+        };
 
         var jsonSchemaForInsert = new JsonObject
         {
@@ -751,6 +893,11 @@ internal static class ExtensionTableTestSchemaBuilder
                                 {
                                     ["type"] = "array",
                                     ["items"] = extensionAddressItems,
+                                },
+                                ["interventions"] = new JsonObject
+                                {
+                                    ["type"] = "array",
+                                    ["items"] = interventionItems,
                                 },
                             },
                         },

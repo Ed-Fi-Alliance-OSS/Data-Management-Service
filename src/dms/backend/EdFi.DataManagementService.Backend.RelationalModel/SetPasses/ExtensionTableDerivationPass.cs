@@ -770,6 +770,8 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
 
     /// <summary>
     /// Creates a child extension table builder for an array-of-object extension property under a parent table.
+    /// Extension child collections mirror core stable-key collection semantics while keeping extension-specific
+    /// immediate parent locators for root-level and collection-aligned scopes.
     /// </summary>
     private static ExtensionTableBuilder CreateChildTableBuilder(
         ExtensionTableBuilder parent,
@@ -795,16 +797,15 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
             extensionProject.PhysicalSchema,
             extensionRootBaseName + string.Concat(collectionBaseNames)
         );
-        var tableKey = BuildChildTableKey(tableName, baseRootBaseName, collectionBaseNames);
+        var tableKey = BuildChildTableKey(tableName);
         var originalTableName = extensionRootBaseName + string.Concat(defaultCollectionBaseNames);
-        var originalKey = BuildChildTableKey(
-            new DbTableName(extensionProject.PhysicalSchema, originalTableName),
+        var identityMetadata = BuildExtensionChildTableIdentityMetadata(
             baseRootBaseName,
-            defaultCollectionBaseNames
+            parent.Definition.IdentityMetadata.TableKind
         );
-        var keyColumns = BuildKeyColumns(tableKey.Columns);
-
-        var parentKeyColumns = BuildParentKeyColumnNames(baseRootBaseName, parent.CollectionBaseNames);
+        var keyColumns = BuildExtensionChildTableColumns(baseRootBaseName, identityMetadata);
+        var originalColumns = BuildExtensionChildTableColumns(baseRootBaseName, identityMetadata);
+        var parentKeyColumns = BuildChildForeignKeyColumns(identityMetadata, parent.Definition);
         var fkName = ConstraintNaming.BuildForeignKeyName(tableName, parent.Definition.Table.Name);
 
         TableConstraint[] constraints =
@@ -813,13 +814,16 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
                 fkName,
                 parentKeyColumns,
                 parent.Definition.Table,
-                parent.Definition.Key.Columns.Select(column => column.ColumnName).ToArray(),
+                BuildChildForeignKeyTargetColumns(parent.Definition),
                 OnDelete: ReferentialAction.Cascade
             ),
         ];
 
         var jsonScope = JsonPathExpressionCompiler.FromSegments(arraySegments);
-        var table = new DbTableModel(tableName, jsonScope, tableKey, keyColumns, constraints);
+        var table = new DbTableModel(tableName, jsonScope, tableKey, keyColumns, constraints)
+        {
+            IdentityMetadata = identityMetadata,
+        };
 
         collisionDetector?.RegisterTable(
             tableName,
@@ -827,10 +831,10 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
             BuildTableOrigin(tableName, resourceLabel, jsonScope)
         );
 
-        for (var index = 0; index < tableKey.Columns.Count; index++)
+        for (var index = 0; index < keyColumns.Length; index++)
         {
-            var finalColumn = tableKey.Columns[index].ColumnName;
-            var originalColumn = originalKey.Columns[index].ColumnName;
+            var finalColumn = keyColumns[index].ColumnName;
+            var originalColumn = originalColumns[index].ColumnName;
 
             collisionDetector?.RegisterColumn(
                 tableName,
@@ -1628,56 +1632,125 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Builds a child table key for an extension collection table aligned to a base collection scope.
+    /// Builds the primary key for an extension child collection table.
     /// </summary>
-    private static TableKey BuildChildTableKey(
-        DbTableName tableName,
-        string baseRootBaseName,
-        IReadOnlyList<string> collectionBaseNames
-    )
+    private static TableKey BuildChildTableKey(DbTableName tableName)
     {
-        List<DbKeyColumn> keyColumns =
-        [
-            new DbKeyColumn(
-                RelationalNameConventions.RootDocumentIdColumnName(baseRootBaseName),
-                ColumnKind.ParentKeyPart
-            ),
-        ];
-
-        for (var index = 0; index < collectionBaseNames.Count - 1; index++)
-        {
-            keyColumns.Add(
-                new DbKeyColumn(
-                    RelationalNameConventions.ParentCollectionOrdinalColumnName(collectionBaseNames[index]),
-                    ColumnKind.ParentKeyPart
-                )
-            );
-        }
-
-        keyColumns.Add(new DbKeyColumn(RelationalNameConventions.OrdinalColumnName, ColumnKind.Ordinal));
-
-        return new TableKey(ConstraintNaming.BuildPrimaryKeyName(tableName), keyColumns.ToArray());
+        return new TableKey(
+            ConstraintNaming.BuildPrimaryKeyName(tableName),
+            [new DbKeyColumn(RelationalNameConventions.CollectionItemIdColumnName, ColumnKind.CollectionKey)]
+        );
     }
 
     /// <summary>
-    /// Builds the parent key column name list for a child extension table FK to its parent table.
+    /// Builds the stable-identity metadata for an extension child collection table.
     /// </summary>
-    private static DbColumnName[] BuildParentKeyColumnNames(
+    private static DbTableIdentityMetadata BuildExtensionChildTableIdentityMetadata(
         string baseRootBaseName,
-        IReadOnlyList<string> parentCollectionBaseNames
+        DbTableKind parentTableKind
     )
     {
-        List<DbColumnName> keyColumns =
+        var rootDocumentIdColumn = RelationalNameConventions.RootDocumentIdColumnName(baseRootBaseName);
+        var immediateParentColumns = parentTableKind switch
+        {
+            DbTableKind.RootExtension => new[] { rootDocumentIdColumn },
+            DbTableKind.CollectionExtensionScope => new[]
+            {
+                RelationalNameConventions.BaseCollectionItemIdColumnName,
+            },
+            DbTableKind.ExtensionCollection => new[]
+            {
+                RelationalNameConventions.ParentCollectionItemIdColumnName,
+            },
+            _ => throw new InvalidOperationException(
+                $"Unsupported parent table kind '{parentTableKind}' for extension child collection derivation."
+            ),
+        };
+
+        return new DbTableIdentityMetadata(
+            DbTableKind.ExtensionCollection,
+            [RelationalNameConventions.CollectionItemIdColumnName],
+            [rootDocumentIdColumn],
+            immediateParentColumns,
+            []
+        );
+    }
+
+    /// <summary>
+    /// Builds the seeded column inventory for an extension child collection table, including stable identity,
+    /// root locator, immediate parent locator, and sibling order.
+    /// </summary>
+    private static DbColumnModel[] BuildExtensionChildTableColumns(
+        string baseRootBaseName,
+        DbTableIdentityMetadata identityMetadata
+    )
+    {
+        var rootDocumentIdColumn = RelationalNameConventions.RootDocumentIdColumnName(baseRootBaseName);
+        List<DbColumnModel> columns =
         [
-            RelationalNameConventions.RootDocumentIdColumnName(baseRootBaseName),
+            CreateKeyColumn(RelationalNameConventions.CollectionItemIdColumnName, ColumnKind.CollectionKey),
+            CreateKeyColumn(rootDocumentIdColumn, ColumnKind.ParentKeyPart),
         ];
 
-        foreach (var collectionBaseName in parentCollectionBaseNames)
+        foreach (var column in identityMetadata.ImmediateParentScopeLocatorColumns)
         {
-            keyColumns.Add(RelationalNameConventions.ParentCollectionOrdinalColumnName(collectionBaseName));
+            if (column.Equals(rootDocumentIdColumn))
+            {
+                continue;
+            }
+
+            columns.Add(CreateKeyColumn(column, ColumnKind.ParentKeyPart));
         }
 
-        return keyColumns.ToArray();
+        columns.Add(CreateKeyColumn(RelationalNameConventions.OrdinalColumnName, ColumnKind.Ordinal));
+
+        return columns.ToArray();
+    }
+
+    /// <summary>
+    /// Builds the child-to-parent FK column list for an extension child collection table from explicit
+    /// identity metadata.
+    /// </summary>
+    private static DbColumnName[] BuildChildForeignKeyColumns(
+        DbTableIdentityMetadata childIdentityMetadata,
+        DbTableModel parentTable
+    )
+    {
+        if (UsesSingleColumnParentForeignKey(parentTable.IdentityMetadata.TableKind))
+        {
+            return childIdentityMetadata.ImmediateParentScopeLocatorColumns.ToArray();
+        }
+
+        return
+        [
+            .. childIdentityMetadata.ImmediateParentScopeLocatorColumns,
+            .. childIdentityMetadata.RootScopeLocatorColumns,
+        ];
+    }
+
+    /// <summary>
+    /// Builds the target column list for an extension child collection FK from explicit parent identity metadata.
+    /// </summary>
+    private static DbColumnName[] BuildChildForeignKeyTargetColumns(DbTableModel parentTable)
+    {
+        if (UsesSingleColumnParentForeignKey(parentTable.IdentityMetadata.TableKind))
+        {
+            return parentTable.IdentityMetadata.PhysicalRowIdentityColumns.ToArray();
+        }
+
+        return
+        [
+            .. parentTable.IdentityMetadata.PhysicalRowIdentityColumns,
+            .. parentTable.IdentityMetadata.RootScopeLocatorColumns,
+        ];
+    }
+
+    /// <summary>
+    /// Returns true when the parent scope's FK target is represented entirely by its physical identity column.
+    /// </summary>
+    private static bool UsesSingleColumnParentForeignKey(DbTableKind parentTableKind)
+    {
+        return parentTableKind is DbTableKind.Root or DbTableKind.RootExtension;
     }
 
     /// <summary>
@@ -1817,6 +1890,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
         return keyColumn.Kind switch
         {
             ColumnKind.Ordinal => new RelationalScalarType(ScalarKind.Int32),
+            ColumnKind.CollectionKey => new RelationalScalarType(ScalarKind.Int64),
             ColumnKind.ParentKeyPart => RelationalNameConventions.IsDocumentIdColumn(keyColumn.ColumnName)
             || RelationalNameConventions.IsCollectionIdentityColumn(keyColumn.ColumnName)
                 ? new RelationalScalarType(ScalarKind.Int64)
