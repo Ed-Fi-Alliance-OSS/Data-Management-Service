@@ -42,7 +42,7 @@
       "Update `ExtensionTableDerivationTests` to cover collection-aligned `_ext` scope tables with the new PK, locator, and composite FK shape.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Extension Child Collections",
