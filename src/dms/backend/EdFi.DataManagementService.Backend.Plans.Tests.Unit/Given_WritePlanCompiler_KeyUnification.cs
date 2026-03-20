@@ -220,7 +220,7 @@ public class Given_WritePlanCompiler_KeyUnification : WritePlanCompilerTestBase
         act.Should()
             .Throw<InvalidOperationException>()
             .WithMessage(
-                "Cannot compile key-unification plan for 'edfi.Student': precomputed bindings produced multiple times by key-unification inventory: 'SchoolYearCanonical'.*"
+                "Cannot compile key-unification plan for 'edfi.Student': precomputed bindings produced multiple times by collection-key preallocation or key-unification inventory: 'SchoolYearCanonical'.*"
             );
     }
 

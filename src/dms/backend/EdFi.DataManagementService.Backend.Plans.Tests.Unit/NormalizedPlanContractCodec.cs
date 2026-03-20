@@ -48,7 +48,13 @@ internal static class NormalizedPlanContractCodec
                                 EncodeKeyUnificationMember
                             )
                         )
-                    )
+                    ),
+                    CollectionKeyPreallocationPlan: tablePlan.CollectionKeyPreallocationPlan is null
+                        ? null
+                        : new CollectionKeyPreallocationPlanDto(
+                            ColumnName: tablePlan.CollectionKeyPreallocationPlan.ColumnName.Value,
+                            BindingIndex: tablePlan.CollectionKeyPreallocationPlan.BindingIndex
+                        )
                 )
             )
         );
@@ -222,11 +228,63 @@ internal static class NormalizedPlanContractCodec
                     MaxParametersPerCommand: tablePlanDto.BulkInsertBatching.MaxParametersPerCommand
                 ),
                 ColumnBindings: decodedColumnBindings,
-                KeyUnificationPlans: decodedKeyUnificationPlans
+                KeyUnificationPlans: decodedKeyUnificationPlans,
+                CollectionKeyPreallocationPlan: DecodeCollectionKeyPreallocationPlan(
+                    tablePlanDto,
+                    tableModel,
+                    columnsByName,
+                    decodedColumnBindings.Length,
+                    tablePlanArgument
+                )
             );
         }
 
         return new ExternalPlans.ResourceWritePlan(model, decodedTablePlans);
+    }
+
+    private static ExternalPlans.CollectionKeyPreallocationPlan? DecodeCollectionKeyPreallocationPlan(
+        TableWritePlanDto tablePlanDto,
+        DbTableModel tableModel,
+        IReadOnlyDictionary<DbColumnName, DbColumnModel> columnsByName,
+        int bindingCount,
+        string tablePlanArgument
+    )
+    {
+        if (tablePlanDto.CollectionKeyPreallocationPlan is null)
+        {
+            return null;
+        }
+
+        var planDto = tablePlanDto.CollectionKeyPreallocationPlan;
+        var planArgument = $"{tablePlanArgument}.{nameof(TableWritePlanDto.CollectionKeyPreallocationPlan)}";
+
+        var columnModel = ResolveColumnModel(
+            planDto.ColumnName,
+            tableModel,
+            columnsByName,
+            $"{planArgument}.{nameof(CollectionKeyPreallocationPlanDto.ColumnName)}"
+        );
+
+        if (columnModel.Kind is not ColumnKind.CollectionKey)
+        {
+            throw new ArgumentException(
+                $"{planArgument}.{nameof(CollectionKeyPreallocationPlanDto.ColumnName)} must resolve to a {nameof(ColumnKind.CollectionKey)} column.",
+                nameof(tablePlanDto)
+            );
+        }
+
+        if (planDto.BindingIndex < 0 || planDto.BindingIndex >= bindingCount)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(tablePlanDto),
+                $"{planArgument}.{nameof(CollectionKeyPreallocationPlanDto.BindingIndex)} must be between 0 and {bindingCount - 1}."
+            );
+        }
+
+        return new ExternalPlans.CollectionKeyPreallocationPlan(
+            ColumnName: columnModel.ColumnName,
+            BindingIndex: planDto.BindingIndex
+        );
     }
 
     public static ExternalPlans.ResourceReadPlan Decode(

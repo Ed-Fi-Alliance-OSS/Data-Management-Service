@@ -299,6 +299,46 @@ public class Given_NormalizedPlanContractDtos
     }
 
     [Test]
+    public void It_should_emit_collection_key_preallocation_plan_when_present()
+    {
+        var collectionWritePlan = new ResourceWritePlanDto(
+            new QualifiedResourceNameDto("Ed-Fi", "School"),
+            [
+                new TableWritePlanDto(
+                    Table: new DbTableNameDto("edfi", "SchoolAddress"),
+                    InsertSql: "INSERT INTO [edfi].[SchoolAddress] ([CollectionItemId])\r\nVALUES (@collectionItemId);",
+                    UpdateSql: null,
+                    DeleteByParentSql: "DELETE FROM [edfi].[SchoolAddress]\r\nWHERE [School_DocumentId] = @schoolDocumentId;",
+                    BulkInsertBatching: new BulkInsertBatchingInfoDto(
+                        MaxRowsPerBatch: 200,
+                        ParametersPerRow: 1,
+                        MaxParametersPerCommand: 2100
+                    ),
+                    ColumnBindings:
+                    [
+                        new WriteColumnBindingDto(
+                            ColumnName: "CollectionItemId",
+                            Source: new WriteValueSourceDto.Precomputed(),
+                            ParameterName: "collectionItemId"
+                        ),
+                    ],
+                    KeyUnificationPlans: [],
+                    CollectionKeyPreallocationPlan: new CollectionKeyPreallocationPlanDto(
+                        ColumnName: "CollectionItemId",
+                        BindingIndex: 0
+                    )
+                ),
+            ]
+        );
+
+        var json = NormalizedPlanDtoJson.EmitCanonicalJson(collectionWritePlan);
+
+        json.Should().Contain("\"collection_key_preallocation_plan\": {");
+        json.Should().Contain("\"column_name\": \"CollectionItemId\"");
+        json.Should().Contain("\"binding_index\": 0");
+    }
+
+    [Test]
     public void It_should_change_query_hash_when_authoritative_parameter_order_changes()
     {
         var reorderedQueryPlan = _queryPlan with

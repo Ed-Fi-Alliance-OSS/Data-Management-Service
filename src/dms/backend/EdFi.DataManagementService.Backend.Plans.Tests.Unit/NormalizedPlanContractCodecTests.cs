@@ -107,6 +107,38 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_roundtrip_collection_key_preallocation_plan_through_normalized_dto()
+    {
+        var model = CreateFocusedStableKeyFixtureResourceModel(SqlDialect.Pgsql);
+        var sourcePlan = new WritePlanCompiler(SqlDialect.Pgsql).Compile(model);
+        var encoded = NormalizedPlanContractCodec.Encode(sourcePlan);
+        var decoded = NormalizedPlanContractCodec.Decode(encoded, model);
+
+        var sourceTablePlan = sourcePlan.TablePlansInDependencyOrder.Single(tablePlan =>
+            string.Equals(tablePlan.TableModel.Table.Name, "SchoolAddress", StringComparison.Ordinal)
+        );
+        var decodedTablePlan = decoded.TablePlansInDependencyOrder.Single(tablePlan =>
+            string.Equals(tablePlan.TableModel.Table.Name, "SchoolAddress", StringComparison.Ordinal)
+        );
+
+        encoded
+            .TablePlansInDependencyOrder.Single(tablePlan =>
+                string.Equals(tablePlan.Table.Name, "SchoolAddress", StringComparison.Ordinal)
+            )
+            .CollectionKeyPreallocationPlan.Should()
+            .Be(
+                new CollectionKeyPreallocationPlanDto(
+                    ColumnName: "CollectionItemId",
+                    BindingIndex: sourceTablePlan.CollectionKeyPreallocationPlan!.BindingIndex
+                )
+            );
+
+        decodedTablePlan
+            .CollectionKeyPreallocationPlan.Should()
+            .Be(sourceTablePlan.CollectionKeyPreallocationPlan);
+    }
+
+    [Test]
     public void It_should_roundtrip_resource_read_plan_through_normalized_dto_without_losing_projection_metadata()
     {
         var encoded = NormalizedPlanContractCodec.Encode(_readPlan);

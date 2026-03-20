@@ -201,7 +201,11 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     )
     {
         var tableCompilationContext = CreateTableCompilationContext(tableModel, writeSourceLookup);
-        var keyUnificationPlans = KeyUnificationWritePlanCompiler.Compile(tableCompilationContext);
+        var collectionKeyPreallocationPlan = CompileCollectionKeyPreallocationPlan(tableCompilationContext);
+        var keyUnificationPlans = KeyUnificationWritePlanCompiler.Compile(
+            tableCompilationContext,
+            collectionKeyPreallocationPlan
+        );
 
         var insertSql = _insertSqlEmitter.Emit(
             tableModel.Table,
@@ -224,7 +228,44 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
             DeleteByParentSql: deleteByParentSql,
             BulkInsertBatching: bulkInsertBatching,
             ColumnBindings: tableCompilationContext.ColumnBindings,
-            KeyUnificationPlans: keyUnificationPlans
+            KeyUnificationPlans: keyUnificationPlans,
+            CollectionKeyPreallocationPlan: collectionKeyPreallocationPlan
+        );
+    }
+
+    private static CollectionKeyPreallocationPlan? CompileCollectionKeyPreallocationPlan(
+        WritePlanTableCompilationContext tableCompilationContext
+    )
+    {
+        var collectionKeyBindings = tableCompilationContext
+            .ColumnBindings.Select((binding, index) => (binding, index))
+            .Where(static tuple => tuple.binding.Column.Kind is ColumnKind.CollectionKey)
+            .ToArray();
+
+        if (collectionKeyBindings.Length == 0)
+        {
+            return null;
+        }
+
+        if (collectionKeyBindings.Length > 1)
+        {
+            throw new InvalidOperationException(
+                $"Cannot compile write plan for '{tableCompilationContext.TableModel.Table}': expected at most one collection-key binding, but found {collectionKeyBindings.Length}."
+            );
+        }
+
+        var (binding, bindingIndex) = collectionKeyBindings[0];
+
+        if (binding.Source is not WriteValueSource.Precomputed)
+        {
+            throw new InvalidOperationException(
+                $"Cannot compile write plan for '{tableCompilationContext.TableModel.Table}': collection-key column '{binding.Column.ColumnName.Value}' must bind as {nameof(WriteValueSource.Precomputed)}."
+            );
+        }
+
+        return new CollectionKeyPreallocationPlan(
+            ColumnName: binding.Column.ColumnName,
+            BindingIndex: bindingIndex
         );
     }
 

@@ -58,7 +58,8 @@ internal sealed record TableWritePlanDto
         string? DeleteByParentSql,
         BulkInsertBatchingInfoDto BulkInsertBatching,
         IEnumerable<WriteColumnBindingDto> ColumnBindings,
-        IEnumerable<KeyUnificationWritePlanDto> KeyUnificationPlans
+        IEnumerable<KeyUnificationWritePlanDto> KeyUnificationPlans,
+        CollectionKeyPreallocationPlanDto? CollectionKeyPreallocationPlan = null
     )
     {
         ArgumentNullException.ThrowIfNull(Table);
@@ -74,6 +75,7 @@ internal sealed record TableWritePlanDto
         this.BulkInsertBatching = BulkInsertBatching;
         this.ColumnBindings = [.. ColumnBindings];
         this.KeyUnificationPlans = [.. KeyUnificationPlans];
+        this.CollectionKeyPreallocationPlan = CollectionKeyPreallocationPlan;
     }
 
     public DbTableNameDto Table { get; init; }
@@ -89,6 +91,8 @@ internal sealed record TableWritePlanDto
     public ImmutableArray<WriteColumnBindingDto> ColumnBindings { get; init; }
 
     public ImmutableArray<KeyUnificationWritePlanDto> KeyUnificationPlans { get; init; }
+
+    public CollectionKeyPreallocationPlanDto? CollectionKeyPreallocationPlan { get; init; }
 }
 
 internal sealed record BulkInsertBatchingInfoDto(
@@ -102,6 +106,8 @@ internal sealed record WriteColumnBindingDto(
     WriteValueSourceDto Source,
     string ParameterName
 );
+
+internal sealed record CollectionKeyPreallocationPlanDto(string ColumnName, int BindingIndex);
 
 internal abstract record WriteValueSourceDto
 {

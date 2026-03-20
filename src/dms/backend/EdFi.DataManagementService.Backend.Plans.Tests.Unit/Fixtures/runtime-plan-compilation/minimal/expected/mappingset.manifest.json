@@ -481,6 +481,10 @@
                     }
                   }
                 ],
+                "collection_key_preallocation_plan": {
+                  "column_name": "CollectionItemId",
+                  "binding_index": 0
+                },
                 "key_unification_plans": []
               }
             ]
@@ -1011,6 +1015,10 @@
                     }
                   }
                 ],
+                "collection_key_preallocation_plan": {
+                  "column_name": "CollectionItemId",
+                  "binding_index": 0
+                },
                 "key_unification_plans": []
               }
             ]

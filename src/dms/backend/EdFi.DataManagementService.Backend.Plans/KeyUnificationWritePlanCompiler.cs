@@ -13,7 +13,10 @@ internal static class KeyUnificationWritePlanCompiler
     /// <summary>
     /// Compiles per-table key-unification plan inventory in deterministic class/member order.
     /// </summary>
-    public static KeyUnificationWritePlan[] Compile(WritePlanTableCompilationContext tableCompilationContext)
+    public static KeyUnificationWritePlan[] Compile(
+        WritePlanTableCompilationContext tableCompilationContext,
+        CollectionKeyPreallocationPlan? collectionKeyPreallocationPlan
+    )
     {
         var tableModel = tableCompilationContext.TableModel;
         var bindingsInColumnOrder = tableCompilationContext.ColumnBindings;
@@ -128,6 +131,7 @@ internal static class KeyUnificationWritePlanCompiler
             tableModel,
             bindingsInColumnOrder,
             keyUnificationPlans,
+            collectionKeyPreallocationPlan,
             precomputedBindingIndices
         );
 
@@ -138,10 +142,7 @@ internal static class KeyUnificationWritePlanCompiler
     {
         return bindingsInColumnOrder
             .Select((binding, index) => (binding, index))
-            .Where(tuple =>
-                tuple.binding.Source is WriteValueSource.Precomputed
-                && tuple.binding.Column.Kind is not ColumnKind.CollectionKey
-            )
+            .Where(static tuple => tuple.binding.Source is WriteValueSource.Precomputed)
             .Select(static tuple => tuple.index)
             .ToArray();
     }
@@ -150,6 +151,7 @@ internal static class KeyUnificationWritePlanCompiler
         DbTableModel tableModel,
         IReadOnlyList<WriteColumnBinding> bindingsInColumnOrder,
         IReadOnlyList<KeyUnificationWritePlan> keyUnificationPlans,
+        CollectionKeyPreallocationPlan? collectionKeyPreallocationPlan,
         IReadOnlyList<int> precomputedBindingIndices
     )
     {
@@ -158,7 +160,7 @@ internal static class KeyUnificationWritePlanCompiler
             return;
         }
 
-        if (keyUnificationPlans.Count == 0)
+        if (keyUnificationPlans.Count == 0 && collectionKeyPreallocationPlan is null)
         {
             var precomputedColumns = string.Join(
                 ", ",
@@ -168,7 +170,7 @@ internal static class KeyUnificationWritePlanCompiler
             );
 
             throw new InvalidOperationException(
-                $"Cannot compile key-unification plan for '{tableModel.Table}': precomputed bindings {precomputedColumns} require key-unification inventory."
+                $"Cannot compile key-unification plan for '{tableModel.Table}': precomputed bindings {precomputedColumns} require producer inventory."
             );
         }
 
@@ -176,6 +178,16 @@ internal static class KeyUnificationWritePlanCompiler
             static bindingIndex => bindingIndex,
             static _ => 0
         );
+
+        if (collectionKeyPreallocationPlan is not null)
+        {
+            IncrementCollectionKeyProducerCount(
+                tableModel,
+                bindingsInColumnOrder,
+                producerCountByBindingIndex,
+                collectionKeyPreallocationPlan
+            );
+        }
 
         foreach (var keyUnificationPlan in keyUnificationPlans)
         {
@@ -210,7 +222,7 @@ internal static class KeyUnificationWritePlanCompiler
         if (orphanedPrecomputedColumns.Length > 0)
         {
             throw new InvalidOperationException(
-                $"Cannot compile key-unification plan for '{tableModel.Table}': precomputed bindings not produced by key-unification inventory: {string.Join(", ", orphanedPrecomputedColumns)}."
+                $"Cannot compile key-unification plan for '{tableModel.Table}': precomputed bindings not produced by collection-key preallocation or key-unification inventory: {string.Join(", ", orphanedPrecomputedColumns)}."
             );
         }
 
@@ -222,7 +234,40 @@ internal static class KeyUnificationWritePlanCompiler
         if (duplicateProducerColumns.Length > 0)
         {
             throw new InvalidOperationException(
-                $"Cannot compile key-unification plan for '{tableModel.Table}': precomputed bindings produced multiple times by key-unification inventory: {string.Join(", ", duplicateProducerColumns)}."
+                $"Cannot compile key-unification plan for '{tableModel.Table}': precomputed bindings produced multiple times by collection-key preallocation or key-unification inventory: {string.Join(", ", duplicateProducerColumns)}."
+            );
+        }
+    }
+
+    private static void IncrementCollectionKeyProducerCount(
+        DbTableModel tableModel,
+        IReadOnlyList<WriteColumnBinding> bindingsInColumnOrder,
+        IDictionary<int, int> producerCountByBindingIndex,
+        CollectionKeyPreallocationPlan collectionKeyPreallocationPlan
+    )
+    {
+        var bindingIndex = collectionKeyPreallocationPlan.BindingIndex;
+
+        IncrementPrecomputedProducerCount(
+            tableModel,
+            bindingsInColumnOrder,
+            producerCountByBindingIndex,
+            bindingIndex
+        );
+
+        var binding = bindingsInColumnOrder[bindingIndex];
+
+        if (!binding.Column.ColumnName.Equals(collectionKeyPreallocationPlan.ColumnName))
+        {
+            throw new InvalidOperationException(
+                $"Cannot compile key-unification plan for '{tableModel.Table}': collection-key preallocation column '{collectionKeyPreallocationPlan.ColumnName.Value}' does not match binding column '{binding.Column.ColumnName.Value}'."
+            );
+        }
+
+        if (binding.Column.Kind is not ColumnKind.CollectionKey)
+        {
+            throw new InvalidOperationException(
+                $"Cannot compile key-unification plan for '{tableModel.Table}': collection-key preallocation binding '{binding.Column.ColumnName.Value}' must target kind '{ColumnKind.CollectionKey}'."
             );
         }
     }
