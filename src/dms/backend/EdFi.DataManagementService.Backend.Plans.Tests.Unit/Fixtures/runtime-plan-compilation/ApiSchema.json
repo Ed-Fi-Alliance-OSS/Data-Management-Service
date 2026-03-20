@@ -142,7 +142,13 @@
         "isResourceExtension": false,
         "isSubclass": false,
         "allowIdentityUpdates": false,
-        "arrayUniquenessConstraints": [],
+        "arrayUniquenessConstraints": [
+          {
+            "paths": [
+              "$.addresses[*].addressType"
+            ]
+          }
+        ],
         "identityJsonPaths": [
           "$.studentUniqueId"
         ],
