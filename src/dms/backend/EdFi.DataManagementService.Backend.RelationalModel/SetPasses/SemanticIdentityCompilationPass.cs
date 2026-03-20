@@ -131,7 +131,7 @@ public sealed class SemanticIdentityCompilationPass : IRelationalModelSetPass
 
         foreach (var table in resourceModel.TablesInDependencyOrder)
         {
-            if (!SupportsReferenceDerivedSemanticIdentity(table))
+            if (!SupportsSemanticIdentityScope(table))
             {
                 continue;
             }
@@ -171,22 +171,18 @@ public sealed class SemanticIdentityCompilationPass : IRelationalModelSetPass
     /// <summary>
     /// Returns whether a table can consume reference-derived semantic identity.
     /// </summary>
-    private static bool SupportsReferenceDerivedSemanticIdentity(DbTableModel table)
+    internal static bool SupportsSemanticIdentityScope(DbTableModel table)
     {
         var supportsTableKind =
             table.IdentityMetadata.TableKind is DbTableKind.Collection or DbTableKind.ExtensionCollection;
 
-        return supportsTableKind
-            && table.Columns.Any(column =>
-                column.Kind == ColumnKind.Ordinal
-                && column.ColumnName.Equals(RelationalNameConventions.OrdinalColumnName)
-            );
+        return supportsTableKind && HasOrdinalColumn(table);
     }
 
     /// <summary>
     /// Attempts to compile semantic identity for a table from one scope-local document reference binding.
     /// </summary>
-    private static bool TryCompileReferenceDerivedSemanticIdentity(
+    internal static bool TryCompileReferenceDerivedSemanticIdentity(
         DbTableModel table,
         DocumentReferenceBinding binding,
         out IReadOnlyList<CollectionSemanticIdentityBinding> bindings
@@ -219,6 +215,17 @@ public sealed class SemanticIdentityCompilationPass : IRelationalModelSetPass
 
         bindings = compiledBindings.ToArray();
         return true;
+    }
+
+    /// <summary>
+    /// Returns whether a table models a persisted multi-item scope with sibling ordering.
+    /// </summary>
+    private static bool HasOrdinalColumn(DbTableModel table)
+    {
+        return table.Columns.Any(column =>
+            column.Kind == ColumnKind.Ordinal
+            && column.ColumnName.Equals(RelationalNameConventions.OrdinalColumnName)
+        );
     }
 
     /// <summary>

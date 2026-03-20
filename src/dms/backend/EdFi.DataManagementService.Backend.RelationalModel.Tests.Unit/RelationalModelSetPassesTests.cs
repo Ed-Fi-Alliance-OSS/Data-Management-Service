@@ -47,6 +47,7 @@ public class Given_Default_RelationalModelSet_Passes
                 typeof(RootIdentityConstraintPass),
                 typeof(ReferenceConstraintPass),
                 typeof(SemanticIdentityCompilationPass),
+                typeof(ValidateCollectionSemanticIdentityPass),
                 typeof(ArrayUniquenessConstraintPass),
                 typeof(StableCollectionConstraintPass),
                 typeof(DescriptorForeignKeyConstraintPass),
@@ -73,15 +74,22 @@ public class Given_Default_RelationalModelSet_Passes
     /// It should compile semantic identity before downstream collection constraint passes.
     /// </summary>
     [Test]
-    public void It_should_compile_semantic_identity_before_downstream_collection_constraint_passes()
+    public void It_should_compile_and_validate_semantic_identity_before_downstream_collection_constraint_passes()
     {
         var semanticIdentityCompilationIndex = _firstPassTypes
             .ToList()
             .IndexOf(typeof(SemanticIdentityCompilationPass));
+        var semanticIdentityValidationIndex = _firstPassTypes
+            .ToList()
+            .IndexOf(typeof(ValidateCollectionSemanticIdentityPass));
         var arrayUniquenessIndex = _firstPassTypes.ToList().IndexOf(typeof(ArrayUniquenessConstraintPass));
         var stableCollectionIndex = _firstPassTypes.ToList().IndexOf(typeof(StableCollectionConstraintPass));
 
         semanticIdentityCompilationIndex.Should().BeGreaterThan(-1);
+        semanticIdentityValidationIndex.Should().BeGreaterThan(-1);
+        semanticIdentityCompilationIndex.Should().BeLessThan(semanticIdentityValidationIndex);
+        semanticIdentityValidationIndex.Should().BeLessThan(arrayUniquenessIndex);
+        semanticIdentityValidationIndex.Should().BeLessThan(stableCollectionIndex);
         semanticIdentityCompilationIndex.Should().BeLessThan(arrayUniquenessIndex);
         semanticIdentityCompilationIndex.Should().BeLessThan(stableCollectionIndex);
     }

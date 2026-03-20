@@ -28,6 +28,7 @@ public static class RelationalModelSetPasses
             new RootIdentityConstraintPass(),
             new ReferenceConstraintPass(),
             new SemanticIdentityCompilationPass(),
+            new ValidateCollectionSemanticIdentityPass(),
             new ArrayUniquenessConstraintPass(),
             new StableCollectionConstraintPass(),
             new DescriptorForeignKeyConstraintPass(),

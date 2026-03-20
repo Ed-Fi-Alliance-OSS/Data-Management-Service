@@ -12,6 +12,19 @@
         "isSubclass": false,
         "allowIdentityUpdates": false,
         "arrayUniquenessConstraints": [
+          {
+            "paths": [
+              "$.addresses[*].addressType"
+            ],
+            "nestedConstraints": [
+              {
+                "basePath": "$.addresses[*]",
+                "paths": [
+                  "$.periods[*].beginDate"
+                ]
+              }
+            ]
+          }
         ],
         "identityJsonPaths": [
           "$.personId"
