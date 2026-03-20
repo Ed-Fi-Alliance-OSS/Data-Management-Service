@@ -19,6 +19,7 @@ Depends on:
 - C2 (`01a-c2-semantic-identity-compatibility-validation.md`) — C5 directly invokes C2 as an orchestration step (step 2)
 - C3 (`01a-c3-request-visibility-and-writable-shaping.md`) — `WritableRequestBody`, `RequestScopeStates` (without creatability)
 - C4 (`01a-c4-request-creatability-and-collection-validation.md`) — `RootResourceCreatable`, creatability flags, `VisibleRequestCollectionItems`
+- C8 (`01a-c8-typed-profile-error-classification.md`) — supplies the shared typed error contract for category-2 invalid-profile-usage failures and downstream typed failures surfaced by the pipeline
 
 **Core responsibility coverage:** #7 (writable request shaping — final assembly), pipeline orchestration
 

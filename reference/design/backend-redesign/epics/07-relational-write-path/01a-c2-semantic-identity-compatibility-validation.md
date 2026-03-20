@@ -15,7 +15,9 @@ Align with:
 
 Delivery plan: `reference/design/backend-redesign/design-docs/core-profile-delivery-plan.md`
 
-Depends on: C1 (`01a-c1-compiled-scope-adapter-and-address-derivation.md`) — consumes adapter contract for `SemanticIdentityRelativePathsInOrder`.
+Depends on:
+- C1 (`01a-c1-compiled-scope-adapter-and-address-derivation.md`) — consumes adapter contract for `SemanticIdentityRelativePathsInOrder`
+- C8 (`01a-c8-typed-profile-error-classification.md`) — supplies the shared typed error contract for category-1 invalid-profile-definition failures
 
 **Core responsibility coverage:** #12 (semantic identity compatibility validation)
 
@@ -23,7 +25,7 @@ This is a pre-runtime validation gate. Backend write stories assume that writabl
 
 ## Acceptance Criteria
 
-- Writable profile definitions that exclude a field required to compute the compiled semantic identity of a persisted multi-item collection scope are rejected with a structured error.
+- Writable profile definitions that exclude a field required to compute the compiled semantic identity of a persisted multi-item collection scope are rejected with a C8 category-1 structured error.
 - The validation uses `SemanticIdentityRelativePathsInOrder` from the compiled-scope adapter to determine which fields are required for semantic identity.
 - Valid writable profiles that expose all semantic-identity fields pass validation.
 - Writable profiles on single-item or non-persisted scopes are not incorrectly rejected by this gate.
@@ -41,6 +43,6 @@ This is a pre-runtime validation gate. Backend write stories assume that writabl
 ## Tasks
 
 1. Implement the compatibility check: for each persisted multi-item collection scope in the compiled adapter, verify that the writable profile exposes all `SemanticIdentityRelativePathsInOrder` members.
-2. Produce a structured error type that identifies the incompatible scope, hidden identity fields, and profile source.
+2. Produce a C8 category-1 structured error that identifies the incompatible scope, hidden identity fields, and profile source.
 3. Integrate the check into the profile validation path so it runs before runtime merge execution.
 4. Add tests proving valid profiles pass, identity-hiding profiles fail, and non-identity field hiding is allowed.

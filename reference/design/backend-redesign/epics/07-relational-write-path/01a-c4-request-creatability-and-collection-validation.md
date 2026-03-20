@@ -20,6 +20,7 @@ Depends on:
 - C1 (`01a-c1-compiled-scope-adapter-and-address-derivation.md`) — adapter for address derivation
 - C2 (`01a-c2-semantic-identity-compatibility-validation.md`) — assumes incompatible profiles are already rejected
 - C3 (`01a-c3-request-visibility-and-writable-shaping.md`) — consumes visibility classification and `VisibleRequestCollectionItem` entries (without `Creatable`)
+- C8 (`01a-c8-typed-profile-error-classification.md`) — supplies the shared typed error contract for duplicate-validation and creatability failures
 - Effective schema metadata (existing Core infrastructure) — provides non-nullable/no-default member information for creation-required member determination
 
 **Core responsibility coverage:**
@@ -66,11 +67,12 @@ The effective schema metadata is an existing Core infrastructure input, not prod
 - A creation-required member hidden by the writable profile makes the create attempt non-creatable.
 - Matched visible stored scopes/rows may be updated even when `Creatable=false`.
 - Hidden stored data does not convert a create-of-new-visible-data attempt into an update-of-existing-visible-data.
+- Non-creatable new visible scope/item cases are surfaced using C8 category-4 creatability-violation types.
 
 ### Duplicate Validation
 
 - `VisibleRequestCollectionItems` contains at most one item per `CollectionRowAddress`.
-- If writable-profile shaping would emit two visible submitted items with the same stable parent address and compiled semantic identity, Core rejects the request before backend receives the contract.
+- If writable-profile shaping would emit two visible submitted items with the same stable parent address and compiled semantic identity, Core rejects the request with a C8 category-3 writable-validation failure before backend receives the contract.
 
 ### Testing
 
@@ -86,5 +88,6 @@ The effective schema metadata is an existing Core infrastructure input, not prod
 1. Implement `RootResourceCreatable` decision per the normative procedure: creation-required root members must be visible or system-supplied; newly visible children must be creatable.
 2. Implement scope-level creatability: for each `VisiblePresent` non-collection scope without a visible stored scope at the same address, check creation-required members (including required members of newly visible descendants that must be co-created), parent creatability, and descendant creatability.
 3. Implement collection-item creatability: for each visible request item without a visible stored row match by compiled semantic identity, check creation-required members (including required members of newly visible descendants), parent creatability, and descendant creatability.
-4. Implement duplicate visible collection-item detection: group visible items by `CollectionRowAddress` and reject duplicates.
-5. Add tests covering the three-level chain, update-allowed/create-denied pairing, duplicate rejection, and storage-managed exclusion.
+4. Implement duplicate visible collection-item detection: group visible items by `CollectionRowAddress` and reject duplicates with C8 category-3 typed failures.
+5. Emit C8 category-4 typed failures for non-creatable create attempts without misclassifying matched visible updates.
+6. Add tests covering the three-level chain, update-allowed/create-denied pairing, duplicate rejection, and storage-managed exclusion.

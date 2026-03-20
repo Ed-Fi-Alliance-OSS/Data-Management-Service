@@ -118,7 +118,7 @@ Per `profiles.md` §"Shared Compiled-Scope Adapter", the selected mapping set mu
 
 ### Construction Responsibility
 
-C1 delivers the adapter contract types, the address derivation engine, and a test-only adapter factory (constructing adapter instances from hand-built test metadata). The production adapter factory — which populates adapter instances from the selected mapping set's `TableWritePlan`, `CollectionMergePlan`, and `DbTableModel` — is backend's responsibility. This factory is owned by DMS-1103 (`E07-S01b`) or a prerequisite task within it. C1 does not depend on backend compiled-plan types; backend depends on C1's contract types.
+C1 delivers the adapter contract types, the address derivation engine, and a test-only adapter factory (constructing adapter instances from hand-built test metadata). The production adapter factory — which populates adapter instances from the selected mapping set's `TableWritePlan`, `CollectionMergePlan`, and `DbTableModel` — is backend's responsibility. This factory is owned by DMS-1103 (`E07-S01b`) or a prerequisite task within it. Because `SemanticIdentityRelativePathsInOrder` is sourced from `CollectionMergePlan.SemanticIdentityBindings`, that backend adapter-factory work is also blocked on DMS-1102 / `E15-S04b`. C1 does not depend on backend compiled-plan types; backend depends on C1's contract types.
 
 ### Storage Topology Is Backend-Only
 
@@ -501,23 +501,24 @@ C5 owns the end-to-end call sequence for the Core profile write pipeline. The in
 **Responsibility mapping:** #15 (structured error classification)
 
 **Inputs:**
-- Profile validation results from C2, C3, C4
-- Runtime execution context
+- Validation and error semantics from `profiles.md`
+- Consumer requirements from C2, C3, C4, C5, DMS-1103, and DMS-1104
 
 **Outputs:**
-- Typed failure categories:
+- Shared typed failure categories:
   - Invalid profile definition (e.g., hides compiled semantic-identity fields)
   - Invalid profile usage (e.g., wrong profile mode for the operation)
-  - Writable-profile validation failure (e.g., submitted forbidden member/value)
+  - Writable-profile validation failure (e.g., submitted forbidden member/value or duplicate visible collection-item collision after shaping)
   - Creatability violation (e.g., new visible scope with hidden required members)
   - Core/backend contract mismatch (e.g., unknown `JsonScope`, ancestor-chain mismatch)
   - Binding-accounting failure (e.g., profiled binding cannot be classified)
+- Shared diagnostic payload shapes/factories consumable by C2, C3, C4, C5, DMS-1103, and DMS-1104
 
 **Test expectations:**
-- Each Core-detected category (1–4) produces correct typed failure
-- Failures short-circuit before DML
-- Matched visible scope/item updates are not misclassified as creatability failures
-- Type shapes for categories 5–6 can be instantiated with representative diagnostic detail
+- Each category shape can be instantiated with representative diagnostic detail
+- Category 3 examples cover both forbidden submitted data and duplicate visible collection-item collisions
+- Category 4 examples cover both root create rejection and visible scope/item insert rejection
+- Type shapes for categories 5–6 are ready for DMS-1103 and DMS-1104 to emit without redefining them
 
 **Story file:** `reference/design/backend-redesign/epics/07-relational-write-path/01a-c8-typed-profile-error-classification.md`
 
@@ -528,13 +529,13 @@ C5 owns the end-to-end call sequence for the Core profile write pipeline. The in
 | Story | Title | Tier | Dependencies | Unblocks |
 | --- | --- | --- | --- | --- |
 | C1 | Shared Compiled-Scope Adapter Contract + Address Derivation Engine | 0 | — | C2, C3, C4, C5, C6 |
-| C2 | Semantic Identity Compatibility Validation | 1 | C1 | C4, C5, C8 |
-| C3 | Request-Side Visibility Classification + Writable Request Shaping | 1 | C1 | C4, C5, C6, C8 |
-| C4 | Request-Side Creatability Analysis + Duplicate Collection-Item Validation | 2 | C1, C2, C3 | C5, C8 |
-| C5 | Orchestrate Profile Write Pipeline + Assemble ProfileAppliedWriteRequest | 2 | C1, C2, C3, C4 | C6, C8, DMS-1103 (via C6) |
+| C2 | Semantic Identity Compatibility Validation | 1 | C1, C8 | C4, C5 |
+| C3 | Request-Side Visibility Classification + Writable Request Shaping | 1 | C1, C8 | C4, C5, C6 |
+| C4 | Request-Side Creatability Analysis + Duplicate Collection-Item Validation | 2 | C1, C2, C3, C8 | C5 |
+| C5 | Orchestrate Profile Write Pipeline + Assemble ProfileAppliedWriteRequest | 2 | C1, C2, C3, C4, C8 | C6, DMS-1103 (via C6) |
 | C6 | Stored-State Projection + HiddenMemberPaths Computation | 3 | C1, C3, C5 | DMS-1103, DMS-1105 |
 | C7 | Readable Profile Projection After Reconstitution | 0 | — | DMS-990 |
-| C8 | Typed Profile Error Classification | 3 | C2, C3, C4, C5 | DMS-1104 |
+| C8 | Typed Profile Error Classification | 0 | — | C2, C3, C4, C5, DMS-1103, DMS-1104 |
 
 ### Per-Story Details
 
@@ -545,22 +546,22 @@ C5 owns the end-to-end call sequence for the Core profile write pipeline. The in
 
 **C2** — `01a-c2-semantic-identity-compatibility-validation.md`
 - Description: Implement the pre-runtime gate that rejects writable profiles hiding compiled semantic-identity fields for persisted multi-item collections.
-- Acceptance criteria: Valid profiles pass; invalid profiles produce structured errors before runtime.
+- Acceptance criteria: Valid profiles pass; invalid profiles emit C8 category-1 errors before runtime.
 - Jira: TBD
 
 **C3** — `01a-c3-request-visibility-and-writable-shaping.md`
 - Description: Implement request-side visibility classification and writable request shaping, producing `WritableRequestBody` and `RequestScopeState` entries.
-- Acceptance criteria: Correct shaping and visibility for all scope types and filter modes.
+- Acceptance criteria: Correct shaping and visibility for all scope types and filter modes; request-side validation failures emit C8 category-3 errors.
 - Jira: TBD
 
 **C4** — `01a-c4-request-creatability-and-collection-validation.md`
 - Description: Implement top-down creatability analysis per profiles.md §"Creatability Decision Model" and duplicate visible collection-item validation.
-- Acceptance criteria: Three-level chain creatability, update-allowed/create-denied pairing, duplicate rejection.
+- Acceptance criteria: Three-level chain creatability, update-allowed/create-denied pairing, duplicate rejection via C8 category-3 validation failures, and non-creatable create attempts surfaced as C8 category-4 errors.
 - Jira: TBD
 
 **C5** — `01a-c5-assemble-profile-applied-write-request.md`
-- Description: Orchestrate the Core profile write pipeline (profile-mode validation → C2 → C3 → existence lookup → C4 → assembly → C6) and assemble `ProfileAppliedWriteRequest` and `ProfileAppliedWriteContext`. Owns the call sequence, profile-mode validation (C8 category 2 detection), the stored-side existence lookup construction (using C1's address derivation) for C4, and the no-profile short-circuit.
-- Acceptance criteria: Full pipeline from profile + adapter + request JSON produces the correct composite contract; profile-mode validation rejects mismatched profile/operation combinations; orchestration correctly threads intermediate results between C2, C3, C4, and C6; no-profile path short-circuits cleanly. C5's update-flow tests use a mock C6 until C6 lands.
+- Description: Orchestrate the Core profile write pipeline (profile-mode validation → C2 → C3 → existence lookup → C4 → assembly → C6) and assemble `ProfileAppliedWriteRequest` and `ProfileAppliedWriteContext`. Owns the call sequence, profile-mode validation (emitting C8 category-2 errors), the stored-side existence lookup construction (using C1's address derivation) for C4, and the no-profile short-circuit.
+- Acceptance criteria: Full pipeline from profile + adapter + request JSON produces the correct composite contract; profile-mode validation rejects mismatched profile/operation combinations with C8 category-2 errors; orchestration correctly threads intermediate results between C2, C3, C4, and C6; no-profile path short-circuits cleanly. C5's update-flow tests use a mock C6 until C6 lands.
 - Jira: TBD
 
 **C6** — `01a-c6-stored-state-projection-and-hidden-member-paths.md`
@@ -574,8 +575,8 @@ C5 owns the end-to-end call sequence for the Core profile write pipeline. The in
 - Jira: TBD
 
 **C8** — `01a-c8-typed-profile-error-classification.md`
-- Description: Define the typed failure type hierarchy for all six error categories. Integrate detection logic for categories 1–4: category 1 into C2, category 2 into C5 (profile-mode validation), category 3 into C3, category 4 into C4. Categories 5–6 (contract mismatch, binding-accounting failure) are type definitions only — backend implements detection.
-- Acceptance criteria: Each Core-detected category (1–4) produces correct typed failure; type shapes for categories 5–6 are instantiable; matched visible updates are not misclassified.
+- Description: Define the shared typed failure contract for all six error categories up front. Detection stays in the owning stories: category 1 in C2, category 2 in C5, category 3 in C3/C4, category 4 in C4, category 5 in DMS-1103, and category 6 in DMS-1104.
+- Acceptance criteria: All six category shapes are defined with enough diagnostic detail for consumers; category 3 covers forbidden submitted data and duplicate visible collection-item collisions; consumer stories can emit the shared types without redefining them.
 - Jira: TBD
 
 ---
@@ -585,53 +586,58 @@ C5 owns the end-to-end call sequence for the Core profile write pipeline. The in
 ### Dependency Graph
 
 ```
-C1 ──┬──> C2 ──> C4 ──┬──> C5 ──> C6 ──> [DMS-1103, DMS-1105]
-     │              ↑  │
-     ├──> C3 ──────┘   └──> C8 ──> [DMS-1104]
+C8 ──┬──> C2 ──> C4 ──> C5 ──> C6 ──> [DMS-1103, DMS-1105]
+     ├──> C3 ──────┘
+     ├──> C4
+     ├──> C5
+     └──> [DMS-1103, DMS-1104]
 
-C7 ──> [DMS-990]  (no C-story dependencies — can start immediately)
+C1 ──┬──> C2
+     ├──> C3
+     ├──> C4
+     ├──> C5
+     └──> C6
+
+C7 ──> [DMS-990]      (no C-story dependencies — can start immediately)
+E15-S04b ──> [DMS-1103]  (production adapter factory consumes stable-identity merge-plan metadata)
 
 Additional edges not shown above (would create crossing lines):
-  C1 ──> C4  (C4 consumes adapter from C1 for address derivation)
-  C1 ──> C5  (adapter for stored-side existence lookup construction)
-  C1 ──> C6  (adapter for stored-side address derivation)
   C2 ──> C5  (C5 directly invokes C2 as an orchestration step)
-  C2 ──> C8  (C8 integrates typed error production into C2's reject path)
-  C3 ──> C5  (C5 consumes WritableRequestBody and RequestScopeStates from C3)
   C3 ──> C6  (shared visibility classification rules)
-  C3 ──> C8  (writable validation failures feed error classification)
-  C5 ──> C8  (profile-mode validation error integration)
 ```
 
 ### Tiers
 
-- **Tier 0 (Foundation + Independent):** C1 — adapter contract and address derivation; C7 — readable profile projection (no C-story dependencies, can start immediately)
-- **Tier 1 (Validation + Shaping):** C2, C3 — semantic identity compatibility validation and request-side visibility/shaping (parallel after C1)
-- **Tier 2 (Request Assembly):** C4, C5 — creatability analysis and request assembly (after C2+C3)
-- **Tier 3 (Stored Side + Error Classification):** C6 — stored-state projection; C8 — error classification (no stored-side dependency; can start in parallel with C6 once Tier 2 completes)
+- **Tier 0 (Foundation + Independent):** C1 — adapter contract and address derivation; C7 — readable profile projection; C8 — shared typed error contract
+- **Tier 1 (Validation + Shaping):** C2, C3 — semantic identity compatibility validation and request-side visibility/shaping (parallel after C1 + C8)
+- **Tier 2 (Request Assembly):** C4, C5 — creatability analysis and request assembly (after C2 + C3; C8 is already available from Tier 0)
+- **Tier 3 (Stored Side):** C6 — stored-state projection (after C5)
 
 ### Minimum Unblock Path
 
-The shortest path to unblock the four hard-blocked backend stories:
+The shortest path to unblock the four hard-blocked backend stories now has two parallel Core foundations plus one cross-epic backend prerequisite:
 
-1. **C1** → Foundation adapter and address derivation
-2. **C3** → Request-side visibility and shaping (depends on C1)
-3. **C2** → Semantic identity compatibility validation (depends on C1, can parallel with C3)
-4. **C4** → Creatability + duplicate validation (depends on C1, C2, C3)
-5. **C5** → Orchestrate pipeline + assemble `ProfileAppliedWriteRequest` (depends on C1, C2, C3, C4)
-6. **C6** → Stored-state projection + `ProfileAppliedWriteContext` (depends on C1, C3, C5) — **unblocks DMS-1103 and DMS-1105**
+1. **C8** → Shared typed error contract (used by C2, C3, C4, C5, DMS-1103, and DMS-1104)
+2. **C1** → Foundation adapter and address derivation
+3. **C3** → Request-side visibility and shaping (depends on C1 + C8)
+4. **C2** → Semantic identity compatibility validation (depends on C1 + C8, can parallel with C3)
+5. **C4** → Creatability + duplicate validation (depends on C1, C2, C3, C8)
+6. **C5** → Orchestrate pipeline + assemble `ProfileAppliedWriteRequest` (depends on C1, C2, C3, C4, C8)
+7. **C6** → Stored-state projection + `ProfileAppliedWriteContext` (depends on C1, C3, C5) — **unblocks DMS-1105**
+8. **E15-S04b** → Stable-identity merge-plan metadata required for the backend production adapter factory
+9. **DMS-1103** starts when C1, C5, C6, C8, and E15-S04b are all complete
 
 In parallel from the start:
 - **C7** → Readable projection (no C-story dependencies) — **unblocks DMS-990 as soon as C7 is complete**
 
-In parallel after Tier 2:
-- **C8** → Error classification (depends on C2, C3, C4, C5) — **unblocks DMS-1104**
+After the Core contract stories are in place:
+- **DMS-1104** still waits on C8 plus backend runtime stories (`DMS-1103`, `DMS-984`)
 
 ### Parallelization Opportunities
 
-- C7 has no C-story dependencies and can start immediately, in parallel with all other work. This is the fastest path to unblock DMS-990.
-- C2 and C3 can run in parallel after C1 completes.
-- C8 depends on C2, C3, C4, and C5, so it can start once Tier 2 completes, in parallel with C6.
+- C7 and C8 have no C-story dependencies and can start immediately, in parallel with all other work. C7 is still the fastest path to unblock DMS-990.
+- C2 and C3 can run in parallel after C1 + C8 complete.
+- DMS-1103 still waits on E15-S04b even after the Core request/context stories complete.
 
 ---
 
@@ -645,25 +651,27 @@ New dependency edges:
 
 | Dependency Type | Blocker | Blocked | Rationale |
 | --- | --- | --- | --- |
+| Hard | `E07-S01a-C8` | `E07-S01a-C2` | C2 emits category-1 invalid-profile-definition errors using the shared C8 type contract |
+| Hard | `E07-S01a-C8` | `E07-S01a-C3` | C3 emits category-3 writable-validation failures using the shared C8 type contract |
 | Hard | `E07-S01a-C1` | `E07-S01a-C2` | C2 consumes adapter from C1 |
 | Hard | `E07-S01a-C1` | `E07-S01a-C3` | C3 consumes adapter from C1 for address derivation |
 | Hard | `E07-S01a-C1` | `E07-S01a-C6` | C6 consumes adapter from C1 for stored-side derivation |
+| Hard | `E07-S01a-C8` | `E07-S01a-C4` | C4 emits duplicate-validation and creatability failures using the shared C8 type contract |
 | Hard | `E07-S01a-C1` | `E07-S01a-C4` | C4 consumes adapter from C1 for address derivation |
 | Hard | `E07-S01a-C1` | `E07-S01a-C5` | C5 uses C1's address derivation engine for stored-side existence lookup construction |
+| Hard | `E07-S01a-C8` | `E07-S01a-C5` | C5 emits category-2 invalid-profile-usage errors using the shared C8 type contract |
 | Hard | `E07-S01a-C2` | `E07-S01a-C4` | C4 assumes semantic identity compatibility is validated |
 | Hard | `E07-S01a-C2` | `E07-S01a-C5` | C5 directly invokes C2 as an orchestration step |
-| Hard | `E07-S01a-C2` | `E07-S01a-C8` | C8 integrates typed error production into C2's reject path (category 1) |
 | Hard | `E07-S01a-C3` | `E07-S01a-C4` | C4 consumes visibility classification from C3 |
 | Hard | `E07-S01a-C3` | `E07-S01a-C5` | C5 consumes `WritableRequestBody` and `RequestScopeStates` from C3 |
 | Hard | `E07-S01a-C3` | `E07-S01a-C6` | C6 uses the same visibility classification rules as C3 |
-| Hard | `E07-S01a-C3` | `E07-S01a-C8` | C8 classifies errors from C3 validation |
 | Hard | `E07-S01a-C4` | `E07-S01a-C5` | C5 consumes creatability and collection items from C4 |
-| Hard | `E07-S01a-C4` | `E07-S01a-C8` | C8 classifies creatability violations from C4 |
 | Hard | `E07-S01a-C5` | `E07-S01a-C6` | C6 includes the assembled request in the write context |
-| Hard | `E07-S01a-C5` | `E07-S01a-C8` | C8 integrates profile-mode validation error (category 2) into C5's orchestration gate |
 | Hard | `E07-S01a-C1` | `E07-S01b` | DMS-1103 consumes adapter contract from C1 |
+| Hard | `E07-S01a-C8` | `E07-S01b` | DMS-1103 emits category-5 contract-mismatch diagnostics using the shared C8 type contract |
 | Hard | `E07-S01a-C5` | `E07-S01b` | DMS-1103 consumes `ProfileAppliedWriteRequest` from C5 |
 | Hard | `E07-S01a-C6` | `E07-S01b` | DMS-1103 consumes `ProfileAppliedWriteContext` from C6 |
+| Hard | `E15-S04b` | `E07-S01b` | DMS-1103's production adapter factory consumes `CollectionMergePlan.SemanticIdentityBindings` to populate `SemanticIdentityRelativePathsInOrder` |
 | Hard | `E07-S01a-C1` | `E07-S01c` | DMS-1105 consumes adapter contract from C1 |
 | Hard | `E07-S01a-C6` | `E07-S01c` | DMS-1105 hands off to C6 for stored-state projection |
 | Hard | `E07-S01a-C7` | `E08-S01` | DMS-990 invokes the readable projector from C7 |
@@ -675,7 +683,7 @@ The blocked backend/read-path stories should update their dependency notes from 
 
 | Story | Current dependency | Updated dependency |
 | --- | --- | --- |
-| `E07-S01b` (DMS-1103) | Blocked on `01a-core-profile-delivery-plan.md` | Blocked on C1 (adapter), C5 (request assembly), C6 (stored-state projection) |
+| `E07-S01b` (DMS-1103) | Blocked on `01a-core-profile-delivery-plan.md` | Blocked on C1 (adapter), C5 (request assembly), C6 (stored-state projection), C8 (shared contract-mismatch error type), and `E15-S04b` (stable-identity merge-plan metadata for the production adapter factory) |
 | `E07-S01c` (DMS-1105) | Blocked on `01a-core-profile-delivery-plan.md` | Blocked on C1 (adapter), C6 (stored-state projection) |
 | `E07-S05b` (DMS-1104) | Blocked on `01a-core-profile-delivery-plan.md` | Blocked on C8 (typed error classification) |
 | `E08-S01` (DMS-990) | Blocked on `01a-core-profile-delivery-plan.md` | Blocked on C7 (readable profile projection) |
