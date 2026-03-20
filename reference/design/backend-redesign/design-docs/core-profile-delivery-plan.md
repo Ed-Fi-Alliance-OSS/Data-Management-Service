@@ -603,6 +603,7 @@ E15-S04b ──> [DMS-1103]  (production adapter factory consumes stable-identit
 
 Additional edges not shown above (would create crossing lines):
   C2 ──> C5  (C5 directly invokes C2 as an orchestration step)
+  C3 ──> C5  (C5 consumes WritableRequestBody and RequestScopeStates from C3)
   C3 ──> C6  (shared visibility classification rules)
 ```
 
