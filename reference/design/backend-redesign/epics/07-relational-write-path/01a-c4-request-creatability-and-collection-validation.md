@@ -1,5 +1,6 @@
 ---
-jira: TBD
+jira: DMS-1116
+jira_url: https://edfi.atlassian.net/browse/DMS-1116
 ---
 
 # Story: Request-Side Creatability Analysis + Duplicate Collection-Item Validation

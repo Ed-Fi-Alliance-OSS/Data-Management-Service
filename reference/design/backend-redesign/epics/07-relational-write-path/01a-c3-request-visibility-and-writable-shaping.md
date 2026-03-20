@@ -1,5 +1,6 @@
 ---
-jira: TBD
+jira: DMS-1115
+jira_url: https://edfi.atlassian.net/browse/DMS-1115
 ---
 
 # Story: Request-Side Visibility Classification + Writable Request Shaping

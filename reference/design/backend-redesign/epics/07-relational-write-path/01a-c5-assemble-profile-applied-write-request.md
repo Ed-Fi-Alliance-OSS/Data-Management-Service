@@ -1,5 +1,6 @@
 ---
-jira: TBD
+jira: DMS-1117
+jira_url: https://edfi.atlassian.net/browse/DMS-1117
 ---
 
 # Story: Orchestrate Profile Write Pipeline + Assemble ProfileAppliedWriteRequest

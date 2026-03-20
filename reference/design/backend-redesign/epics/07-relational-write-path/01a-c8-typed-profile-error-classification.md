@@ -1,5 +1,6 @@
 ---
-jira: TBD
+jira: DMS-1112
+jira_url: https://edfi.atlassian.net/browse/DMS-1112
 ---
 
 # Story: Typed Profile Error Classification

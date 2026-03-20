@@ -542,42 +542,42 @@ C5 owns the end-to-end call sequence for the Core profile write pipeline. The in
 **C1** — `01a-c1-compiled-scope-adapter-and-address-derivation.md`
 - Description: Define the shared compiled-scope adapter contract types and implement the normative address derivation algorithm from `profiles.md` §"Scope and Row Address Derivation". Assess compatibility between the existing `ProfileDefinition` and the adapter contract's canonical vocabulary.
 - Acceptance criteria: Adapter surface matches profiles.md §"Shared Compiled-Scope Adapter" exactly; derivation produces correct addresses for root, 1:1, collection, nested collection, and `_ext` scopes; `ProfileDefinition` compatibility assessment is documented.
-- Jira: TBD
+- Jira: DMS-1111
 
 **C2** — `01a-c2-semantic-identity-compatibility-validation.md`
 - Description: Implement the pre-runtime gate that rejects writable profiles hiding compiled semantic-identity fields for persisted multi-item collections.
 - Acceptance criteria: Valid profiles pass; invalid profiles emit C8 category-1 errors before runtime.
-- Jira: TBD
+- Jira: DMS-1114
 
 **C3** — `01a-c3-request-visibility-and-writable-shaping.md`
 - Description: Implement request-side visibility classification and writable request shaping, producing `WritableRequestBody` and `RequestScopeState` entries.
 - Acceptance criteria: Correct shaping and visibility for all scope types and filter modes; request-side validation failures emit C8 category-3 errors.
-- Jira: TBD
+- Jira: DMS-1115
 
 **C4** — `01a-c4-request-creatability-and-collection-validation.md`
 - Description: Implement top-down creatability analysis per profiles.md §"Creatability Decision Model" and duplicate visible collection-item validation.
 - Acceptance criteria: Three-level chain creatability, update-allowed/create-denied pairing, duplicate rejection via C8 category-3 validation failures, and non-creatable create attempts surfaced as C8 category-4 errors.
-- Jira: TBD
+- Jira: DMS-1116
 
 **C5** — `01a-c5-assemble-profile-applied-write-request.md`
 - Description: Orchestrate the Core profile write pipeline (profile-mode validation → C2 → C3 → existence lookup → C4 → assembly → C6) and assemble `ProfileAppliedWriteRequest` and `ProfileAppliedWriteContext`. Owns the call sequence, profile-mode validation (emitting C8 category-2 errors), the stored-side existence lookup construction (using C1's address derivation) for C4, and the no-profile short-circuit.
 - Acceptance criteria: Full pipeline from profile + adapter + request JSON produces the correct composite contract; profile-mode validation rejects mismatched profile/operation combinations with C8 category-2 errors; orchestration correctly threads intermediate results between C2, C3, C4, and C6; no-profile path short-circuits cleanly. C5's update-flow tests use a mock C6 until C6 lands.
-- Jira: TBD
+- Jira: DMS-1117
 
 **C6** — `01a-c6-stored-state-projection-and-hidden-member-paths.md`
 - Description: Implement the Core-owned stored-state projector callback and `HiddenMemberPaths` computation, assembling `ProfileAppliedWriteContext`.
 - Acceptance criteria: Correct stored-side visibility, `HiddenMemberPaths` in canonical vocabulary, full context assembly.
-- Jira: TBD
+- Jira: DMS-1118
 
 **C7** — `01a-c7-readable-profile-projection.md`
 - Description: Implement readable profile projection applied after full relational reconstitution. Backend does not reimplement. No C-story dependencies — can start immediately in parallel with all other work.
 - Acceptance criteria: Correct readable projection for all scope types including `_ext`; backend invokes Core projector.
-- Jira: TBD
+- Jira: DMS-1113
 
 **C8** — `01a-c8-typed-profile-error-classification.md`
 - Description: Define the shared typed failure contract for all six error categories up front. Detection stays in the owning stories: category 1 in C2, category 2 in C5, category 3 in C3/C4, category 4 in C4, category 5 in DMS-1103, and category 6 in DMS-1104.
 - Acceptance criteria: All six category shapes are defined with enough diagnostic detail for consumers; category 3 covers forbidden submitted data and duplicate visible collection-item collisions; consumer stories can emit the shared types without redefining them.
-- Jira: TBD
+- Jira: DMS-1112
 
 ---
 

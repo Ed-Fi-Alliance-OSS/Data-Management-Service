@@ -1,5 +1,6 @@
 ---
-jira: TBD
+jira: DMS-1113
+jira_url: https://edfi.atlassian.net/browse/DMS-1113
 ---
 
 # Story: Readable Profile Projection After Reconstitution

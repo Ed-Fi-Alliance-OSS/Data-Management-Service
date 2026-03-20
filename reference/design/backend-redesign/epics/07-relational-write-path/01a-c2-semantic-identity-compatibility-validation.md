@@ -1,5 +1,6 @@
 ---
-jira: TBD
+jira: DMS-1114
+jira_url: https://edfi.atlassian.net/browse/DMS-1114
 ---
 
 # Story: Semantic Identity Compatibility Validation

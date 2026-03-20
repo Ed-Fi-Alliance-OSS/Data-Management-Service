@@ -1,5 +1,6 @@
 ---
-jira: TBD
+jira: DMS-1111
+jira_url: https://edfi.atlassian.net/browse/DMS-1111
 ---
 
 # Story: Shared Compiled-Scope Adapter Contract + Address Derivation Engine

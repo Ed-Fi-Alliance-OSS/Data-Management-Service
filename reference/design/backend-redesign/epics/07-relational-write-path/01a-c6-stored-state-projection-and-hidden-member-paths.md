@@ -1,5 +1,6 @@
 ---
-jira: TBD
+jira: DMS-1118
+jira_url: https://edfi.atlassian.net/browse/DMS-1118
 ---
 
 # Story: Stored-State Projection + HiddenMemberPaths Computation
