@@ -1,0 +1,1330 @@
+{
+  "mapping_sets": [
+    {
+      "mapping_set_key": {
+        "effective_schema_hash": "3611a33fa3d2dfa3734c312052367bef78edd6e66825da66fde889a34ade8a86",
+        "dialect": "mssql",
+        "relational_mapping_version": "1.0.0"
+      },
+      "resources": [
+        {
+          "resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "Program"
+          },
+          "write_plan": {
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "Program"
+                },
+                "insert_sql_sha256": "fffa344322813f15a5f90a4ac3cbb2559470ab547025158e4ab1e17105292acf",
+                "update_sql_sha256": "f845cd4f4d7fcbca704637dbd2cbc3ad05e815ee4a4cdb0f5cd60adbe6188388",
+                "delete_by_parent_sql_sha256": null,
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 1000,
+                  "parameters_per_row": 2,
+                  "max_parameters_per_command": 2100
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "documentId",
+                    "write_value_source": {
+                      "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "ProgramName",
+                    "column_kind": "scalar",
+                    "parameter_name": "programName",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.programName",
+                      "scalar_kind": "string"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              }
+            ]
+          },
+          "read_plan": {
+            "keyset_table": {
+              "temp_table_name": "#page",
+              "document_id_column_name": "DocumentId"
+            },
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "Program"
+                },
+                "select_by_keyset_sql_sha256": "a6d821c86b154cbe8b94ef26c63de341beafa513c2f5c7f861b42720f3e32c42",
+                "select_list_columns_in_order": [
+                  "DocumentId",
+                  "ProgramName"
+                ],
+                "order_by_key_columns_in_order": [
+                  "DocumentId"
+                ]
+              }
+            ],
+            "reference_identity_projection_plans_in_dependency_order": [],
+            "descriptor_projection_plans_in_order": []
+          }
+        },
+        {
+          "resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "School"
+          },
+          "write_plan": {
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "School"
+                },
+                "insert_sql_sha256": "b2f8a1bde9960f3e9331e6aed84acb4b9dbd9da589e929fde9b017b494653f5b",
+                "update_sql_sha256": "d8c3b6eb74929c900434279c65d2ea23a4839461c4b74113a4626e037a88a2f1",
+                "delete_by_parent_sql_sha256": null,
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 1000,
+                  "parameters_per_row": 2,
+                  "max_parameters_per_command": 2100
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "documentId",
+                    "write_value_source": {
+                      "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "SchoolId",
+                    "column_kind": "scalar",
+                    "parameter_name": "schoolId",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.schoolId",
+                      "scalar_kind": "int32"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtension"
+                },
+                "insert_sql_sha256": "9d4e641c2e4751cf05122d595161859b93a01454869796c290252265db1aaae2",
+                "update_sql_sha256": "cf0481f393ade2c61caccd9c66c2248b0f8d10e299885b4ded4229e2917dfe52",
+                "delete_by_parent_sql_sha256": "d0d9450dbf9bc7d29ffcd08eb14c773dd899cf7bdb2bdc8f9585769e1d43692d",
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 1000,
+                  "parameters_per_row": 2,
+                  "max_parameters_per_command": 2100
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "documentId",
+                    "write_value_source": {
+                      "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "CampusCode",
+                    "column_kind": "scalar",
+                    "parameter_name": "campusCode",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.campusCode",
+                      "scalar_kind": "string"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtensionAddress"
+                },
+                "insert_sql_sha256": "8eddb86d0bba5ed2e2118d97262a4210fe51d372af87297a78c80aad9c759908",
+                "update_sql_sha256": "79765c07c96e719ffd98ba9daef5515d9ef980298e341c7bcc5cf051a5b99cb0",
+                "delete_by_parent_sql_sha256": "b29da3d009f8355363db23f361400b34b25af5057f34a42d5ec70598edc82faf",
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 700,
+                  "parameters_per_row": 3,
+                  "max_parameters_per_command": 2100
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "BaseCollectionItemId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "baseCollectionItemId",
+                    "write_value_source": {
+                      "kind": "parent_key_part",
+                      "index": 0
+                    }
+                  },
+                  {
+                    "column_name": "School_DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "school_DocumentId",
+                    "write_value_source": {
+                      "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "Zone",
+                    "column_kind": "scalar",
+                    "parameter_name": "zone",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.zone",
+                      "scalar_kind": "string"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtensionIntervention"
+                },
+                "insert_sql_sha256": "5868a9343e02882a26a85ef28da3a0a895a068172290ecd8a51c71de92974b74",
+                "update_sql_sha256": null,
+                "delete_by_parent_sql_sha256": "1c5f500e19c1be57f6b160b2fa4ad51903c9946eb2946dde405e18b7980c26f0",
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 525,
+                  "parameters_per_row": 4,
+                  "max_parameters_per_command": 2100
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "CollectionItemId",
+                    "column_kind": "collection_key",
+                    "parameter_name": "collectionItemId",
+                    "write_value_source": {
+                      "kind": "precomputed"
+                    }
+                  },
+                  {
+                    "column_name": "Ordinal",
+                    "column_kind": "ordinal",
+                    "parameter_name": "ordinal",
+                    "write_value_source": {
+                      "kind": "ordinal"
+                    }
+                  },
+                  {
+                    "column_name": "School_DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "school_DocumentId",
+                    "write_value_source": {
+                      "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "InterventionCode",
+                    "column_kind": "scalar",
+                    "parameter_name": "interventionCode",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.interventionCode",
+                      "scalar_kind": "string"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              },
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "SchoolAddress"
+                },
+                "insert_sql_sha256": "987cc4fcbf85fa5817ccc9040514e3145892585283be6a605c7c95af210642e2",
+                "update_sql_sha256": null,
+                "delete_by_parent_sql_sha256": "cfa72015c203e5ff45702425136f9c79b580fe9367f3917fe39c8bc55710293d",
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 525,
+                  "parameters_per_row": 4,
+                  "max_parameters_per_command": 2100
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "CollectionItemId",
+                    "column_kind": "collection_key",
+                    "parameter_name": "collectionItemId",
+                    "write_value_source": {
+                      "kind": "precomputed"
+                    }
+                  },
+                  {
+                    "column_name": "Ordinal",
+                    "column_kind": "ordinal",
+                    "parameter_name": "ordinal",
+                    "write_value_source": {
+                      "kind": "ordinal"
+                    }
+                  },
+                  {
+                    "column_name": "School_DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "school_DocumentId",
+                    "write_value_source": {
+                      "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "City",
+                    "column_kind": "scalar",
+                    "parameter_name": "city",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.city",
+                      "scalar_kind": "string"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtensionAddressSponsorReference"
+                },
+                "insert_sql_sha256": "beeb0d7dcd0bb05bde473f98dd81f0e79b08be5c84623a77e6eb189f333b06dc",
+                "update_sql_sha256": null,
+                "delete_by_parent_sql_sha256": "a5abf945fe449279efd4e73159a9cc42e42399dda5da50d2d29d8d12b3c5be64",
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 350,
+                  "parameters_per_row": 6,
+                  "max_parameters_per_command": 2100
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "CollectionItemId",
+                    "column_kind": "collection_key",
+                    "parameter_name": "collectionItemId",
+                    "write_value_source": {
+                      "kind": "precomputed"
+                    }
+                  },
+                  {
+                    "column_name": "BaseCollectionItemId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "baseCollectionItemId",
+                    "write_value_source": {
+                      "kind": "parent_key_part",
+                      "index": 0
+                    }
+                  },
+                  {
+                    "column_name": "Ordinal",
+                    "column_kind": "ordinal",
+                    "parameter_name": "ordinal",
+                    "write_value_source": {
+                      "kind": "ordinal"
+                    }
+                  },
+                  {
+                    "column_name": "School_DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "school_DocumentId",
+                    "write_value_source": {
+                      "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "Program_DocumentId",
+                    "column_kind": "document_fk",
+                    "parameter_name": "program_DocumentId",
+                    "write_value_source": {
+                      "kind": "document_reference",
+                      "binding_index": 0
+                    }
+                  },
+                  {
+                    "column_name": "Program_ProgramName",
+                    "column_kind": "scalar",
+                    "parameter_name": "program_ProgramName",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.programReference.programName",
+                      "scalar_kind": "string"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtensionInterventionVisit"
+                },
+                "insert_sql_sha256": "1ffdfc7cba3e76eccc99a87c1d9918bcb363e2d0e7a21514274609ecfcf4fce1",
+                "update_sql_sha256": null,
+                "delete_by_parent_sql_sha256": "7381d7872759be45e306a15eeab7ad508957b6a552844e3408023db38ad8a2aa",
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 420,
+                  "parameters_per_row": 5,
+                  "max_parameters_per_command": 2100
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "CollectionItemId",
+                    "column_kind": "collection_key",
+                    "parameter_name": "collectionItemId",
+                    "write_value_source": {
+                      "kind": "precomputed"
+                    }
+                  },
+                  {
+                    "column_name": "Ordinal",
+                    "column_kind": "ordinal",
+                    "parameter_name": "ordinal",
+                    "write_value_source": {
+                      "kind": "ordinal"
+                    }
+                  },
+                  {
+                    "column_name": "ParentCollectionItemId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "parentCollectionItemId",
+                    "write_value_source": {
+                      "kind": "parent_key_part",
+                      "index": 0
+                    }
+                  },
+                  {
+                    "column_name": "School_DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "school_DocumentId",
+                    "write_value_source": {
+                      "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "VisitCode",
+                    "column_kind": "scalar",
+                    "parameter_name": "visitCode",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.visitCode",
+                      "scalar_kind": "string"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              },
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "SchoolAddressPeriod"
+                },
+                "insert_sql_sha256": "b212c5a9e665d28648ca37456f89fdbe032ea918f134639232502b29ad83aed9",
+                "update_sql_sha256": null,
+                "delete_by_parent_sql_sha256": "d3b5a5c4f6f9db330b387a0509fe1fb5a3fb76cd6075d3f7ad13d58b491bf79f",
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 420,
+                  "parameters_per_row": 5,
+                  "max_parameters_per_command": 2100
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "CollectionItemId",
+                    "column_kind": "collection_key",
+                    "parameter_name": "collectionItemId",
+                    "write_value_source": {
+                      "kind": "precomputed"
+                    }
+                  },
+                  {
+                    "column_name": "Ordinal",
+                    "column_kind": "ordinal",
+                    "parameter_name": "ordinal",
+                    "write_value_source": {
+                      "kind": "ordinal"
+                    }
+                  },
+                  {
+                    "column_name": "ParentCollectionItemId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "parentCollectionItemId",
+                    "write_value_source": {
+                      "kind": "parent_key_part",
+                      "index": 0
+                    }
+                  },
+                  {
+                    "column_name": "School_DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "school_DocumentId",
+                    "write_value_source": {
+                      "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "PeriodName",
+                    "column_kind": "scalar",
+                    "parameter_name": "periodName",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.periodName",
+                      "scalar_kind": "string"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              }
+            ]
+          },
+          "read_plan": {
+            "keyset_table": {
+              "temp_table_name": "#page",
+              "document_id_column_name": "DocumentId"
+            },
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "School"
+                },
+                "select_by_keyset_sql_sha256": "dc0edc310255b266dd69c3feb07423fa2982345ba263f546ba49a20d2aa17428",
+                "select_list_columns_in_order": [
+                  "DocumentId",
+                  "SchoolId"
+                ],
+                "order_by_key_columns_in_order": [
+                  "DocumentId"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtension"
+                },
+                "select_by_keyset_sql_sha256": "2f050e2892d49fc3695519951ec8bd5d632029a09f09e8c7f5c37d4158ac8dd2",
+                "select_list_columns_in_order": [
+                  "DocumentId",
+                  "CampusCode"
+                ],
+                "order_by_key_columns_in_order": [
+                  "DocumentId"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtensionAddress"
+                },
+                "select_by_keyset_sql_sha256": "dfc172d0fd62794e1c6de277d7e0484e006a8642d1a67c8180e047466841e575",
+                "select_list_columns_in_order": [
+                  "BaseCollectionItemId",
+                  "School_DocumentId",
+                  "Zone"
+                ],
+                "order_by_key_columns_in_order": [
+                  "School_DocumentId",
+                  "BaseCollectionItemId"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtensionIntervention"
+                },
+                "select_by_keyset_sql_sha256": "d1321c6a81d7d5db8d4701f13af058adb97ed97a7cbaffdb0e8537b731748e65",
+                "select_list_columns_in_order": [
+                  "CollectionItemId",
+                  "Ordinal",
+                  "School_DocumentId",
+                  "InterventionCode"
+                ],
+                "order_by_key_columns_in_order": [
+                  "School_DocumentId",
+                  "Ordinal"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "SchoolAddress"
+                },
+                "select_by_keyset_sql_sha256": "f07db8ae6f3b7924ec6d24b91e102805a7ac17b2f9c6c947b1804bc3ed0b71cb",
+                "select_list_columns_in_order": [
+                  "CollectionItemId",
+                  "Ordinal",
+                  "School_DocumentId",
+                  "City"
+                ],
+                "order_by_key_columns_in_order": [
+                  "School_DocumentId",
+                  "Ordinal"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtensionAddressSponsorReference"
+                },
+                "select_by_keyset_sql_sha256": "22a023d696a6dd04c1c1fe3017a7b3e77b7b059832f1ff1b1c2c46526dda843a",
+                "select_list_columns_in_order": [
+                  "CollectionItemId",
+                  "BaseCollectionItemId",
+                  "Ordinal",
+                  "School_DocumentId",
+                  "Program_DocumentId",
+                  "Program_ProgramName"
+                ],
+                "order_by_key_columns_in_order": [
+                  "School_DocumentId",
+                  "BaseCollectionItemId",
+                  "Ordinal"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtensionInterventionVisit"
+                },
+                "select_by_keyset_sql_sha256": "7bac2f36fff3f27af7e125a19acc7a8e0f5cd63f4c4bd5fa7ccdd90360f03746",
+                "select_list_columns_in_order": [
+                  "CollectionItemId",
+                  "Ordinal",
+                  "ParentCollectionItemId",
+                  "School_DocumentId",
+                  "VisitCode"
+                ],
+                "order_by_key_columns_in_order": [
+                  "School_DocumentId",
+                  "ParentCollectionItemId",
+                  "Ordinal"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "SchoolAddressPeriod"
+                },
+                "select_by_keyset_sql_sha256": "dbf8a405b7c1691266ffae45718d13b0431ec0b43159cc63309cfa9d74f63425",
+                "select_list_columns_in_order": [
+                  "CollectionItemId",
+                  "Ordinal",
+                  "ParentCollectionItemId",
+                  "School_DocumentId",
+                  "PeriodName"
+                ],
+                "order_by_key_columns_in_order": [
+                  "School_DocumentId",
+                  "ParentCollectionItemId",
+                  "Ordinal"
+                ]
+              }
+            ],
+            "reference_identity_projection_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtensionAddressSponsorReference"
+                },
+                "bindings_in_order": [
+                  {
+                    "is_identity_component": false,
+                    "reference_object_path": "$._ext.sample.addresses[*]._ext.sample.sponsorReferences[*].programReference",
+                    "target_resource": {
+                      "project_name": "Ed-Fi",
+                      "resource_name": "Program"
+                    },
+                    "fk_column_ordinal": 4,
+                    "identity_field_ordinals_in_order": [
+                      {
+                        "reference_json_path": "$._ext.sample.addresses[*]._ext.sample.sponsorReferences[*].programReference.programName",
+                        "column_ordinal": 5
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "descriptor_projection_plans_in_order": []
+          }
+        }
+      ]
+    },
+    {
+      "mapping_set_key": {
+        "effective_schema_hash": "3611a33fa3d2dfa3734c312052367bef78edd6e66825da66fde889a34ade8a86",
+        "dialect": "pgsql",
+        "relational_mapping_version": "1.0.0"
+      },
+      "resources": [
+        {
+          "resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "Program"
+          },
+          "write_plan": {
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "Program"
+                },
+                "insert_sql_sha256": "a1fc1b3dcb67c72f16066468afb8909738ff145ece8996f28b8c4a768b62c18c",
+                "update_sql_sha256": "8c5241ef6cc5406eb3452423178c00d52eae6bc7666c4a815e5e5a25960c4be8",
+                "delete_by_parent_sql_sha256": null,
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 1000,
+                  "parameters_per_row": 2,
+                  "max_parameters_per_command": 65535
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "documentId",
+                    "write_value_source": {
+                      "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "ProgramName",
+                    "column_kind": "scalar",
+                    "parameter_name": "programName",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.programName",
+                      "scalar_kind": "string"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              }
+            ]
+          },
+          "read_plan": {
+            "keyset_table": {
+              "temp_table_name": "page",
+              "document_id_column_name": "DocumentId"
+            },
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "Program"
+                },
+                "select_by_keyset_sql_sha256": "1c58a338797442cf63ae8cff9884f7209de18c782a7629e9fe3ed13a5fc386c0",
+                "select_list_columns_in_order": [
+                  "DocumentId",
+                  "ProgramName"
+                ],
+                "order_by_key_columns_in_order": [
+                  "DocumentId"
+                ]
+              }
+            ],
+            "reference_identity_projection_plans_in_dependency_order": [],
+            "descriptor_projection_plans_in_order": []
+          }
+        },
+        {
+          "resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "School"
+          },
+          "write_plan": {
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "School"
+                },
+                "insert_sql_sha256": "bb83f9c22ff6e33886f99da234bd6a697952d13fd071debf5eea944eed48ea37",
+                "update_sql_sha256": "e12797237f6101e51ddc502b814fc5770d70e2afcb403b9a615b44dca5d1fec8",
+                "delete_by_parent_sql_sha256": null,
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 1000,
+                  "parameters_per_row": 2,
+                  "max_parameters_per_command": 65535
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "documentId",
+                    "write_value_source": {
+                      "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "SchoolId",
+                    "column_kind": "scalar",
+                    "parameter_name": "schoolId",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.schoolId",
+                      "scalar_kind": "int32"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtension"
+                },
+                "insert_sql_sha256": "f6e76bbe4fb483425bd17adcb0d6964bde19e19844cd51d9129eb9c03a9df67d",
+                "update_sql_sha256": "e23a7fdcb115f136481a309ebf952e32bfaa992a607c22672d96543b06009515",
+                "delete_by_parent_sql_sha256": "8263638c0d98f4920497c789d763261fc9177fa6f6d3116dd4eb1b8e9a01258b",
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 1000,
+                  "parameters_per_row": 2,
+                  "max_parameters_per_command": 65535
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "documentId",
+                    "write_value_source": {
+                      "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "CampusCode",
+                    "column_kind": "scalar",
+                    "parameter_name": "campusCode",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.campusCode",
+                      "scalar_kind": "string"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtensionAddress"
+                },
+                "insert_sql_sha256": "522587b2bb7c4beb88df191329f36dd3c3e474ec6d31f948088154cd64d1ef27",
+                "update_sql_sha256": "cdc4feed5db16a18e7f70bd54a1b0b36d5ffc6af145b0b86bd567d1a38bb4647",
+                "delete_by_parent_sql_sha256": "a7f08ff77fca49a9b22de358aaa5302b3726558544042972a5d01e38475720bc",
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 1000,
+                  "parameters_per_row": 3,
+                  "max_parameters_per_command": 65535
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "BaseCollectionItemId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "baseCollectionItemId",
+                    "write_value_source": {
+                      "kind": "parent_key_part",
+                      "index": 0
+                    }
+                  },
+                  {
+                    "column_name": "School_DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "school_DocumentId",
+                    "write_value_source": {
+                      "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "Zone",
+                    "column_kind": "scalar",
+                    "parameter_name": "zone",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.zone",
+                      "scalar_kind": "string"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtensionIntervention"
+                },
+                "insert_sql_sha256": "f938feb4c6f684193153b50cc237d2d2d85dbdcbe43283321fb4fdae271ee38c",
+                "update_sql_sha256": null,
+                "delete_by_parent_sql_sha256": "27c31f10a1f2fe3cb9effcbe5c97dedd6b6610085cb725eb1594a0f667b2711b",
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 1000,
+                  "parameters_per_row": 4,
+                  "max_parameters_per_command": 65535
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "CollectionItemId",
+                    "column_kind": "collection_key",
+                    "parameter_name": "collectionItemId",
+                    "write_value_source": {
+                      "kind": "precomputed"
+                    }
+                  },
+                  {
+                    "column_name": "Ordinal",
+                    "column_kind": "ordinal",
+                    "parameter_name": "ordinal",
+                    "write_value_source": {
+                      "kind": "ordinal"
+                    }
+                  },
+                  {
+                    "column_name": "School_DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "school_DocumentId",
+                    "write_value_source": {
+                      "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "InterventionCode",
+                    "column_kind": "scalar",
+                    "parameter_name": "interventionCode",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.interventionCode",
+                      "scalar_kind": "string"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              },
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "SchoolAddress"
+                },
+                "insert_sql_sha256": "61ea175a37cd45cf0260cd5f3660f5e3134238e9407ceb86496028fd71aa8bda",
+                "update_sql_sha256": null,
+                "delete_by_parent_sql_sha256": "8f4b35307b54ede81fadc454935cef8e413c939bbc51d7f981b2570345758c97",
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 1000,
+                  "parameters_per_row": 4,
+                  "max_parameters_per_command": 65535
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "CollectionItemId",
+                    "column_kind": "collection_key",
+                    "parameter_name": "collectionItemId",
+                    "write_value_source": {
+                      "kind": "precomputed"
+                    }
+                  },
+                  {
+                    "column_name": "Ordinal",
+                    "column_kind": "ordinal",
+                    "parameter_name": "ordinal",
+                    "write_value_source": {
+                      "kind": "ordinal"
+                    }
+                  },
+                  {
+                    "column_name": "School_DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "school_DocumentId",
+                    "write_value_source": {
+                      "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "City",
+                    "column_kind": "scalar",
+                    "parameter_name": "city",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.city",
+                      "scalar_kind": "string"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtensionAddressSponsorReference"
+                },
+                "insert_sql_sha256": "94465a4b6b98a1e52140bf41c37b4924c71c3c000ed7ed9b366a11004ced11a5",
+                "update_sql_sha256": null,
+                "delete_by_parent_sql_sha256": "5b35388098235ed5f5dd610da933cb3c0d20c262e2b84b52c45d0713ac8b4bce",
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 1000,
+                  "parameters_per_row": 6,
+                  "max_parameters_per_command": 65535
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "CollectionItemId",
+                    "column_kind": "collection_key",
+                    "parameter_name": "collectionItemId",
+                    "write_value_source": {
+                      "kind": "precomputed"
+                    }
+                  },
+                  {
+                    "column_name": "BaseCollectionItemId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "baseCollectionItemId",
+                    "write_value_source": {
+                      "kind": "parent_key_part",
+                      "index": 0
+                    }
+                  },
+                  {
+                    "column_name": "Ordinal",
+                    "column_kind": "ordinal",
+                    "parameter_name": "ordinal",
+                    "write_value_source": {
+                      "kind": "ordinal"
+                    }
+                  },
+                  {
+                    "column_name": "School_DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "school_DocumentId",
+                    "write_value_source": {
+                      "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "Program_DocumentId",
+                    "column_kind": "document_fk",
+                    "parameter_name": "program_DocumentId",
+                    "write_value_source": {
+                      "kind": "document_reference",
+                      "binding_index": 0
+                    }
+                  },
+                  {
+                    "column_name": "Program_ProgramName",
+                    "column_kind": "scalar",
+                    "parameter_name": "program_ProgramName",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.programReference.programName",
+                      "scalar_kind": "string"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtensionInterventionVisit"
+                },
+                "insert_sql_sha256": "ad6277c3436a7e074634c70017e3e4075c444c78c1108740fbf67b1d8fa808ae",
+                "update_sql_sha256": null,
+                "delete_by_parent_sql_sha256": "16e3c065a6d64202c574cc5ed26f30130755959f8b60553d63890a1fb10489d0",
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 1000,
+                  "parameters_per_row": 5,
+                  "max_parameters_per_command": 65535
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "CollectionItemId",
+                    "column_kind": "collection_key",
+                    "parameter_name": "collectionItemId",
+                    "write_value_source": {
+                      "kind": "precomputed"
+                    }
+                  },
+                  {
+                    "column_name": "Ordinal",
+                    "column_kind": "ordinal",
+                    "parameter_name": "ordinal",
+                    "write_value_source": {
+                      "kind": "ordinal"
+                    }
+                  },
+                  {
+                    "column_name": "ParentCollectionItemId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "parentCollectionItemId",
+                    "write_value_source": {
+                      "kind": "parent_key_part",
+                      "index": 0
+                    }
+                  },
+                  {
+                    "column_name": "School_DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "school_DocumentId",
+                    "write_value_source": {
+                      "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "VisitCode",
+                    "column_kind": "scalar",
+                    "parameter_name": "visitCode",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.visitCode",
+                      "scalar_kind": "string"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              },
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "SchoolAddressPeriod"
+                },
+                "insert_sql_sha256": "36423059e58a33ec168dc965e94bbdd67958ab6664737cb5e885fde74e0695b0",
+                "update_sql_sha256": null,
+                "delete_by_parent_sql_sha256": "0fecc9c6a40da053d3983dd9dfcbe4a294765b9fdf4b1cb01072e7881b24024f",
+                "bulk_insert_batching": {
+                  "max_rows_per_batch": 1000,
+                  "parameters_per_row": 5,
+                  "max_parameters_per_command": 65535
+                },
+                "column_bindings_in_order": [
+                  {
+                    "column_name": "CollectionItemId",
+                    "column_kind": "collection_key",
+                    "parameter_name": "collectionItemId",
+                    "write_value_source": {
+                      "kind": "precomputed"
+                    }
+                  },
+                  {
+                    "column_name": "Ordinal",
+                    "column_kind": "ordinal",
+                    "parameter_name": "ordinal",
+                    "write_value_source": {
+                      "kind": "ordinal"
+                    }
+                  },
+                  {
+                    "column_name": "ParentCollectionItemId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "parentCollectionItemId",
+                    "write_value_source": {
+                      "kind": "parent_key_part",
+                      "index": 0
+                    }
+                  },
+                  {
+                    "column_name": "School_DocumentId",
+                    "column_kind": "parent_key_part",
+                    "parameter_name": "school_DocumentId",
+                    "write_value_source": {
+                      "kind": "document_id"
+                    }
+                  },
+                  {
+                    "column_name": "PeriodName",
+                    "column_kind": "scalar",
+                    "parameter_name": "periodName",
+                    "write_value_source": {
+                      "kind": "scalar",
+                      "relative_path": "$.periodName",
+                      "scalar_kind": "string"
+                    }
+                  }
+                ],
+                "key_unification_plans": []
+              }
+            ]
+          },
+          "read_plan": {
+            "keyset_table": {
+              "temp_table_name": "page",
+              "document_id_column_name": "DocumentId"
+            },
+            "table_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "School"
+                },
+                "select_by_keyset_sql_sha256": "fffc1a79a363a4b97e20e086d0330ea9b4f29d7bd8288e65c70772a0daf93f9c",
+                "select_list_columns_in_order": [
+                  "DocumentId",
+                  "SchoolId"
+                ],
+                "order_by_key_columns_in_order": [
+                  "DocumentId"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtension"
+                },
+                "select_by_keyset_sql_sha256": "052bc8ea6ce4a1bc660f28b46728dab281da03b5876e1fa738fad180eca973aa",
+                "select_list_columns_in_order": [
+                  "DocumentId",
+                  "CampusCode"
+                ],
+                "order_by_key_columns_in_order": [
+                  "DocumentId"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtensionAddress"
+                },
+                "select_by_keyset_sql_sha256": "27a3a8f4dde6fdf7363ce336ca2c7f770f51c6f1abaaf09971b17869f5ec86d0",
+                "select_list_columns_in_order": [
+                  "BaseCollectionItemId",
+                  "School_DocumentId",
+                  "Zone"
+                ],
+                "order_by_key_columns_in_order": [
+                  "School_DocumentId",
+                  "BaseCollectionItemId"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtensionIntervention"
+                },
+                "select_by_keyset_sql_sha256": "3eb4d10cddf900634686910f31582ad6529ed768d80c3bbb9e434fbf670e7a12",
+                "select_list_columns_in_order": [
+                  "CollectionItemId",
+                  "Ordinal",
+                  "School_DocumentId",
+                  "InterventionCode"
+                ],
+                "order_by_key_columns_in_order": [
+                  "School_DocumentId",
+                  "Ordinal"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "SchoolAddress"
+                },
+                "select_by_keyset_sql_sha256": "a2b834672562b9bcb68322a01e0fc732f4134febe1617fc42c9d56e8501d87ef",
+                "select_list_columns_in_order": [
+                  "CollectionItemId",
+                  "Ordinal",
+                  "School_DocumentId",
+                  "City"
+                ],
+                "order_by_key_columns_in_order": [
+                  "School_DocumentId",
+                  "Ordinal"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtensionAddressSponsorReference"
+                },
+                "select_by_keyset_sql_sha256": "7a3e9350bab37061dee057db432011678542e0785215050ba3ad42c4626d85a0",
+                "select_list_columns_in_order": [
+                  "CollectionItemId",
+                  "BaseCollectionItemId",
+                  "Ordinal",
+                  "School_DocumentId",
+                  "Program_DocumentId",
+                  "Program_ProgramName"
+                ],
+                "order_by_key_columns_in_order": [
+                  "School_DocumentId",
+                  "BaseCollectionItemId",
+                  "Ordinal"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtensionInterventionVisit"
+                },
+                "select_by_keyset_sql_sha256": "870dfbcf23c3c0fe9565b63de7f85e51b86d2e544b47146279376e54fc3a168c",
+                "select_list_columns_in_order": [
+                  "CollectionItemId",
+                  "Ordinal",
+                  "ParentCollectionItemId",
+                  "School_DocumentId",
+                  "VisitCode"
+                ],
+                "order_by_key_columns_in_order": [
+                  "School_DocumentId",
+                  "ParentCollectionItemId",
+                  "Ordinal"
+                ]
+              },
+              {
+                "table": {
+                  "schema": "edfi",
+                  "name": "SchoolAddressPeriod"
+                },
+                "select_by_keyset_sql_sha256": "926288cd46ec444c861aef1acae47566367414d170dce05d0b0915530d1283ec",
+                "select_list_columns_in_order": [
+                  "CollectionItemId",
+                  "Ordinal",
+                  "ParentCollectionItemId",
+                  "School_DocumentId",
+                  "PeriodName"
+                ],
+                "order_by_key_columns_in_order": [
+                  "School_DocumentId",
+                  "ParentCollectionItemId",
+                  "Ordinal"
+                ]
+              }
+            ],
+            "reference_identity_projection_plans_in_dependency_order": [
+              {
+                "table": {
+                  "schema": "sample",
+                  "name": "SchoolExtensionAddressSponsorReference"
+                },
+                "bindings_in_order": [
+                  {
+                    "is_identity_component": false,
+                    "reference_object_path": "$._ext.sample.addresses[*]._ext.sample.sponsorReferences[*].programReference",
+                    "target_resource": {
+                      "project_name": "Ed-Fi",
+                      "resource_name": "Program"
+                    },
+                    "fk_column_ordinal": 4,
+                    "identity_field_ordinals_in_order": [
+                      {
+                        "reference_json_path": "$._ext.sample.addresses[*]._ext.sample.sponsorReferences[*].programReference.programName",
+                        "column_ordinal": 5
+                      }
+                    ]
+                  }
+                ]
+              }
+            ],
+            "descriptor_projection_plans_in_order": []
+          }
+        }
+      ]
+    }
+  ]
+}

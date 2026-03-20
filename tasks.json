@@ -161,6 +161,6 @@
       "Update the relevant expected artifacts under `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Fixtures`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   }
 ]
