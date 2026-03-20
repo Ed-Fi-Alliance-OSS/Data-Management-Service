@@ -71,3 +71,7 @@
 - decisions: no code/golden refresh needed; authoritative expected manifests already show reference-derived semantic identity for `AssessmentProgram` in `$.programs[*]`, with ordered FK-bound bindings and semantic-identity UNIQUE on parent locator + reference `DocumentId`
 - files: tasks.json; progress.txt
 - notes: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj` green (562). next: all tasks complete
+- completed: Read Plan Compatibility; story: reference/design/backend-redesign/epics/01-relational-model/11-stable-collection-row-identity.md
+- decisions: no product-code delta; read-plan assertions now validate root-locator join column via plan validator metadata and hydration ordering via explicit root + immediate-parent + Ordinal columns; add collections-nested-extension fixture coverage so top-level collections, nested collections, and collection-aligned `_ext` tables all exercise stable-key path
+- files: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReadPlanCompilerTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/ReadPlanSqlShape.cs; tasks.json; progress.txt
+- notes: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj` green (375). next: write-plan compatibility remains open in current tracker

@@ -17,6 +17,8 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
 {
     private const string RuntimePlanCompilationFixturePath =
         "Fixtures/runtime-plan-compilation/ApiSchema.json";
+    private const string CollectionsNestedExtensionFixturePath =
+        "Fixtures/runtime-plan-compilation/collections-nested-extension/fixture.manifest.json";
     private static readonly QualifiedResourceName _rootOnlyFixtureResource = new("Ed-Fi", "School");
     private static readonly QualifiedResourceName _projectionFixtureResource = new("Ed-Fi", "Student");
     private static readonly QualifiedResourceName _multiTableFixtureResource = new(
@@ -915,6 +917,24 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         permutedFingerprint.Should().Be(firstFingerprint);
     }
 
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_use_explicit_locator_metadata_for_fixture_models_with_stable_collection_keys(
+        SqlDialect dialect
+    )
+    {
+        var readPlan = new ReadPlanCompiler(dialect).Compile(
+            BuildFixtureResourceModel(
+                CollectionsNestedExtensionFixturePath,
+                _rootOnlyFixtureResource,
+                dialect,
+                reverseResourceSchemaOrder: false
+            )
+        );
+
+        AssertSqlProjectionAndOrderingMatchesModel(readPlan);
+    }
+
     [Test]
     public void It_should_emit_select_list_and_order_by_columns_in_model_order_for_every_table_plan()
     {
@@ -1459,14 +1479,28 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             var expectedSelectList = tablePlan
                 .TableModel.Columns.Select(static column => column.ColumnName.Value)
                 .ToArray();
-            var expectedOrderBy = tablePlan
-                .TableModel.Key.Columns.Select(static column => column.ColumnName.Value)
+            var expectedOrderBy = RelationalResourceModelCompileValidator
+                .ResolveHydrationOrderingColumnsOrThrow(tablePlan.TableModel, "read plan")
+                .Select(static column => column.Value)
                 .ToArray();
+            var expectedJoinLeftColumn =
+                RelationalResourceModelCompileValidator.ResolveRootScopeLocatorColumnOrThrow(
+                    tablePlan.TableModel,
+                    "read plan"
+                );
 
             ReadPlanSqlShape
                 .ExtractSelectedColumnNames(tablePlan.SelectByKeysetSql)
                 .Should()
                 .Equal(expectedSelectList);
+            ReadPlanSqlShape
+                .ExtractJoinLeftColumnName(tablePlan.SelectByKeysetSql)
+                .Should()
+                .Be(expectedJoinLeftColumn.Value);
+            ReadPlanSqlShape
+                .ExtractJoinRightColumnName(tablePlan.SelectByKeysetSql)
+                .Should()
+                .Be(readPlan.KeysetTable.DocumentIdColumnName.Value);
             ReadPlanSqlShape
                 .ExtractOrderByColumnNames(tablePlan.SelectByKeysetSql)
                 .Should()
@@ -1498,8 +1532,23 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         bool reverseResourceSchemaOrder
     )
     {
-        var modelSet = RuntimePlanFixtureModelSetBuilder.Build(
+        return BuildFixtureResourceModel(
             RuntimePlanCompilationFixturePath,
+            resourceName,
+            dialect,
+            reverseResourceSchemaOrder
+        );
+    }
+
+    private static RelationalResourceModel BuildFixtureResourceModel(
+        string fixtureRelativePath,
+        QualifiedResourceName resourceName,
+        SqlDialect dialect,
+        bool reverseResourceSchemaOrder
+    )
+    {
+        var modelSet = RuntimePlanFixtureModelSetBuilder.Build(
+            fixtureRelativePath,
             dialect,
             reverseResourceSchemaOrder
         );
