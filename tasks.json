@@ -6,7 +6,7 @@
       "Run: `rg -n \"arrayUniquenessConstraints|referenceJsonPaths|semantic identity|reference-backed|non-reference|compiled semantic identity\" reference/design/backend-redesign/epics/01-relational-model/11-stable-collection-row-identity.md reference/design/backend-redesign/epics/01-relational-model/01-reference-and-constraints.md reference/design/backend-redesign/design-docs/flattening-reconstitution.md reference/design/backend-redesign/design-docs/profiles.md reference/design/backend-redesign/design-docs/summary.md reference/design/backend-redesign/design-docs/data-model.md reference/design/backend-redesign/design-docs/transactions-and-concurrency.md reference/design/backend-redesign/design-docs/key-unification.md` and confirm the wording is consistent across all touched files.",
       "Review the updated sections and confirm none of those docs still describe `arrayUniquenessConstraints` as the only semantic-identity source for reference-backed persisted multi-item scopes or as the sole source of collection semantic-identity UNIQUE derivation."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Downstream Story Docs",

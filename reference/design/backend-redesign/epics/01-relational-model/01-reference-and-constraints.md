@@ -18,7 +18,10 @@ Key rules:
   identity natural-key columns for the referenced resource.
 - Root natural key unique constraint is derived from `identityJsonPaths`, using the `..._DocumentId` FK column for
   identity components sourced from references.
-- Child uniqueness constraints are derived from `arrayUniquenessConstraints`.
+- Persisted multi-item collection scopes compile semantic identity from exactly one of two schema sources:
+  - non-reference-backed scopes use scope-resolved `arrayUniquenessConstraints`, and
+  - reference-backed scopes whose AUC-derived identity is still empty use exactly one qualifying scope-local `DocumentReferenceBinding`, emitting members in `documentPathsMapping.referenceJsonPaths` order and binding every member to the reference `..._DocumentId` FK column.
+- Child-table API-semantic UNIQUE constraints are derived from that compiled semantic identity, not from raw `arrayUniquenessConstraints` alone.
 
 Descriptor binding (`*_DescriptorId` columns + descriptor edge metadata) is handled in the base traversal pass
 (`DMS-929`).
@@ -49,6 +52,14 @@ implementation code rather than spelled out in the design docs:
     (`ResolveArrayUniquenessColumn` uses `DocumentReferenceBinding.FkColumn` for identity-path matches).
   - Rationale: the FK `..._DocumentId` is the stable key for the referenced document; using it preserves determinism
     and aligns with the root-identity rule above.
+- Reference-backed collection scopes may derive semantic identity from exactly one scope-local reference binding.
+  - If a persisted multi-item collection/common-type/extension-collection scope is reference-backed and its
+    AUC-derived identity is empty, DMS compiles semantic identity from exactly one qualifying scope-local
+    `DocumentReferenceBinding`, in `documentPathsMapping.referenceJsonPaths` order.
+  - Every compiled member binds to the reference `..._DocumentId` FK column rather than to propagated identity
+    columns, and the downstream collection UNIQUE constraint is derived from that compiled semantic identity.
+  - If neither scope-resolved `arrayUniquenessConstraints` nor the reference-backed rule yields a non-empty identity,
+    validation/compilation fails before runtime merge execution.
 
 ## Integration (ordered passes)
 
@@ -67,7 +78,11 @@ implementation code rather than spelled out in the design docs:
   - a `DocumentReferenceBinding` with correct `IsIdentityComponent` classification and column bindings.
 - Root-table natural key UNIQUE constraint matches `identityJsonPaths` semantics.
   - For identity components sourced from references, the UNIQUE constraint uses the `..._DocumentId` column.
-- Child-table UNIQUE constraints are created per `arrayUniquenessConstraints` with deterministic column ordering.
+- Child-table API-semantic UNIQUE constraints are created from compiled semantic identity with deterministic column
+  ordering.
+  - Non-reference-backed scopes compile from scope-resolved `arrayUniquenessConstraints`.
+  - Reference-backed scopes whose AUC-derived identity is empty compile from exactly one scope-local reference binding
+    in `documentPathsMapping.referenceJsonPaths` order.
 - Unknown/mismatched mapping paths fail fast during model compilation (no silent omissions).
 
 ## Tasks
@@ -78,7 +93,8 @@ implementation code rather than spelled out in the design docs:
    - `DocumentReferenceBinding` metadata (including `IsIdentityComponent` and local column bindings).
 2. Implement constraint derivation:
    - root natural key unique,
-   - child uniqueness from `arrayUniquenessConstraints`.
+   - child uniqueness from compiled semantic identity (`arrayUniquenessConstraints` for non-reference scopes, or a
+     single scope-local `referenceJsonPaths` binding for supported reference-backed scopes).
    - per-reference “all-or-none” CHECK constraints and composite FKs (for propagated identity columns).
 3. Add unit tests covering:
    1. references inside nested collections (scope selection),

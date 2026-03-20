@@ -629,7 +629,16 @@ For each JSON array of objects under the resource:
 - Scalar columns for the element object
 - Reference/descriptor FK columns as above
 - Unique constraint on `(ParentScope, Ordinal)` to preserve sibling ordering
-- Unique constraints derived from the compiled collection semantic identity (separate from the PK). For a persisted multi-item collection scope, that identity is the non-empty ordered member set derived from the applicable `arrayUniquenessConstraints` entry for the scope; DMS does not fall back to ordinals or hidden/internal row ids, and validation/compilation fails if a supported model cannot supply that identity.
+- Unique constraints derived from the compiled collection semantic identity (separate from the PK). For a persisted
+  multi-item collection scope, that identity is the non-empty ordered member set compiled from exactly one of two
+  sources:
+  - non-reference-backed scopes use the applicable scope-resolved `arrayUniquenessConstraints` entry, and
+  - reference-backed scopes whose AUC-derived identity is still empty use exactly one qualifying scope-local
+    `DocumentReferenceBinding` in `documentPathsMapping.referenceJsonPaths` order, with every compiled member bound
+    to the reference `..._DocumentId` FK column rather than to propagated identity columns.
+  Those API-semantic collection UNIQUE constraints derive from the compiled identity rather than from raw
+  `arrayUniquenessConstraints` alone. DMS does not fall back to ordinals or hidden/internal row ids, and
+  validation/compilation fails if a supported model cannot supply identity from either source.
 
 Nested collections attach to the immediate parent collection row by `ParentCollectionItemId`, while extension/common-type scope tables under collections use the same stable collection row identity.
 

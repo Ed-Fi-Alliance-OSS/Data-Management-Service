@@ -174,9 +174,19 @@ Deep dive on derived mapping and the minimal `ApiSchema.json` additions: [flatte
 - `jsonSchemaForInsert`: authoritative shape, types, formats, maxLength, required (fully dereferenced/expanded;
   no `$ref`, `oneOf`/`anyOf`/`allOf`, `enum`)
 - `identityJsonPaths`: natural key extraction and uniqueness
-- `documentPathsMapping`: identifies references vs scalars vs descriptor paths, plus reference identity mapping
+- `documentPathsMapping`: identifies references vs scalars vs descriptor paths, plus reference identity mapping; for
+  supported reference-backed persisted multi-item collection scopes, `referenceJsonPaths` also supplies the
+  reference-derived semantic-identity member order when exactly one scope-local binding qualifies
 - `decimalPropertyValidationInfos`: precision/scale for `decimal`
-- `arrayUniquenessConstraints`: authoritative schema metadata for collection semantic identity / relational unique constraints. For a persisted multi-item collection scope, the compiled identity is the non-empty ordered member set resolved for that scope from this metadata. DMS does not fall back to ordinals, parent-only locators, or hidden/internal row ids, and supported models that cannot supply a non-empty compiled identity must fail validation/compilation.
+- `arrayUniquenessConstraints`: authoritative schema metadata for non-reference collection semantic identity and the
+  first schema source considered for collection semantic-identity compilation / relational API-semantic unique
+  constraints. For a persisted multi-item collection scope, the compiled identity is the non-empty ordered member set
+  compiled from either scope-resolved `arrayUniquenessConstraints` or, for a supported reference-backed scope whose
+  AUC-derived identity is still empty, exactly one scope-local `DocumentReferenceBinding` in
+  `documentPathsMapping.referenceJsonPaths` order. Reference-derived members bind to the reference `..._DocumentId`
+  FK column rather than to propagated identity columns. DMS does not fall back to ordinals, parent-only locators, or
+  hidden/internal row ids, and supported models that cannot supply a non-empty compiled identity from either source
+  must fail validation/compilation.
 - `abstractResources`: abstract identity metadata for polymorphic reference targets (drives `{AbstractResource}Identity` tables and optional union views)
 - `isSubclass` + superclass metadata: drives insertion of superclass/abstract alias referential-id rows in `dms.ReferentialIdentity`
 - `queryFieldMapping`: defines queryable fields and their JSON paths/types; may map to:
@@ -339,7 +349,11 @@ Collection-write note:
 - For profile-constrained writes, backend loads/reconstitutes the current stored document and invokes the Core-owned projector with the same mapping-set-scoped compiled-scope catalog used for address derivation to derive `ProfileAppliedWriteContext`, including `VisibleStoredBody`, `StoredScopeStates`, and `VisibleStoredCollectionRows`.
 - Backend determines the visible persisted rows for merge/delete from `StoredScopeStates` / `VisibleStoredCollectionRows` in that Core-projected stored-state contract, using the compiled semantic-identity values already supplied there. Backend MUST NOT evaluate writable-profile member filters or collection-item value predicates itself, and MUST NOT infer hidden-vs-visible-absent from `VisibleStoredBody` alone.
 - Core MUST reject any writable profile definition that excludes a field required to compute the compiled semantic identity of a persisted multi-item collection scope.
-- Every persisted multi-item collection scope MUST compile a non-empty semantic identity from scope-resolved `arrayUniquenessConstraints`; supported DMS models are valid MetaEd-generated models with the relevant validator set applied, and any model that still cannot do this must fail before runtime merge execution.
+- Every persisted multi-item collection scope MUST compile a non-empty semantic identity from either scope-resolved
+  `arrayUniquenessConstraints` or, for a supported reference-backed scope whose AUC-derived identity is still empty,
+  exactly one scope-local `DocumentReferenceBinding` in `documentPathsMapping.referenceJsonPaths` order. Collection
+  semantic-identity UNIQUE constraints are derived from that compiled identity, and any supported model that still
+  cannot produce it must fail before runtime merge execution.
 - Correctness for accepted profile writes still relies on the same `If-Match` / `ContentVersion` guard described above; no new API surface is required.
 
 ### Deadlock + retry policy
