@@ -313,7 +313,7 @@ public class Given_MappingSetProvider
 
             ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.EffectiveSchemaHash));
             ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.Dialect.ToString()));
-            ex.Diagnostics.Should().Contain(d => d.Contains("simulated compile error"));
+            ex.Diagnostics.Should().Contain(d => d.Contains("see server logs for details"));
         }
     }
 

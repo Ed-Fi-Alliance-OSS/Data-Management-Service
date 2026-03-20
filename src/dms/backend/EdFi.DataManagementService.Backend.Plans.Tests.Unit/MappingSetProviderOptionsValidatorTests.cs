@@ -58,6 +58,22 @@ public class Given_MappingSetProviderOptionsValidator
     }
 
     [TestFixture]
+    public class Given_Negative_FailureCooldownSeconds : Given_MappingSetProviderOptionsValidator
+    {
+        [Test]
+        public void It_fails_validation()
+        {
+            var result = _validator.Validate(
+                null,
+                new MappingSetProviderOptions { FailureCooldownSeconds = -1 }
+            );
+
+            result.Failed.Should().BeTrue();
+            result.FailureMessage.Should().Contain("FailureCooldownSeconds");
+        }
+    }
+
+    [TestFixture]
     public class Given_Invalid_CacheMode : Given_MappingSetProviderOptionsValidator
     {
         [Test]

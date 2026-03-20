@@ -192,7 +192,7 @@ public sealed class MappingSetProvider : IMappingSetProvider
                 $"Runtime compilation failed for {FormatKeyForMessage(key)}: {ex.Message}",
                 [
                     .. BuildKeyDiagnostics(key),
-                    $"Compilation error: {ex.Message}",
+                    "Compilation error: see server logs for details.",
                     "Suggested action: Check server logs for the full stack trace.",
                 ],
                 ex
