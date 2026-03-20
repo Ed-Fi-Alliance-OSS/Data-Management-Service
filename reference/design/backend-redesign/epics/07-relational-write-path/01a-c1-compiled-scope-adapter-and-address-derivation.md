@@ -64,6 +64,7 @@ Implement the normative 7-step algorithm from `profiles.md` §"Scope and Row Add
   - nested collection scope (two-level ancestor chain),
   - `_ext` scope at root level,
   - collection-aligned `_ext` child collection scope.
+- `ProfileDefinition` compatibility assessment is documented: whether the existing profile loading infrastructure produces definitions that C2–C8 can consume directly, or whether adaptation is needed. If adaptation is non-trivial, the required changes and their scope are documented so that C3 can incorporate them.
 
 ## Tasks
 
