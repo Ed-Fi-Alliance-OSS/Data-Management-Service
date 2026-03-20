@@ -199,5 +199,23 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
     "completed": true
+  },
+  {
+    "category": "Descriptor Projection Root Locator Joins",
+    "description": "Repair descriptor projection planning for stable-key collection scopes so `src/dms/backend/EdFi.DataManagementService.Backend.Plans/DescriptorProjectionPlanCompiler.cs` joins page keysets through the explicit root document locator metadata instead of assuming `tableModel.Key.Columns[0]` is the locator. Acceptance: descriptor URI projection for base collection/common-type tables and collection-aligned `_ext` scope tables joins `KeysetValues.DocumentId` to the table's explicit root-scope locator column, not to `CollectionItemId` or `BaseCollectionItemId`; root-table behavior remains unchanged; and read-plan compilation covers descriptor projections sourced from root scopes, collection/common-type scopes, and collection-aligned `_ext` scopes.",
+    "steps-to-verify": [
+      "Add regression coverage in `ReadPlanCompilerTests` that asserts the generated descriptor-projection SQL uses the explicit root document locator for collection/common-type and collection-aligned `_ext` descriptor sources, rather than the first key column.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Semantic Identity Path Normalization Consolidation",
+    "description": "Consolidate scope-relative semantic-identity path normalization so `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/SemanticIdentityCompilationPass.cs` and `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ArrayUniquenessConstraintPass.cs` rely on one shared implementation with consistent validation behavior. Acceptance: both AUC-derived and reference-derived semantic-identity compilation use the same helper to strip the owning table scope prefix, reject descendant-array crossings, and produce the same deterministic diagnostics for invalid paths, eliminating the current duplicate logic and drift risk between the two passes.",
+    "steps-to-verify": [
+      "Add or update shared-helper and pass-level regression tests that exercise valid normalization, non-prefix failures, and stripped paths containing `[*]`, and assert the two compilation paths now behave identically.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
   }
 ]

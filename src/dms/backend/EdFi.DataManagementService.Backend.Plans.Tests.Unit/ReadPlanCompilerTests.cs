@@ -689,6 +689,59 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             .Equal(5, 4, 6);
     }
 
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_join_descriptor_projection_keysets_through_explicit_root_locators_for_stable_key_tables(
+        SqlDialect dialect
+    )
+    {
+        var model = CreateStableKeyDescriptorProjectionResourceModel(dialect);
+        var readPlan = new ReadPlanCompiler(dialect).Compile(model);
+        var descriptorProjectionPlan = readPlan
+            .DescriptorProjectionPlansInOrder.Should()
+            .ContainSingle()
+            .Subject;
+        var rootTable = readPlan.Model.Root;
+        var collectionTable = readPlan.Model.TablesInDependencyOrder.Single(table =>
+            table.JsonScope.Canonical == "$.addresses[*]"
+        );
+        var alignedExtensionTable = readPlan.Model.TablesInDependencyOrder.Single(table =>
+            table.JsonScope.Canonical == "$._ext.sample.addresses[*]._ext.sample"
+        );
+
+        descriptorProjectionPlan
+            .SourcesInOrder.Select(static source => source.DescriptorValuePath.Canonical)
+            .Should()
+            .Equal(
+                "$.schoolCategoryDescriptor",
+                "$.addresses[*].addressTypeDescriptor",
+                "$._ext.sample.addresses[*]._ext.sample.zoneDescriptor"
+            );
+        descriptorProjectionPlan
+            .SourcesInOrder.Select(static source => source.Table)
+            .Should()
+            .Equal(rootTable.Table, collectionTable.Table, alignedExtensionTable.Table);
+
+        AssertDescriptorProjectionKeysetJoinUsesExpectedRootLocator(
+            descriptorProjectionPlan.SelectByKeysetSql,
+            dialect,
+            sourceIndex: 0,
+            tableModel: rootTable
+        );
+        AssertDescriptorProjectionKeysetJoinUsesExpectedRootLocator(
+            descriptorProjectionPlan.SelectByKeysetSql,
+            dialect,
+            sourceIndex: 1,
+            tableModel: collectionTable
+        );
+        AssertDescriptorProjectionKeysetJoinUsesExpectedRootLocator(
+            descriptorProjectionPlan.SelectByKeysetSql,
+            dialect,
+            sourceIndex: 2,
+            tableModel: alignedExtensionTable
+        );
+    }
+
     [Test]
     public void It_should_accept_valid_descriptor_projection_source_coverage_for_key_unified_models()
     {
@@ -1652,6 +1705,43 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         descriptorPlan.SelectByKeysetSql.Should().NotContain("SchoolYearTypeDescriptorSecondary");
     }
 
+    private static void AssertDescriptorProjectionKeysetJoinUsesExpectedRootLocator(
+        string sql,
+        SqlDialect dialect,
+        int sourceIndex,
+        DbTableModel tableModel
+    )
+    {
+        var rootScopeLocatorColumn =
+            RelationalResourceModelCompileValidator.ResolveRootScopeLocatorColumnOrThrow(
+                tableModel,
+                "descriptor projection plan"
+            );
+        var expectedJoinCondition =
+            $" ON t{sourceIndex}.{QuoteIdentifier(dialect, rootScopeLocatorColumn.Value)} = "
+            + $"k.{QuoteIdentifier(dialect, "DocumentId")}";
+
+        sql.Should().Contain(expectedJoinCondition);
+
+        var firstKeyColumn = tableModel.Key.Columns[0].ColumnName;
+
+        if (firstKeyColumn.Equals(rootScopeLocatorColumn))
+        {
+            return;
+        }
+
+        sql.Should()
+            .NotContain(
+                $" ON t{sourceIndex}.{QuoteIdentifier(dialect, firstKeyColumn.Value)} = "
+                    + $"k.{QuoteIdentifier(dialect, "DocumentId")}"
+            );
+    }
+
+    private static string QuoteIdentifier(SqlDialect dialect, string identifier)
+    {
+        return dialect == SqlDialect.Pgsql ? $"\"{identifier}\"" : $"[{identifier}]";
+    }
+
     private static string CreateReadPlanFingerprint(ResourceReadPlan readPlan)
     {
         return NormalizedPlanDtoJson.EmitCanonicalJson(NormalizedPlanContractCodec.Encode(readPlan));
@@ -1942,6 +2032,138 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 ),
             ],
         };
+    }
+
+    private static RelationalResourceModel CreateStableKeyDescriptorProjectionResourceModel(
+        SqlDialect dialect
+    )
+    {
+        const string fixturePath =
+            "Fixtures/runtime-plan-compilation/focused-stable-key/positive/extension-child-collections/fixture.manifest.json";
+        var model = BuildFixtureResourceModel(
+            fixturePath,
+            new QualifiedResourceName("Ed-Fi", "School"),
+            dialect,
+            reverseResourceSchemaOrder: false
+        );
+        var rootDescriptorPath = CreatePath(
+            "$.schoolCategoryDescriptor",
+            new JsonPathSegment.Property("schoolCategoryDescriptor")
+        );
+        var collectionDescriptorPath = CreatePath(
+            "$.addresses[*].addressTypeDescriptor",
+            new JsonPathSegment.Property("addresses"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("addressTypeDescriptor")
+        );
+        var alignedExtensionDescriptorPath = CreatePath(
+            "$._ext.sample.addresses[*]._ext.sample.zoneDescriptor",
+            new JsonPathSegment.Property("_ext"),
+            new JsonPathSegment.Property("sample"),
+            new JsonPathSegment.Property("addresses"),
+            new JsonPathSegment.AnyArrayElement(),
+            new JsonPathSegment.Property("_ext"),
+            new JsonPathSegment.Property("sample"),
+            new JsonPathSegment.Property("zoneDescriptor")
+        );
+        var rootTable = AppendDescriptorColumn(
+            model.Root,
+            new DbColumnName("SchoolCategoryDescriptorId"),
+            rootDescriptorPath,
+            new QualifiedResourceName("Ed-Fi", "SchoolCategoryDescriptor")
+        );
+        var collectionTable = AppendDescriptorColumn(
+            model.TablesInDependencyOrder.Single(table => table.JsonScope.Canonical == "$.addresses[*]"),
+            new DbColumnName("AddressTypeDescriptorId"),
+            collectionDescriptorPath,
+            new QualifiedResourceName("Ed-Fi", "AddressTypeDescriptor")
+        );
+        var alignedExtensionTable = AppendDescriptorColumn(
+            model.TablesInDependencyOrder.Single(table =>
+                table.JsonScope.Canonical == "$._ext.sample.addresses[*]._ext.sample"
+            ),
+            new DbColumnName("ZoneDescriptorId"),
+            alignedExtensionDescriptorPath,
+            new QualifiedResourceName("Ed-Fi", "ZoneDescriptor")
+        );
+
+        return model with
+        {
+            Root = rootTable,
+            TablesInDependencyOrder =
+            [
+                .. model.TablesInDependencyOrder.Select(table =>
+                    table.JsonScope.Canonical switch
+                    {
+                        "$" => rootTable,
+                        "$.addresses[*]" => collectionTable,
+                        "$._ext.sample.addresses[*]._ext.sample" => alignedExtensionTable,
+                        _ => table,
+                    }
+                ),
+            ],
+            DescriptorEdgeSources =
+            [
+                CreateDescriptorEdgeSource(
+                    rootTable,
+                    new DbColumnName("SchoolCategoryDescriptorId"),
+                    rootDescriptorPath,
+                    new QualifiedResourceName("Ed-Fi", "SchoolCategoryDescriptor")
+                ),
+                CreateDescriptorEdgeSource(
+                    collectionTable,
+                    new DbColumnName("AddressTypeDescriptorId"),
+                    collectionDescriptorPath,
+                    new QualifiedResourceName("Ed-Fi", "AddressTypeDescriptor")
+                ),
+                CreateDescriptorEdgeSource(
+                    alignedExtensionTable,
+                    new DbColumnName("ZoneDescriptorId"),
+                    alignedExtensionDescriptorPath,
+                    new QualifiedResourceName("Ed-Fi", "ZoneDescriptor")
+                ),
+            ],
+        };
+    }
+
+    private static DbTableModel AppendDescriptorColumn(
+        DbTableModel tableModel,
+        DbColumnName columnName,
+        JsonPathExpression sourceJsonPath,
+        QualifiedResourceName descriptorResource
+    )
+    {
+        return tableModel with
+        {
+            Columns =
+            [
+                .. tableModel.Columns,
+                new DbColumnModel(
+                    ColumnName: columnName,
+                    Kind: ColumnKind.DescriptorFk,
+                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: sourceJsonPath,
+                    TargetResource: descriptorResource
+                ),
+            ],
+        };
+    }
+
+    private static DescriptorEdgeSource CreateDescriptorEdgeSource(
+        DbTableModel tableModel,
+        DbColumnName fkColumn,
+        JsonPathExpression descriptorValuePath,
+        QualifiedResourceName descriptorResource
+    )
+    {
+        return new DescriptorEdgeSource(
+            IsIdentityComponent: false,
+            DescriptorValuePath: descriptorValuePath,
+            Table: tableModel.Table,
+            FkColumn: fkColumn,
+            DescriptorResource: descriptorResource
+        );
     }
 
     private static RelationalResourceModel CreateRootMultiBindingReferenceProjectionResourceModel()
