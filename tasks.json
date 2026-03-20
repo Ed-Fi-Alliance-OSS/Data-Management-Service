@@ -162,5 +162,42 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
     ],
     "completed": true
+  },
+  {
+    "category": "CollectionItemId Producer Contract",
+    "description": "Repair stable-key collection insert planning so `CollectionItemId` is owned by a real producer instead of surfacing as an orphan `Precomputed` parameter. Update `src/dms/backend/EdFi.DataManagementService.Backend.Plans/WritePlanCompiler.cs`, `src/dms/backend/EdFi.DataManagementService.Backend.Plans/KeyUnificationWritePlanCompiler.cs`, and `src/dms/backend/EdFi.DataManagementService.Backend.External/Plans/WritePlanContracts.cs` so collection inserts preallocate `CollectionItemId` values before DML generation, consistent with the stable-row-identity design, and so the external plan contract describes that producer accurately. Acceptance: top-level, nested, and extension collection insert plans never require an unowned `@collectionItemId` parameter; every emitted `CollectionItemId`/`CollectionKey` binding has a concrete producer step in the compiled plan; and normalized plan artifacts and contract comments align with the implemented producer semantics.",
+    "steps-to-verify": [
+      "Add regression coverage in the plan test suite for top-level, nested, and extension collection inserts that asserts a concrete `CollectionItemId` producer exists and that generated insert SQL does not expose an unbound `@collectionItemId` parameter.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Semantic Identity Precedence",
+    "description": "Make collection semantic-identity compilation deterministic regardless of project/resource ordering. Update `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/SemanticIdentityCompilationPass.cs`, `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ArrayUniquenessConstraintPass.cs`, and any supporting set-builder flow so a persisted multi-item scope always prefers the applicable scope-resolved `arrayUniquenessConstraints` member set, and only falls back to exactly one qualifying scope-local `DocumentReferenceBinding` when the AUC-derived identity is still empty after all contributing metadata is considered. Acceptance: base and extension project sort order cannot change the chosen semantic identity or derived UNIQUE-constraint columns, and reference fallback never permanently wins when a valid AUC-derived identity exists for the same scope.",
+    "steps-to-verify": [
+      "Add a regression fixture where an extension project sorts before its base project and assert that the compiled semantic identity and collection UNIQUE constraint still use the AUC-derived member set rather than the reference fallback.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Ambiguous Semantic Identity Validation",
+    "description": "Restore fail-fast validation for persisted multi-item scopes that resolve to more than one semantic-identity candidate. Update `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ArrayUniquenessConstraintPass.cs` and `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ValidateCollectionSemanticIdentityPass.cs` so compilation rejects multiple applicable AUC member sets, multiple qualifying reference-derived fallbacks, or any other ambiguous semantic-identity inputs instead of keeping the first binding set while emitting uniqueness constraints from a broader source list. Acceptance: a persisted multi-item scope compiles only when exactly one non-empty ordered semantic-identity binding set survives resolution; runtime merge/read metadata and collection UNIQUE constraints are derived from that same single binding set; and ambiguous cases fail with a deterministic diagnostic before manifests or plans are emitted.",
+    "steps-to-verify": [
+      "Add negative relational-model fixtures that exercise multiple applicable `arrayUniquenessConstraints` sets and multiple qualifying reference-backed fallbacks, and assert deterministic compilation failure rather than first-wins metadata.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Stable-Identity Helper Deduplication",
+    "description": "Collapse duplicated helper logic introduced during the stable-row-identity implementation. Replace the local path-prefix helper implementations in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/SemanticIdentityCompilationPass.cs` and `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ArrayUniquenessConstraintPass.cs` with the shared helper in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Schema/RelationalModelSetSchemaHelpers.cs`, and extract the duplicated `CreateKeyColumn`/scalar-type logic shared by `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/Steps/DeriveTableScopesAndKeysStep.cs` and `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ExtensionTableDerivationPass.cs` into one reusable implementation. Acceptance: path-prefix stripping and stable-key column construction each have a single authoritative implementation used by both base and extension derivation paths, with no behavior drift between the previously duplicated call sites.",
+    "steps-to-verify": [
+      "Add or update unit coverage for the shared helpers and regression coverage that exercises both base and extension collection derivation paths through the consolidated implementations.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
   }
 ]

@@ -135,6 +135,7 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
             ApplyArrayUniquenessConstraint(
                 constraint,
                 mutation,
+                resourceModel,
                 resource,
                 tablesByScope,
                 tablesByName,
@@ -152,6 +153,7 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
     private static void ApplyArrayUniquenessConstraint(
         ArrayUniquenessConstraintInput constraint,
         ResourceMutation mutation,
+        RelationalResourceModel resourceModel,
         QualifiedResourceName resource,
         IReadOnlyDictionary<string, IReadOnlyList<DbTableModel>> tablesByScope,
         IReadOnlyDictionary<DbTableName, IReadOnlyList<DbTableModel>> tablesByName,
@@ -188,6 +190,7 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
             {
                 AddArrayUniquenessConstraint(
                     mutation,
+                    resourceModel,
                     table,
                     compiledIdentity,
                     resource,
@@ -222,6 +225,7 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
                 {
                     AddArrayUniquenessConstraint(
                         mutation,
+                        resourceModel,
                         alignedTable,
                         alignedIdentity,
                         resource,
@@ -257,6 +261,7 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
             ApplyArrayUniquenessConstraint(
                 nested,
                 mutation,
+                resourceModel,
                 resource,
                 tablesByScope,
                 tablesByName,
@@ -335,13 +340,20 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
     /// </summary>
     private static void AddArrayUniquenessConstraint(
         ResourceMutation mutation,
+        RelationalResourceModel resourceModel,
         DbTableModel table,
         CompiledArrayUniqueness compiledIdentity,
         QualifiedResourceName resource,
         bool emitUniqueConstraint
     )
     {
-        ApplySemanticIdentityBindings(mutation, table, compiledIdentity.SemanticIdentityBindings, resource);
+        ApplyArrayUniquenessSemanticIdentityBindings(
+            mutation,
+            resourceModel,
+            table,
+            compiledIdentity.SemanticIdentityBindings,
+            resource
+        );
 
         if (!emitUniqueConstraint)
         {
@@ -367,6 +379,54 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
             );
             mutation.MarkTableMutated(table);
         }
+    }
+
+    /// <summary>
+    /// Applies AUC-derived semantic identity bindings, replacing an earlier reference-derived fallback when
+    /// the resolved AUC member set is more specific for the same persisted scope.
+    /// </summary>
+    private static void ApplyArrayUniquenessSemanticIdentityBindings(
+        ResourceMutation mutation,
+        RelationalResourceModel resourceModel,
+        DbTableModel table,
+        IReadOnlyList<CollectionSemanticIdentityBinding> semanticIdentityBindings,
+        QualifiedResourceName resource
+    )
+    {
+        var tableAccumulator = mutation.GetTableAccumulator(table, mutation.Entry.Model.ResourceKey.Resource);
+        var existingIdentityMetadata = tableAccumulator.IdentityMetadata;
+
+        if (semanticIdentityBindings.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Semantic identity scope '{table.JsonScope.Canonical}' on resource "
+                    + $"'{FormatResource(resource)}' did not compile any semantic identity bindings."
+            );
+        }
+
+        if (existingIdentityMetadata.SemanticIdentityBindings.Count > 0)
+        {
+            if (
+                SemanticIdentityBindingsMatch(
+                    existingIdentityMetadata.SemanticIdentityBindings,
+                    semanticIdentityBindings
+                )
+                || !MatchesReferenceDerivedFallback(
+                    resourceModel,
+                    table,
+                    existingIdentityMetadata.SemanticIdentityBindings
+                )
+            )
+            {
+                return;
+            }
+        }
+
+        tableAccumulator.IdentityMetadata = existingIdentityMetadata with
+        {
+            SemanticIdentityBindings = semanticIdentityBindings.ToArray(),
+        };
+        mutation.MarkTableMutated(table);
     }
 
     /// <summary>
@@ -403,6 +463,52 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
             SemanticIdentityBindings = semanticIdentityBindings.ToArray(),
         };
         mutation.MarkTableMutated(table);
+    }
+
+    /// <summary>
+    /// Returns true when two ordered semantic-identity binding sets are equivalent.
+    /// </summary>
+    private static bool SemanticIdentityBindingsMatch(
+        IReadOnlyList<CollectionSemanticIdentityBinding> left,
+        IReadOnlyList<CollectionSemanticIdentityBinding> right
+    )
+    {
+        if (left.Count != right.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < left.Count; index++)
+        {
+            if (
+                !left[index].RelativePath.Equals(right[index].RelativePath)
+                || !left[index].ColumnName.Equals(right[index].ColumnName)
+            )
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Returns true when the existing semantic identity exactly matches one qualifying reference-derived
+    /// fallback candidate for the table.
+    /// </summary>
+    private static bool MatchesReferenceDerivedFallback(
+        RelationalResourceModel resourceModel,
+        DbTableModel table,
+        IReadOnlyList<CollectionSemanticIdentityBinding> semanticIdentityBindings
+    )
+    {
+        return resourceModel.DocumentReferenceBindings.Any(binding =>
+            SemanticIdentityCompilationPass.TryCompileReferenceDerivedSemanticIdentity(
+                table,
+                binding,
+                out var candidateBindings
+            ) && SemanticIdentityBindingsMatch(candidateBindings, semanticIdentityBindings)
+        );
     }
 
     /// <summary>
