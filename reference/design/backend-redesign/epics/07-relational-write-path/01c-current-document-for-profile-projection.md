@@ -10,7 +10,9 @@ Align with:
 - `reference/design/backend-redesign/design-docs/flattening-reconstitution.md`
 - `reference/design/backend-redesign/design-docs/overview.md`
 
-Dependency note: this story is hard-blocked on `reference/design/backend-redesign/epics/07-relational-write-path/01a-core-profile-delivery-plan.md`, which plans the Core-owned stored-state projection and address-derivation work it hands off to.
+Dependency note: this story is hard-blocked on the following Core profile stories produced by the delivery plan spike (`01a-core-profile-delivery-plan.md`):
+- C1 (`01a-c1-compiled-scope-adapter-and-address-derivation.md`) — provides the shared compiled-scope adapter this story hands off to Core, and
+- C6 (`01a-c6-stored-state-projection-and-hidden-member-paths.md`) — the Core-owned stored-state projector that consumes the current document loaded by this story.
 
 This story owns the internal backend capability to:
 

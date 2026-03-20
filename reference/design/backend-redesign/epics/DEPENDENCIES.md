@@ -210,13 +210,21 @@ Epic: `07-relational-write-path/EPIC.md`
 | E07-S00 | [`00-core-extraction-location.md`](07-relational-write-path/00-core-extraction-location.md) | — | — | Core emits concrete JSON locations for each extracted document reference |
 | E07-S01 | [`01-reference-and-descriptor-resolution.md`](07-relational-write-path/01-reference-and-descriptor-resolution.md) | E07-S00, E02-S01 | E09-S01 | Bulk `ReferentialId→DocumentId` resolver + descriptor discriminator validation |
 | E07-S01a | [`01a-core-profile-delivery-plan.md`](07-relational-write-path/01a-core-profile-delivery-plan.md) | — | — | Core-owned profile delivery plan spike + follow-on story inventory for profile support |
-| E07-S01b | [`01b-profile-write-context.md`](07-relational-write-path/01b-profile-write-context.md) | E06-S02, E07-S01, E07-S01a | — | Backend-facing `WritableRequestBody` / visibility / creatability contract for profiled writes |
-| E07-S01c | [`01c-current-document-for-profile-projection.md`](07-relational-write-path/01c-current-document-for-profile-projection.md) | E06-S02, E07-S01a, E07-S01b, E15-S05, E15-S06 | — | Write-side current-document hydration + reconstitution for profile projection |
+| E07-S01a-C1 | [`01a-c1-compiled-scope-adapter-and-address-derivation.md`](07-relational-write-path/01a-c1-compiled-scope-adapter-and-address-derivation.md) | E07-S01a | — | Shared compiled-scope adapter contract + address derivation engine (Core, Tier 0) |
+| E07-S01a-C2 | [`01a-c2-semantic-identity-compatibility-validation.md`](07-relational-write-path/01a-c2-semantic-identity-compatibility-validation.md) | E07-S01a-C1, E07-S01a-C8 | — | Pre-runtime gate rejecting profiles hiding semantic-identity fields (Core, Tier 1) |
+| E07-S01a-C3 | [`01a-c3-request-visibility-and-writable-shaping.md`](07-relational-write-path/01a-c3-request-visibility-and-writable-shaping.md) | E07-S01a-C1, E07-S01a-C8 | — | Request-side visibility classification + writable request shaping (Core, Tier 1) |
+| E07-S01a-C4 | [`01a-c4-request-creatability-and-collection-validation.md`](07-relational-write-path/01a-c4-request-creatability-and-collection-validation.md) | E07-S01a-C1, E07-S01a-C2, E07-S01a-C3, E07-S01a-C8 | — | Request-side creatability + duplicate collection-item validation (Core, Tier 2) |
+| E07-S01a-C5 | [`01a-c5-assemble-profile-applied-write-request.md`](07-relational-write-path/01a-c5-assemble-profile-applied-write-request.md) | E07-S01a-C1, E07-S01a-C2, E07-S01a-C3, E07-S01a-C4, E07-S01a-C8 | — | Orchestrate profile write pipeline + assemble `ProfileAppliedWriteRequest` (Core, Tier 2) |
+| E07-S01a-C6 | [`01a-c6-stored-state-projection-and-hidden-member-paths.md`](07-relational-write-path/01a-c6-stored-state-projection-and-hidden-member-paths.md) | E07-S01a-C1, E07-S01a-C3, E07-S01a-C5 | — | Stored-state projection + `HiddenMemberPaths` + `ProfileAppliedWriteContext` assembly (Core, Tier 3) |
+| E07-S01a-C7 | [`01a-c7-readable-profile-projection.md`](07-relational-write-path/01a-c7-readable-profile-projection.md) | E07-S01a | — | Readable profile projection after reconstitution (Core, no C-story dependencies — can start immediately) |
+| E07-S01a-C8 | [`01a-c8-typed-profile-error-classification.md`](07-relational-write-path/01a-c8-typed-profile-error-classification.md) | E07-S01a | — | Typed profile error classification (Core, Tier 0 — shared type contract) |
+| E07-S01b | [`01b-profile-write-context.md`](07-relational-write-path/01b-profile-write-context.md) | E06-S02, E07-S01, E07-S01a-C1, E07-S01a-C5, E07-S01a-C6, E07-S01a-C8, E15-S04b | — | Backend-facing `WritableRequestBody` / visibility / creatability contract for profiled writes |
+| E07-S01c | [`01c-current-document-for-profile-projection.md`](07-relational-write-path/01c-current-document-for-profile-projection.md) | E06-S02, E07-S01a-C1, E07-S01a-C6, E07-S01b, E15-S05, E15-S06 | — | Write-side current-document hydration + reconstitution for profile projection |
 | E07-S02 | [`02-flattening-executor.md`](07-relational-write-path/02-flattening-executor.md) | E06-S02, E07-S01, E07-S01b | E01-S05, E01-S03, E01-S11 | JSON→row buffers and logical collection candidates using compiled mapping |
 | E07-S03 | [`03-persist-and-batch.md`](07-relational-write-path/03-persist-and-batch.md) | E07-S02, E07-S01b, E07-S01c, E15-S04b | E10-S00 | Transactional persist executor (stable-identity merge semantics, batching, guarded no-op freshness) |
 | E07-S04 | [`04-propagated-reference-identity-columns.md`](07-relational-write-path/04-propagated-reference-identity-columns.md) | E07-S03 | E01-S01 | Populate propagated reference identity columns for FK cascades |
 | E07-S05 | [`05-write-error-mapping.md`](07-relational-write-path/05-write-error-mapping.md) | E07-S03 | E01-S02 | DB constraint error mapping (pgsql/mssql parity) |
-| E07-S05b | [`05b-profile-error-classification.md`](07-relational-write-path/05b-profile-error-classification.md) | E07-S01a, E07-S01b, E07-S03 | — | Profile contract/runtime error classification + API mapping |
+| E07-S05b | [`05b-profile-error-classification.md`](07-relational-write-path/05b-profile-error-classification.md) | E07-S01a-C8, E07-S01b, E07-S03 | — | Profile contract/runtime error classification + API mapping |
 | E07-S06 | [`06-descriptor-writes.md`](07-relational-write-path/06-descriptor-writes.md) | E06-S02, E02-S05 | E01-S06 | Descriptor POST/PUT writes to `dms.Descriptor` + descriptor referential identities |
 
 ### E08 — Relational Read Path (GET + Query)
@@ -226,7 +234,7 @@ Epic: `08-relational-read-path/EPIC.md`
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
 | E08-S00 | [`00-hydrate-multiresult.md`](08-relational-read-path/00-hydrate-multiresult.md) | E06-S02 | E15-S05 | Multi-result hydration queries for root/child/_ext tables |
-| E08-S01 | [`01-json-reconstitution.md`](08-relational-read-path/01-json-reconstitution.md) | E08-S00, E07-S01a | — | JSON writer/reconstituter (ordering, null handling, `_ext` overlay) |
+| E08-S01 | [`01-json-reconstitution.md`](08-relational-read-path/01-json-reconstitution.md) | E08-S00, E07-S01a-C7 | — | JSON writer/reconstituter (ordering, null handling, `_ext` overlay) |
 | E08-S02 | [`02-reference-identity-projection.md`](08-relational-read-path/02-reference-identity-projection.md) | E08-S00, E02-S02 | E01-S04 | Reference identity projection (incl. abstract targets via `{Abstract}_View`) |
 | E08-S03 | [`03-descriptor-projection.md`](08-relational-read-path/03-descriptor-projection.md) | E08-S00, E02-S01 | — | Descriptor URI projection from `dms.Descriptor` |
 | E08-S04 | [`04-query-execution.md`](08-relational-read-path/04-query-execution.md) | E06-S02 | E15-S01 | Root-table-only query execution + deterministic paging |
@@ -327,8 +335,9 @@ This is the smallest “end-to-end usable” spine that enables: generate DDL �
 4. E03-S00 → E03-S01 → E03-S02
 5. E15-S01 → E15-S02 → E15-S03 → E15-S04 → E15-S04b → E15-S05 → E15-S06
 6. E06-S00 → E06-S01 → E06-S02 → E06-S03 → E06-S04
-7. E07-S00 → E07-S01 → E07-S01a → E07-S01b → E07-S01c → E07-S02 → E07-S03 → E07-S04 → E07-S05 → E07-S05b
-8. E07-S01a + E08-S00 → E08-S01 → E08-S02 → E08-S03 → E08-S04
+7. E07-S00 → E07-S01 → E07-S01a → (E07-S01a-C1 + E07-S01a-C8) → E07-S01a-C3 → E07-S01a-C4 → E07-S01a-C5 → E07-S01a-C6 → E07-S01b → E07-S01c → E07-S02 → E07-S03 → E07-S04 → E07-S05 → E07-S05b
+   (C2 parallel with C3 after C1+C8; C7 parallel from E07-S01a; E07-S01b also waits on E15-S04b)
+8. E07-S01a-C7 + E08-S00 → E08-S01 → E08-S02 → E08-S03 → E08-S04
 9. E09-S00 → E09-S01 → E09-S02 → E09-S03 → E09-S04
 10. E10-S00 → E10-S01 → E10-S02 → E10-S03
 11. E11-S00 → E11-S01 → E11-S02
@@ -518,9 +527,14 @@ Recommended Jira link creation:
 | Soft | `E09-S01` | `DMS-997` | `09-identity-concurrency/01-referentialidentity-maintenance.md` | `E07-S01` | `DMS-982` | `07-relational-write-path/01-reference-and-descriptor-resolution.md` |
 | Hard | `E06-S02` | `DMS-977` | `06-runtime-mapping-selection/02-mapping-set-selection.md` | `E07-S01b` | `DMS-1103` | `07-relational-write-path/01b-profile-write-context.md` |
 | Hard | `E07-S01` | `DMS-982` | `07-relational-write-path/01-reference-and-descriptor-resolution.md` | `E07-S01b` | `DMS-1103` | `07-relational-write-path/01b-profile-write-context.md` |
-| Hard | `E07-S01a` | `DMS-1106` | `07-relational-write-path/01a-core-profile-delivery-plan.md` | `E07-S01b` | `DMS-1103` | `07-relational-write-path/01b-profile-write-context.md` |
+| Hard | `E07-S01a-C1` | `DMS-1111` | `07-relational-write-path/01a-c1-compiled-scope-adapter-and-address-derivation.md` | `E07-S01b` | `DMS-1103` | `07-relational-write-path/01b-profile-write-context.md` |
+| Hard | `E07-S01a-C5` | `DMS-1117` | `07-relational-write-path/01a-c5-assemble-profile-applied-write-request.md` | `E07-S01b` | `DMS-1103` | `07-relational-write-path/01b-profile-write-context.md` |
+| Hard | `E07-S01a-C6` | `DMS-1118` | `07-relational-write-path/01a-c6-stored-state-projection-and-hidden-member-paths.md` | `E07-S01b` | `DMS-1103` | `07-relational-write-path/01b-profile-write-context.md` |
+| Hard | `E07-S01a-C8` | `DMS-1112` | `07-relational-write-path/01a-c8-typed-profile-error-classification.md` | `E07-S01b` | `DMS-1103` | `07-relational-write-path/01b-profile-write-context.md` |
+| Hard | `E15-S04b` | `DMS-1102` | `15-plan-compilation/04b-stable-collection-merge-plans.md` | `E07-S01b` | `DMS-1103` | `07-relational-write-path/01b-profile-write-context.md` |
 | Hard | `E06-S02` | `DMS-977` | `06-runtime-mapping-selection/02-mapping-set-selection.md` | `E07-S01c` | `DMS-1105` | `07-relational-write-path/01c-current-document-for-profile-projection.md` |
-| Hard | `E07-S01a` | `DMS-1106` | `07-relational-write-path/01a-core-profile-delivery-plan.md` | `E07-S01c` | `DMS-1105` | `07-relational-write-path/01c-current-document-for-profile-projection.md` |
+| Hard | `E07-S01a-C1` | `DMS-1111` | `07-relational-write-path/01a-c1-compiled-scope-adapter-and-address-derivation.md` | `E07-S01c` | `DMS-1105` | `07-relational-write-path/01c-current-document-for-profile-projection.md` |
+| Hard | `E07-S01a-C6` | `DMS-1118` | `07-relational-write-path/01a-c6-stored-state-projection-and-hidden-member-paths.md` | `E07-S01c` | `DMS-1105` | `07-relational-write-path/01c-current-document-for-profile-projection.md` |
 | Hard | `E07-S01b` | `DMS-1103` | `07-relational-write-path/01b-profile-write-context.md` | `E07-S01c` | `DMS-1105` | `07-relational-write-path/01c-current-document-for-profile-projection.md` |
 | Hard | `E15-S05` | `DMS-1046` | `15-plan-compilation/05-read-plan-compiler-hydration.md` | `E07-S01c` | `DMS-1105` | `07-relational-write-path/01c-current-document-for-profile-projection.md` |
 | Hard | `E15-S06` | `DMS-1047` | `15-plan-compilation/06-projection-plan-compilers.md` | `E07-S01c` | `DMS-1105` | `07-relational-write-path/01c-current-document-for-profile-projection.md` |
@@ -539,7 +553,7 @@ Recommended Jira link creation:
 | Hard | `E07-S03` | `DMS-984` | `07-relational-write-path/03-persist-and-batch.md` | `E07-S04` | `DMS-985` | `07-relational-write-path/04-propagated-reference-identity-columns.md` |
 | Soft | `E01-S02` | `DMS-931` | `01-relational-model/02-naming-and-overrides.md` | `E07-S05` | `DMS-986` | `07-relational-write-path/05-write-error-mapping.md` |
 | Hard | `E07-S03` | `DMS-984` | `07-relational-write-path/03-persist-and-batch.md` | `E07-S05` | `DMS-986` | `07-relational-write-path/05-write-error-mapping.md` |
-| Hard | `E07-S01a` | `DMS-1106` | `07-relational-write-path/01a-core-profile-delivery-plan.md` | `E07-S05b` | `DMS-1104` | `07-relational-write-path/05b-profile-error-classification.md` |
+| Hard | `E07-S01a-C8` | `DMS-1112` | `07-relational-write-path/01a-c8-typed-profile-error-classification.md` | `E07-S05b` | `DMS-1104` | `07-relational-write-path/05b-profile-error-classification.md` |
 | Hard | `E07-S01b` | `DMS-1103` | `07-relational-write-path/01b-profile-write-context.md` | `E07-S05b` | `DMS-1104` | `07-relational-write-path/05b-profile-error-classification.md` |
 | Hard | `E07-S03` | `DMS-984` | `07-relational-write-path/03-persist-and-batch.md` | `E07-S05b` | `DMS-1104` | `07-relational-write-path/05b-profile-error-classification.md` |
 | Soft | `E01-S06` | `DMS-942` | `01-relational-model/06-descriptor-resource-mapping.md` | `E07-S06` | `DMS-987` | `07-relational-write-path/06-descriptor-writes.md` |
@@ -547,7 +561,7 @@ Recommended Jira link creation:
 | Hard | `E06-S02` | `DMS-977` | `06-runtime-mapping-selection/02-mapping-set-selection.md` | `E07-S06` | `DMS-987` | `07-relational-write-path/06-descriptor-writes.md` |
 | Hard | `E06-S02` | `DMS-977` | `06-runtime-mapping-selection/02-mapping-set-selection.md` | `E08-S00` | `DMS-989` | `08-relational-read-path/00-hydrate-multiresult.md` |
 | Soft | `E15-S05` | `DMS-1046` | `15-plan-compilation/05-read-plan-compiler-hydration.md` | `E08-S00` | `DMS-989` | `08-relational-read-path/00-hydrate-multiresult.md` |
-| Hard | `E07-S01a` | `DMS-1106` | `07-relational-write-path/01a-core-profile-delivery-plan.md` | `E08-S01` | `DMS-990` | `08-relational-read-path/01-json-reconstitution.md` |
+| Hard | `E07-S01a-C7` | `DMS-1113` | `07-relational-write-path/01a-c7-readable-profile-projection.md` | `E08-S01` | `DMS-990` | `08-relational-read-path/01-json-reconstitution.md` |
 | Hard | `E08-S00` | `DMS-989` | `08-relational-read-path/00-hydrate-multiresult.md` | `E08-S01` | `DMS-990` | `08-relational-read-path/01-json-reconstitution.md` |
 | Soft | `E01-S04` | `DMS-933` | `01-relational-model/04-abstract-union-views.md` | `E08-S02` | `DMS-991` | `08-relational-read-path/02-reference-identity-projection.md` |
 | Hard | `E02-S02` | `DMS-938` | `02-ddl-emission/02-project-and-resource-ddl.md` | `E08-S02` | `DMS-991` | `08-relational-read-path/02-reference-identity-projection.md` |
@@ -623,4 +637,23 @@ Recommended Jira link creation:
 | Soft | `E15-S04` | `DMS-1045` | `15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md` | `E15-S06` | `DMS-1047` | `15-plan-compilation/06-projection-plan-compilers.md` |
 | Soft | `E15-S04b` | `DMS-1102` | `15-plan-compilation/04b-stable-collection-merge-plans.md` | `E15-S06` | `DMS-1047` | `15-plan-compilation/06-projection-plan-compilers.md` |
 | Hard | `E15-S05` | `DMS-1046` | `15-plan-compilation/05-read-plan-compiler-hydration.md` | `E15-S06` | `DMS-1047` | `15-plan-compilation/06-projection-plan-compilers.md` |
+| Hard | `E07-S01a` | `DMS-1110` | `07-relational-write-path/01a-core-profile-delivery-plan.md` | `E07-S01a-C1` | `DMS-1111` | `07-relational-write-path/01a-c1-compiled-scope-adapter-and-address-derivation.md` |
+| Hard | `E07-S01a` | `DMS-1110` | `07-relational-write-path/01a-core-profile-delivery-plan.md` | `E07-S01a-C7` | `DMS-1113` | `07-relational-write-path/01a-c7-readable-profile-projection.md` |
+| Hard | `E07-S01a` | `DMS-1110` | `07-relational-write-path/01a-core-profile-delivery-plan.md` | `E07-S01a-C8` | `DMS-1112` | `07-relational-write-path/01a-c8-typed-profile-error-classification.md` |
+| Hard | `E07-S01a-C8` | `DMS-1112` | `07-relational-write-path/01a-c8-typed-profile-error-classification.md` | `E07-S01a-C2` | `DMS-1114` | `07-relational-write-path/01a-c2-semantic-identity-compatibility-validation.md` |
+| Hard | `E07-S01a-C1` | `DMS-1111` | `07-relational-write-path/01a-c1-compiled-scope-adapter-and-address-derivation.md` | `E07-S01a-C2` | `DMS-1114` | `07-relational-write-path/01a-c2-semantic-identity-compatibility-validation.md` |
+| Hard | `E07-S01a-C8` | `DMS-1112` | `07-relational-write-path/01a-c8-typed-profile-error-classification.md` | `E07-S01a-C3` | `DMS-1115` | `07-relational-write-path/01a-c3-request-visibility-and-writable-shaping.md` |
+| Hard | `E07-S01a-C1` | `DMS-1111` | `07-relational-write-path/01a-c1-compiled-scope-adapter-and-address-derivation.md` | `E07-S01a-C3` | `DMS-1115` | `07-relational-write-path/01a-c3-request-visibility-and-writable-shaping.md` |
+| Hard | `E07-S01a-C8` | `DMS-1112` | `07-relational-write-path/01a-c8-typed-profile-error-classification.md` | `E07-S01a-C4` | `DMS-1116` | `07-relational-write-path/01a-c4-request-creatability-and-collection-validation.md` |
+| Hard | `E07-S01a-C1` | `DMS-1111` | `07-relational-write-path/01a-c1-compiled-scope-adapter-and-address-derivation.md` | `E07-S01a-C4` | `DMS-1116` | `07-relational-write-path/01a-c4-request-creatability-and-collection-validation.md` |
+| Hard | `E07-S01a-C2` | `DMS-1114` | `07-relational-write-path/01a-c2-semantic-identity-compatibility-validation.md` | `E07-S01a-C4` | `DMS-1116` | `07-relational-write-path/01a-c4-request-creatability-and-collection-validation.md` |
+| Hard | `E07-S01a-C3` | `DMS-1115` | `07-relational-write-path/01a-c3-request-visibility-and-writable-shaping.md` | `E07-S01a-C4` | `DMS-1116` | `07-relational-write-path/01a-c4-request-creatability-and-collection-validation.md` |
+| Hard | `E07-S01a-C8` | `DMS-1112` | `07-relational-write-path/01a-c8-typed-profile-error-classification.md` | `E07-S01a-C5` | `DMS-1117` | `07-relational-write-path/01a-c5-assemble-profile-applied-write-request.md` |
+| Hard | `E07-S01a-C1` | `DMS-1111` | `07-relational-write-path/01a-c1-compiled-scope-adapter-and-address-derivation.md` | `E07-S01a-C5` | `DMS-1117` | `07-relational-write-path/01a-c5-assemble-profile-applied-write-request.md` |
+| Hard | `E07-S01a-C2` | `DMS-1114` | `07-relational-write-path/01a-c2-semantic-identity-compatibility-validation.md` | `E07-S01a-C5` | `DMS-1117` | `07-relational-write-path/01a-c5-assemble-profile-applied-write-request.md` |
+| Hard | `E07-S01a-C3` | `DMS-1115` | `07-relational-write-path/01a-c3-request-visibility-and-writable-shaping.md` | `E07-S01a-C5` | `DMS-1117` | `07-relational-write-path/01a-c5-assemble-profile-applied-write-request.md` |
+| Hard | `E07-S01a-C4` | `DMS-1116` | `07-relational-write-path/01a-c4-request-creatability-and-collection-validation.md` | `E07-S01a-C5` | `DMS-1117` | `07-relational-write-path/01a-c5-assemble-profile-applied-write-request.md` |
+| Hard | `E07-S01a-C1` | `DMS-1111` | `07-relational-write-path/01a-c1-compiled-scope-adapter-and-address-derivation.md` | `E07-S01a-C6` | `DMS-1118` | `07-relational-write-path/01a-c6-stored-state-projection-and-hidden-member-paths.md` |
+| Hard | `E07-S01a-C3` | `DMS-1115` | `07-relational-write-path/01a-c3-request-visibility-and-writable-shaping.md` | `E07-S01a-C6` | `DMS-1118` | `07-relational-write-path/01a-c6-stored-state-projection-and-hidden-member-paths.md` |
+| Hard | `E07-S01a-C5` | `DMS-1117` | `07-relational-write-path/01a-c5-assemble-profile-applied-write-request.md` | `E07-S01a-C6` | `DMS-1118` | `07-relational-write-path/01a-c6-stored-state-projection-and-hidden-member-paths.md` |
 <!-- END STORY DEPENDENCY EDGES -->

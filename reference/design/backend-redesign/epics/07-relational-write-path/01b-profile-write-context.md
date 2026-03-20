@@ -8,7 +8,12 @@ Implement the backend-side orchestration for profile-constrained writes describe
 - `reference/design/backend-redesign/design-docs/overview.md`
 - `reference/design/backend-redesign/design-docs/flattening-reconstitution.md`
 
-Dependency note: this story is hard-blocked on `reference/design/backend-redesign/epics/07-relational-write-path/01a-core-profile-delivery-plan.md`, which plans the Core-owned outputs it consumes, including readable-vs-writable selection, stored-state projection, address derivation, creatability analysis, and typed profile failures.
+Dependency note: this story is hard-blocked on the following Core profile stories produced by the delivery plan spike (`01a-core-profile-delivery-plan.md`):
+- C1 (`01a-c1-compiled-scope-adapter-and-address-derivation.md`) — provides the shared compiled-scope adapter contract and address derivation engine,
+- C5 (`01a-c5-assemble-profile-applied-write-request.md`) — produces `ProfileAppliedWriteRequest`, and
+- C6 (`01a-c6-stored-state-projection-and-hidden-member-paths.md`) — produces `ProfileAppliedWriteContext` including stored-state projection and `HiddenMemberPaths`,
+- C8 (`01a-c8-typed-profile-error-classification.md`) — supplies the shared typed error contract for category-5 contract-mismatch diagnostics, and
+- `DMS-1102` / `E15-S04b` (`reference/design/backend-redesign/epics/15-plan-compilation/04b-stable-collection-merge-plans.md`) — the production adapter factory in this story populates `SemanticIdentityRelativePathsInOrder` from `CollectionMergePlan.SemanticIdentityBindings`.
 
 This story introduces the request-scoped Core/backend profile hand-off needed before profiled create and stable-identity merge execution:
 
@@ -67,7 +72,7 @@ Coverage in this story should reuse the shared scenario names from `reference/de
 - Stored-scope and stored-row entries expose `HiddenMemberPaths` metadata sufficient for backend to account for every non-storage-managed compiled binding affected by a profiled row/scope as visible/writable, hidden/preserved, clear-on-visible-absent, or storage-managed, including canonical key-unification storage columns, synthetic presence flags, and FK/descriptor bindings derived from hidden members; generated aliases stay indirect/read-only.
 - The contract is sufficient for backend to overlay visible request/resolved values onto stored rows using compiled bindings; backend does not require Core to provide per-column visibility flags or rewritten storage rows.
 - Backend validates emitted `JsonScope`, ancestor collection ancestry, and semantic-identity part ordering against the selected compiled-scope adapter and compiled metadata before using the contract.
-- Deterministic contract-mismatch diagnostics surface when:
+- Deterministic C8 category-5 contract-mismatch diagnostics surface when:
   - a Core-emitted `JsonScope` does not map to a compiled scope,
   - a Core-emitted ancestor chain does not line up to compiled collection ancestry, or
   - backend cannot line up a Core-emitted visible stored row/scope with the compiled plan shape expected for the resource.
@@ -99,5 +104,5 @@ Coverage in this story should reuse the shared scenario names from `reference/de
 2. Thread `WritableRequestBody` into write-path flattening entry points without duplicating profile logic in backend.
 3. For `POST` requests that would create a new document, consult Core-supplied root creatability before creating `dms.Document` or root rows; for profile-scoped update/upsert flows, accept the current stored document plus the selected compiled-scope adapter from the separate write-side load/reconstitution step and invoke the Core-owned stored-state projector.
 4. Surface root/scope visibility, collection visibility details, hidden-member preservation metadata, and creatability metadata to downstream merge/no-op code so the executor can distinguish create-of-new-visible-data from update-of-existing-visible-data without re-evaluating profile rules, including the four-way binding-accounting split between visible/writable, hidden/preserved, clear-on-visible-absent, and storage-managed bindings.
-5. Validate Core-emitted scope/row addresses and canonical member paths against the selected compiled-scope adapter/compiled metadata before downstream merge/no-op code uses them, and emit deterministic contract-mismatch diagnostics instead of guessing from ordinals or filtered JSON.
+5. Validate Core-emitted scope/row addresses and canonical member paths against the selected compiled-scope adapter/compiled metadata before downstream merge/no-op code uses them, and emit deterministic C8 category-5 contract-mismatch diagnostics instead of guessing from ordinals or filtered JSON.
 6. Add tests that prove the backend consumes the Core-owned contract without inferring hidden-vs-absent semantics from `WritableRequestBody` or `VisibleStoredBody` alone, using the shared scenario names where applicable: `ProfileRootCreateRejectedWhenNonCreatable`, one scope-addressed `ProfileVisibleRowUpdateWithHiddenRowPreservation` case, `ProfileVisibleButAbsentNonCollectionScope` plus `ProfileHiddenInlinedColumnPreservation` or `ProfileHiddenExtensionRowPreservation` with key-unified/presence/FK coverage, one `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable` update-allowed/create-denied pair including the three-level chain, and one invalid-contract diagnostic case.

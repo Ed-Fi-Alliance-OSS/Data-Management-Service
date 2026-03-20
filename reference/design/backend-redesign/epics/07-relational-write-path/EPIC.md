@@ -27,13 +27,21 @@ Core produces validated JSON + extracted references; the backend:
 
 Authorization remains out of scope; however, the roundtrip and transaction structures built in this epic should accommodate future authorization queries being batched into the same DB roundtrips. See `reference/design/backend-redesign/design-docs/auth.md` §"Performance improvements over ODS" for the expected roundtrip layout per operation.
 
-Critical-path note: `reference/design/backend-redesign/epics/DEPENDENCIES.md` remains the source of truth for story blocking, but runtime collection-merge execution in this epic does not start until `DMS-1102` / `E15-S04b` (`reference/design/backend-redesign/epics/15-plan-compilation/04b-stable-collection-merge-plans.md`) lands. `DMS-984` consumes that retrofitted merge-plan contract; it must not implement profile-aware stable-identity collection merge execution against the earlier delete-by-parent / `Ordinal`-based write-plan shape. The profile-dependent backend stories in this epic, plus readable profile projection in `DMS-990`, are also blocked on `E07-S01a` / `01a-core-profile-delivery-plan.md`; backend must not guess the missing Core-side profile outputs.
+Critical-path note: `reference/design/backend-redesign/epics/DEPENDENCIES.md` remains the source of truth for story blocking, but runtime collection-merge execution in this epic does not start until `DMS-1102` / `E15-S04b` (`reference/design/backend-redesign/epics/15-plan-compilation/04b-stable-collection-merge-plans.md`) lands. `DMS-984` consumes that retrofitted merge-plan contract; it must not implement profile-aware stable-identity collection merge execution against the earlier delete-by-parent / `Ordinal`-based write-plan shape. `DMS-1103` is also blocked on `E15-S04b`, because its production compiled-scope adapter factory populates `SemanticIdentityRelativePathsInOrder` from `CollectionMergePlan.SemanticIdentityBindings`. The profile-dependent backend stories in this epic are blocked on specific Core profile stories produced by the delivery plan spike (`01a-core-profile-delivery-plan.md`): `DMS-1103` on C1, C5, C6, C8, and `E15-S04b`; `DMS-1105` on C1 and C6; `DMS-1104` on C8. Readable profile projection in `DMS-990` is blocked on C7. See each story's dependency note and `core-profile-delivery-plan.md` §"Dependency Map Updates" for the full edge list; backend must not guess the missing Core-side profile outputs.
 
 ## Stories
 
 - `DMS-981` — `00-core-extraction-location.md` — Core emits concrete JSON locations for document references
 - `DMS-982` — `01-reference-and-descriptor-resolution.md` — Bulk resolve `ReferentialId → DocumentId` and validate descriptors
-- `DMS-1106` — `01a-core-profile-delivery-plan.md` — Core profile support delivery plan spike (creates the follow-on Core stories that block profiled write/read integration)
+- `DMS-1110` — `01a-core-profile-delivery-plan.md` — Core profile support delivery plan spike (creates the follow-on Core stories that block profiled write/read integration)
+- `DMS-1111` — `01a-c1-compiled-scope-adapter-and-address-derivation.md` — Shared Compiled-Scope Adapter Contract + Address Derivation Engine (Core, Tier 0)
+- `DMS-1114` — `01a-c2-semantic-identity-compatibility-validation.md` — Semantic Identity Compatibility Validation (Core, Tier 1)
+- `DMS-1115` — `01a-c3-request-visibility-and-writable-shaping.md` — Request-Side Visibility Classification + Writable Request Shaping (Core, Tier 1)
+- `DMS-1116` — `01a-c4-request-creatability-and-collection-validation.md` — Request-Side Creatability Analysis + Duplicate Collection-Item Validation (Core, Tier 2)
+- `DMS-1117` — `01a-c5-assemble-profile-applied-write-request.md` — Orchestrate Profile Write Pipeline + Assemble ProfileAppliedWriteRequest (Core, Tier 2)
+- `DMS-1118` — `01a-c6-stored-state-projection-and-hidden-member-paths.md` — Stored-State Projection + HiddenMemberPaths Computation (Core, Tier 3)
+- `DMS-1113` — `01a-c7-readable-profile-projection.md` — Readable Profile Projection After Reconstitution (Core, Tier 0 — independent, no C-story dependencies)
+- `DMS-1112` — `01a-c8-typed-profile-error-classification.md` — Typed Profile Error Classification (Core, Tier 0 — shared type contract)
 - `DMS-1103` — `01b-profile-write-context.md` — Integrate the Core/backend profile write contract
 - `DMS-1105` — `01c-current-document-for-profile-projection.md` — Load/reconstitute the current stored document for profiled update/upserts
 - `DMS-983` — `02-flattening-executor.md` — Flatten `WritableRequestBody` into row buffers and collection candidates using compiled mapping
