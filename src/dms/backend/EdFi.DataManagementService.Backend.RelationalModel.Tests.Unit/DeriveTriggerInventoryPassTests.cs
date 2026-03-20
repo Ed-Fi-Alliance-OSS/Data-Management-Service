@@ -222,6 +222,104 @@ public class Given_Extension_Table_Triggers
 }
 
 /// <summary>
+/// Test fixture for stable-key collection and collection-aligned extension trigger derivation.
+/// </summary>
+[TestFixture]
+public class Given_Stable_Key_Collections_And_Aligned_Extension_Scopes
+{
+    private IReadOnlyList<DbTriggerInfo> _triggers = default!;
+    private DbTableModel _addressTable = default!;
+    private DbTableModel _extensionAddressTable = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema = ExtensionTableTestSchemaBuilder.BuildCoreProjectSchema();
+        var extensionProjectSchema = ExtensionTableTestSchemaBuilder.BuildExtensionProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var extensionProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            extensionProjectSchema,
+            isExtensionProject: true
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([
+            coreProject,
+            extensionProject,
+        ]);
+        var builder = new DerivedRelationalModelSetBuilder([
+            new BaseTraversalAndDescriptorBindingPass(),
+            new ExtensionTableDerivationPass(),
+            new ReferenceBindingPass(),
+            new AbstractIdentityTableAndUnionViewDerivationPass(),
+            new RootIdentityConstraintPass(),
+            new ReferenceConstraintPass(),
+            new ArrayUniquenessConstraintPass(),
+            new ApplyConstraintDialectHashingPass(),
+            new DeriveIndexInventoryPass(),
+            new DeriveTriggerInventoryPass(),
+        ]);
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        _triggers = result.TriggersInCreateOrder;
+
+        var schoolModel = result
+            .ConcreteResourcesInNameOrder.Single(model =>
+                model.ResourceKey.Resource.ProjectName == "Ed-Fi"
+                && model.ResourceKey.Resource.ResourceName == "School"
+            )
+            .RelationalModel;
+
+        _addressTable = schoolModel.TablesInDependencyOrder.Single(table =>
+            table.Table.Name == "SchoolAddress"
+        );
+        _extensionAddressTable = schoolModel.TablesInDependencyOrder.Single(table =>
+            table.Table.Name == "SchoolExtensionAddress"
+        );
+    }
+
+    /// <summary>
+    /// It should stamp stable-key collection tables by the root document locator instead of the collection PK.
+    /// </summary>
+    [Test]
+    public void It_should_stamp_stable_key_collection_tables_by_the_root_document_locator()
+    {
+        var addressStamp = _triggers.Single(trigger =>
+            trigger.Table.Name == "SchoolAddress"
+            && trigger.Parameters is TriggerKindParameters.DocumentStamping
+        );
+
+        _addressTable
+            .Key.Columns.Select(column => column.ColumnName.Value)
+            .Should()
+            .Equal("CollectionItemId");
+        addressStamp.KeyColumns.Select(column => column.Value).Should().Equal("School_DocumentId");
+    }
+
+    /// <summary>
+    /// It should stamp collection-aligned extension scopes by the root document locator instead of the base PK.
+    /// </summary>
+    [Test]
+    public void It_should_stamp_collection_aligned_extension_scopes_by_the_root_document_locator()
+    {
+        var extensionAddressStamp = _triggers.Single(trigger =>
+            trigger.Table.Name == "SchoolExtensionAddress"
+            && trigger.Parameters is TriggerKindParameters.DocumentStamping
+        );
+
+        _extensionAddressTable
+            .Key.Columns.Select(column => column.ColumnName.Value)
+            .Should()
+            .Equal("BaseCollectionItemId");
+        extensionAddressStamp.KeyColumns.Select(column => column.Value).Should().Equal("School_DocumentId");
+    }
+}
+
+/// <summary>
 /// Test fixture for descriptor resource trigger exclusion.
 /// </summary>
 [TestFixture]
@@ -507,6 +605,7 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Abstract_Targets
 public class Given_Three_Level_Nested_Collections
 {
     private IReadOnlyList<DbTriggerInfo> _triggers = default!;
+    private DbTableModel _grandchildTable = default!;
 
     /// <summary>
     /// Sets up the test fixture.
@@ -526,6 +625,14 @@ public class Given_Three_Level_Nested_Collections
 
         var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
         _triggers = result.TriggersInCreateOrder;
+        _grandchildTable = result
+            .ConcreteResourcesInNameOrder.Single(model =>
+                model.ResourceKey.Resource.ProjectName == "Ed-Fi"
+                && model.ResourceKey.Resource.ResourceName == "School"
+            )
+            .RelationalModel.TablesInDependencyOrder.Single(table =>
+                table.Table.Name == "SchoolAddressPeriod"
+            );
     }
 
     /// <summary>
@@ -554,6 +661,23 @@ public class Given_Three_Level_Nested_Collections
 
         grandchildStamp.KeyColumns.Should().ContainSingle();
         grandchildStamp.KeyColumns[0].Value.Should().Be("School_DocumentId");
+    }
+
+    /// <summary>
+    /// It should stamp nested stable-key collection rows by the root document locator instead of the row PK.
+    /// </summary>
+    [Test]
+    public void It_should_stamp_nested_stable_key_collection_rows_by_the_root_document_locator()
+    {
+        var grandchildStamp = _triggers.Single(t =>
+            t.Table.Name == "SchoolAddressPeriod" && t.Parameters is TriggerKindParameters.DocumentStamping
+        );
+
+        _grandchildTable
+            .Key.Columns.Select(column => column.ColumnName.Value)
+            .Should()
+            .Equal("CollectionItemId");
+        grandchildStamp.KeyColumns.Select(column => column.Value).Should().Equal("School_DocumentId");
     }
 
     /// <summary>

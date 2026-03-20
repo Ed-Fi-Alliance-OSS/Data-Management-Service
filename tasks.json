@@ -96,7 +96,7 @@
       "Update `DeriveTriggerInventoryPassTests` to assert trigger derivation for stable-key collections and collection-aligned `_ext` tables.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Authoritative Fixture Cleanup",
