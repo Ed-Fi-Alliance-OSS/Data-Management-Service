@@ -67,6 +67,10 @@ public class Given_A_Reference_Backed_Collection_Without_Array_Uniqueness
             .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.ColumnName.Value)
             .Should()
             .Equal("School_DocumentId", "School_DocumentId");
+
+        _addressTable
+            .IdentityMetadata.SemanticIdentitySource.Should()
+            .Be(CollectionSemanticIdentitySource.ReferenceFallback);
     }
 
     /// <summary>

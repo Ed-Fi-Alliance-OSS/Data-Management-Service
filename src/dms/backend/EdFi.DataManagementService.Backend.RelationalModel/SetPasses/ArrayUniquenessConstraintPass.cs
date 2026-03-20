@@ -190,7 +190,6 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
             {
                 AddArrayUniquenessConstraint(
                     mutation,
-                    resourceModel,
                     table,
                     compiledIdentity,
                     resource,
@@ -225,7 +224,6 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
                 {
                     AddArrayUniquenessConstraint(
                         mutation,
-                        resourceModel,
                         alignedTable,
                         alignedIdentity,
                         resource,
@@ -340,7 +338,6 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
     /// </summary>
     private static void AddArrayUniquenessConstraint(
         ResourceMutation mutation,
-        RelationalResourceModel resourceModel,
         DbTableModel table,
         CompiledArrayUniqueness compiledIdentity,
         QualifiedResourceName resource,
@@ -349,7 +346,6 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
     {
         ApplyArrayUniquenessSemanticIdentityBindings(
             mutation,
-            resourceModel,
             table,
             compiledIdentity.SemanticIdentityBindings,
             resource,
@@ -388,7 +384,6 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
     /// </summary>
     private static void ApplyArrayUniquenessSemanticIdentityBindings(
         ResourceMutation mutation,
-        RelationalResourceModel resourceModel,
         DbTableModel table,
         IReadOnlyList<CollectionSemanticIdentityBinding> semanticIdentityBindings,
         QualifiedResourceName resource,
@@ -415,21 +410,32 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
                 )
             )
             {
+                if (
+                    allowReferenceDerivedFallbackReplacement
+                    && existingIdentityMetadata.SemanticIdentitySource
+                        == CollectionSemanticIdentitySource.ReferenceFallback
+                )
+                {
+                    tableAccumulator.IdentityMetadata = existingIdentityMetadata with
+                    {
+                        SemanticIdentitySource = CollectionSemanticIdentitySource.ArrayUniquenessConstraint,
+                    };
+                    mutation.MarkTableMutated(table);
+                }
+
                 return;
             }
 
             if (
                 allowReferenceDerivedFallbackReplacement
-                && MatchesReferenceDerivedFallback(
-                    resourceModel,
-                    table,
-                    existingIdentityMetadata.SemanticIdentityBindings
-                )
+                && existingIdentityMetadata.SemanticIdentitySource
+                    == CollectionSemanticIdentitySource.ReferenceFallback
             )
             {
                 tableAccumulator.IdentityMetadata = existingIdentityMetadata with
                 {
                     SemanticIdentityBindings = semanticIdentityBindings.ToArray(),
+                    SemanticIdentitySource = CollectionSemanticIdentitySource.ArrayUniquenessConstraint,
                 };
                 mutation.MarkTableMutated(table);
                 return;
@@ -446,6 +452,7 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
         tableAccumulator.IdentityMetadata = existingIdentityMetadata with
         {
             SemanticIdentityBindings = semanticIdentityBindings.ToArray(),
+            SemanticIdentitySource = CollectionSemanticIdentitySource.ArrayUniquenessConstraint,
         };
         mutation.MarkTableMutated(table);
     }
@@ -458,6 +465,7 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
         ResourceMutation mutation,
         DbTableModel table,
         IReadOnlyList<CollectionSemanticIdentityBinding> semanticIdentityBindings,
+        CollectionSemanticIdentitySource semanticIdentitySource,
         QualifiedResourceName resource
     )
     {
@@ -480,6 +488,7 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
         tableAccumulator.IdentityMetadata = existingIdentityMetadata with
         {
             SemanticIdentityBindings = semanticIdentityBindings.ToArray(),
+            SemanticIdentitySource = semanticIdentitySource,
         };
         mutation.MarkTableMutated(table);
     }
@@ -512,25 +521,6 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
         }
 
         return true;
-    }
-
-    /// <summary>
-    /// Returns true when the existing semantic identity exactly matches one qualifying reference-derived
-    /// fallback candidate for the table.
-    /// </summary>
-    private static bool MatchesReferenceDerivedFallback(
-        RelationalResourceModel resourceModel,
-        DbTableModel table,
-        IReadOnlyList<CollectionSemanticIdentityBinding> semanticIdentityBindings
-    )
-    {
-        return resourceModel.DocumentReferenceBindings.Any(binding =>
-            SemanticIdentityCompilationPass.TryCompileReferenceDerivedSemanticIdentity(
-                table,
-                binding,
-                out var candidateBindings
-            ) && SemanticIdentityBindingsMatch(candidateBindings, semanticIdentityBindings)
-        );
     }
 
     /// <summary>

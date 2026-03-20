@@ -106,6 +106,10 @@ public class Given_A_Reference_Fallback_And_An_Aligned_Extension_Array_Uniquenes
             .Should()
             .Equal("StreetNumberName");
 
+        addressTable
+            .IdentityMetadata.SemanticIdentitySource.Should()
+            .Be(CollectionSemanticIdentitySource.ArrayUniquenessConstraint);
+
         var semanticIdentityUniqueConstraint = ConstraintDerivationAssertionHelpers.FindUniqueConstraint(
             addressTable,
             "BusRoute_DocumentId",
@@ -196,5 +200,267 @@ public class Given_A_Reference_Fallback_And_An_Aligned_Extension_Array_Uniquenes
                 },
             },
         };
+    }
+}
+
+/// <summary>
+/// Test fixture for upgrading matching fallback provenance once an equivalent AUC is observed.
+/// </summary>
+[TestFixture]
+public class Given_A_Seeded_Reference_Fallback_And_A_Matching_Array_Uniqueness
+{
+    private DbTableModel _addressTable = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildReferenceBackedCollectionProjectSchema();
+
+        SemanticIdentityPrecedenceFixture.SetBusRouteArrayUniquenessConstraints(
+            coreProjectSchema,
+            SemanticIdentityPrecedenceFixture.BuildMatchingReferenceFallbackArrayUniquenessConstraints()
+        );
+
+        _addressTable = SemanticIdentityPrecedenceFixture.BuildBusRouteAddressTable(
+            coreProjectSchema,
+            new BaseTraversalAndDescriptorBindingPass(),
+            new ReferenceBindingPass(),
+            new RootIdentityConstraintPass(),
+            new ReferenceConstraintPass(),
+            new SeedSemanticIdentityPass(
+                "BusRoute",
+                "BusRouteAddress",
+                SemanticIdentityPrecedenceFixture.BuildAddressSchoolFallbackBindings(),
+                CollectionSemanticIdentitySource.ReferenceFallback
+            ),
+            new ArrayUniquenessConstraintPass()
+        );
+    }
+
+    /// <summary>
+    /// It should upgrade the authoritative source to AUC even when the bindings are identical.
+    /// </summary>
+    [Test]
+    public void It_should_upgrade_matching_reference_fallback_provenance_to_array_uniqueness()
+    {
+        _addressTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.RelativePath.Canonical)
+            .Should()
+            .Equal("$.schoolReference.schoolId", "$.schoolReference.educationOrganizationId");
+
+        _addressTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.ColumnName.Value)
+            .Should()
+            .Equal("AddressSchool_DocumentId", "AddressSchool_DocumentId");
+
+        _addressTable
+            .IdentityMetadata.SemanticIdentitySource.Should()
+            .Be(CollectionSemanticIdentitySource.ArrayUniquenessConstraint);
+    }
+}
+
+/// <summary>
+/// Test fixture for the false-fallback ambiguity regression.
+/// </summary>
+[TestFixture]
+public class Given_An_Earlier_Auc_That_Compiles_To_The_Reference_Fallback_Binding_Set
+{
+    private Action _build = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildReferenceBackedCollectionProjectSchema();
+
+        SemanticIdentityPrecedenceFixture.SetBusRouteArrayUniquenessConstraints(
+            coreProjectSchema,
+            SemanticIdentityPrecedenceFixture.BuildAmbiguousFallbackLikeArrayUniquenessConstraints()
+        );
+
+        _build = () =>
+        {
+            SemanticIdentityPrecedenceFixture.BuildBusRouteAddressTable(
+                coreProjectSchema,
+                new BaseTraversalAndDescriptorBindingPass(),
+                new ReferenceBindingPass(),
+                new RootIdentityConstraintPass(),
+                new ReferenceConstraintPass(),
+                new SeedSemanticIdentityPass(
+                    "BusRoute",
+                    "BusRouteAddress",
+                    SemanticIdentityPrecedenceFixture.BuildAddressSchoolFallbackBindings(),
+                    CollectionSemanticIdentitySource.ArrayUniquenessConstraint
+                ),
+                new ArrayUniquenessConstraintPass()
+            );
+        };
+    }
+
+    /// <summary>
+    /// It should fail as ambiguous instead of treating the existing AUC bindings as replaceable fallback.
+    /// </summary>
+    [Test]
+    public void It_should_fail_with_ambiguous_array_uniqueness_instead_of_fallback_replacement()
+    {
+        var exception = _build.Should().Throw<InvalidOperationException>().Which;
+
+        exception.Message.Should().Contain("Persisted multi-item scope");
+        exception.Message.Should().Contain("$.addresses[*]");
+        exception.Message.Should().Contain("Ed-Fi:BusRoute");
+        exception.Message.Should().Contain("$.schoolReference.schoolId");
+        exception.Message.Should().Contain("$.schoolReference.educationOrganizationId");
+        exception.Message.Should().Contain("$.streetNumberName");
+        exception.Message.Should().Contain("exactly one non-empty ordered binding set");
+    }
+}
+
+file static class SemanticIdentityPrecedenceFixture
+{
+    internal static DbTableModel BuildBusRouteAddressTable(
+        JsonObject coreProjectSchema,
+        params IRelationalModelSetPass[] passes
+    )
+    {
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder(passes);
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        var busRouteModel = result
+            .ConcreteResourcesInNameOrder.Single(model =>
+                model.ResourceKey.Resource == new QualifiedResourceName("Ed-Fi", "BusRoute")
+            )
+            .RelationalModel;
+
+        return busRouteModel.TablesInDependencyOrder.Single(table => table.Table.Name == "BusRouteAddress");
+    }
+
+    internal static CollectionSemanticIdentityBinding[] BuildAddressSchoolFallbackBindings()
+    {
+        return
+        [
+            new CollectionSemanticIdentityBinding(
+                JsonPathExpressionCompiler.Compile("$.schoolReference.schoolId"),
+                new DbColumnName("AddressSchool_DocumentId")
+            ),
+            new CollectionSemanticIdentityBinding(
+                JsonPathExpressionCompiler.Compile("$.schoolReference.educationOrganizationId"),
+                new DbColumnName("AddressSchool_DocumentId")
+            ),
+        ];
+    }
+
+    internal static JsonArray BuildMatchingReferenceFallbackArrayUniquenessConstraints()
+    {
+        return new JsonArray
+        {
+            new JsonObject
+            {
+                ["paths"] = new JsonArray
+                {
+                    "$.addresses[*].schoolReference.schoolId",
+                    "$.addresses[*].schoolReference.educationOrganizationId",
+                },
+            },
+        };
+    }
+
+    internal static JsonArray BuildAmbiguousFallbackLikeArrayUniquenessConstraints()
+    {
+        return new JsonArray
+        {
+            new JsonObject
+            {
+                ["paths"] = new JsonArray
+                {
+                    "$.addresses[*].schoolReference.schoolId",
+                    "$.addresses[*].schoolReference.educationOrganizationId",
+                },
+            },
+            new JsonObject { ["paths"] = new JsonArray { "$.addresses[*].streetNumberName" } },
+        };
+    }
+
+    internal static void SetBusRouteArrayUniquenessConstraints(
+        JsonObject projectSchema,
+        JsonArray arrayUniquenessConstraints
+    )
+    {
+        var resourceSchemas =
+            projectSchema["resourceSchemas"] as JsonObject
+            ?? throw new InvalidOperationException("Expected 'resourceSchemas' to be a JSON object.");
+        var busRoute =
+            resourceSchemas["busRoutes"] as JsonObject
+            ?? throw new InvalidOperationException("Expected 'busRoutes' to be a JSON object.");
+
+        busRoute["arrayUniquenessConstraints"] = arrayUniquenessConstraints;
+    }
+}
+
+file sealed class SeedSemanticIdentityPass(
+    string resourceName,
+    string tableName,
+    IReadOnlyList<CollectionSemanticIdentityBinding> semanticIdentityBindings,
+    CollectionSemanticIdentitySource semanticIdentitySource
+) : IRelationalModelSetPass
+{
+    /// <summary>
+    /// Execute pass.
+    /// </summary>
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        for (var index = 0; index < context.ConcreteResourcesInNameOrder.Count; index++)
+        {
+            var concreteResource = context.ConcreteResourcesInNameOrder[index];
+
+            if (
+                !string.Equals(
+                    concreteResource.ResourceKey.Resource.ResourceName,
+                    resourceName,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                continue;
+            }
+
+            var updatedTables = concreteResource
+                .RelationalModel.TablesInDependencyOrder.Select(table =>
+                    string.Equals(table.Table.Name, tableName, StringComparison.Ordinal)
+                        ? table with
+                        {
+                            IdentityMetadata = table.IdentityMetadata with
+                            {
+                                SemanticIdentityBindings = semanticIdentityBindings.ToArray(),
+                                SemanticIdentitySource = semanticIdentitySource,
+                            },
+                        }
+                        : table
+                )
+                .ToArray();
+            var updatedRoot = updatedTables.Single(table =>
+                table.JsonScope.Equals(concreteResource.RelationalModel.Root.JsonScope)
+            );
+            var updatedModel = concreteResource.RelationalModel with
+            {
+                Root = updatedRoot,
+                TablesInDependencyOrder = updatedTables,
+            };
+
+            context.ConcreteResourcesInNameOrder[index] = concreteResource with
+            {
+                RelationalModel = updatedModel,
+            };
+        }
     }
 }

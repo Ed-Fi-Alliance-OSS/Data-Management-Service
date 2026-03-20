@@ -299,6 +299,27 @@ public enum DbTableKind
 }
 
 /// <summary>
+/// Captures which compilation path produced a table's semantic-identity bindings.
+/// </summary>
+public enum CollectionSemanticIdentitySource
+{
+    /// <summary>
+    /// No semantic-identity source has been recorded.
+    /// </summary>
+    Unspecified,
+
+    /// <summary>
+    /// Semantic identity came from <c>arrayUniquenessConstraints</c>.
+    /// </summary>
+    ArrayUniquenessConstraint,
+
+    /// <summary>
+    /// Semantic identity came from the single qualifying reference-derived fallback.
+    /// </summary>
+    ReferenceFallback,
+}
+
+/// <summary>
 /// Explicit physical identity metadata for one derived table.
 /// </summary>
 /// <param name="TableKind">The physical role of the table in the derived model.</param>
@@ -323,6 +344,12 @@ public sealed record DbTableIdentityMetadata(
     IReadOnlyList<CollectionSemanticIdentityBinding> SemanticIdentityBindings
 )
 {
+    /// <summary>
+    /// The authoritative compilation path that produced <see cref="SemanticIdentityBindings"/>.
+    /// </summary>
+    public CollectionSemanticIdentitySource SemanticIdentitySource { get; init; } =
+        CollectionSemanticIdentitySource.Unspecified;
+
     /// <summary>
     /// Empty identity metadata for tables that have not been classified yet.
     /// </summary>

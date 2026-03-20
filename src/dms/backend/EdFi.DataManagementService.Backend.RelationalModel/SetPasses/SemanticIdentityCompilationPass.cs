@@ -214,6 +214,7 @@ public sealed class SemanticIdentityCompilationPass : IRelationalModelSetPass
                 mutation,
                 table,
                 candidateBindings[0].Bindings,
+                CollectionSemanticIdentitySource.ReferenceFallback,
                 resource
             );
         }
