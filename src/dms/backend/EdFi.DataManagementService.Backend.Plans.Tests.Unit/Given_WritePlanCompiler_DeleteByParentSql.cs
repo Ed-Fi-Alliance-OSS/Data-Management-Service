@@ -231,4 +231,36 @@ public class Given_WritePlanCompiler_DeleteByParentSql : WritePlanCompilerTestBa
             .TablePlansInDependencyOrder.Should()
             .HaveCount(multiTableModel.TablesInDependencyOrder.Count);
     }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_emit_delete_by_parent_sql_for_collection_aligned_extension_scope_using_explicit_parent_locator_metadata(
+        SqlDialect dialect
+    )
+    {
+        var tablePlan = CompileCollectionsNestedExtensionFixtureTablePlan(dialect, "SchoolExtensionAddress");
+
+        tablePlan
+            .DeleteByParentSql.Should()
+            .Be(
+                dialect switch
+                {
+                    SqlDialect.Pgsql => """
+                    DELETE FROM "sample"."SchoolExtensionAddress"
+                    WHERE
+                        ("BaseCollectionItemId" = @baseCollectionItemId)
+                    ;
+
+                    """,
+                    SqlDialect.Mssql => """
+                    DELETE FROM [sample].[SchoolExtensionAddress]
+                    WHERE
+                        ([BaseCollectionItemId] = @baseCollectionItemId)
+                    ;
+
+                    """,
+                    _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, null),
+                }
+            );
+    }
 }

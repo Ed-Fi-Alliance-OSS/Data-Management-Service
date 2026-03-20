@@ -240,6 +240,35 @@ public class Given_WritePlanCompiler_BindingsAndSources : WritePlanCompilerTestB
     }
 
     [Test]
+    public void It_should_bind_collection_aligned_extension_scope_locators_from_explicit_identity_metadata()
+    {
+        var tablePlan = CompileCollectionsNestedExtensionFixtureTablePlan(
+            SqlDialect.Pgsql,
+            "SchoolExtensionAddress"
+        );
+
+        tablePlan
+            .ColumnBindings.Select(static binding => binding.Column.ColumnName.Value)
+            .Should()
+            .Equal("BaseCollectionItemId", "School_DocumentId", "Zone");
+
+        tablePlan
+            .ColumnBindings[0]
+            .Source.Should()
+            .BeEquivalentTo(new WriteValueSource.ParentKeyPart(Index: 0));
+        tablePlan.ColumnBindings[1].Source.Should().BeOfType<WriteValueSource.DocumentId>();
+        tablePlan
+            .ColumnBindings[2]
+            .Source.Should()
+            .BeEquivalentTo(
+                new WriteValueSource.Scalar(
+                    RelativePath: new JsonPathExpression("$.zone", [new JsonPathSegment.Property("zone")]),
+                    Type: new RelationalScalarType(ScalarKind.String, MaxLength: 20)
+                )
+            );
+    }
+
+    [Test]
     public void It_should_fail_fast_when_document_reference_binding_is_missing_for_document_fk_column()
     {
         var model = CreateSingleTableModelWithMissingDocumentReferenceBinding();

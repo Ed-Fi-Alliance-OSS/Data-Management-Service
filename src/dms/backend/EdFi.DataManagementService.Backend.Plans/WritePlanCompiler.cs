@@ -481,7 +481,7 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     {
         var tableModel = tableCompilationContext.TableModel;
 
-        if (tableModel.Columns.Any(static column => column.Kind is ColumnKind.Ordinal))
+        if (!SupportsInPlaceUpdate(tableModel))
         {
             return null;
         }
@@ -515,6 +515,25 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
             keyColumnsInKeyOrder,
             keyParameterNamesInKeyOrder
         );
+    }
+
+    /// <summary>
+    /// Keeps the temporary stable-key compatibility split between singleton UPDATE plans and collection-scoped
+    /// replace/merge plans explicit. Follow-on stories:
+    /// `reference/design/backend-redesign/epics/07-relational-write-path/03-persist-and-batch.md` and
+    /// `reference/design/backend-redesign/epics/15-plan-compilation/04b-stable-collection-merge-plans.md`.
+    /// </summary>
+    private static bool SupportsInPlaceUpdate(DbTableModel tableModel)
+    {
+        if (RelationalResourceModelCompileValidator.UsesExplicitIdentityMetadata(tableModel))
+        {
+            return tableModel.IdentityMetadata.TableKind
+                is DbTableKind.Root
+                    or DbTableKind.RootExtension
+                    or DbTableKind.CollectionExtensionScope;
+        }
+
+        return !tableModel.Columns.Any(static column => column.Kind is ColumnKind.Ordinal);
     }
 
     /// <summary>

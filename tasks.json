@@ -152,7 +152,7 @@
       "Update the relevant `Given_WritePlanCompiler_*` tests so they assert the temporary stable-key-compatible behavior.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Plan Goldens",
