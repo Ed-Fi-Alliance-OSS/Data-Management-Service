@@ -791,7 +791,7 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
 
             semanticIdentityBindings.Add(
                 new CollectionSemanticIdentityBinding(
-                    DeriveScopeRelativePath(table.JsonScope, path),
+                    DeriveScopeRelativeSemanticIdentityPath(table.JsonScope, path),
                     columnName
                 )
             );
@@ -873,36 +873,6 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
         }
 
         return columnName;
-    }
-
-    /// <summary>
-    /// Derives a table-scope-relative JSON path by stripping the owning table scope prefix from an absolute
-    /// constraint path.
-    /// </summary>
-    private static JsonPathExpression DeriveScopeRelativePath(
-        JsonPathExpression jsonScope,
-        JsonPathExpression path
-    )
-    {
-        if (!IsPrefixOf(jsonScope.Segments, path.Segments))
-        {
-            throw new InvalidOperationException(
-                $"Cannot derive scope-relative semantic identity path for '{path.Canonical}': "
-                    + $"scope '{jsonScope.Canonical}' is not a prefix."
-            );
-        }
-
-        var relativeSegments = path.Segments.Skip(jsonScope.Segments.Count).ToArray();
-
-        if (relativeSegments.Any(segment => segment is JsonPathSegment.AnyArrayElement))
-        {
-            throw new InvalidOperationException(
-                $"Cannot derive scope-relative semantic identity path for '{path.Canonical}' under "
-                    + $"scope '{jsonScope.Canonical}': stripped path contains '[*]'."
-            );
-        }
-
-        return JsonPathExpressionCompiler.FromSegments(relativeSegments);
     }
 
     /// <summary>

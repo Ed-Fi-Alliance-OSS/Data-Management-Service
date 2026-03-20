@@ -137,10 +137,10 @@ public class Given_A_Collection_With_Multiple_Applicable_Array_Uniqueness_Semant
 }
 
 /// <summary>
-/// Test fixture for reference-backed collection scopes whose scope-local binding no longer qualifies.
+/// Test fixture for reference-backed collection scopes whose rewritten identity path crosses a descendant array.
 /// </summary>
 [TestFixture]
-public class Given_A_Reference_Backed_Collection_With_No_Qualifying_Reference_Derived_Semantic_Identity
+public class Given_A_Reference_Backed_Collection_With_A_Reference_Derived_Semantic_Identity_That_Crosses_A_Descendant_Array
 {
     private Action _build = default!;
 
@@ -174,21 +174,74 @@ public class Given_A_Reference_Backed_Collection_With_No_Qualifying_Reference_De
     }
 
     /// <summary>
-    /// It should fail with the ambiguous reference-backed diagnostic when no bindings qualify.
+    /// It should fail fast with the shared descendant-array normalization diagnostic.
     /// </summary>
     [Test]
-    public void It_should_fail_with_the_zero_qualifying_reference_backed_diagnostic()
+    public void It_should_fail_with_the_descendant_array_scope_relative_diagnostic()
     {
         var exception = _build.Should().Throw<InvalidOperationException>().Which;
 
-        exception.Message.Should().Contain("Persisted multi-item scope");
-        exception.Message.Should().Contain("$.addresses[*]");
-        exception.Message.Should().Contain("Ed-Fi:BusRoute");
-        exception.Message.Should().Contain("reference-backed");
-        exception.Message.Should().Contain("exactly one qualifying");
-        exception.Message.Should().Contain("found 0");
-        exception.Message.Should().Contain("$.addresses[*].schoolReference");
-        exception.Message.Should().Contain("exactly one non-empty ordered binding set");
+        exception
+            .Message.Should()
+            .Be(
+                "Cannot derive scope-relative semantic identity path for "
+                    + "'$.addresses[*].periods[*].schoolReference.schoolId' under scope "
+                    + "'$.addresses[*]': stripped path contains '[*]'."
+            );
+    }
+}
+
+/// <summary>
+/// Test fixture for reference-backed collection scopes whose rewritten identity path falls outside the table scope.
+/// </summary>
+[TestFixture]
+public class Given_A_Reference_Backed_Collection_With_A_Reference_Derived_Semantic_Identity_Outside_The_Table_Scope
+{
+    private Action _build = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildReferenceConstraintProjectSchemaWithChildReference();
+        var schemaSet = CollectionSemanticIdentityValidationFixture.CreateSchemaSet(coreProjectSchema);
+        var builder = new DerivedRelationalModelSetBuilder([
+            new BaseTraversalAndDescriptorBindingPass(),
+            new ReferenceBindingPass(),
+            new RewriteReferenceIdentityBindingsPass(
+                "BusRoute",
+                "$.addresses[*].schoolReference",
+                [
+                    JsonPathExpressionCompiler.Compile("$.contacts[*].schoolReference.schoolId"),
+                    JsonPathExpressionCompiler.Compile(
+                        "$.contacts[*].schoolReference.educationOrganizationId"
+                    ),
+                ]
+            ),
+            new SemanticIdentityCompilationPass(),
+            new ValidateCollectionSemanticIdentityPass(),
+        ]);
+
+        _build = () => builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+    }
+
+    /// <summary>
+    /// It should fail fast with the shared non-prefix normalization diagnostic.
+    /// </summary>
+    [Test]
+    public void It_should_fail_with_the_non_prefix_scope_relative_diagnostic()
+    {
+        var exception = _build.Should().Throw<InvalidOperationException>().Which;
+
+        exception
+            .Message.Should()
+            .Be(
+                "Cannot derive scope-relative semantic identity path for "
+                    + "'$.contacts[*].schoolReference.schoolId': scope '$.addresses[*]' is not a prefix."
+            );
     }
 }
 

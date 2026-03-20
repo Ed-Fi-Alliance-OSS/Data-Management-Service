@@ -639,6 +639,36 @@ internal static class RelationalModelSetSchemaHelpers
     }
 
     /// <summary>
+    /// Derives a scope-relative semantic-identity path by stripping the owning table scope prefix from an
+    /// absolute path and rejecting descendant-array crossings.
+    /// </summary>
+    internal static JsonPathExpression DeriveScopeRelativeSemanticIdentityPath(
+        JsonPathExpression jsonScope,
+        JsonPathExpression path
+    )
+    {
+        if (!IsPrefixOf(jsonScope.Segments, path.Segments))
+        {
+            throw new InvalidOperationException(
+                $"Cannot derive scope-relative semantic identity path for '{path.Canonical}': "
+                    + $"scope '{jsonScope.Canonical}' is not a prefix."
+            );
+        }
+
+        var relativeSegments = path.Segments.Skip(jsonScope.Segments.Count).ToArray();
+
+        if (relativeSegments.Any(segment => segment is JsonPathSegment.AnyArrayElement))
+        {
+            throw new InvalidOperationException(
+                $"Cannot derive scope-relative semantic identity path for '{path.Canonical}' under "
+                    + $"scope '{jsonScope.Canonical}': stripped path contains '[*]'."
+            );
+        }
+
+        return JsonPathExpressionCompiler.FromSegments(relativeSegments);
+    }
+
+    /// <summary>
     /// Reads the <c>isResourceExtension</c> flag from a resource schema node.
     /// </summary>
     private static bool IsResourceExtension(JsonObject resourceSchema, string resourceLabel)

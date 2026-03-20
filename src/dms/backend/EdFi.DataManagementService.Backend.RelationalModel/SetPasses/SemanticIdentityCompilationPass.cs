@@ -269,6 +269,8 @@ public sealed class SemanticIdentityCompilationPass : IRelationalModelSetPass
 
     /// <summary>
     /// Attempts to compile semantic identity for a table from one scope-local document reference binding.
+    /// Invalid scope-relative identity paths fail fast with the shared semantic-identity normalization
+    /// diagnostic.
     /// </summary>
     internal static bool TryCompileReferenceDerivedSemanticIdentity(
         DbTableModel table,
@@ -287,18 +289,15 @@ public sealed class SemanticIdentityCompilationPass : IRelationalModelSetPass
 
         foreach (var identityBinding in binding.IdentityBindings)
         {
-            if (
-                !TryDeriveScopeRelativePath(
-                    table.JsonScope,
-                    identityBinding.ReferenceJsonPath,
-                    out var relativePath
+            compiledBindings.Add(
+                new CollectionSemanticIdentityBinding(
+                    DeriveScopeRelativeSemanticIdentityPath(
+                        table.JsonScope,
+                        identityBinding.ReferenceJsonPath
+                    ),
+                    binding.FkColumn
                 )
-            )
-            {
-                return false;
-            }
-
-            compiledBindings.Add(new CollectionSemanticIdentityBinding(relativePath, binding.FkColumn));
+            );
         }
 
         bindings = compiledBindings.ToArray();
@@ -314,33 +313,6 @@ public sealed class SemanticIdentityCompilationPass : IRelationalModelSetPass
             column.Kind == ColumnKind.Ordinal
             && column.ColumnName.Equals(RelationalNameConventions.OrdinalColumnName)
         );
-    }
-
-    /// <summary>
-    /// Attempts to derive a table-scope-relative JSON path without crossing into descendant array scopes.
-    /// </summary>
-    private static bool TryDeriveScopeRelativePath(
-        JsonPathExpression jsonScope,
-        JsonPathExpression path,
-        out JsonPathExpression relativePath
-    )
-    {
-        relativePath = default;
-
-        if (!IsPrefixOf(jsonScope.Segments, path.Segments))
-        {
-            return false;
-        }
-
-        var relativeSegments = path.Segments.Skip(jsonScope.Segments.Count).ToArray();
-
-        if (relativeSegments.Any(segment => segment is JsonPathSegment.AnyArrayElement))
-        {
-            return false;
-        }
-
-        relativePath = JsonPathExpressionCompiler.FromSegments(relativeSegments);
-        return true;
     }
 
     /// <summary>

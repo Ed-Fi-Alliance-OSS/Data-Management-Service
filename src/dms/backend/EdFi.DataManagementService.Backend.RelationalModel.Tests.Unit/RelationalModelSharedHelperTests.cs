@@ -36,6 +36,64 @@ public class Given_Relational_Model_Shared_Helpers
     }
 
     /// <summary>
+    /// It should derive scope-relative semantic identity paths.
+    /// </summary>
+    [Test]
+    public void It_should_derive_scope_relative_semantic_identity_paths()
+    {
+        var jsonScope = JsonPathExpressionCompiler.Compile("$.addresses[*]");
+        var path = JsonPathExpressionCompiler.Compile("$.addresses[*].schoolReference.schoolId");
+
+        RelationalModelSetSchemaHelpers
+            .DeriveScopeRelativeSemanticIdentityPath(jsonScope, path)
+            .Canonical.Should()
+            .Be("$.schoolReference.schoolId");
+    }
+
+    /// <summary>
+    /// It should reject scope-relative semantic identity paths outside the owning scope.
+    /// </summary>
+    [Test]
+    public void It_should_reject_scope_relative_semantic_identity_paths_outside_the_owning_scope()
+    {
+        var jsonScope = JsonPathExpressionCompiler.Compile("$.addresses[*]");
+        var path = JsonPathExpressionCompiler.Compile("$.contacts[*].schoolReference.schoolId");
+
+        Action action = () =>
+            RelationalModelSetSchemaHelpers.DeriveScopeRelativeSemanticIdentityPath(jsonScope, path);
+
+        action
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot derive scope-relative semantic identity path for "
+                    + "'$.contacts[*].schoolReference.schoolId': scope '$.addresses[*]' is not a prefix."
+            );
+    }
+
+    /// <summary>
+    /// It should reject scope-relative semantic identity paths that cross descendant arrays.
+    /// </summary>
+    [Test]
+    public void It_should_reject_scope_relative_semantic_identity_paths_that_cross_descendant_arrays()
+    {
+        var jsonScope = JsonPathExpressionCompiler.Compile("$.addresses[*]");
+        var path = JsonPathExpressionCompiler.Compile("$.addresses[*].periods[*].beginDate");
+
+        Action action = () =>
+            RelationalModelSetSchemaHelpers.DeriveScopeRelativeSemanticIdentityPath(jsonScope, path);
+
+        action
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Cannot derive scope-relative semantic identity path for "
+                    + "'$.addresses[*].periods[*].beginDate' under scope '$.addresses[*]': "
+                    + "stripped path contains '[*]'."
+            );
+    }
+
+    /// <summary>
     /// It should assign expected scalar types for seeded key and locator columns.
     /// </summary>
     [Test]
