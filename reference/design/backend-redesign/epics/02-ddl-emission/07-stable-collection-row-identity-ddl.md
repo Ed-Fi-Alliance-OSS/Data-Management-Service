@@ -39,7 +39,7 @@ The new DDL contract must support:
   - root `..._DocumentId`,
   - `Ordinal`,
   - primary key on `CollectionItemId`, and
-  - unique constraints/indexes for sibling ordering and compiled semantic identity.
+  - unique constraints/indexes for sibling ordering and compiled semantic identity, where the relational-model metadata may come from scope-resolved `arrayUniquenessConstraints` or, for reference-backed scopes, exactly one qualifying scope-local `documentPathsMapping.referenceJsonPaths` binding set.
 - Nested collection/common-type tables emit:
   - `CollectionItemId`,
   - `ParentCollectionItemId`,

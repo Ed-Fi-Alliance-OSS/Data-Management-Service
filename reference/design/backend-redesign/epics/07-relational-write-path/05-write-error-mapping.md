@@ -13,7 +13,7 @@ Provide consistent, actionable error mapping for relational writes across Postgr
 - FK violations (unresolved/missing references when writing, or schema mismatch).
 - Deterministic fallback mapping for final DB write exceptions that are not profile failures.
 
-Submitted duplicate collection/common-type/extension collection items are not in scope for this DB-exception story. They remain request-validation failures keyed by `arrayUniquenessConstraints` / compiled semantic identity and should be rejected before backend DML reaches the database.
+Submitted duplicate collection/common-type/extension collection items are not in scope for this DB-exception story. They remain request-validation failures keyed by the compiled semantic identity for the scope, sourced from scope-resolved `arrayUniquenessConstraints` or the qualifying scope-local `documentPathsMapping.referenceJsonPaths` binding set, and should be rejected before backend DML reaches the database.
 
 Profile-specific classification and API mapping are handled by `DMS-1104`; deadlock/serialization retry policy remains owned by `DMS-996`. This story stays limited to final database exception classification and mapping.
 
