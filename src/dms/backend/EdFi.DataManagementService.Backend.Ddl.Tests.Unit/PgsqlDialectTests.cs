@@ -946,6 +946,83 @@ public class Given_PgsqlDialect_Create_Uuidv5_Function
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// Authorization helper tests
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_PgsqlDialect_Create_Throw_Error_Function
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = new PgsqlDialect(new PgsqlDialectRules());
+        _ddl = dialect.CreateThrowErrorFunction(new DbSchemaName("dms"));
+    }
+
+    [Test]
+    public void It_should_use_create_or_replace_pattern()
+    {
+        _ddl.Should().Contain("CREATE OR REPLACE FUNCTION");
+    }
+
+    [Test]
+    public void It_should_qualify_function_name_with_schema()
+    {
+        _ddl.Should().Contain("\"dms\".\"throw_error\"");
+    }
+
+    [Test]
+    public void It_should_accept_code_and_msg_text_parameters()
+    {
+        _ddl.Should().Contain("code text").And.Contain("msg text");
+    }
+
+    [Test]
+    public void It_should_return_integer()
+    {
+        _ddl.Should().Contain("RETURNS integer");
+    }
+
+    [Test]
+    public void It_should_use_plpgsql_language()
+    {
+        _ddl.Should().Contain("LANGUAGE plpgsql");
+    }
+
+    [Test]
+    public void It_should_raise_exception_with_errcode()
+    {
+        _ddl.Should().Contain("RAISE EXCEPTION").And.Contain("USING ERRCODE = code");
+    }
+}
+
+[TestFixture]
+public class Given_PgsqlDialect_Create_User_Defined_Table_Type
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = new PgsqlDialect(new PgsqlDialectRules());
+        _ddl = dialect.CreateUserDefinedTableTypeIfNotExists(
+            new DbSchemaName("dms"),
+            "BigIntTable",
+            "Id",
+            "bigint"
+        );
+    }
+
+    [Test]
+    public void It_should_return_empty_string()
+    {
+        _ddl.Should().BeEmpty();
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Literal rendering tests
 // ═══════════════════════════════════════════════════════════════════
 

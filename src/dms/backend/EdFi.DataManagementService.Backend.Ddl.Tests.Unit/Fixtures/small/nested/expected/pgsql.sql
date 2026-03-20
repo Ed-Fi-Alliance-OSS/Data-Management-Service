@@ -35,8 +35,17 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE SEQUENCE IF NOT EXISTS "dms"."ChangeVersionSequence" START WITH 1;
 
 -- ==========================================================
--- Phase 4: Functions
+-- Phase 4: Functions and Types
 -- ==========================================================
+
+CREATE OR REPLACE FUNCTION "dms"."throw_error"(code text, msg text)
+RETURNS integer
+LANGUAGE plpgsql
+AS $throw_error$
+BEGIN
+    RAISE EXCEPTION '%', msg USING ERRCODE = code;
+END
+$throw_error$;
 
 CREATE OR REPLACE FUNCTION "dms"."uuidv5"(namespace_uuid uuid, name_text text)
 RETURNS uuid

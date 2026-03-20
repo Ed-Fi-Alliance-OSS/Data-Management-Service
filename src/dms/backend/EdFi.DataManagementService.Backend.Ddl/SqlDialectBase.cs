@@ -184,6 +184,17 @@ public abstract class SqlDialectBase : ISqlDialect
     /// <inheritdoc />
     public abstract string CreateUuidv5Function(DbSchemaName schema);
 
+    /// <inheritdoc />
+    public abstract string CreateThrowErrorFunction(DbSchemaName schema);
+
+    /// <inheritdoc />
+    public abstract string CreateUserDefinedTableTypeIfNotExists(
+        DbSchemaName schema,
+        string typeName,
+        string columnName,
+        string columnType
+    );
+
     // ── Core-table type properties ──────────────────────────────────────
 
     /// <inheritdoc />

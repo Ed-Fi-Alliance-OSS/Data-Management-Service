@@ -176,7 +176,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     private void EmitFunctions(SqlWriter writer)
     {
         writer.AppendLine("-- ==========================================================");
-        writer.AppendLine("-- Phase 4: Functions");
+        writer.AppendLine("-- Phase 4: Functions and Types");
         writer.AppendLine("-- ==========================================================");
         writer.AppendLine();
 
@@ -187,9 +187,32 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
             writer.AppendLine(_dialect.CreateUuidv5Function(DmsTableNames.DmsSchema));
             writer.AppendLine("GO");
             writer.AppendLine();
+
+            // User-Defined Table Types for authorization query parameterization (alphabetical)
+            writer.AppendLine(
+                _dialect.CreateUserDefinedTableTypeIfNotExists(
+                    DmsTableNames.DmsSchema,
+                    "BigIntTable",
+                    "Id",
+                    "bigint"
+                )
+            );
+            writer.AppendLine();
+            writer.AppendLine(
+                _dialect.CreateUserDefinedTableTypeIfNotExists(
+                    DmsTableNames.DmsSchema,
+                    "UniqueIdentifierTable",
+                    "Id",
+                    "uniqueidentifier"
+                )
+            );
+            writer.AppendLine();
             return;
         }
 
+        // PostgreSQL: functions (alphabetical)
+        writer.AppendLine(_dialect.CreateThrowErrorFunction(DmsTableNames.DmsSchema));
+        writer.AppendLine();
         writer.AppendLine(_dialect.CreateUuidv5Function(DmsTableNames.DmsSchema));
         writer.AppendLine();
     }

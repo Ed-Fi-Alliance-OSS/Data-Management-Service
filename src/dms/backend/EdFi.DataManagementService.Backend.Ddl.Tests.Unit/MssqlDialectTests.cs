@@ -996,6 +996,119 @@ public class Given_MssqlDialect_Create_Uuidv5_Function
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// Authorization helper tests
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_MssqlDialect_Create_Throw_Error_Function
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = new MssqlDialect(new MssqlDialectRules());
+        _ddl = dialect.CreateThrowErrorFunction(new DbSchemaName("dms"));
+    }
+
+    [Test]
+    public void It_should_return_empty_string()
+    {
+        _ddl.Should().BeEmpty();
+    }
+}
+
+[TestFixture]
+public class Given_MssqlDialect_Create_BigIntTable_Type
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = new MssqlDialect(new MssqlDialectRules());
+        _ddl = dialect.CreateUserDefinedTableTypeIfNotExists(
+            new DbSchemaName("dms"),
+            "BigIntTable",
+            "Id",
+            "bigint"
+        );
+    }
+
+    [Test]
+    public void It_should_use_sys_types_guard()
+    {
+        _ddl.Should().Contain("sys.types");
+    }
+
+    [Test]
+    public void It_should_check_schema_name()
+    {
+        _ddl.Should().Contain("N'dms'");
+    }
+
+    [Test]
+    public void It_should_check_type_name()
+    {
+        _ddl.Should().Contain("N'BigIntTable'");
+    }
+
+    [Test]
+    public void It_should_include_create_type()
+    {
+        _ddl.Should().Contain("CREATE TYPE [dms].[BigIntTable]");
+    }
+
+    [Test]
+    public void It_should_include_as_table()
+    {
+        _ddl.Should().Contain("AS TABLE(");
+    }
+
+    [Test]
+    public void It_should_include_quoted_column_with_type()
+    {
+        _ddl.Should().Contain("[Id] bigint NOT NULL");
+    }
+}
+
+[TestFixture]
+public class Given_MssqlDialect_Create_UniqueIdentifierTable_Type
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = new MssqlDialect(new MssqlDialectRules());
+        _ddl = dialect.CreateUserDefinedTableTypeIfNotExists(
+            new DbSchemaName("dms"),
+            "UniqueIdentifierTable",
+            "Id",
+            "uniqueidentifier"
+        );
+    }
+
+    [Test]
+    public void It_should_include_create_type()
+    {
+        _ddl.Should().Contain("CREATE TYPE [dms].[UniqueIdentifierTable]");
+    }
+
+    [Test]
+    public void It_should_include_quoted_column_with_type()
+    {
+        _ddl.Should().Contain("[Id] uniqueidentifier NOT NULL");
+    }
+
+    [Test]
+    public void It_should_use_idempotent_guard()
+    {
+        _ddl.Should().Contain("IF NOT EXISTS");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Literal rendering tests
 // ═══════════════════════════════════════════════════════════════════
 

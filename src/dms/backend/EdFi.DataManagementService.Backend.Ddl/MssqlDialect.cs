@@ -325,6 +325,42 @@ public sealed class MssqlDialect : SqlDialectBase
             """;
     }
 
+    /// <inheritdoc />
+    public override string CreateThrowErrorFunction(DbSchemaName schema)
+    {
+        // SQL Server does not use a throw_error function; authorization error
+        // signaling uses intentional invalid casts instead.
+        return string.Empty;
+    }
+
+    /// <inheritdoc />
+    public override string CreateUserDefinedTableTypeIfNotExists(
+        DbSchemaName schema,
+        string typeName,
+        string columnName,
+        string columnType
+    )
+    {
+        ArgumentNullException.ThrowIfNull(typeName);
+        ArgumentNullException.ThrowIfNull(columnName);
+        ArgumentNullException.ThrowIfNull(columnType);
+
+        var qualifiedType = $"{QuoteIdentifier(schema.Value)}.{QuoteIdentifier(typeName)}";
+        var escapedSchema = schema.Value.Replace("'", "''");
+        var escapedType = typeName.Replace("'", "''");
+
+        return $"""
+            IF NOT EXISTS (
+                SELECT 1 FROM sys.types t
+                JOIN sys.schemas s ON t.schema_id = s.schema_id
+                WHERE s.name = N'{escapedSchema}' AND t.name = N'{escapedType}'
+            )
+            CREATE TYPE {qualifiedType} AS TABLE(
+                {QuoteIdentifier(columnName)} {columnType} NOT NULL
+            );
+            """;
+    }
+
     // ── Scalar type rendering ──────────────────────────────────────────
 
     /// <inheritdoc />
