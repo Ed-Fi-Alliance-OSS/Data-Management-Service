@@ -75,6 +75,68 @@ public class Given_A_Non_Reference_Backed_Collection_Without_Array_Uniqueness
 }
 
 /// <summary>
+/// Test fixture for ambiguous array-uniqueness semantic identity.
+/// </summary>
+[TestFixture]
+public class Given_A_Collection_With_Multiple_Applicable_Array_Uniqueness_Semantic_Identities
+{
+    private Action _build = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema = ConstraintDerivationTestSchemaBuilder.BuildArrayUniquenessProjectSchema();
+
+        CollectionSemanticIdentityValidationFixture.SetArrayUniquenessConstraints(
+            coreProjectSchema,
+            "busRoutes",
+            [
+                new JsonObject { ["paths"] = new JsonArray { "$.addresses[*].streetNumberName" } },
+                new JsonObject
+                {
+                    ["paths"] = new JsonArray
+                    {
+                        "$.addresses[*].schoolReference.schoolId",
+                        "$.addresses[*].schoolReference.educationOrganizationId",
+                    },
+                },
+            ]
+        );
+
+        var schemaSet = CollectionSemanticIdentityValidationFixture.CreateSchemaSet(coreProjectSchema);
+        var builder = new DerivedRelationalModelSetBuilder([
+            new BaseTraversalAndDescriptorBindingPass(),
+            new ReferenceBindingPass(),
+            new SemanticIdentityCompilationPass(),
+            new ValidateCollectionSemanticIdentityPass(),
+        ]);
+
+        _build = () => builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+    }
+
+    /// <summary>
+    /// It should fail with the ambiguous array-uniqueness diagnostic.
+    /// </summary>
+    [Test]
+    public void It_should_fail_with_the_ambiguous_array_uniqueness_diagnostic()
+    {
+        var exception = _build.Should().Throw<InvalidOperationException>().Which;
+
+        exception.Message.Should().Contain("Persisted multi-item scope");
+        exception.Message.Should().Contain("$.addresses[*]");
+        exception.Message.Should().Contain("Ed-Fi:BusRoute");
+        exception.Message.Should().Contain("arrayUniquenessConstraints");
+        exception.Message.Should().Contain("$.streetNumberName");
+        exception.Message.Should().Contain("$.schoolReference.schoolId");
+        exception.Message.Should().Contain("$.schoolReference.educationOrganizationId");
+        exception.Message.Should().Contain("exactly one non-empty ordered binding set");
+    }
+}
+
+/// <summary>
 /// Test fixture for reference-backed collection scopes whose scope-local binding no longer qualifies.
 /// </summary>
 [TestFixture]
@@ -126,6 +188,7 @@ public class Given_A_Reference_Backed_Collection_With_No_Qualifying_Reference_De
         exception.Message.Should().Contain("exactly one qualifying");
         exception.Message.Should().Contain("found 0");
         exception.Message.Should().Contain("$.addresses[*].schoolReference");
+        exception.Message.Should().Contain("exactly one non-empty ordered binding set");
     }
 }
 
@@ -172,6 +235,7 @@ public class Given_A_Reference_Backed_Collection_With_Ambiguous_Reference_Derive
         exception.Message.Should().Contain("exactly one qualifying");
         exception.Message.Should().Contain("found 2");
         exception.Message.Should().Contain("$.addresses[*].schoolReference");
+        exception.Message.Should().Contain("exactly one non-empty ordered binding set");
     }
 }
 
@@ -236,6 +300,29 @@ internal static class CollectionSemanticIdentityValidationFixture
         );
 
         return EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+    }
+
+    /// <summary>
+    /// Replaces array uniqueness constraints for one resource endpoint.
+    /// </summary>
+    internal static void SetArrayUniquenessConstraints(
+        JsonObject projectSchema,
+        string resourceEndpointName,
+        JsonArray arrayUniquenessConstraints
+    )
+    {
+        var resourceSchemas = RequireObject(projectSchema["resourceSchemas"], "resourceSchemas");
+        var resourceSchema = RequireObject(resourceSchemas[resourceEndpointName], resourceEndpointName);
+        resourceSchema["arrayUniquenessConstraints"] = arrayUniquenessConstraints;
+    }
+
+    /// <summary>
+    /// Requires a JSON object node.
+    /// </summary>
+    private static JsonObject RequireObject(JsonNode? node, string path)
+    {
+        return node as JsonObject
+            ?? throw new InvalidOperationException($"Expected '{path}' to be a JSON object.");
     }
 }
 

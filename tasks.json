@@ -189,7 +189,7 @@
       "Add negative relational-model fixtures that exercise multiple applicable `arrayUniquenessConstraints` sets and multiple qualifying reference-backed fallbacks, and assert deterministic compilation failure rather than first-wins metadata.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Stable-Identity Helper Deduplication",

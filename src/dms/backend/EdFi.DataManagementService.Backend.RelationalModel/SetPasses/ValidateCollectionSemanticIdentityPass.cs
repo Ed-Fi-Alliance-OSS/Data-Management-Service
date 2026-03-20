@@ -61,7 +61,8 @@ public sealed class ValidateCollectionSemanticIdentityPass : IRelationalModelSet
                     $"Persisted multi-item scope '{table.JsonScope.Canonical}' on resource "
                         + $"'{FormatResource(resource)}' is not reference-backed and did not compile a "
                         + "non-empty semantic identity. Add an applicable arrayUniquenessConstraints "
-                        + "entry for this scope."
+                        + "entry for this scope. Collection semantic identity must resolve to "
+                        + "exactly one non-empty ordered binding set."
                 );
             }
 
@@ -83,7 +84,8 @@ public sealed class ValidateCollectionSemanticIdentityPass : IRelationalModelSet
                         + "non-empty semantic identity. Expected exactly one qualifying scope-local "
                         + $"document reference binding, found {qualifyingReferenceBindings.Length} from "
                         + $"{scopeLocalReferenceBindings.Length} scope-local binding(s): "
-                        + $"{FormatReferenceBindings(scopeLocalReferenceBindings)}."
+                        + $"{FormatReferenceBindings(scopeLocalReferenceBindings)}. Collection semantic "
+                        + "identity must resolve to exactly one non-empty ordered binding set."
                 );
             }
 

@@ -352,7 +352,8 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
             resourceModel,
             table,
             compiledIdentity.SemanticIdentityBindings,
-            resource
+            resource,
+            allowReferenceDerivedFallbackReplacement: emitUniqueConstraint
         );
 
         if (!emitUniqueConstraint)
@@ -390,7 +391,8 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
         RelationalResourceModel resourceModel,
         DbTableModel table,
         IReadOnlyList<CollectionSemanticIdentityBinding> semanticIdentityBindings,
-        QualifiedResourceName resource
+        QualifiedResourceName resource,
+        bool allowReferenceDerivedFallbackReplacement
     )
     {
         var tableAccumulator = mutation.GetTableAccumulator(table, mutation.Entry.Model.ResourceKey.Resource);
@@ -411,15 +413,34 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
                     existingIdentityMetadata.SemanticIdentityBindings,
                     semanticIdentityBindings
                 )
-                || !MatchesReferenceDerivedFallback(
+            )
+            {
+                return;
+            }
+
+            if (
+                allowReferenceDerivedFallbackReplacement
+                && MatchesReferenceDerivedFallback(
                     resourceModel,
                     table,
                     existingIdentityMetadata.SemanticIdentityBindings
                 )
             )
             {
+                tableAccumulator.IdentityMetadata = existingIdentityMetadata with
+                {
+                    SemanticIdentityBindings = semanticIdentityBindings.ToArray(),
+                };
+                mutation.MarkTableMutated(table);
                 return;
             }
+
+            throw CreateAmbiguousArrayUniquenessSemanticIdentityException(
+                table,
+                resource,
+                existingIdentityMetadata.SemanticIdentityBindings,
+                semanticIdentityBindings
+            );
         }
 
         tableAccumulator.IdentityMetadata = existingIdentityMetadata with
@@ -456,8 +477,6 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
             return;
         }
 
-        // Keep the first applicable binding set deterministically; a follow-on validation task will
-        // fail fast on supported models that still resolve ambiguously for the same persisted scope.
         tableAccumulator.IdentityMetadata = existingIdentityMetadata with
         {
             SemanticIdentityBindings = semanticIdentityBindings.ToArray(),
@@ -481,8 +500,11 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
         for (var index = 0; index < left.Count; index++)
         {
             if (
-                !left[index].RelativePath.Equals(right[index].RelativePath)
-                || !left[index].ColumnName.Equals(right[index].ColumnName)
+                !string.Equals(
+                    left[index].RelativePath.Canonical,
+                    right[index].RelativePath.Canonical,
+                    StringComparison.Ordinal
+                ) || !left[index].ColumnName.Equals(right[index].ColumnName)
             )
             {
                 return false;
@@ -509,6 +531,43 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
                 out var candidateBindings
             ) && SemanticIdentityBindingsMatch(candidateBindings, semanticIdentityBindings)
         );
+    }
+
+    /// <summary>
+    /// Creates a deterministic diagnostic for competing array-uniqueness semantic identity candidates.
+    /// </summary>
+    private static Exception CreateAmbiguousArrayUniquenessSemanticIdentityException(
+        DbTableModel table,
+        QualifiedResourceName resource,
+        IReadOnlyList<CollectionSemanticIdentityBinding> existingBindings,
+        IReadOnlyList<CollectionSemanticIdentityBinding> conflictingBindings
+    )
+    {
+        return new InvalidOperationException(
+            $"Persisted multi-item scope '{table.JsonScope.Canonical}' on resource "
+                + $"'{FormatResource(resource)}' resolved multiple applicable "
+                + "arrayUniquenessConstraints semantic-identity binding sets: "
+                + $"{FormatSemanticIdentityBindings(existingBindings)} and "
+                + $"{FormatSemanticIdentityBindings(conflictingBindings)}. Collection semantic "
+                + "identity must resolve to exactly one non-empty ordered binding set."
+        );
+    }
+
+    /// <summary>
+    /// Formats one semantic-identity binding set for diagnostics.
+    /// </summary>
+    private static string FormatSemanticIdentityBindings(
+        IReadOnlyList<CollectionSemanticIdentityBinding> bindings
+    )
+    {
+        return "["
+            + string.Join(
+                ", ",
+                bindings.Select(binding =>
+                    $"'{binding.RelativePath.Canonical}' -> '{binding.ColumnName.Value}'"
+                )
+            )
+            + "]";
     }
 
     /// <summary>
