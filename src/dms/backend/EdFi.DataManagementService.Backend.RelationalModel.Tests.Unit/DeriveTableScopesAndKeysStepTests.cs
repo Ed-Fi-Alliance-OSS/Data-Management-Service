@@ -130,6 +130,63 @@ public class Given_A_JsonSchema_With_Nested_Collections
     }
 
     /// <summary>
+    /// It should assign expected scalar types to seeded key and locator columns.
+    /// </summary>
+    [Test]
+    public void It_should_assign_expected_scalar_types_to_seeded_key_and_locator_columns()
+    {
+        _rootTable
+            .Columns.Select(column => (column.ColumnName.Value, column.ScalarType))
+            .Should()
+            .Equal(
+                (
+                    RelationalNameConventions.DocumentIdColumnName.Value,
+                    new RelationalScalarType(ScalarKind.Int64)
+                )
+            );
+
+        _addressTable
+            .Columns.Select(column => (column.ColumnName.Value, column.ScalarType))
+            .Should()
+            .Equal(
+                (
+                    RelationalNameConventions.CollectionItemIdColumnName.Value,
+                    new RelationalScalarType(ScalarKind.Int64)
+                ),
+                (
+                    RelationalNameConventions.RootDocumentIdColumnName("School").Value,
+                    new RelationalScalarType(ScalarKind.Int64)
+                ),
+                (
+                    RelationalNameConventions.OrdinalColumnName.Value,
+                    new RelationalScalarType(ScalarKind.Int32)
+                )
+            );
+
+        _periodTable
+            .Columns.Select(column => (column.ColumnName.Value, column.ScalarType))
+            .Should()
+            .Equal(
+                (
+                    RelationalNameConventions.CollectionItemIdColumnName.Value,
+                    new RelationalScalarType(ScalarKind.Int64)
+                ),
+                (
+                    RelationalNameConventions.RootDocumentIdColumnName("School").Value,
+                    new RelationalScalarType(ScalarKind.Int64)
+                ),
+                (
+                    RelationalNameConventions.ParentCollectionItemIdColumnName.Value,
+                    new RelationalScalarType(ScalarKind.Int64)
+                ),
+                (
+                    RelationalNameConventions.OrdinalColumnName.Value,
+                    new RelationalScalarType(ScalarKind.Int32)
+                )
+            );
+    }
+
+    /// <summary>
     /// It should create parent child foreign keys.
     /// </summary>
     [Test]

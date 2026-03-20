@@ -164,6 +164,54 @@ public class Given_Extension_Table_Derivation
     }
 
     /// <summary>
+    /// It should assign expected scalar types to extension stable-identity columns.
+    /// </summary>
+    [Test]
+    public void It_should_assign_expected_scalar_types_to_extension_stable_identity_columns()
+    {
+        _schoolExtensionAddress
+            .Columns.Select(column => (column.ColumnName.Value, column.ScalarType))
+            .Take(2)
+            .Should()
+            .Equal(
+                ("BaseCollectionItemId", new RelationalScalarType(ScalarKind.Int64)),
+                ("School_DocumentId", new RelationalScalarType(ScalarKind.Int64))
+            );
+
+        _schoolExtensionIntervention
+            .Columns.Select(column => (column.ColumnName.Value, column.ScalarType))
+            .Take(3)
+            .Should()
+            .Equal(
+                ("CollectionItemId", new RelationalScalarType(ScalarKind.Int64)),
+                ("School_DocumentId", new RelationalScalarType(ScalarKind.Int64)),
+                ("Ordinal", new RelationalScalarType(ScalarKind.Int32))
+            );
+
+        _schoolExtensionSponsor
+            .Columns.Select(column => (column.ColumnName.Value, column.ScalarType))
+            .Take(4)
+            .Should()
+            .Equal(
+                ("CollectionItemId", new RelationalScalarType(ScalarKind.Int64)),
+                ("School_DocumentId", new RelationalScalarType(ScalarKind.Int64)),
+                ("BaseCollectionItemId", new RelationalScalarType(ScalarKind.Int64)),
+                ("Ordinal", new RelationalScalarType(ScalarKind.Int32))
+            );
+
+        _schoolExtensionInterventionVisit
+            .Columns.Select(column => (column.ColumnName.Value, column.ScalarType))
+            .Take(4)
+            .Should()
+            .Equal(
+                ("CollectionItemId", new RelationalScalarType(ScalarKind.Int64)),
+                ("School_DocumentId", new RelationalScalarType(ScalarKind.Int64)),
+                ("ParentCollectionItemId", new RelationalScalarType(ScalarKind.Int64)),
+                ("Ordinal", new RelationalScalarType(ScalarKind.Int32))
+            );
+    }
+
+    /// <summary>
     /// It should create fk to base tables with cascade.
     /// </summary>
     [Test]

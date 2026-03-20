@@ -5,6 +5,7 @@
 
 using System.Text;
 using System.Text.Json.Nodes;
+using static EdFi.DataManagementService.Backend.RelationalModel.Build.RelationalModelSystemColumnFactory;
 using static EdFi.DataManagementService.Backend.RelationalModel.Schema.RelationalModelSetSchemaHelpers;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
@@ -1754,31 +1755,6 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Builds physical column models for the table key columns.
-    /// </summary>
-    private static DbColumnModel[] BuildKeyColumns(IReadOnlyList<DbKeyColumn> keyColumns)
-    {
-        DbColumnModel[] columns = new DbColumnModel[keyColumns.Count];
-
-        for (var index = 0; index < keyColumns.Count; index++)
-        {
-            var keyColumn = keyColumns[index];
-            var scalarType = ResolveKeyColumnScalarType(keyColumn);
-
-            columns[index] = new DbColumnModel(
-                keyColumn.ColumnName,
-                keyColumn.Kind,
-                scalarType,
-                IsNullable: false,
-                SourceJsonPath: null,
-                TargetResource: null
-            );
-        }
-
-        return columns;
-    }
-
-    /// <summary>
     /// Builds identity metadata for a root-scope extension table.
     /// </summary>
     private static DbTableIdentityMetadata BuildRootExtensionTableIdentityMetadata()
@@ -1863,43 +1839,6 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
             .. baseTable.IdentityMetadata.PhysicalRowIdentityColumns,
             .. baseTable.IdentityMetadata.RootScopeLocatorColumns,
         ];
-    }
-
-    /// <summary>
-    /// Creates one seeded system column using the standard scalar-type conventions for key and locator roles.
-    /// </summary>
-    private static DbColumnModel CreateKeyColumn(DbColumnName columnName, ColumnKind columnKind)
-    {
-        var keyColumn = new DbKeyColumn(columnName, columnKind);
-
-        return new DbColumnModel(
-            columnName,
-            columnKind,
-            ResolveKeyColumnScalarType(keyColumn),
-            IsNullable: false,
-            SourceJsonPath: null,
-            TargetResource: null
-        );
-    }
-
-    /// <summary>
-    /// Resolves the scalar type for a key column based on its kind and name.
-    /// </summary>
-    private static RelationalScalarType ResolveKeyColumnScalarType(DbKeyColumn keyColumn)
-    {
-        return keyColumn.Kind switch
-        {
-            ColumnKind.Ordinal => new RelationalScalarType(ScalarKind.Int32),
-            ColumnKind.CollectionKey => new RelationalScalarType(ScalarKind.Int64),
-            ColumnKind.ParentKeyPart => RelationalNameConventions.IsDocumentIdColumn(keyColumn.ColumnName)
-            || RelationalNameConventions.IsCollectionIdentityColumn(keyColumn.ColumnName)
-                ? new RelationalScalarType(ScalarKind.Int64)
-                : new RelationalScalarType(ScalarKind.Int32),
-            ColumnKind.DocumentFk => new RelationalScalarType(ScalarKind.Int64),
-            _ => throw new InvalidOperationException(
-                $"Unsupported key column kind '{keyColumn.Kind}' for {keyColumn.ColumnName.Value}."
-            ),
-        };
     }
 
     /// <summary>

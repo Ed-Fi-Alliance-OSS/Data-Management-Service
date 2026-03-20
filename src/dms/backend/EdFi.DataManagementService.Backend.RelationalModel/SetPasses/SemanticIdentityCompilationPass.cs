@@ -344,40 +344,6 @@ public sealed class SemanticIdentityCompilationPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Returns true when <paramref name="prefix"/> matches the left-most path segments of
-    /// <paramref name="path"/>.
-    /// </summary>
-    private static bool IsPrefixOf(IReadOnlyList<JsonPathSegment> prefix, IReadOnlyList<JsonPathSegment> path)
-    {
-        if (prefix.Count > path.Count)
-        {
-            return false;
-        }
-
-        for (var index = 0; index < prefix.Count; index++)
-        {
-            var prefixSegment = prefix[index];
-            var pathSegment = path[index];
-
-            if (prefixSegment.GetType() != pathSegment.GetType())
-            {
-                return false;
-            }
-
-            if (
-                prefixSegment is JsonPathSegment.Property prefixProperty
-                && pathSegment is JsonPathSegment.Property pathProperty
-                && !string.Equals(prefixProperty.Name, pathProperty.Name, StringComparison.Ordinal)
-            )
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /// <summary>
     /// Captures one qualifying reference binding and its compiled semantic-identity bindings.
     /// </summary>
     private sealed record ReferenceSemanticIdentityCandidate(
