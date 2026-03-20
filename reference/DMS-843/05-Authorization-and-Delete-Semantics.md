@@ -46,13 +46,13 @@ The current authorization model also depends on companion tables and triggers th
 | `dms.StaffSecurableDocument` | Maps staff identifiers to securable documents. | Unchanged. |
 | `dms.StudentEducationOrganizationResponsibilityAuthorization` | Derives student responsibility authorization values. | Unchanged, but the projection must be preserved in tombstones. |
 
-The Change Queries feature does not alter these companion tables or their triggers. The transitional `EdFi.DataManagementService.Old.Postgresql` project may still be consulted to verify current authorization behavior, but the design does not depend on that project remaining the long-term implementation, and the resulting authorization semantics must hold for both PostgreSQL and MSSQL relational backends.
+The Change Queries feature does not alter these companion tables or their triggers. The transitional `EdFi.DataManagementService.Old.Postgresql` project may still be consulted to verify current authorization behavior, but the design does not depend on that project remaining the long-term implementation.
 
 ## Live Changed-Resource Authorization
 
 Implementation rule:
 
-- apply the existing live collection authorization filters after `dms.DocumentChangeEvent` candidate selection and verification against `dms.Document.ChangeVersion`
+- add `ChangeVersion` predicates to the existing live collection query logic
 - do not redesign the authorization predicates
 
 Expected effect:
@@ -104,15 +104,13 @@ This preserves parity with the logical authorization categories used by current 
 
 ## Required Key-Change Authorization Columns
 
-Each key-change tracking row must preserve the pre-update authorization projection:
+Each key-change tracking row must preserve:
 
 - `SecurityElements`
 - `StudentSchoolAuthorizationEdOrgIds`
 - `StudentEdOrgResponsibilityAuthorizationIds`
 - `ContactStudentSchoolAuthorizationEdOrgIds`
 - `StaffEducationOrganizationAuthorizationEdOrgIds`
-
-The design does not store a second post-update authorization projection on the key-change row.
 
 ## Delete Query Authorization Model
 
@@ -135,38 +133,8 @@ The difference is only the physical source table.
 Implementation guidance:
 
 - the delete-query authorization builder should mirror the current collection GET authorization behavior against tombstone columns
-- the key-change-query authorization builder should mirror the current collection GET authorization behavior against the stored pre-update key-change tracking columns
-- key-change-query authorization filtering must happen before collapse
-- the promised earliest `oldKeyValues`, latest `newKeyValues`, and latest `ChangeVersion` semantics apply only to the rows that remain after authorization filtering
-- rows removed by authorization filtering must not participate in collapse
+- the key-change-query authorization builder should mirror the current collection GET authorization behavior against key-change tracking columns
 - hierarchy-based filters continue to use `dms.EducationOrganizationHierarchyTermsLookup`
-
-Rationale:
-
-- key changes are a transition surface rather than a pure current-state read surface
-- using the pre-update authorization projection allows a client that could read the resource before the identity change to receive the transition needed to reconcile the old key
-- this is intentionally not identical to evaluating authorization only against the current post-update live row, because that would lose transition visibility for clients that must retire an old key they were previously entitled to read
-
-## Profile Behavior for Change Query GET Endpoints
-
-Changed-resource mode on the existing collection GET route continues to use the normal profile-resolution and profile-response-filtering behavior because it still returns standard resource representations.
-
-Changed-resource eligibility remains resource-level:
-
-- the API decides whether a resource qualifies for changed-resource mode from the underlying resource `ChangeVersion` before profile filtering
-- a readable profile may therefore return a filtered representation whose visible fields appear unchanged even though the resource qualified because some non-profile-visible field changed
-- the design intentionally accepts that behavior because profile-visible-level change tracking would require separate profile-specific stamps or journals and is not part of DMS-843
-
-The new non-resource Change Query GET endpoints use different rules:
-
-- `/deletes`, `/keyChanges`, and `availableChangeVersions` do not participate in profile resolution or profile response filtering
-- readable profile media types on those endpoints are ignored rather than validated or enforced
-- profile-based readability must not block the request, alter authorization, alter row eligibility, reshape the payload, or change the response content type
-- those endpoints return ordinary `application/json` rather than profile-specific media types
-
-Implementation guidance:
-
-- route `/deletes`, `/keyChanges`, and `availableChangeVersions` through pipelines that omit `ProfileResolutionMiddleware` and `ProfileFilteringMiddleware`
 
 ## `availableChangeVersions` Authorization
 
@@ -193,8 +161,6 @@ Required order:
 - insert the tombstone only after authorization succeeds
 - then delete the live row
 
-The live row must already be locked as part of the write-path locking contract before the authorization projection and natural-key values are read.
-
 This prevents unauthorized callers from generating tombstone side effects.
 
 ## Auth-Only Updates Must Not Emit Change Records
@@ -206,7 +172,7 @@ Current authorization-maintenance triggers can update derived authorization colu
 Required behavior:
 
 - those updates must not change `dms.Document.ChangeVersion`
-- those updates must not create `dms.DocumentChangeEvent` rows
+- those updates must not create `dms.DocumentChangeEvent` rows if the optional journal is enabled
 - those updates must not create `dms.DocumentKeyChangeTracking` rows
 
 Reason:
@@ -228,9 +194,7 @@ Reason:
 
 The design supports descriptors because they are stored in the same canonical `dms.Document` table and share the same overall change-tracking model.
 
-DMS-843 v1 includes descriptor endpoints in Change Queries with no special exclusion.
-
-If product policy later decides to exclude some descriptor endpoints from Change Queries, that should be an explicit endpoint-level product decision rather than a change to the underlying authorization or change-tracking design.
+If product policy later decides to exclude some descriptor endpoints from Change Queries, that should be an endpoint-level product decision rather than a change to the underlying authorization or change-tracking design.
 
 ## Review Criteria
 
@@ -238,8 +202,7 @@ The authorization design is acceptable if reviewers agree that:
 
 - live changed-resource queries reuse the current DMS authorization semantics
 - delete queries are no more permissive and no more restrictive than logically equivalent live reads
-- key-change queries intentionally evaluate transition visibility from the stored pre-update authorization projection rather than from the current post-update live row
+- key-change queries are no more permissive and no more restrictive than logically equivalent live reads
 - tombstones preserve enough authorization projection to survive deletion of the live row
 - key-change tracking preserves enough authorization projection to survive later key mutations or deletion of the live row
 - authorization-maintenance updates do not create false change records
-- changed-resource eligibility remains resource-level even when readable profiles filter the returned representation

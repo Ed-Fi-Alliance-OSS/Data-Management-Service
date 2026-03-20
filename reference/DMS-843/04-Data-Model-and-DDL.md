@@ -2,65 +2,20 @@
 
 ## Design Summary
 
-The feature uses a redesign-aligned update-tracking model centered on the canonical `dms.Document` row, a required narrow live-change journal, and dedicated tracking tables for deletes and key changes.
+The feature uses a DMS-native ChangeVersion column model centered on the canonical `dms.Document` row and a tombstone table for deletes.
 
 Core required artifacts:
 
 - `dms.ChangeVersionSequence`
-- `dms.ResourceKey`
-- `dms.Document.ResourceKeyId`
 - `dms.Document.ChangeVersion`
-- `dms.Document.IdentityVersion`
-- `dms.DocumentChangeEvent`
 - `dms.DocumentDeleteTracking`
 - `dms.DocumentKeyChangeTracking`
 - supporting indexes
-- change-version, identity-version, and journal-maintenance logic
+- change-version stamping triggers
 
-Deferred retention artifact for a later phase:
+Optional internal alignment artifact:
 
-- `dms.ChangeQueryRetentionFloor` when purge is enabled
-
-## Backend Scope Note
-
-The canonical DMS-843 design is defined at the contract, artifact-responsibility, and behavioral level rather than as a PostgreSQL-only feature.
-
-Normative rule:
-
-- any relational backend that implements DMS-843 must provide semantically equivalent change-version allocation, live-row stamping, tombstone capture, key-change capture, indexing, and row-level write serialization
-
-Informative note:
-
-- the SQL blocks in this document and in `Appendix-A-Feature-DDL-Sketch.sql` use PostgreSQL syntax as one concrete example of a conforming backend implementation
-- equivalent MSSQL DDL, trigger, locking, and backfill behavior is also required for the project's supported SQL Server path
-- JSON payload and authorization-projection columns on tracking rows may use engine-appropriate JSON-capable storage, for example PostgreSQL `jsonb` or SQL Server `nvarchar(max)` carrying JSON text, because the normative requirement is faithful JSON-document storage and response materialization rather than a PostgreSQL-specific physical type
-- those SQL blocks are examples of one conforming backend implementation, not a statement that the public feature contract is PostgreSQL-only
-
-## Resource key lookup
-
-To align with the backend-redesign journal model, the current backend must add a stable resource-key lookup used to filter live change-journal rows.
-
-One conforming shape is:
-
-```sql
-CREATE TABLE dms.ResourceKey (
-    ResourceKeyId smallint NOT NULL PRIMARY KEY,
-    ProjectName varchar(256) NOT NULL,
-    ResourceName varchar(256) NOT NULL,
-    ResourceVersion varchar(64) NOT NULL,
-    CONSTRAINT UX_ResourceKey_ProjectName_ResourceName
-        UNIQUE (ProjectName, ResourceName)
-);
-```
-
-Required semantics:
-
-- `ResourceKeyId` is the narrow filter key used by `dms.DocumentChangeEvent`
-- the mapping for a deployed effective schema must be stable
-- seed rows must be provisioned from the deployed effective schema inventory rather than inferred from the current contents of `dms.Document`
-- resources with zero current live rows still require `dms.ResourceKey` rows so the deployed effective schema has a complete stable mapping
-- current implementations may also persist `ResourceVersion` on `dms.ResourceKey` as a compatibility or diagnostic copy tied to the deployed effective schema seed
-- provisioning or startup validation must fail fast if the effective resource inventory exceeds the chosen key-space bound
+- `dms.DocumentChangeEvent`
 
 ## Canonical Live Row
 
@@ -85,11 +40,7 @@ Relevant existing columns include:
 - `LastModifiedAt`
 - `LastModifiedTraceId`
 
-The feature extends this table with:
-
-- `ResourceKeyId`
-- `ChangeVersion`
-- `IdentityVersion`
+The feature extends this table with `ChangeVersion`.
 
 ## Global Sequence
 
@@ -105,24 +56,6 @@ Required semantics:
 - values may contain gaps
 - rollbacks may consume values
 - clients treat values as ordering tokens rather than row counts
-- value `0` is reserved for the bootstrap watermark sentinel exposed by `availableChangeVersions` when no retained change rows exist
-- the sequence is an allocation mechanism for future stamps, not the public source of `oldestChangeVersion` or `newestChangeVersion`
-
-## `dms.Document.ResourceKeyId`
-
-Add the redesign-aligned live-row resource key:
-
-```sql
-ALTER TABLE dms.Document
-    ADD COLUMN ResourceKeyId smallint;
-```
-
-Required semantics:
-
-- `ResourceKeyId` references `dms.ResourceKey`
-- backfill derives `ResourceKeyId` from the row's current `(ProjectName, ResourceName)`
-- current-backend implementations may retain `ProjectName`, `ResourceName`, `ResourceVersion`, and `IsDescriptor` as compatibility or diagnostic copies, but `ResourceKeyId` becomes the required filter key for the live change journal
-- changed-resource candidate selection must key off `ResourceKeyId`, not off wide journal copies of resource identity text
 
 ## `dms.Document.ChangeVersion`
 
@@ -141,30 +74,7 @@ Final state after backfill:
 
 For redesign alignment, `dms.Document.ChangeVersion` is the current-backend equivalent of redesign `dms.Document.ContentVersion`.
 
-This bridge design adds one physical live-row representation-change stamp column: `dms.Document.ChangeVersion`.
-
-It does not also add `dms.Document.ContentVersion` to the current-backend schema. In this package, references to `ContentVersion` are redesign cross-reference terminology for the same stamp responsibility.
-
-## `dms.Document.IdentityVersion`
-
-Add a distinct live-row identity-change stamp:
-
-```sql
-ALTER TABLE dms.Document
-    ADD COLUMN IdentityVersion bigint;
-```
-
-Final state after backfill:
-
-- non-null for all rows
-- defaulted from `dms.ChangeVersionSequence` for new inserts
-- updated only when the document's identity tuple changes
-
-For redesign alignment, `dms.Document.IdentityVersion` is the current-backend equivalent of redesign `dms.Document.IdentityVersion`.
-
-This column is not a public Change Query response field, but it is required so the current-backend bridge model matches redesign identity-tracking responsibilities.
-
-## Content and Identity Stamping Rules
+## ChangeVersion Stamping Rules
 
 `ChangeVersion` must change when the served representation changes.
 
@@ -176,29 +86,12 @@ For the current backend, this includes:
 
 `ChangeVersion` must not change when only authorization-maintenance columns or other non-representation metadata are updated.
 
-`IdentityVersion` must change when the document's natural-key identity tuple changes.
-
-For the current backend, this includes:
-
-- insertion of a new `dms.Document` row
-- an identity-changing update where the tuple extracted from `ResourceSchema.IdentityJsonPaths` changes
-
-`IdentityVersion` must not change for:
-
-- non-identity representation rewrites
-- representation rewrites on dependent documents whose own identity tuple does not change
-- authorization-only maintenance updates
-
 Examples that must not change `ChangeVersion` by themselves:
 
 - `StudentSchoolAuthorizationEdOrgIds`
 - `StudentEdOrgResponsibilityAuthorizationIds`
 - `ContactStudentSchoolAuthorizationEdOrgIds`
 - `StaffEducationOrganizationAuthorizationEdOrgIds`
-
-Identity-change consequence rule:
-
-- when an update changes the resource identity tuple, that write must allocate both a new `ChangeVersion` and a new `IdentityVersion`
 
 ## Trigger Strategy
 
@@ -208,9 +101,8 @@ Recommended behavior:
 
 - `BEFORE INSERT`
 - if `ChangeVersion` is null, assign `nextval('dms.ChangeVersionSequence')`
-- if `IdentityVersion` is null, assign `nextval('dms.ChangeVersionSequence')`
 
-## Representation-change trigger
+## Update trigger
 
 Recommended behavior:
 
@@ -223,26 +115,11 @@ Why the trigger is scoped to `EdfiDoc`:
 - current authorization triggers update other columns on `dms.Document`
 - a generic update trigger would create false changed-resource records
 
-Trigger responsibility note:
-
-- use database triggers to keep the live-row `ChangeVersion` stamp consistent on inserts and representation-changing updates
-- set `IdentityVersion` in the application update path when the extracted identity tuple changes, because the current backend's generic database layer does not have resource-specific `IdentityJsonPaths` metadata available inside one universal trigger
-- use database triggers to emit `dms.DocumentChangeEvent` rows whenever the live `ChangeVersion` stamp changes
-- do not use trigger-maintained aggregate state or the raw sequence value as the source of `availableChangeVersions`
-
-## Journal trigger
-
-Recommended behavior:
-
-- `AFTER INSERT OR UPDATE OF ChangeVersion`
-- insert one `dms.DocumentChangeEvent` row containing the new `ChangeVersion`, `DocumentPartitionKey`, `DocumentId`, and `ResourceKeyId`
-- do not emit a journal row for updates that leave `ChangeVersion` unchanged
-
 ## Partition note
 
 `dms.Document` is partitioned by `DocumentPartitionKey`.
 
-The migration must validate, for each supported engine, that change-version stamping triggers apply to every physical table or partition that can store `dms.Document` rows in the deployed layout. For PostgreSQL this includes validating parent-table trigger propagation to partitions; MSSQL implementations must validate the engine-equivalent trigger coverage for the deployed layout.
+The migration must validate whether the deployed PostgreSQL version applies parent-table row triggers to all partitions in the current deployment model. If not, the migration must create equivalent triggers on each partition table.
 
 This is a migration validation requirement, not an assumption.
 
@@ -307,12 +184,6 @@ CREATE TABLE dms.DocumentKeyChangeTracking (
 );
 ```
 
-Required semantics:
-
-- `dms.DocumentKeyChangeTracking.ChangeVersion` stores the same public live representation-change stamp allocated to `dms.Document.ChangeVersion` by the committed identity-changing update
-- `dms.DocumentKeyChangeTracking.ChangeVersion` does not store `dms.Document.IdentityVersion`
-- this keeps `/keyChanges`, changed-resource queries, and `availableChangeVersions` on one public synchronization-token model while leaving `IdentityVersion` as an internal bridge artifact
-
 ## Why old and new key values are stored
 
 The current live row only contains the latest natural-key state.
@@ -326,7 +197,7 @@ Those values cannot be reconstructed from only the current row after additional 
 
 ## Why key-change authorization projection is stored
 
-Key-change results must remain authorization-filtered even if a later delete removes the live row or if later writes move the current resource to a different key state. The tracking row therefore stores the same authorization projection categories copied from the pre-update `dms.Document` row.
+Key-change results must remain authorization-filtered even if a later delete removes the live row or if later writes move the current resource to a different key state. The tracking row therefore stores the same authorization projection categories copied from `dms.Document`.
 
 ## Resource-scoped key payload contract for shared tracking tables
 
@@ -338,7 +209,7 @@ Required rules:
 - query execution must always filter by routed resource before reading or returning those payloads
 - key extraction order is the declared `ResourceSchema.IdentityJsonPaths` order for that resource
 - key payload aliases are resolved by the canonical key-alias rule below
-- the API must not rely on storage-engine JSON property order; when a deterministic response-object field order is desired, materialization must follow `IdentityJsonPaths` order rather than the stored JSON value order
+- the API must not rely on PostgreSQL `jsonb` property order; when a deterministic response-object field order is desired, materialization must follow `IdentityJsonPaths` order rather than stored `jsonb` order
 
 This means heterogeneous natural-key shapes across resources are expected and acceptable. The common tracking tables do not need one universal relational key schema because the public routes and internal readers are already resource-scoped.
 
@@ -386,7 +257,7 @@ Reasons:
 - delete rows are terminal tombstones and must preserve `KeyValues` after the live row disappears
 - key-change rows are transition records and must preserve both `OldKeyValues` and `NewKeyValues`
 - key-change queries have route-specific collapse semantics that do not apply to delete rows
-- live changed-resource queries are driven by the current live representation stamp and required live-change journal, not by historical tombstones
+- live changed-resource queries are driven by the current live representation stamp and optional live-change journal, not by historical tombstones
 - separate tables keep indexes purpose-built, avoid sparse nullable payload columns, and allow retention policies to evolve without conflating distinct artifact lifecycles
 
 ## Key-change insert strategy
@@ -398,7 +269,6 @@ Reason:
 - the application update path already has the resolved `ResourceSchema`
 - the application can derive old and new key values from `ResourceSchema.IdentityJsonPaths`
 - only the application can reliably distinguish a natural-key change from a representation rewrite that leaves identity unchanged
-- the application already has the pre-update authorization projection that this design stores on the key-change row
 
 ## Key-change eligibility rules
 
@@ -428,25 +298,25 @@ Delete-time extraction rule:
 
 - `KeyValues` must be extracted from the pre-delete `EdfiDoc` using the same canonical identity-path and key-alias rules used for key-change tracking
 
-## `dms.DocumentChangeEvent`
+## Optional `dms.DocumentChangeEvent`
 
-The feature requires an append-only live-change journal aligned to the backend-redesign data model:
+The feature may also include an internal append-only live-change journal:
 
 ```sql
 CREATE TABLE dms.DocumentChangeEvent (
     ChangeVersion bigint NOT NULL,
     DocumentPartitionKey smallint NOT NULL,
     DocumentId bigint NOT NULL,
-    ResourceKeyId smallint NOT NULL,
+    ProjectName varchar(256) NOT NULL,
+    ResourceName varchar(256) NOT NULL,
+    ResourceVersion varchar(64) NOT NULL,
+    IsDescriptor boolean NOT NULL,
     CreatedAt timestamp NOT NULL DEFAULT now(),
     PRIMARY KEY (ChangeVersion, DocumentPartitionKey, DocumentId),
     CONSTRAINT FK_DocumentChangeEvent_Document
         FOREIGN KEY (DocumentPartitionKey, DocumentId)
         REFERENCES dms.Document (DocumentPartitionKey, Id)
-        ON DELETE CASCADE,
-    CONSTRAINT FK_DocumentChangeEvent_ResourceKey
-        FOREIGN KEY (ResourceKeyId)
-        REFERENCES dms.ResourceKey (ResourceKeyId)
+        ON DELETE CASCADE
 );
 ```
 
@@ -455,8 +325,7 @@ Semantics:
 - one journal row per committed live representation change
 - no delete payloads are stored here
 - journal rows are removed automatically when the live row is deleted
-- the journal is the required source for `journal + verify` changed-resource candidate selection
-- resource filtering happens by `ResourceKeyId`, not by repeated text copies of project and resource names
+- the journal can support `journal + verify` selection for live changed-resource queries
 
 Why it is not contradictory with tombstones:
 
@@ -466,51 +335,19 @@ Why it is not contradictory with tombstones:
 - delete queries need data that survives after the live row and its journal rows are removed
 - key-change queries need data that survives later key mutations and later deletes
 
-## Later-phase replay-floor metadata if purge is introduced
-
-Retention and purge are not part of the initial DMS-843 scope. If a later phase introduces purge for any change-query surface, the implementation must persist replay-floor metadata explicitly rather than inferring replay floors from table emptiness.
-
-One conforming relational shape is:
-
-```sql
-CREATE TABLE dms.ChangeQueryRetentionFloor (
-    SurfaceName varchar(64) NOT NULL PRIMARY KEY,
-    ReplayFloorChangeVersion bigint NOT NULL,
-    UpdatedAt timestamp NOT NULL DEFAULT now(),
-    CONSTRAINT CK_ChangeQueryRetentionFloor_SurfaceName
-        CHECK (SurfaceName IN ('live', 'deletes', 'keyChanges')),
-    CONSTRAINT CK_ChangeQueryRetentionFloor_ReplayFloor
-        CHECK (ReplayFloorChangeVersion >= 0)
-);
-```
-
-Required semantics:
-
-- `SurfaceName` identifies the participating synchronization surface: `live`, `deletes`, or `keyChanges`
-- an absent row means that surface has not had its replay floor advanced by purge and therefore contributes replay floor `0`
-- when a row is present, `ReplayFloorChangeVersion` is the lowest inclusive `minChangeVersion` that can still be requested for complete results from that surface
-- if a surface becomes empty because of purge, its metadata row remains authoritative and must not be removed
-- `availableChangeVersions` computes the instance-wide `oldestChangeVersion` as the greatest participating surface replay floor
-
-Atomic update contract:
-
-- each purge operation must delete obsolete tracking rows and advance that surface's replay floor metadata in the same transaction
-- `availableChangeVersions` must never observe purged rows without the corresponding replay-floor advance, or a replay-floor advance without the corresponding purge
-- if the purge transaction rolls back, both the deleted rows and the replay-floor advance must roll back together
-
 ## Index Design
 
-## Required live-row support index
+## Required live-row index
 
 ```sql
-CREATE INDEX IX_Document_ResourceKeyId_DocumentId
-    ON dms.Document (ResourceKeyId, DocumentPartitionKey, Id);
+CREATE INDEX IX_Document_Project_Resource_ChangeVersion
+    ON dms.Document (ProjectName, ResourceName, ChangeVersion, DocumentPartitionKey, Id);
 ```
 
 Purpose:
 
-- support redesign-aligned resource-key joins and diagnostics
-- keep the bridge schema aligned with the backend-redesign live-row shape
+- support resource-scoped changed-resource scans in live-row execution mode
+- support deterministic ordering
 
 ## Required tombstone index
 
@@ -550,13 +387,23 @@ Purpose:
 - support resource-scoped key-change scans
 - support deterministic ordering before window collapse
 
-## Required journal indexes
+## Optional live-row support index
 
 ```sql
-CREATE INDEX IX_DocumentChangeEvent_ResourceKeyId_ChangeVersion
+CREATE INDEX IX_Document_ChangeVersion
+    ON dms.Document (ChangeVersion);
+```
+
+Use only if validation shows it is needed for `availableChangeVersions` or supporting scans.
+
+## Optional journal indexes
+
+```sql
+CREATE INDEX IX_DocumentChangeEvent_Resource_ChangeVersion
     ON dms.DocumentChangeEvent
     (
-        ResourceKeyId,
+        ProjectName,
+        ResourceName,
         ChangeVersion,
         DocumentPartitionKey,
         DocumentId
@@ -566,51 +413,34 @@ CREATE INDEX IX_DocumentChangeEvent_Document
     ON dms.DocumentChangeEvent (DocumentPartitionKey, DocumentId);
 ```
 
-Purpose:
-
-- support the required `WHERE ResourceKeyId = @R AND ChangeVersion BETWEEN @min AND @max` candidate selection pattern
-- support efficient verification joins back to `dms.Document`
+These indexes are needed only when the journal is enabled.
 
 ## Available Change Version Computation
 
-Ed-Fi ODS/API exposes one global synchronization surface through `availableChangeVersions` and uses that captured synchronization version across `keyChanges`, changed-resource queries, and `deletes`; see the [platform guide](https://docs.ed-fi.org/reference/ods-api/platform-dev-guide/features/changed-record-queries/) and [client guide](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/using-the-changed-record-queries/). DMS follows that same single-surface model.
+If the journal is not enabled:
 
-The participating sources are:
+- `newestChangeVersion` is the maximum retained value across `dms.Document.ChangeVersion`, `dms.DocumentDeleteTracking.ChangeVersion`, and `dms.DocumentKeyChangeTracking.ChangeVersion`
+- `oldestChangeVersion` is the minimum retained value across the same three sources
 
-- live side from `dms.DocumentChangeEvent.ChangeVersion`
-- delete side from `dms.DocumentDeleteTracking.ChangeVersion`
-- key-change side from `dms.DocumentKeyChangeTracking.ChangeVersion`
+If the journal is enabled:
 
-For the participating sources:
+- `newestChangeVersion` is the maximum retained value across `dms.DocumentChangeEvent.ChangeVersion`, `dms.DocumentDeleteTracking.ChangeVersion`, and `dms.DocumentKeyChangeTracking.ChangeVersion`
+- `oldestChangeVersion` is the minimum retained value across the same three sources
 
-- `newestChangeVersion` is the synchronization ceiling across them
-- for the initial DMS-843 scope, each participating surface contributes replay floor `0`, so `oldestChangeVersion` remains `0`
-- if retained participating rows exist, `newestChangeVersion` is the maximum retained `ChangeVersion` across them
-- if all participating sources are empty and no replay-floor metadata exists, return `0` for both values; in that bootstrap case `0` is a starting watermark sentinel rather than a retained change row
-- if a later retention phase introduces purge metadata, `oldestChangeVersion` becomes the effective replay floor across the participating sources, and `newestChangeVersion = oldestChangeVersion =` the greatest participating replay floor when all participating sources are empty after purge
-- for identity-changing updates, the key-change participation value is the same public live `ChangeVersion` exposed by the changed-resource surface for that write, not the internal `IdentityVersion`
-
-Client-compatibility note:
-
-- the public API returns the canonical live-resource `id` on `/deletes` and `/keyChanges` from `DocumentUuid`
-- `DocumentUuid` is persisted on both tracking tables specifically so those routes can return the same canonical resource identifier after the live row has changed or been deleted
-
-This computation must read committed tracking artifacts and, if a later retention phase is added, any committed replay-floor metadata. It must not use the current `dms.ChangeVersionSequence` value as a substitute for either bound, because sequence advancement can lead committed state and can contain rollback gaps.
+If both relevant sources are empty, return `0` for both values.
 
 ## Backend-redesign artifact mapping
 
-The bridge design is aligned to backend-redesign change tracking by preserving artifact responsibilities and adding the missing bridge artifacts where the current backend differs physically.
+The bridge design is aligned to backend-redesign change tracking by preserving artifact responsibilities rather than forcing identical physical names.
 
 | Current-backend artifact | Purpose in this design | Backend-redesign relationship |
 | --- | --- | --- |
-| `dms.ResourceKey` plus `dms.Document.ResourceKeyId` | stable resource-type lookup and narrow journal filter key | same resource-key concept already defined in redesign |
 | `dms.Document.ChangeVersion` | canonical live-row served token for changed-resource semantics | semantic equivalent of redesign `dms.Document.ContentVersion` |
-| `dms.Document.IdentityVersion` | identity-change stamp for alignment of identity-update tracking | semantic equivalent of redesign `dms.Document.IdentityVersion` |
-| `dms.DocumentChangeEvent` | append-only live-change journal for required `journal + verify` selection | same live-change-journal concept already defined in redesign |
+| optional `dms.DocumentChangeEvent` | append-only live-change journal for `journal + verify` selection | same live-change-journal concept already defined in redesign |
 | `dms.DocumentDeleteTracking` | delete tombstone store with key values and authorization projection | redesign still needs a semantically equivalent delete artifact because `DocumentChangeEvent` does not survive deletes and does not store delete payload |
 | `dms.DocumentKeyChangeTracking` | old/new natural-key transition store with authorization projection | redesign still needs a semantically equivalent key-change artifact because live-row stamps and `DocumentChangeEvent` do not preserve prior key values |
 
-This means the bridge design extends the backend-redesign update-tracking model where necessary for Change Query parity, but it no longer diverges on whether the live journal, resource key, or identity stamp are core artifacts.
+This means the bridge design extends the backend-redesign update-tracking model where necessary for Change Query parity, but it does not contradict the redesign rules for live representation stamps or live journaling.
 
 ## Backfill Strategy
 
@@ -619,8 +449,6 @@ The design chooses one-time deterministic backfill for existing live rows.
 Reasons:
 
 - every current row receives a valid `ChangeVersion`
-- every current row receives a valid `IdentityVersion`
-- every current row receives a valid `ResourceKeyId`
 - clients can use `availableChangeVersions` immediately after rollout
 - no ambiguous future-only tracking mode is introduced
 
@@ -632,41 +460,26 @@ DocumentPartitionKey ASC, Id ASC
 
 Requirements:
 
-- seed `dms.ResourceKey` from the deployed effective schema manifest before live-row backfill; do not derive resource keys from the current contents of `dms.Document`
-- resources with zero current live rows still require seeded `dms.ResourceKey` rows
-- assign each live row a non-null `ResourceKeyId`
-- allocate one `ChangeVersion` value per row
-- allocate one `IdentityVersion` value per row
-- allocate sequence values in the exact declared backfill order using an engine-specific mechanism that preserves per-row iteration order
+- allocate one sequence value per row
 - complete the backfill before exposing the feature endpoints
-- validate that `ResourceKeyId`, `ChangeVersion`, and `IdentityVersion` are non-null afterward
-- execute live-row backfill, journal backfill, and trigger enablement in one controlled deployment window with representation-changing writes paused or drained
-
-Implementation note:
-
-- set-based sequence-assignment updates are not sufficient when the engine cannot guarantee row-update order during backfill
-- PostgreSQL `UPDATE ... FROM ... nextval(...)` is one example that is not sufficient for this requirement because it does not guarantee row-update order
-- use an ordered procedural loop, cursor, or another engine-specific ordered-assignment mechanism that guarantees the sequence is consumed in `DocumentPartitionKey ASC, Id ASC` order
-- when `ChangeVersion` and `IdentityVersion` are backfilled in the same pass, consume them as distinct sequence allocations rather than copying one value into both columns
+- validate that all rows are non-null afterward
 
 ## Journal Backfill
 
-`dms.DocumentChangeEvent` must also be backfilled after the live-row backfill is complete.
+If the optional journal is enabled, it must also be backfilled after the live-row backfill is complete.
 
 Required rule:
 
-- insert one journal row for each current live row using the row's current `ChangeVersion` and `ResourceKeyId`
+- insert one journal row for each current live row using the row's current `ChangeVersion`
 
 ## Metadata Notes
 
 The current backend stores `_etag` and `_lastModifiedDate` inside `EdfiDoc`.
 
-This feature does not redesign that behavior. `ChangeVersion` remains additive and serves Change Query ordering, while `IdentityVersion` remains an internal alignment artifact for identity-update tracking.
+This feature does not redesign that behavior. `ChangeVersion` is additive and serves Change Query ordering only.
 
-The design remains aligned to backend-redesign concepts by treating `ChangeVersion` as the current-backend equivalent of redesign `ContentVersion`, `IdentityVersion` as the current-backend equivalent of redesign `IdentityVersion`, and `ResourceKeyId` as the current-backend journal filter key.
-
-To avoid ambiguity, current-backend implementations of DMS-843 should persist only `dms.Document.ChangeVersion` for this live-row stamp. If a future redesign adopts the physical name `ContentVersion`, that would be a rename or replacement of the same responsibility, not an additional concurrent column.
+The design remains aligned to backend-redesign concepts by treating `ChangeVersion` as the current-backend equivalent of redesign `ContentVersion`.
 
 ## Consolidated SQL Sketch
 
-See `Appendix-A-Feature-DDL-Sketch.sql` for an implementation-oriented SQL sketch of the required and deferred artifacts.
+See `Appendix-A-Feature-DDL-Sketch.sql` for an implementation-oriented SQL sketch of the required and optional artifacts.
