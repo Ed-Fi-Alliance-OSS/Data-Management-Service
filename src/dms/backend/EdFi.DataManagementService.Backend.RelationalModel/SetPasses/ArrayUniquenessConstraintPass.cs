@@ -58,7 +58,8 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
                     mutation,
                     baseEntry.Model.RelationalModel,
                     builderContext,
-                    baseResource
+                    baseResource,
+                    emitUniqueConstraints: true
                 );
 
                 continue;
@@ -77,7 +78,8 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
                 resourceMutation,
                 entry.Model.RelationalModel,
                 builderContext,
-                resource
+                resource,
+                emitUniqueConstraints: true
             );
         }
 
@@ -99,11 +101,12 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
     /// <summary>
     /// Applies array uniqueness constraints for a single resource model, recording table mutations.
     /// </summary>
-    private static void ApplyArrayUniquenessConstraintsForResource(
+    internal static void ApplyArrayUniquenessConstraintsForResource(
         ResourceMutation mutation,
         RelationalResourceModel resourceModel,
         RelationalModelBuilderContext builderContext,
-        QualifiedResourceName resource
+        QualifiedResourceName resource,
+        bool emitUniqueConstraints
     )
     {
         var tablesByScope = resourceModel
@@ -136,7 +139,8 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
                 tablesByScope,
                 tablesByName,
                 referenceBindingsByIdentityPath,
-                columnsByTable
+                columnsByTable,
+                emitUniqueConstraints
             );
         }
     }
@@ -152,7 +156,8 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
         IReadOnlyDictionary<string, IReadOnlyList<DbTableModel>> tablesByScope,
         IReadOnlyDictionary<DbTableName, IReadOnlyList<DbTableModel>> tablesByName,
         IReadOnlyDictionary<string, DocumentReferenceBinding> referenceBindingsByIdentityPath,
-        IDictionary<DbTableName, IReadOnlyDictionary<string, DbColumnName>> columnsByTable
+        IDictionary<DbTableName, IReadOnlyDictionary<string, DbColumnName>> columnsByTable,
+        bool emitUniqueConstraints
     )
     {
         var resolvedPaths = constraint
@@ -181,7 +186,13 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
                 )
             )
             {
-                AddArrayUniquenessConstraint(mutation, table, compiledIdentity, resource);
+                AddArrayUniquenessConstraint(
+                    mutation,
+                    table,
+                    compiledIdentity,
+                    resource,
+                    emitUniqueConstraints
+                );
                 continue;
             }
 
@@ -209,7 +220,13 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
                     )
                 )
                 {
-                    AddArrayUniquenessConstraint(mutation, alignedTable, alignedIdentity, resource);
+                    AddArrayUniquenessConstraint(
+                        mutation,
+                        alignedTable,
+                        alignedIdentity,
+                        resource,
+                        emitUniqueConstraints
+                    );
                     continue;
                 }
             }
@@ -244,7 +261,8 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
                 tablesByScope,
                 tablesByName,
                 referenceBindingsByIdentityPath,
-                columnsByTable
+                columnsByTable,
+                emitUniqueConstraints
             );
         }
     }
@@ -319,30 +337,18 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
         ResourceMutation mutation,
         DbTableModel table,
         CompiledArrayUniqueness compiledIdentity,
-        QualifiedResourceName resource
+        QualifiedResourceName resource,
+        bool emitUniqueConstraint
     )
     {
+        ApplySemanticIdentityBindings(mutation, table, compiledIdentity.SemanticIdentityBindings, resource);
+
+        if (!emitUniqueConstraint)
+        {
+            return;
+        }
+
         var tableAccumulator = mutation.GetTableAccumulator(table, mutation.Entry.Model.ResourceKey.Resource);
-        var existingIdentityMetadata = tableAccumulator.IdentityMetadata;
-
-        if (compiledIdentity.SemanticIdentityBindings.Length == 0)
-        {
-            throw new InvalidOperationException(
-                $"arrayUniquenessConstraints scope '{table.JsonScope.Canonical}' on resource "
-                    + $"'{FormatResource(resource)}' did not compile any semantic identity bindings."
-            );
-        }
-
-        if (existingIdentityMetadata.SemanticIdentityBindings.Count == 0)
-        {
-            // Keep the first applicable binding set deterministically; a follow-on validation task will
-            // fail fast on supported models that still resolve ambiguously for the same persisted scope.
-            tableAccumulator.IdentityMetadata = existingIdentityMetadata with
-            {
-                SemanticIdentityBindings = compiledIdentity.SemanticIdentityBindings,
-            };
-            mutation.MarkTableMutated(table);
-        }
 
         if (
             !ContainsUniqueConstraint(
@@ -361,6 +367,42 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
             );
             mutation.MarkTableMutated(table);
         }
+    }
+
+    /// <summary>
+    /// Applies compiled semantic-identity bindings to a table when it does not already carry an applicable
+    /// binding set.
+    /// </summary>
+    internal static void ApplySemanticIdentityBindings(
+        ResourceMutation mutation,
+        DbTableModel table,
+        IReadOnlyList<CollectionSemanticIdentityBinding> semanticIdentityBindings,
+        QualifiedResourceName resource
+    )
+    {
+        var tableAccumulator = mutation.GetTableAccumulator(table, mutation.Entry.Model.ResourceKey.Resource);
+        var existingIdentityMetadata = tableAccumulator.IdentityMetadata;
+
+        if (semanticIdentityBindings.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Semantic identity scope '{table.JsonScope.Canonical}' on resource "
+                    + $"'{FormatResource(resource)}' did not compile any semantic identity bindings."
+            );
+        }
+
+        if (existingIdentityMetadata.SemanticIdentityBindings.Count > 0)
+        {
+            return;
+        }
+
+        // Keep the first applicable binding set deterministically; a follow-on validation task will
+        // fail fast on supported models that still resolve ambiguously for the same persisted scope.
+        tableAccumulator.IdentityMetadata = existingIdentityMetadata with
+        {
+            SemanticIdentityBindings = semanticIdentityBindings.ToArray(),
+        };
+        mutation.MarkTableMutated(table);
     }
 
     /// <summary>

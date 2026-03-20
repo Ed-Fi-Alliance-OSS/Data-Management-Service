@@ -24,7 +24,7 @@
       "Add or update unit coverage that exercises the ordered pass list and proves semantic identity is compiled before fail-fast validation and constraint derivation.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Reference-Derived Semantic Identity",

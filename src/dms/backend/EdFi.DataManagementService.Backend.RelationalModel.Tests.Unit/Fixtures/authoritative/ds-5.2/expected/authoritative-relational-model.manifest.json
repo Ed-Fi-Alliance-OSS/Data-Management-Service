@@ -1450,7 +1450,20 @@
               "immediate_parent_scope_locator_columns": [
                 "AssessmentAdministration_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.assessmentBatteryPartReference.assessmentBatteryPartName",
+                  "column": "AssessmentBatteryPart_DocumentId"
+                },
+                {
+                  "relative_path": "$.assessmentBatteryPartReference.assessmentIdentifier",
+                  "column": "AssessmentBatteryPart_DocumentId"
+                },
+                {
+                  "relative_path": "$.assessmentBatteryPartReference.namespace",
+                  "column": "AssessmentBatteryPart_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -1967,7 +1980,20 @@
               "immediate_parent_scope_locator_columns": [
                 "AssessmentBatteryPart_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.objectiveAssessmentReference.assessmentIdentifier",
+                  "column": "ObjectiveAssessment_DocumentId"
+                },
+                {
+                  "relative_path": "$.objectiveAssessmentReference.namespace",
+                  "column": "ObjectiveAssessment_DocumentId"
+                },
+                {
+                  "relative_path": "$.objectiveAssessmentReference.identificationCode",
+                  "column": "ObjectiveAssessment_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -2509,7 +2535,12 @@
               "immediate_parent_scope_locator_columns": [
                 "AssessmentItem_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.learningStandardReference.learningStandardId",
+                  "column": "LearningStandard_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -3199,7 +3230,12 @@
               "immediate_parent_scope_locator_columns": [
                 "AssessmentScoreRangeLearningStandard_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.learningStandardReference.learningStandardId",
+                  "column": "LearningStandard_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -5050,7 +5086,20 @@
               "immediate_parent_scope_locator_columns": [
                 "Assessment_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.programReference.educationOrganizationId",
+                  "column": "SectionOrProgramChoiceProgram_DocumentId"
+                },
+                {
+                  "relative_path": "$.programReference.programName",
+                  "column": "SectionOrProgramChoiceProgram_DocumentId"
+                },
+                {
+                  "relative_path": "$.programReference.programTypeDescriptor",
+                  "column": "SectionOrProgramChoiceProgram_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -5448,7 +5497,28 @@
               "immediate_parent_scope_locator_columns": [
                 "Assessment_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.sectionReference.localCourseCode",
+                  "column": "SectionOrProgramChoiceSection_DocumentId"
+                },
+                {
+                  "relative_path": "$.sectionReference.schoolId",
+                  "column": "SectionOrProgramChoiceSection_DocumentId"
+                },
+                {
+                  "relative_path": "$.sectionReference.schoolYear",
+                  "column": "SectionOrProgramChoiceSection_DocumentId"
+                },
+                {
+                  "relative_path": "$.sectionReference.sessionName",
+                  "column": "SectionOrProgramChoiceSection_DocumentId"
+                },
+                {
+                  "relative_path": "$.sectionReference.sectionIdentifier",
+                  "column": "SectionOrProgramChoiceSection_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -6377,7 +6447,16 @@
               "immediate_parent_scope_locator_columns": [
                 "BellSchedule_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.classPeriodReference.classPeriodName",
+                  "column": "ClassPeriod_DocumentId"
+                },
+                {
+                  "relative_path": "$.classPeriodReference.schoolId",
+                  "column": "ClassPeriod_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -9392,7 +9471,20 @@
               "immediate_parent_scope_locator_columns": [
                 "Cohort_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.programReference.educationOrganizationId",
+                  "column": "ProgramProgram_DocumentId"
+                },
+                {
+                  "relative_path": "$.programReference.programName",
+                  "column": "ProgramProgram_DocumentId"
+                },
+                {
+                  "relative_path": "$.programReference.programTypeDescriptor",
+                  "column": "ProgramProgram_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -18586,7 +18678,20 @@
               "immediate_parent_scope_locator_columns": [
                 "CourseTranscript_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.courseProgramReference.educationOrganizationId",
+                  "column": "CourseProgram_DocumentId"
+                },
+                {
+                  "relative_path": "$.courseProgramReference.programName",
+                  "column": "CourseProgram_DocumentId"
+                },
+                {
+                  "relative_path": "$.courseProgramReference.programTypeDescriptor",
+                  "column": "CourseProgram_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -19258,7 +19363,28 @@
               "immediate_parent_scope_locator_columns": [
                 "CourseTranscript_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.sectionReference.localCourseCode",
+                  "column": "Section_DocumentId"
+                },
+                {
+                  "relative_path": "$.sectionReference.schoolId",
+                  "column": "Section_DocumentId"
+                },
+                {
+                  "relative_path": "$.sectionReference.schoolYear",
+                  "column": "Section_DocumentId"
+                },
+                {
+                  "relative_path": "$.sectionReference.sessionName",
+                  "column": "Section_DocumentId"
+                },
+                {
+                  "relative_path": "$.sectionReference.sectionIdentifier",
+                  "column": "Section_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -20494,7 +20620,12 @@
               "immediate_parent_scope_locator_columns": [
                 "Course_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.learningStandardReference.learningStandardId",
+                  "column": "LearningStandard_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -23054,7 +23185,12 @@
               "immediate_parent_scope_locator_columns": [
                 "DisciplineAction_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.staffReference.staffUniqueId",
+                  "column": "Staff_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -23232,7 +23368,24 @@
               "immediate_parent_scope_locator_columns": [
                 "DisciplineAction_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.studentDisciplineIncidentBehaviorAssociationReference.behaviorDescriptor",
+                  "column": "StudentDisciplineIncidentBehaviorAssociation_DocumentId"
+                },
+                {
+                  "relative_path": "$.studentDisciplineIncidentBehaviorAssociationReference.incidentIdentifier",
+                  "column": "StudentDisciplineIncidentBehaviorAssociation_DocumentId"
+                },
+                {
+                  "relative_path": "$.studentDisciplineIncidentBehaviorAssociationReference.schoolId",
+                  "column": "StudentDisciplineIncidentBehaviorAssociation_DocumentId"
+                },
+                {
+                  "relative_path": "$.studentDisciplineIncidentBehaviorAssociationReference.studentUniqueId",
+                  "column": "StudentDisciplineIncidentBehaviorAssociation_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -25149,7 +25302,12 @@
               "immediate_parent_scope_locator_columns": [
                 "EducationContent_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.derivativeSourceEducationContentReference.contentIdentifier",
+                  "column": "DerivativeSourceEducationContent_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -32267,7 +32425,12 @@
               "immediate_parent_scope_locator_columns": [
                 "GradebookEntry_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.learningStandardReference.learningStandardId",
+                  "column": "LearningStandard_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -34865,7 +35028,16 @@
               "immediate_parent_scope_locator_columns": [
                 "ParentCollectionItemId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.courseReference.courseCode",
+                  "column": "CourseCourse_DocumentId"
+                },
+                {
+                  "relative_path": "$.courseReference.educationOrganizationId",
+                  "column": "CourseCourse_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -36381,7 +36553,12 @@
               "immediate_parent_scope_locator_columns": [
                 "InterventionPrescription_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.educationContentReference.contentIdentifier",
+                  "column": "EducationContentSourceEducationContent_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -37509,7 +37686,12 @@
               "immediate_parent_scope_locator_columns": [
                 "InterventionStudy_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.educationContentReference.contentIdentifier",
+                  "column": "EducationContentSourceEducationContent_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -39180,7 +39362,12 @@
               "immediate_parent_scope_locator_columns": [
                 "Intervention_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.educationContentReference.contentIdentifier",
+                  "column": "EducationContentSourceEducationContent_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -39333,7 +39520,16 @@
               "immediate_parent_scope_locator_columns": [
                 "Intervention_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.interventionPrescriptionReference.educationOrganizationId",
+                  "column": "InterventionPrescriptionInterventionPrescription_DocumentId"
+                },
+                {
+                  "relative_path": "$.interventionPrescriptionReference.interventionPrescriptionIdentificationCode",
+                  "column": "InterventionPrescriptionInterventionPrescription_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -39856,7 +40052,12 @@
               "immediate_parent_scope_locator_columns": [
                 "Intervention_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.staffReference.staffUniqueId",
+                  "column": "Staff_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -47135,7 +47336,20 @@
               "immediate_parent_scope_locator_columns": [
                 "ObjectiveAssessment_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.assessmentItemReference.assessmentIdentifier",
+                  "column": "AssessmentItemAssessmentItem_DocumentId"
+                },
+                {
+                  "relative_path": "$.assessmentItemReference.namespace",
+                  "column": "AssessmentItemAssessmentItem_DocumentId"
+                },
+                {
+                  "relative_path": "$.assessmentItemReference.identificationCode",
+                  "column": "AssessmentItemAssessmentItem_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -47282,7 +47496,12 @@
               "immediate_parent_scope_locator_columns": [
                 "ObjectiveAssessment_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.learningStandardReference.learningStandardId",
+                  "column": "LearningStandard_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -56451,7 +56670,12 @@
               "immediate_parent_scope_locator_columns": [
                 "Program_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.learningStandardReference.learningStandardId",
+                  "column": "LearningStandard_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -58019,7 +58243,56 @@
               "immediate_parent_scope_locator_columns": [
                 "ReportCard_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.gradeReference.gradeTypeDescriptor",
+                  "column": "Grade_DocumentId"
+                },
+                {
+                  "relative_path": "$.gradeReference.gradingPeriodDescriptor",
+                  "column": "Grade_DocumentId"
+                },
+                {
+                  "relative_path": "$.gradeReference.gradingPeriodName",
+                  "column": "Grade_DocumentId"
+                },
+                {
+                  "relative_path": "$.gradeReference.schoolId",
+                  "column": "Grade_DocumentId"
+                },
+                {
+                  "relative_path": "$.gradeReference.gradingPeriodSchoolYear",
+                  "column": "Grade_DocumentId"
+                },
+                {
+                  "relative_path": "$.gradeReference.beginDate",
+                  "column": "Grade_DocumentId"
+                },
+                {
+                  "relative_path": "$.gradeReference.localCourseCode",
+                  "column": "Grade_DocumentId"
+                },
+                {
+                  "relative_path": "$.gradeReference.schoolId",
+                  "column": "Grade_DocumentId"
+                },
+                {
+                  "relative_path": "$.gradeReference.schoolYear",
+                  "column": "Grade_DocumentId"
+                },
+                {
+                  "relative_path": "$.gradeReference.sectionIdentifier",
+                  "column": "Grade_DocumentId"
+                },
+                {
+                  "relative_path": "$.gradeReference.sessionName",
+                  "column": "Grade_DocumentId"
+                },
+                {
+                  "relative_path": "$.gradeReference.studentUniqueId",
+                  "column": "Grade_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -58307,7 +58580,40 @@
               "immediate_parent_scope_locator_columns": [
                 "ReportCard_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.studentCompetencyObjectiveReference.gradingPeriodDescriptor",
+                  "column": "StudentCompetencyObjective_DocumentId"
+                },
+                {
+                  "relative_path": "$.studentCompetencyObjectiveReference.gradingPeriodName",
+                  "column": "StudentCompetencyObjective_DocumentId"
+                },
+                {
+                  "relative_path": "$.studentCompetencyObjectiveReference.gradingPeriodSchoolId",
+                  "column": "StudentCompetencyObjective_DocumentId"
+                },
+                {
+                  "relative_path": "$.studentCompetencyObjectiveReference.gradingPeriodSchoolYear",
+                  "column": "StudentCompetencyObjective_DocumentId"
+                },
+                {
+                  "relative_path": "$.studentCompetencyObjectiveReference.objectiveEducationOrganizationId",
+                  "column": "StudentCompetencyObjective_DocumentId"
+                },
+                {
+                  "relative_path": "$.studentCompetencyObjectiveReference.objective",
+                  "column": "StudentCompetencyObjective_DocumentId"
+                },
+                {
+                  "relative_path": "$.studentCompetencyObjectiveReference.objectiveGradeLevelDescriptor",
+                  "column": "StudentCompetencyObjective_DocumentId"
+                },
+                {
+                  "relative_path": "$.studentCompetencyObjectiveReference.studentUniqueId",
+                  "column": "StudentCompetencyObjective_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -59254,7 +59560,20 @@
               "immediate_parent_scope_locator_columns": [
                 "RestraintEvent_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.programReference.educationOrganizationId",
+                  "column": "Program_DocumentId"
+                },
+                {
+                  "relative_path": "$.programReference.programName",
+                  "column": "Program_DocumentId"
+                },
+                {
+                  "relative_path": "$.programReference.programTypeDescriptor",
+                  "column": "Program_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -63672,7 +63991,16 @@
               "immediate_parent_scope_locator_columns": [
                 "Section_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.classPeriodReference.classPeriodName",
+                  "column": "ClassPeriod_DocumentId"
+                },
+                {
+                  "relative_path": "$.classPeriodReference.schoolId",
+                  "column": "ClassPeriod_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -64102,7 +64430,20 @@
               "immediate_parent_scope_locator_columns": [
                 "Section_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.programReference.educationOrganizationId",
+                  "column": "Program_DocumentId"
+                },
+                {
+                  "relative_path": "$.programReference.programName",
+                  "column": "Program_DocumentId"
+                },
+                {
+                  "relative_path": "$.programReference.programTypeDescriptor",
+                  "column": "Program_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -64779,7 +65120,16 @@
               "immediate_parent_scope_locator_columns": [
                 "Session_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.academicWeekReference.schoolId",
+                  "column": "AcademicWeek_DocumentId"
+                },
+                {
+                  "relative_path": "$.academicWeekReference.weekIdentifier",
+                  "column": "AcademicWeek_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -64959,7 +65309,24 @@
               "immediate_parent_scope_locator_columns": [
                 "Session_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.gradingPeriodReference.gradingPeriodDescriptor",
+                  "column": "GradingPeriod_DocumentId"
+                },
+                {
+                  "relative_path": "$.gradingPeriodReference.gradingPeriodName",
+                  "column": "GradingPeriod_DocumentId"
+                },
+                {
+                  "relative_path": "$.gradingPeriodReference.schoolId",
+                  "column": "GradingPeriod_DocumentId"
+                },
+                {
+                  "relative_path": "$.gradingPeriodReference.schoolYear",
+                  "column": "GradingPeriod_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -70926,7 +71293,16 @@
               "immediate_parent_scope_locator_columns": [
                 "Staff_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.credentialReference.credentialIdentifier",
+                  "column": "Credential_DocumentId"
+                },
+                {
+                  "relative_path": "$.credentialReference.stateOfIssueStateAbbreviationDescriptor",
+                  "column": "Credential_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -77955,7 +78331,32 @@
               "immediate_parent_scope_locator_columns": [
                 "StudentAcademicRecord_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.reportCardReference.educationOrganizationId",
+                  "column": "ReportCard_DocumentId"
+                },
+                {
+                  "relative_path": "$.reportCardReference.gradingPeriodDescriptor",
+                  "column": "ReportCard_DocumentId"
+                },
+                {
+                  "relative_path": "$.reportCardReference.gradingPeriodName",
+                  "column": "ReportCard_DocumentId"
+                },
+                {
+                  "relative_path": "$.reportCardReference.gradingPeriodSchoolId",
+                  "column": "ReportCard_DocumentId"
+                },
+                {
+                  "relative_path": "$.reportCardReference.gradingPeriodSchoolYear",
+                  "column": "ReportCard_DocumentId"
+                },
+                {
+                  "relative_path": "$.reportCardReference.studentUniqueId",
+                  "column": "ReportCard_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -83606,7 +84007,28 @@
               "immediate_parent_scope_locator_columns": [
                 "StudentCohortAssociation_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.sectionReference.localCourseCode",
+                  "column": "Section_DocumentId"
+                },
+                {
+                  "relative_path": "$.sectionReference.schoolId",
+                  "column": "Section_DocumentId"
+                },
+                {
+                  "relative_path": "$.sectionReference.schoolYear",
+                  "column": "Section_DocumentId"
+                },
+                {
+                  "relative_path": "$.sectionReference.sessionName",
+                  "column": "Section_DocumentId"
+                },
+                {
+                  "relative_path": "$.sectionReference.sectionIdentifier",
+                  "column": "Section_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -84223,7 +84645,32 @@
               "immediate_parent_scope_locator_columns": [
                 "StudentCompetencyObjective_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.generalStudentProgramAssociationReference.beginDate",
+                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceGene_9ca396b829"
+                },
+                {
+                  "relative_path": "$.generalStudentProgramAssociationReference.educationOrganizationId",
+                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceGene_9ca396b829"
+                },
+                {
+                  "relative_path": "$.generalStudentProgramAssociationReference.programEducationOrganizationId",
+                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceGene_9ca396b829"
+                },
+                {
+                  "relative_path": "$.generalStudentProgramAssociationReference.programName",
+                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceGene_9ca396b829"
+                },
+                {
+                  "relative_path": "$.generalStudentProgramAssociationReference.programTypeDescriptor",
+                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceGene_9ca396b829"
+                },
+                {
+                  "relative_path": "$.generalStudentProgramAssociationReference.studentUniqueId",
+                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceGene_9ca396b829"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -84470,7 +84917,36 @@
               "immediate_parent_scope_locator_columns": [
                 "StudentCompetencyObjective_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.studentSectionAssociationReference.beginDate",
+                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0"
+                },
+                {
+                  "relative_path": "$.studentSectionAssociationReference.localCourseCode",
+                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0"
+                },
+                {
+                  "relative_path": "$.studentSectionAssociationReference.schoolId",
+                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0"
+                },
+                {
+                  "relative_path": "$.studentSectionAssociationReference.schoolYear",
+                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0"
+                },
+                {
+                  "relative_path": "$.studentSectionAssociationReference.sectionIdentifier",
+                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0"
+                },
+                {
+                  "relative_path": "$.studentSectionAssociationReference.sessionName",
+                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0"
+                },
+                {
+                  "relative_path": "$.studentSectionAssociationReference.studentUniqueId",
+                  "column": "StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -100362,7 +100838,20 @@
               "immediate_parent_scope_locator_columns": [
                 "StudentSchoolAssociation_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.alternativeGraduationPlanReference.educationOrganizationId",
+                  "column": "AlternativeGraduationPlan_DocumentId"
+                },
+                {
+                  "relative_path": "$.alternativeGraduationPlanReference.graduationPlanTypeDescriptor",
+                  "column": "AlternativeGraduationPlan_DocumentId"
+                },
+                {
+                  "relative_path": "$.alternativeGraduationPlanReference.graduationSchoolYear",
+                  "column": "AlternativeGraduationPlan_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -103218,7 +103707,20 @@
               "immediate_parent_scope_locator_columns": [
                 "StudentSectionAssociation_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.programReference.educationOrganizationId",
+                  "column": "Program_DocumentId"
+                },
+                {
+                  "relative_path": "$.programReference.programName",
+                  "column": "Program_DocumentId"
+                },
+                {
+                  "relative_path": "$.programReference.programTypeDescriptor",
+                  "column": "Program_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
@@ -103842,7 +104344,16 @@
               "immediate_parent_scope_locator_columns": [
                 "StudentSectionAttendanceEvent_DocumentId"
               ],
-              "semantic_identity_bindings": []
+              "semantic_identity_bindings": [
+                {
+                  "relative_path": "$.classPeriodReference.classPeriodName",
+                  "column": "ClassPeriod_DocumentId"
+                },
+                {
+                  "relative_path": "$.classPeriodReference.schoolId",
+                  "column": "ClassPeriod_DocumentId"
+                }
+              ]
             },
             "descriptor_fk_deduplications": [],
             "constraints": [

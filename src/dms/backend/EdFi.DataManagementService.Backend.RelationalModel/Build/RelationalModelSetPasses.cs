@@ -27,6 +27,7 @@ public static class RelationalModelSetPasses
             new ValidateUnifiedAliasMetadataPass(),
             new RootIdentityConstraintPass(),
             new ReferenceConstraintPass(),
+            new SemanticIdentityCompilationPass(),
             new ArrayUniquenessConstraintPass(),
             new StableCollectionConstraintPass(),
             new DescriptorForeignKeyConstraintPass(),

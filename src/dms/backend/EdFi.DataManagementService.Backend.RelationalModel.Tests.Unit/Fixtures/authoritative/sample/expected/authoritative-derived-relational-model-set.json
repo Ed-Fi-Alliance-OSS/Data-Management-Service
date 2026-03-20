@@ -48757,7 +48757,20 @@
             "immediate_parent_scope_locator_columns": [
               "AssessmentAdministration_DocumentId"
             ],
-            "semantic_identity_bindings": []
+            "semantic_identity_bindings": [
+              {
+                "relative_path": "$.assessmentBatteryPartReference.assessmentBatteryPartName",
+                "column": "AssessmentBatteryPart_DocumentId"
+              },
+              {
+                "relative_path": "$.assessmentBatteryPartReference.assessmentIdentifier",
+                "column": "AssessmentBatteryPart_DocumentId"
+              },
+              {
+                "relative_path": "$.assessmentBatteryPartReference.namespace",
+                "column": "AssessmentBatteryPart_DocumentId"
+              }
+            ]
           },
           "descriptor_fk_deduplications": [],
           "constraints": [
@@ -52248,7 +52261,20 @@
             "immediate_parent_scope_locator_columns": [
               "StudentSchoolAssociation_DocumentId"
             ],
-            "semantic_identity_bindings": []
+            "semantic_identity_bindings": [
+              {
+                "relative_path": "$.alternativeGraduationPlanReference.educationOrganizationId",
+                "column": "AlternativeGraduationPlan_DocumentId"
+              },
+              {
+                "relative_path": "$.alternativeGraduationPlanReference.graduationPlanTypeDescriptor",
+                "column": "AlternativeGraduationPlan_DocumentId"
+              },
+              {
+                "relative_path": "$.alternativeGraduationPlanReference.graduationSchoolYear",
+                "column": "AlternativeGraduationPlan_DocumentId"
+              }
+            ]
           },
           "descriptor_fk_deduplications": [],
           "constraints": [

@@ -46,6 +46,7 @@ public class Given_Default_RelationalModelSet_Passes
                 typeof(ValidateUnifiedAliasMetadataPass),
                 typeof(RootIdentityConstraintPass),
                 typeof(ReferenceConstraintPass),
+                typeof(SemanticIdentityCompilationPass),
                 typeof(ArrayUniquenessConstraintPass),
                 typeof(StableCollectionConstraintPass),
                 typeof(DescriptorForeignKeyConstraintPass),
@@ -66,5 +67,22 @@ public class Given_Default_RelationalModelSet_Passes
     public void It_should_be_stable_across_invocations()
     {
         _firstPassTypes.Should().Equal(_secondPassTypes);
+    }
+
+    /// <summary>
+    /// It should compile semantic identity before downstream collection constraint passes.
+    /// </summary>
+    [Test]
+    public void It_should_compile_semantic_identity_before_downstream_collection_constraint_passes()
+    {
+        var semanticIdentityCompilationIndex = _firstPassTypes
+            .ToList()
+            .IndexOf(typeof(SemanticIdentityCompilationPass));
+        var arrayUniquenessIndex = _firstPassTypes.ToList().IndexOf(typeof(ArrayUniquenessConstraintPass));
+        var stableCollectionIndex = _firstPassTypes.ToList().IndexOf(typeof(StableCollectionConstraintPass));
+
+        semanticIdentityCompilationIndex.Should().BeGreaterThan(-1);
+        semanticIdentityCompilationIndex.Should().BeLessThan(arrayUniquenessIndex);
+        semanticIdentityCompilationIndex.Should().BeLessThan(stableCollectionIndex);
     }
 }
