@@ -33,6 +33,8 @@ public sealed class MappingSetCache(
     /// </summary>
     private readonly TimeSpan _failureCooldown = failureCooldown ?? TimeSpan.Zero;
 
+    // Unbounded: the key space is naturally small (one entry per unique schema hash +
+    // dialect + mapping version combination, typically 1-2 per deployment).
     private readonly ConcurrentDictionary<MappingSetKey, CacheEntry> _cache = new();
 
     /// <summary>
@@ -136,14 +138,14 @@ public sealed class MappingSetCache(
             }
         }
 
-        private static async Task EvictAfterCooldownAsync(
+        private async Task EvictAfterCooldownAsync(
             MappingSetKey key,
             ConcurrentDictionary<MappingSetKey, CacheEntry> cache,
             TimeSpan cooldown
         )
         {
             await Task.Delay(cooldown).ConfigureAwait(false);
-            cache.TryRemove(key, out _);
+            cache.TryRemove(new KeyValuePair<MappingSetKey, CacheEntry>(key, this));
         }
     }
 }

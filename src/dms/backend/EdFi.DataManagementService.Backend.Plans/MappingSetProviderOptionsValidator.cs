@@ -24,12 +24,20 @@ public sealed class MappingSetProviderOptionsValidator : IValidateOptions<Mappin
             );
         }
 
+        if (options.FailureCooldownSeconds < 0)
+        {
+            return ValidateOptionsResult.Fail("MappingPacks:FailureCooldownSeconds must not be negative.");
+        }
+
         if (!Enum.IsDefined(options.CacheMode))
         {
             return ValidateOptionsResult.Fail(
                 $"MappingPacks:CacheMode value '{options.CacheMode}' is not a supported cache mode."
             );
         }
+
+        // TODO(DMS-968): When a real pack store is wired up, validate that
+        // RootPath is non-empty when Enabled is true.
 
         return ValidateOptionsResult.Success;
     }

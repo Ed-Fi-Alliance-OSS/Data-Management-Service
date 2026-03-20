@@ -102,6 +102,24 @@ public class Given_MappingSetProvider
 
             ex.And.InnerException.Should().BeOfType<NotSupportedException>();
         }
+
+        [Test]
+        public async Task It_includes_key_diagnostics_on_decode_failure()
+        {
+            var packStore = new TestPackStore(new MappingPackPayload());
+            var provider = CreateProvider(
+                options: new MappingSetProviderOptions { Enabled = true },
+                packStore: packStore
+            );
+
+            var act = () => provider.GetOrCreateAsync(_testKey, CancellationToken.None);
+
+            var ex = (await act.Should().ThrowAsync<MappingSetUnavailableException>()).And;
+
+            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.EffectiveSchemaHash));
+            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.Dialect.ToString()));
+            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.RelationalMappingVersion));
+        }
     }
 
     [TestFixture]
@@ -171,6 +189,24 @@ public class Given_MappingSetProvider
                 .ThrowAsync<MappingSetUnavailableException>()
                 .WithMessage("*required but not found*");
         }
+
+        [Test]
+        public async Task It_includes_key_diagnostics_when_pack_required_but_missing()
+        {
+            var provider = CreateProvider(
+                options: new MappingSetProviderOptions { Enabled = true, Required = true },
+                packStore: new NoOpMappingPackStore()
+            );
+
+            var act = () => provider.GetOrCreateAsync(_testKey, CancellationToken.None);
+
+            var ex = (await act.Should().ThrowAsync<MappingSetUnavailableException>()).And;
+
+            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.EffectiveSchemaHash));
+            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.Dialect.ToString()));
+            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.RelationalMappingVersion));
+            ex.Diagnostics.Should().Contain(d => d.Contains("required but not found"));
+        }
     }
 
     [TestFixture]
@@ -238,50 +274,6 @@ public class Given_MappingSetProvider
             first.Should().BeSameAs(expectedMappingSet);
             second.Should().BeSameAs(expectedMappingSet);
             compileCount.Should().Be(1);
-        }
-    }
-
-    [TestFixture]
-    public class Given_Enabled_And_Pack_Found_Diagnostics : Given_MappingSetProvider
-    {
-        [Test]
-        public async Task It_includes_key_diagnostics_on_decode_failure()
-        {
-            var packStore = new TestPackStore(new MappingPackPayload());
-            var provider = CreateProvider(
-                options: new MappingSetProviderOptions { Enabled = true },
-                packStore: packStore
-            );
-
-            var act = () => provider.GetOrCreateAsync(_testKey, CancellationToken.None);
-
-            var ex = (await act.Should().ThrowAsync<MappingSetUnavailableException>()).And;
-
-            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.EffectiveSchemaHash));
-            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.Dialect.ToString()));
-            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.RelationalMappingVersion));
-        }
-    }
-
-    [TestFixture]
-    public class Given_Enabled_And_Required_And_Pack_Not_Found_Diagnostics : Given_MappingSetProvider
-    {
-        [Test]
-        public async Task It_includes_key_diagnostics_when_pack_required_but_missing()
-        {
-            var provider = CreateProvider(
-                options: new MappingSetProviderOptions { Enabled = true, Required = true },
-                packStore: new NoOpMappingPackStore()
-            );
-
-            var act = () => provider.GetOrCreateAsync(_testKey, CancellationToken.None);
-
-            var ex = (await act.Should().ThrowAsync<MappingSetUnavailableException>()).And;
-
-            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.EffectiveSchemaHash));
-            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.Dialect.ToString()));
-            ex.Diagnostics.Should().Contain(d => d.Contains(_testKey.RelationalMappingVersion));
-            ex.Diagnostics.Should().Contain(d => d.Contains("required but not found"));
         }
     }
 

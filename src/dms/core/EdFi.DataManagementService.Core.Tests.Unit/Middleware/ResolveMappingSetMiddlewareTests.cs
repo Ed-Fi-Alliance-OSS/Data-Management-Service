@@ -96,6 +96,40 @@ public class ResolveMappingSetMiddlewareTests
         return compiler;
     }
 
+    private static MappingSet CreateTestMappingSet()
+    {
+        var key = new MappingSetKey(_testHash, SqlDialect.Pgsql, "v1");
+        var effectiveSchema = new EffectiveSchemaInfo(
+            ApiSchemaFormatVersion: "1.0",
+            RelationalMappingVersion: "v1",
+            EffectiveSchemaHash: _testHash,
+            ResourceKeyCount: 0,
+            ResourceKeySeedHash: new byte[32],
+            SchemaComponentsInEndpointOrder: [],
+            ResourceKeysInIdOrder: []
+        );
+
+        var modelSet = new DerivedRelationalModelSet(
+            EffectiveSchema: effectiveSchema,
+            Dialect: SqlDialect.Pgsql,
+            ProjectSchemasInEndpointOrder: [],
+            ConcreteResourcesInNameOrder: [],
+            AbstractIdentityTablesInNameOrder: [],
+            AbstractUnionViewsInNameOrder: [],
+            IndexesInCreateOrder: [],
+            TriggersInCreateOrder: []
+        );
+
+        return new MappingSet(
+            Key: key,
+            Model: modelSet,
+            WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
+            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
+            ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>(),
+            ResourceKeyById: new Dictionary<short, ResourceKeyEntry>()
+        );
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_UseRelationalBackend_Is_False : ResolveMappingSetMiddlewareTests
@@ -196,40 +230,6 @@ public class ResolveMappingSetMiddlewareTests
         private bool _nextCalled;
         private readonly MappingSet _expectedMappingSet = CreateTestMappingSet();
 
-        private static MappingSet CreateTestMappingSet()
-        {
-            var key = new MappingSetKey(_testHash, SqlDialect.Pgsql, "v1");
-            var effectiveSchema = new EffectiveSchemaInfo(
-                ApiSchemaFormatVersion: "1.0",
-                RelationalMappingVersion: "v1",
-                EffectiveSchemaHash: _testHash,
-                ResourceKeyCount: 0,
-                ResourceKeySeedHash: new byte[32],
-                SchemaComponentsInEndpointOrder: [],
-                ResourceKeysInIdOrder: []
-            );
-
-            var modelSet = new DerivedRelationalModelSet(
-                EffectiveSchema: effectiveSchema,
-                Dialect: SqlDialect.Pgsql,
-                ProjectSchemasInEndpointOrder: [],
-                ConcreteResourcesInNameOrder: [],
-                AbstractIdentityTablesInNameOrder: [],
-                AbstractUnionViewsInNameOrder: [],
-                IndexesInCreateOrder: [],
-                TriggersInCreateOrder: []
-            );
-
-            return new MappingSet(
-                Key: key,
-                Model: modelSet,
-                WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
-                ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
-                ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>(),
-                ResourceKeyById: new Dictionary<short, ResourceKeyEntry>()
-            );
-        }
-
         [SetUp]
         public async Task Setup()
         {
@@ -298,33 +298,7 @@ public class ResolveMappingSetMiddlewareTests
                     )
                 )
                 .Invokes((MappingSetKey key, CancellationToken _) => _capturedKey = key)
-                .Returns(
-                    new MappingSet(
-                        Key: new MappingSetKey(_testHash, SqlDialect.Pgsql, "v1"),
-                        Model: new DerivedRelationalModelSet(
-                            EffectiveSchema: new EffectiveSchemaInfo(
-                                "1.0",
-                                "v1",
-                                _testHash,
-                                0,
-                                new byte[32],
-                                [],
-                                []
-                            ),
-                            Dialect: SqlDialect.Pgsql,
-                            ProjectSchemasInEndpointOrder: [],
-                            ConcreteResourcesInNameOrder: [],
-                            AbstractIdentityTablesInNameOrder: [],
-                            AbstractUnionViewsInNameOrder: [],
-                            IndexesInCreateOrder: [],
-                            TriggersInCreateOrder: []
-                        ),
-                        WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
-                        ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
-                        ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>(),
-                        ResourceKeyById: new Dictionary<short, ResourceKeyEntry>()
-                    )
-                );
+                .Returns(CreateTestMappingSet());
 
             await middleware.Execute(requestInfo, () => Task.CompletedTask);
         }

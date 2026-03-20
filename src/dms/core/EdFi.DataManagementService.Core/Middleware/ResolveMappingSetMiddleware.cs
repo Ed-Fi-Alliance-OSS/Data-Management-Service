@@ -116,7 +116,7 @@ internal class ResolveMappingSetMiddleware(
                 Body: FailureResponse.ForMappingSetUnavailable(
                     MappingSetUnavailableTitle,
                     ex.Message,
-                    [.. ex.Diagnostics],
+                    ex.Diagnostics.ToArray(),
                     requestInfo.FrontendRequest.TraceId
                 ),
                 Headers: []

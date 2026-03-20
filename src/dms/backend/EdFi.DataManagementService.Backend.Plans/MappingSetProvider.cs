@@ -51,10 +51,14 @@ public sealed class MappingSetProvider : IMappingSetProvider
         return _cache.GetOrCreateAsync(key, cancellationToken);
     }
 
+    // Sanitized single-line format for Exception.Message and log entries.
+    // Distinct from BuildKeyDiagnostics which produces structured unsanitized entries.
     private static string FormatKeyForMessage(MappingSetKey key) =>
         $"EffectiveSchemaHash '{SanitizeForLog(key.EffectiveSchemaHash)}', "
         + $"Dialect '{key.Dialect}', RelationalMappingVersion '{SanitizeForLog(key.RelationalMappingVersion)}'";
 
+    // Diagnostics are intentionally unsanitized: they carry verbatim key fields for
+    // operator troubleshooting in the HTTP response body. Log messages use SanitizeForLog.
     private static string[] BuildKeyDiagnostics(MappingSetKey key) =>
         [
             $"EffectiveSchemaHash: {key.EffectiveSchemaHash}",
