@@ -125,7 +125,7 @@
       "Update the expected JSON artifacts under `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/Fixtures/authoritative` and any new focused fixture directories.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Plan Contracts And Validator",
