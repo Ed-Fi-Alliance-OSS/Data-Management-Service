@@ -214,7 +214,8 @@ public class Given_Incomplete_Reference_Identity_Mapping
                 new ReferenceBindingPass(),
                 new RootIdentityConstraintPass(),
                 new ReferenceConstraintPass(),
-                new ArrayUniquenessConstraintPass(),
+                new SemanticIdentityCompilationPass(),
+                new ValidateCollectionSemanticIdentityPass(),
                 new StableCollectionConstraintPass(),
             }
         );
@@ -1680,6 +1681,129 @@ public class Given_Array_Uniqueness_Constraint_Derivation
 }
 
 /// <summary>
+/// Test fixture for reference-derived semantic-identity constraint derivation.
+/// </summary>
+[TestFixture]
+public class Given_Reference_Derived_Semantic_Identity_Constraint_Derivation
+{
+    private DbTableModel _addressTable = default!;
+    private DbTableModel _periodTable = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildReferenceBackedCollectionProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { coreProject });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new ReferenceBindingPass(),
+                new RootIdentityConstraintPass(),
+                new ReferenceConstraintPass(),
+                new SemanticIdentityCompilationPass(),
+                new ValidateCollectionSemanticIdentityPass(),
+                new StableCollectionConstraintPass(),
+            }
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        var busRouteModel = result
+            .ConcreteResourcesInNameOrder.Single(model =>
+                model.ResourceKey.Resource.ResourceName == "BusRoute"
+            )
+            .RelationalModel;
+
+        _addressTable = busRouteModel.TablesInDependencyOrder.Single(table =>
+            table.Table.Name == "BusRouteAddress"
+        );
+        _periodTable = busRouteModel.TablesInDependencyOrder.Single(table =>
+            table.Table.Name == "BusRouteAddressPeriod"
+        );
+    }
+
+    /// <summary>
+    /// It should add semantic-identity uniqueness for top-level reference-backed collections.
+    /// </summary>
+    [Test]
+    public void It_should_add_semantic_identity_uniqueness_for_top_level_reference_backed_collections()
+    {
+        var uniqueConstraint = ConstraintDerivationAssertionHelpers.FindUniqueConstraint(
+            _addressTable,
+            "BusRoute_DocumentId",
+            "AddressSchool_DocumentId"
+        );
+
+        uniqueConstraint
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal("BusRoute_DocumentId", "AddressSchool_DocumentId");
+        uniqueConstraint.Columns.Should().NotContain(column => column.Value == "Ordinal");
+    }
+
+    /// <summary>
+    /// It should compile ordered semantic identity bindings for top-level reference-backed collections.
+    /// </summary>
+    [Test]
+    public void It_should_compile_ordered_semantic_identity_bindings_for_top_level_reference_backed_collections()
+    {
+        _addressTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.RelativePath.Canonical)
+            .Should()
+            .Equal("$.schoolReference.schoolId", "$.schoolReference.educationOrganizationId");
+
+        _addressTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.ColumnName.Value)
+            .Should()
+            .Equal("AddressSchool_DocumentId", "AddressSchool_DocumentId");
+    }
+
+    /// <summary>
+    /// It should add semantic-identity uniqueness for nested reference-backed collections.
+    /// </summary>
+    [Test]
+    public void It_should_add_semantic_identity_uniqueness_for_nested_reference_backed_collections()
+    {
+        var uniqueConstraint = ConstraintDerivationAssertionHelpers.FindUniqueConstraint(
+            _periodTable,
+            "ParentCollectionItemId",
+            "PeriodSchool_DocumentId"
+        );
+
+        uniqueConstraint
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal("ParentCollectionItemId", "PeriodSchool_DocumentId");
+        uniqueConstraint.Columns.Should().NotContain(column => column.Value == "Ordinal");
+    }
+
+    /// <summary>
+    /// It should compile scope-relative semantic identity bindings for nested reference-backed collections.
+    /// </summary>
+    [Test]
+    public void It_should_compile_scope_relative_semantic_identity_bindings_for_nested_reference_backed_collections()
+    {
+        _periodTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.RelativePath.Canonical)
+            .Should()
+            .Equal("$.schoolReference.schoolId", "$.schoolReference.educationOrganizationId");
+
+        _periodTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.ColumnName.Value)
+            .Should()
+            .Equal("PeriodSchool_DocumentId", "PeriodSchool_DocumentId");
+    }
+}
+
+/// <summary>
 /// Test fixture for nested array uniqueness constraint derivation.
 /// </summary>
 [TestFixture]
@@ -2424,6 +2548,24 @@ internal static class ConstraintDerivationTestSchemaBuilder
                 ["busRoutes"] = BuildBusRouteArrayUniquenessSchema(new JsonArray()),
                 ["schools"] = BuildReferenceConstraintSchoolSchema(),
                 ["students"] = BuildStudentSchema(),
+            },
+        };
+    }
+
+    /// <summary>
+    /// Build reference-backed collection project schema.
+    /// </summary>
+    internal static JsonObject BuildReferenceBackedCollectionProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["busRoutes"] = BuildBusRouteReferenceBackedCollectionSchema(),
+                ["schools"] = BuildReferenceConstraintSchoolSchema(),
             },
         };
     }
@@ -3273,6 +3415,128 @@ internal static class ConstraintDerivationTestSchemaBuilder
             ["arrayUniquenessConstraints"] = arrayUniquenessConstraints,
             ["identityJsonPaths"] = new JsonArray(),
             ["documentPathsMapping"] = new JsonObject(),
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    /// <summary>
+    /// Build bus route schema with reference-backed top-level and nested collection identity.
+    /// </summary>
+    private static JsonObject BuildBusRouteReferenceBackedCollectionSchema()
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["addresses"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["items"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["streetNumberName"] = new JsonObject { ["type"] = "string", ["maxLength"] = 20 },
+                            ["schoolReference"] = new JsonObject
+                            {
+                                ["type"] = "object",
+                                ["properties"] = new JsonObject
+                                {
+                                    ["schoolId"] = new JsonObject { ["type"] = "integer" },
+                                    ["educationOrganizationId"] = new JsonObject { ["type"] = "integer" },
+                                    ["link"] = new JsonObject { ["type"] = "string", ["maxLength"] = 255 },
+                                },
+                            },
+                            ["periods"] = new JsonObject
+                            {
+                                ["type"] = "array",
+                                ["items"] = new JsonObject
+                                {
+                                    ["type"] = "object",
+                                    ["properties"] = new JsonObject
+                                    {
+                                        ["schoolReference"] = new JsonObject
+                                        {
+                                            ["type"] = "object",
+                                            ["properties"] = new JsonObject
+                                            {
+                                                ["schoolId"] = new JsonObject { ["type"] = "integer" },
+                                                ["educationOrganizationId"] = new JsonObject
+                                                {
+                                                    ["type"] = "integer",
+                                                },
+                                                ["link"] = new JsonObject
+                                                {
+                                                    ["type"] = "string",
+                                                    ["maxLength"] = 255,
+                                                },
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "BusRoute",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray(),
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["AddressSchool"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "School",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.schoolId",
+                            ["referenceJsonPath"] = "$.addresses[*].schoolReference.schoolId",
+                        },
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.educationOrganizationId",
+                            ["referenceJsonPath"] = "$.addresses[*].schoolReference.educationOrganizationId",
+                        },
+                    },
+                },
+                ["PeriodSchool"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "School",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.schoolId",
+                            ["referenceJsonPath"] = "$.addresses[*].periods[*].schoolReference.schoolId",
+                        },
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.educationOrganizationId",
+                            ["referenceJsonPath"] =
+                                "$.addresses[*].periods[*].schoolReference.educationOrganizationId",
+                        },
+                    },
+                },
+            },
             ["jsonSchemaForInsert"] = jsonSchemaForInsert,
         };
     }

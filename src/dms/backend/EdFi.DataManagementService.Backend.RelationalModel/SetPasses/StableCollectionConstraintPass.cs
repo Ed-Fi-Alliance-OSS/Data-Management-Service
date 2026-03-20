@@ -8,7 +8,8 @@ using static EdFi.DataManagementService.Backend.RelationalModel.Constraints.Cons
 namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 
 /// <summary>
-/// Derives stable-collection unique constraints needed for sibling ordering and composite parent/root FKs.
+/// Derives stable-collection unique constraints needed for semantic identity, sibling ordering, and
+/// composite parent/root FKs.
 /// </summary>
 public sealed class StableCollectionConstraintPass : IRelationalModelSetPass
 {
@@ -38,7 +39,7 @@ public sealed class StableCollectionConstraintPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Adds sibling-order and parent/root-target uniques for one resource model.
+    /// Adds semantic-identity, sibling-order, and parent/root-target uniques for one resource model.
     /// </summary>
     private static void ApplyStableCollectionConstraints(
         ResourceMutation mutation,
@@ -59,7 +60,26 @@ public sealed class StableCollectionConstraintPass : IRelationalModelSetPass
 
             var tableAccumulator = mutation.GetTableAccumulator(table, resource);
             var mutated = false;
+            var semanticIdentityColumns = BuildSemanticIdentityUniqueColumns(table);
             var siblingOrderColumns = BuildSiblingOrderUniqueColumns(table);
+
+            if (
+                semanticIdentityColumns.Length > 0
+                && !ContainsUniqueConstraint(
+                    tableAccumulator.Constraints,
+                    table.Table,
+                    semanticIdentityColumns
+                )
+            )
+            {
+                tableAccumulator.AddConstraint(
+                    new TableConstraint.Unique(
+                        ConstraintNaming.BuildColumnUniqueName(table.Table, semanticIdentityColumns),
+                        semanticIdentityColumns
+                    )
+                );
+                mutated = true;
+            }
 
             if (
                 siblingOrderColumns.Length > 0
@@ -139,6 +159,37 @@ public sealed class StableCollectionConstraintPass : IRelationalModelSetPass
         }
 
         return targets;
+    }
+
+    /// <summary>
+    /// Returns the ordered columns needed for semantic-identity uniqueness on one stable collection table.
+    /// </summary>
+    private static DbColumnName[] BuildSemanticIdentityUniqueColumns(DbTableModel table)
+    {
+        if (
+            table.IdentityMetadata.ImmediateParentScopeLocatorColumns.Count == 0
+            || table.IdentityMetadata.SemanticIdentityBindings.Count == 0
+        )
+        {
+            return [];
+        }
+
+        List<DbColumnName> columns = [];
+        HashSet<string> seenColumns = new(StringComparer.Ordinal);
+
+        foreach (var column in table.IdentityMetadata.ImmediateParentScopeLocatorColumns)
+        {
+            AddUniqueColumn(column, columns, seenColumns);
+        }
+
+        foreach (var binding in table.IdentityMetadata.SemanticIdentityBindings)
+        {
+            AddUniqueColumn(binding.ColumnName, columns, seenColumns);
+        }
+
+        return columns.Count > table.IdentityMetadata.ImmediateParentScopeLocatorColumns.Count
+            ? columns.ToArray()
+            : [];
     }
 
     /// <summary>

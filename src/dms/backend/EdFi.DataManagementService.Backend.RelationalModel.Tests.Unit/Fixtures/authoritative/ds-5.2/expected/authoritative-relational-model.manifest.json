@@ -1469,6 +1469,14 @@
             "constraints": [
               {
                 "kind": "Unique",
+                "name": "UX_AssessmentAdministrationAssessmentBatteryPart_Ass_f82da38521",
+                "columns": [
+                  "AssessmentAdministration_DocumentId",
+                  "AssessmentBatteryPart_DocumentId"
+                ]
+              },
+              {
+                "kind": "Unique",
                 "name": "UX_AssessmentAdministrationAssessmentBatteryPart_Ord_d486c4ed4f",
                 "columns": [
                   "AssessmentAdministration_DocumentId",
@@ -1997,6 +2005,14 @@
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
+              {
+                "kind": "Unique",
+                "name": "UX_AssessmentBatteryPartObjectiveAssessment_Assessme_7a38152000",
+                "columns": [
+                  "AssessmentBatteryPart_DocumentId",
+                  "ObjectiveAssessment_DocumentId"
+                ]
+              },
               {
                 "kind": "Unique",
                 "name": "UX_AssessmentBatteryPartObjectiveAssessment_Ordinal__f014360295",
@@ -2544,6 +2560,14 @@
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
+              {
+                "kind": "Unique",
+                "name": "UX_AssessmentItemLearningStandard_AssessmentItem_Doc_da085e0260",
+                "columns": [
+                  "AssessmentItem_DocumentId",
+                  "LearningStandard_DocumentId"
+                ]
+              },
               {
                 "kind": "Unique",
                 "name": "UX_AssessmentItemLearningStandard_Ordinal_Assessment_ece4718a8d",
@@ -3245,6 +3269,14 @@
                 "columns": [
                   "AssessmentScoreRangeLearningStandard_DocumentId",
                   "Ordinal"
+                ]
+              },
+              {
+                "kind": "Unique",
+                "name": "UX_AssessmentScoreRangeLearningStandardLearningStand_ee43f2bbdf",
+                "columns": [
+                  "AssessmentScoreRangeLearningStandard_DocumentId",
+                  "LearningStandard_DocumentId"
                 ]
               },
               {
@@ -5105,6 +5137,14 @@
             "constraints": [
               {
                 "kind": "Unique",
+                "name": "UX_AssessmentProgram_Assessment_DocumentId_SectionOr_3491ec6823",
+                "columns": [
+                  "Assessment_DocumentId",
+                  "SectionOrProgramChoiceProgram_DocumentId"
+                ]
+              },
+              {
+                "kind": "Unique",
                 "name": "UX_AssessmentProgram_Ordinal_Assessment_DocumentId",
                 "columns": [
                   "Assessment_DocumentId",
@@ -5522,6 +5562,14 @@
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
+              {
+                "kind": "Unique",
+                "name": "UX_AssessmentSection_Assessment_DocumentId_SectionOr_9a956ae02c",
+                "columns": [
+                  "Assessment_DocumentId",
+                  "SectionOrProgramChoiceSection_DocumentId"
+                ]
+              },
               {
                 "kind": "Unique",
                 "name": "UX_AssessmentSection_Ordinal_Assessment_DocumentId",
@@ -6460,6 +6508,14 @@
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
+              {
+                "kind": "Unique",
+                "name": "UX_BellScheduleClassPeriod_BellSchedule_DocumentId_C_92e01df297",
+                "columns": [
+                  "BellSchedule_DocumentId",
+                  "ClassPeriod_DocumentId"
+                ]
+              },
               {
                 "kind": "Unique",
                 "name": "UX_BellScheduleClassPeriod_Ordinal_BellSchedule_DocumentId",
@@ -9488,6 +9544,14 @@
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
+              {
+                "kind": "Unique",
+                "name": "UX_CohortProgram_Cohort_DocumentId_ProgramProgram_DocumentId",
+                "columns": [
+                  "Cohort_DocumentId",
+                  "ProgramProgram_DocumentId"
+                ]
+              },
               {
                 "kind": "Unique",
                 "name": "UX_CohortProgram_Ordinal_Cohort_DocumentId",
@@ -18697,6 +18761,14 @@
             "constraints": [
               {
                 "kind": "Unique",
+                "name": "UX_CourseTranscriptCourseProgram_CourseProgram_Docum_c44523dbfa",
+                "columns": [
+                  "CourseTranscript_DocumentId",
+                  "CourseProgram_DocumentId"
+                ]
+              },
+              {
+                "kind": "Unique",
                 "name": "UX_CourseTranscriptCourseProgram_Ordinal_CourseTrans_b17878ced7",
                 "columns": [
                   "CourseTranscript_DocumentId",
@@ -19388,6 +19460,14 @@
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
+              {
+                "kind": "Unique",
+                "name": "UX_CourseTranscriptSection_CourseTranscript_Document_49864a49c3",
+                "columns": [
+                  "CourseTranscript_DocumentId",
+                  "Section_DocumentId"
+                ]
+              },
               {
                 "kind": "Unique",
                 "name": "UX_CourseTranscriptSection_Ordinal_CourseTranscript_DocumentId",
@@ -20629,6 +20709,14 @@
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
+              {
+                "kind": "Unique",
+                "name": "UX_CourseLearningStandard_Course_DocumentId_Learning_911d755b74",
+                "columns": [
+                  "Course_DocumentId",
+                  "LearningStandard_DocumentId"
+                ]
+              },
               {
                 "kind": "Unique",
                 "name": "UX_CourseLearningStandard_Ordinal_Course_DocumentId",
@@ -23196,6 +23284,14 @@
             "constraints": [
               {
                 "kind": "Unique",
+                "name": "UX_DisciplineActionStaff_DisciplineAction_DocumentId_124e7952b7",
+                "columns": [
+                  "DisciplineAction_DocumentId",
+                  "Staff_DocumentId"
+                ]
+              },
+              {
+                "kind": "Unique",
                 "name": "UX_DisciplineActionStaff_Ordinal_DisciplineAction_DocumentId",
                 "columns": [
                   "DisciplineAction_DocumentId",
@@ -23395,6 +23491,14 @@
                 "columns": [
                   "DisciplineAction_DocumentId",
                   "Ordinal"
+                ]
+              },
+              {
+                "kind": "Unique",
+                "name": "UX_DisciplineActionStudentDisciplineIncidentBehavior_7cf2b5d17f",
+                "columns": [
+                  "DisciplineAction_DocumentId",
+                  "StudentDisciplineIncidentBehaviorAssociation_DocumentId"
                 ]
               },
               {
@@ -25311,6 +25415,14 @@
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
+              {
+                "kind": "Unique",
+                "name": "UX_EducationContentDerivativeSourceEducationContent__89fc2a26d9",
+                "columns": [
+                  "EducationContent_DocumentId",
+                  "DerivativeSourceEducationContent_DocumentId"
+                ]
+              },
               {
                 "kind": "Unique",
                 "name": "UX_EducationContentDerivativeSourceEducationContent__9c38152014",
@@ -32436,6 +32548,14 @@
             "constraints": [
               {
                 "kind": "Unique",
+                "name": "UX_GradebookEntryLearningStandard_GradebookEntry_Doc_1bf44ab247",
+                "columns": [
+                  "GradebookEntry_DocumentId",
+                  "LearningStandard_DocumentId"
+                ]
+              },
+              {
+                "kind": "Unique",
                 "name": "UX_GradebookEntryLearningStandard_Ordinal_GradebookE_6d6dcdd200",
                 "columns": [
                   "GradebookEntry_DocumentId",
@@ -35050,6 +35170,14 @@
                 ]
               },
               {
+                "kind": "Unique",
+                "name": "UX_GraduationPlanCreditsByCoursCours_ParentCollectio_6bc659eb69",
+                "columns": [
+                  "ParentCollectionItemId",
+                  "CourseCourse_DocumentId"
+                ]
+              },
+              {
                 "kind": "ForeignKey",
                 "name": "FK_GraduationPlanCreditsByCoursCours_CourseCourse_RefKey",
                 "columns": [
@@ -36564,6 +36692,14 @@
             "constraints": [
               {
                 "kind": "Unique",
+                "name": "UX_InterventionPrescriptionEducationContent_Educatio_869ba11ab6",
+                "columns": [
+                  "InterventionPrescription_DocumentId",
+                  "EducationContentSourceEducationContent_DocumentId"
+                ]
+              },
+              {
+                "kind": "Unique",
                 "name": "UX_InterventionPrescriptionEducationContent_Ordinal__9d31a04054",
                 "columns": [
                   "InterventionPrescription_DocumentId",
@@ -37695,6 +37831,14 @@
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
+              {
+                "kind": "Unique",
+                "name": "UX_InterventionStudyEducationContent_EducationConten_f642697bf7",
+                "columns": [
+                  "InterventionStudy_DocumentId",
+                  "EducationContentSourceEducationContent_DocumentId"
+                ]
+              },
               {
                 "kind": "Unique",
                 "name": "UX_InterventionStudyEducationContent_Ordinal_Interve_fa4c1634e7",
@@ -39373,6 +39517,14 @@
             "constraints": [
               {
                 "kind": "Unique",
+                "name": "UX_InterventionEducationContent_EducationContentSour_462424c1aa",
+                "columns": [
+                  "Intervention_DocumentId",
+                  "EducationContentSourceEducationContent_DocumentId"
+                ]
+              },
+              {
+                "kind": "Unique",
                 "name": "UX_InterventionEducationContent_Ordinal_Intervention_DocumentId",
                 "columns": [
                   "Intervention_DocumentId",
@@ -39533,6 +39685,14 @@
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
+              {
+                "kind": "Unique",
+                "name": "UX_InterventionInterventionPrescription_Intervention_ffb7d2a7c8",
+                "columns": [
+                  "Intervention_DocumentId",
+                  "InterventionPrescriptionInterventionPrescription_DocumentId"
+                ]
+              },
               {
                 "kind": "Unique",
                 "name": "UX_InterventionInterventionPrescription_Ordinal_Inte_36922280a8",
@@ -40061,6 +40221,14 @@
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
+              {
+                "kind": "Unique",
+                "name": "UX_InterventionStaff_Intervention_DocumentId_Staff_DocumentId",
+                "columns": [
+                  "Intervention_DocumentId",
+                  "Staff_DocumentId"
+                ]
+              },
               {
                 "kind": "Unique",
                 "name": "UX_InterventionStaff_Ordinal_Intervention_DocumentId",
@@ -47355,6 +47523,14 @@
             "constraints": [
               {
                 "kind": "Unique",
+                "name": "UX_ObjectiveAssessmentAssessmentItem_AssessmentItemA_d5ab1e380e",
+                "columns": [
+                  "ObjectiveAssessment_DocumentId",
+                  "AssessmentItemAssessmentItem_DocumentId"
+                ]
+              },
+              {
+                "kind": "Unique",
                 "name": "UX_ObjectiveAssessmentAssessmentItem_Ordinal_Objecti_0ed98b769b",
                 "columns": [
                   "ObjectiveAssessment_DocumentId",
@@ -47505,6 +47681,14 @@
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
+              {
+                "kind": "Unique",
+                "name": "UX_ObjectiveAssessmentLearningStandard_LearningStand_0bc58ebc36",
+                "columns": [
+                  "ObjectiveAssessment_DocumentId",
+                  "LearningStandard_DocumentId"
+                ]
+              },
               {
                 "kind": "Unique",
                 "name": "UX_ObjectiveAssessmentLearningStandard_Ordinal_Objec_17b21af036",
@@ -56681,6 +56865,14 @@
             "constraints": [
               {
                 "kind": "Unique",
+                "name": "UX_ProgramLearningStandard_LearningStandard_Document_13485098ba",
+                "columns": [
+                  "Program_DocumentId",
+                  "LearningStandard_DocumentId"
+                ]
+              },
+              {
+                "kind": "Unique",
                 "name": "UX_ProgramLearningStandard_Ordinal_Program_DocumentId",
                 "columns": [
                   "Program_DocumentId",
@@ -58298,6 +58490,14 @@
             "constraints": [
               {
                 "kind": "Unique",
+                "name": "UX_ReportCardGrade_Grade_DocumentId_ReportCard_DocumentId",
+                "columns": [
+                  "ReportCard_DocumentId",
+                  "Grade_DocumentId"
+                ]
+              },
+              {
+                "kind": "Unique",
                 "name": "UX_ReportCardGrade_Ordinal_ReportCard_DocumentId",
                 "columns": [
                   "ReportCard_DocumentId",
@@ -58623,6 +58823,14 @@
                 "columns": [
                   "ReportCard_DocumentId",
                   "Ordinal"
+                ]
+              },
+              {
+                "kind": "Unique",
+                "name": "UX_ReportCardStudentCompetencyObjective_ReportCard_D_39bd501a86",
+                "columns": [
+                  "ReportCard_DocumentId",
+                  "StudentCompetencyObjective_DocumentId"
                 ]
               },
               {
@@ -59583,6 +59791,14 @@
                 "columns": [
                   "RestraintEvent_DocumentId",
                   "Ordinal"
+                ]
+              },
+              {
+                "kind": "Unique",
+                "name": "UX_RestraintEventProgram_Program_DocumentId_Restrain_4b9304020d",
+                "columns": [
+                  "RestraintEvent_DocumentId",
+                  "Program_DocumentId"
                 ]
               },
               {
@@ -64006,6 +64222,14 @@
             "constraints": [
               {
                 "kind": "Unique",
+                "name": "UX_SectionClassPeriod_ClassPeriod_DocumentId_Section_DocumentId",
+                "columns": [
+                  "Section_DocumentId",
+                  "ClassPeriod_DocumentId"
+                ]
+              },
+              {
+                "kind": "Unique",
                 "name": "UX_SectionClassPeriod_Ordinal_Section_DocumentId",
                 "columns": [
                   "Section_DocumentId",
@@ -64453,6 +64677,14 @@
                 "columns": [
                   "Section_DocumentId",
                   "Ordinal"
+                ]
+              },
+              {
+                "kind": "Unique",
+                "name": "UX_SectionProgram_Program_DocumentId_Section_DocumentId",
+                "columns": [
+                  "Section_DocumentId",
+                  "Program_DocumentId"
                 ]
               },
               {
@@ -65135,6 +65367,14 @@
             "constraints": [
               {
                 "kind": "Unique",
+                "name": "UX_SessionAcademicWeek_AcademicWeek_DocumentId_Sessi_687b6f9c21",
+                "columns": [
+                  "Session_DocumentId",
+                  "AcademicWeek_DocumentId"
+                ]
+              },
+              {
+                "kind": "Unique",
                 "name": "UX_SessionAcademicWeek_Ordinal_Session_DocumentId",
                 "columns": [
                   "Session_DocumentId",
@@ -65330,6 +65570,14 @@
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
+              {
+                "kind": "Unique",
+                "name": "UX_SessionGradingPeriod_GradingPeriod_DocumentId_Ses_a3287e9c5b",
+                "columns": [
+                  "Session_DocumentId",
+                  "GradingPeriod_DocumentId"
+                ]
+              },
               {
                 "kind": "Unique",
                 "name": "UX_SessionGradingPeriod_Ordinal_Session_DocumentId",
@@ -71306,6 +71554,14 @@
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
+              {
+                "kind": "Unique",
+                "name": "UX_StaffCredential_Credential_DocumentId_Staff_DocumentId",
+                "columns": [
+                  "Staff_DocumentId",
+                  "Credential_DocumentId"
+                ]
+              },
               {
                 "kind": "Unique",
                 "name": "UX_StaffCredential_Ordinal_Staff_DocumentId",
@@ -78369,6 +78625,14 @@
                 ]
               },
               {
+                "kind": "Unique",
+                "name": "UX_StudentAcademicRecordReportCard_ReportCard_Docume_0ddac2c9e6",
+                "columns": [
+                  "StudentAcademicRecord_DocumentId",
+                  "ReportCard_DocumentId"
+                ]
+              },
+              {
                 "kind": "ForeignKey",
                 "name": "FK_StudentAcademicRecordReportCard_ReportCard_Gradin_2161e893cb",
                 "columns": [
@@ -84041,6 +84305,14 @@
                 ]
               },
               {
+                "kind": "Unique",
+                "name": "UX_StudentCohortAssociationSection_Section_DocumentI_e4715cd1ec",
+                "columns": [
+                  "StudentCohortAssociation_DocumentId",
+                  "Section_DocumentId"
+                ]
+              },
+              {
                 "kind": "ForeignKey",
                 "name": "FK_StudentCohortAssociationSection_Section_RefKey",
                 "columns": [
@@ -84676,6 +84948,14 @@
             "constraints": [
               {
                 "kind": "Unique",
+                "name": "UX_StudentCompetencyObjectiveGeneralStudentProgramAs_857a6cc358",
+                "columns": [
+                  "StudentCompetencyObjective_DocumentId",
+                  "StudentCompetencyObjectiveSectionOrProgramChoiceGene_9ca396b829"
+                ]
+              },
+              {
+                "kind": "Unique",
                 "name": "UX_StudentCompetencyObjectiveGeneralStudentProgramAs_d11644e81b",
                 "columns": [
                   "StudentCompetencyObjective_DocumentId",
@@ -84950,6 +85230,14 @@
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
+              {
+                "kind": "Unique",
+                "name": "UX_StudentCompetencyObjectiveStudentSectionAssociati_3f9aab491f",
+                "columns": [
+                  "StudentCompetencyObjective_DocumentId",
+                  "StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0"
+                ]
+              },
               {
                 "kind": "Unique",
                 "name": "UX_StudentCompetencyObjectiveStudentSectionAssociati_598ed458c5",
@@ -100864,6 +101152,14 @@
                 ]
               },
               {
+                "kind": "Unique",
+                "name": "UX_StudentSchoolAssociationAlternativeGraduationPlan_64d4374eea",
+                "columns": [
+                  "StudentSchoolAssociation_DocumentId",
+                  "AlternativeGraduationPlan_DocumentId"
+                ]
+              },
+              {
                 "kind": "ForeignKey",
                 "name": "FK_StudentSchoolAssociationAlternativeGraduationPlan_5d3e0a6492",
                 "columns": [
@@ -103733,6 +104029,14 @@
                 ]
               },
               {
+                "kind": "Unique",
+                "name": "UX_StudentSectionAssociationProgram_Program_Document_e1803f1bfc",
+                "columns": [
+                  "StudentSectionAssociation_DocumentId",
+                  "Program_DocumentId"
+                ]
+              },
+              {
                 "kind": "ForeignKey",
                 "name": "FK_StudentSectionAssociationProgram_Program_ProgramT_3934919190",
                 "columns": [
@@ -104357,6 +104661,14 @@
             },
             "descriptor_fk_deduplications": [],
             "constraints": [
+              {
+                "kind": "Unique",
+                "name": "UX_StudentSectionAttendanceEventClassPeriod_ClassPer_32827dac6f",
+                "columns": [
+                  "StudentSectionAttendanceEvent_DocumentId",
+                  "ClassPeriod_DocumentId"
+                ]
+              },
               {
                 "kind": "Unique",
                 "name": "UX_StudentSectionAttendanceEventClassPeriod_Ordinal__2fbe6b01f4",

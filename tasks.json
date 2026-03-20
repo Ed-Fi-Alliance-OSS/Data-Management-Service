@@ -51,7 +51,7 @@
       "Update `ConstraintDerivationRelationalModelSetPassTests` to assert semantic-identity UNIQUE constraints are derived from compiled identity metadata for both AUC-backed and reference-backed scopes.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Reference-Derived Positive Tests",
