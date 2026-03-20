@@ -75,6 +75,61 @@ public class Given_A_Non_Reference_Backed_Collection_Without_Array_Uniqueness
 }
 
 /// <summary>
+/// Test fixture for reference-backed collection scopes whose scope-local binding no longer qualifies.
+/// </summary>
+[TestFixture]
+public class Given_A_Reference_Backed_Collection_With_No_Qualifying_Reference_Derived_Semantic_Identity
+{
+    private Action _build = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildReferenceConstraintProjectSchemaWithChildReference();
+        var schemaSet = CollectionSemanticIdentityValidationFixture.CreateSchemaSet(coreProjectSchema);
+        var builder = new DerivedRelationalModelSetBuilder([
+            new BaseTraversalAndDescriptorBindingPass(),
+            new ReferenceBindingPass(),
+            new RewriteReferenceIdentityBindingsPass(
+                "BusRoute",
+                "$.addresses[*].schoolReference",
+                [
+                    JsonPathExpressionCompiler.Compile("$.addresses[*].periods[*].schoolReference.schoolId"),
+                    JsonPathExpressionCompiler.Compile(
+                        "$.addresses[*].periods[*].schoolReference.educationOrganizationId"
+                    ),
+                ]
+            ),
+            new SemanticIdentityCompilationPass(),
+            new ValidateCollectionSemanticIdentityPass(),
+        ]);
+
+        _build = () => builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+    }
+
+    /// <summary>
+    /// It should fail with the ambiguous reference-backed diagnostic when no bindings qualify.
+    /// </summary>
+    [Test]
+    public void It_should_fail_with_the_zero_qualifying_reference_backed_diagnostic()
+    {
+        var exception = _build.Should().Throw<InvalidOperationException>().Which;
+
+        exception.Message.Should().Contain("Persisted multi-item scope");
+        exception.Message.Should().Contain("$.addresses[*]");
+        exception.Message.Should().Contain("Ed-Fi:BusRoute");
+        exception.Message.Should().Contain("reference-backed");
+        exception.Message.Should().Contain("exactly one qualifying");
+        exception.Message.Should().Contain("found 0");
+        exception.Message.Should().Contain("$.addresses[*].schoolReference");
+    }
+}
+
+/// <summary>
 /// Test fixture for ambiguous reference-derived semantic identity.
 /// </summary>
 [TestFixture]
@@ -283,6 +338,79 @@ file sealed class RewriteTableKindPass(string resourceName, string tableName, Db
             {
                 Root = updatedRoot,
                 TablesInDependencyOrder = updatedTables,
+            };
+
+            context.ConcreteResourcesInNameOrder[index] = concreteResource with
+            {
+                RelationalModel = updatedModel,
+            };
+        }
+    }
+}
+
+/// <summary>
+/// Test-only set pass that rewrites one reference binding's identity paths to a non-qualifying scope.
+/// </summary>
+file sealed class RewriteReferenceIdentityBindingsPass(
+    string resourceName,
+    string referenceObjectPath,
+    IReadOnlyList<JsonPathExpression> rewrittenReferenceJsonPaths
+) : IRelationalModelSetPass
+{
+    /// <summary>
+    /// Execute pass.
+    /// </summary>
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        for (var index = 0; index < context.ConcreteResourcesInNameOrder.Count; index++)
+        {
+            var concreteResource = context.ConcreteResourcesInNameOrder[index];
+
+            if (
+                !string.Equals(
+                    concreteResource.ResourceKey.Resource.ResourceName,
+                    resourceName,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                continue;
+            }
+
+            var updatedBindings = concreteResource
+                .RelationalModel.DocumentReferenceBindings.Select(binding =>
+                {
+                    if (
+                        !string.Equals(
+                            binding.ReferenceObjectPath.Canonical,
+                            referenceObjectPath,
+                            StringComparison.Ordinal
+                        )
+                    )
+                    {
+                        return binding;
+                    }
+
+                    var identityBindings = rewrittenReferenceJsonPaths
+                        .Select(
+                            (path, rewrittenIndex) =>
+                                new ReferenceIdentityBinding(
+                                    path,
+                                    binding.IdentityBindings[rewrittenIndex].Column
+                                )
+                        )
+                        .ToArray();
+
+                    return binding with
+                    {
+                        IdentityBindings = identityBindings,
+                    };
+                })
+                .ToArray();
+
+            var updatedModel = concreteResource.RelationalModel with
+            {
+                DocumentReferenceBindings = updatedBindings,
             };
 
             context.ConcreteResourcesInNameOrder[index] = concreteResource with
