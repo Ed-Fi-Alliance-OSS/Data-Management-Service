@@ -427,11 +427,14 @@ At runtime, DMS needs two related caches:
 Recommended key shape:
 
 ```csharp
-public readonly record struct MappingPackKey(
+// Selection key used for cache lookup and runtime compilation.
+// PackFormatVersion is intentionally omitted: it is a validation concern
+// (checked from the envelope after reading), not a selection concern.
+// File distribution keys use this same 3-field shape (see §7.1).
+public readonly record struct MappingSetKey(
     string EffectiveSchemaHash,
     SqlDialect Dialect,
-    string RelationalMappingVersion,
-    uint PackFormatVersion);
+    string RelationalMappingVersion);
 ```
 
 ### 11.2 Interfaces
@@ -441,18 +444,19 @@ Suggested separation:
 ```csharp
 public interface IMappingSetProvider
 {
-    Task<IMappingSet> GetOrCreateAsync(MappingPackKey key, CancellationToken ct);
+    Task<MappingSet> GetOrCreateAsync(MappingSetKey key, CancellationToken ct);
 }
 
 public interface IMappingPackStore
 {
-    // Returns null if the pack is not present in this store.
-    Task<MappingPackEnvelope?> TryGetAsync(MappingPackKey key, CancellationToken ct);
+    // Returns the decoded payload, or null if the pack is not present in this store.
+    // Envelope parsing and validation are the store's responsibility.
+    Task<MappingPackPayload?> TryLoadPayloadAsync(MappingSetKey key, CancellationToken ct);
 }
 ```
 
 Where:
-- `IMappingPackStore` has multiple implementations (file now; Redis/DB later).
+- `IMappingPackStore` has multiple implementations (file now; Redis/DB later). The store owns envelope validation/decompression and returns a clean payload.
 - `IMappingSetProvider` coordinates loading + fallback runtime compilation + in-memory caching.
 
 ### 11.3 File-based store (sketch)

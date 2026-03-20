@@ -28,12 +28,54 @@ public interface IMappingSetProvider
 
 /// <summary>
 /// Thrown when a mapping set cannot be provided for a selection key.
+/// Carries a <see cref="Diagnostics"/> list of actionable detail strings
+/// that middleware surfaces in the 503 response body.
 /// </summary>
 public sealed class MappingSetUnavailableException : Exception
 {
+    /// <summary>
+    /// Actionable diagnostic details describing the failure. Each entry is a
+    /// human-readable string suitable for inclusion in the API error response.
+    /// </summary>
+    public IReadOnlyList<string> Diagnostics { get; }
+
+    public MappingSetUnavailableException(string message, IReadOnlyList<string> diagnostics)
+        : base(message)
+    {
+        Diagnostics = ValidateDiagnostics(diagnostics);
+    }
+
+    public MappingSetUnavailableException(
+        string message,
+        IReadOnlyList<string> diagnostics,
+        Exception innerException
+    )
+        : base(message, innerException)
+    {
+        Diagnostics = ValidateDiagnostics(diagnostics);
+    }
+
     public MappingSetUnavailableException(string message)
-        : base(message) { }
+        : base(message)
+    {
+        Diagnostics = [message];
+    }
 
     public MappingSetUnavailableException(string message, Exception innerException)
-        : base(message, innerException) { }
+        : base(message, innerException)
+    {
+        Diagnostics = [message];
+    }
+
+    private static IReadOnlyList<string> ValidateDiagnostics(IReadOnlyList<string> diagnostics)
+    {
+        ArgumentNullException.ThrowIfNull(diagnostics);
+
+        if (diagnostics.Count == 0)
+        {
+            throw new ArgumentException("At least one diagnostic entry is required.", nameof(diagnostics));
+        }
+
+        return diagnostics;
+    }
 }

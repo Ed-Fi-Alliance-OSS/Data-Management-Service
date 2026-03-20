@@ -5,6 +5,7 @@
 
 using System.Linq;
 using EdFi.DataManagementService.Backend.Deploy;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Response;
@@ -259,6 +260,7 @@ OptionsValidationException? ReportInvalidConfiguration(WebApplication app)
         // Accessing IOptions<T> forces validation
         _ = app.Services.GetRequiredService<IOptions<AppSettings>>().Value;
         _ = app.Services.GetRequiredService<IOptions<ConfigurationServiceSettings>>().Value;
+        _ = app.Services.GetRequiredService<IOptions<MappingSetProviderOptions>>().Value;
     }
     catch (OptionsValidationException ex)
     {

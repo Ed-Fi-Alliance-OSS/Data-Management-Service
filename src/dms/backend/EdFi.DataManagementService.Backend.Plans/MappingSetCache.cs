@@ -6,17 +6,35 @@
 using System.Collections.Concurrent;
 using System.Threading;
 using EdFi.DataManagementService.Backend.External;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using static EdFi.DataManagementService.Backend.External.LogSanitizer;
 
 namespace EdFi.DataManagementService.Backend.Plans;
 
 /// <summary>
 /// Process-local cache of compiled mapping sets keyed by <see cref="MappingSetKey" />.
 /// </summary>
-public sealed class MappingSetCache(Func<MappingSetKey, CancellationToken, Task<MappingSet>> compileAsync)
+public sealed class MappingSetCache(
+    Func<MappingSetKey, CancellationToken, Task<MappingSet>> compileAsync,
+    ILogger? logger = null,
+    TimeSpan? failureCooldown = null
+)
 {
     private readonly Func<MappingSetKey, CancellationToken, Task<MappingSet>> _compileAsync =
         compileAsync ?? throw new ArgumentNullException(nameof(compileAsync));
 
+    private readonly ILogger _logger = logger ?? NullLogger.Instance;
+
+    /// <summary>
+    /// How long a faulted entry stays in cache before eviction. Defaults to zero
+    /// (immediate eviction) so the next call retries, per the design spec.
+    /// Callers may pass a non-zero value to prevent retry storms on permanently-failing keys.
+    /// </summary>
+    private readonly TimeSpan _failureCooldown = failureCooldown ?? TimeSpan.Zero;
+
+    // Unbounded: the key space is naturally small (one entry per unique schema hash +
+    // dialect + mapping version combination, typically 1-2 per deployment).
     private readonly ConcurrentDictionary<MappingSetKey, CacheEntry> _cache = new();
 
     /// <summary>
@@ -36,7 +54,15 @@ public sealed class MappingSetCache(Func<MappingSetKey, CancellationToken, Task<
 
         if (ReferenceEquals(cacheEntry, createdEntry))
         {
-            cacheEntry.StartCompilation(key, _compileAsync, _cache);
+            cacheEntry.StartCompilation(key, _compileAsync, _cache, _failureCooldown);
+        }
+        else
+        {
+            _logger.LogDebug(
+                "Mapping set cache hit for EffectiveSchemaHash {EffectiveSchemaHash}, Dialect {Dialect}",
+                SanitizeForLog(key.EffectiveSchemaHash),
+                key.Dialect
+            );
         }
 
         return await cacheEntry.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -55,7 +81,8 @@ public sealed class MappingSetCache(Func<MappingSetKey, CancellationToken, Task<
         public void StartCompilation(
             MappingSetKey key,
             Func<MappingSetKey, CancellationToken, Task<MappingSet>> compileAsync,
-            ConcurrentDictionary<MappingSetKey, CacheEntry> cache
+            ConcurrentDictionary<MappingSetKey, CacheEntry> cache,
+            TimeSpan failureCooldown
         )
         {
             ArgumentNullException.ThrowIfNull(compileAsync);
@@ -65,16 +92,19 @@ public sealed class MappingSetCache(Func<MappingSetKey, CancellationToken, Task<
                 throw new InvalidOperationException("Cache entry compilation was already started.");
             }
 
-            _ = CompileAndPublishAsync(key, compileAsync, cache);
+            _ = CompileAndPublishAsync(key, compileAsync, cache, failureCooldown);
         }
 
         /// <summary>
-        /// Compiles a mapping set and evicts the cache entry if compilation fails so subsequent calls can retry.
+        /// Compiles a mapping set. On failure, the faulted entry is evicted after
+        /// <paramref name="failureCooldown"/> (default zero = immediate) so a fresh
+        /// retry can happen.
         /// </summary>
         private async Task CompileAndPublishAsync(
             MappingSetKey key,
             Func<MappingSetKey, CancellationToken, Task<MappingSet>> compileAsync,
-            ConcurrentDictionary<MappingSetKey, CacheEntry> cache
+            ConcurrentDictionary<MappingSetKey, CacheEntry> cache,
+            TimeSpan failureCooldown
         )
         {
             try
@@ -86,14 +116,36 @@ public sealed class MappingSetCache(Func<MappingSetKey, CancellationToken, Task<
             }
             catch (OperationCanceledException ex)
             {
+                // Cancellation is transient — evict immediately so retries can start fresh.
                 cache.TryRemove(new KeyValuePair<MappingSetKey, CacheEntry>(key, this));
                 _completionSource.TrySetCanceled(ex.CancellationToken);
             }
             catch (Exception ex)
             {
-                cache.TryRemove(new KeyValuePair<MappingSetKey, CacheEntry>(key, this));
                 _completionSource.TrySetException(ex);
+
+                if (failureCooldown <= TimeSpan.Zero)
+                {
+                    // Evict synchronously so the very next call retries immediately.
+                    cache.TryRemove(new KeyValuePair<MappingSetKey, CacheEntry>(key, this));
+                }
+                else
+                {
+                    // Keep the faulted entry cached for the cooldown period to prevent
+                    // retry storms, then evict so a fresh retry can happen.
+                    _ = EvictAfterCooldownAsync(key, cache, failureCooldown);
+                }
             }
+        }
+
+        private async Task EvictAfterCooldownAsync(
+            MappingSetKey key,
+            ConcurrentDictionary<MappingSetKey, CacheEntry> cache,
+            TimeSpan cooldown
+        )
+        {
+            await Task.Delay(cooldown).ConfigureAwait(false);
+            cache.TryRemove(new KeyValuePair<MappingSetKey, CacheEntry>(key, this));
         }
     }
 }

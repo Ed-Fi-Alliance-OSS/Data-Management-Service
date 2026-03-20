@@ -96,6 +96,40 @@ public class ResolveMappingSetMiddlewareTests
         return compiler;
     }
 
+    private static MappingSet CreateTestMappingSet()
+    {
+        var key = new MappingSetKey(_testHash, SqlDialect.Pgsql, "v1");
+        var effectiveSchema = new EffectiveSchemaInfo(
+            ApiSchemaFormatVersion: "1.0",
+            RelationalMappingVersion: "v1",
+            EffectiveSchemaHash: _testHash,
+            ResourceKeyCount: 0,
+            ResourceKeySeedHash: new byte[32],
+            SchemaComponentsInEndpointOrder: [],
+            ResourceKeysInIdOrder: []
+        );
+
+        var modelSet = new DerivedRelationalModelSet(
+            EffectiveSchema: effectiveSchema,
+            Dialect: SqlDialect.Pgsql,
+            ProjectSchemasInEndpointOrder: [],
+            ConcreteResourcesInNameOrder: [],
+            AbstractIdentityTablesInNameOrder: [],
+            AbstractUnionViewsInNameOrder: [],
+            IndexesInCreateOrder: [],
+            TriggersInCreateOrder: []
+        );
+
+        return new MappingSet(
+            Key: key,
+            Model: modelSet,
+            WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
+            ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
+            ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>(),
+            ResourceKeyById: new Dictionary<short, ResourceKeyEntry>()
+        );
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_UseRelationalBackend_Is_False : ResolveMappingSetMiddlewareTests
@@ -196,40 +230,6 @@ public class ResolveMappingSetMiddlewareTests
         private bool _nextCalled;
         private readonly MappingSet _expectedMappingSet = CreateTestMappingSet();
 
-        private static MappingSet CreateTestMappingSet()
-        {
-            var key = new MappingSetKey(_testHash, SqlDialect.Pgsql, "v1");
-            var effectiveSchema = new EffectiveSchemaInfo(
-                ApiSchemaFormatVersion: "1.0",
-                RelationalMappingVersion: "v1",
-                EffectiveSchemaHash: _testHash,
-                ResourceKeyCount: 0,
-                ResourceKeySeedHash: new byte[32],
-                SchemaComponentsInEndpointOrder: [],
-                ResourceKeysInIdOrder: []
-            );
-
-            var modelSet = new DerivedRelationalModelSet(
-                EffectiveSchema: effectiveSchema,
-                Dialect: SqlDialect.Pgsql,
-                ProjectSchemasInEndpointOrder: [],
-                ConcreteResourcesInNameOrder: [],
-                AbstractIdentityTablesInNameOrder: [],
-                AbstractUnionViewsInNameOrder: [],
-                IndexesInCreateOrder: [],
-                TriggersInCreateOrder: []
-            );
-
-            return new MappingSet(
-                Key: key,
-                Model: modelSet,
-                WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
-                ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
-                ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>(),
-                ResourceKeyById: new Dictionary<short, ResourceKeyEntry>()
-            );
-        }
-
         [SetUp]
         public async Task Setup()
         {
@@ -268,6 +268,73 @@ public class ResolveMappingSetMiddlewareTests
         public void It_attaches_mapping_set_to_request_info()
         {
             _requestInfo.MappingSet.Should().BeSameAs(_expectedMappingSet);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Fingerprint_Present_Verifies_Exact_Key_Construction : ResolveMappingSetMiddlewareTests
+    {
+        private MappingSetKey _capturedKey;
+        private IMappingSetProvider _mappingSetProvider = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var compiler = CreateFakeCompiler();
+            var (middleware, mappingSetProvider) = CreateMiddleware(
+                useRelationalBackend: true,
+                compiler: compiler
+            );
+            _mappingSetProvider = mappingSetProvider;
+
+            var fingerprint = CreateFingerprint(hash: _testHash);
+            var requestInfo = CreateRequestInfo(fingerprint: fingerprint);
+
+            A.CallTo(() =>
+                    mappingSetProvider.GetOrCreateAsync(
+                        A<MappingSetKey>.Ignored,
+                        A<CancellationToken>.Ignored
+                    )
+                )
+                .Invokes((MappingSetKey key, CancellationToken _) => _capturedKey = key)
+                .Returns(CreateTestMappingSet());
+
+            await middleware.Execute(requestInfo, () => Task.CompletedTask);
+        }
+
+        [Test]
+        public void It_uses_fingerprint_effective_schema_hash()
+        {
+            _capturedKey.EffectiveSchemaHash.Should().Be(_testHash);
+        }
+
+        [Test]
+        public void It_uses_compiler_dialect()
+        {
+            _capturedKey.Dialect.Should().Be(SqlDialect.Pgsql);
+        }
+
+        [Test]
+        public void It_uses_effective_schema_relational_mapping_version()
+        {
+            _capturedKey.RelationalMappingVersion.Should().Be("v1");
+        }
+
+        [Test]
+        public void It_calls_provider_exactly_once()
+        {
+            A.CallTo(() =>
+                    _mappingSetProvider.GetOrCreateAsync(
+                        A<MappingSetKey>.That.Matches(k =>
+                            k.EffectiveSchemaHash == _testHash
+                            && k.Dialect == SqlDialect.Pgsql
+                            && k.RelationalMappingVersion == "v1"
+                        ),
+                        A<CancellationToken>.Ignored
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
         }
     }
 
@@ -431,6 +498,84 @@ public class ResolveMappingSetMiddlewareTests
                 .FrontendResponse.Body!.ToString()
                 .Should()
                 .Contain("No relational backend compiler is registered");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Provider_Throws_With_Diagnostics : ResolveMappingSetMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var compiler = CreateFakeCompiler();
+            var (middleware, mappingSetProvider) = CreateMiddleware(
+                useRelationalBackend: true,
+                compiler: compiler
+            );
+            _requestInfo = CreateRequestInfo(fingerprint: CreateFingerprint());
+
+            A.CallTo(() =>
+                    mappingSetProvider.GetOrCreateAsync(
+                        A<MappingSetKey>.Ignored,
+                        A<CancellationToken>.Ignored
+                    )
+                )
+                .Throws(
+                    new MappingSetUnavailableException(
+                        "Mapping pack is required but not found.",
+                        [
+                            $"EffectiveSchemaHash: {_testHash}",
+                            "Dialect: Pgsql",
+                            "RelationalMappingVersion: v1",
+                            "Pack status: required but not found",
+                            "Suggested action: Provide a matching .mpack file or set Required=false.",
+                        ]
+                    )
+                );
+
+            await middleware.Execute(_requestInfo, () => Task.CompletedTask);
+        }
+
+        [Test]
+        public void It_returns_503()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(503);
+        }
+
+        [Test]
+        public void It_includes_exception_message_as_detail()
+        {
+            _requestInfo
+                .FrontendResponse.Body!.ToString()
+                .Should()
+                .Contain("Mapping pack is required but not found.");
+        }
+
+        [Test]
+        public void It_includes_effective_schema_hash_in_errors()
+        {
+            _requestInfo.FrontendResponse.Body!.ToString().Should().Contain(_testHash);
+        }
+
+        [Test]
+        public void It_includes_dialect_in_errors()
+        {
+            _requestInfo.FrontendResponse.Body!.ToString().Should().Contain("Dialect: Pgsql");
+        }
+
+        [Test]
+        public void It_includes_mapping_version_in_errors()
+        {
+            _requestInfo.FrontendResponse.Body!.ToString().Should().Contain("RelationalMappingVersion: v1");
+        }
+
+        [Test]
+        public void It_includes_pack_status_in_errors()
+        {
+            _requestInfo.FrontendResponse.Body!.ToString().Should().Contain("required but not found");
         }
     }
 }

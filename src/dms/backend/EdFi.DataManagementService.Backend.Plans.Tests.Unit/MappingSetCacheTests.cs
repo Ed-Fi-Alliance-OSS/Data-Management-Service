@@ -75,7 +75,8 @@ public class Given_MappingSetCache
                 }
 
                 return compiledMappingSet;
-            }
+            },
+            failureCooldown: TimeSpan.Zero
         );
 
         var firstAct = async () => await cache.GetOrCreateAsync(key, CancellationToken.None);
@@ -84,6 +85,7 @@ public class Given_MappingSetCache
             .ThrowAsync<InvalidOperationException>()
             .WithMessage("failed to compile mapping set");
 
+        // With zero cooldown, eviction is synchronous — retry works immediately.
         var secondResult = await cache.GetOrCreateAsync(key, CancellationToken.None);
         secondResult.Should().BeSameAs(compiledMappingSet);
 
@@ -116,7 +118,8 @@ public class Given_MappingSetCache
                 }
 
                 return compiledMappingSet;
-            }
+            },
+            failureCooldown: TimeSpan.Zero
         );
 
         var firstCallers = Enumerable
@@ -138,6 +141,7 @@ public class Given_MappingSetCache
 
         compileInvocationCount.Should().Be(1);
 
+        // With zero cooldown, eviction is synchronous — retry works immediately.
         var retryResult = await cache.GetOrCreateAsync(key, CancellationToken.None);
         retryResult.Should().BeSameAs(compiledMappingSet);
         compileInvocationCount.Should().Be(2);
@@ -181,6 +185,65 @@ public class Given_MappingSetCache
         var completedResult = await cache.GetOrCreateAsync(key, CancellationToken.None);
         completedResult.Should().BeSameAs(compiledMappingSet);
         compileInvocationCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_should_evict_and_retry_after_OperationCanceledException()
+    {
+        var key = CreateMappingSetKey(new string('f', 64), SqlDialect.Pgsql, "v1");
+        var compiledMappingSet = CreateMappingSet(key);
+        var compileInvocationCount = 0;
+
+        var cache = new MappingSetCache(
+            async (_, _) =>
+            {
+                var invocationCount = Interlocked.Increment(ref compileInvocationCount);
+                await Task.Yield();
+
+                if (invocationCount == 1)
+                {
+                    throw new OperationCanceledException("simulated cancellation");
+                }
+
+                return compiledMappingSet;
+            }
+        );
+
+        var firstAct = async () => await cache.GetOrCreateAsync(key, CancellationToken.None);
+        await firstAct.Should().ThrowAsync<OperationCanceledException>();
+
+        // OperationCanceledException evicts immediately (no cooldown), so retry works right away.
+        var secondResult = await cache.GetOrCreateAsync(key, CancellationToken.None);
+        secondResult.Should().BeSameAs(compiledMappingSet);
+
+        compileInvocationCount.Should().Be(2);
+    }
+
+    [Test]
+    public async Task It_should_return_cached_failure_during_cooldown_period()
+    {
+        var key = CreateMappingSetKey(new string('g', 64), SqlDialect.Pgsql, "v1");
+        var compileInvocationCount = 0;
+
+        var cache = new MappingSetCache(
+            async (_, _) =>
+            {
+                Interlocked.Increment(ref compileInvocationCount);
+                await Task.Yield();
+                throw new InvalidOperationException("permanent failure");
+            },
+            failureCooldown: TimeSpan.FromSeconds(30)
+        );
+
+        var firstAct = async () => await cache.GetOrCreateAsync(key, CancellationToken.None);
+        await firstAct.Should().ThrowAsync<InvalidOperationException>().WithMessage("permanent failure");
+
+        // Within the 30s cooldown, the faulted entry is still cached.
+        // The second call should see the cached failure, not trigger recompilation.
+        var secondAct = async () => await cache.GetOrCreateAsync(key, CancellationToken.None);
+        await secondAct.Should().ThrowAsync<InvalidOperationException>().WithMessage("permanent failure");
+
+        compileInvocationCount.Should().Be(1, "compilation should happen only once during cooldown");
     }
 
     private static MappingSetKey CreateMappingSetKey(
