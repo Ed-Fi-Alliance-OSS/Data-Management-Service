@@ -528,11 +528,11 @@ C5 owns the end-to-end call sequence for the Core profile write pipeline. The in
 
 | Story | Title | Tier | Dependencies | Unblocks |
 | --- | --- | --- | --- | --- |
-| C1 | Shared Compiled-Scope Adapter Contract + Address Derivation Engine | 0 | — | C2, C3, C4, C5, C6 |
+| C1 | Shared Compiled-Scope Adapter Contract + Address Derivation Engine | 0 | — | C2, C3, C4, C5, C6, DMS-1103, DMS-1105 |
 | C2 | Semantic Identity Compatibility Validation | 1 | C1, C8 | C4, C5 |
 | C3 | Request-Side Visibility Classification + Writable Request Shaping | 1 | C1, C8 | C4, C5, C6 |
 | C4 | Request-Side Creatability Analysis + Duplicate Collection-Item Validation | 2 | C1, C2, C3, C8 | C5 |
-| C5 | Orchestrate Profile Write Pipeline + Assemble ProfileAppliedWriteRequest | 2 | C1, C2, C3, C4, C8 | C6, DMS-1103 (via C6) |
+| C5 | Orchestrate Profile Write Pipeline + Assemble ProfileAppliedWriteRequest | 2 | C1, C2, C3, C4, C8 | C6, DMS-1103 |
 | C6 | Stored-State Projection + HiddenMemberPaths Computation | 3 | C1, C3, C5 | DMS-1103, DMS-1105 |
 | C7 | Readable Profile Projection After Reconstitution | 0 | — | DMS-990 |
 | C8 | Typed Profile Error Classification | 0 | — | C2, C3, C4, C5, DMS-1103, DMS-1104 |
