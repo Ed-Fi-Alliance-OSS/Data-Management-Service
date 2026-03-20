@@ -1,6 +1,6 @@
 ---
-jira: DMS-1106
-jira_url: https://edfi.atlassian.net/browse/DMS-1106
+jira: DMS-1110
+jira_url: https://edfi.atlassian.net/browse/DMS-1110
 ---
 
 # Story: Core Profile Support Delivery Plan Spike
@@ -48,7 +48,7 @@ The delivery plan document and follow-on story files are:
 - **C4:** `01a-c4-request-creatability-and-collection-validation.md` — Request-Side Creatability Analysis + Duplicate Collection-Item Validation (Tier 2)
 - **C5:** `01a-c5-assemble-profile-applied-write-request.md` — Orchestrate Profile Write Pipeline + Assemble ProfileAppliedWriteRequest (Tier 2)
 - **C6:** `01a-c6-stored-state-projection-and-hidden-member-paths.md` — Stored-State Projection + HiddenMemberPaths Computation (Tier 3)
-- **C7:** `01a-c7-readable-profile-projection.md` — Readable Profile Projection After Reconstitution (Tier 3)
+- **C7:** `01a-c7-readable-profile-projection.md` — Readable Profile Projection After Reconstitution (Tier 0 — independent, no C-story dependencies)
 - **C8:** `01a-c8-typed-profile-error-classification.md` — Typed Profile Error Classification (Tier 3)
 
 ## Tasks

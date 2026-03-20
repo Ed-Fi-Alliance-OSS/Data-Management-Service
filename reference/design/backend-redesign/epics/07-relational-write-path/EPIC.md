@@ -33,14 +33,14 @@ Critical-path note: `reference/design/backend-redesign/epics/DEPENDENCIES.md` re
 
 - `DMS-981` — `00-core-extraction-location.md` — Core emits concrete JSON locations for document references
 - `DMS-982` — `01-reference-and-descriptor-resolution.md` — Bulk resolve `ReferentialId → DocumentId` and validate descriptors
-- `DMS-1106` — `01a-core-profile-delivery-plan.md` — Core profile support delivery plan spike (creates the follow-on Core stories that block profiled write/read integration)
+- `DMS-1110` — `01a-core-profile-delivery-plan.md` — Core profile support delivery plan spike (creates the follow-on Core stories that block profiled write/read integration)
 - `TBD` — `01a-c1-compiled-scope-adapter-and-address-derivation.md` — Shared Compiled-Scope Adapter Contract + Address Derivation Engine (Core, Tier 0)
 - `TBD` — `01a-c2-semantic-identity-compatibility-validation.md` — Semantic Identity Compatibility Validation (Core, Tier 1)
 - `TBD` — `01a-c3-request-visibility-and-writable-shaping.md` — Request-Side Visibility Classification + Writable Request Shaping (Core, Tier 1)
 - `TBD` — `01a-c4-request-creatability-and-collection-validation.md` — Request-Side Creatability Analysis + Duplicate Collection-Item Validation (Core, Tier 2)
 - `TBD` — `01a-c5-assemble-profile-applied-write-request.md` — Orchestrate Profile Write Pipeline + Assemble ProfileAppliedWriteRequest (Core, Tier 2)
 - `TBD` — `01a-c6-stored-state-projection-and-hidden-member-paths.md` — Stored-State Projection + HiddenMemberPaths Computation (Core, Tier 3)
-- `TBD` — `01a-c7-readable-profile-projection.md` — Readable Profile Projection After Reconstitution (Core, Tier 3)
+- `TBD` — `01a-c7-readable-profile-projection.md` — Readable Profile Projection After Reconstitution (Core, Tier 0 — independent, no C-story dependencies)
 - `TBD` — `01a-c8-typed-profile-error-classification.md` — Typed Profile Error Classification (Core, Tier 3)
 - `DMS-1103` — `01b-profile-write-context.md` — Integrate the Core/backend profile write contract
 - `DMS-1105` — `01c-current-document-for-profile-projection.md` — Load/reconstitute the current stored document for profiled update/upserts

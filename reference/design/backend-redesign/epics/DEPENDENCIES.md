@@ -635,18 +635,21 @@ Recommended Jira link creation:
 | Soft | `E15-S04` | `DMS-1045` | `15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md` | `E15-S06` | `DMS-1047` | `15-plan-compilation/06-projection-plan-compilers.md` |
 | Soft | `E15-S04b` | `DMS-1102` | `15-plan-compilation/04b-stable-collection-merge-plans.md` | `E15-S06` | `DMS-1047` | `15-plan-compilation/06-projection-plan-compilers.md` |
 | Hard | `E15-S05` | `DMS-1046` | `15-plan-compilation/05-read-plan-compiler-hydration.md` | `E15-S06` | `DMS-1047` | `15-plan-compilation/06-projection-plan-compilers.md` |
-| Hard | `E07-S01a` | `DMS-1106` | `07-relational-write-path/01a-core-profile-delivery-plan.md` | `E07-S01a-C1` | `TBD` | `07-relational-write-path/01a-c1-compiled-scope-adapter-and-address-derivation.md` |
+| Hard | `E07-S01a` | `DMS-1110` | `07-relational-write-path/01a-core-profile-delivery-plan.md` | `E07-S01a-C1` | `TBD` | `07-relational-write-path/01a-c1-compiled-scope-adapter-and-address-derivation.md` |
 | Hard | `E07-S01a-C1` | `TBD` | `07-relational-write-path/01a-c1-compiled-scope-adapter-and-address-derivation.md` | `E07-S01a-C2` | `TBD` | `07-relational-write-path/01a-c2-semantic-identity-compatibility-validation.md` |
 | Hard | `E07-S01a-C1` | `TBD` | `07-relational-write-path/01a-c1-compiled-scope-adapter-and-address-derivation.md` | `E07-S01a-C3` | `TBD` | `07-relational-write-path/01a-c3-request-visibility-and-writable-shaping.md` |
 | Hard | `E07-S01a-C1` | `TBD` | `07-relational-write-path/01a-c1-compiled-scope-adapter-and-address-derivation.md` | `E07-S01a-C4` | `TBD` | `07-relational-write-path/01a-c4-request-creatability-and-collection-validation.md` |
 | Hard | `E07-S01a-C2` | `TBD` | `07-relational-write-path/01a-c2-semantic-identity-compatibility-validation.md` | `E07-S01a-C4` | `TBD` | `07-relational-write-path/01a-c4-request-creatability-and-collection-validation.md` |
 | Hard | `E07-S01a-C3` | `TBD` | `07-relational-write-path/01a-c3-request-visibility-and-writable-shaping.md` | `E07-S01a-C4` | `TBD` | `07-relational-write-path/01a-c4-request-creatability-and-collection-validation.md` |
+| Hard | `E07-S01a-C1` | `TBD` | `07-relational-write-path/01a-c1-compiled-scope-adapter-and-address-derivation.md` | `E07-S01a-C5` | `TBD` | `07-relational-write-path/01a-c5-assemble-profile-applied-write-request.md` |
+| Hard | `E07-S01a-C2` | `TBD` | `07-relational-write-path/01a-c2-semantic-identity-compatibility-validation.md` | `E07-S01a-C5` | `TBD` | `07-relational-write-path/01a-c5-assemble-profile-applied-write-request.md` |
 | Hard | `E07-S01a-C3` | `TBD` | `07-relational-write-path/01a-c3-request-visibility-and-writable-shaping.md` | `E07-S01a-C5` | `TBD` | `07-relational-write-path/01a-c5-assemble-profile-applied-write-request.md` |
 | Hard | `E07-S01a-C4` | `TBD` | `07-relational-write-path/01a-c4-request-creatability-and-collection-validation.md` | `E07-S01a-C5` | `TBD` | `07-relational-write-path/01a-c5-assemble-profile-applied-write-request.md` |
 | Hard | `E07-S01a-C1` | `TBD` | `07-relational-write-path/01a-c1-compiled-scope-adapter-and-address-derivation.md` | `E07-S01a-C6` | `TBD` | `07-relational-write-path/01a-c6-stored-state-projection-and-hidden-member-paths.md` |
 | Hard | `E07-S01a-C3` | `TBD` | `07-relational-write-path/01a-c3-request-visibility-and-writable-shaping.md` | `E07-S01a-C6` | `TBD` | `07-relational-write-path/01a-c6-stored-state-projection-and-hidden-member-paths.md` |
 | Hard | `E07-S01a-C5` | `TBD` | `07-relational-write-path/01a-c5-assemble-profile-applied-write-request.md` | `E07-S01a-C6` | `TBD` | `07-relational-write-path/01a-c6-stored-state-projection-and-hidden-member-paths.md` |
-| Hard | `E07-S01a-C1` | `TBD` | `07-relational-write-path/01a-c1-compiled-scope-adapter-and-address-derivation.md` | `E07-S01a-C7` | `TBD` | `07-relational-write-path/01a-c7-readable-profile-projection.md` |
+| Hard | `E07-S01a-C2` | `TBD` | `07-relational-write-path/01a-c2-semantic-identity-compatibility-validation.md` | `E07-S01a-C8` | `TBD` | `07-relational-write-path/01a-c8-typed-profile-error-classification.md` |
 | Hard | `E07-S01a-C3` | `TBD` | `07-relational-write-path/01a-c3-request-visibility-and-writable-shaping.md` | `E07-S01a-C8` | `TBD` | `07-relational-write-path/01a-c8-typed-profile-error-classification.md` |
 | Hard | `E07-S01a-C4` | `TBD` | `07-relational-write-path/01a-c4-request-creatability-and-collection-validation.md` | `E07-S01a-C8` | `TBD` | `07-relational-write-path/01a-c8-typed-profile-error-classification.md` |
+| Hard | `E07-S01a-C5` | `TBD` | `07-relational-write-path/01a-c5-assemble-profile-applied-write-request.md` | `E07-S01a-C8` | `TBD` | `07-relational-write-path/01a-c8-typed-profile-error-classification.md` |
 <!-- END STORY DEPENDENCY EDGES -->

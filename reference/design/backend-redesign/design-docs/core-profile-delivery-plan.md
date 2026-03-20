@@ -1,6 +1,6 @@
 # Core Profile Support Delivery Plan
 
-This document is the delivery plan for Core-owned profile support, produced by the spike story `DMS-1106` (`reference/design/backend-redesign/epics/07-relational-write-path/01a-core-profile-delivery-plan.md`).
+This document is the delivery plan for Core-owned profile support, produced by the spike story `DMS-1110` (`reference/design/backend-redesign/epics/07-relational-write-path/01a-core-profile-delivery-plan.md`).
 
 It translates the ownership statements in `reference/design/backend-redesign/design-docs/profiles.md` into a concrete implementation plan, shared contract definitions, and follow-on story inventory.
 
@@ -592,10 +592,12 @@ C1 ──┬──> C2 ──> C4 ──┬──> C5 ──> C6 ──> [DMS-11
 C7 ──> [DMS-990]  (no C-story dependencies — can start immediately)
 
 Additional edges not shown above (would create crossing lines):
+  C1 ──> C4  (C4 consumes adapter from C1 for address derivation)
   C1 ──> C5  (adapter for stored-side existence lookup construction)
   C1 ──> C6  (adapter for stored-side address derivation)
   C2 ──> C5  (C5 directly invokes C2 as an orchestration step)
   C2 ──> C8  (C8 integrates typed error production into C2's reject path)
+  C3 ──> C5  (C5 consumes WritableRequestBody and RequestScopeStates from C3)
   C3 ──> C6  (shared visibility classification rules)
   C3 ──> C8  (writable validation failures feed error classification)
   C5 ──> C8  (profile-mode validation error integration)
@@ -659,7 +661,10 @@ New dependency edges:
 | Hard | `E07-S01a-C4` | `E07-S01a-C8` | C8 classifies creatability violations from C4 |
 | Hard | `E07-S01a-C5` | `E07-S01a-C6` | C6 includes the assembled request in the write context |
 | Hard | `E07-S01a-C5` | `E07-S01a-C8` | C8 integrates profile-mode validation error (category 2) into C5's orchestration gate |
+| Hard | `E07-S01a-C1` | `E07-S01b` | DMS-1103 consumes adapter contract from C1 |
+| Hard | `E07-S01a-C5` | `E07-S01b` | DMS-1103 consumes `ProfileAppliedWriteRequest` from C5 |
 | Hard | `E07-S01a-C6` | `E07-S01b` | DMS-1103 consumes `ProfileAppliedWriteContext` from C6 |
+| Hard | `E07-S01a-C1` | `E07-S01c` | DMS-1105 consumes adapter contract from C1 |
 | Hard | `E07-S01a-C6` | `E07-S01c` | DMS-1105 hands off to C6 for stored-state projection |
 | Hard | `E07-S01a-C7` | `E08-S01` | DMS-990 invokes the readable projector from C7 |
 | Hard | `E07-S01a-C8` | `E07-S05b` | DMS-1104 classifies errors defined by C8 |

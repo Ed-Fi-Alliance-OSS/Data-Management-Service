@@ -76,7 +76,7 @@ This index links design documents under `reference/design/backend-redesign/epics
 - `DMS-980` — Relational Write Path (POST/PUT) — `reference/design/backend-redesign/epics/07-relational-write-path/EPIC.md`
   - `DMS-981` — Core Emits Concrete JSON Locations for Document References — `reference/design/backend-redesign/epics/07-relational-write-path/00-core-extraction-location.md`
   - `DMS-982` — Bulk Reference and Descriptor Resolution (Write-Time Validation) — `reference/design/backend-redesign/epics/07-relational-write-path/01-reference-and-descriptor-resolution.md`
-  - `DMS-1106` — Core Profile Support Delivery Plan Spike — `reference/design/backend-redesign/epics/07-relational-write-path/01a-core-profile-delivery-plan.md`
+  - `DMS-1110` — Core Profile Support Delivery Plan Spike — `reference/design/backend-redesign/epics/07-relational-write-path/01a-core-profile-delivery-plan.md`
   - `TBD` — Shared Compiled-Scope Adapter Contract + Address Derivation Engine (C1) — `reference/design/backend-redesign/epics/07-relational-write-path/01a-c1-compiled-scope-adapter-and-address-derivation.md`
   - `TBD` — Semantic Identity Compatibility Validation (C2) — `reference/design/backend-redesign/epics/07-relational-write-path/01a-c2-semantic-identity-compatibility-validation.md`
   - `TBD` — Request-Side Visibility Classification + Writable Request Shaping (C3) — `reference/design/backend-redesign/epics/07-relational-write-path/01a-c3-request-visibility-and-writable-shaping.md`

@@ -8,7 +8,7 @@ jira: TBD
 
 Define the shared compiled-scope adapter contract types and implement the normative `ScopeInstanceAddress` / `CollectionRowAddress` derivation algorithm.
 
-This is the foundation story for all Core profile support. Every other Core profile story (C2–C8) depends on the adapter contract and address derivation engine produced here.
+This is the foundation story for Core profile write support. C2–C6 depend directly on the adapter contract and address derivation engine produced here. C7 (readable projection) and C8 (error classification) do not depend on C1 directly.
 
 Align with:
 
