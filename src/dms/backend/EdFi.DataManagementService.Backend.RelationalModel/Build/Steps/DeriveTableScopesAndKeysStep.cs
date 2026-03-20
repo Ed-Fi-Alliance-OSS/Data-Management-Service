@@ -4,7 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
-using static EdFi.DataManagementService.Backend.RelationalModel.Build.RelationalModelSystemColumnFactory;
+using static EdFi.DataManagementService.Backend.RelationalModel.Build.RelationalModelStableIdentityHelper;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Build.Steps;
 
@@ -133,8 +133,8 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         var tableName = new DbTableName(schema, rootBaseName);
         var jsonScope = JsonPathExpressionCompiler.FromSegments([]);
         var key = BuildRootTableKey(tableName);
-
-        var columns = BuildKeyColumns(key.Columns);
+        var identityMetadata = BuildRootTableIdentityMetadata();
+        var columns = BuildIdentityColumns(identityMetadata);
 
         var fkName = ConstraintNaming.BuildForeignKeyName(tableName, ConstraintNaming.DocumentToken);
 
@@ -151,7 +151,7 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
 
         var table = new DbTableModel(tableName, jsonScope, key, columns, constraints)
         {
-            IdentityMetadata = BuildRootTableIdentityMetadata(),
+            IdentityMetadata = identityMetadata,
         };
 
         collisionDetector?.RegisterTable(
@@ -182,8 +182,8 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
     {
         var jsonScope = JsonPathExpressionCompiler.FromSegments([]);
         var key = BuildRootTableKey(_descriptorTableName);
-
-        var columns = BuildKeyColumns(key.Columns);
+        var identityMetadata = BuildRootTableIdentityMetadata();
+        var columns = BuildIdentityColumns(identityMetadata);
 
         var fkName = ConstraintNaming.BuildForeignKeyName(
             _descriptorTableName,
@@ -203,7 +203,7 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
 
         var table = new DbTableModel(_descriptorTableName, jsonScope, key, columns, constraints)
         {
-            IdentityMetadata = BuildRootTableIdentityMetadata(),
+            IdentityMetadata = identityMetadata,
         };
 
         return new TableScope(table, [], []);
@@ -464,10 +464,10 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         var key = BuildChildTableKey(tableName);
         var originalTableName = BuildCollectionTableName(rootBaseName, defaultCollectionBaseNames);
         var identityMetadata = BuildCollectionTableIdentityMetadata(rootBaseName, isNestedCollection);
-        var columns = BuildCollectionTableColumns(rootBaseName, isNestedCollection);
-        var originalColumns = BuildCollectionTableColumns(rootBaseName, isNestedCollection);
-        var foreignKeyColumns = BuildParentForeignKeyColumns(identityMetadata, parentTable.Table);
-        var targetColumns = BuildParentForeignKeyTargetColumns(parentTable.Table);
+        var columns = BuildIdentityColumns(identityMetadata);
+        var originalColumns = BuildIdentityColumns(identityMetadata);
+        var foreignKeyColumns = BuildParentScopeForeignKeyColumns(identityMetadata, parentTable.Table);
+        var targetColumns = BuildParentScopeForeignKeyTargetColumns(parentTable.Table);
 
         var fkName = ConstraintNaming.BuildForeignKeyName(tableName, parentTable.Table.Table.Name);
 
@@ -546,108 +546,6 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         }
 
         return rootBaseName + string.Concat(collectionBaseNames);
-    }
-
-    /// <summary>
-    /// Builds the root-scope identity metadata for root and shared descriptor tables.
-    /// </summary>
-    private static DbTableIdentityMetadata BuildRootTableIdentityMetadata()
-    {
-        return new DbTableIdentityMetadata(
-            DbTableKind.Root,
-            [RelationalNameConventions.DocumentIdColumnName],
-            [RelationalNameConventions.DocumentIdColumnName],
-            [],
-            []
-        );
-    }
-
-    /// <summary>
-    /// Builds the stable-identity metadata for a base collection table.
-    /// </summary>
-    private static DbTableIdentityMetadata BuildCollectionTableIdentityMetadata(
-        string rootBaseName,
-        bool isNestedCollection
-    )
-    {
-        var rootDocumentIdColumn = RelationalNameConventions.RootDocumentIdColumnName(rootBaseName);
-        var immediateParentColumns = isNestedCollection
-            ? new[] { RelationalNameConventions.ParentCollectionItemIdColumnName }
-            : new[] { rootDocumentIdColumn };
-
-        return new DbTableIdentityMetadata(
-            DbTableKind.Collection,
-            [RelationalNameConventions.CollectionItemIdColumnName],
-            [rootDocumentIdColumn],
-            immediateParentColumns,
-            []
-        );
-    }
-
-    /// <summary>
-    /// Builds the seeded column inventory for a collection table, including stable-identity and locator columns.
-    /// </summary>
-    private static DbColumnModel[] BuildCollectionTableColumns(string rootBaseName, bool isNestedCollection)
-    {
-        List<DbColumnModel> columns =
-        [
-            CreateKeyColumn(RelationalNameConventions.CollectionItemIdColumnName, ColumnKind.CollectionKey),
-            CreateKeyColumn(
-                RelationalNameConventions.RootDocumentIdColumnName(rootBaseName),
-                ColumnKind.ParentKeyPart
-            ),
-        ];
-
-        if (isNestedCollection)
-        {
-            columns.Add(
-                CreateKeyColumn(
-                    RelationalNameConventions.ParentCollectionItemIdColumnName,
-                    ColumnKind.ParentKeyPart
-                )
-            );
-        }
-
-        columns.Add(CreateKeyColumn(RelationalNameConventions.OrdinalColumnName, ColumnKind.Ordinal));
-
-        return columns.ToArray();
-    }
-
-    /// <summary>
-    /// Builds the child-to-parent FK column list from explicit identity metadata.
-    /// </summary>
-    private static DbColumnName[] BuildParentForeignKeyColumns(
-        DbTableIdentityMetadata childIdentityMetadata,
-        DbTableModel parentTable
-    )
-    {
-        if (parentTable.IdentityMetadata.TableKind == DbTableKind.Root)
-        {
-            return childIdentityMetadata.ImmediateParentScopeLocatorColumns.ToArray();
-        }
-
-        return
-        [
-            .. childIdentityMetadata.ImmediateParentScopeLocatorColumns,
-            .. childIdentityMetadata.RootScopeLocatorColumns,
-        ];
-    }
-
-    /// <summary>
-    /// Builds the target column list for the child-to-parent FK from explicit parent identity metadata.
-    /// </summary>
-    private static DbColumnName[] BuildParentForeignKeyTargetColumns(DbTableModel parentTable)
-    {
-        if (parentTable.IdentityMetadata.TableKind == DbTableKind.Root)
-        {
-            return parentTable.IdentityMetadata.PhysicalRowIdentityColumns.ToArray();
-        }
-
-        return
-        [
-            .. parentTable.IdentityMetadata.PhysicalRowIdentityColumns,
-            .. parentTable.IdentityMetadata.RootScopeLocatorColumns,
-        ];
     }
 
     /// <summary>

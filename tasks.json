@@ -217,5 +217,25 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
     "completed": true
+  },
+  {
+    "category": "Semantic Identity Fallback Provenance",
+    "description": "Track semantic-identity candidate provenance explicitly in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ArrayUniquenessConstraintPass.cs` so AUC/reference fallback precedence cannot silently mask a real ambiguity. Replacement logic must only treat an existing binding set as replaceable when it was actually compiled from the single-reference fallback path, not merely when its member set happens to match what a fallback would look like. Acceptance: if one applicable `arrayUniquenessConstraints` member set compiles to the same ordered bindings as a qualifying scope-local reference fallback, a later conflicting AUC still fails compilation as ambiguous; persisted multi-item scopes continue to compile semantic identity from exactly one source; and the emitted semantic-identity metadata and collection UNIQUE constraints remain derived from that single authoritative source.",
+    "steps-to-verify": [
+      "Add a regression fixture where an earlier AUC resolves to the same binding set as the single-reference fallback and a later conflicting AUC is discovered, and assert deterministic compilation failure instead of fallback replacement.",
+      "Add assertions that the winning semantic-identity candidate carries explicit source provenance so AUC-derived and reference-derived matches are distinguishable even when their ordered bindings are identical.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Stable Identity Derivation Helper Consolidation",
+    "description": "Extract the duplicated stable-row-identity helper stack currently split between `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/Steps/DeriveTableScopesAndKeysStep.cs` and `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ExtensionTableDerivationPass.cs` into one shared implementation. The shared path must own stable-identity metadata construction, key-column creation, and parent/root FK helper behavior so follow-on stories do not have to update base-table and extension-table derivation separately. Acceptance: base and extension derivation both route through the same helper APIs for stable collection identity shape; there is one authoritative implementation for identity metadata, column creation, and FK assembly; and changing stable-identity rules in later stories requires updating only the shared implementation rather than parallel helper stacks.",
+    "steps-to-verify": [
+      "Refactor the duplicated identity-metadata, key-column, and FK helper logic into a shared implementation and remove the now-redundant local helper stacks from both derivation paths.",
+      "Add regression coverage that exercises top-level collections, nested collections, and collection-aligned `_ext` scopes through both derivation paths and asserts they still emit the same stable-identity metadata, keys, and FK inventories after consolidation.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": true
   }
 ]

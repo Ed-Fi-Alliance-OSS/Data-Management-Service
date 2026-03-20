@@ -5,7 +5,7 @@
 
 using System.Text;
 using System.Text.Json.Nodes;
-using static EdFi.DataManagementService.Backend.RelationalModel.Build.RelationalModelSystemColumnFactory;
+using static EdFi.DataManagementService.Backend.RelationalModel.Build.RelationalModelStableIdentityHelper;
 using static EdFi.DataManagementService.Backend.RelationalModel.Schema.RelationalModelSetSchemaHelpers;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
@@ -711,21 +711,12 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
             ? BuildRootTableKey(tableName)
             : BuildCollectionAlignedScopeTableKey(tableName);
         var originalTableName = extensionRootBaseName + string.Concat(defaultCollectionBaseNames);
-        var originalTable = new DbTableName(extensionProject.PhysicalSchema, originalTableName);
-        var originalKey =
-            defaultCollectionBaseNames.Count == 0
-                ? BuildRootTableKey(originalTable)
-                : BuildCollectionAlignedScopeTableKey(originalTable);
         var identityMetadata = isRootExtensionScope
             ? BuildRootExtensionTableIdentityMetadata()
             : BuildCollectionExtensionScopeIdentityMetadata(baseRootBaseName);
-        var keyColumns = isRootExtensionScope
-            ? BuildKeyColumns(tableKey.Columns)
-            : BuildCollectionExtensionScopeColumns(baseRootBaseName);
-        var originalColumns = isRootExtensionScope
-            ? BuildKeyColumns(originalKey.Columns)
-            : BuildCollectionExtensionScopeColumns(baseRootBaseName);
-        var fkColumns = BuildExtensionScopeForeignKeyColumns(identityMetadata, baseTable);
+        var keyColumns = BuildIdentityColumns(identityMetadata);
+        var originalColumns = BuildIdentityColumns(identityMetadata);
+        var fkColumns = BuildParentScopeForeignKeyColumns(identityMetadata, baseTable);
         var fkName = ConstraintNaming.BuildForeignKeyName(tableName, baseTable.Table.Name);
 
         TableConstraint[] constraints =
@@ -734,7 +725,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
                 fkName,
                 fkColumns,
                 baseTable.Table,
-                BuildExtensionScopeForeignKeyTargetColumns(baseTable),
+                BuildParentScopeForeignKeyTargetColumns(baseTable),
                 OnDelete: ReferentialAction.Cascade
             ),
         ];
@@ -804,9 +795,9 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
             baseRootBaseName,
             parent.Definition.IdentityMetadata.TableKind
         );
-        var keyColumns = BuildExtensionChildTableColumns(baseRootBaseName, identityMetadata);
-        var originalColumns = BuildExtensionChildTableColumns(baseRootBaseName, identityMetadata);
-        var parentKeyColumns = BuildChildForeignKeyColumns(identityMetadata, parent.Definition);
+        var keyColumns = BuildIdentityColumns(identityMetadata);
+        var originalColumns = BuildIdentityColumns(identityMetadata);
+        var parentKeyColumns = BuildParentScopeForeignKeyColumns(identityMetadata, parent.Definition);
         var fkName = ConstraintNaming.BuildForeignKeyName(tableName, parent.Definition.Table.Name);
 
         TableConstraint[] constraints =
@@ -815,7 +806,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
                 fkName,
                 parentKeyColumns,
                 parent.Definition.Table,
-                BuildChildForeignKeyTargetColumns(parent.Definition),
+                BuildParentScopeForeignKeyTargetColumns(parent.Definition),
                 OnDelete: ReferentialAction.Cascade
             ),
         ];
@@ -1641,204 +1632,6 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
             ConstraintNaming.BuildPrimaryKeyName(tableName),
             [new DbKeyColumn(RelationalNameConventions.CollectionItemIdColumnName, ColumnKind.CollectionKey)]
         );
-    }
-
-    /// <summary>
-    /// Builds the stable-identity metadata for an extension child collection table.
-    /// </summary>
-    private static DbTableIdentityMetadata BuildExtensionChildTableIdentityMetadata(
-        string baseRootBaseName,
-        DbTableKind parentTableKind
-    )
-    {
-        var rootDocumentIdColumn = RelationalNameConventions.RootDocumentIdColumnName(baseRootBaseName);
-        var immediateParentColumns = parentTableKind switch
-        {
-            DbTableKind.RootExtension => new[] { rootDocumentIdColumn },
-            DbTableKind.CollectionExtensionScope => new[]
-            {
-                RelationalNameConventions.BaseCollectionItemIdColumnName,
-            },
-            DbTableKind.ExtensionCollection => new[]
-            {
-                RelationalNameConventions.ParentCollectionItemIdColumnName,
-            },
-            _ => throw new InvalidOperationException(
-                $"Unsupported parent table kind '{parentTableKind}' for extension child collection derivation."
-            ),
-        };
-
-        return new DbTableIdentityMetadata(
-            DbTableKind.ExtensionCollection,
-            [RelationalNameConventions.CollectionItemIdColumnName],
-            [rootDocumentIdColumn],
-            immediateParentColumns,
-            []
-        );
-    }
-
-    /// <summary>
-    /// Builds the seeded column inventory for an extension child collection table, including stable identity,
-    /// root locator, immediate parent locator, and sibling order.
-    /// </summary>
-    private static DbColumnModel[] BuildExtensionChildTableColumns(
-        string baseRootBaseName,
-        DbTableIdentityMetadata identityMetadata
-    )
-    {
-        var rootDocumentIdColumn = RelationalNameConventions.RootDocumentIdColumnName(baseRootBaseName);
-        List<DbColumnModel> columns =
-        [
-            CreateKeyColumn(RelationalNameConventions.CollectionItemIdColumnName, ColumnKind.CollectionKey),
-            CreateKeyColumn(rootDocumentIdColumn, ColumnKind.ParentKeyPart),
-        ];
-
-        foreach (var column in identityMetadata.ImmediateParentScopeLocatorColumns)
-        {
-            if (column.Equals(rootDocumentIdColumn))
-            {
-                continue;
-            }
-
-            columns.Add(CreateKeyColumn(column, ColumnKind.ParentKeyPart));
-        }
-
-        columns.Add(CreateKeyColumn(RelationalNameConventions.OrdinalColumnName, ColumnKind.Ordinal));
-
-        return columns.ToArray();
-    }
-
-    /// <summary>
-    /// Builds the child-to-parent FK column list for an extension child collection table from explicit
-    /// identity metadata.
-    /// </summary>
-    private static DbColumnName[] BuildChildForeignKeyColumns(
-        DbTableIdentityMetadata childIdentityMetadata,
-        DbTableModel parentTable
-    )
-    {
-        if (UsesSingleColumnParentForeignKey(parentTable.IdentityMetadata.TableKind))
-        {
-            return childIdentityMetadata.ImmediateParentScopeLocatorColumns.ToArray();
-        }
-
-        return
-        [
-            .. childIdentityMetadata.ImmediateParentScopeLocatorColumns,
-            .. childIdentityMetadata.RootScopeLocatorColumns,
-        ];
-    }
-
-    /// <summary>
-    /// Builds the target column list for an extension child collection FK from explicit parent identity metadata.
-    /// </summary>
-    private static DbColumnName[] BuildChildForeignKeyTargetColumns(DbTableModel parentTable)
-    {
-        if (UsesSingleColumnParentForeignKey(parentTable.IdentityMetadata.TableKind))
-        {
-            return parentTable.IdentityMetadata.PhysicalRowIdentityColumns.ToArray();
-        }
-
-        return
-        [
-            .. parentTable.IdentityMetadata.PhysicalRowIdentityColumns,
-            .. parentTable.IdentityMetadata.RootScopeLocatorColumns,
-        ];
-    }
-
-    /// <summary>
-    /// Returns true when the parent scope's FK target is represented entirely by its physical identity column.
-    /// </summary>
-    private static bool UsesSingleColumnParentForeignKey(DbTableKind parentTableKind)
-    {
-        return parentTableKind is DbTableKind.Root or DbTableKind.RootExtension;
-    }
-
-    /// <summary>
-    /// Builds identity metadata for a root-scope extension table.
-    /// </summary>
-    private static DbTableIdentityMetadata BuildRootExtensionTableIdentityMetadata()
-    {
-        return new DbTableIdentityMetadata(
-            DbTableKind.RootExtension,
-            [RelationalNameConventions.DocumentIdColumnName],
-            [RelationalNameConventions.DocumentIdColumnName],
-            [RelationalNameConventions.DocumentIdColumnName],
-            []
-        );
-    }
-
-    /// <summary>
-    /// Builds identity metadata for a collection-aligned extension scope table.
-    /// </summary>
-    private static DbTableIdentityMetadata BuildCollectionExtensionScopeIdentityMetadata(
-        string baseRootBaseName
-    )
-    {
-        var rootDocumentIdColumn = RelationalNameConventions.RootDocumentIdColumnName(baseRootBaseName);
-
-        return new DbTableIdentityMetadata(
-            DbTableKind.CollectionExtensionScope,
-            [RelationalNameConventions.BaseCollectionItemIdColumnName],
-            [rootDocumentIdColumn],
-            [RelationalNameConventions.BaseCollectionItemIdColumnName],
-            []
-        );
-    }
-
-    /// <summary>
-    /// Builds the seeded column inventory for a collection-aligned extension scope table.
-    /// </summary>
-    private static DbColumnModel[] BuildCollectionExtensionScopeColumns(string baseRootBaseName)
-    {
-        return
-        [
-            CreateKeyColumn(
-                RelationalNameConventions.BaseCollectionItemIdColumnName,
-                ColumnKind.ParentKeyPart
-            ),
-            CreateKeyColumn(
-                RelationalNameConventions.RootDocumentIdColumnName(baseRootBaseName),
-                ColumnKind.ParentKeyPart
-            ),
-        ];
-    }
-
-    /// <summary>
-    /// Builds the FK column list for an extension scope table from explicit identity metadata.
-    /// </summary>
-    private static DbColumnName[] BuildExtensionScopeForeignKeyColumns(
-        DbTableIdentityMetadata identityMetadata,
-        DbTableModel baseTable
-    )
-    {
-        if (baseTable.IdentityMetadata.TableKind == DbTableKind.Root)
-        {
-            return identityMetadata.ImmediateParentScopeLocatorColumns.ToArray();
-        }
-
-        return
-        [
-            .. identityMetadata.ImmediateParentScopeLocatorColumns,
-            .. identityMetadata.RootScopeLocatorColumns,
-        ];
-    }
-
-    /// <summary>
-    /// Builds the FK target columns for an extension scope table from explicit base-table identity metadata.
-    /// </summary>
-    private static DbColumnName[] BuildExtensionScopeForeignKeyTargetColumns(DbTableModel baseTable)
-    {
-        if (baseTable.IdentityMetadata.TableKind == DbTableKind.Root)
-        {
-            return baseTable.IdentityMetadata.PhysicalRowIdentityColumns.ToArray();
-        }
-
-        return
-        [
-            .. baseTable.IdentityMetadata.PhysicalRowIdentityColumns,
-            .. baseTable.IdentityMetadata.RootScopeLocatorColumns,
-        ];
     }
 
     /// <summary>

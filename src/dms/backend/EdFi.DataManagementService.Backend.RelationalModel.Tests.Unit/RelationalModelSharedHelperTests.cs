@@ -121,4 +121,173 @@ public class Given_Relational_Model_Shared_Helpers
                 ("Ordinal", new RelationalScalarType(ScalarKind.Int32))
             );
     }
+
+    /// <summary>
+    /// It should build stable-identity seeded columns for base and extension table kinds from shared metadata.
+    /// </summary>
+    [Test]
+    public void It_should_build_stable_identity_seeded_columns_for_base_and_extension_table_kinds()
+    {
+        var baseCollectionColumns = RelationalModelStableIdentityHelper.BuildIdentityColumns(
+            RelationalModelStableIdentityHelper.BuildCollectionTableIdentityMetadata(
+                "School",
+                isNestedCollection: true
+            )
+        );
+        var collectionExtensionScopeColumns = RelationalModelStableIdentityHelper.BuildIdentityColumns(
+            RelationalModelStableIdentityHelper.BuildCollectionExtensionScopeIdentityMetadata("School")
+        );
+        var extensionChildColumns = RelationalModelStableIdentityHelper.BuildIdentityColumns(
+            RelationalModelStableIdentityHelper.BuildExtensionChildTableIdentityMetadata(
+                "School",
+                DbTableKind.CollectionExtensionScope
+            )
+        );
+
+        baseCollectionColumns
+            .Select(column => (column.ColumnName.Value, column.Kind, column.ScalarType))
+            .Should()
+            .Equal(
+                ("CollectionItemId", ColumnKind.CollectionKey, new RelationalScalarType(ScalarKind.Int64)),
+                ("School_DocumentId", ColumnKind.ParentKeyPart, new RelationalScalarType(ScalarKind.Int64)),
+                (
+                    "ParentCollectionItemId",
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64)
+                ),
+                ("Ordinal", ColumnKind.Ordinal, new RelationalScalarType(ScalarKind.Int32))
+            );
+
+        collectionExtensionScopeColumns
+            .Select(column => (column.ColumnName.Value, column.Kind, column.ScalarType))
+            .Should()
+            .Equal(
+                (
+                    "BaseCollectionItemId",
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64)
+                ),
+                ("School_DocumentId", ColumnKind.ParentKeyPart, new RelationalScalarType(ScalarKind.Int64))
+            );
+
+        extensionChildColumns
+            .Select(column => (column.ColumnName.Value, column.Kind, column.ScalarType))
+            .Should()
+            .Equal(
+                ("CollectionItemId", ColumnKind.CollectionKey, new RelationalScalarType(ScalarKind.Int64)),
+                ("School_DocumentId", ColumnKind.ParentKeyPart, new RelationalScalarType(ScalarKind.Int64)),
+                (
+                    "BaseCollectionItemId",
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64)
+                ),
+                ("Ordinal", ColumnKind.Ordinal, new RelationalScalarType(ScalarKind.Int32))
+            );
+    }
+
+    /// <summary>
+    /// It should build parent-scope FK columns and targets for root, collection, and extension parents.
+    /// </summary>
+    [Test]
+    public void It_should_build_parent_scope_fk_columns_and_targets_for_root_collection_and_extension_parents()
+    {
+        var rootTable = CreateTable(
+            "School",
+            RelationalModelStableIdentityHelper.BuildRootTableIdentityMetadata()
+        );
+        var rootExtensionTable = CreateTable(
+            "SchoolExtension",
+            RelationalModelStableIdentityHelper.BuildRootExtensionTableIdentityMetadata()
+        );
+        var baseCollectionTable = CreateTable(
+            "SchoolAddress",
+            RelationalModelStableIdentityHelper.BuildCollectionTableIdentityMetadata(
+                "School",
+                isNestedCollection: false
+            )
+        );
+        var nestedCollectionIdentity =
+            RelationalModelStableIdentityHelper.BuildCollectionTableIdentityMetadata(
+                "School",
+                isNestedCollection: true
+            );
+        var alignedExtensionScopeTable = CreateTable(
+            "SchoolExtensionAddress",
+            RelationalModelStableIdentityHelper.BuildCollectionExtensionScopeIdentityMetadata("School")
+        );
+        var alignedExtensionChildIdentity =
+            RelationalModelStableIdentityHelper.BuildExtensionChildTableIdentityMetadata(
+                "School",
+                DbTableKind.CollectionExtensionScope
+            );
+
+        RelationalModelStableIdentityHelper
+            .BuildParentScopeForeignKeyColumns(baseCollectionTable.IdentityMetadata, rootTable)
+            .Select(column => column.Value)
+            .Should()
+            .Equal("School_DocumentId");
+        RelationalModelStableIdentityHelper
+            .BuildParentScopeForeignKeyTargetColumns(rootTable)
+            .Select(column => column.Value)
+            .Should()
+            .Equal("DocumentId");
+
+        RelationalModelStableIdentityHelper
+            .BuildParentScopeForeignKeyColumns(nestedCollectionIdentity, baseCollectionTable)
+            .Select(column => column.Value)
+            .Should()
+            .Equal("ParentCollectionItemId", "School_DocumentId");
+        RelationalModelStableIdentityHelper
+            .BuildParentScopeForeignKeyTargetColumns(baseCollectionTable)
+            .Select(column => column.Value)
+            .Should()
+            .Equal("CollectionItemId", "School_DocumentId");
+
+        RelationalModelStableIdentityHelper
+            .BuildParentScopeForeignKeyColumns(alignedExtensionChildIdentity, alignedExtensionScopeTable)
+            .Select(column => column.Value)
+            .Should()
+            .Equal("BaseCollectionItemId", "School_DocumentId");
+        RelationalModelStableIdentityHelper
+            .BuildParentScopeForeignKeyTargetColumns(alignedExtensionScopeTable)
+            .Select(column => column.Value)
+            .Should()
+            .Equal("BaseCollectionItemId", "School_DocumentId");
+
+        RelationalModelStableIdentityHelper
+            .BuildParentScopeForeignKeyColumns(rootExtensionTable.IdentityMetadata, rootTable)
+            .Select(column => column.Value)
+            .Should()
+            .Equal("DocumentId");
+        RelationalModelStableIdentityHelper
+            .BuildParentScopeForeignKeyColumns(
+                RelationalModelStableIdentityHelper.BuildExtensionChildTableIdentityMetadata(
+                    "School",
+                    DbTableKind.RootExtension
+                ),
+                rootExtensionTable
+            )
+            .Select(column => column.Value)
+            .Should()
+            .Equal("School_DocumentId");
+        RelationalModelStableIdentityHelper
+            .BuildParentScopeForeignKeyTargetColumns(rootExtensionTable)
+            .Select(column => column.Value)
+            .Should()
+            .Equal("DocumentId");
+    }
+
+    private static DbTableModel CreateTable(string tableName, DbTableIdentityMetadata identityMetadata)
+    {
+        return new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), tableName),
+            JsonPathExpressionCompiler.Compile("$"),
+            new TableKey("PK_" + tableName, []),
+            RelationalModelStableIdentityHelper.BuildIdentityColumns(identityMetadata),
+            []
+        )
+        {
+            IdentityMetadata = identityMetadata,
+        };
+    }
 }
