@@ -1,0 +1,304 @@
+# Jira Story Input
+
+## Purpose
+
+This document decomposes the consolidated Change Queries feature design into story-sized implementation slices that can be used as direct input for Jira story creation.
+
+The intent is not to prescribe sprint sequencing rigidly. The intent is to provide a technically coherent breakdown with dependencies, scope boundaries, and acceptance themes.
+
+The story slices are normative planning inputs. The project and file references listed under "Likely implementation areas" are informative planning aids only.
+
+Likely implementation areas below point to the design-target seams and relational backend modules intended for the replacement path. The transitional `EdFi.DataManagementService.Old.Postgresql` project may still be consulted where current-behavior parity must be confirmed, but the stories are not anchored to that project structure.
+
+## Proposed Epic Structure
+
+## Epic A: Core Change Queries feature
+
+Covers the public API contract, core schema changes, delete tracking, key-change tracking, query execution, and test coverage needed for the feature to exist.
+
+## Epic B: Optional journal alignment
+
+Covers the optional `dms.DocumentChangeEvent` journal used to switch the live changed-resource query path from direct live-row scanning to `journal + verify` execution.
+
+This epic is technically compatible with Epic A and can be planned separately without reopening the public API contract.
+
+## Story Candidates
+
+## CQ-STORY-01: Add core change-tracking schema and deterministic backfill
+
+Objective:
+
+- add `dms.ChangeVersionSequence`
+- add `dms.Document.ChangeVersion`
+- create required indexes
+- backfill existing rows deterministically
+- enable live-row change-version stamping
+
+Key acceptance themes:
+
+- every live row has a non-null `ChangeVersion`
+- inserts allocate unique `ChangeVersion` values
+- representation-changing updates allocate new `ChangeVersion` values
+- authorization-only maintenance updates do not allocate new `ChangeVersion` values
+- the rollout sequence is safe for existing data
+
+Likely implementation areas:
+
+- `src/dms/backend/EdFi.DataManagementService.Backend.Ddl`
+- `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel`
+- `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql`
+
+Dependencies:
+
+- none
+
+## CQ-STORY-02: Add delete tombstones with natural-key and authorization projection capture
+
+Objective:
+
+- create `dms.DocumentDeleteTracking`
+- insert tombstones during delete execution in the same transaction
+- derive `keyValues` from `ResourceSchema.IdentityJsonPaths`
+- apply the canonical shortest-unique-suffix alias contract when key leaf names repeat
+- preserve the live authorization projection on the tombstone
+
+Key acceptance themes:
+
+- delete commits produce exactly one tombstone row
+- delete rollbacks produce no tombstone row
+- tombstones contain `id`, `changeVersion`, and `keyValues`
+- tombstone `keyValues` stay deterministic even for composite reference-based identities with repeated leaf names
+- tombstones contain the authorization projection required for delete-query filtering
+
+Likely implementation areas:
+
+- `src/dms/core/EdFi.DataManagementService.Core.External/Interface/IDocumentStoreRepository.cs`
+- `src/dms/core/EdFi.DataManagementService.Core/Backend`
+- `src/dms/backend/EdFi.DataManagementService.Backend.Ddl`
+- `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql`
+
+Dependencies:
+
+- `CQ-STORY-01`
+
+## CQ-STORY-03: Add key-change tracking with old-key, new-key, and authorization projection capture
+
+Objective:
+
+- create `dms.DocumentKeyChangeTracking`
+- insert key-change tracking rows during identity-changing updates in the same transaction
+- derive `oldKeyValues` and `newKeyValues` from `ResourceSchema.IdentityJsonPaths`
+- apply the canonical shortest-unique-suffix alias contract when key leaf names repeat
+- preserve the live authorization projection on the key-change tracking row
+
+Key acceptance themes:
+
+- identity-changing update commits produce exactly one key-change tracking row
+- non-identity updates produce no key-change tracking row
+- tracking rows contain `id`, `changeVersion`, `oldKeyValues`, and `newKeyValues`
+- key payload aliases stay deterministic even when `IdentityJsonPaths` reuse the same leaf names
+- tracking rows contain the authorization projection required for key-change-query filtering
+
+Likely implementation areas:
+
+- `src/dms/core/EdFi.DataManagementService.Core.External/Interface/IDocumentStoreRepository.cs`
+- `src/dms/core/EdFi.DataManagementService.Core/Backend/UpdateCascadeHandler.cs`
+- `src/dms/backend/EdFi.DataManagementService.Backend.Ddl`
+- `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/Steps/ExtractInputs/IdentityJsonPathsExtractor.cs`
+- `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql`
+
+Dependencies:
+
+- `CQ-STORY-01`
+
+## CQ-STORY-04: Add API routing and request validation for Change Queries
+
+Objective:
+
+- add `availableChangeVersions` route
+- add `/deletes` route
+- add `/keyChanges` route
+- accept and validate `minChangeVersion` and `maxChangeVersion`
+- preserve current collection GET and item-by-id behavior when change-query parameters are absent
+
+Key acceptance themes:
+
+- `/deletes` resolves as a dedicated route rather than being treated as an item id
+- `/keyChanges` resolves as a dedicated route rather than being treated as an item id
+- invalid or inconsistent change-query windows preserve ODS-compatible `200 OK` behavior
+- existing non-change-query GET behavior remains unchanged
+
+Likely implementation areas:
+
+- `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/AspNetCoreFrontend.cs`
+- `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Modules/CoreEndpointModule.cs`
+- `src/dms/core/EdFi.DataManagementService.Core/ApiService.cs`
+- `src/dms/core/EdFi.DataManagementService.Core.External/Interface/IApiService.cs`
+- `src/dms/core/EdFi.DataManagementService.Core/Middleware/ValidateQueryMiddleware.cs`
+- `src/dms/core/EdFi.DataManagementService.Core/Middleware/ParsePathMiddleware.cs`
+- `src/dms/core/EdFi.DataManagementService.Core/Middleware/ValidateEndpointMiddleware.cs`
+
+Dependencies:
+
+- none
+
+## CQ-STORY-05: Implement live changed-resource queries on existing collection GET routes
+
+Objective:
+
+- add changed-resource query execution against `dms.Document`
+- preserve current authorization logic
+- order deterministically by `ChangeVersion`, `DocumentPartitionKey`, and `Id`
+- keep the normal collection GET path unchanged when `minChangeVersion` is absent
+
+Key acceptance themes:
+
+- changed-resource mode returns current live resource payloads only once per resource
+- authorization behavior matches current collection GET semantics
+- ordering is deterministic and index-supported
+
+Likely implementation areas:
+
+- `src/dms/core/EdFi.DataManagementService.Core/ApiService.cs`
+- `src/dms/core/EdFi.DataManagementService.Core.External/Interface/IQueryHandler.cs`
+- `src/dms/core/EdFi.DataManagementService.Core/Backend`
+- `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql`
+
+Dependencies:
+
+- `CQ-STORY-01`
+- `CQ-STORY-04`
+
+## CQ-STORY-06: Implement delete queries, key-change queries, and `availableChangeVersions`
+
+Objective:
+
+- implement `/deletes` query execution against tombstones
+- implement `/keyChanges` query execution against key-change tracking rows
+- compute `oldestChangeVersion` and `newestChangeVersion`
+- preserve delete-query and key-change-query authorization parity
+
+Key acceptance themes:
+
+- `/deletes` returns tombstones ordered deterministically
+- `/keyChanges` returns collapsed rows ordered deterministically
+- delete-query authorization matches live-query semantics
+- key-change-query authorization matches live-query semantics
+- `availableChangeVersions` returns correct bounds for the active tracking artifacts
+
+Likely implementation areas:
+
+- `src/dms/core/EdFi.DataManagementService.Core/ApiService.cs`
+- `src/dms/core/EdFi.DataManagementService.Core.External/Interface/IQueryHandler.cs`
+- `src/dms/core/EdFi.DataManagementService.Core/Backend`
+- `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql`
+
+Dependencies:
+
+- `CQ-STORY-01`
+- `CQ-STORY-02`
+- `CQ-STORY-03`
+- `CQ-STORY-04`
+
+## CQ-STORY-07: Add unit, integration, and E2E coverage plus rollout validation
+
+Objective:
+
+- add test coverage for request validation, changed-resource behavior, delete behavior, authorization parity, and replay safety
+- cover canonical key alias derivation for simple, composite, and repeated-leaf identities
+- validate backfill, trigger behavior, and non-breaking route behavior
+
+Key acceptance themes:
+
+- the test matrix in the design package is covered
+- existing non-change-query behavior remains unchanged
+- crash-replay and edge-case scenarios are exercised
+
+Likely implementation areas:
+
+- `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/*`
+- `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/*`
+- `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/*`
+- `src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/*`
+- `src/dms/tests/EdFi.DataManagementService.Tests.E2E/*`
+
+Dependencies:
+
+- `CQ-STORY-01`
+- `CQ-STORY-02`
+- `CQ-STORY-03`
+- `CQ-STORY-04`
+- `CQ-STORY-05`
+- `CQ-STORY-06`
+
+## CQ-STORY-08: Optional internal journal alignment with `dms.DocumentChangeEvent`
+
+Objective:
+
+- add `dms.DocumentChangeEvent`
+- backfill and trigger journal rows from live `ChangeVersion` changes
+- switch live changed-resource query execution to `journal + verify`
+- keep the public API, delete logic, and key-change logic unchanged
+
+Key acceptance themes:
+
+- one journal row exists per committed live representation change
+- stale journal candidates are filtered by verification against `dms.Document.ChangeVersion`
+- delete operations remove live journal rows through FK cascade and still preserve tombstones
+- key-change operations continue to rely on `dms.DocumentKeyChangeTracking`
+- `availableChangeVersions` remains correct when the journal is the live tracking source
+
+Likely implementation areas:
+
+- `src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CoreDdlEmitter.cs`
+- `src/dms/backend/EdFi.DataManagementService.Backend.Ddl/RelationalModelDdlEmitter.cs`
+- `src/dms/core/EdFi.DataManagementService.Core.External/Interface/IQueryHandler.cs`
+- `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql`
+
+Dependencies:
+
+- `CQ-STORY-01`
+- `CQ-STORY-05`
+- `CQ-STORY-06`
+
+## Suggested Delivery Order
+
+Recommended technical order:
+
+1. `CQ-STORY-01`
+2. `CQ-STORY-04`
+3. `CQ-STORY-02`
+4. `CQ-STORY-03`
+5. `CQ-STORY-05`
+6. `CQ-STORY-06`
+7. `CQ-STORY-07`
+8. `CQ-STORY-08` if the optional journal is selected
+
+## Story Slicing Notes
+
+- `CQ-STORY-01` and `CQ-STORY-04` can proceed mostly in parallel because one is schema-focused and the other is route and validation focused.
+- `CQ-STORY-02` should not be merged into `CQ-STORY-01` because the tombstone behavior depends on delete-path application logic and authorization projection copying, not just DDL.
+- `CQ-STORY-03` should not be merged into `CQ-STORY-01` because key-change behavior depends on update-path application logic and explicit old/new key capture, not just DDL.
+- `CQ-STORY-05` and `CQ-STORY-06` should stay separate because live-query execution and delete/key-change execution are technically different read paths.
+- `CQ-STORY-08` is optional and should stay isolated from the core feature so reviewers can approve the public feature without requiring the journal immediately.
+
+## Story Definition of Ready
+
+Each story should include:
+
+- explicit reference to the relevant numbered-package document sections in `reference/DMS-843`
+- a clear statement of public behavior changes or non-changes
+- listed data-migration or deployment prerequisites when applicable
+- explicit test expectations
+- confirmation that the story does not reintroduce snapshot requirements
+
+## Story Definition of Done Themes
+
+A story should be considered done only if:
+
+- code changes and database changes are implemented or explicitly not needed
+- unit and integration coverage exists where appropriate
+- E2E impact is covered for route or behavior changes
+- no existing API behavior regresses
+- the resulting artifact still matches the bounded-window synchronization model
+
