@@ -17,14 +17,21 @@ internal static class FocusedStableKeyFixtureDerivedModelSetBuilder
     private const string FixtureInputsDirectoryName = "inputs";
     private const string FixtureInputsPropertyName = "inputs";
 
-    public static DerivedRelationalModelSet Build(string fixtureRelativePath, SqlDialect dialect)
+    public static DerivedRelationalModelSet Build(
+        string fixtureRelativePath,
+        SqlDialect dialect,
+        bool useStrictPasses = false
+    )
     {
         var fixturePath = GetFixturePath(fixtureRelativePath);
         var fixtureRoot = ParseJsonObject(fixturePath, "Fixture");
         var projects = LoadProjects(fixtureRoot, fixturePath);
         var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(projects);
+        var setPasses = useStrictPasses
+            ? RelationalModelSetPasses.CreateStrict()
+            : RelationalModelSetPasses.CreateDefault();
 
-        return new DerivedRelationalModelSetBuilder(RelationalModelSetPasses.CreateDefault()).Build(
+        return new DerivedRelationalModelSetBuilder(setPasses).Build(
             schemaSet,
             dialect,
             CreateDialectRules(dialect)

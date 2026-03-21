@@ -192,7 +192,12 @@ public class Given_A_Focused_Stable_Key_Negative_Fixture_Without_Semantic_Identi
     [SetUp]
     public void Setup()
     {
-        _build = () => FocusedStableKeyFixtureDerivedModelSetBuilder.Build(FixturePath, SqlDialect.Pgsql);
+        _build = () =>
+            FocusedStableKeyFixtureDerivedModelSetBuilder.Build(
+                FixturePath,
+                SqlDialect.Pgsql,
+                useStrictPasses: true
+            );
     }
 
     [Test]

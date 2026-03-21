@@ -6,7 +6,7 @@
       "Add or update `RelationalModelSetPassesTests` to assert both pass orders and to prove strict mode contains `ValidateCollectionSemanticIdentityPass` immediately after `SemanticIdentityCompilationPass`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "DDL And Generic Fixture Boundary",
