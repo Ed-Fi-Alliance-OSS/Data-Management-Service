@@ -128,22 +128,26 @@ public class Given_RuntimePlanFixtureModelSetBuilder_FocusedStableKeyNegativeMis
     private const string FixturePath =
         "Fixtures/runtime-plan-compilation/focused-stable-key/negative/missing-semantic-identity/fixture.manifest.json";
 
-    private Action _build = null!;
+    private static readonly QualifiedResourceName _schoolResource = new("Ed-Fi", "School");
+
+    private DerivedRelationalModelSet _modelSet = null!;
 
     [SetUp]
     public void Setup()
     {
-        _build = () => RuntimePlanFixtureModelSetBuilder.Build(FixturePath, dialect);
+        _modelSet = RuntimePlanFixtureModelSetBuilder.Build(FixturePath, dialect);
     }
 
     [Test]
-    public void It_should_fail_with_the_missing_semantic_identity_diagnostic()
+    public void It_should_compile_on_the_default_permissive_pipeline()
     {
-        var exception = _build.Should().Throw<InvalidOperationException>().Which;
+        var schoolModel = _modelSet.ConcreteResourcesInNameOrder.Single(resource =>
+            resource.ResourceKey.Resource == _schoolResource
+        );
+        var addressTable = schoolModel.RelationalModel.TablesInDependencyOrder.Single(table =>
+            table.JsonScope.Canonical == "$.addresses[*]"
+        );
 
-        exception.Message.Should().Contain("Persisted multi-item scope");
-        exception.Message.Should().Contain("$.addresses[*]");
-        exception.Message.Should().Contain("Ed-Fi:School");
-        exception.Message.Should().Contain("arrayUniquenessConstraints");
+        addressTable.IdentityMetadata.SemanticIdentityBindings.Should().BeEmpty();
     }
 }

@@ -44,7 +44,7 @@
       "When implemented, add runtime/plan tests that assert the strict builder path fails deterministically for missing semantic identity while the default builder remains permissive.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Downstream Write-Path Story Closure",
