@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.RelationalModel;
+using EdFi.DataManagementService.Backend.RelationalModel.Build;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -29,12 +30,7 @@ public class Given_A_Non_Reference_Backed_Collection_Without_Array_Uniqueness
         ClearArrayUniquenessConstraints(coreProjectSchema, "busRoutes");
 
         var schemaSet = CollectionSemanticIdentityValidationFixture.CreateSchemaSet(coreProjectSchema);
-        var builder = new DerivedRelationalModelSetBuilder([
-            new BaseTraversalAndDescriptorBindingPass(),
-            new ReferenceBindingPass(),
-            new SemanticIdentityCompilationPass(),
-            new ValidateCollectionSemanticIdentityPass(),
-        ]);
+        var builder = CollectionSemanticIdentityValidationFixture.CreateStrictBuilder();
 
         _build = () => builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
     }
@@ -107,12 +103,7 @@ public class Given_A_Collection_With_Multiple_Applicable_Array_Uniqueness_Semant
         );
 
         var schemaSet = CollectionSemanticIdentityValidationFixture.CreateSchemaSet(coreProjectSchema);
-        var builder = new DerivedRelationalModelSetBuilder([
-            new BaseTraversalAndDescriptorBindingPass(),
-            new ReferenceBindingPass(),
-            new SemanticIdentityCompilationPass(),
-            new ValidateCollectionSemanticIdentityPass(),
-        ]);
+        var builder = CollectionSemanticIdentityValidationFixture.CreateStrictBuilder();
 
         _build = () => builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
     }
@@ -153,9 +144,7 @@ public class Given_A_Reference_Backed_Collection_With_A_Reference_Derived_Semant
         var coreProjectSchema =
             ConstraintDerivationTestSchemaBuilder.BuildReferenceConstraintProjectSchemaWithChildReference();
         var schemaSet = CollectionSemanticIdentityValidationFixture.CreateSchemaSet(coreProjectSchema);
-        var builder = new DerivedRelationalModelSetBuilder([
-            new BaseTraversalAndDescriptorBindingPass(),
-            new ReferenceBindingPass(),
+        var builder = CollectionSemanticIdentityValidationFixture.CreateStrictBuilder(
             new RewriteReferenceIdentityBindingsPass(
                 "BusRoute",
                 "$.addresses[*].schoolReference",
@@ -165,10 +154,8 @@ public class Given_A_Reference_Backed_Collection_With_A_Reference_Derived_Semant
                         "$.addresses[*].periods[*].schoolReference.educationOrganizationId"
                     ),
                 ]
-            ),
-            new SemanticIdentityCompilationPass(),
-            new ValidateCollectionSemanticIdentityPass(),
-        ]);
+            )
+        );
 
         _build = () => builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
     }
@@ -208,9 +195,7 @@ public class Given_A_Reference_Backed_Collection_With_A_Reference_Derived_Semant
         var coreProjectSchema =
             ConstraintDerivationTestSchemaBuilder.BuildReferenceConstraintProjectSchemaWithChildReference();
         var schemaSet = CollectionSemanticIdentityValidationFixture.CreateSchemaSet(coreProjectSchema);
-        var builder = new DerivedRelationalModelSetBuilder([
-            new BaseTraversalAndDescriptorBindingPass(),
-            new ReferenceBindingPass(),
+        var builder = CollectionSemanticIdentityValidationFixture.CreateStrictBuilder(
             new RewriteReferenceIdentityBindingsPass(
                 "BusRoute",
                 "$.addresses[*].schoolReference",
@@ -220,10 +205,8 @@ public class Given_A_Reference_Backed_Collection_With_A_Reference_Derived_Semant
                         "$.contacts[*].schoolReference.educationOrganizationId"
                     ),
                 ]
-            ),
-            new SemanticIdentityCompilationPass(),
-            new ValidateCollectionSemanticIdentityPass(),
-        ]);
+            )
+        );
 
         _build = () => builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
     }
@@ -262,13 +245,9 @@ public class Given_A_Reference_Backed_Collection_With_Ambiguous_Reference_Derive
         var coreProjectSchema =
             ConstraintDerivationTestSchemaBuilder.BuildReferenceConstraintProjectSchemaWithChildReference();
         var schemaSet = CollectionSemanticIdentityValidationFixture.CreateSchemaSet(coreProjectSchema);
-        var builder = new DerivedRelationalModelSetBuilder([
-            new BaseTraversalAndDescriptorBindingPass(),
-            new ReferenceBindingPass(),
-            new DuplicateDocumentReferenceBindingPass("BusRoute", "$.addresses[*].schoolReference"),
-            new SemanticIdentityCompilationPass(),
-            new ValidateCollectionSemanticIdentityPass(),
-        ]);
+        var builder = CollectionSemanticIdentityValidationFixture.CreateStrictBuilder(
+            new DuplicateDocumentReferenceBindingPass("BusRoute", "$.addresses[*].schoolReference")
+        );
 
         _build = () => builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
     }
@@ -309,13 +288,9 @@ public class Given_An_Unsupported_Persisted_Multi_Item_Scope_Without_Semantic_Id
         var coreProjectSchema =
             ConstraintDerivationTestSchemaBuilder.BuildReferenceConstraintProjectSchemaWithChildReference();
         var schemaSet = CollectionSemanticIdentityValidationFixture.CreateSchemaSet(coreProjectSchema);
-        var builder = new DerivedRelationalModelSetBuilder([
-            new BaseTraversalAndDescriptorBindingPass(),
-            new ReferenceBindingPass(),
-            new RewriteTableKindPass("BusRoute", "BusRouteAddress", DbTableKind.CollectionExtensionScope),
-            new SemanticIdentityCompilationPass(),
-            new ValidateCollectionSemanticIdentityPass(),
-        ]);
+        var builder = CollectionSemanticIdentityValidationFixture.CreateStrictBuilder(
+            new RewriteTableKindPass("BusRoute", "BusRouteAddress", DbTableKind.CollectionExtensionScope)
+        );
 
         _build = () => builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
     }
@@ -353,6 +328,33 @@ internal static class CollectionSemanticIdentityValidationFixture
         );
 
         return EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+    }
+
+    /// <summary>
+    /// Creates a strict builder using the canonical pass order, with test-only passes inserted
+    /// immediately before semantic-identity compilation.
+    /// </summary>
+    internal static DerivedRelationalModelSetBuilder CreateStrictBuilder(
+        params IRelationalModelSetPass[] additionalPassesBeforeSemanticIdentityCompilation
+    )
+    {
+        var strictPasses = RelationalModelSetPasses.CreateStrict().ToList();
+        var semanticIdentityCompilationIndex = strictPasses.FindIndex(pass =>
+            pass is SemanticIdentityCompilationPass
+        );
+
+        if (semanticIdentityCompilationIndex < 0)
+        {
+            throw new InvalidOperationException(
+                "Strict relational-model pass order is missing SemanticIdentityCompilationPass."
+            );
+        }
+
+        strictPasses.InsertRange(
+            semanticIdentityCompilationIndex,
+            additionalPassesBeforeSemanticIdentityCompilation
+        );
+        return new DerivedRelationalModelSetBuilder(strictPasses);
     }
 
     /// <summary>

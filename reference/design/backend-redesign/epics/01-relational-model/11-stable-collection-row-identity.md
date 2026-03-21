@@ -65,8 +65,9 @@ This story updates the derived model to the new collection-key strategy:
   - preserve matched row identity across write-time merges,
   - distinguish physical row identity from sibling ordering, and
   - derive read/write plans without reconstructing parent-ordinal keys.
-- Persisted multi-item collection scopes fail validation/compilation when neither scope-resolved `arrayUniquenessConstraints` nor the reference-backed `referenceJsonPaths` rule yields a non-empty semantic identity.
-- The supported-model boundary is explicit: valid MetaEd-generated models with the relevant validator set applied are expected to supply collection identity semantics up front; this story does not introduce a fallback identity contract for out-of-bound models.
+- The shared/default relational-model pipeline remains permissive: it compiles semantic-identity metadata and downstream stable-identity constraints when metadata exists, but it does not universally reject generic or out-of-bound fixtures solely because a persisted multi-item scope lacks compiled semantic identity.
+- Supported-model/runtime-boundary callers that opt into the strict pipeline fail validation/compilation when neither scope-resolved `arrayUniquenessConstraints` nor the reference-backed `referenceJsonPaths` rule yields a non-empty semantic identity.
+- The supported-model boundary is explicit: valid MetaEd-generated models with the relevant validator set applied are expected to supply collection identity semantics up front; this story introduces the strict validation capability for those boundaries without introducing a fallback identity contract for out-of-bound models or re-globalizing validation into every shared compile path.
 
 ### Verification
 
@@ -79,5 +80,5 @@ This story updates the derived model to the new collection-key strategy:
 2. Update extension table derivation so collection/common-type extension scopes align to base-row stable identity instead of ancestor ordinals.
 3. Derive the new PK/UK/FK inventories for stable collection identity, sibling ordering, and parent/root consistency.
 4. Expose stable-identity metadata needed by downstream DDL, plan-compilation, and read-path consumers.
-5. Add or align validation so persisted multi-item collection scopes fail when neither their applicable `arrayUniquenessConstraints` metadata nor the reference-backed `referenceJsonPaths` rule compiles a non-empty semantic identity, rather than falling back to ordinals or parent-only locators.
+5. Add or align strict validation so supported-model/runtime-boundary compilation fails when neither the applicable `arrayUniquenessConstraints` metadata nor the reference-backed `referenceJsonPaths` rule compiles a non-empty semantic identity, rather than falling back to ordinals or parent-only locators; keep the shared/default pipeline permissive for generic compile paths.
 6. Update unit tests, manifests, and authoritative goldens for representative nested-collection and `_ext` fixtures.

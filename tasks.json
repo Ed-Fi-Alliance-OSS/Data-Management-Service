@@ -25,7 +25,7 @@
       "Inspect `reference/design/backend-redesign/epics/01-relational-model/11-stable-collection-row-identity.md` and confirm it distinguishes the permissive shared pipeline from the strict supported-model/runtime boundary.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "DMS-1107 Story Alignment",
