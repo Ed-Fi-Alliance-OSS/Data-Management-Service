@@ -29,7 +29,7 @@ Dependency note: `reference/design/backend-redesign/epics/DEPENDENCIES.md` is th
   - delete only omitted visible rows,
   - insert only new visible rows marked creatable by Core in `VisibleRequestCollectionItems`, and
   - preserve hidden rows and hidden columns/member values using contract metadata rather than inference from projected JSON alone or backend-owned profile evaluation.
-  - runtime execution consumes the non-empty compiled semantic identity emitted by E01/E15; it does not derive a fallback match key when that prerequisite is missing.
+  - runtime execution consumes the non-empty compiled semantic identity guaranteed by `E15-S04b` / `DMS-1108`, where runtime/write-plan compilation already opted into the strict relational-model pipeline from `DMS-1103`; it does not derive a fallback match key when that upstream prerequisite is missing.
 - Recompute `Ordinal` using the deterministic post-merge sibling-order rule defined in the design docs.
 - Respect dialect parameter limits and implement batching to avoid N+1 patterns.
 - Guard the no-op fast path by revalidating the observed `ContentVersion` before returning success; public `If-Match` header semantics remain owned by `DMS-1005`.
@@ -73,7 +73,7 @@ The runtime executor story and downstream test-migration stories should reuse th
 - `ProfileVisibleButAbsentNonCollectionScope` deletes separate-table rows or clears only the bindings classified as visible-and-clearable for inlined parent/root-row scopes according to the compiled mapping; bindings still governed by hidden preserved member paths are not cleared, and hidden scopes are not treated as deletes.
 - `ProfileRootCreateRejectedWhenNonCreatable` and `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable` fail deterministically as profile-based policy/validation errors before insert DML commits.
 - `ProfileVisibleScopeOrItemInsertRejectedWhenNonCreatable` includes a three-level chain where an existing visible middle-level parent still allows descendant update/create, while a new visible middle-level parent is rejected because a required middle-level member is hidden and therefore blocks descendant extension-child creation in the same request.
-- Collection merge execution assumes upstream validation/compilation already rejected any persisted multi-item collection scope that lacks a non-empty compiled semantic identity from the allowed upstream schema sources: scope-resolved `arrayUniquenessConstraints` for non-reference-backed scopes, or exactly one qualifying scope-local `documentPathsMapping.referenceJsonPaths` binding set for reference-backed scopes.
+- Collection merge execution assumes `DMS-1108` already selected the strict relational-model/runtime compilation path and therefore rejected any persisted multi-item collection scope that lacks a non-empty compiled semantic identity from the allowed upstream schema sources: scope-resolved `arrayUniquenessConstraints` for non-reference-backed scopes, or exactly one qualifying scope-local `documentPathsMapping.referenceJsonPaths` binding set for reference-backed scopes.
 - Bulk operations avoid N+1 insert/update patterns.
 - Implementation works on both PostgreSQL and SQL Server with appropriate batching/parameterization behavior.
 

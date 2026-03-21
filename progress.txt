@@ -166,3 +166,8 @@
 - decisions: make DMS-1107 explicitly depend on DMS-1103 permissive/shared compile contract; state DDL consumes compiled stable-identity + semantic-identity metadata when present but does not own global fail-fast; point strict validation responsibility at runtime-boundary callers and `DMS-1108`
 - files: reference/design/backend-redesign/epics/02-ddl-emission/07-stable-collection-row-identity-ddl.md; tasks.json; progress.txt
 - notes: `rg -n "strict|default|semantic identity|runtime" reference/design/backend-redesign/epics/02-ddl-emission/07-stable-collection-row-identity-ddl.md` confirmed boundary language present. next: Downstream Write-Path Story Closure
+2026-03-20
+- completed: Downstream Write-Path Story Closure; story: reference/design/backend-redesign/epics/07-relational-write-path/03-persist-and-batch.md
+- decisions: make `DMS-984` name `DMS-1108` as the upstream strict/runtime compile boundary; keep collection merge execution dependent on strict non-empty semantic identity, not implicit global validation from shared/default compilation
+- files: reference/design/backend-redesign/epics/07-relational-write-path/03-persist-and-batch.md; tasks.json; progress.txt
+- notes: `rg -n "DMS-1108|strict|semantic identity" reference/design/backend-redesign/epics/07-relational-write-path/03-persist-and-batch.md` confirmed explicit boundary language. `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj` green (401). tracker clear for this task

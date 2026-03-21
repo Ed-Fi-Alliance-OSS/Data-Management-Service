@@ -53,6 +53,6 @@
       "Inspect `reference/design/backend-redesign/epics/07-relational-write-path/03-persist-and-batch.md` and confirm it names DMS-1108 or the strict builder contract as the upstream source of the semantic-identity guarantee.",
       "Run: `rg -n \"DMS-1108|strict|semantic identity\" reference/design/backend-redesign/epics/07-relational-write-path/03-persist-and-batch.md`"
     ],
-    "completed": false
+    "completed": true
   }
 ]
