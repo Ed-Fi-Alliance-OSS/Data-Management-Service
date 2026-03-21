@@ -62,6 +62,31 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
+        "CollectionItemId"
+      ]
+    },
+    {
+      "name": "UX_SchoolAddress_CollectionItemId_School_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "SchoolAddress"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
+        "CollectionItemId",
+        "School_DocumentId"
+      ]
+    },
+    {
+      "name": "UX_SchoolAddress_Ordinal_School_DocumentId",
+      "table": {
+        "schema": "edfi",
+        "name": "SchoolAddress"
+      },
+      "kind": "UniqueConstraint",
+      "is_unique": true,
+      "key_columns": [
         "School_DocumentId",
         "Ordinal"
       ]
@@ -79,6 +104,19 @@
       ]
     },
     {
+      "name": "IX_SchoolExtensionAddress_BaseCollectionItemId_Schoo_8db7cde2b1",
+      "table": {
+        "schema": "sample",
+        "name": "SchoolExtensionAddress"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "BaseCollectionItemId",
+        "School_DocumentId"
+      ]
+    },
+    {
       "name": "PK_SchoolExtensionAddress",
       "table": {
         "schema": "sample",
@@ -87,8 +125,7 @@
       "kind": "PrimaryKey",
       "is_unique": true,
       "key_columns": [
-        "School_DocumentId",
-        "Ordinal"
+        "BaseCollectionItemId"
       ]
     }
   ],
@@ -213,6 +250,17 @@
             }
           ],
           "key_unification_classes": [],
+          "identity_metadata": {
+            "table_kind": "Root",
+            "physical_row_identity_columns": [
+              "DocumentId"
+            ],
+            "root_scope_locator_columns": [
+              "DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [],
+            "semantic_identity_bindings": []
+          },
           "descriptor_fk_deduplications": [],
           "constraints": [
             {
@@ -278,6 +326,19 @@
             }
           ],
           "key_unification_classes": [],
+          "identity_metadata": {
+            "table_kind": "RootExtension",
+            "physical_row_identity_columns": [
+              "DocumentId"
+            ],
+            "root_scope_locator_columns": [
+              "DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [
+              "DocumentId"
+            ],
+            "semantic_identity_bindings": []
+          },
           "descriptor_fk_deduplications": [],
           "constraints": [
             {
@@ -304,17 +365,13 @@
           "scope": "$._ext.sample.addresses[*]._ext.sample",
           "key_columns": [
             {
-              "name": "School_DocumentId",
+              "name": "BaseCollectionItemId",
               "kind": "ParentKeyPart"
-            },
-            {
-              "name": "Ordinal",
-              "kind": "Ordinal"
             }
           ],
           "columns": [
             {
-              "name": "School_DocumentId",
+              "name": "BaseCollectionItemId",
               "kind": "ParentKeyPart",
               "type": {
                 "kind": "Int64"
@@ -326,10 +383,10 @@
               }
             },
             {
-              "name": "Ordinal",
-              "kind": "Ordinal",
+              "name": "School_DocumentId",
+              "kind": "ParentKeyPart",
               "type": {
-                "kind": "Int32"
+                "kind": "Int64"
               },
               "is_nullable": false,
               "source_path": null,
@@ -352,22 +409,35 @@
             }
           ],
           "key_unification_classes": [],
+          "identity_metadata": {
+            "table_kind": "CollectionExtensionScope",
+            "physical_row_identity_columns": [
+              "BaseCollectionItemId"
+            ],
+            "root_scope_locator_columns": [
+              "School_DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [
+              "BaseCollectionItemId"
+            ],
+            "semantic_identity_bindings": []
+          },
           "descriptor_fk_deduplications": [],
           "constraints": [
             {
               "kind": "ForeignKey",
               "name": "FK_SchoolExtensionAddress_SchoolAddress",
               "columns": [
-                "School_DocumentId",
-                "Ordinal"
+                "BaseCollectionItemId",
+                "School_DocumentId"
               ],
               "target_table": {
                 "schema": "edfi",
                 "name": "SchoolAddress"
               },
               "target_columns": [
-                "School_DocumentId",
-                "Ordinal"
+                "CollectionItemId",
+                "School_DocumentId"
               ],
               "on_delete": "Cascade",
               "on_update": "NoAction"
@@ -380,18 +450,14 @@
           "scope": "$.addresses[*]",
           "key_columns": [
             {
-              "name": "School_DocumentId",
-              "kind": "ParentKeyPart"
-            },
-            {
-              "name": "Ordinal",
-              "kind": "Ordinal"
+              "name": "CollectionItemId",
+              "kind": "CollectionKey"
             }
           ],
           "columns": [
             {
-              "name": "School_DocumentId",
-              "kind": "ParentKeyPart",
+              "name": "CollectionItemId",
+              "kind": "CollectionKey",
               "type": {
                 "kind": "Int64"
               },
@@ -414,6 +480,18 @@
               }
             },
             {
+              "name": "School_DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "Street",
               "kind": "Scalar",
               "type": {
@@ -428,8 +506,37 @@
             }
           ],
           "key_unification_classes": [],
+          "identity_metadata": {
+            "table_kind": "Collection",
+            "physical_row_identity_columns": [
+              "CollectionItemId"
+            ],
+            "root_scope_locator_columns": [
+              "School_DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [
+              "School_DocumentId"
+            ],
+            "semantic_identity_bindings": []
+          },
           "descriptor_fk_deduplications": [],
           "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_SchoolAddress_CollectionItemId_School_DocumentId",
+              "columns": [
+                "CollectionItemId",
+                "School_DocumentId"
+              ]
+            },
+            {
+              "kind": "Unique",
+              "name": "UX_SchoolAddress_Ordinal_School_DocumentId",
+              "columns": [
+                "School_DocumentId",
+                "Ordinal"
+              ]
+            },
             {
               "kind": "ForeignKey",
               "name": "FK_SchoolAddress_School",

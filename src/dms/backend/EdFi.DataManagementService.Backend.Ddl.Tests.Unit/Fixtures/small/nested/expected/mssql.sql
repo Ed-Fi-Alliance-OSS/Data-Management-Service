@@ -421,20 +421,25 @@ CREATE TABLE [edfi].[School]
 IF OBJECT_ID(N'edfi.SchoolAddress', N'U') IS NULL
 CREATE TABLE [edfi].[SchoolAddress]
 (
-    [School_DocumentId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
+    [School_DocumentId] bigint NOT NULL,
     [Street] nvarchar(100) NOT NULL,
-    CONSTRAINT [PK_SchoolAddress] PRIMARY KEY ([School_DocumentId], [Ordinal])
+    CONSTRAINT [PK_SchoolAddress] PRIMARY KEY ([CollectionItemId]),
+    CONSTRAINT [UX_SchoolAddress_CollectionItemId_School_DocumentId] UNIQUE ([CollectionItemId], [School_DocumentId]),
+    CONSTRAINT [UX_SchoolAddress_Ordinal_School_DocumentId] UNIQUE ([School_DocumentId], [Ordinal])
 );
 
 IF OBJECT_ID(N'edfi.SchoolAddressPhoneNumber', N'U') IS NULL
 CREATE TABLE [edfi].[SchoolAddressPhoneNumber]
 (
-    [School_DocumentId] bigint NOT NULL,
-    [AddressOrdinal] int NOT NULL,
+    [CollectionItemId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
+    [ParentCollectionItemId] bigint NOT NULL,
+    [School_DocumentId] bigint NOT NULL,
     [PhoneNumber] nvarchar(20) NOT NULL,
-    CONSTRAINT [PK_SchoolAddressPhoneNumber] PRIMARY KEY ([School_DocumentId], [AddressOrdinal], [Ordinal])
+    CONSTRAINT [PK_SchoolAddressPhoneNumber] PRIMARY KEY ([CollectionItemId]),
+    CONSTRAINT [UX_SchoolAddressPhoneNumber_Ordinal_ParentCollectionItemId] UNIQUE ([ParentCollectionItemId], [Ordinal])
 );
 
 IF NOT EXISTS (
@@ -465,10 +470,18 @@ IF NOT EXISTS (
 )
 ALTER TABLE [edfi].[SchoolAddressPhoneNumber]
 ADD CONSTRAINT [FK_SchoolAddressPhoneNumber_SchoolAddress]
-FOREIGN KEY ([School_DocumentId], [AddressOrdinal])
-REFERENCES [edfi].[SchoolAddress] ([School_DocumentId], [Ordinal])
+FOREIGN KEY ([ParentCollectionItemId], [School_DocumentId])
+REFERENCES [edfi].[SchoolAddress] ([CollectionItemId], [School_DocumentId])
 ON DELETE CASCADE
 ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'edfi' AND t.name = N'SchoolAddressPhoneNumber' AND i.name = N'IX_SchoolAddressPhoneNumber_ParentCollectionItemId_School_DocumentId'
+)
+CREATE INDEX [IX_SchoolAddressPhoneNumber_ParentCollectionItemId_School_DocumentId] ON [edfi].[SchoolAddressPhoneNumber] ([ParentCollectionItemId], [School_DocumentId]);
 
 GO
 CREATE OR ALTER TRIGGER [edfi].[TR_School_ReferentialIdentity]
