@@ -183,9 +183,3 @@ internal static class SetPassHelpers
         );
     }
 }
-
-/// <summary>
-/// Captures a concrete resource model and its index within the builder's canonical resource ordering.
-/// Used by multiple set passes that need to track both the model and its positional index.
-/// </summary>
-internal sealed record BaseResourceEntry(int Index, ConcreteResourceModel Model);

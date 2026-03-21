@@ -74,5 +74,27 @@
       "Run: `rg -n \"ApplyArrayUniquenessConstraint\\(|resourceModel,\" src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses` and confirm the unused `resourceModel` parameter plumbing has been removed."
     ],
     "completed": true
+  },
+  {
+    "category": "Ordinal Scope Predicate Deduplication",
+    "description": "Extract one shared helper for the stable-collection ordinal-column predicate currently duplicated in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/SemanticIdentityCompilationPass.cs`, `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ValidateCollectionSemanticIdentityPass.cs`, and `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/StableCollectionConstraintPass.cs`. Consolidate the common check `table.Columns.Any(column => column.Kind == ColumnKind.Ordinal && column.ColumnName.Equals(RelationalNameConventions.OrdinalColumnName))` into a single helper, preferably in `SetPassHelpers` or a focused `DbTableModel` helper/extension. Acceptance: all three call sites use the same shared implementation; semantic-identity scope selection, strict validation, and sibling-order unique-constraint derivation behave exactly as before for collection and extension collection tables; and no copy of the ordinal-column predicate remains in those pass implementations.",
+    "steps-to-verify": [
+      "Replace `SemanticIdentityCompilationPass.HasOrdinalColumn`, `ValidateCollectionSemanticIdentityPass.IsPersistedMultiItemScope`, and the inline ordinal check in `StableCollectionConstraintPass.BuildSiblingOrderUniqueColumns` with one shared helper.",
+      "Add or update unit coverage in `SemanticIdentityCompilationPassTests`, `CollectionSemanticIdentityValidationPassTests`, and `ConstraintDerivationRelationalModelSetPassTests` so the affected passes still recognize persisted multi-item scopes and still derive sibling-order uniqueness only for tables with an `Ordinal` column.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"FullyQualifiedName~SemanticIdentityCompilationPassTests|FullyQualifiedName~CollectionSemanticIdentityValidationPassTests|FullyQualifiedName~ConstraintDerivationRelationalModelSetPassTests\"`",
+      "Run: `rg -n \"column.Kind == ColumnKind.Ordinal.*RelationalNameConventions.OrdinalColumnName|RelationalNameConventions.OrdinalColumnName.*column.Kind == ColumnKind.Ordinal\" src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses -g '*.cs'` and confirm the duplicated predicate no longer appears in those three pass codepaths."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Resource Entry Type Consolidation",
+    "description": "Unify the structurally identical `ResourceEntry(int Index, ConcreteResourceModel Model)` and `BaseResourceEntry(int Index, ConcreteResourceModel Model)` record types used by relational-model set passes. Refactor `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/SetPassHelpers.cs`, `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ExtensionTableDerivationPass.cs`, `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ReferenceBindingPass.cs`, `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/KeyUnificationPass.cs`, and any related helpers so both mutation plumbing and extension-base lookup share one common entry record instead of maintaining duplicate types. Acceptance: the extension base-resource lookup continues to resolve the same canonical base resource entries in the same deterministic order; all call sites compile against one shared entry type; no duplicate record definitions with the same `(Index, Model)` shape remain; and behavior of extension table derivation, reference binding, key unification, and constraint derivation remains unchanged.",
+    "steps-to-verify": [
+      "Choose a single shared record type for concrete resource entries, update `BuildExtensionBaseResourceLookup` and all current `BaseResourceEntry`/`ResourceEntry` consumers to use it, and remove the redundant record definition.",
+      "Add or update regression coverage in `ExtensionTableDerivationTests`, `RelationalModelSetPassesTests`, `ConstraintDerivationRelationalModelSetPassTests`, and any key-unification tests that exercise extension-to-base resource resolution so the refactor proves behavior did not change.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"FullyQualifiedName~ExtensionTableDerivationTests|FullyQualifiedName~RelationalModelSetPassesTests|FullyQualifiedName~ConstraintDerivationRelationalModelSetPassTests|FullyQualifiedName~KeyUnification\"`",
+      "Run: `rg -n \"record (BaseResourceEntry|ResourceEntry)\\(\" src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel -g '*.cs'` and confirm only one shared entry record remains."
+    ],
+    "completed": true
   }
 ]

@@ -6,6 +6,7 @@
 using System.Text;
 using System.Text.Json.Nodes;
 using static EdFi.DataManagementService.Backend.RelationalModel.Build.RelationalModelStableIdentityHelper;
+using static EdFi.DataManagementService.Backend.RelationalModel.Constraints.ConstraintDerivationHelpers;
 using static EdFi.DataManagementService.Backend.RelationalModel.Schema.RelationalModelSetSchemaHelpers;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
@@ -48,7 +49,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
         var concreteResourceSchemas = context.EnumerateConcreteResourceSchemasInNameOrder().ToArray();
         var baseResourcesByName = SetPassHelpers.BuildExtensionBaseResourceLookup(
             context,
-            static (index, model) => new BaseResourceEntry(index, model)
+            static (index, model) => new ResourceEntry(index, model)
         );
         Dictionary<string, JsonObject> apiSchemaRootsByProjectEndpoint = new(StringComparer.Ordinal);
 
