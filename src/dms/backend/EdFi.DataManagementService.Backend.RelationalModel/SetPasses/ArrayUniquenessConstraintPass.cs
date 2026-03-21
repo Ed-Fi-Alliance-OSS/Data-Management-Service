@@ -21,81 +21,19 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var resourcesByKey = context
-            .ConcreteResourcesInNameOrder.Select((model, index) => new ResourceEntry(index, model))
-            .ToDictionary(entry => entry.Model.ResourceKey.Resource, entry => entry);
-        var baseResourcesByName = SetPassHelpers.BuildExtensionBaseResourceLookup(
+        SetPassHelpers.ExecuteContributingResourceMutationPass(
             context,
-            static (index, model) => new ResourceEntry(index, model)
-        );
-        Dictionary<QualifiedResourceName, ResourceMutation> mutations = new();
-
-        foreach (var resourceContext in context.EnumerateConcreteResourceSchemasInNameOrder())
-        {
-            var resource = new QualifiedResourceName(
-                resourceContext.Project.ProjectSchema.ProjectName,
-                resourceContext.ResourceName
-            );
-            var builderContext = context.GetOrCreateResourceBuilderContext(resourceContext);
-
-            if (builderContext.ArrayUniquenessConstraints.Count == 0)
-            {
-                continue;
-            }
-
-            if (IsResourceExtension(resourceContext))
-            {
-                var baseEntry = ResolveBaseResourceForExtension(
-                    resourceContext.ResourceName,
-                    resource,
-                    baseResourcesByName,
-                    static entry => entry.Model.ResourceKey.Resource
-                );
-                var baseResource = baseEntry.Model.ResourceKey.Resource;
-                var mutation = GetOrCreateMutation(baseResource, baseEntry, mutations);
-
+            "constraint derivation",
+            static builderContext => builderContext.ArrayUniquenessConstraints.Count > 0,
+            static (mutation, resourceModel, builderContext, resource) =>
                 ApplyArrayUniquenessConstraintsForResource(
                     mutation,
-                    baseEntry.Model.RelationalModel,
+                    resourceModel,
                     builderContext,
-                    baseResource,
+                    resource,
                     emitUniqueConstraints: true
-                );
-
-                continue;
-            }
-
-            if (!resourcesByKey.TryGetValue(resource, out var entry))
-            {
-                throw new InvalidOperationException(
-                    $"Concrete resource '{FormatResource(resource)}' was not found for constraint derivation."
-                );
-            }
-
-            var resourceMutation = GetOrCreateMutation(resource, entry, mutations);
-
-            ApplyArrayUniquenessConstraintsForResource(
-                resourceMutation,
-                entry.Model.RelationalModel,
-                builderContext,
-                resource,
-                emitUniqueConstraints: true
-            );
-        }
-
-        foreach (var mutation in mutations.Values)
-        {
-            if (!mutation.HasChanges)
-            {
-                continue;
-            }
-
-            var updatedModel = UpdateResourceModel(mutation.Entry.Model.RelationalModel, mutation);
-            context.ConcreteResourcesInNameOrder[mutation.Entry.Index] = mutation.Entry.Model with
-            {
-                RelationalModel = updatedModel,
-            };
-        }
+                )
+        );
     }
 
     /// <summary>
@@ -135,7 +73,6 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
             ApplyArrayUniquenessConstraint(
                 constraint,
                 mutation,
-                resourceModel,
                 resource,
                 tablesByScope,
                 tablesByName,
@@ -153,7 +90,6 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
     private static void ApplyArrayUniquenessConstraint(
         ArrayUniquenessConstraintInput constraint,
         ResourceMutation mutation,
-        RelationalResourceModel resourceModel,
         QualifiedResourceName resource,
         IReadOnlyDictionary<string, IReadOnlyList<DbTableModel>> tablesByScope,
         IReadOnlyDictionary<DbTableName, IReadOnlyList<DbTableModel>> tablesByName,
@@ -259,7 +195,6 @@ public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
             ApplyArrayUniquenessConstraint(
                 nested,
                 mutation,
-                resourceModel,
                 resource,
                 tablesByScope,
                 tablesByName,

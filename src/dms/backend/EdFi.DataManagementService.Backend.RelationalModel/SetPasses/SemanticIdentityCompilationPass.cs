@@ -32,72 +32,21 @@ public sealed class SemanticIdentityCompilationPass : IRelationalModelSetPass
     /// </summary>
     private static void ApplyArrayUniquenessSemanticIdentity(RelationalModelSetBuilderContext context)
     {
-        var baseResourcesByName = SetPassHelpers.BuildExtensionBaseResourceLookup(
+        SetPassHelpers.ExecuteContributingResourceMutationPass(
             context,
-            static (index, model) => new ResourceEntry(index, model)
-        );
-        var resourceIndexByKey = BuildResourceIndexByKey(context);
-        Dictionary<QualifiedResourceName, ResourceMutation> mutations = new();
-
-        foreach (var resourceContext in context.EnumerateConcreteResourceSchemasInNameOrder())
-        {
-            var resource = new QualifiedResourceName(
-                resourceContext.Project.ProjectSchema.ProjectName,
-                resourceContext.ResourceName
-            );
-            var builderContext = context.GetOrCreateResourceBuilderContext(resourceContext);
-
-            if (builderContext.ArrayUniquenessConstraints.Count == 0)
+            "semantic identity compilation",
+            static builderContext => builderContext.ArrayUniquenessConstraints.Count > 0,
+            static (mutation, resourceModel, builderContext, resource) =>
             {
-                continue;
-            }
-
-            if (IsResourceExtension(resourceContext))
-            {
-                var baseEntry = ResolveBaseResourceForExtension(
-                    resourceContext.ResourceName,
-                    resource,
-                    baseResourcesByName,
-                    static entry => entry.Model.ResourceKey.Resource
-                );
-                var baseResource = baseEntry.Model.ResourceKey.Resource;
-                var mutation = GetOrCreateMutation(baseResource, baseEntry, mutations);
-
                 ArrayUniquenessConstraintPass.ApplyArrayUniquenessConstraintsForResource(
                     mutation,
-                    baseEntry.Model.RelationalModel,
+                    resourceModel,
                     builderContext,
-                    baseResource,
+                    resource,
                     emitUniqueConstraints: false
                 );
-
-                continue;
             }
-
-            if (!resourceIndexByKey.TryGetValue(resource, out var index))
-            {
-                throw new InvalidOperationException(
-                    $"Concrete resource '{FormatResource(resource)}' was not found for semantic identity compilation."
-                );
-            }
-
-            var concrete = context.ConcreteResourcesInNameOrder[index];
-            var resourceMutation = GetOrCreateMutation(
-                resource,
-                new ResourceEntry(index, concrete),
-                mutations
-            );
-
-            ArrayUniquenessConstraintPass.ApplyArrayUniquenessConstraintsForResource(
-                resourceMutation,
-                concrete.RelationalModel,
-                builderContext,
-                resource,
-                emitUniqueConstraints: false
-            );
-        }
-
-        ApplyMutations(context, mutations);
+        );
     }
 
     /// <summary>
@@ -106,68 +55,15 @@ public sealed class SemanticIdentityCompilationPass : IRelationalModelSetPass
     /// </summary>
     private static void ApplyReferenceFallbackSemanticIdentity(RelationalModelSetBuilderContext context)
     {
-        var baseResourcesByName = SetPassHelpers.BuildExtensionBaseResourceLookup(
+        SetPassHelpers.ExecuteContributingResourceMutationPass(
             context,
-            static (index, model) => new ResourceEntry(index, model)
+            "semantic identity compilation",
+            static builderContext => builderContext.DocumentReferenceMappings.Count > 0,
+            static (mutation, resourceModel, _, resource) =>
+            {
+                CompileReferenceDerivedSemanticIdentityForResource(mutation, resourceModel, resource);
+            }
         );
-        var resourceIndexByKey = BuildResourceIndexByKey(context);
-        Dictionary<QualifiedResourceName, ResourceMutation> mutations = new();
-
-        foreach (var resourceContext in context.EnumerateConcreteResourceSchemasInNameOrder())
-        {
-            var resource = new QualifiedResourceName(
-                resourceContext.Project.ProjectSchema.ProjectName,
-                resourceContext.ResourceName
-            );
-            var builderContext = context.GetOrCreateResourceBuilderContext(resourceContext);
-
-            if (builderContext.DocumentReferenceMappings.Count == 0)
-            {
-                continue;
-            }
-
-            if (IsResourceExtension(resourceContext))
-            {
-                var baseEntry = ResolveBaseResourceForExtension(
-                    resourceContext.ResourceName,
-                    resource,
-                    baseResourcesByName,
-                    static entry => entry.Model.ResourceKey.Resource
-                );
-                var baseResource = baseEntry.Model.ResourceKey.Resource;
-                var mutation = GetOrCreateMutation(baseResource, baseEntry, mutations);
-
-                CompileReferenceDerivedSemanticIdentityForResource(
-                    mutation,
-                    baseEntry.Model.RelationalModel,
-                    baseResource
-                );
-
-                continue;
-            }
-
-            if (!resourceIndexByKey.TryGetValue(resource, out var index))
-            {
-                throw new InvalidOperationException(
-                    $"Concrete resource '{FormatResource(resource)}' was not found for semantic identity compilation."
-                );
-            }
-
-            var concrete = context.ConcreteResourcesInNameOrder[index];
-            var resourceMutation = GetOrCreateMutation(
-                resource,
-                new ResourceEntry(index, concrete),
-                mutations
-            );
-
-            CompileReferenceDerivedSemanticIdentityForResource(
-                resourceMutation,
-                concrete.RelationalModel,
-                resource
-            );
-        }
-
-        ApplyMutations(context, mutations);
     }
 
     /// <summary>
@@ -218,43 +114,6 @@ public sealed class SemanticIdentityCompilationPass : IRelationalModelSetPass
                 resource
             );
         }
-    }
-
-    /// <summary>
-    /// Applies accumulated mutations back to the shared builder context.
-    /// </summary>
-    private static void ApplyMutations(
-        RelationalModelSetBuilderContext context,
-        IReadOnlyDictionary<QualifiedResourceName, ResourceMutation> mutations
-    )
-    {
-        foreach (var mutation in mutations.Values)
-        {
-            if (!mutation.HasChanges)
-            {
-                continue;
-            }
-
-            var updatedModel = UpdateResourceModel(mutation.Entry.Model.RelationalModel, mutation);
-            context.ConcreteResourcesInNameOrder[mutation.Entry.Index] = mutation.Entry.Model with
-            {
-                RelationalModel = updatedModel,
-            };
-        }
-    }
-
-    /// <summary>
-    /// Builds the current concrete-resource index lookup.
-    /// </summary>
-    private static Dictionary<QualifiedResourceName, int> BuildResourceIndexByKey(
-        RelationalModelSetBuilderContext context
-    )
-    {
-        return context
-            .ConcreteResourcesInNameOrder.Select(
-                (resource, index) => new { resource.ResourceKey.Resource, Index = index }
-            )
-            .ToDictionary(entry => entry.Resource, entry => entry.Index);
     }
 
     /// <summary>
