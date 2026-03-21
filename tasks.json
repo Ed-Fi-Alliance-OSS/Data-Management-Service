@@ -63,7 +63,7 @@
       "Run relational-model unit coverage that exercises both base and extension collection derivation, including `DeriveTableScopesAndKeysStepTests`, `ExtensionTableDerivationTests`, and `DbTableModelIdentityMetadataContractTests`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"FullyQualifiedName~DeriveTableScopesAndKeysStepTests|FullyQualifiedName~ExtensionTableDerivationTests|FullyQualifiedName~DbTableModelIdentityMetadataContractTests\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Semantic Identity Pass Refactor",

@@ -13,6 +13,17 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.Build;
 internal static class RelationalModelStableIdentityHelper
 {
     /// <summary>
+    /// Builds the child-table PK column for stable collection row identity.
+    /// </summary>
+    internal static TableKey BuildChildTableKey(DbTableName tableName)
+    {
+        return new TableKey(
+            ConstraintNaming.BuildPrimaryKeyName(tableName),
+            [new DbKeyColumn(RelationalNameConventions.CollectionItemIdColumnName, ColumnKind.CollectionKey)]
+        );
+    }
+
+    /// <summary>
     /// Builds root-table identity metadata.
     /// </summary>
     internal static DbTableIdentityMetadata BuildRootTableIdentityMetadata()

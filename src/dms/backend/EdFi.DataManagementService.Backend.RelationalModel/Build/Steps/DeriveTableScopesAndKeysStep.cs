@@ -521,17 +521,6 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
     }
 
     /// <summary>
-    /// Builds the child-table PK column: stable collection row identity.
-    /// </summary>
-    private static TableKey BuildChildTableKey(DbTableName tableName)
-    {
-        return new TableKey(
-            ConstraintNaming.BuildPrimaryKeyName(tableName),
-            [new DbKeyColumn(RelationalNameConventions.CollectionItemIdColumnName, ColumnKind.CollectionKey)]
-        );
-    }
-
-    /// <summary>
     /// Computes the physical child table name from the root name plus the concatenated collection base
     /// names.
     /// </summary>

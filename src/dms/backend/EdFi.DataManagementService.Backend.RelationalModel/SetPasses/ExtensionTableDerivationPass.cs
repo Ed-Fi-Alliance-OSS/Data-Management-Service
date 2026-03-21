@@ -1624,17 +1624,6 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Builds the primary key for an extension child collection table.
-    /// </summary>
-    private static TableKey BuildChildTableKey(DbTableName tableName)
-    {
-        return new TableKey(
-            ConstraintNaming.BuildPrimaryKeyName(tableName),
-            [new DbKeyColumn(RelationalNameConventions.CollectionItemIdColumnName, ColumnKind.CollectionKey)]
-        );
-    }
-
-    /// <summary>
     /// Captures the derived extension table models and descriptor edge sources for an extension resource.
     /// </summary>
     private sealed record ExtensionDerivationResult(
