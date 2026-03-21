@@ -34,7 +34,7 @@
       "Review `reference/design/backend-redesign/epics/02-ddl-emission/07-stable-collection-row-identity-ddl.md` and confirm the story no longer implies that DDL should fail universally on missing semantic identity.",
       "Run: `rg -n \"strict|default|semantic identity|runtime\" reference/design/backend-redesign/epics/02-ddl-emission/07-stable-collection-row-identity-ddl.md`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "DMS-1108 Strict Runtime Boundary",

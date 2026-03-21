@@ -16,6 +16,12 @@ This story applies the relational-model changes from `DMS-1103` to emitted Postg
 - `reference/design/backend-redesign/design-docs/flattening-reconstitution.md`
 - `reference/design/backend-redesign/design-docs/profiles.md`
 
+This story depends on `DMS-1103`'s relational-model contract split:
+
+- DDL consumes the stable-identity and compiled semantic-identity metadata produced by the shared/default relational-model pipeline when that metadata exists, but
+- DDL does not own or reintroduce global semantic-identity fail-fast for generic or hand-authored fixtures, and
+- strict validation remains scoped to supported-model/runtime-boundary callers such as `DMS-1108`.
+
 The new DDL contract must support:
 
 - stable internal child-row identity via `CollectionItemId`,
@@ -31,6 +37,13 @@ The new DDL contract must support:
 
 - DDL emits `dms.CollectionItemIdSequence` for both PostgreSQL and SQL Server.
 - Statement ordering ensures the sequence exists before any table defaults that depend on it.
+
+### Relational-model boundary
+
+- DDL consumes the permissive/shared relational-model output from `DMS-1103` rather than assuming `CreateDefault()` is globally strict.
+- DDL emits compiled stable-identity and semantic-identity constraints when the upstream relational model exposes that metadata.
+- Missing semantic identity in a generic or otherwise out-of-bound fixture is not, by itself, a universal DDL compilation failure.
+- Any fail-fast requirement for missing semantic identity is scoped to callers that deliberately opt into the strict/runtime boundary rather than to DDL emission itself.
 
 ### Project/resource/extension tables
 
@@ -81,3 +94,4 @@ The new DDL contract must support:
 4. Update FK-supporting indexes and deterministic ordering rules for the new constraint inventory.
 5. Emit the root-level, collection-aligned, and nested extension child-table FK/cascade chains so delete propagation follows the immediate parent scope without redundant root-cascade edges.
 6. Refresh snapshot/golden fixtures and DB-apply smoke coverage for nested collections, root-level `_ext` child collections, and collection-aligned `_ext` scopes.
+7. Keep DDL compilation on the permissive/shared relational-model pipeline from `DMS-1103`; this story consumes compiled semantic-identity metadata when present, but it does not move semantic-identity fail-fast out of the strict/runtime boundary owned by `DMS-1108`.
