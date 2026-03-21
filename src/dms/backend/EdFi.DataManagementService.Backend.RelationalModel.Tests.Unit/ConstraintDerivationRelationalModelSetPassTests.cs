@@ -1927,6 +1927,65 @@ public class Given_Nested_Array_Uniqueness_Constraint_Derivation
 }
 
 /// <summary>
+/// Test fixture for sibling-order uniqueness when the canonical ordinal column kind is missing.
+/// </summary>
+[TestFixture]
+public class Given_A_Collection_Without_The_Canonical_Ordinal_Column_During_Stable_Constraint_Derivation
+{
+    private DbTableModel _addressTable = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema = ConstraintDerivationTestSchemaBuilder.BuildArrayUniquenessProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder([
+            new BaseTraversalAndDescriptorBindingPass(),
+            new ReferenceBindingPass(),
+            new RootIdentityConstraintPass(),
+            new ReferenceConstraintPass(),
+            new ArrayUniquenessConstraintPass(),
+            new RewriteOrdinalColumnKindPass("BusRoute", "BusRouteAddress", ColumnKind.Scalar),
+            new StableCollectionConstraintPass(),
+        ]);
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        var busRouteModel = result
+            .ConcreteResourcesInNameOrder.Single(model =>
+                model.ResourceKey.Resource.ResourceName == "BusRoute"
+            )
+            .RelationalModel;
+
+        _addressTable = busRouteModel.TablesInDependencyOrder.Single(table =>
+            table.Table.Name == "BusRouteAddress"
+        );
+    }
+
+    /// <summary>
+    /// It should not add sibling-order uniqueness without the canonical ordinal column kind.
+    /// </summary>
+    [Test]
+    public void It_should_not_add_sibling_order_uniqueness_without_the_canonical_ordinal_column_kind()
+    {
+        _addressTable
+            .Constraints.OfType<TableConstraint.Unique>()
+            .Should()
+            .NotContain(constraint =>
+                constraint
+                    .Columns.Select(column => column.Value)
+                    .SequenceEqual(new[] { "BusRoute_DocumentId", "Ordinal" })
+            );
+    }
+}
+
+/// <summary>
 /// Test fixture for unmappable array uniqueness path.
 /// </summary>
 [TestFixture]
@@ -2141,6 +2200,65 @@ public class Given_Array_Uniqueness_Constraint_With_Multiple_Candidate_Tables
             };
 
             return new DbTableModel(tableName, scope, key, columns, Array.Empty<TableConstraint>());
+        }
+    }
+}
+
+file sealed class RewriteOrdinalColumnKindPass(
+    string resourceName,
+    string tableName,
+    ColumnKind rewrittenColumnKind
+) : IRelationalModelSetPass
+{
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        for (var index = 0; index < context.ConcreteResourcesInNameOrder.Count; index++)
+        {
+            var concreteResource = context.ConcreteResourcesInNameOrder[index];
+
+            if (
+                !string.Equals(
+                    concreteResource.ResourceKey.Resource.ResourceName,
+                    resourceName,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                continue;
+            }
+
+            var updatedTables = concreteResource
+                .RelationalModel.TablesInDependencyOrder.Select(table =>
+                    string.Equals(table.Table.Name, tableName, StringComparison.Ordinal)
+                        ? table with
+                        {
+                            Columns = table
+                                .Columns.Select(column =>
+                                    column.Kind is ColumnKind.Ordinal
+                                        ? column with
+                                        {
+                                            Kind = rewrittenColumnKind,
+                                        }
+                                        : column
+                                )
+                                .ToArray(),
+                        }
+                        : table
+                )
+                .ToArray();
+            var updatedRoot = updatedTables.Single(table =>
+                table.JsonScope.Equals(concreteResource.RelationalModel.Root.JsonScope)
+            );
+            var updatedModel = concreteResource.RelationalModel with
+            {
+                Root = updatedRoot,
+                TablesInDependencyOrder = updatedTables,
+            };
+
+            context.ConcreteResourcesInNameOrder[index] = concreteResource with
+            {
+                RelationalModel = updatedModel,
+            };
         }
     }
 }

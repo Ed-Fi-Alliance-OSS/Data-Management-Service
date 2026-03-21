@@ -84,7 +84,7 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"FullyQualifiedName~SemanticIdentityCompilationPassTests|FullyQualifiedName~CollectionSemanticIdentityValidationPassTests|FullyQualifiedName~ConstraintDerivationRelationalModelSetPassTests\"`",
       "Run: `rg -n \"column.Kind == ColumnKind.Ordinal.*RelationalNameConventions.OrdinalColumnName|RelationalNameConventions.OrdinalColumnName.*column.Kind == ColumnKind.Ordinal\" src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses -g '*.cs'` and confirm the duplicated predicate no longer appears in those three pass codepaths."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Resource Entry Type Consolidation",

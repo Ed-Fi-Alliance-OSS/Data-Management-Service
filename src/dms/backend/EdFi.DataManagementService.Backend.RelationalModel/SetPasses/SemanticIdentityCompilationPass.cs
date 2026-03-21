@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Backend.RelationalModel.Naming;
 using static EdFi.DataManagementService.Backend.RelationalModel.Constraints.ConstraintDerivationHelpers;
 using static EdFi.DataManagementService.Backend.RelationalModel.Schema.RelationalModelSetSchemaHelpers;
 
@@ -124,7 +123,7 @@ public sealed class SemanticIdentityCompilationPass : IRelationalModelSetPass
         var supportsTableKind =
             table.IdentityMetadata.TableKind is DbTableKind.Collection or DbTableKind.ExtensionCollection;
 
-        return supportsTableKind && HasOrdinalColumn(table);
+        return supportsTableKind && SetPassHelpers.HasPersistedScopeOrdinalColumn(table);
     }
 
     /// <summary>
@@ -162,17 +161,6 @@ public sealed class SemanticIdentityCompilationPass : IRelationalModelSetPass
 
         bindings = compiledBindings.ToArray();
         return true;
-    }
-
-    /// <summary>
-    /// Returns whether a table models a persisted multi-item scope with sibling ordering.
-    /// </summary>
-    private static bool HasOrdinalColumn(DbTableModel table)
-    {
-        return table.Columns.Any(column =>
-            column.Kind == ColumnKind.Ordinal
-            && column.ColumnName.Equals(RelationalNameConventions.OrdinalColumnName)
-        );
     }
 
     /// <summary>

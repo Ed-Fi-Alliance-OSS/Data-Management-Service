@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Backend.RelationalModel.Naming;
 using static EdFi.DataManagementService.Backend.RelationalModel.Schema.RelationalModelSetSchemaHelpers;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
@@ -38,7 +37,7 @@ public sealed class ValidateCollectionSemanticIdentityPass : IRelationalModelSet
         foreach (var table in resourceModel.TablesInDependencyOrder)
         {
             if (
-                !IsPersistedMultiItemScope(table)
+                !SetPassHelpers.HasPersistedScopeOrdinalColumn(table)
                 || table.IdentityMetadata.SemanticIdentityBindings.Count > 0
             )
             {
@@ -96,17 +95,6 @@ public sealed class ValidateCollectionSemanticIdentityPass : IRelationalModelSet
                     + "bindings. This indicates an unsupported semantic identity scenario."
             );
         }
-    }
-
-    /// <summary>
-    /// Returns whether the table models a persisted multi-item scope.
-    /// </summary>
-    private static bool IsPersistedMultiItemScope(DbTableModel table)
-    {
-        return table.Columns.Any(column =>
-            column.Kind == ColumnKind.Ordinal
-            && column.ColumnName.Equals(RelationalNameConventions.OrdinalColumnName)
-        );
     }
 
     /// <summary>

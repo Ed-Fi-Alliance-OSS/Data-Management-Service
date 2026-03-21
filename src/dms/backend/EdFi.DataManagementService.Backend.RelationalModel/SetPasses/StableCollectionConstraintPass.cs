@@ -199,10 +199,7 @@ public sealed class StableCollectionConstraintPass : IRelationalModelSetPass
     {
         if (
             table.IdentityMetadata.ImmediateParentScopeLocatorColumns.Count == 0
-            || !table.Columns.Any(column =>
-                column.Kind == ColumnKind.Ordinal
-                && column.ColumnName.Equals(RelationalNameConventions.OrdinalColumnName)
-            )
+            || !SetPassHelpers.HasPersistedScopeOrdinalColumn(table)
         )
         {
             return [];

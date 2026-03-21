@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.RelationalModel;
+using EdFi.DataManagementService.Backend.RelationalModel.Naming;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -89,6 +90,34 @@ public class Given_A_Reference_Backed_Collection_Without_Array_Uniqueness
             .Select(binding => binding.ColumnName.Value)
             .Should()
             .Equal("School_DocumentId", "School_DocumentId");
+    }
+
+    /// <summary>
+    /// It should recognize persisted multi-item scopes only when the canonical ordinal column is present.
+    /// </summary>
+    [Test]
+    public void It_should_recognize_persisted_multi_item_scopes_only_when_the_canonical_ordinal_column_is_present()
+    {
+        SemanticIdentityCompilationPass.SupportsSemanticIdentityScope(_addressTable).Should().BeTrue();
+
+        var tableWithoutOrdinalKind = _addressTable with
+        {
+            Columns = _addressTable
+                .Columns.Select(column =>
+                    column.ColumnName.Equals(RelationalNameConventions.OrdinalColumnName)
+                        ? column with
+                        {
+                            Kind = ColumnKind.Scalar,
+                        }
+                        : column
+                )
+                .ToArray(),
+        };
+
+        SemanticIdentityCompilationPass
+            .SupportsSemanticIdentityScope(tableWithoutOrdinalKind)
+            .Should()
+            .BeFalse();
     }
 
     /// <summary>

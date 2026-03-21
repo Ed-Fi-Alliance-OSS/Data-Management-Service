@@ -71,6 +71,53 @@ public class Given_A_Non_Reference_Backed_Collection_Without_Array_Uniqueness
 }
 
 /// <summary>
+/// Test fixture for strict validation when the canonical ordinal column is absent.
+/// </summary>
+[TestFixture]
+public class Given_A_Collection_Without_The_Canonical_Ordinal_Column_During_Strict_Validation
+{
+    private DbTableModel _addressTable = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildReferenceBackedCollectionProjectSchema();
+        var schemaSet = CollectionSemanticIdentityValidationFixture.CreateSchemaSet(coreProjectSchema);
+        var builder = new DerivedRelationalModelSetBuilder([
+            new BaseTraversalAndDescriptorBindingPass(),
+            new ReferenceBindingPass(),
+            new RewriteOrdinalColumnPass("BusRoute", "BusRouteAddress", new DbColumnName("ItemOrdinal")),
+            new SemanticIdentityCompilationPass(),
+            new ValidateCollectionSemanticIdentityPass(),
+        ]);
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        var busRouteModel = result
+            .ConcreteResourcesInNameOrder.Single(model =>
+                model.ResourceKey.Resource.ResourceName == "BusRoute"
+            )
+            .RelationalModel;
+
+        _addressTable = busRouteModel.TablesInDependencyOrder.Single(table =>
+            table.Table.Name == "BusRouteAddress"
+        );
+    }
+
+    /// <summary>
+    /// It should skip strict validation for tables without the canonical ordinal column.
+    /// </summary>
+    [Test]
+    public void It_should_skip_strict_validation_for_tables_without_the_canonical_ordinal_column()
+    {
+        _addressTable.IdentityMetadata.SemanticIdentityBindings.Should().BeEmpty();
+    }
+}
+
+/// <summary>
 /// Test fixture for ambiguous array-uniqueness semantic identity.
 /// </summary>
 [TestFixture]
@@ -469,6 +516,71 @@ file sealed class RewriteTableKindPass(string resourceName, string tableName, Db
                         ? table with
                         {
                             IdentityMetadata = table.IdentityMetadata with { TableKind = tableKind },
+                        }
+                        : table
+                )
+                .ToArray();
+            var updatedRoot = updatedTables.Single(table =>
+                table.JsonScope.Equals(concreteResource.RelationalModel.Root.JsonScope)
+            );
+            var updatedModel = concreteResource.RelationalModel with
+            {
+                Root = updatedRoot,
+                TablesInDependencyOrder = updatedTables,
+            };
+
+            context.ConcreteResourcesInNameOrder[index] = concreteResource with
+            {
+                RelationalModel = updatedModel,
+            };
+        }
+    }
+}
+
+/// <summary>
+/// Test-only set pass that rewrites one table's canonical ordinal column name.
+/// </summary>
+file sealed class RewriteOrdinalColumnPass(
+    string resourceName,
+    string tableName,
+    DbColumnName rewrittenColumnName
+) : IRelationalModelSetPass
+{
+    /// <summary>
+    /// Execute pass.
+    /// </summary>
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        for (var index = 0; index < context.ConcreteResourcesInNameOrder.Count; index++)
+        {
+            var concreteResource = context.ConcreteResourcesInNameOrder[index];
+
+            if (
+                !string.Equals(
+                    concreteResource.ResourceKey.Resource.ResourceName,
+                    resourceName,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                continue;
+            }
+
+            var updatedTables = concreteResource
+                .RelationalModel.TablesInDependencyOrder.Select(table =>
+                    string.Equals(table.Table.Name, tableName, StringComparison.Ordinal)
+                        ? table with
+                        {
+                            Columns = table
+                                .Columns.Select(column =>
+                                    column.Kind is ColumnKind.Ordinal
+                                        ? column with
+                                        {
+                                            ColumnName = rewrittenColumnName,
+                                        }
+                                        : column
+                                )
+                                .ToArray(),
                         }
                         : table
                 )

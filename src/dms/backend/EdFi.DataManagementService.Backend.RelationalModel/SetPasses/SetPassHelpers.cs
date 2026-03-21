@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.RelationalModel.Naming;
 using static EdFi.DataManagementService.Backend.RelationalModel.Constraints.ConstraintDerivationHelpers;
 using static EdFi.DataManagementService.Backend.RelationalModel.Schema.RelationalModelSetSchemaHelpers;
 
@@ -19,6 +20,19 @@ internal static class SetPassHelpers
     internal static int CountArrayDepth(JsonPathExpression scope)
     {
         return scope.Segments.Count(segment => segment is JsonPathSegment.AnyArrayElement);
+    }
+
+    /// <summary>
+    /// Returns whether the table exposes the canonical ordinal column used for persisted multi-item scopes.
+    /// </summary>
+    internal static bool HasPersistedScopeOrdinalColumn(DbTableModel table)
+    {
+        ArgumentNullException.ThrowIfNull(table);
+
+        return table.Columns.Any(column =>
+            column.Kind is ColumnKind.Ordinal
+            && column.ColumnName.Equals(RelationalNameConventions.OrdinalColumnName)
+        );
     }
 
     /// <summary>
