@@ -119,13 +119,18 @@ Objective:
 - add `/deletes` route
 - add `/keyChanges` route
 - accept and validate `minChangeVersion` and `maxChangeVersion`
+- define profile-bypass behavior for the new non-resource Change Query GET endpoints
+- define exact ProblemDetails contracts for invalid windows and replay-floor misses
 - preserve current collection GET and item-by-id behavior when change-query parameters are absent
 
 Key acceptance themes:
 
 - `/deletes` resolves as a dedicated route rather than being treated as an item id
 - `/keyChanges` resolves as a dedicated route rather than being treated as an item id
-- invalid or inconsistent change-query windows preserve ODS-compatible `200 OK` behavior
+- invalid or inconsistent change-query windows return the documented `400 Bad Request` problem details
+- `minChangeVersion < oldestChangeVersion` returns the documented `409 Conflict` problem details
+- changed-resource collection GET continues normal profile behavior, while `/deletes`, `/keyChanges`, and `availableChangeVersions` bypass profile resolution and profile filtering
+- changed-resource eligibility remains resource-level even when a readable profile filters the returned representation
 - existing non-change-query GET behavior remains unchanged
 
 Likely implementation areas:
@@ -155,6 +160,7 @@ Key acceptance themes:
 
 - changed-resource mode returns current live resource payloads only once per resource
 - authorization behavior matches current collection GET semantics
+- the package documents the non-snapshot tradeoffs and the recommended open-ended `minChangeVersion` synchronization algorithm explicitly
 - ordering is deterministic and index-supported
 
 Likely implementation areas:
@@ -175,16 +181,24 @@ Objective:
 
 - implement `/deletes` query execution against tombstones
 - implement `/keyChanges` query execution against key-change tracking rows
-- compute `oldestChangeVersion` and `newestChangeVersion`
+- compute `oldestChangeVersion` as the effective replay floor and `newestChangeVersion` as the synchronization ceiling
+- serialize identity-changing update and delete capture with row-level locking or an engine-equivalent mechanism
 - preserve delete-query and key-change-query authorization parity
 
 Key acceptance themes:
 
 - `/deletes` returns tombstones ordered deterministically
 - `/keyChanges` returns collapsed rows ordered deterministically
+- `/keyChanges` remains valid for resources that do not support identity updates and returns `200 OK` with an empty array for them
+- `/deletes` and `/keyChanges` return the canonical public resource `id` sourced from `DocumentUuid`
+- `/keyChanges` applies `totalCount`, `offset`, and `limit` after authorization filtering and collapse
 - delete-query authorization matches live-query semantics
 - key-change-query authorization matches live-query semantics
-- `availableChangeVersions` returns correct bounds for the active tracking artifacts
+- `availableChangeVersions` returns one ODS-aligned synchronization surface with correct replay-floor and ceiling bounds for the active tracking artifacts, including `replayFloor/replayFloor` when all participating sources are empty after purge has advanced the replay floor
+- requests where `minChangeVersion < oldestChangeVersion` return `409 Conflict` problem details
+- multi-resource synchronization guidance is explicit: `keyChanges` and changed resources in dependency order, deletes in reverse-dependency order
+- optional journal-assisted changed-resource execution preserves the same public paging semantics as live-row execution
+- concurrent updates and deletes on the same document do not capture stale old keys or tombstones
 
 Likely implementation areas:
 
@@ -204,7 +218,8 @@ Dependencies:
 
 Objective:
 
-- add test coverage for request validation, changed-resource behavior, delete behavior, authorization parity, and replay safety
+- add test coverage for request validation, changed-resource behavior, delete behavior, authorization parity, paging semantics, replay-floor errors, and fully-purged replay-floor bounds
+- cover unsupported-resource `/keyChanges` behavior and journal-assisted paging parity
 - cover canonical key alias derivation for simple, composite, and repeated-leaf identities
 - validate backfill, trigger behavior, and non-breaking route behavior
 
@@ -300,5 +315,5 @@ A story should be considered done only if:
 - unit and integration coverage exists where appropriate
 - E2E impact is covered for route or behavior changes
 - no existing API behavior regresses
-- the resulting artifact still matches the bounded-window synchronization model
+- the resulting artifact still matches the documented change-query synchronization model, including the no-snapshot tradeoffs and saved-watermark rules
 

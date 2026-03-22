@@ -36,16 +36,16 @@ Project, component, and file references are informative implementation touchpoin
 The consolidated design preserves the approved spike decisions:
 
 - existing APIs remain non-breaking
-- snapshots are avoided in favor of bounded `minChangeVersion` and `maxChangeVersion` windows
+- server-side snapshot history tables are avoided; DMS-843 v1 does not expose a client-selectable snapshot or consistent-read mode, so synchronization under concurrent writes is intentionally documented as best-effort
 - the canonical live-row change token lives on `dms.Document`
 - deletes are tracked in `dms.DocumentDeleteTracking` in the `dms` schema
 - `keyChanges` are part of the feature and use dedicated tracking for old and new natural-key values
 - `dms.DocumentChangeEvent` is treated as an optional internal journal artifact for scalability and redesign alignment, not as a competing delete mechanism
 - deletes and key changes use separate dedicated tracking tables rather than one mixed event table
 
-## Deliverables
+## Required Review Set
 
-Read the package in this order:
+To achieve the spike goal with the least review noise, the required core review set is:
 
 1. `01-Feature-Summary-and-Decisions.md`
 2. `02-API-Contract-and-Synchronization.md`
@@ -53,12 +53,35 @@ Read the package in this order:
 4. `04-Data-Model-and-DDL.md`
 5. `05-Authorization-and-Delete-Semantics.md`
 6. `06-Validation-Rollout-and-Operations.md`
-7. `07-Jira-Story-Input.md`
-8. `08-Requirements-Traceability.md`
-9. `Appendix-A-Feature-DDL-Sketch.sql`
-10. `story-map.json`
-11. `workitems/tasks.json`
-12. `workitems/progress.json`
+
+These six documents contain the normative design needed to review the spike outputs:
+
+- feature decisions
+- public API contract
+- synchronization rules
+- architecture and execution model
+- data model and DDL requirements
+- authorization semantics
+- rollout, validation, and operational constraints
+
+## Supporting Review Artifacts
+
+The following documents remain useful, but they are supporting artifacts rather than the minimum review set for the spike goal:
+
+1. `07-Jira-Story-Input.md`
+2. `08-Requirements-Traceability.md`
+3. `Appendix-A-Feature-DDL-Sketch.sql`
+4. `story-map.json`
+5. `workitems/tasks.json`
+6. `workitems/progress.json`
+
+Supporting-artifact notes:
+
+- `07-Jira-Story-Input.md` is for Jira decomposition after design review
+- `08-Requirements-Traceability.md` is for auditability and coverage confirmation
+- `Appendix-A-Feature-DDL-Sketch.sql` is informative only; it is an implementation-oriented sketch, not a normative design source
+- `Strict-Review-Comments*.md` files are historical review trails; use their status notes and post-remediation sections for current package status
+- `story-map.json`, `workitems/tasks.json`, and `workitems/progress.json` are planning aids
 
 ## Output Coverage
 
@@ -77,12 +100,8 @@ This package covers the spike template outputs directly:
 
 This package is aligned to:
 
-- `DMS-843/changequeries/*`
-- `reference/DMS-843/*`
-- `DMS-843/Design/*`
-- `reference/design/backend-redesign/design-docs/update-tracking.md`
-- `reference/design/backend-redesign/design-docs/data-model.md`
-- `reference/design/backend-redesign/design-docs/auth.md`
+- Ed-Fi ODS/API platform guide, Changed Record Queries: <https://docs.ed-fi.org/reference/ods-api/platform-dev-guide/features/changed-record-queries/>
+- Ed-Fi ODS/API client guide, Using the Changed Record Queries: <https://docs.ed-fi.org/reference/ods-api/client-developers-guide/using-the-changed-record-queries/>
 
 ## How to Use This Package for Jira Story Creation
 

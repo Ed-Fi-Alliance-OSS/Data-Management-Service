@@ -17,6 +17,23 @@ Optional internal alignment artifact:
 
 - `dms.DocumentChangeEvent`
 
+Conditional retention artifact:
+
+- `dms.ChangeQueryRetentionFloor` when purge is enabled
+
+## Backend Scope Note
+
+The canonical DMS-843 design is defined at the contract, artifact-responsibility, and behavioral level rather than as a PostgreSQL-only feature.
+
+Normative rule:
+
+- any relational backend that implements DMS-843 must provide semantically equivalent change-version allocation, live-row stamping, tombstone capture, key-change capture, indexing, and row-level write serialization
+
+Informative note:
+
+- the SQL blocks in this document and in `Appendix-A-Feature-DDL-Sketch.sql` use PostgreSQL syntax because the current DMS storage implementation is PostgreSQL-first
+- those SQL blocks are examples of one conforming backend implementation, not a statement that the public feature contract is PostgreSQL-only
+
 ## Canonical Live Row
 
 The current source of truth for resources and descriptors is `dms.Document`.
@@ -56,6 +73,8 @@ Required semantics:
 - values may contain gaps
 - rollbacks may consume values
 - clients treat values as ordering tokens rather than row counts
+- value `0` is reserved for the bootstrap watermark sentinel exposed by `availableChangeVersions` when no retained change rows exist
+- the sequence is an allocation mechanism for future stamps, not the public source of `oldestChangeVersion` or `newestChangeVersion`
 
 ## `dms.Document.ChangeVersion`
 
@@ -73,6 +92,10 @@ Final state after backfill:
 - unique per committed representation change for a single document row
 
 For redesign alignment, `dms.Document.ChangeVersion` is the current-backend equivalent of redesign `dms.Document.ContentVersion`.
+
+This bridge design adds one physical live-row representation-change stamp column: `dms.Document.ChangeVersion`.
+
+It does not also add `dms.Document.ContentVersion` to the current-backend schema. In this package, references to `ContentVersion` are redesign cross-reference terminology for the same stamp responsibility.
 
 ## ChangeVersion Stamping Rules
 
@@ -114,6 +137,12 @@ Why the trigger is scoped to `EdfiDoc`:
 
 - current authorization triggers update other columns on `dms.Document`
 - a generic update trigger would create false changed-resource records
+
+Trigger responsibility note:
+
+- use database triggers to keep the live-row `ChangeVersion` stamp consistent on inserts and representation-changing updates
+- if the optional `dms.DocumentChangeEvent` journal is enabled, use triggers to emit journal rows when the live stamp changes
+- do not use trigger-maintained aggregate state or the raw sequence value as the source of `availableChangeVersions`
 
 ## Partition note
 
@@ -197,7 +226,7 @@ Those values cannot be reconstructed from only the current row after additional 
 
 ## Why key-change authorization projection is stored
 
-Key-change results must remain authorization-filtered even if a later delete removes the live row or if later writes move the current resource to a different key state. The tracking row therefore stores the same authorization projection categories copied from `dms.Document`.
+Key-change results must remain authorization-filtered even if a later delete removes the live row or if later writes move the current resource to a different key state. The tracking row therefore stores the same authorization projection categories copied from the pre-update `dms.Document` row.
 
 ## Resource-scoped key payload contract for shared tracking tables
 
@@ -269,6 +298,7 @@ Reason:
 - the application update path already has the resolved `ResourceSchema`
 - the application can derive old and new key values from `ResourceSchema.IdentityJsonPaths`
 - only the application can reliably distinguish a natural-key change from a representation rewrite that leaves identity unchanged
+- the application already has the pre-update authorization projection that this design stores on the key-change row
 
 ## Key-change eligibility rules
 
@@ -334,6 +364,38 @@ Why it is not contradictory with tombstones:
 - key-change tracking is for old-to-new natural-key transitions
 - delete queries need data that survives after the live row and its journal rows are removed
 - key-change queries need data that survives later key mutations and later deletes
+
+## Required replay-floor metadata when purge is enabled
+
+If retention purge is enabled for any change-query surface, the implementation must persist replay-floor metadata explicitly rather than inferring replay floors from table emptiness.
+
+One conforming relational shape is:
+
+```sql
+CREATE TABLE dms.ChangeQueryRetentionFloor (
+    SurfaceName varchar(64) NOT NULL PRIMARY KEY,
+    ReplayFloorChangeVersion bigint NOT NULL,
+    UpdatedAt timestamp NOT NULL DEFAULT now(),
+    CONSTRAINT CK_ChangeQueryRetentionFloor_SurfaceName
+        CHECK (SurfaceName IN ('live', 'deletes', 'keyChanges')),
+    CONSTRAINT CK_ChangeQueryRetentionFloor_ReplayFloor
+        CHECK (ReplayFloorChangeVersion >= 0)
+);
+```
+
+Required semantics:
+
+- `SurfaceName` identifies the participating synchronization surface: `live`, `deletes`, or `keyChanges`
+- an absent row means that surface has not had its replay floor advanced by purge and therefore contributes replay floor `0`
+- when a row is present, `ReplayFloorChangeVersion` is the lowest inclusive `minChangeVersion` that can still be requested for complete results from that surface
+- if a surface becomes empty because of purge, its metadata row remains authoritative and must not be removed
+- `availableChangeVersions` computes the instance-wide `oldestChangeVersion` as the greatest participating surface replay floor
+
+Atomic update contract:
+
+- each purge operation must delete obsolete tracking rows and advance that surface's replay floor metadata in the same transaction
+- `availableChangeVersions` must never observe purged rows without the corresponding replay-floor advance, or a replay-floor advance without the corresponding purge
+- if the purge transaction rolls back, both the deleted rows and the replay-floor advance must roll back together
 
 ## Index Design
 
@@ -417,17 +479,37 @@ These indexes are needed only when the journal is enabled.
 
 ## Available Change Version Computation
 
-If the journal is not enabled:
+Ed-Fi ODS/API exposes one global synchronization surface through `availableChangeVersions` and uses that captured synchronization version across `keyChanges`, changed-resource queries, and `deletes`; see the [platform guide](https://docs.ed-fi.org/reference/ods-api/platform-dev-guide/features/changed-record-queries/) and [client guide](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/using-the-changed-record-queries/). DMS follows that same single-surface model.
 
-- `newestChangeVersion` is the maximum retained value across `dms.Document.ChangeVersion`, `dms.DocumentDeleteTracking.ChangeVersion`, and `dms.DocumentKeyChangeTracking.ChangeVersion`
-- `oldestChangeVersion` is the minimum retained value across the same three sources
+If the journal is not enabled, the participating sources are:
 
-If the journal is enabled:
+- live side from `dms.Document.ChangeVersion`
+- delete side from `dms.DocumentDeleteTracking.ChangeVersion`
+- key-change side from `dms.DocumentKeyChangeTracking.ChangeVersion`
 
-- `newestChangeVersion` is the maximum retained value across `dms.DocumentChangeEvent.ChangeVersion`, `dms.DocumentDeleteTracking.ChangeVersion`, and `dms.DocumentKeyChangeTracking.ChangeVersion`
-- `oldestChangeVersion` is the minimum retained value across the same three sources
+If the journal is enabled, the participating sources are:
 
-If both relevant sources are empty, return `0` for both values.
+- live side from `dms.DocumentChangeEvent.ChangeVersion`
+- delete side from `dms.DocumentDeleteTracking.ChangeVersion`
+- key-change side from `dms.DocumentKeyChangeTracking.ChangeVersion`
+
+For the participating sources:
+
+- `newestChangeVersion` is the synchronization ceiling across them
+- `oldestChangeVersion` is the effective replay floor across them, meaning the lowest inclusive `minChangeVersion` from which the API can still return complete synchronization results across the participating sources
+- without purge metadata, each participating surface contributes replay floor `0`
+- when purge is enabled for a surface, that surface's replay floor comes from `dms.ChangeQueryRetentionFloor`
+- if retained participating rows exist, `newestChangeVersion` is the maximum retained `ChangeVersion` across them
+- if all participating sources are empty but replay-floor metadata exists, `newestChangeVersion = oldestChangeVersion =` the greatest participating replay floor
+- if the participating surfaces have different replay floors, `oldestChangeVersion` is the greatest of those floors
+- if all participating sources are empty and no replay-floor metadata exists, return `0` for both values; in that bootstrap case `0` is a starting watermark sentinel rather than a retained change row
+
+Client-compatibility note:
+
+- the public API returns the canonical live-resource `id` on `/deletes` and `/keyChanges` from `DocumentUuid`
+- `DocumentUuid` is persisted on both tracking tables specifically so those routes can return the same canonical resource identifier after the live row has changed or been deleted
+
+This computation must read committed tracking artifacts and any committed replay-floor metadata. It must not use the current `dms.ChangeVersionSequence` value as a substitute for either bound, because sequence advancement can lead committed state and can contain rollback gaps.
 
 ## Backend-redesign artifact mapping
 
@@ -461,8 +543,14 @@ DocumentPartitionKey ASC, Id ASC
 Requirements:
 
 - allocate one sequence value per row
+- allocate sequence values in the exact declared backfill order using an engine-specific mechanism that preserves per-row iteration order
 - complete the backfill before exposing the feature endpoints
 - validate that all rows are non-null afterward
+
+Implementation note:
+
+- PostgreSQL set-based `UPDATE ... FROM ... nextval(...)` is not sufficient for this requirement because it does not guarantee row-update order
+- use an ordered procedural loop, cursor, or another engine-specific ordered-assignment mechanism that guarantees the sequence is consumed in `DocumentPartitionKey ASC, Id ASC` order
 
 ## Journal Backfill
 
@@ -479,6 +567,8 @@ The current backend stores `_etag` and `_lastModifiedDate` inside `EdfiDoc`.
 This feature does not redesign that behavior. `ChangeVersion` is additive and serves Change Query ordering only.
 
 The design remains aligned to backend-redesign concepts by treating `ChangeVersion` as the current-backend equivalent of redesign `ContentVersion`.
+
+To avoid ambiguity, current-backend implementations of DMS-843 should persist only `dms.Document.ChangeVersion` for this live-row stamp. If a future redesign adopts the physical name `ContentVersion`, that would be a rename or replacement of the same responsibility, not an additional concurrent column.
 
 ## Consolidated SQL Sketch
 

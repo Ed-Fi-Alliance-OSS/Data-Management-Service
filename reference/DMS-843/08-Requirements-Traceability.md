@@ -11,7 +11,7 @@ In this matrix, project and file references are informative traceability aids. T
 | Requirement or output | Package coverage | Story mapping |
 | --- | --- | --- |
 | Do not introduce breaking API changes | `01-Feature-Summary-and-Decisions.md`, `02-API-Contract-and-Synchronization.md`, `03-Architecture-and-Execution.md` | `CQ-STORY-04`, `CQ-STORY-05`, `CQ-STORY-06`, `CQ-STORY-07` |
-| Avoid snapshots if possible | `01-Feature-Summary-and-Decisions.md`, `02-API-Contract-and-Synchronization.md`, `06-Validation-Rollout-and-Operations.md` | `CQ-STORY-05`, `CQ-STORY-06`, `CQ-STORY-07` |
+| Avoid snapshot history tables if possible while defining the no-snapshot tradeoffs and the non-snapshot synchronization algorithm explicitly | `01-Feature-Summary-and-Decisions.md`, `02-API-Contract-and-Synchronization.md`, `06-Validation-Rollout-and-Operations.md` | `CQ-STORY-05`, `CQ-STORY-06`, `CQ-STORY-07` |
 | Prefer ChangeVersion column model | `01-Feature-Summary-and-Decisions.md`, `04-Data-Model-and-DDL.md` | `CQ-STORY-01`, `CQ-STORY-05` |
 | Treat `dms.Document` as canonical source of truth | `01-Feature-Summary-and-Decisions.md`, `03-Architecture-and-Execution.md`, `04-Data-Model-and-DDL.md` | `CQ-STORY-01`, `CQ-STORY-05` |
 | Reliable delete detection | `02-API-Contract-and-Synchronization.md`, `04-Data-Model-and-DDL.md`, `05-Authorization-and-Delete-Semantics.md` | `CQ-STORY-02`, `CQ-STORY-06`, `CQ-STORY-07` |
@@ -19,7 +19,7 @@ In this matrix, project and file references are informative traceability aids. T
 | Deterministic ordering | `02-API-Contract-and-Synchronization.md`, `03-Architecture-and-Execution.md`, `04-Data-Model-and-DDL.md` | `CQ-STORY-05`, `CQ-STORY-06`, `CQ-STORY-07` |
 | API behavior definition | `02-API-Contract-and-Synchronization.md` | `CQ-STORY-04`, `CQ-STORY-05`, `CQ-STORY-06` |
 | Architecture design | `03-Architecture-and-Execution.md` | all stories |
-| DDL proposal | `04-Data-Model-and-DDL.md`, `Appendix-A-Feature-DDL-Sketch.sql` | `CQ-STORY-01`, `CQ-STORY-02`, `CQ-STORY-03`, `CQ-STORY-08` |
+| DDL proposal | `04-Data-Model-and-DDL.md` as the normative source; `Appendix-A-Feature-DDL-Sketch.sql` as an optional informative sketch | `CQ-STORY-01`, `CQ-STORY-02`, `CQ-STORY-03`, `CQ-STORY-08` |
 | Synchronization algorithm | `02-API-Contract-and-Synchronization.md` | `CQ-STORY-05`, `CQ-STORY-06`, `CQ-STORY-07` |
 | Delete and key-change tracking strategy | `04-Data-Model-and-DDL.md`, `05-Authorization-and-Delete-Semantics.md` | `CQ-STORY-02`, `CQ-STORY-03`, `CQ-STORY-06` |
 | Migration and backfill strategy | `04-Data-Model-and-DDL.md`, `06-Validation-Rollout-and-Operations.md` | `CQ-STORY-01`, `CQ-STORY-08` |
