@@ -122,19 +122,27 @@ CREATE INDEX IF NOT EXISTS IX_Document_ChangeVersion
     ON dms.Document (ChangeVersion);
 
 -- Deterministic one-time live-row backfill sketch.
-WITH ordered_documents AS (
-    SELECT
-        DocumentPartitionKey,
-        Id
-    FROM dms.Document
-    WHERE ChangeVersion IS NULL
-    ORDER BY DocumentPartitionKey, Id
-)
-UPDATE dms.Document d
-SET ChangeVersion = nextval('dms.ChangeVersionSequence')
-FROM ordered_documents o
-WHERE d.DocumentPartitionKey = o.DocumentPartitionKey
-  AND d.Id = o.Id;
+-- Use an ordered procedural loop so sequence values are consumed in the
+-- declared backfill order. Do not replace this with UPDATE ... FROM plus
+-- nextval(...), because PostgreSQL does not guarantee row-update order there.
+DO $$
+DECLARE
+    backfill_row record;
+BEGIN
+    FOR backfill_row IN
+        SELECT
+            DocumentPartitionKey,
+            Id
+        FROM dms.Document
+        WHERE ChangeVersion IS NULL
+        ORDER BY DocumentPartitionKey, Id
+    LOOP
+        UPDATE dms.Document
+        SET ChangeVersion = nextval('dms.ChangeVersionSequence')
+        WHERE DocumentPartitionKey = backfill_row.DocumentPartitionKey
+          AND Id = backfill_row.Id;
+    END LOOP;
+END $$;
 
 ALTER TABLE dms.Document
     ALTER COLUMN ChangeVersion SET NOT NULL;

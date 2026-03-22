@@ -104,13 +104,15 @@ This preserves parity with the logical authorization categories used by current 
 
 ## Required Key-Change Authorization Columns
 
-Each key-change tracking row must preserve:
+Each key-change tracking row must preserve the pre-update authorization projection:
 
 - `SecurityElements`
 - `StudentSchoolAuthorizationEdOrgIds`
 - `StudentEdOrgResponsibilityAuthorizationIds`
 - `ContactStudentSchoolAuthorizationEdOrgIds`
 - `StaffEducationOrganizationAuthorizationEdOrgIds`
+
+The design does not store a second post-update authorization projection on the key-change row.
 
 ## Delete Query Authorization Model
 
@@ -133,8 +135,37 @@ The difference is only the physical source table.
 Implementation guidance:
 
 - the delete-query authorization builder should mirror the current collection GET authorization behavior against tombstone columns
-- the key-change-query authorization builder should mirror the current collection GET authorization behavior against key-change tracking columns
+- the key-change-query authorization builder should mirror the current collection GET authorization behavior against the stored pre-update key-change tracking columns
+- key-change-query authorization filtering must happen before collapse
+- the promised earliest `oldKeyValues`, latest `newKeyValues`, and latest `ChangeVersion` semantics apply only to the rows that remain after authorization filtering
+- rows removed by authorization filtering must not participate in collapse
 - hierarchy-based filters continue to use `dms.EducationOrganizationHierarchyTermsLookup`
+
+Rationale:
+
+- key changes are a transition surface rather than a pure current-state read surface
+- using the pre-update authorization projection allows a client that could read the resource before the identity change to receive the transition needed to reconcile the old key
+
+## Profile Behavior for Change Query GET Endpoints
+
+Changed-resource mode on the existing collection GET route continues to use the normal profile-resolution and profile-response-filtering behavior because it still returns standard resource representations.
+
+Changed-resource eligibility remains resource-level:
+
+- the API decides whether a resource qualifies for changed-resource mode from the underlying resource `ChangeVersion` before profile filtering
+- a readable profile may therefore return a filtered representation whose visible fields appear unchanged even though the resource qualified because some non-profile-visible field changed
+- the design intentionally accepts that behavior because profile-visible-level change tracking would require separate profile-specific stamps or journals and is not part of DMS-843
+
+The new non-resource Change Query GET endpoints use different rules:
+
+- `/deletes`, `/keyChanges`, and `availableChangeVersions` do not participate in profile resolution or profile response filtering
+- readable profile media types on those endpoints are ignored rather than validated or enforced
+- profile-based readability must not block the request, alter authorization, alter row eligibility, reshape the payload, or change the response content type
+- those endpoints return ordinary `application/json` rather than profile-specific media types
+
+Implementation guidance:
+
+- route `/deletes`, `/keyChanges`, and `availableChangeVersions` through pipelines that omit `ProfileResolutionMiddleware` and `ProfileFilteringMiddleware`
 
 ## `availableChangeVersions` Authorization
 
@@ -160,6 +191,8 @@ Required order:
 - authorize against the live row
 - insert the tombstone only after authorization succeeds
 - then delete the live row
+
+The live row must already be locked as part of the write-path locking contract before the authorization projection and natural-key values are read.
 
 This prevents unauthorized callers from generating tombstone side effects.
 
@@ -206,3 +239,4 @@ The authorization design is acceptable if reviewers agree that:
 - tombstones preserve enough authorization projection to survive deletion of the live row
 - key-change tracking preserves enough authorization projection to survive later key mutations or deletion of the live row
 - authorization-maintenance updates do not create false change records
+- changed-resource eligibility remains resource-level even when readable profiles filter the returned representation

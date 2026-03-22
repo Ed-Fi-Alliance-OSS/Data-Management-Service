@@ -39,6 +39,8 @@ The design stores the public Change Query token on the canonical live row as `dm
 
 For backend-redesign alignment, this column is the semantic equivalent of redesign `dms.Document.ContentVersion`.
 
+This design does not introduce a second live-row column named `ContentVersion` in the current backend. Within the DMS-843 package, `ContentVersion` is redesign terminology used only as a cross-reference for the same representation-change stamp stored physically as `dms.Document.ChangeVersion`.
+
 ## 3. Deletes require tombstones
 
 Deletes cannot be inferred from the live row because the live row disappears. The feature therefore requires `dms.DocumentDeleteTracking` in the `dms` schema.
@@ -79,6 +81,12 @@ This design remains aligned by preserving the same artifact responsibilities:
 
 The alignment target is therefore contract and behavior parity, not reuse of identical table names across storage models.
 
+Required interpretation:
+
+- current-backend implementations of this design persist one live-row representation-change stamp, `dms.Document.ChangeVersion`
+- redesign references to `ContentVersion` map to that same stamp responsibility
+- the current-backend schema must not persist both `dms.Document.ChangeVersion` and `dms.Document.ContentVersion` as separate live-row fields for the same purpose
+
 ## 9. The design is not coupled to the transitional compatibility backend
 
 `EdFi.DataManagementService.Old.Postgresql` may remain in the repo temporarily for backward compatibility and current-behavior comparison, but DMS-843 is defined at the contract, data-model, authorization, and core-service seam level so the planned replacement backend can implement it directly.
@@ -118,15 +126,33 @@ Required rule:
 
 This rule is required because authoritative schemas already contain composite identities with repeated leaf names such as multiple `schoolId` or `educationOrganizationId` members.
 
-## 11. Snapshot-free synchronization is the default model
+## 11. DMS-843 uses Ed-Fi-style inclusive lower-bound windows
 
-The feature uses bounded synchronization windows:
+The feature uses the following Change Query window semantics:
 
 ```text
-minChangeVersion < ChangeVersion <= maxChangeVersion
+minChangeVersion <= ChangeVersion <= maxChangeVersion
 ```
 
-Clients synchronize by capturing `newestChangeVersion`, querying changed resources and deletes within the same bounded window, and advancing their watermark only after the full window succeeds.
+When `maxChangeVersion` is omitted, the effective rule is:
+
+```text
+minChangeVersion <= ChangeVersion
+```
+
+This aligns the package to current Ed-Fi client guidance, which treats `minChangeVersion` as the next starting watermark to include.
+
+## 12. Avoiding snapshot tables does not create a snapshot-free correctness guarantee
+
+The feature continues to avoid server-side snapshot history tables and uses bounded synchronization windows:
+
+```text
+minChangeVersion <= ChangeVersion <= maxChangeVersion
+```
+
+The Ed-Fi ODS/API client guidance uses snapshot isolation when a client needs one correctness-safe view across a full synchronization pass.
+
+DMS-843 v1 does not expose a client-selectable snapshot or equivalent consistent-read mode. All Change Query requests therefore operate against current committed state, and the package treats synchronization under concurrent writes as best-effort rather than a guaranteed gap-free export.
 
 ## Feature Scope
 
@@ -141,7 +167,7 @@ The full Change Queries feature defined by this package includes:
 - key-change tracking rows with old-key and new-key values plus authorization projection data
 - deterministic ordering for changed-resource and delete queries
 - deterministic ordering and window collapse for key-change queries
-- retention-aware `oldestChangeVersion` and `newestChangeVersion` semantics
+- replay-floor-aware `oldestChangeVersion` and `newestChangeVersion` semantics
 - an optional `dms.DocumentChangeEvent` journal path that uses the same API contract
 
 ## Non-Goals
@@ -178,6 +204,14 @@ This artifact is optional and may be implemented when scale or redesign alignmen
 
 When present, it changes only the internal selection strategy for live changed-resource queries. It does not change the public API contract or the delete strategy.
 
+## Conditional retention artifact
+
+This artifact is required before any purge capability is enabled:
+
+- `dms.ChangeQueryRetentionFloor`
+
+When present, it makes replay-floor-safe `availableChangeVersions` computation explicit under purge. It does not change changed-resource payload semantics, delete semantics, or any public route shape.
+
 ## Decision Summary
 
 | Decision area | Decision |
@@ -190,12 +224,15 @@ When present, it changes only the internal selection strategy for live changed-r
 | Delete vs key-change storage | Separate dedicated tables |
 | Key payload naming | Shortest unique identity-path suffix aliases in `IdentityJsonPaths` order |
 | Delete table schema | `dms` |
-| Snapshot policy | Avoid snapshots |
+| Window semantics | Inclusive `minChangeVersion`; inclusive `maxChangeVersion` when supplied |
+| Snapshot policy | Avoid snapshot history tables; no client-visible snapshot or consistent-read mode in DMS-843 v1 |
 | Ordering model | Global monotonic `dms.ChangeVersionSequence` |
+| Replay floor model | Instance-wide `oldestChangeVersion` replay floor; per-surface floor metadata when purge is enabled |
 | Update history | Not required for public changed-resource queries |
 | `keyChanges` | Peer Change Queries endpoint to `/deletes`, backed by explicit tracking |
 | Journal alignment | `dms.DocumentChangeEvent` is optional and complementary |
 | Backend-redesign relationship | Semantic artifact alignment rather than physical-name matching |
+| Profile interaction | Changed-resource eligibility is resource-level; readable profiles filter only the returned representation |
 
 ## Open Operational Inputs
 

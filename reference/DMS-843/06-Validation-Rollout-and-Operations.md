@@ -40,17 +40,23 @@ Required checks after optional journal backfill:
 Required unit coverage:
 
 - parsing of `minChangeVersion` and `maxChangeVersion`
-- ODS-compatible `200 OK` behavior for malformed or inconsistent change-query parameters
+- `minChangeVersion = 0` is accepted as a bootstrap watermark
+- `maxChangeVersion = minChangeVersion` is accepted as a single-version bounded window
+- `400 Bad Request` `application/problem+json` behavior for malformed, negative, or otherwise invalid change-query parameters
+- `409 Conflict` `application/problem+json` behavior when `minChangeVersion < oldestChangeVersion`
 - route dispatch for `availableChangeVersions`
 - route dispatch for `/deletes`
 - route dispatch for `/keyChanges`
 - changed-resource mode branching in `ApiService`
+- changed-resource collection GET continues normal profile resolution and profile response filtering
+- `/deletes`, `/keyChanges`, and `availableChangeVersions` bypass profile resolution and profile response filtering
 - `keyValues` extraction from `ResourceSchema.IdentityJsonPaths`
 - old-key and new-key extraction from `ResourceSchema.IdentityJsonPaths`
 - shortest-unique-suffix alias derivation for simple, composite, and repeated-leaf identities
 - fail-fast validation for duplicate or otherwise unresolvable identity-path alias sets
 - tombstone DTO or response mapping
 - key-change DTO or response mapping
+- `/deletes` and `/keyChanges` map `id` from stored `DocumentUuid`
 
 ## Integration tests
 
@@ -69,9 +75,13 @@ Required backend integration coverage:
 11. representation rewrite caused by an upstream identity change does not insert a key-change row when the dependent resource's own identity tuple is unchanged
 12. key-change query collapses multiple key changes for one resource within a window correctly
 13. key-change query authorization matches live-query authorization semantics
-14. `availableChangeVersions` returns correct bounds
-15. optional journal trigger inserts exactly one row per committed representation change
-16. optional `journal + verify` execution filters stale journal candidates correctly
+14. `/keyChanges` applies `totalCount`, `offset`, and `limit` after authorization filtering and collapse
+15. `availableChangeVersions` returns correct bounds, including bootstrap `0/0` when the synchronization surface is empty and `replayFloor/replayFloor` when all participating sources are empty after purge has advanced the replay floor
+16. replay-floor enforcement uses `minChangeVersion < oldestChangeVersion`
+17. optional journal trigger inserts exactly one row per committed representation change
+18. optional `journal + verify` execution filters stale journal candidates correctly
+19. optional `journal + verify` execution applies `totalCount`, `offset`, and `limit` to the final verified authorized changed-resource result set rather than to raw journal candidates
+20. concurrent identity-changing update and delete attempts against the same document serialize under the write-path locking contract and do not capture stale pre-change data
 
 ## End-to-end tests
 
@@ -82,14 +92,23 @@ Required E2E coverage:
 3. changed-resource query returns current resources within the requested window
 4. `/deletes` returns tombstones in deterministic order
 5. `/keyChanges` returns collapsed key-change rows in deterministic order
-6. malformed or inconsistent change-query windows preserve ODS-compatible `200 OK` behavior
-7. unauthorized callers do not see unauthorized changed resources
-8. unauthorized callers do not see unauthorized deletes
-9. unauthorized callers do not see unauthorized key changes
-10. insert then delete before sync returns only the delete row
-11. delete then reinsert yields a delete row and a later live resource in later windows
-12. multiple key changes before sync yield one collapsed key-change row
-13. replaying the same window is safe after client crash recovery
+6. `minChangeVersion = 0` is accepted when used as a bootstrap watermark
+7. `maxChangeVersion = minChangeVersion` returns a valid single-version bounded-window response
+8. malformed, negative, or otherwise invalid change-query windows return `400 Bad Request` problem details with the documented `type`, `title`, `detail`, `errors`, and `correlationId`
+9. requests where `minChangeVersion < oldestChangeVersion` return `409 Conflict` problem details with the documented replay-floor fields
+10. `availableChangeVersions` returns bootstrap `0/0` before any retained tracking rows exist and returns `replayFloor/replayFloor` when all participating sources are empty after purge has advanced the replay floor
+11. `/deletes` and `/keyChanges` return the canonical public resource `id` sourced from `DocumentUuid`
+12. unauthorized callers do not see unauthorized changed resources
+13. unauthorized callers do not see unauthorized deletes
+14. unauthorized callers do not see unauthorized key changes
+15. insert then delete before sync returns only the delete row
+16. delete then reinsert yields a delete row and a later live resource in later windows
+17. multiple key changes before sync yield one collapsed key-change row
+18. `/keyChanges` for a resource that does not support identity updates returns `200 OK` with an empty array
+19. `/keyChanges` paging and `totalCount` semantics apply after authorization filtering and collapse
+20. optional journal-assisted changed-resource execution preserves the same public paging semantics as live-row execution
+21. readable profile headers do not alter or block `/deletes`, `/keyChanges`, or `availableChangeVersions`
+22. changed-resource mode remains resource-level under readable profiles even when the filtered payload appears unchanged
 
 ## Scenario Expectations
 
@@ -98,8 +117,9 @@ Required E2E coverage:
 | Multiple updates before sync | Return the current resource once |
 | ChangeVersion gaps from rollback | Preserve ordering; gaps are acceptable |
 | Large change window | Deterministic ordering with pagination |
-| Client crash mid-window | Replay the same bounded window safely |
-| Request older than retained window | Preserve ODS-compatible `200 OK` behavior; exact body must match ODS parity |
+| Client crash mid-window | Persist the pass-start synchronization version only after success; re-delivery above that watermark is expected in later passes |
+| Request older than replay floor | Return `409 Conflict` problem details when `minChangeVersion < oldestChangeVersion` and instruct the client to restart from the advertised replay floor |
+| All participating sources empty after purge | Return `oldestChangeVersion = newestChangeVersion =` current replay floor |
 | Auth-only maintenance updates | No new changed-resource signal |
 | Delete transaction rollback | No committed tombstone |
 | Multiple key changes in one window | Return one collapsed key-change row |
@@ -135,16 +155,19 @@ Recommended operational starting point:
 
 When purge is eventually enabled:
 
-- `oldestChangeVersion` must reflect the oldest retained value across all tracking artifacts the feature depends on
-- if all rows in a tracked source are purged, the implementation should not infer an incorrect lower bound from emptiness alone
-- a persisted retention floor should be introduced at that point
+- deploy `dms.ChangeQueryRetentionFloor` before any purge job is allowed to run
+- each participating surface contributes replay floor `0` until purge advances it
+- `oldestChangeVersion` is the greatest replay floor among the participating live, delete, and key-change tracking surfaces
+- each purge job must delete obsolete rows and advance that surface's `dms.ChangeQueryRetentionFloor` value in the same transaction
+- if all rows in a tracked source are purged, the metadata row remains authoritative; emptiness alone must not lower the replay floor
 
 ## Monitoring
 
 Recommended metrics:
 
 - current maximum `ChangeVersion`
-- minimum retained `ChangeVersion`
+- current instance-wide replay floor (`oldestChangeVersion`)
+- replay floor per participating surface
 - tombstone row count
 - key-change tracking row count
 - optional journal row count
@@ -153,6 +176,43 @@ Recommended metrics:
 - key-change-query latency
 - `availableChangeVersions` latency
 - query plans for live scans or journal candidate scans
+
+## Change-Query Error Contract
+
+Required external-contract behavior:
+
+- invalid or negative `minChangeVersion` returns `400 Bad Request` problem details
+- invalid or negative `maxChangeVersion` returns `400 Bad Request` problem details
+- `maxChangeVersion < minChangeVersion` returns `400 Bad Request` problem details
+- `minChangeVersion < oldestChangeVersion` returns `409 Conflict` problem details
+
+Problem-detail expectations:
+
+- all responses include `type`, `title`, `status`, `detail`, `errors`, and `correlationId`
+- invalid `minChangeVersion` uses type `urn:ed-fi:api:change-queries:validation:min-change-version`
+- invalid `maxChangeVersion` uses type `urn:ed-fi:api:change-queries:validation:max-change-version`
+- invalid window relationship uses type `urn:ed-fi:api:change-queries:validation:window`
+- replay-floor miss uses type `urn:ed-fi:api:change-queries:sync:window-unavailable`
+- replay-floor miss responses include `requestedMinChangeVersion`, `oldestChangeVersion`, and `newestChangeVersion`
+
+## Reference: Tradeoffs of Not Using Snapshots
+
+DMS-843 v1 intentionally does not expose a client-selectable snapshot or consistent-read mode.
+
+Benefits:
+
+- no snapshot lifecycle or storage-management surface is added to the API
+- the feature can be implemented with the canonical `dms.Document` row, tombstones, and key-change tracking only
+- the design stays additive and avoids introducing snapshot-specific operational dependencies
+
+Tradeoffs:
+
+- a multi-request synchronization pass does not see one frozen database view
+- the same current-state timing tradeoff applies to initial full loads performed without snapshots
+- offset paging can drift while requests are in progress
+- duplicate delivery above the saved synchronization watermark is expected and must be tolerated by clients
+- missing items are still possible under concurrent writes, especially when paging shifts after deletes or updates
+- clients that need stronger assurance must use overlap, periodic reinitialization, or a future additive consistency feature if one is introduced later
 
 ## Risks and Mitigations
 
@@ -164,9 +224,9 @@ Risk:
 
 Mitigation:
 
-- require bounded windows
-- document the behavior
-- ensure clients only advance their watermark after the full window succeeds
+- document the no-snapshot tradeoffs explicitly
+- use the normative open-ended `minChangeVersion` algorithm and persist the pass-start synchronization version only after the full pass succeeds
+- require clients to tolerate duplicates and recommend overlap or periodic reinitialization when stronger assurance is required
 
 ## False positives from authorization maintenance
 
@@ -224,6 +284,9 @@ The feature design is ready for review if reviewers can answer yes to the follow
 - live and delete authorization behavior stays aligned to current DMS semantics
 - live and key-change authorization behavior stays aligned to current DMS semantics
 - the key payload contract stays deterministic even when a resource reuses the same leaf name in multiple identity paths
-- the design avoids snapshots while documenting the resulting paging tradeoffs
+- the design avoids snapshot history tables and explicitly documents the resulting tradeoffs and client obligations
+- multi-resource synchronization order is explicit for `keyChanges`, changed resources, and deletes
+- the public error contract is normative, including ProblemDetails members and types
+- `/deletes` and `/keyChanges` expose the canonical public resource `id`
 - the optional journal changes only internal execution, not public contract
 - the package can be decomposed into implementation stories without reopening major architecture decisions
