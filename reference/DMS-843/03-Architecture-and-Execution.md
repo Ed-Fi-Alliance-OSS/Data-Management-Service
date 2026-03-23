@@ -117,6 +117,12 @@ Add dedicated routes for:
 
 The dedicated `/deletes` and `/keyChanges` routes must be registered before the current catch-all data route so ASP.NET Core resolves them first.
 
+Feature-off routing rule:
+
+- when `AppSettings.EnableChangeQueries = false`, the application must still reserve the dedicated Change Query path shapes so `/deletes`, `/keyChanges`, and `availableChangeVersions` return the documented `404 Not Found`
+- implementation may do this either by keeping dedicated routes registered and short-circuiting them behind the feature flag, or by an equivalent pre-routing reservation mechanism
+- the generic item-by-id path must never interpret `deletes` or `keyChanges` as an item id when evaluating feature-off requests
+
 ## Execution Model
 
 Changed-resource execution uses the backend-redesign `journal + verify` model.
@@ -130,12 +136,14 @@ Behavior:
 5. keep only rows where `dms.Document.ChangeVersion = dms.DocumentChangeEvent.ChangeVersion`
 6. apply the existing authorization filters
 7. continue candidate processing as needed so public `totalCount`, `offset`, and `limit` are evaluated over the surviving verified authorized rows rather than over raw journal candidates
-8. return the current `EdfiDoc` payloads for surviving documents
+8. order the final surviving verified authorized rows by `ChangeVersion`, `DocumentPartitionKey`, and `DocumentId`
+9. return the current `EdfiDoc` payloads for surviving documents
 
 Required paging rule:
 
 - the `journal + verify` path may over-fetch candidates or use an equivalent query shape, but it must preserve the public paging and `totalCount` semantics of the changed-resource contract
 - internal candidate rows eliminated by verification or authorization must not consume public page slots
+- the public changed-resource order must remain `ChangeVersion`, `DocumentPartitionKey`, and `DocumentId` even when the implementation over-fetches or verifies candidates in batches
 
 Required architectural rule:
 
@@ -246,12 +254,14 @@ Within an update transaction that changes natural-key values for a resource that
 4. allocate a new live `ChangeVersion`
 5. allocate a new live `IdentityVersion`
 6. derive the new key values and canonical key aliases from `ResourceSchema.IdentityJsonPaths`
-7. insert a row into `dms.DocumentKeyChangeTracking` containing the old key values, new key values, and copied pre-update authorization projection
+7. insert a row into `dms.DocumentKeyChangeTracking` with `ChangeVersion =` the new live `dms.Document.ChangeVersion`, plus the old key values, new key values, and copied pre-update authorization projection
 8. commit the transaction
 
 This ordering is mandatory because key changes must preserve both sides of the natural-key transition while staying aligned to the committed live representation.
 
 The copied authorization projection on the tracking row is intentionally the pre-update authorization state. This design does not store a second post-update authorization snapshot for key-change rows.
+
+The key-change row does not expose or store the internal `IdentityVersion` as its public synchronization token. `IdentityVersion` remains an internal live-row stamp used for alignment and future identity-tracking needs.
 
 ## Delete Path Execution Order
 

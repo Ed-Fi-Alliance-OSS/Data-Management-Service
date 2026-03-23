@@ -6,9 +6,13 @@ The Change Queries API surface is controlled by `AppSettings.EnableChangeQueries
 
 Required contract:
 
-- if the flag is absent, DMS treats it as `false`
-- the flag makes Change Queries an explicit opt-in capability in DMS
+- DMS follows the Ed-Fi ODS/API default-on posture for this feature, so if the flag is absent DMS treats it as `true`
+- when the flag is off, the dedicated Change Query routes are not exposed and requests to them return `404 Not Found`
+- feature-off handling must reserve the `/deletes`, `/keyChanges`, and `availableChangeVersions` paths so those requests cannot fall through to the generic collection or item-by-id routes
+- the feature-off `404 Not Found` behavior for those dedicated routes intentionally treats the endpoints as not exposed; DMS-843 does not define a bespoke Change-Query-specific response-body contract for that hidden-route case
+- when the flag is off, collection GET requests that include `minChangeVersion` or `maxChangeVersion` return `400 Bad Request` with the feature-disabled problem details defined below
 - when the flag is off, DMS must not silently treat Change Query requests as ordinary non-Change-Query requests
+- when the flag is on, the Change Queries API surface is available subject to the contracts in this document
 
 ## Public Endpoints
 
@@ -67,6 +71,7 @@ Semantics:
 - the API returns the latest current representation of each qualifying resource once
 - the API does not return every intermediate mutation
 - `limit`, `offset`, and `totalCount` in changed-resource mode apply to the final authorized one-row-per-resource result set; internal journal candidates eliminated by verification or authorization do not consume page space or count toward `totalCount`
+- the final changed-resource result set is ordered by `ChangeVersion`, `DocumentPartitionKey`, and `DocumentId`
 - when a readable profile is applied, change eligibility is still resource-level based on the underlying resource `ChangeVersion`
 - readable profiles filter only the returned representation; they do not create profile-specific change tracking or suppress an otherwise qualifying changed resource
 
@@ -133,6 +138,7 @@ Key change semantics:
 - resources that support identity updates return key-change rows when qualifying transitions exist
 - resources that do not support identity updates return `200 OK` with an empty array and `totalCount = 0` when `totalCount` is requested
 - `id` is the canonical public resource identifier for the affected item and is sourced from the stored `DocumentUuid`
+- the row `changeVersion` is the public live representation-change stamp from the same committed identity-changing update that produced the key transition; it is not the internal `IdentityVersion`
 - key-change rows are ordered deterministically
 - key-change-query authorization is evaluated before collapse against each tracking row's stored pre-update authorization projection
 - if multiple key changes occur for the same resource inside one window, the API returns one collapsed row with the earliest `oldKeyValues`, the latest `newKeyValues`, and the latest `changeVersion` from the rows that remain after authorization filtering
@@ -174,14 +180,16 @@ The field-name contract is evaluated per routed resource, so different resources
 
 ## `minChangeVersion`
 
-- required for changed-resource mode
+- required to activate changed-resource mode on the collection GET route
 - required for `/deletes`
 - required for `/keyChanges`
+- when absent and `maxChangeVersion` is also absent, the collection GET route remains an ordinary non-Change-Query request
 - must be a non-negative signed 64-bit integer
 
 ## `maxChangeVersion`
 
 - optional
+- valid only when `minChangeVersion` is also supplied
 - when supplied, must be a non-negative signed 64-bit integer
 - must be greater than or equal to `minChangeVersion`
 
@@ -291,6 +299,10 @@ The public Ed-Fi documentation describes the change-query workflow and parameter
 
 Required status behavior:
 
+- when Change Queries is disabled and a collection GET request supplies `minChangeVersion` or `maxChangeVersion`, return `400 Bad Request`
+- when Change Queries is disabled and `/deletes`, `/keyChanges`, or `availableChangeVersions` is requested, return `404 Not Found` through the reserved dedicated route rather than by falling through to generic route parsing
+- when `/deletes` or `/keyChanges` is called without `minChangeVersion`, return `400 Bad Request`
+- when `maxChangeVersion` is supplied without `minChangeVersion`, return `400 Bad Request`
 - invalid or negative `minChangeVersion` returns `400 Bad Request`
 - invalid or negative `maxChangeVersion` returns `400 Bad Request`
 - `maxChangeVersion < minChangeVersion` returns `400 Bad Request`
@@ -302,6 +314,22 @@ Required body behavior:
 - all responses include RFC 9457 core members: `type`, `title`, `status`, and `detail`
 - all responses include `correlationId`
 - all responses include an `errors` array
+
+`400 Bad Request` for change-query parameters on the collection GET route when the feature is explicitly disabled:
+
+- `type`: `urn:ed-fi:api:change-queries:feature-disabled`
+- `title`: `Change Queries Feature Disabled`
+- `status`: `400`
+- `detail`: `Change Queries is not enabled for this DMS deployment.`
+- `errors`: exactly one entry, `Change query parameters cannot be used because the Change Queries feature is disabled.`
+
+`400 Bad Request` for missing required `minChangeVersion`:
+
+- `type`: `urn:ed-fi:api:change-queries:validation:min-change-version-required`
+- `title`: `Invalid Change Query Request`
+- `status`: `400`
+- `detail`: `The change query parameters are invalid.`
+- `errors`: exactly one entry, `The 'minChangeVersion' parameter is required for this Change Query request.`
 
 `400 Bad Request` for invalid `minChangeVersion`:
 
@@ -318,6 +346,14 @@ Required body behavior:
 - `status`: `400`
 - `detail`: `The change query parameters are invalid.`
 - `errors`: exactly one entry, `The 'maxChangeVersion' parameter must be a non-negative 64-bit integer.`
+
+`400 Bad Request` for `maxChangeVersion` without `minChangeVersion`:
+
+- `type`: `urn:ed-fi:api:change-queries:validation:window`
+- `title`: `Invalid Change Query Request`
+- `status`: `400`
+- `detail`: `The change query parameters are invalid.`
+- `errors`: exactly one entry, `The 'maxChangeVersion' parameter cannot be supplied without 'minChangeVersion'.`
 
 `400 Bad Request` for invalid window relationship:
 
@@ -358,9 +394,10 @@ Therefore:
 The public API contract must preserve these invariants:
 
 - existing collection GET callers are unaffected when no change-query parameters are supplied
-- changed-resource results are deterministically ordered
-- delete results are deterministically ordered
-- key-change results are deterministically ordered
+- change-query requests fail explicitly when the feature is disabled; DMS never silently downgrades them to ordinary non-change-query requests
+- changed-resource results are deterministically ordered by `ChangeVersion`, `DocumentPartitionKey`, and `DocumentId`
+- delete results are deterministically ordered by `ChangeVersion`, `DocumentPartitionKey`, and `DocumentId`
+- key-change results are deterministically ordered by `ChangeVersion`, `DocumentPartitionKey`, and `DocumentId`
 - changed-resource paging semantics are based on the final authorized result set rather than on raw internal candidates
 - delete visibility is supported independently from the live row
 - key-change visibility is supported independently from the current live key state

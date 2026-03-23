@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS dms.ResourceKey (
     ResourceKeyId smallint NOT NULL,
     ProjectName varchar(256) NOT NULL,
     ResourceName varchar(256) NOT NULL,
+    ResourceVersion varchar(64) NOT NULL,
     CONSTRAINT PK_ResourceKey PRIMARY KEY (ResourceKeyId),
     CONSTRAINT UX_ResourceKey_ProjectName_ResourceName
         UNIQUE (ProjectName, ResourceName)
@@ -64,17 +65,7 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS TR_Document_StampChangeVersion_Insert ON dms.Document;
-CREATE TRIGGER TR_Document_StampChangeVersion_Insert
-BEFORE INSERT ON dms.Document
-FOR EACH ROW
-EXECUTE FUNCTION dms.TF_Document_StampChangeVersion();
-
-DROP TRIGGER IF EXISTS TR_Document_StampChangeVersion_Update ON dms.Document;
-CREATE TRIGGER TR_Document_StampChangeVersion_Update
-BEFORE UPDATE OF EdfiDoc ON dms.Document
-FOR EACH ROW
-EXECUTE FUNCTION dms.TF_Document_StampChangeVersion();
+-- Enable the stamp triggers only after live-row and journal backfill complete.
 
 -- IdentityVersion updates for identity-changing writes are application-managed,
 -- because generic database triggers do not have access to resource-specific
@@ -218,34 +209,29 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS TR_Document_JournalChangeVersion ON dms.Document;
-CREATE TRIGGER TR_Document_JournalChangeVersion
-AFTER INSERT OR UPDATE OF ChangeVersion ON dms.Document
-FOR EACH ROW
-EXECUTE FUNCTION dms.TF_Document_JournalChangeVersion();
+-- Enable the journal trigger only after journal backfill completes.
 
 -- ---------------------------------------------------------------------------
 -- Deterministic backfill sketches
 -- ---------------------------------------------------------------------------
 
-INSERT INTO dms.ResourceKey
-(
-    ResourceKeyId,
-    ProjectName,
-    ResourceName
-)
-SELECT
-    ROW_NUMBER() OVER (ORDER BY seed.ProjectName, seed.ResourceName)::smallint,
-    seed.ProjectName,
-    seed.ResourceName
-FROM
-(
-    SELECT DISTINCT
-        ProjectName,
-        ResourceName
-    FROM dms.Document
-) seed
-ON CONFLICT (ProjectName, ResourceName) DO NOTHING;
+-- ResourceKey seeds must be emitted from the deployed effective schema manifest
+-- rather than discovered from the current contents of dms.Document.
+-- Provision one row for every resource in the effective schema, including
+-- resources that currently have zero live rows.
+--
+-- Example shape:
+-- INSERT INTO dms.ResourceKey
+-- (
+--     ResourceKeyId,
+--     ProjectName,
+--     ResourceName,
+--     ResourceVersion
+-- )
+-- VALUES
+--     (1, 'Ed-Fi', 'Student', '5.2.0'),
+--     ...
+-- ON CONFLICT (ResourceKeyId) DO NOTHING;
 
 -- Use an ordered procedural loop so sequence values are consumed in the
 -- declared backfill order. Do not replace this with UPDATE ... FROM plus
@@ -316,3 +302,24 @@ LEFT JOIN dms.DocumentChangeEvent e
    AND e.DocumentId = d.Id
    AND e.ChangeVersion = d.ChangeVersion
 WHERE e.DocumentId IS NULL;
+
+-- Enable triggers only after live-row and journal backfill complete so rollout
+-- does not double-journal historical rows and does not contradict the intended
+-- deployment order.
+DROP TRIGGER IF EXISTS TR_Document_StampChangeVersion_Insert ON dms.Document;
+CREATE TRIGGER TR_Document_StampChangeVersion_Insert
+BEFORE INSERT ON dms.Document
+FOR EACH ROW
+EXECUTE FUNCTION dms.TF_Document_StampChangeVersion();
+
+DROP TRIGGER IF EXISTS TR_Document_StampChangeVersion_Update ON dms.Document;
+CREATE TRIGGER TR_Document_StampChangeVersion_Update
+BEFORE UPDATE OF EdfiDoc ON dms.Document
+FOR EACH ROW
+EXECUTE FUNCTION dms.TF_Document_StampChangeVersion();
+
+DROP TRIGGER IF EXISTS TR_Document_JournalChangeVersion ON dms.Document;
+CREATE TRIGGER TR_Document_JournalChangeVersion
+AFTER INSERT OR UPDATE OF ChangeVersion ON dms.Document
+FOR EACH ROW
+EXECUTE FUNCTION dms.TF_Document_JournalChangeVersion();
