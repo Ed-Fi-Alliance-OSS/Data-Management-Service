@@ -145,6 +145,7 @@ Rationale:
 
 - key changes are a transition surface rather than a pure current-state read surface
 - using the pre-update authorization projection allows a client that could read the resource before the identity change to receive the transition needed to reconcile the old key
+- this is intentionally not identical to evaluating authorization only against the current post-update live row, because that would lose transition visibility for clients that must retire an old key they were previously entitled to read
 
 ## Profile Behavior for Change Query GET Endpoints
 
@@ -227,7 +228,9 @@ Reason:
 
 The design supports descriptors because they are stored in the same canonical `dms.Document` table and share the same overall change-tracking model.
 
-If product policy later decides to exclude some descriptor endpoints from Change Queries, that should be an endpoint-level product decision rather than a change to the underlying authorization or change-tracking design.
+DMS-843 v1 includes descriptor endpoints in Change Queries with no special exclusion.
+
+If product policy later decides to exclude some descriptor endpoints from Change Queries, that should be an explicit endpoint-level product decision rather than a change to the underlying authorization or change-tracking design.
 
 ## Review Criteria
 
@@ -235,7 +238,7 @@ The authorization design is acceptable if reviewers agree that:
 
 - live changed-resource queries reuse the current DMS authorization semantics
 - delete queries are no more permissive and no more restrictive than logically equivalent live reads
-- key-change queries are no more permissive and no more restrictive than logically equivalent live reads
+- key-change queries intentionally evaluate transition visibility from the stored pre-update authorization projection rather than from the current post-update live row
 - tombstones preserve enough authorization projection to survive deletion of the live row
 - key-change tracking preserves enough authorization projection to survive later key mutations or deletion of the live row
 - authorization-maintenance updates do not create false change records

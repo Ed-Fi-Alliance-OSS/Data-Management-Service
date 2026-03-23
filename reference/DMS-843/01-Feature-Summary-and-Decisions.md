@@ -167,14 +167,17 @@ The Ed-Fi ODS/API client guidance uses snapshot isolation when a client needs on
 
 DMS-843 v1 does not expose a client-selectable snapshot or equivalent consistent-read mode. All Change Query requests therefore operate against current committed state, and the package treats synchronization under concurrent writes as best-effort rather than a guaranteed gap-free export.
 
-## 13. Change Queries is a configurable feature, disabled unless explicitly enabled
+## 13. Change Queries is a configurable feature that follows the Ed-Fi default-on posture
 
-To align with Ed-Fi ODS/API feature behavior, DMS-843 should introduce an application configuration flag for Change Queries rather than making the capability permanently on.
+DMS-843 should introduce an application configuration flag for Change Queries rather than making the capability permanently on.
+
+When the setting is absent, DMS should follow the same default-on posture documented by Ed-Fi ODS/API for Change Queries.
 
 Required rule:
 
 - add `AppSettings.EnableChangeQueries`
-- if the flag is absent, treat it as `false`
+- if the flag is absent, treat it as `true`
+- when the flag is `false`, dedicated Change Query routes are not exposed and collection GET requests that supply change-query parameters fail explicitly rather than silently falling back
 - use the flag to control exposure of the Change Queries API surface
 - do not treat the flag as a substitute for the required database artifacts, migrations, or cleanup operations
 
@@ -251,7 +254,7 @@ If a later phase adds purge, this artifact makes replay-floor-safe `availableCha
 | Ordering model | Global monotonic `dms.ChangeVersionSequence` |
 | Replay floor model | Phase 1 uses retained tracking data with bootstrap `0/0`; a later retention phase may add per-surface replay-floor metadata if purge is introduced |
 | Update history | Not required for public changed-resource queries |
-| Feature availability | `AppSettings.EnableChangeQueries`; absent means `false`, so Change Queries is opt-in |
+| Feature availability | `AppSettings.EnableChangeQueries`; absent = `true` to align with Ed-Fi default-on behavior, and feature-off requests fail explicitly rather than silently downgrading |
 | `keyChanges` | Peer Change Queries endpoint to `/deletes`, backed by explicit tracking |
 | Resource keying | `dms.ResourceKey` plus `dms.Document.ResourceKeyId` provide the redesign-aligned filter key for live journals |
 | Identity tracking | `dms.Document.IdentityVersion` is required as the current-backend equivalent of redesign `IdentityVersion` |
@@ -261,7 +264,7 @@ If a later phase adds purge, this artifact makes replay-floor-safe `availableCha
 
 ## Open Operational Inputs
 
-The design is complete enough for implementation planning, but the following operational choices should be confirmed before rollout planning is finalized:
+The design is complete enough for implementation planning, but the following later-phase operational choice should be confirmed before rollout planning is finalized:
 
 - whether a later phase should introduce tombstone retention and purge behavior
-- whether descriptor endpoints participate in Change Queries with no exclusions
+- descriptor endpoints participate in Change Queries with no exclusions in DMS-843 v1; any future exclusion must be an explicit endpoint-level product decision rather than an implicit gap in this package

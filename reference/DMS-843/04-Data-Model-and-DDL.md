@@ -33,6 +33,7 @@ Informative note:
 
 - the SQL blocks in this document and in `Appendix-A-Feature-DDL-Sketch.sql` use PostgreSQL syntax as one concrete example of a conforming backend implementation
 - equivalent MSSQL DDL, trigger, locking, and backfill behavior is also required for the project's supported SQL Server path
+- JSON payload and authorization-projection columns on tracking rows may use engine-appropriate JSON-capable storage, for example PostgreSQL `jsonb` or SQL Server `nvarchar(max)` carrying JSON text, because the normative requirement is faithful JSON-document storage and response materialization rather than a PostgreSQL-specific physical type
 - those SQL blocks are examples of one conforming backend implementation, not a statement that the public feature contract is PostgreSQL-only
 
 ## Resource key lookup
@@ -46,6 +47,7 @@ CREATE TABLE dms.ResourceKey (
     ResourceKeyId smallint NOT NULL PRIMARY KEY,
     ProjectName varchar(256) NOT NULL,
     ResourceName varchar(256) NOT NULL,
+    ResourceVersion varchar(64) NOT NULL,
     CONSTRAINT UX_ResourceKey_ProjectName_ResourceName
         UNIQUE (ProjectName, ResourceName)
 );
@@ -55,6 +57,9 @@ Required semantics:
 
 - `ResourceKeyId` is the narrow filter key used by `dms.DocumentChangeEvent`
 - the mapping for a deployed effective schema must be stable
+- seed rows must be provisioned from the deployed effective schema inventory rather than inferred from the current contents of `dms.Document`
+- resources with zero current live rows still require `dms.ResourceKey` rows so the deployed effective schema has a complete stable mapping
+- current implementations may also persist `ResourceVersion` on `dms.ResourceKey` as a compatibility or diagnostic copy tied to the deployed effective schema seed
 - provisioning or startup validation must fail fast if the effective resource inventory exceeds the chosen key-space bound
 
 ## Canonical Live Row
@@ -301,6 +306,12 @@ CREATE TABLE dms.DocumentKeyChangeTracking (
     PRIMARY KEY (ChangeVersion, DocumentPartitionKey, DocumentId)
 );
 ```
+
+Required semantics:
+
+- `dms.DocumentKeyChangeTracking.ChangeVersion` stores the same public live representation-change stamp allocated to `dms.Document.ChangeVersion` by the committed identity-changing update
+- `dms.DocumentKeyChangeTracking.ChangeVersion` does not store `dms.Document.IdentityVersion`
+- this keeps `/keyChanges`, changed-resource queries, and `availableChangeVersions` on one public synchronization-token model while leaving `IdentityVersion` as an internal bridge artifact
 
 ## Why old and new key values are stored
 
@@ -577,6 +588,7 @@ For the participating sources:
 - if retained participating rows exist, `newestChangeVersion` is the maximum retained `ChangeVersion` across them
 - if all participating sources are empty and no replay-floor metadata exists, return `0` for both values; in that bootstrap case `0` is a starting watermark sentinel rather than a retained change row
 - if a later retention phase introduces purge metadata, `oldestChangeVersion` becomes the effective replay floor across the participating sources, and `newestChangeVersion = oldestChangeVersion =` the greatest participating replay floor when all participating sources are empty after purge
+- for identity-changing updates, the key-change participation value is the same public live `ChangeVersion` exposed by the changed-resource surface for that write, not the internal `IdentityVersion`
 
 Client-compatibility note:
 
@@ -620,12 +632,15 @@ DocumentPartitionKey ASC, Id ASC
 
 Requirements:
 
-- seed `dms.ResourceKey` before live-row backfill and assign each live row a non-null `ResourceKeyId`
+- seed `dms.ResourceKey` from the deployed effective schema manifest before live-row backfill; do not derive resource keys from the current contents of `dms.Document`
+- resources with zero current live rows still require seeded `dms.ResourceKey` rows
+- assign each live row a non-null `ResourceKeyId`
 - allocate one `ChangeVersion` value per row
 - allocate one `IdentityVersion` value per row
 - allocate sequence values in the exact declared backfill order using an engine-specific mechanism that preserves per-row iteration order
 - complete the backfill before exposing the feature endpoints
 - validate that `ResourceKeyId`, `ChangeVersion`, and `IdentityVersion` are non-null afterward
+- execute live-row backfill, journal backfill, and trigger enablement in one controlled deployment window with representation-changing writes paused or drained
 
 Implementation note:
 

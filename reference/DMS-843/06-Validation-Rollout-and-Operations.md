@@ -17,18 +17,24 @@ Recommended rollout order:
 9. backfill `dms.DocumentChangeEvent` from the current live rows
 10. make `dms.Document.ResourceKeyId`, `dms.Document.ChangeVersion`, and `dms.Document.IdentityVersion` non-null
 11. enable live-row stamp and journal triggers
-12. deploy application changes for request validation, query routing, `journal + verify` changed-resource queries, delete queries, key-change queries, and `availableChangeVersions`
+12. deploy application changes for request validation, query routing, `journal + verify` changed-resource queries, delete queries, key-change queries, and `availableChangeVersions` while `AppSettings.EnableChangeQueries` remains `false`
 13. set `AppSettings.EnableChangeQueries = true` in the deployed configuration
 14. expose the feature routes
 
+Operational precondition:
+
+- steps 8 through 11 must run in one controlled deployment window with representation-changing DMS writes paused or drained so no committed write can occur after backfill and before trigger enablement
+
 ## Feature Availability Flag
 
-To align with Ed-Fi ODS/API behavior, DMS-843 should add `AppSettings.EnableChangeQueries` as a configurable feature flag.
+DMS-843 should add `AppSettings.EnableChangeQueries` as a configurable feature flag.
+
+When the setting is absent, DMS should follow the same default-on posture documented by Ed-Fi ODS/API for Change Queries.
 
 Rollout rules:
 
-- absent configuration must leave Change Queries disabled
-- new code should not rely on implicit defaults during deployment; set the flag explicitly in deployed configuration
+- absent configuration leaves Change Queries enabled
+- new code should not rely on the implicit default during deployment; set the flag explicitly in deployed configuration and keep it `false` until the database artifacts, backfill, and trigger enablement are complete
 - do not turn the flag on until the required Change Queries database artifacts and application changes are deployed together
 - turning the flag off is an API-surface decision; database cleanup remains a separate operational action if that path is ever chosen
 
@@ -36,6 +42,8 @@ Rollout rules:
 
 Required checks after live-row backfill:
 
+- `dms.ResourceKey` count and contents match the deployed effective schema seed
+- resources with zero current live rows still have seeded `dms.ResourceKey` rows
 - row count is unchanged
 - every live row has a non-null `ResourceKeyId`
 - every live row has a non-null `ChangeVersion`
@@ -56,13 +64,17 @@ Required checks after journal backfill:
 Required unit coverage:
 
 - parsing of `minChangeVersion` and `maxChangeVersion`
+- feature-disabled collection GET behavior when `minChangeVersion` or `maxChangeVersion` is supplied while `AppSettings.EnableChangeQueries = false`
+- missing required `minChangeVersion` on `/deletes` and `/keyChanges`
 - `minChangeVersion = 0` is accepted as a bootstrap watermark
 - `maxChangeVersion = minChangeVersion` is accepted as a single-version bounded window
+- `maxChangeVersion` without `minChangeVersion` returns the documented `400 Bad Request` problem details
 - `400 Bad Request` `application/problem+json` behavior for malformed, negative, or otherwise invalid change-query parameters
 - if a later retention phase is added, `409 Conflict` `application/problem+json` behavior when `minChangeVersion < oldestChangeVersion`
 - route dispatch for `availableChangeVersions`
 - route dispatch for `/deletes`
 - route dispatch for `/keyChanges`
+- when Change Queries is disabled, `/deletes`, `/keyChanges`, and `availableChangeVersions` return the documented `404 Not Found` behavior without falling through to generic item-route parsing
 - changed-resource mode branching in `ApiService`
 - changed-resource collection GET continues normal profile resolution and profile response filtering
 - `/deletes`, `/keyChanges`, and `availableChangeVersions` bypass profile resolution and profile response filtering
@@ -88,17 +100,18 @@ Required backend integration coverage:
 8. delete rollback leaves no tombstone row committed
 9. delete query authorization matches live-query authorization semantics
 10. identity-changing update inserts one key-change tracking row with copied old-key, new-key, and authorization data
-11. non-identity update does not insert a key-change tracking row
-12. representation rewrite caused by an upstream identity change does not insert a key-change row when the dependent resource's own identity tuple is unchanged
-13. key-change query collapses multiple key changes for one resource within a window correctly
-14. key-change query authorization matches live-query authorization semantics
-15. `/keyChanges` applies `totalCount`, `offset`, and `limit` after authorization filtering and collapse
-16. `availableChangeVersions` returns correct bounds, including bootstrap `0/0` when the synchronization surface is empty
-17. if a later retention phase is added, replay-floor enforcement uses `minChangeVersion < oldestChangeVersion`
-18. journal trigger inserts exactly one row per committed representation change
-19. required `journal + verify` execution filters stale journal candidates correctly
-20. required `journal + verify` execution applies `totalCount`, `offset`, and `limit` to the final verified authorized changed-resource result set rather than to raw journal candidates
-21. concurrent identity-changing update and delete attempts against the same document serialize under the write-path locking contract and do not capture stale pre-change data
+11. identity-changing update records the new live `ChangeVersion`, not `IdentityVersion`, on `dms.DocumentKeyChangeTracking`
+12. non-identity update does not insert a key-change tracking row
+13. representation rewrite caused by an upstream identity change does not insert a key-change row when the dependent resource's own identity tuple is unchanged
+14. key-change query collapses multiple key changes for one resource within a window correctly
+15. key-change query authorization uses the stored pre-update projection as documented
+16. `/keyChanges` applies `totalCount`, `offset`, and `limit` after authorization filtering and collapse
+17. `availableChangeVersions` returns correct bounds, including bootstrap `0/0` when the synchronization surface is empty
+18. if a later retention phase is added, replay-floor enforcement uses `minChangeVersion < oldestChangeVersion`
+19. journal trigger inserts exactly one row per committed representation change
+20. required `journal + verify` execution filters stale journal candidates correctly
+21. required `journal + verify` execution applies `totalCount`, `offset`, and `limit` to the final verified authorized changed-resource result set rather than to raw journal candidates
+22. concurrent identity-changing update and delete attempts against the same document serialize under the write-path locking contract and do not capture stale pre-change data
 
 ## End-to-end tests
 
@@ -115,17 +128,18 @@ Required E2E coverage:
 9. if a later retention phase is added, requests where `minChangeVersion < oldestChangeVersion` return `409 Conflict` problem details with the documented replay-floor fields
 10. `availableChangeVersions` returns bootstrap `0/0` before any retained tracking rows exist
 11. `/deletes` and `/keyChanges` return the canonical public resource `id` sourced from `DocumentUuid`
-12. unauthorized callers do not see unauthorized changed resources
-13. unauthorized callers do not see unauthorized deletes
-14. unauthorized callers do not see unauthorized key changes
-15. insert then delete before sync returns only the delete row
-16. delete then reinsert yields a delete row and a later live resource in later windows
-17. multiple key changes before sync yield one collapsed key-change row
-18. `/keyChanges` for a resource that does not support identity updates returns `200 OK` with an empty array
-19. `/keyChanges` paging and `totalCount` semantics apply after authorization filtering and collapse
-20. required `journal + verify` changed-resource execution preserves the documented public paging semantics
-21. readable profile headers do not alter or block `/deletes`, `/keyChanges`, or `availableChangeVersions`
-22. changed-resource mode remains resource-level under readable profiles even when the filtered payload appears unchanged
+12. when Change Queries is disabled, `/deletes`, `/keyChanges`, and `availableChangeVersions` return `404 Not Found` without being interpreted as ordinary resource routes
+13. unauthorized callers do not see unauthorized changed resources
+14. unauthorized callers do not see unauthorized deletes
+15. unauthorized callers do not see unauthorized key changes
+16. insert then delete before sync returns only the delete row
+17. delete then reinsert yields a delete row and a later live resource in later windows
+18. multiple key changes before sync yield one collapsed key-change row
+19. `/keyChanges` for a resource that does not support identity updates returns `200 OK` with an empty array
+20. `/keyChanges` paging and `totalCount` semantics apply after authorization filtering and collapse
+21. required `journal + verify` changed-resource execution preserves the documented public paging semantics
+22. readable profile headers do not alter or block `/deletes`, `/keyChanges`, or `availableChangeVersions`
+23. changed-resource mode remains resource-level under readable profiles even when the filtered payload appears unchanged
 
 ## Scenario Expectations
 
@@ -182,6 +196,9 @@ If purge is eventually enabled:
 
 Required external-contract behavior:
 
+- collection GET requests that supply `minChangeVersion` or `maxChangeVersion` while Change Queries is disabled return `400 Bad Request` problem details
+- `/deletes` and `/keyChanges` require `minChangeVersion` and return `400 Bad Request` problem details when it is missing
+- `maxChangeVersion` without `minChangeVersion` returns `400 Bad Request` problem details
 - invalid or negative `minChangeVersion` returns `400 Bad Request` problem details
 - invalid or negative `maxChangeVersion` returns `400 Bad Request` problem details
 - `maxChangeVersion < minChangeVersion` returns `400 Bad Request` problem details
@@ -190,6 +207,8 @@ Required external-contract behavior:
 Problem-detail expectations:
 
 - all responses include `type`, `title`, `status`, `detail`, `errors`, and `correlationId`
+- feature-disabled collection GET requests use type `urn:ed-fi:api:change-queries:feature-disabled`
+- missing required `minChangeVersion` uses type `urn:ed-fi:api:change-queries:validation:min-change-version-required`
 - invalid `minChangeVersion` uses type `urn:ed-fi:api:change-queries:validation:min-change-version`
 - invalid `maxChangeVersion` uses type `urn:ed-fi:api:change-queries:validation:max-change-version`
 - invalid window relationship uses type `urn:ed-fi:api:change-queries:validation:window`
@@ -279,6 +298,7 @@ Mitigation:
 The feature design is ready for review if reviewers can answer yes to the following:
 
 - the public API remains non-breaking
+- feature-off behavior is explicit, with no silent downgrade of Change Query requests
 - the feature satisfies the Ed-Fi changed-resource semantics of current-state results rather than mutation history
 - deletes remain visible after the live row is gone
 - key changes remain visible after later key mutations or deletion of the live row
