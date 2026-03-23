@@ -1187,6 +1187,58 @@ public class Given_MssqlDialect_Create_TableType_With_Disallowed_ColumnType
     }
 }
 
+[TestFixture]
+public class Given_MssqlDialect_Create_TableType_With_Null_TypeName
+{
+    [Test]
+    public void It_should_throw_argument_null_exception()
+    {
+        var dialect = new MssqlDialect(new MssqlDialectRules());
+        var act = () =>
+            dialect.CreateUserDefinedTableTypeIfNotExists(new DbSchemaName("dms"), null!, "Id", "bigint");
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("typeName");
+    }
+}
+
+[TestFixture]
+public class Given_MssqlDialect_Create_TableType_With_Null_ColumnName
+{
+    [Test]
+    public void It_should_throw_argument_null_exception()
+    {
+        var dialect = new MssqlDialect(new MssqlDialectRules());
+        var act = () =>
+            dialect.CreateUserDefinedTableTypeIfNotExists(
+                new DbSchemaName("dms"),
+                "BigIntTable",
+                null!,
+                "bigint"
+            );
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("columnName");
+    }
+}
+
+[TestFixture]
+public class Given_MssqlDialect_Create_TableType_With_Null_ColumnType
+{
+    [Test]
+    public void It_should_throw_argument_null_exception()
+    {
+        var dialect = new MssqlDialect(new MssqlDialectRules());
+        var act = () =>
+            dialect.CreateUserDefinedTableTypeIfNotExists(
+                new DbSchemaName("dms"),
+                "BigIntTable",
+                "Id",
+                null!
+            );
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("columnType");
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Literal rendering tests
 // ═══════════════════════════════════════════════════════════════════
