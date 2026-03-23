@@ -213,12 +213,15 @@ internal static class RelationalModelOrdering
             columnOrderLookup,
             out var immediateParentScopeLocatorColumnsChanged
         );
-        var canonicalSemanticIdentityBindings = CanonicalizeSemanticIdentityBindings(
+        var validatedSemanticIdentityBindings = ValidateSemanticIdentityBindingsAgainstCanonicalColumns(
             table,
             identityMetadata.SemanticIdentityBindings,
             columnOrderLookup
         );
 
+        // Semantic-identity binding order is authoritative from compilation and must not be rewritten to match
+        // physical table column order here. Validation only ensures that any referenced binding columns still
+        // exist after identifier rewriting and final column canonicalization.
         if (
             !physicalRowIdentityColumnsChanged
             && !rootScopeLocatorColumnsChanged
@@ -233,7 +236,7 @@ internal static class RelationalModelOrdering
             PhysicalRowIdentityColumns = orderedPhysicalRowIdentityColumns,
             RootScopeLocatorColumns = orderedRootScopeLocatorColumns,
             ImmediateParentScopeLocatorColumns = orderedImmediateParentScopeLocatorColumns,
-            SemanticIdentityBindings = canonicalSemanticIdentityBindings,
+            SemanticIdentityBindings = validatedSemanticIdentityBindings,
         };
     }
 
@@ -279,7 +282,7 @@ internal static class RelationalModelOrdering
     /// Validates semantic-identity binding column references against the canonical table columns while
     /// preserving the compiled binding order.
     /// </summary>
-    private static IReadOnlyList<CollectionSemanticIdentityBinding> CanonicalizeSemanticIdentityBindings(
+    private static IReadOnlyList<CollectionSemanticIdentityBinding> ValidateSemanticIdentityBindingsAgainstCanonicalColumns(
         DbTableName table,
         IReadOnlyList<CollectionSemanticIdentityBinding> semanticIdentityBindings,
         IReadOnlyDictionary<string, int> columnOrderLookup
