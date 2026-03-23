@@ -167,16 +167,17 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         writer.AppendLine();
     }
 
-    // ── Phase 4: Functions ──────────────────────────────────────────────
+    // ── Phase 4: Functions and Types ──────────────────────────────────────
 
     /// <summary>
-    /// Emits database functions required by core triggers and relational model triggers.
-    /// The UUIDv5 helper must exist before any triggers that call it.
+    /// Emits database functions and type definitions required by core infrastructure.
+    /// Includes the UUIDv5 helper (both dialects), the <c>throw_error</c> function
+    /// (PostgreSQL), and user-defined table types for authorization TVPs (SQL Server).
     /// </summary>
     private void EmitFunctions(SqlWriter writer)
     {
         writer.AppendLine("-- ==========================================================");
-        writer.AppendLine("-- Phase 4: Functions");
+        writer.AppendLine("-- Phase 4: Functions and Types");
         writer.AppendLine("-- ==========================================================");
         writer.AppendLine();
 
@@ -187,9 +188,32 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
             writer.AppendLine(_dialect.CreateUuidv5Function(DmsTableNames.DmsSchema));
             writer.AppendLine("GO");
             writer.AppendLine();
+
+            // User-Defined Table Types for authorization query parameterization (alphabetical)
+            writer.AppendLine(
+                _dialect.CreateUserDefinedTableTypeIfNotExists(
+                    DmsTableNames.DmsSchema,
+                    DmsTableNames.BigIntTableType,
+                    "Id",
+                    "bigint"
+                )
+            );
+            writer.AppendLine();
+            writer.AppendLine(
+                _dialect.CreateUserDefinedTableTypeIfNotExists(
+                    DmsTableNames.DmsSchema,
+                    DmsTableNames.UniqueIdentifierTableType,
+                    "Id",
+                    "uniqueidentifier"
+                )
+            );
+            writer.AppendLine();
             return;
         }
 
+        // PostgreSQL: functions (alphabetical)
+        writer.AppendLine(_dialect.CreateThrowErrorFunction(DmsTableNames.DmsSchema));
+        writer.AppendLine();
         writer.AppendLine(_dialect.CreateUuidv5Function(DmsTableNames.DmsSchema));
         writer.AppendLine();
     }

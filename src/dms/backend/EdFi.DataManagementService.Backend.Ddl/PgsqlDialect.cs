@@ -286,6 +286,35 @@ public sealed class PgsqlDialect : SqlDialectBase
             """;
     }
 
+    /// <inheritdoc />
+    public override string CreateThrowErrorFunction(DbSchemaName schema)
+    {
+        var qualifiedName = $"{QuoteIdentifier(schema.Value)}.{QuoteIdentifier("throw_error")}";
+
+        return $"""
+            CREATE OR REPLACE FUNCTION {qualifiedName}(code text, msg text)
+            RETURNS integer
+            LANGUAGE plpgsql
+            AS $throw_error$
+            BEGIN
+                RAISE EXCEPTION '%', msg USING ERRCODE = code;
+            END
+            $throw_error$;
+            """;
+    }
+
+    /// <inheritdoc />
+    public override string CreateUserDefinedTableTypeIfNotExists(
+        DbSchemaName schema,
+        string typeName,
+        string columnName,
+        string columnType
+    )
+    {
+        // PostgreSQL uses native arrays; no user-defined table types needed.
+        return string.Empty;
+    }
+
     // ── Core-table type properties ──────────────────────────────────────
 
     /// <inheritdoc />

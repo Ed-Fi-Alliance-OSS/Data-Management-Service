@@ -145,6 +145,18 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         funcPos.Should().BeLessThan(triggerPos);
     }
 
+    [Test]
+    public void It_should_create_throw_error_function()
+    {
+        _ddl.Should().Contain("CREATE OR REPLACE FUNCTION \"dms\".\"throw_error\"");
+    }
+
+    [Test]
+    public void It_should_not_emit_user_defined_table_types()
+    {
+        _ddl.Should().NotContain("CREATE TYPE");
+    }
+
     // ── Tables ──────────────────────────────────────────────────────
 
     [Test]
@@ -665,6 +677,24 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         var triggerPos = _ddl.IndexOf("Phase 8: Triggers", StringComparison.Ordinal);
         funcPos.Should().BeGreaterThan(0);
         funcPos.Should().BeLessThan(triggerPos);
+    }
+
+    [Test]
+    public void It_should_create_big_int_table_type()
+    {
+        _ddl.Should().Contain("CREATE TYPE [dms].[BigIntTable]");
+    }
+
+    [Test]
+    public void It_should_create_unique_identifier_table_type()
+    {
+        _ddl.Should().Contain("CREATE TYPE [dms].[UniqueIdentifierTable]");
+    }
+
+    [Test]
+    public void It_should_not_emit_throw_error_function()
+    {
+        _ddl.Should().NotContain("throw_error");
     }
 
     // ── Tables ──────────────────────────────────────────────────────

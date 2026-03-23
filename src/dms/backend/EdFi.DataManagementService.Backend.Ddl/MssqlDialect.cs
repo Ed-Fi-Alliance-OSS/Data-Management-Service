@@ -325,6 +325,65 @@ public sealed class MssqlDialect : SqlDialectBase
             """;
     }
 
+    /// <inheritdoc />
+    public override string CreateThrowErrorFunction(DbSchemaName schema)
+    {
+        // SQL Server does not use a throw_error function; authorization error
+        // signaling uses intentional invalid casts instead.
+        return string.Empty;
+    }
+
+    /// <summary>
+    /// SQL Server column types that are allowed in user-defined table type definitions.
+    /// This allowlist prevents arbitrary strings from being interpolated into DDL.
+    /// </summary>
+    private static readonly HashSet<string> _allowedColumnTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "bigint",
+        "int",
+        "smallint",
+        "tinyint",
+        "uniqueidentifier",
+    };
+
+    /// <inheritdoc />
+    public override string CreateUserDefinedTableTypeIfNotExists(
+        DbSchemaName schema,
+        string typeName,
+        string columnName,
+        string columnType
+    )
+    {
+        ArgumentNullException.ThrowIfNull(typeName);
+        ArgumentNullException.ThrowIfNull(columnName);
+        ArgumentNullException.ThrowIfNull(columnType);
+
+        if (!_allowedColumnTypes.Contains(columnType))
+        {
+            throw new ArgumentException(
+                $"Column type '{columnType}' is not in the allowed list for user-defined table types.",
+                nameof(columnType)
+            );
+        }
+
+        var qualifiedType = $"{QuoteIdentifier(schema.Value)}.{QuoteIdentifier(typeName)}";
+        var escapedSchema = schema.Value.Replace("'", "''");
+        var escapedType = typeName.Replace("'", "''");
+
+        return $"""
+            IF NOT EXISTS (
+                SELECT 1 FROM sys.types t
+                JOIN sys.schemas s ON t.schema_id = s.schema_id
+                WHERE s.name = N'{escapedSchema}'
+                  AND t.name = N'{escapedType}'
+                  AND t.is_table_type = 1
+            )
+            CREATE TYPE {qualifiedType} AS TABLE(
+                {QuoteIdentifier(columnName)} {columnType} NOT NULL
+            );
+            """;
+    }
+
     // ── Scalar type rendering ──────────────────────────────────────────
 
     /// <inheritdoc />

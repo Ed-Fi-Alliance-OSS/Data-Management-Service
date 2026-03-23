@@ -35,7 +35,7 @@ IF NOT EXISTS (
 CREATE SEQUENCE [dms].[ChangeVersionSequence] START WITH 1;
 
 -- ==========================================================
--- Phase 4: Functions
+-- Phase 4: Functions and Types
 -- ==========================================================
 
 GO
@@ -84,6 +84,28 @@ BEGIN
         AS uniqueidentifier);
 END;
 GO
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.types t
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'dms'
+      AND t.name = N'BigIntTable'
+      AND t.is_table_type = 1
+)
+CREATE TYPE [dms].[BigIntTable] AS TABLE(
+    [Id] bigint NOT NULL
+);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.types t
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'dms'
+      AND t.name = N'UniqueIdentifierTable'
+      AND t.is_table_type = 1
+)
+CREATE TYPE [dms].[UniqueIdentifierTable] AS TABLE(
+    [Id] uniqueidentifier NOT NULL
+);
 
 -- ==========================================================
 -- Phase 5: Tables (PK/UNIQUE/CHECK only, no cross-table FKs)

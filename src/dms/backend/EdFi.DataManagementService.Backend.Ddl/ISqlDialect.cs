@@ -229,6 +229,34 @@ public interface ISqlDialect
     /// <returns>The complete CREATE FUNCTION statement.</returns>
     string CreateUuidv5Function(DbSchemaName schema);
 
+    /// <summary>
+    /// Returns the DDL statement to create the <c>throw_error</c> helper function used by
+    /// batched authorization checks to abort a batch with a custom error code and message.
+    /// PostgreSQL emits a <c>CREATE OR REPLACE FUNCTION</c> using <c>RAISE EXCEPTION</c>;
+    /// SQL Server returns an empty string (error signaling uses a different mechanism).
+    /// </summary>
+    /// <param name="schema">The schema to create the function in (typically "dms").</param>
+    /// <returns>The complete CREATE FUNCTION statement, or empty string.</returns>
+    string CreateThrowErrorFunction(DbSchemaName schema);
+
+    /// <summary>
+    /// Returns the DDL statement to create a user-defined table type (TVP) with a single column,
+    /// used by authorization queries to pass lists as parameters.
+    /// SQL Server emits a <c>CREATE TYPE</c> with an idempotent <c>sys.types</c> guard;
+    /// PostgreSQL returns an empty string (arrays are native).
+    /// </summary>
+    /// <param name="schema">The schema to create the type in (typically "dms").</param>
+    /// <param name="typeName">The type name (e.g., "BigIntTable").</param>
+    /// <param name="columnName">The single column name (e.g., "Id").</param>
+    /// <param name="columnType">The SQL type for the column (e.g., "bigint").</param>
+    /// <returns>The idempotent CREATE TYPE statement, or empty string.</returns>
+    string CreateUserDefinedTableTypeIfNotExists(
+        DbSchemaName schema,
+        string typeName,
+        string columnName,
+        string columnType
+    );
+
     // ── Core-table type properties ──────────────────────────────────────
 
     /// <summary>
