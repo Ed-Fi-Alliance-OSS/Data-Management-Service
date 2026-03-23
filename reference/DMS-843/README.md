@@ -1,142 +1,137 @@
 # DMS-843 Change Queries Spike Package
 
+## Status
+
+Review-ready spike package for implementing Ed-Fi Change Queries in the current DMS architecture while staying aligned to the backend-redesign artifact responsibilities and Ed-Fi Change Query behavior.
+
 ## Purpose
 
-This folder is the review-ready spike package for `DMS-843`.
+This folder is the canonical review package for `DMS-843`.
 
-It consolidates the Change Queries design for the current DMS architecture into one package that can be used for:
+It consolidates the spike artifacts needed to review:
 
-- architecture and design review
-- implementation planning
-- Jira story creation
-- later implementation traceability
+- public API behavior and synchronization rules
+- execution model and routing
+- required tracking artifacts and DDL responsibilities
+- authorization, delete, and key-change semantics
+- rollout, backfill, validation, and operational constraints
 
-The package is intended to reduce review round trips by making the public contract, execution model, data model, authorization behavior, rollout constraints, and validation expectations explicit in one place.
+Use this package for design review first, then for implementation planning, Jira story creation, and later traceability.
 
-## Canonical Status
+## Scope And Design Posture
 
-The numbered documents in this folder are the canonical design for `DMS-843`.
+This package is the DMS-843 design for the current backend shape. It is not the full backend-redesign package.
 
-Use these as the source of truth:
+The alignment target is semantic and behavioral parity with the redesign where responsibilities are the same, while still using current-backend bridge artifacts where names or storage differ.
 
-1. `01-Feature-Summary-and-Decisions.md`
-2. `02-API-Contract-and-Synchronization.md`
-3. `03-Architecture-and-Execution.md`
-4. `04-Data-Model-and-DDL.md`
-5. `05-Authorization-and-Delete-Semantics.md`
-6. `06-Validation-Rollout-and-Operations.md`
+The most important current-backend to redesign mappings used throughout this package are:
 
-If older spike notes, local planning files, draft comments, or historical review trails are referenced during review, treat them as context only. They are not approval sources.
+- current-backend `dms.Document.ChangeVersion` is the semantic equivalent of redesign `dms.Document.ContentVersion`
+- `dms.Document.IdentityVersion` remains required for identity-tracking alignment, but it is not the public `/keyChanges` token
+- `dms.DocumentChangeEvent` is the required live-change journal used for changed-resource `journal + verify`
+- `dms.DocumentDeleteTracking` and `dms.DocumentKeyChangeTracking` remain separate required artifacts
+- `availableChangeVersions` is computed from committed tracking surfaces, not from the raw sequence value
 
-## What The Package Decides
+## Canonical Review Set
 
-The canonical package defines these key DMS-843 decisions:
+The numbered documents in this folder are the canonical DMS-843 spike artifacts and should be reviewed in this order:
 
-- existing APIs remain non-breaking
-- DMS follows the Ed-Fi default-on posture for Change Queries when `AppSettings.EnableChangeQueries` is absent
-- DMS-843 v1 does not expose a client-selectable snapshot or consistent-read mode
-- changed-resource execution uses required `journal + verify` behavior through `dms.DocumentChangeEvent`
-- the canonical live-row change token lives on `dms.Document.ChangeVersion`
-- `dms.Document.IdentityVersion` is required for identity-tracking responsibility and redesign alignment, but it is not the public `/keyChanges` token
-- deletes are tracked in `dms.DocumentDeleteTracking`
-- key changes are tracked in `dms.DocumentKeyChangeTracking`
-- delete tracking and key-change tracking stay in separate artifacts
-- descriptor endpoints are included in DMS-843 v1 unless a later explicit product decision says otherwise
-- key-change authorization uses the stored pre-update authorization projection for transition visibility
+1. [01-Feature-Summary-and-Decisions.md](01-Feature-Summary-and-Decisions.md)
+2. [02-API-Contract-and-Synchronization.md](02-API-Contract-and-Synchronization.md)
+3. [03-Architecture-and-Execution.md](03-Architecture-and-Execution.md)
+4. [04-Data-Model-and-DDL.md](04-Data-Model-and-DDL.md)
+5. [05-Authorization-and-Delete-Semantics.md](05-Authorization-and-Delete-Semantics.md)
+6. [06-Validation-Rollout-and-Operations.md](06-Validation-Rollout-and-Operations.md)
 
-## Normative vs Informative Content
+These six documents define the design at the contract, behavior, artifact-responsibility, authorization, and rollout level.
 
-The normative design in this package is defined by:
+If review notes, local planning files, draft comments, or historical spike fragments are referenced during discussion, treat them as context only. They are not approval sources.
 
-- the public API contract
-- the required behavior and synchronization rules
-- the data model and tracking artifacts
-- the authorization and consistency rules
-- the rollout and validation constraints
+## Artifact Guide
 
-Project names, component names, code paths, SQL sketches, and implementation touchpoints are informative planning aids unless a numbered document explicitly makes a behavioral requirement out of them.
+| Artifact | Primary review question | Main review outcome |
+| --- | --- | --- |
+| [01-Feature-Summary-and-Decisions.md](01-Feature-Summary-and-Decisions.md) | What is in scope, what is out of scope, and what whole-feature decisions are fixed? | Feature scope, bridge rules, key decisions, non-goals |
+| [02-API-Contract-and-Synchronization.md](02-API-Contract-and-Synchronization.md) | What does the public API do and how should clients synchronize? | Endpoint contract, window semantics, error contract, synchronization algorithm |
+| [03-Architecture-and-Execution.md](03-Architecture-and-Execution.md) | How does the feature execute across routing, service, repository, and storage layers? | Routing model, `journal + verify`, write ordering, delete and key-change execution |
+| [04-Data-Model-and-DDL.md](04-Data-Model-and-DDL.md) | What physical artifacts and data responsibilities are required? | `ChangeVersion`, `IdentityVersion`, `DocumentChangeEvent`, tombstones, key-change tracking, indexes, backfill |
+| [05-Authorization-and-Delete-Semantics.md](05-Authorization-and-Delete-Semantics.md) | How do authorization and profile rules apply to changed resources, deletes, and key changes? | Live-query authorization parity, tombstone visibility, key-change visibility, profile behavior |
+| [06-Validation-Rollout-and-Operations.md](06-Validation-Rollout-and-Operations.md) | How is the feature rolled out, validated, and operated safely? | Rollout order, validation matrix, E2E expectations, risks, review checklist |
+| [07-Jira-Story-Input.md](07-Jira-Story-Input.md) | How should the approved design be broken into delivery work? | Story decomposition, dependencies, delivery order |
+| [08-Requirements-Traceability.md](08-Requirements-Traceability.md) | Where is each spike requirement covered? | Requirement-to-artifact and requirement-to-story mapping |
+| [Appendix-A-Feature-DDL-Sketch.sql](Appendix-A-Feature-DDL-Sketch.sql) | What does one concrete SQL sketch look like? | Informative implementation sketch only |
 
-## Recommended Review Path
+## Recommended Review Flow
 
-For a focused spike review with the least noise:
+Use the package in three passes:
 
-1. Read `01` through `06` in order.
-2. Use `07` and `08` only after the canonical design is understood.
-3. Use `Appendix-A-Feature-DDL-Sketch.sql` only as an implementation-oriented sketch, not as a source of truth.
+1. Contract pass: review `01`, `02`, and `03` to confirm scope, public behavior, routing, and execution rules.
+2. Storage and authorization pass: review `04` and `05` to confirm artifact boundaries, tracking semantics, and authorization parity.
+3. Delivery pass: review `06`, then use `07`, `08`, and the appendix as supporting material for rollout, testability, and planning.
 
-## Required Review Set
+For a quick design check, the key approval questions are:
 
-The minimum review set for approving the spike is:
+- Does the package preserve existing non-Change-Query API behavior while adding the required Change Query surface?
+- Is changed-resource execution clearly defined as required `journal + verify` rather than an open-ended live-row scan?
+- Are `DocumentChangeEvent`, tombstones, and key-change tracking separated cleanly by responsibility?
+- Is the current-backend bridge clearly aligned to backend-redesign concepts without pretending the physical schemas are identical?
+- Are authorization, rollout, and validation obligations explicit enough to implement without relying on external notes?
 
-1. `01-Feature-Summary-and-Decisions.md`
-2. `02-API-Contract-and-Synchronization.md`
-3. `03-Architecture-and-Execution.md`
-4. `04-Data-Model-and-DDL.md`
-5. `05-Authorization-and-Delete-Semantics.md`
-6. `06-Validation-Rollout-and-Operations.md`
+## Relationship To Backend Redesign Docs
 
-Together, these define:
+The redesign docs under `reference/design/backend-redesign/design-docs/` are related context, especially for alignment of update-tracking responsibilities and future backend direction. For DMS-843 review, use them as companion context, not as replacements for the numbered package.
 
-- feature scope and decisions
-- public API behavior
-- synchronization rules
-- architecture and execution model
-- data model and DDL requirements
-- authorization semantics
+Recommended cross-reference points:
+
+| DMS-843 focus | Related redesign docs | Relationship |
+| --- | --- | --- |
+| whole-feature alignment and bridge posture | [`overview.md`](../design/backend-redesign/design-docs/overview.md), [`update-tracking.md`](../design/backend-redesign/design-docs/update-tracking.md) | explains why the package uses redesign-aligned artifact responsibilities |
+| changed-resource execution and concurrency | [`transactions-and-concurrency.md`](../design/backend-redesign/design-docs/transactions-and-concurrency.md), [`update-tracking.md`](../design/backend-redesign/design-docs/update-tracking.md) | provides the broader `journal + verify` and committed-state execution context |
+| live-row stamps, journal, and core tracking artifacts | [`data-model.md`](../design/backend-redesign/design-docs/data-model.md), [`update-tracking.md`](../design/backend-redesign/design-docs/update-tracking.md), [`ddl-generation.md`](../design/backend-redesign/design-docs/ddl-generation.md) | aligns `ResourceKey`, live stamps, journal responsibilities, indexing, and deterministic provisioning |
+| authorization semantics | [`auth.md`](../design/backend-redesign/design-docs/auth.md) | companion context for SQL-layer authorization behavior |
+| optional downstream projections and ETL ideas | [`etl-view-sketch.md`](../design/backend-redesign/design-docs/etl-view-sketch.md) | informative only; not required for DMS-843 approval |
+
+Important boundary:
+
+- optional redesign projections such as `dms.DocumentCache` and ETL-oriented views are not required DMS-843 spike artifacts
+- the DMS-843 package is approval-complete without those optional projections
+
+## Normative Vs Informative Material
+
+Normative in this folder:
+
+- the public API contract and synchronization rules
+- the required tracking artifacts and their responsibilities
+- execution ordering and routing behavior
+- authorization, delete, and key-change semantics
 - rollout, validation, and operational constraints
+
+Informative in this folder:
+
+- project names, component names, and current implementation touchpoints
+- the Jira story breakdown
+- the requirements traceability matrix
+- the SQL appendix, which is a concrete sketch rather than the normative source of behavior
+
+Informative outside this folder:
+
+- redesign companion docs
+- Ed-Fi platform and client guides
+- local or reviewer notes not included in the numbered package
 
 ## Supporting Artifacts
 
-The following files are useful, but they are supporting artifacts rather than approval sources:
+Use these after the numbered design is understood:
 
-1. `07-Jira-Story-Input.md`
-2. `08-Requirements-Traceability.md`
-3. `Appendix-A-Feature-DDL-Sketch.sql`
+- [07-Jira-Story-Input.md](07-Jira-Story-Input.md): ticket-ready story slicing, dependencies, and likely implementation areas
+- [08-Requirements-Traceability.md](08-Requirements-Traceability.md): requirement coverage matrix across the package and stories
+- [Appendix-A-Feature-DDL-Sketch.sql](Appendix-A-Feature-DDL-Sketch.sql): PostgreSQL-shaped implementation sketch only
 
-Supporting artifact roles:
+## Relationship To External Ed-Fi References
 
-- `07-Jira-Story-Input.md`: ticket-ready story decomposition using `Description`, `Acceptance Criteria`, `Tasks`, `Dependencies`, `Design References`, and `Likely Implementation Areas`
-- `08-Requirements-Traceability.md`: coverage matrix from spike constraints to package documents and stories
-- `Appendix-A-Feature-DDL-Sketch.sql`: PostgreSQL-flavored implementation sketch only
-
-## How To Use The Package
-
-### For Review
-
-- Start with the numbered documents.
-- Evaluate support files only after the numbered package is coherent.
-
-### For Jira Story Creation
-
-- Use `07-Jira-Story-Input.md` as the primary ticket-decomposition input.
-- Use `08-Requirements-Traceability.md` to verify that each story still maps back to the spike obligations.
-- Keep `04-Data-Model-and-DDL.md` as the normative source whenever a ticket touches schema or storage semantics.
-
-### For Implementation Planning
-
-- Use the numbered package for behavior and contract.
-- Use `07-Jira-Story-Input.md` to identify story boundaries, dependencies, and concrete work items.
-- Use `Appendix-A-Feature-DDL-Sketch.sql` only when a SQL sketch helps discussion; do not let it override the numbered documents.
-
-## Output Coverage
-
-This package covers the spike outputs directly:
-
-- architecture design
-- DDL proposal
-- API specification
-- synchronization algorithm
-- delete tracking strategy
-- key-change tracking strategy
-- migration and backfill strategy
-- performance considerations
-- validation scenarios
-
-## Relationship To Existing References
-
-This package is aligned to:
+This package is designed to align to the Ed-Fi ODS/API Change Query behavior where DMS-843 follows platform guidance:
 
 - Ed-Fi ODS/API platform guide, Changed Record Queries: <https://docs.ed-fi.org/reference/ods-api/platform-dev-guide/features/changed-record-queries/>
 - Ed-Fi ODS/API client guide, Using the Changed Record Queries: <https://docs.ed-fi.org/reference/ods-api/client-developers-guide/using-the-changed-record-queries/>
 
-The alignment target is behavioral and contract parity where DMS-843 follows Ed-Fi guidance, with explicit documentation where DMS makes a product-specific choice.
+The alignment target is behavioral and contract parity where appropriate, with explicit package-level decisions wherever DMS makes a product-specific choice.
