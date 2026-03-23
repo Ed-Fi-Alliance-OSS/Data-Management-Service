@@ -124,7 +124,7 @@ Required E2E coverage:
 5. `/keyChanges` returns collapsed key-change rows in deterministic order
 6. `minChangeVersion = 0` is accepted when used as a bootstrap watermark
 7. `maxChangeVersion = minChangeVersion` returns a valid single-version bounded-window response
-8. malformed, negative, or otherwise invalid change-query windows return `400 Bad Request` problem details with the documented `type`, `title`, `detail`, `errors`, and `correlationId`
+8. malformed, negative, or otherwise invalid change-query windows return `400 Bad Request` problem details with the documented `type`, `title`, `detail`, `validationErrors`, `errors`, and `correlationId`
 9. if a later retention phase is added, requests where `minChangeVersion < oldestChangeVersion` return `409 Conflict` problem details with the documented replay-floor fields
 10. `availableChangeVersions` returns bootstrap `0/0` before any retained tracking rows exist
 11. `/deletes` and `/keyChanges` return the canonical public resource `id` sourced from `DocumentUuid`
@@ -206,7 +206,8 @@ Required external-contract behavior:
 
 Problem-detail expectations:
 
-- all responses include `type`, `title`, `status`, `detail`, `errors`, and `correlationId`
+- all responses include `type`, `title`, `status`, `detail`, `validationErrors`, `errors`, and `correlationId`
+- for the documented change-query parameter-validation and replay-floor failures, `validationErrors` is present as an empty object, `{}`, rather than being omitted
 - feature-disabled collection GET requests use type `urn:ed-fi:api:change-queries:feature-disabled`
 - missing required `minChangeVersion` uses type `urn:ed-fi:api:change-queries:validation:min-change-version-required`
 - invalid `minChangeVersion` uses type `urn:ed-fi:api:change-queries:validation:min-change-version`

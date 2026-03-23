@@ -313,7 +313,9 @@ Required body behavior:
 - error responses use `application/problem+json`
 - all responses include RFC 9457 core members: `type`, `title`, `status`, and `detail`
 - all responses include `correlationId`
+- all responses include `validationErrors`
 - all responses include an `errors` array
+- for the change-query request-validation and replay-floor failures defined below, `validationErrors` is present as an empty object, `{}`, because these failures are request-level contract errors rather than path-keyed document-validation failures
 
 `400 Bad Request` for change-query parameters on the collection GET route when the feature is explicitly disabled:
 
@@ -321,6 +323,7 @@ Required body behavior:
 - `title`: `Change Queries Feature Disabled`
 - `status`: `400`
 - `detail`: `Change Queries is not enabled for this DMS deployment.`
+- `validationErrors`: `{}`
 - `errors`: exactly one entry, `Change query parameters cannot be used because the Change Queries feature is disabled.`
 
 `400 Bad Request` for missing required `minChangeVersion`:
@@ -329,6 +332,7 @@ Required body behavior:
 - `title`: `Invalid Change Query Request`
 - `status`: `400`
 - `detail`: `The change query parameters are invalid.`
+- `validationErrors`: `{}`
 - `errors`: exactly one entry, `The 'minChangeVersion' parameter is required for this Change Query request.`
 
 `400 Bad Request` for invalid `minChangeVersion`:
@@ -337,6 +341,7 @@ Required body behavior:
 - `title`: `Invalid Change Query Request`
 - `status`: `400`
 - `detail`: `The change query parameters are invalid.`
+- `validationErrors`: `{}`
 - `errors`: exactly one entry, `The 'minChangeVersion' parameter must be a non-negative 64-bit integer.`
 
 `400 Bad Request` for invalid `maxChangeVersion`:
@@ -345,6 +350,7 @@ Required body behavior:
 - `title`: `Invalid Change Query Request`
 - `status`: `400`
 - `detail`: `The change query parameters are invalid.`
+- `validationErrors`: `{}`
 - `errors`: exactly one entry, `The 'maxChangeVersion' parameter must be a non-negative 64-bit integer.`
 
 `400 Bad Request` for `maxChangeVersion` without `minChangeVersion`:
@@ -353,6 +359,7 @@ Required body behavior:
 - `title`: `Invalid Change Query Request`
 - `status`: `400`
 - `detail`: `The change query parameters are invalid.`
+- `validationErrors`: `{}`
 - `errors`: exactly one entry, `The 'maxChangeVersion' parameter cannot be supplied without 'minChangeVersion'.`
 
 `400 Bad Request` for invalid window relationship:
@@ -361,6 +368,7 @@ Required body behavior:
 - `title`: `Invalid Change Query Request`
 - `status`: `400`
 - `detail`: `The change query parameters are invalid.`
+- `validationErrors`: `{}`
 - `errors`: exactly one entry, `The 'maxChangeVersion' parameter must be greater than or equal to 'minChangeVersion'.`
 
 `409 Conflict` for replay-floor miss in a later retention phase:
@@ -369,6 +377,7 @@ Required body behavior:
 - `title`: `Change Query Window No Longer Available`
 - `status`: `409`
 - `detail`: `The requested change query window is older than the oldest available change version for complete synchronization. Reinitialize or restart from the advertised replay floor.`
+- `validationErrors`: `{}`
 - `errors`: exactly one entry, `The supplied 'minChangeVersion' is older than the current replay floor.`
 - extension members `requestedMinChangeVersion`, `oldestChangeVersion`, and `newestChangeVersion` are required
 
