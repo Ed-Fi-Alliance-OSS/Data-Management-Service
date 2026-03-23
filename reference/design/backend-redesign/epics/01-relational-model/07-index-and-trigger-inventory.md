@@ -48,7 +48,8 @@ Descriptor resources stored in shared `dms.Descriptor` (no per-descriptor tables
     - one per table primary key, named the same as the PK constraint (`PK_{TableName}`).
   - **UNIQUE-implied indexes** (`DbIndexKind.UniqueConstraint`):
     - one per UNIQUE constraint, named the same as the constraint (`UX_{TableName}_{Column1}_...`).
-    - includes identity/uniqueness constraints derived from `identityJsonPaths` / `arrayUniquenessConstraints`,
+    - includes root identity/uniqueness constraints derived from `identityJsonPaths`,
+    - includes collection semantic-identity UNIQUE constraints derived from the compiled semantic identity emitted by `DMS-1103` rather than from raw `arrayUniquenessConstraints` alone,
     - includes “referenced-key” UNIQUE constraints that exist purely to make composite FKs legal (as described in `ddl-generation.md`).
   - **FK-supporting indexes** (`DbIndexKind.ForeignKeySupport`) required by the FK index policy in `ddl-generation.md`:
     - one candidate per FK on the referencing columns, named `IX_{TableName}_{Column1}_{Column2}_...`.

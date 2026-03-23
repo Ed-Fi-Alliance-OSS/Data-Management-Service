@@ -98,4 +98,42 @@ public class Given_WritePlanCompiler_UpdateSql : WritePlanCompilerTestBase
 
         tablePlan.UpdateSql.Should().BeNull();
     }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_emit_update_sql_for_collection_aligned_extension_scope_using_explicit_identity_metadata(
+        SqlDialect dialect
+    )
+    {
+        var tablePlan = CompileCollectionsNestedExtensionFixtureTablePlan(dialect, "SchoolExtensionAddress");
+
+        tablePlan
+            .UpdateSql.Should()
+            .Be(
+                dialect switch
+                {
+                    SqlDialect.Pgsql => """
+                    UPDATE "sample"."SchoolExtensionAddress"
+                    SET
+                        "School_DocumentId" = @school_DocumentId,
+                        "Zone" = @zone
+                    WHERE
+                        ("BaseCollectionItemId" = @baseCollectionItemId)
+                    ;
+
+                    """,
+                    SqlDialect.Mssql => """
+                    UPDATE [sample].[SchoolExtensionAddress]
+                    SET
+                        [School_DocumentId] = @school_DocumentId,
+                        [Zone] = @zone
+                    WHERE
+                        ([BaseCollectionItemId] = @baseCollectionItemId)
+                    ;
+
+                    """,
+                    _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, null),
+                }
+            );
+    }
 }

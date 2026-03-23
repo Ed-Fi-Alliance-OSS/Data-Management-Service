@@ -161,7 +161,11 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
                     var sqlSource = sqlSources[index];
                     var tableModel = sqlSource.TableModel;
                     var tableAlias = tableAliasAllocator.AllocateNext();
-                    var rootDocumentIdKeyColumn = tableModel.Key.Columns[0].ColumnName;
+                    var rootScopeLocatorColumn =
+                        RelationalResourceModelCompileValidator.ResolveRootScopeLocatorColumnOrThrow(
+                            tableModel,
+                            "descriptor projection plan"
+                        );
 
                     writer.Append("SELECT ");
 
@@ -177,7 +181,7 @@ internal sealed class DescriptorProjectionPlanCompiler(SqlDialect dialect)
                         .Append("INNER JOIN ")
                         .AppendRelation(keysetTable.Table)
                         .Append($" {keysetAlias} ON ");
-                    AppendQualifiedColumn(writer, tableAlias, rootDocumentIdKeyColumn);
+                    AppendQualifiedColumn(writer, tableAlias, rootScopeLocatorColumn);
                     writer.Append(" = ");
                     AppendQualifiedColumn(writer, keysetAlias, keysetTable.DocumentIdColumnName);
                     writer.AppendLine();

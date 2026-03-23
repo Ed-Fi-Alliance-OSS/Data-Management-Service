@@ -13,6 +13,9 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 [TestFixture]
 public class Given_RuntimeMappingSetCompiler
 {
+    private const string MissingSemanticIdentityFixturePath =
+        "Fixtures/runtime-plan-compilation/focused-stable-key/negative/missing-semantic-identity/fixture.manifest.json";
+
     private const string MinimalProjectSchemaJson = """
         {
           "projectName": "Ed-Fi",
@@ -227,6 +230,37 @@ public class Given_RuntimeMappingSetCompiler
                 .Throw<InvalidOperationException>()
                 .WithMessage("*runtime mapping initialization failed*")
                 .WithInnerException<InvalidOperationException>();
+        }
+    }
+
+    [TestFixture(SqlDialect.Pgsql)]
+    [TestFixture(SqlDialect.Mssql)]
+    public class Given_A_Runtime_Collection_Fixture_Missing_Semantic_Identity(SqlDialect dialect)
+        : Given_RuntimeMappingSetCompiler
+    {
+        private Func<Task<MappingSet>> _compile = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var schemaSet = RuntimePlanFixtureModelSetBuilder.CreateEffectiveSchemaSet(
+                MissingSemanticIdentityFixturePath
+            );
+            var compiler = CreateCompiler(dialect, accessor: () => schemaSet);
+            var key = compiler.GetCurrentKey();
+
+            _compile = () => compiler.CompileAsync(key, CancellationToken.None);
+        }
+
+        [Test]
+        public async Task It_should_fail_with_the_missing_semantic_identity_diagnostic()
+        {
+            var exception = (await _compile.Should().ThrowAsync<InvalidOperationException>()).Which;
+
+            exception.Message.Should().Contain("Persisted multi-item scope");
+            exception.Message.Should().Contain("$.addresses[*]");
+            exception.Message.Should().Contain("Ed-Fi:School");
+            exception.Message.Should().Contain("arrayUniquenessConstraints");
         }
     }
 }

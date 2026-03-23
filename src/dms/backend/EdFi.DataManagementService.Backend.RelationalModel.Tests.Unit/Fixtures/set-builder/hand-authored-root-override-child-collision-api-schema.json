@@ -45,6 +45,11 @@
         "isSubclass": false,
         "allowIdentityUpdates": false,
         "arrayUniquenessConstraints": [
+          {
+            "paths": [
+              "$.programs[*].programName"
+            ]
+          }
         ],
         "identityJsonPaths": [
           "$.schoolId"

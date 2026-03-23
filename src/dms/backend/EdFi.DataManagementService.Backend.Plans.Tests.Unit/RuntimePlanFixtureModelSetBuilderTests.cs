@@ -188,14 +188,47 @@ public class Given_RuntimePlanFixtureModelSetBuilder_CollectionsNestedExtensionF
         _tablesByScope.Should().ContainKey(extensionScope);
         var baseTable = _tablesByScope[baseScope];
         var extensionTable = _tablesByScope[extensionScope];
-        var baseKeyColumns = baseTable
-            .Key.Columns.Select(column => $"{column.ColumnName.Value}:{column.Kind}")
-            .ToArray();
-        var extensionKeyColumns = extensionTable
-            .Key.Columns.Select(column => $"{column.ColumnName.Value}:{column.Kind}")
-            .ToArray();
 
-        extensionKeyColumns.Should().Equal(baseKeyColumns);
+        extensionTable
+            .IdentityMetadata.RootScopeLocatorColumns.Select(static column => column.Value)
+            .Should()
+            .Equal(baseTable.IdentityMetadata.RootScopeLocatorColumns.Select(static column => column.Value));
+
+        if (baseTable.IdentityMetadata.TableKind is DbTableKind.Root)
+        {
+            extensionTable.IdentityMetadata.TableKind.Should().Be(DbTableKind.RootExtension);
+            extensionTable
+                .IdentityMetadata.PhysicalRowIdentityColumns.Select(static column => column.Value)
+                .Should()
+                .Equal(
+                    baseTable.IdentityMetadata.PhysicalRowIdentityColumns.Select(static column =>
+                        column.Value
+                    )
+                );
+            extensionTable
+                .IdentityMetadata.ImmediateParentScopeLocatorColumns.Select(static column => column.Value)
+                .Should()
+                .Equal(
+                    baseTable.IdentityMetadata.RootScopeLocatorColumns.Select(static column => column.Value)
+                );
+
+            return;
+        }
+
+        extensionTable.IdentityMetadata.TableKind.Should().Be(DbTableKind.CollectionExtensionScope);
+        extensionTable
+            .IdentityMetadata.PhysicalRowIdentityColumns.Select(static column => column.Value)
+            .Should()
+            .Equal("BaseCollectionItemId");
+        extensionTable
+            .IdentityMetadata.ImmediateParentScopeLocatorColumns.Select(static column => column.Value)
+            .Should()
+            .Equal(
+                extensionTable.IdentityMetadata.PhysicalRowIdentityColumns.Select(static column =>
+                    column.Value
+                )
+            );
+        baseTable.IdentityMetadata.PhysicalRowIdentityColumns.Should().ContainSingle();
     }
 
     private void AssertExtensionScalarPath(string extensionScope, string expectedSourcePath)

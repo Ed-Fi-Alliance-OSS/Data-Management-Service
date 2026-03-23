@@ -142,6 +142,44 @@ public class Given_Pgsql_Identifier_Shortening
     }
 
     /// <summary>
+    /// It should shorten stable-identity metadata identifiers and re-canonicalize metadata column lists.
+    /// </summary>
+    [Test]
+    public void It_should_shorten_and_canonicalize_stable_identity_metadata_identifiers()
+    {
+        var dialectRules = _scenario.DialectRules;
+        var identifiers = _scenario.Identifiers;
+        var expectedKey = dialectRules.ShortenIdentifier(identifiers.KeyColumnName);
+        var expectedFk = dialectRules.ShortenIdentifier(identifiers.FkColumnName);
+        var expectedIdentity = dialectRules.ShortenIdentifier(identifiers.IdentityColumnName);
+        var expectedDescriptor = dialectRules.ShortenIdentifier(identifiers.DescriptorColumnName);
+
+        var identityMetadata = _scenario
+            .Result.ConcreteResourcesInNameOrder.Single()
+            .RelationalModel.Root.IdentityMetadata;
+
+        identityMetadata.TableKind.Should().Be(DbTableKind.CollectionExtensionScope);
+        identityMetadata
+            .PhysicalRowIdentityColumns.Select(column => column.Value)
+            .Should()
+            .Equal(expectedKey, expectedIdentity);
+        identityMetadata
+            .RootScopeLocatorColumns.Select(column => column.Value)
+            .Should()
+            .Equal(expectedFk, expectedDescriptor);
+        identityMetadata
+            .ImmediateParentScopeLocatorColumns.Select(column => column.Value)
+            .Should()
+            .Equal(expectedIdentity, expectedDescriptor);
+        identityMetadata
+            .SemanticIdentityBindings.Select(binding =>
+                (binding.RelativePath.Canonical, binding.ColumnName.Value)
+            )
+            .Should()
+            .Equal(("$.semanticZeta", expectedDescriptor), ("$.semanticAlpha", expectedIdentity));
+    }
+
+    /// <summary>
     /// It should shorten index and trigger identifiers.
     /// </summary>
     [Test]
@@ -777,6 +815,7 @@ internal sealed record ShorteningScenario(
         var builder = new DerivedRelationalModelSetBuilder([
             new IdentifierShorteningFixturePass(effectiveSchemaSet, identifiers),
             new ApplyDialectIdentifierShorteningPass(),
+            new CanonicalizeOrderingPass(),
         ]);
 
         var result = builder.Build(effectiveSchemaSet, dialectRules.Dialect, dialectRules);
@@ -1081,7 +1120,34 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
             new TableKey(ConstraintNaming.BuildPrimaryKeyName(tableName), [keyColumn]),
             columns,
             constraints
-        );
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.CollectionExtensionScope,
+                [
+                    new DbColumnName(_identifiers.IdentityColumnName),
+                    new DbColumnName(_identifiers.KeyColumnName),
+                ],
+                [
+                    new DbColumnName(_identifiers.DescriptorColumnName),
+                    new DbColumnName(_identifiers.FkColumnName),
+                ],
+                [
+                    new DbColumnName(_identifiers.DescriptorColumnName),
+                    new DbColumnName(_identifiers.IdentityColumnName),
+                ],
+                [
+                    new CollectionSemanticIdentityBinding(
+                        JsonPathExpressionCompiler.Compile("$.semanticZeta"),
+                        new DbColumnName(_identifiers.DescriptorColumnName)
+                    ),
+                    new CollectionSemanticIdentityBinding(
+                        JsonPathExpressionCompiler.Compile("$.semanticAlpha"),
+                        new DbColumnName(_identifiers.IdentityColumnName)
+                    ),
+                ]
+            ),
+        };
 
         var binding = new DocumentReferenceBinding(
             IsIdentityComponent: true,

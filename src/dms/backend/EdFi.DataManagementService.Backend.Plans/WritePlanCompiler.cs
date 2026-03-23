@@ -201,7 +201,11 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     )
     {
         var tableCompilationContext = CreateTableCompilationContext(tableModel, writeSourceLookup);
-        var keyUnificationPlans = KeyUnificationWritePlanCompiler.Compile(tableCompilationContext);
+        var collectionKeyPreallocationPlan = CompileCollectionKeyPreallocationPlan(tableCompilationContext);
+        var keyUnificationPlans = KeyUnificationWritePlanCompiler.Compile(
+            tableCompilationContext,
+            collectionKeyPreallocationPlan
+        );
 
         var insertSql = _insertSqlEmitter.Emit(
             tableModel.Table,
@@ -224,7 +228,44 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
             DeleteByParentSql: deleteByParentSql,
             BulkInsertBatching: bulkInsertBatching,
             ColumnBindings: tableCompilationContext.ColumnBindings,
-            KeyUnificationPlans: keyUnificationPlans
+            KeyUnificationPlans: keyUnificationPlans,
+            CollectionKeyPreallocationPlan: collectionKeyPreallocationPlan
+        );
+    }
+
+    private static CollectionKeyPreallocationPlan? CompileCollectionKeyPreallocationPlan(
+        WritePlanTableCompilationContext tableCompilationContext
+    )
+    {
+        var collectionKeyBindings = tableCompilationContext
+            .ColumnBindings.Select((binding, index) => (binding, index))
+            .Where(static tuple => tuple.binding.Column.Kind is ColumnKind.CollectionKey)
+            .ToArray();
+
+        if (collectionKeyBindings.Length == 0)
+        {
+            return null;
+        }
+
+        if (collectionKeyBindings.Length > 1)
+        {
+            throw new InvalidOperationException(
+                $"Cannot compile write plan for '{tableCompilationContext.TableModel.Table}': expected at most one collection-key binding, but found {collectionKeyBindings.Length}."
+            );
+        }
+
+        var (binding, bindingIndex) = collectionKeyBindings[0];
+
+        if (binding.Source is not WriteValueSource.Precomputed)
+        {
+            throw new InvalidOperationException(
+                $"Cannot compile write plan for '{tableCompilationContext.TableModel.Table}': collection-key column '{binding.Column.ColumnName.Value}' must bind as {nameof(WriteValueSource.Precomputed)}."
+            );
+        }
+
+        return new CollectionKeyPreallocationPlan(
+            ColumnName: binding.Column.ColumnName,
+            BindingIndex: bindingIndex
         );
     }
 
@@ -242,6 +283,7 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         var keyColumnNames = tableModel
             .Key.Columns.Select(static keyColumn => keyColumn.ColumnName)
             .ToHashSet();
+        var requiredBindingColumns = DeriveRequiredBindingColumns(tableModel, keyColumnNames);
         var requiredKeyUnificationPrecomputedColumns = DeriveRequiredKeyUnificationPrecomputedColumns(
             tableModel,
             columnByName
@@ -250,7 +292,7 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         var columnBindings = CompileStoredColumnBindings(
             tableModel,
             writeSourceLookup,
-            keyColumnNames,
+            requiredBindingColumns,
             requiredKeyUnificationPrecomputedColumns
         );
 
@@ -274,7 +316,7 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     private static WriteColumnBinding[] CompileStoredColumnBindings(
         DbTableModel tableModel,
         WriteSourceLookup writeSourceLookup,
-        IReadOnlySet<DbColumnName> keyColumnNames,
+        IReadOnlySet<DbColumnName> requiredBindingColumns,
         IReadOnlySet<DbColumnName> requiredKeyUnificationPrecomputedColumns
     )
     {
@@ -283,7 +325,7 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
                 column.Storage is ColumnStorage.Stored
                 && (
                     column.IsWritable
-                    || keyColumnNames.Contains(column.ColumnName)
+                    || requiredBindingColumns.Contains(column.ColumnName)
                     || requiredKeyUnificationPrecomputedColumns.Contains(column.ColumnName)
                 )
             )
@@ -362,6 +404,34 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     }
 
     /// <summary>
+    /// Derives the structural columns that must always receive write bindings.
+    /// </summary>
+    private static IReadOnlySet<DbColumnName> DeriveRequiredBindingColumns(
+        DbTableModel tableModel,
+        IReadOnlySet<DbColumnName> keyColumnNames
+    )
+    {
+        var requiredBindingColumns = new HashSet<DbColumnName>(keyColumnNames);
+
+        if (!RelationalResourceModelCompileValidator.UsesExplicitIdentityMetadata(tableModel))
+        {
+            return requiredBindingColumns;
+        }
+
+        foreach (var column in tableModel.IdentityMetadata.RootScopeLocatorColumns)
+        {
+            requiredBindingColumns.Add(column);
+        }
+
+        foreach (var column in tableModel.IdentityMetadata.ImmediateParentScopeLocatorColumns)
+        {
+            requiredBindingColumns.Add(column);
+        }
+
+        return requiredBindingColumns;
+    }
+
+    /// <summary>
     /// Validates that every key column maps to a writable stored column. Unified aliases are generated and non-writable.
     /// </summary>
     private static void ValidateWritableKeyColumns(
@@ -369,6 +439,21 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         IReadOnlyDictionary<DbColumnName, DbColumnModel> columnByName
     )
     {
+        if (RelationalResourceModelCompileValidator.UsesExplicitIdentityMetadata(tableModel))
+        {
+            var requiredBindingColumns = DeriveRequiredBindingColumns(
+                tableModel,
+                tableModel.Key.Columns.Select(static keyColumn => keyColumn.ColumnName).ToHashSet()
+            );
+
+            foreach (var requiredBindingColumn in requiredBindingColumns)
+            {
+                ValidateBoundStoredColumn(tableModel, columnByName, requiredBindingColumn);
+            }
+
+            return;
+        }
+
         RelationalResourceModelCompileValidator.ValidateDeterministicTableKeyShapeOrThrow(
             tableModel,
             "write plan",
@@ -400,6 +485,36 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         );
     }
 
+    private static void ValidateBoundStoredColumn(
+        DbTableModel tableModel,
+        IReadOnlyDictionary<DbColumnName, DbColumnModel> columnByName,
+        DbColumnName columnName
+    )
+    {
+        if (!columnByName.TryGetValue(columnName, out var matchingColumn))
+        {
+            throw new InvalidOperationException(
+                $"Cannot compile write plan for '{tableModel.Table}': required bound column '{columnName.Value}' does not exist in table columns."
+            );
+        }
+
+        if (matchingColumn.Storage is not ColumnStorage.UnifiedAlias unifiedAlias)
+        {
+            return;
+        }
+
+        var presenceColumnDescription = unifiedAlias.PresenceColumn switch
+        {
+            null => "<none>",
+            { } presenceColumn => presenceColumn.Value,
+        };
+
+        throw new InvalidOperationException(
+            $"Cannot compile write plan for '{tableModel.Table}': required bound column '{columnName.Value}' is UnifiedAlias "
+                + $"(canonical '{unifiedAlias.CanonicalColumn.Value}', presence '{presenceColumnDescription}') and is not writable."
+        );
+    }
+
     /// <summary>
     /// Emits table <c>UPDATE</c> SQL for 1:1 tables (no ordinal key column) when at least one stored non-key column is writable.
     /// </summary>
@@ -407,7 +522,7 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     {
         var tableModel = tableCompilationContext.TableModel;
 
-        if (tableModel.Key.Columns.Any(static keyColumn => keyColumn.Kind is ColumnKind.Ordinal))
+        if (!SupportsInPlaceUpdate(tableModel))
         {
             return null;
         }
@@ -444,6 +559,25 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     }
 
     /// <summary>
+    /// Keeps the temporary stable-key compatibility split between singleton UPDATE plans and collection-scoped
+    /// replace/merge plans explicit. Follow-on stories:
+    /// `reference/design/backend-redesign/epics/07-relational-write-path/03-persist-and-batch.md` and
+    /// `reference/design/backend-redesign/epics/15-plan-compilation/04b-stable-collection-merge-plans.md`.
+    /// </summary>
+    private static bool SupportsInPlaceUpdate(DbTableModel tableModel)
+    {
+        if (RelationalResourceModelCompileValidator.UsesExplicitIdentityMetadata(tableModel))
+        {
+            return tableModel.IdentityMetadata.TableKind
+                is DbTableKind.Root
+                    or DbTableKind.RootExtension
+                    or DbTableKind.CollectionExtensionScope;
+        }
+
+        return !tableModel.Columns.Any(static column => column.Kind is ColumnKind.Ordinal);
+    }
+
+    /// <summary>
     /// Emits table <c>DELETE</c> SQL for replace semantics by parent key for all non-root tables.
     /// </summary>
     private string? TryEmitDeleteByParentSql(
@@ -458,10 +592,16 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
             return null;
         }
 
-        var keyColumnsInOrder = tableModel
-            .Key.Columns.Where(static keyColumn => keyColumn.Kind is ColumnKind.ParentKeyPart)
-            .Select(static keyColumn => keyColumn.ColumnName)
-            .ToArray();
+        var keyColumnsInOrder = RelationalResourceModelCompileValidator.UsesExplicitIdentityMetadata(
+            tableModel
+        )
+            ? RelationalResourceModelCompileValidator
+                .ResolveImmediateParentScopeLocatorColumnsOrThrow(tableModel, "write plan")
+                .ToArray()
+            : tableModel
+                .Key.Columns.Where(static keyColumn => keyColumn.Kind is ColumnKind.ParentKeyPart)
+                .Select(static keyColumn => keyColumn.ColumnName)
+                .ToArray();
 
         if (keyColumnsInOrder.Length == 0)
         {
@@ -610,13 +750,21 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
         IReadOnlySet<DbColumnName> requiredKeyUnificationPrecomputedColumns
     )
     {
-        if (IsCanonicalDocumentIdKeyColumn(tableModel, column))
+        if (IsRootDocumentLocatorColumn(tableModel, column))
         {
             return new WriteValueSource.DocumentId();
         }
 
+        if (IsImmediateParentScopeLocatorColumn(tableModel, column))
+        {
+            return new WriteValueSource.ParentKeyPart(
+                GetImmediateParentScopeLocatorIndex(tableModel, column)
+            );
+        }
+
         return column.Kind switch
         {
+            ColumnKind.CollectionKey => new WriteValueSource.Precomputed(),
             ColumnKind.ParentKeyPart => new WriteValueSource.ParentKeyPart(
                 GetParentKeyPartIndex(tableModel, column)
             ),
@@ -641,15 +789,62 @@ public sealed class WritePlanCompiler(SqlDialect dialect)
     }
 
     /// <summary>
-    /// Returns <see langword="true" /> when the column is the canonical key <c>DocumentId</c> component.
+    /// Returns <see langword="true" /> when the column is the compiled root-document locator.
     /// </summary>
-    private static bool IsCanonicalDocumentIdKeyColumn(DbTableModel tableModel, DbColumnModel column)
+    private static bool IsRootDocumentLocatorColumn(DbTableModel tableModel, DbColumnModel column)
     {
+        if (RelationalResourceModelCompileValidator.UsesExplicitIdentityMetadata(tableModel))
+        {
+            return RelationalNameConventions.IsDocumentIdColumn(column.ColumnName)
+                && tableModel.IdentityMetadata.RootScopeLocatorColumns.Contains(column.ColumnName);
+        }
+
         return column.Kind == ColumnKind.ParentKeyPart
             && column.ColumnName.Equals(RelationalNameConventions.DocumentIdColumnName)
             && tableModel.Key.Columns.Any(keyColumn =>
                 keyColumn.Kind == ColumnKind.ParentKeyPart && keyColumn.ColumnName.Equals(column.ColumnName)
             );
+    }
+
+    /// <summary>
+    /// Returns <see langword="true" /> when the column is an explicit immediate-parent scope locator.
+    /// </summary>
+    private static bool IsImmediateParentScopeLocatorColumn(DbTableModel tableModel, DbColumnModel column)
+    {
+        return RelationalResourceModelCompileValidator.UsesExplicitIdentityMetadata(tableModel)
+            && tableModel.IdentityMetadata.ImmediateParentScopeLocatorColumns.Contains(column.ColumnName)
+            && !IsRootDocumentLocatorColumn(tableModel, column);
+    }
+
+    /// <summary>
+    /// Gets the 0-based explicit immediate-parent locator index for the column.
+    /// </summary>
+    private static int GetImmediateParentScopeLocatorIndex(DbTableModel tableModel, DbColumnModel column)
+    {
+        if (!RelationalResourceModelCompileValidator.UsesExplicitIdentityMetadata(tableModel))
+        {
+            return GetParentKeyPartIndex(tableModel, column);
+        }
+
+        for (
+            var locatorIndex = 0;
+            locatorIndex < tableModel.IdentityMetadata.ImmediateParentScopeLocatorColumns.Count;
+            locatorIndex++
+        )
+        {
+            if (
+                tableModel
+                    .IdentityMetadata.ImmediateParentScopeLocatorColumns[locatorIndex]
+                    .Equals(column.ColumnName)
+            )
+            {
+                return locatorIndex;
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Column '{column.ColumnName.Value}' on table '{tableModel.Table}' is not in explicit immediate-parent locator order."
+        );
     }
 
     /// <summary>

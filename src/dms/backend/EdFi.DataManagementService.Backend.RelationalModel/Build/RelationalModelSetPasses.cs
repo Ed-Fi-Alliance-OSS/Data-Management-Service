@@ -14,9 +14,24 @@ public static class RelationalModelSetPasses
     /// Creates the default ordered pass list for deriving a <see cref="DerivedRelationalModelSet"/>.
     /// </summary>
     /// <returns>The ordered pass list.</returns>
-    public static IReadOnlyList<IRelationalModelSetPass> CreateDefault()
+    public static IReadOnlyList<IRelationalModelSetPass> CreateDefault() =>
+        CreatePasses(includeCollectionSemanticIdentityValidation: false);
+
+    /// <summary>
+    /// Creates the strict ordered pass list for deriving a <see cref="DerivedRelationalModelSet"/>.
+    /// </summary>
+    /// <returns>The ordered pass list.</returns>
+    public static IReadOnlyList<IRelationalModelSetPass> CreateStrict() =>
+        CreatePasses(includeCollectionSemanticIdentityValidation: true);
+
+    private static IReadOnlyList<IRelationalModelSetPass> CreatePasses(
+        bool includeCollectionSemanticIdentityValidation
+    )
     {
-        IRelationalModelSetPass[] passes =
+        IReadOnlyList<IRelationalModelSetPass> collectionSemanticIdentityValidationPasses =
+            includeCollectionSemanticIdentityValidation ? [new ValidateCollectionSemanticIdentityPass()] : [];
+
+        return
         [
             new BaseTraversalAndDescriptorBindingPass(),
             new DescriptorResourceMappingPass(),
@@ -27,7 +42,10 @@ public static class RelationalModelSetPasses
             new ValidateUnifiedAliasMetadataPass(),
             new RootIdentityConstraintPass(),
             new ReferenceConstraintPass(),
+            new SemanticIdentityCompilationPass(),
+            .. collectionSemanticIdentityValidationPasses,
             new ArrayUniquenessConstraintPass(),
+            new StableCollectionConstraintPass(),
             new DescriptorForeignKeyConstraintPass(),
             new ApplyConstraintDialectHashingPass(),
             new ValidateForeignKeyStorageInvariantPass(),
@@ -41,7 +59,5 @@ public static class RelationalModelSetPasses
             new ApplyDialectIdentifierShorteningPass(),
             new CanonicalizeOrderingPass(),
         ];
-
-        return passes;
     }
 }

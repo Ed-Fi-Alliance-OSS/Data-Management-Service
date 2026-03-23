@@ -27,6 +27,7 @@ Authorization objects remain out of scope.
 - `DMS-1044` — `02-plan-contracts-and-deterministic-bindings.md` — Plan contracts + deterministic bindings (parameter naming, ordering, compare metadata)
 - `DMS-1028` — `03-thin-slice-runtime-plan-compilation-and-cache.md` — Thin slice: runtime plan compilation + caching (root-only)
 - `DMS-1045` — `04-write-plan-compiler-collections-and-extensions.md` — Write-plan compilation for child/extension tables (initial replace-semantics baseline)
-- `DMS-1102` — `04b-stable-collection-merge-plans.md` — Retrofit write plans for stable-identity collection merge semantics
+- `DMS-1108` — `04b-stable-collection-merge-plans.md` — Retrofit write plans for stable-identity collection merge semantics
 - `DMS-1046` — `05-read-plan-compiler-hydration.md` — Read/hydration plan compilation (`SelectByKeysetSql`) for all tables
 - `DMS-1047` — `06-projection-plan-compilers.md` — Projection plan compilation (reference identity + descriptor URI)
+- `DMS-1109` — `startup-failure-status-surfacing.md` — Startup failure status surfacing

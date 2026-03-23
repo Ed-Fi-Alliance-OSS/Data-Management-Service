@@ -1,0 +1,123 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Ed-Fi",
+    "projectEndpointName": "ed-fi",
+    "projectVersion": "1.0.0",
+    "resourceSchemas": {
+      "schools": {
+        "resourceName": "School",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "documentPathsMapping": {
+          "SchoolId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.schoolId"
+          },
+          "AddressCity": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "path": "$.addresses[*].city"
+          },
+          "AddressPeriodName": {
+            "isReference": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "path": "$.addresses[*].periods[*].periodName"
+          }
+        },
+        "arrayUniquenessConstraints": [
+          {
+            "paths": [
+              "$.addresses[*].city"
+            ],
+            "nestedConstraints": [
+              {
+                "basePath": "$.addresses[*]",
+                "paths": [
+                  "$.periods[*].periodName"
+                ]
+              }
+            ]
+          }
+        ],
+        "decimalPropertyValidationInfos": [],
+        "identityJsonPaths": [
+          "$.schoolId"
+        ],
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "schoolId": {
+              "type": "integer"
+            },
+            "addresses": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string",
+                    "maxLength": 30
+                  },
+                  "periods": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "periodName": {
+                          "type": "string",
+                          "maxLength": 30
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": [
+            "schoolId"
+          ]
+        }
+      },
+      "programs": {
+        "resourceName": "Program",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "documentPathsMapping": {
+          "ProgramName": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.programName"
+          }
+        },
+        "arrayUniquenessConstraints": [],
+        "decimalPropertyValidationInfos": [],
+        "identityJsonPaths": [
+          "$.programName"
+        ],
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "programName": {
+              "type": "string",
+              "maxLength": 20
+            }
+          },
+          "required": [
+            "programName"
+          ]
+        }
+      }
+    }
+  }
+}

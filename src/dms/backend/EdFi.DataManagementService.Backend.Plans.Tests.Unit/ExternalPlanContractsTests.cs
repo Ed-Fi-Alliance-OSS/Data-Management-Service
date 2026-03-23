@@ -132,6 +132,64 @@ public class Given_ExternalPlanContracts
     }
 
     [Test]
+    public void It_should_expose_collection_key_preallocation_plan_for_collection_write_tables()
+    {
+        var tableModel = new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "SchoolAddress"),
+            new JsonPathExpression(
+                "$.addresses[*]",
+                [new JsonPathSegment.Property("addresses"), new JsonPathSegment.AnyArrayElement()]
+            ),
+            new TableKey(
+                "PK_SchoolAddress",
+                [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("CollectionItemId"),
+                    ColumnKind.CollectionKey,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            []
+        );
+
+        var tablePlan = new ExternalPlans.TableWritePlan(
+            TableModel: tableModel,
+            InsertSql: "INSERT SQL",
+            UpdateSql: null,
+            DeleteByParentSql: "DELETE SQL",
+            BulkInsertBatching: new ExternalPlans.BulkInsertBatchingInfo(100, 1, 2100),
+            ColumnBindings:
+            [
+                new ExternalPlans.WriteColumnBinding(
+                    Column: tableModel.Columns[0],
+                    Source: new ExternalPlans.WriteValueSource.Precomputed(),
+                    ParameterName: "collectionItemId"
+                ),
+            ],
+            KeyUnificationPlans: [],
+            CollectionKeyPreallocationPlan: new ExternalPlans.CollectionKeyPreallocationPlan(
+                ColumnName: new DbColumnName("CollectionItemId"),
+                BindingIndex: 0
+            )
+        );
+
+        tablePlan.CollectionKeyPreallocationPlan.Should().NotBeNull();
+        tablePlan
+            .CollectionKeyPreallocationPlan.Should()
+            .Be(
+                new ExternalPlans.CollectionKeyPreallocationPlan(
+                    ColumnName: new DbColumnName("CollectionItemId"),
+                    BindingIndex: 0
+                )
+            );
+    }
+
+    [Test]
     public void It_should_expose_keyset_table_contract_for_resource_read_plan()
     {
         var rootPath = new JsonPathExpression("$", []);

@@ -1754,12 +1754,18 @@ As a result, UNIQUE constraints fall into two distinct categories with different
 These are constraints whose purpose is to enforce API-visible uniqueness rules derived from ApiSchema:
 
 - root natural-key UNIQUE (derived from `identityJsonPaths`), and
-- collection element uniqueness UNIQUEs (derived from `arrayUniquenessConstraints`).
+- collection element uniqueness UNIQUEs (derived from compiled collection semantic identity, which itself comes from
+  scope-resolved `arrayUniquenessConstraints` for non-reference-backed scopes or from exactly one qualifying
+  scope-local `DocumentReferenceBinding` in `documentPathsMapping.referenceJsonPaths` order for supported
+  reference-backed scopes whose AUC-derived identity is empty).
 
 Normative rules:
 
 1. API-semantic UNIQUE constraints MUST be derived from JsonPath endpoint bindings (`DbColumnModel.SourceJsonPath`) and
    MUST use the **path/binding column names** (even when those columns are unified aliases).
+2. For reference-derived collection semantic identity members, the API-semantic UNIQUE MUST use the reference
+   `..._DocumentId` FK binding column, not propagated identity columns, and the member order MUST follow
+   `documentPathsMapping.referenceJsonPaths`.
 2. API-semantic UNIQUE constraints MUST NOT “collapse” or substitute member path columns with their canonical storage
    columns.
 

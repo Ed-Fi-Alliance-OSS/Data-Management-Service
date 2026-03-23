@@ -431,19 +431,22 @@ CREATE TABLE [sample].[SchoolExtension]
 IF OBJECT_ID(N'sample.SchoolExtensionAddress', N'U') IS NULL
 CREATE TABLE [sample].[SchoolExtensionAddress]
 (
+    [BaseCollectionItemId] bigint NOT NULL,
     [School_DocumentId] bigint NOT NULL,
-    [Ordinal] int NOT NULL,
     [AddressExtData] nvarchar(100) NULL,
-    CONSTRAINT [PK_SchoolExtensionAddress] PRIMARY KEY ([School_DocumentId], [Ordinal])
+    CONSTRAINT [PK_SchoolExtensionAddress] PRIMARY KEY ([BaseCollectionItemId])
 );
 
 IF OBJECT_ID(N'edfi.SchoolAddress', N'U') IS NULL
 CREATE TABLE [edfi].[SchoolAddress]
 (
-    [School_DocumentId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
+    [School_DocumentId] bigint NOT NULL,
     [Street] nvarchar(100) NOT NULL,
-    CONSTRAINT [PK_SchoolAddress] PRIMARY KEY ([School_DocumentId], [Ordinal])
+    CONSTRAINT [PK_SchoolAddress] PRIMARY KEY ([CollectionItemId]),
+    CONSTRAINT [UX_SchoolAddress_CollectionItemId_School_DocumentId] UNIQUE ([CollectionItemId], [School_DocumentId]),
+    CONSTRAINT [UX_SchoolAddress_Ordinal_School_DocumentId] UNIQUE ([School_DocumentId], [Ordinal])
 );
 
 IF NOT EXISTS (
@@ -474,8 +477,8 @@ IF NOT EXISTS (
 )
 ALTER TABLE [sample].[SchoolExtensionAddress]
 ADD CONSTRAINT [FK_SchoolExtensionAddress_SchoolAddress]
-FOREIGN KEY ([School_DocumentId], [Ordinal])
-REFERENCES [edfi].[SchoolAddress] ([School_DocumentId], [Ordinal])
+FOREIGN KEY ([BaseCollectionItemId], [School_DocumentId])
+REFERENCES [edfi].[SchoolAddress] ([CollectionItemId], [School_DocumentId])
 ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
@@ -489,6 +492,14 @@ FOREIGN KEY ([School_DocumentId])
 REFERENCES [edfi].[School] ([DocumentId])
 ON DELETE CASCADE
 ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'sample' AND t.name = N'SchoolExtensionAddress' AND i.name = N'IX_SchoolExtensionAddress_BaseCollectionItemId_School_DocumentId'
+)
+CREATE INDEX [IX_SchoolExtensionAddress_BaseCollectionItemId_School_DocumentId] ON [sample].[SchoolExtensionAddress] ([BaseCollectionItemId], [School_DocumentId]);
 
 GO
 CREATE OR ALTER TRIGGER [edfi].[TR_School_ReferentialIdentity]

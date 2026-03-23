@@ -196,6 +196,17 @@
             }
           ],
           "key_unification_classes": [],
+          "identity_metadata": {
+            "table_kind": "Root",
+            "physical_row_identity_columns": [
+              "DocumentId"
+            ],
+            "root_scope_locator_columns": [
+              "DocumentId"
+            ],
+            "immediate_parent_scope_locator_columns": [],
+            "semantic_identity_bindings": []
+          },
           "descriptor_fk_deduplications": [],
           "constraints": [
             {

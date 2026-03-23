@@ -358,6 +358,169 @@ public class Given_Extension_Table_Indexes
 }
 
 /// <summary>
+/// Test fixture for stable-key collection index derivation.
+/// </summary>
+[TestFixture]
+public class Given_Stable_Key_Collection_Indexes
+{
+    private IReadOnlyList<DbIndexInfo> _indexes = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildNestedArrayUniquenessProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder(
+            IndexInventoryTestSchemaBuilder.BuildPassesThroughStableKeyIndexDerivation()
+        );
+
+        _indexes = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules()).IndexesInCreateOrder;
+    }
+
+    /// <summary>
+    /// It should derive PK and stable-identity uniques for top-level collections.
+    /// </summary>
+    [Test]
+    public void It_should_derive_PK_and_stable_identity_uniques_for_top_level_collections()
+    {
+        var primaryKeyIndex = _indexes.Single(index =>
+            index.Table.Name == "BusRouteAddress" && index.Kind == DbIndexKind.PrimaryKey
+        );
+
+        primaryKeyIndex.KeyColumns.Select(column => column.Value).Should().Equal("CollectionItemId");
+
+        var uniqueIndexes = _indexes
+            .Where(index =>
+                index.Table.Name == "BusRouteAddress" && index.Kind == DbIndexKind.UniqueConstraint
+            )
+            .ToArray();
+
+        var uniqueIndexSignatures = uniqueIndexes
+            .Select(index => string.Join("|", index.KeyColumns.Select(column => column.Value)))
+            .ToArray();
+
+        uniqueIndexSignatures.Should().Contain("BusRoute_DocumentId|AddressType");
+        uniqueIndexSignatures.Should().Contain("BusRoute_DocumentId|Ordinal");
+        uniqueIndexSignatures.Should().Contain("CollectionItemId|BusRoute_DocumentId");
+    }
+
+    /// <summary>
+    /// It should suppress root-locator FK support indexes when stable-identity uniques already cover them.
+    /// </summary>
+    [Test]
+    public void It_should_suppress_root_locator_FK_support_indexes_when_stable_identity_uniques_cover_them()
+    {
+        _indexes
+            .Where(index =>
+                index.Table.Name == "BusRouteAddress"
+                && index.Kind == DbIndexKind.ForeignKeySupport
+                && index.KeyColumns.Select(column => column.Value).SequenceEqual(["BusRoute_DocumentId"])
+            )
+            .Should()
+            .BeEmpty();
+    }
+
+    /// <summary>
+    /// It should derive composite FK-support indexes for nested parent/root consistency.
+    /// </summary>
+    [Test]
+    public void It_should_derive_composite_FK_support_indexes_for_nested_parent_root_consistency()
+    {
+        var nestedUniqueIndexes = _indexes
+            .Where(index =>
+                index.Table.Name == "BusRouteAddressPeriod" && index.Kind == DbIndexKind.UniqueConstraint
+            )
+            .ToArray();
+
+        var nestedUniqueIndexSignatures = nestedUniqueIndexes
+            .Select(index => string.Join("|", index.KeyColumns.Select(column => column.Value)))
+            .ToArray();
+
+        nestedUniqueIndexSignatures.Should().Contain("ParentCollectionItemId|BeginDate");
+        nestedUniqueIndexSignatures.Should().Contain("ParentCollectionItemId|Ordinal");
+        nestedUniqueIndexSignatures.Should().Contain("CollectionItemId|BusRoute_DocumentId");
+
+        var compositeParentRootSupportIndex = _indexes.Single(index =>
+            index.Table.Name == "BusRouteAddressPeriod"
+            && index.Kind == DbIndexKind.ForeignKeySupport
+            && index
+                .KeyColumns.Select(column => column.Value)
+                .SequenceEqual(["ParentCollectionItemId", "BusRoute_DocumentId"])
+        );
+
+        compositeParentRootSupportIndex.IsUnique.Should().BeFalse();
+    }
+}
+
+/// <summary>
+/// Test fixture for collection-aligned extension-scope index derivation.
+/// </summary>
+[TestFixture]
+public class Given_Collection_Aligned_Extension_Scope_Indexes
+{
+    private IReadOnlyList<DbIndexInfo> _indexes = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema = IndexInventoryTestSchemaBuilder.BuildStableKeyExtensionCoreProjectSchema();
+        var extensionProjectSchema =
+            ExtensionTableTestSchemaBuilder.BuildSampleExtensionProjectSchemaWithBaseArrayUniquenessConstraints();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var extensionProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            extensionProjectSchema,
+            isExtensionProject: true
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([
+            coreProject,
+            extensionProject,
+        ]);
+        var builder = new DerivedRelationalModelSetBuilder(
+            IndexInventoryTestSchemaBuilder.BuildPassesThroughStableKeyIndexDerivation()
+        );
+
+        _indexes = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules()).IndexesInCreateOrder;
+    }
+
+    /// <summary>
+    /// It should derive PK and composite FK-support indexes for collection-aligned extension scopes.
+    /// </summary>
+    [Test]
+    public void It_should_derive_PK_and_composite_FK_support_indexes_for_collection_aligned_extension_scopes()
+    {
+        var primaryKeyIndex = _indexes.Single(index =>
+            index.Table.Name == "SchoolExtensionAddress" && index.Kind == DbIndexKind.PrimaryKey
+        );
+
+        primaryKeyIndex.KeyColumns.Select(column => column.Value).Should().Equal("BaseCollectionItemId");
+
+        var compositeParentRootSupportIndex = _indexes.Single(index =>
+            index.Table.Name == "SchoolExtensionAddress"
+            && index.Kind == DbIndexKind.ForeignKeySupport
+            && index
+                .KeyColumns.Select(column => column.Value)
+                .SequenceEqual(["BaseCollectionItemId", "School_DocumentId"])
+        );
+
+        compositeParentRootSupportIndex.IsUnique.Should().BeFalse();
+    }
+}
+
+/// <summary>
 /// Test fixture for long index name validation.
 /// </summary>
 [TestFixture]
@@ -1289,6 +1452,34 @@ internal static class IndexInventoryTestSchemaBuilder
     }
 
     /// <summary>
+    /// Build the current default pass list through index derivation, including stable-key metadata and
+    /// constraint passes.
+    /// </summary>
+    internal static IRelationalModelSetPass[] BuildPassesThroughStableKeyIndexDerivation()
+    {
+        return
+        [
+            new BaseTraversalAndDescriptorBindingPass(),
+            new DescriptorResourceMappingPass(),
+            new ExtensionTableDerivationPass(),
+            new ReferenceBindingPass(),
+            new KeyUnificationPass(),
+            new AbstractIdentityTableAndUnionViewDerivationPass(),
+            new ValidateUnifiedAliasMetadataPass(),
+            new RootIdentityConstraintPass(),
+            new ReferenceConstraintPass(),
+            new SemanticIdentityCompilationPass(),
+            new ValidateCollectionSemanticIdentityPass(),
+            new ArrayUniquenessConstraintPass(),
+            new StableCollectionConstraintPass(),
+            new DescriptorForeignKeyConstraintPass(),
+            new ApplyConstraintDialectHashingPass(),
+            new ValidateForeignKeyStorageInvariantPass(),
+            new DeriveIndexInventoryPass(),
+        ];
+    }
+
+    /// <summary>
     /// Build project schema with references (School, Student, Enrollment).
     /// </summary>
     internal static JsonObject BuildSchoolWithReferenceProjectSchema()
@@ -1344,6 +1535,68 @@ internal static class IndexInventoryTestSchemaBuilder
                     BuildStudentEducationOrganizationAssociationSchema(),
                 ["schools"] = BuildSchoolSchema(),
                 ["students"] = BuildStudentSchema(),
+            },
+        };
+    }
+
+    /// <summary>
+    /// Build a minimal School core project schema for collection-aligned extension index tests.
+    /// </summary>
+    internal static JsonObject BuildStableKeyExtensionCoreProjectSchema()
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["schoolId"] = new JsonObject { ["type"] = "integer", ["format"] = "int64" },
+                ["name"] = new JsonObject { ["type"] = "string", ["maxLength"] = 20 },
+                ["addresses"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["items"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["street"] = new JsonObject { ["type"] = "string", ["maxLength"] = 50 },
+                        },
+                    },
+                },
+            },
+            ["required"] = new JsonArray { "schoolId" },
+        };
+
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["schools"] = new JsonObject
+                {
+                    ["resourceName"] = "School",
+                    ["isDescriptor"] = false,
+                    ["isResourceExtension"] = false,
+                    ["isSubclass"] = false,
+                    ["allowIdentityUpdates"] = false,
+                    ["documentPathsMapping"] = new JsonObject
+                    {
+                        ["SchoolId"] = new JsonObject
+                        {
+                            ["isReference"] = false,
+                            ["isDescriptor"] = false,
+                            ["isPartOfIdentity"] = true,
+                            ["isRequired"] = true,
+                            ["path"] = "$.schoolId",
+                        },
+                    },
+                    ["arrayUniquenessConstraints"] = new JsonArray(),
+                    ["decimalPropertyValidationInfos"] = new JsonArray(),
+                    ["identityJsonPaths"] = new JsonArray { "$.schoolId" },
+                    ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+                },
             },
         };
     }

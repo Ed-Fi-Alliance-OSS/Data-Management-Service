@@ -238,11 +238,14 @@ Related redesign discussion:
    - nested descendants and extension scope rows attach through stable base identities rather than ordinals.
 
 2. **Compiled semantic collection identity**
-   - for a persisted multi-item collection scope, the compiled semantic identity is the non-empty ordered member set resolved for that scope from the applicable `resourceSchema.arrayUniquenessConstraints` entry after scope resolution and path-to-column binding,
+   - for a persisted multi-item collection scope, the compiled semantic identity is the non-empty ordered member set compiled from exactly one of two schema sources after scope resolution and path-to-column binding:
+     - non-reference-backed scopes use the applicable `resourceSchema.arrayUniquenessConstraints` entry, and
+     - reference-backed scopes whose AUC-derived identity is still empty use exactly one qualifying scope-local `DocumentReferenceBinding` in `documentPathsMapping.referenceJsonPaths` order, with every compiled member bound to the reference `..._DocumentId` FK column rather than to propagated identity columns,
    - runtime merge behavior uses `(ParentScope, SemanticIdentity)` rather than blanket delete/reinsert,
+   - collection semantic-identity UNIQUE constraints are derived from that compiled identity rather than from raw `arrayUniquenessConstraints` alone,
    - DMS does not synthesize fallback collection identity from `Ordinal`, `CollectionItemId`, or a parent-only locator,
    - the supported DMS boundary is valid MetaEd-generated models with the relevant validator set applied; for common-backed collections this relies on validators such as `CommonPropertyCollectionTargetMustContainIdentity`, while `CommonPropertyMustNotContainIdentity` keeps the collection property itself out of the parent identity, and
-   - if compilation cannot derive that non-empty semantic identity for a persisted multi-item collection scope, validation/compilation MUST fail before runtime write execution.
+   - if compilation cannot derive that non-empty semantic identity for a persisted multi-item collection scope from either schema source, validation/compilation MUST fail before runtime write execution.
 
 3. **Root and parent scope locators**
    - every collection table stores the root `..._DocumentId`,

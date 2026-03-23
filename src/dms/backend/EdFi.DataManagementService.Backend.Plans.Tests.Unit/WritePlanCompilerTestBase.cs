@@ -12,6 +12,11 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
 public abstract class WritePlanCompilerTestBase
 {
+    private const string CollectionsNestedExtensionFixturePath =
+        "Fixtures/runtime-plan-compilation/collections-nested-extension/fixture.manifest.json";
+    private const string FocusedStableKeyFixturePath =
+        "Fixtures/runtime-plan-compilation/focused-stable-key/positive/extension-child-collections/fixture.manifest.json";
+    private static readonly QualifiedResourceName _schoolResource = new("Ed-Fi", "School");
     protected RelationalResourceModel _supportedRootOnlyModel = null!;
 
     [SetUp]
@@ -1502,6 +1507,60 @@ public abstract class WritePlanCompilerTestBase
     protected static JsonPathExpression CreatePath(string canonical, params JsonPathSegment[] segments)
     {
         return new JsonPathExpression(canonical, segments);
+    }
+
+    protected static RelationalResourceModel CreateCollectionsNestedExtensionFixtureResourceModel(
+        SqlDialect dialect
+    )
+    {
+        var modelSet = RuntimePlanFixtureModelSetBuilder.Build(
+            CollectionsNestedExtensionFixturePath,
+            dialect,
+            reverseResourceSchemaOrder: false,
+            reverseFixtureInputOrder: false
+        );
+
+        return modelSet
+            .ConcreteResourcesInNameOrder.Single(resource => resource.ResourceKey.Resource == _schoolResource)
+            .RelationalModel;
+    }
+
+    protected static TableWritePlan CompileCollectionsNestedExtensionFixtureTablePlan(
+        SqlDialect dialect,
+        string tableName
+    )
+    {
+        return new WritePlanCompiler(dialect)
+            .Compile(CreateCollectionsNestedExtensionFixtureResourceModel(dialect))
+            .TablePlansInDependencyOrder.Single(tablePlan =>
+                string.Equals(tablePlan.TableModel.Table.Name, tableName, StringComparison.Ordinal)
+            );
+    }
+
+    protected static RelationalResourceModel CreateFocusedStableKeyFixtureResourceModel(SqlDialect dialect)
+    {
+        var modelSet = RuntimePlanFixtureModelSetBuilder.Build(
+            FocusedStableKeyFixturePath,
+            dialect,
+            reverseResourceSchemaOrder: false,
+            reverseFixtureInputOrder: false
+        );
+
+        return modelSet
+            .ConcreteResourcesInNameOrder.Single(resource => resource.ResourceKey.Resource == _schoolResource)
+            .RelationalModel;
+    }
+
+    protected static TableWritePlan CompileFocusedStableKeyFixtureTablePlan(
+        SqlDialect dialect,
+        string tableName
+    )
+    {
+        return new WritePlanCompiler(dialect)
+            .Compile(CreateFocusedStableKeyFixtureResourceModel(dialect))
+            .TablePlansInDependencyOrder.Single(tablePlan =>
+                string.Equals(tablePlan.TableModel.Table.Name, tableName, StringComparison.Ordinal)
+            );
     }
 
     protected static string CreateWritePlanFingerprint(ResourceWritePlan plan)

@@ -218,6 +218,59 @@ public class Given_A_Contact_Model_Set_With_Extension_When_Emitting_Manifest
         detailedManifest.Should().Contain("\"descriptor_edge_sources\":");
         detailedManifest.Should().Contain("\"extension_sites\":");
     }
+
+    [Test]
+    public void It_should_emit_identity_metadata_in_resource_details_tables()
+    {
+        var coreSchema = CommonInventoryTestSchemaBuilder.BuildExtensionCoreProjectSchema();
+        var extensionSchema = CommonInventoryTestSchemaBuilder.BuildExtensionProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreSchema,
+            isExtensionProject: false
+        );
+        var extensionProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            extensionSchema,
+            isExtensionProject: true
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([
+            coreProject,
+            extensionProject,
+        ]);
+        var builder = new DerivedRelationalModelSetBuilder(RelationalModelSetPasses.CreateDefault());
+        var derivedSet = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        var detailedManifest = DerivedModelSetManifestEmitter.Emit(
+            derivedSet,
+            new HashSet<QualifiedResourceName> { new("Ed-Fi", "Contact") }
+        );
+        var root =
+            JsonNode.Parse(detailedManifest) as JsonObject
+            ?? throw new InvalidOperationException("Expected manifest to be a JSON object.");
+        var resourceDetails =
+            root["resource_details"] as JsonArray
+            ?? throw new InvalidOperationException("Expected resource_details to be a JSON array.");
+        var resourceDetail =
+            resourceDetails.Should().ContainSingle().Subject as JsonObject
+            ?? throw new InvalidOperationException("Expected resource detail to be a JSON object.");
+        var tables =
+            resourceDetail["tables"] as JsonArray
+            ?? throw new InvalidOperationException("Expected tables to be a JSON array.");
+
+        tables.Should().NotBeEmpty();
+
+        foreach (var table in tables)
+        {
+            var identityMetadata =
+                table?["identity_metadata"] as JsonObject
+                ?? throw new InvalidOperationException("Expected identity_metadata to be a JSON object.");
+
+            identityMetadata["table_kind"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
+            identityMetadata["physical_row_identity_columns"].Should().NotBeNull();
+            identityMetadata["root_scope_locator_columns"].Should().NotBeNull();
+            identityMetadata["immediate_parent_scope_locator_columns"].Should().NotBeNull();
+            identityMetadata["semantic_identity_bindings"].Should().NotBeNull();
+        }
+    }
 }
 
 [TestFixture]

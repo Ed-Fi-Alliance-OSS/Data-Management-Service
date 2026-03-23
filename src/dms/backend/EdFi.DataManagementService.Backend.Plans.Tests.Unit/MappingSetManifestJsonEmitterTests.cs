@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -850,6 +851,23 @@ public class Given_MappingSetManifestJsonEmitter
         var batching = RequireObject(tablePlan["bulk_insert_batching"], "bulk_insert_batching");
         var columnBindings = RequireArray(tablePlan["column_bindings_in_order"], "column_bindings_in_order");
         var keyUnificationPlans = RequireArray(tablePlan["key_unification_plans"], "key_unification_plans");
+        var collectionKeyPreallocationPlan = tablePlan["collection_key_preallocation_plan"];
+
+        if (collectionKeyPreallocationPlan is not null)
+        {
+            if (collectionKeyPreallocationPlan is JsonObject collectionKeyPreallocationObject)
+            {
+                _ = RequireString(collectionKeyPreallocationObject, "column_name");
+                _ = RequireInt(collectionKeyPreallocationObject, "binding_index");
+            }
+            else
+            {
+                collectionKeyPreallocationPlan
+                    .Should()
+                    .BeOfType<JsonValue>("collection_key_preallocation_plan should be an object or null");
+                collectionKeyPreallocationPlan.GetValueKind().Should().Be(JsonValueKind.Null);
+            }
+        }
 
         // Validate key-unification member metadata shape while building summary.
         foreach (var keyUnificationPlanNode in keyUnificationPlans)

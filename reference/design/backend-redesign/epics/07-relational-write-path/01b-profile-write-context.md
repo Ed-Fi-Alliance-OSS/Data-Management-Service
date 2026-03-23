@@ -1,3 +1,8 @@
+---
+jira: DMS-1106
+jira_url: https://edfi.atlassian.net/browse/DMS-1106
+---
+
 # Story: Integrate the Core/Backend Profile Write Contract
 
 ## Description

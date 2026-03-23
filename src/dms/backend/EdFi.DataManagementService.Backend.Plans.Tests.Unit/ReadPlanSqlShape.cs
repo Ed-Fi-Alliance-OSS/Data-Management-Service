@@ -13,6 +13,12 @@ internal static class ReadPlanSqlShape
     public static IReadOnlyList<string> ExtractOrderByColumnNames(string sql) =>
         ExtractOrderByColumnExpressions(sql).Select(ExtractQualifiedColumnName).ToArray();
 
+    public static string ExtractJoinLeftColumnName(string sql) =>
+        ExtractQualifiedColumnName(ExtractJoinConditionExpressions(sql).LeftExpression);
+
+    public static string ExtractJoinRightColumnName(string sql) =>
+        ExtractQualifiedColumnName(ExtractJoinConditionExpressions(sql).RightExpression);
+
     public static IReadOnlyList<string> ExtractSelectedColumnExpressions(string sql) =>
         ExtractSqlSectionExpressions(sql, "SELECT", "FROM");
 
@@ -40,6 +46,33 @@ internal static class ReadPlanSqlShape
             .Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
         return relationTokens[^1];
+    }
+
+    private static (string LeftExpression, string RightExpression) ExtractJoinConditionExpressions(string sql)
+    {
+        var joinLine = sql.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(static segment => segment.Trim())
+            .Single(segment => segment.StartsWith("INNER JOIN ", StringComparison.Ordinal));
+        var onClauseIndex = joinLine.IndexOf(" ON ", StringComparison.Ordinal);
+
+        if (onClauseIndex <= 0)
+        {
+            throw new InvalidOperationException(
+                $"Hydration SQL join line is missing an ON clause: '{joinLine}'."
+            );
+        }
+
+        var joinCondition = joinLine[(onClauseIndex + " ON ".Length)..];
+        var conditionParts = joinCondition.Split(" = ", StringSplitOptions.RemoveEmptyEntries);
+
+        if (conditionParts.Length != 2)
+        {
+            throw new InvalidOperationException(
+                $"Hydration SQL join line has unsupported join condition shape: '{joinLine}'."
+            );
+        }
+
+        return (conditionParts[0], conditionParts[1]);
     }
 
     private static IReadOnlyList<string> ExtractSqlSectionExpressions(

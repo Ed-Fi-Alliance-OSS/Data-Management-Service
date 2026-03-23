@@ -188,6 +188,15 @@ internal static class MappingSetManifestJsonEmitter
         }
 
         writer.WriteEndArray();
+        if (tablePlan.CollectionKeyPreallocationPlan is not null)
+        {
+            writer.WritePropertyName("collection_key_preallocation_plan");
+            writer.WriteStartObject();
+            writer.WriteString("column_name", tablePlan.CollectionKeyPreallocationPlan.ColumnName.Value);
+            writer.WriteNumber("binding_index", tablePlan.CollectionKeyPreallocationPlan.BindingIndex);
+            writer.WriteEndObject();
+        }
+
         writer.WritePropertyName("key_unification_plans");
         writer.WriteStartArray();
 
@@ -535,6 +544,7 @@ internal static class MappingSetManifestJsonEmitter
             ColumnKind.DocumentFk => "document_fk",
             ColumnKind.DescriptorFk => "descriptor_fk",
             ColumnKind.Ordinal => "ordinal",
+            ColumnKind.CollectionKey => "collection_key",
             ColumnKind.ParentKeyPart => "parent_key_part",
             _ => throw new ArgumentOutOfRangeException(
                 nameof(columnKind),

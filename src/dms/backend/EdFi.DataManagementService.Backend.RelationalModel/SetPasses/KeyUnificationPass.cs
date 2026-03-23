@@ -30,7 +30,7 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
 
         var baseResourcesByName = SetPassHelpers.BuildExtensionBaseResourceLookup(
             context,
-            static (index, model) => new BaseResourceEntry(index, model)
+            static (index, model) => new ResourceEntry(index, model)
         );
         var resourceIndexByKey = context
             .ConcreteResourcesInNameOrder.Select(
@@ -106,7 +106,7 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
     private static int ResolveConcreteResourceIndex(
         ConcreteResourceSchemaContext resourceContext,
         QualifiedResourceName resource,
-        IReadOnlyDictionary<string, List<BaseResourceEntry>> baseResourcesByName,
+        IReadOnlyDictionary<string, List<ResourceEntry>> baseResourcesByName,
         IReadOnlyDictionary<QualifiedResourceName, int> resourceIndexByKey
     )
     {

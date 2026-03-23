@@ -1,3 +1,8 @@
+---
+jira: DMS-1103
+jira_url: https://edfi.atlassian.net/browse/DMS-1103
+---
+
 # Story: Derive Stable Collection Row Identity and Parent-Scope Keys
 
 ## Description
@@ -44,7 +49,10 @@ This story updates the derived model to the new collection-key strategy:
   - sibling-order uniqueness on `(ParentScope, Ordinal)`,
   - semantic collection identity uniqueness separate from the PK, and
   - nested parent/root consistency via `(ParentCollectionItemId, RootDocumentId)` foreign keys.
-- For each persisted multi-item collection scope, the derived model exposes the compiled semantic identity as the non-empty ordered member set resolved from the applicable `arrayUniquenessConstraints` entry for that scope; it does not fall back to ordinals or parent-only locators.
+- For each persisted multi-item collection scope, the derived model exposes the compiled semantic identity as the non-empty ordered member set compiled from exactly one of two sources:
+  - non-reference-backed scopes compile from the applicable scope-resolved `arrayUniquenessConstraints` member set, and
+  - reference-backed scopes whose AUC-derived identity is still empty compile from exactly one qualifying scope-local `DocumentReferenceBinding` in `documentPathsMapping.referenceJsonPaths` order, binding every member to the reference `..._DocumentId` FK column rather than to propagated identity columns.
+- Collection semantic-identity UNIQUE constraints derive from that compiled semantic identity, not from raw `arrayUniquenessConstraints` entries alone, and the model does not fall back to ordinals or parent-only locators.
 - Collection/common-type extension scope tables align to the owning base row identity:
   - root-scope extension rows remain keyed by `DocumentId`,
   - collection/common-type extension scope rows are keyed by the base row `CollectionItemId`,
@@ -57,8 +65,9 @@ This story updates the derived model to the new collection-key strategy:
   - preserve matched row identity across write-time merges,
   - distinguish physical row identity from sibling ordering, and
   - derive read/write plans without reconstructing parent-ordinal keys.
-- Persisted multi-item collection scopes fail validation/compilation when the applicable `arrayUniquenessConstraints` metadata does not yield a non-empty semantic identity.
-- The supported-model boundary is explicit: valid MetaEd-generated models with the relevant validator set applied are expected to supply collection identity semantics up front; this story does not introduce a fallback identity contract for out-of-bound models.
+- The shared/default relational-model pipeline remains permissive: it compiles semantic-identity metadata and downstream stable-identity constraints when metadata exists, but it does not universally reject generic or out-of-bound fixtures solely because a persisted multi-item scope lacks compiled semantic identity.
+- Supported-model/runtime-boundary callers that opt into the strict pipeline fail validation/compilation when neither scope-resolved `arrayUniquenessConstraints` nor the reference-backed `referenceJsonPaths` rule yields a non-empty semantic identity.
+- The supported-model boundary is explicit: valid MetaEd-generated models with the relevant validator set applied are expected to supply collection identity semantics up front; this story introduces the strict validation capability for those boundaries without introducing a fallback identity contract for out-of-bound models or re-globalizing validation into every shared compile path.
 
 ### Verification
 
@@ -71,5 +80,5 @@ This story updates the derived model to the new collection-key strategy:
 2. Update extension table derivation so collection/common-type extension scopes align to base-row stable identity instead of ancestor ordinals.
 3. Derive the new PK/UK/FK inventories for stable collection identity, sibling ordering, and parent/root consistency.
 4. Expose stable-identity metadata needed by downstream DDL, plan-compilation, and read-path consumers.
-5. Add or align validation so persisted multi-item collection scopes fail when their applicable `arrayUniquenessConstraints` metadata does not compile a non-empty semantic identity, rather than falling back to ordinals or parent-only locators.
+5. Add or align strict validation so supported-model/runtime-boundary compilation fails when neither the applicable `arrayUniquenessConstraints` metadata nor the reference-backed `referenceJsonPaths` rule compiles a non-empty semantic identity, rather than falling back to ordinals or parent-only locators; keep the shared/default pipeline permissive for generic compile paths.
 6. Update unit tests, manifests, and authoritative goldens for representative nested-collection and `_ext` fixtures.

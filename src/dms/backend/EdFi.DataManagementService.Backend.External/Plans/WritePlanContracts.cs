@@ -73,8 +73,13 @@ public sealed record TableWritePlan
     /// <param name="ColumnBindings">
     /// Stored/writable column bindings in authoritative parameter/value order.
     /// </param>
+    /// <param name="CollectionKeyPreallocationPlan">
+    /// Optional table-local precompute plan that reserves stable collection-row identities for
+    /// <see cref="ColumnKind.CollectionKey" /> bindings before insert DML executes.
+    /// </param>
     /// <param name="KeyUnificationPlans">
-    /// Per-table key-unification precompute plans that populate <see cref="WriteValueSource.Precomputed" /> bindings.
+    /// Per-table key-unification precompute plans that populate key-unification-specific
+    /// <see cref="WriteValueSource.Precomputed" /> bindings.
     /// </param>
     public TableWritePlan(
         DbTableModel TableModel,
@@ -83,7 +88,8 @@ public sealed record TableWritePlan
         string? DeleteByParentSql,
         BulkInsertBatchingInfo BulkInsertBatching,
         IEnumerable<WriteColumnBinding> ColumnBindings,
-        IEnumerable<KeyUnificationWritePlan> KeyUnificationPlans
+        IEnumerable<KeyUnificationWritePlan> KeyUnificationPlans,
+        CollectionKeyPreallocationPlan? CollectionKeyPreallocationPlan = null
     )
     {
         this.TableModel = PlanContractArgumentValidator.RequireNotNull(TableModel, nameof(TableModel));
@@ -98,6 +104,7 @@ public sealed record TableWritePlan
             ColumnBindings,
             nameof(ColumnBindings)
         );
+        this.CollectionKeyPreallocationPlan = CollectionKeyPreallocationPlan;
         this.KeyUnificationPlans = PlanContractArgumentValidator.RequireImmutableArray(
             KeyUnificationPlans,
             nameof(KeyUnificationPlans)
@@ -149,7 +156,13 @@ public sealed record TableWritePlan
     public ImmutableArray<WriteColumnBinding> ColumnBindings { get; init; }
 
     /// <summary>
-    /// Key-unification precompute plans that populate <see cref="WriteValueSource.Precomputed" /> bindings deterministically.
+    /// Optional collection-key preallocation metadata for table-local stable row-identity reservation.
+    /// </summary>
+    public CollectionKeyPreallocationPlan? CollectionKeyPreallocationPlan { get; init; }
+
+    /// <summary>
+    /// Key-unification precompute plans that populate key-unification-specific
+    /// <see cref="WriteValueSource.Precomputed" /> bindings deterministically.
     /// </summary>
     public ImmutableArray<KeyUnificationWritePlan> KeyUnificationPlans { get; init; }
 }
@@ -173,6 +186,15 @@ public sealed record BulkInsertBatchingInfo(
 /// <param name="Source">The source used to populate the bound value.</param>
 /// <param name="ParameterName">The bare SQL parameter name (without <c>@</c>).</param>
 public sealed record WriteColumnBinding(DbColumnModel Column, WriteValueSource Source, string ParameterName);
+
+/// <summary>
+/// Table-local precompute metadata for reserving stable collection-row identities.
+/// </summary>
+/// <param name="ColumnName">The <see cref="ColumnKind.CollectionKey" /> column receiving the reserved value.</param>
+/// <param name="BindingIndex">
+/// Binding index in <see cref="TableWritePlan.ColumnBindings" /> for the precomputed collection key.
+/// </param>
+public sealed record CollectionKeyPreallocationPlan(DbColumnName ColumnName, int BindingIndex);
 
 /// <summary>
 /// Discriminated union describing where a write-time column value comes from.
@@ -227,7 +249,8 @@ public abstract record WriteValueSource
     ) : WriteValueSource;
 
     /// <summary>
-    /// Value is populated by precompute logic (for example key-unification).
+    /// Value is populated by table-local precompute logic (for example collection-key preallocation or
+    /// key-unification).
     /// </summary>
     public sealed record Precomputed : WriteValueSource;
 }

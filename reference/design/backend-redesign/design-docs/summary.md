@@ -113,9 +113,20 @@ For each project, create a physical schema derived from `ProjectEndpointName` (e
     - nested collections additionally store `ParentCollectionItemId`,
     - nested collections keep the denormalized root scope consistent via a composite FK from `(ParentCollectionItemId, ..._DocumentId)` to the parent collection row.
   - `Ordinal` preserves array order for reconstitution and is constrained uniquely within the parent scope.
-  - `arrayUniquenessConstraints` are the authoritative schema metadata for collection semantic identity and relational unique constraints.
-  - For a persisted multi-item collection scope, the compiled semantic identity is the non-empty ordered member set resolved for that scope from `arrayUniquenessConstraints`; DMS does not fall back to ordinals, parent-only locators, or hidden/internal row ids.
-  - The supported DMS boundary is valid MetaEd-generated models with the relevant validator set applied. If such a scope still cannot produce a non-empty compiled identity, validation/compilation fails before runtime write execution.
+  - `arrayUniquenessConstraints` are the authoritative schema metadata for non-reference collection semantic identity and
+    the first collection semantic-identity source considered during compilation.
+  - For a persisted multi-item collection scope, the compiled semantic identity is the non-empty ordered member set
+    compiled from exactly one of two sources:
+    - non-reference-backed scopes use scope-resolved `arrayUniquenessConstraints`, and
+    - reference-backed scopes whose AUC-derived identity is still empty use exactly one qualifying scope-local
+      `DocumentReferenceBinding` in `documentPathsMapping.referenceJsonPaths` order, with every compiled member bound
+      to the reference `..._DocumentId` FK column rather than to propagated identity columns.
+  - Collection semantic-identity UNIQUE constraints derive from that compiled identity rather than from raw
+    `arrayUniquenessConstraints` entries alone, and DMS does not fall back to ordinals, parent-only locators, or
+    hidden/internal row ids.
+  - The supported DMS boundary is valid MetaEd-generated models with the relevant validator set applied. If such a
+    scope still cannot produce a non-empty compiled identity from either source, validation/compilation fails before
+    runtime write execution.
 
 - Abstract identity artifacts:
   - `{schema}.{AbstractResource}Identity` tables provide FK targets for polymorphic references with cascade support.

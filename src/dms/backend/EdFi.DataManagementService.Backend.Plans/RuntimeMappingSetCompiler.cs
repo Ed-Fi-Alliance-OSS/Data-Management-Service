@@ -52,7 +52,9 @@ public sealed class RuntimeMappingSetCompiler(
         }
 
         var derivedModelSet = new DerivedRelationalModelSetBuilder(
-            RelationalModelSetPasses.CreateDefault()
+            // Runtime plan compilation is the first executable boundary that
+            // requires non-empty collection semantic identity metadata.
+            RelationalModelSetPasses.CreateStrict()
         ).Build(CloneEffectiveSchemaSet(effectiveSchemaSet), dialect, dialectRules);
 
         return Task.FromResult(mappingSetCompiler.Compile(derivedModelSet));

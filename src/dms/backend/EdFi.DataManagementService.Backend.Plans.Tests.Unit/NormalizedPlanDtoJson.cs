@@ -135,6 +135,20 @@ internal static class NormalizedPlanDtoJson
             }
             writer.WriteEndArray();
 
+            writer.WritePropertyName("collection_key_preallocation_plan");
+
+            if (tablePlan.CollectionKeyPreallocationPlan is null)
+            {
+                writer.WriteNullValue();
+            }
+            else
+            {
+                writer.WriteStartObject();
+                writer.WriteString("column_name", tablePlan.CollectionKeyPreallocationPlan.ColumnName);
+                writer.WriteNumber("binding_index", tablePlan.CollectionKeyPreallocationPlan.BindingIndex);
+                writer.WriteEndObject();
+            }
+
             writer.WritePropertyName("key_unification_plans");
             writer.WriteStartArray();
             foreach (var plan in tablePlan.KeyUnificationPlans)

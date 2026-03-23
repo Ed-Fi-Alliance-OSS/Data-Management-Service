@@ -58,7 +58,9 @@ For Ed-Fi resource documents, DMS can derive a complete relational mapping *dete
 2. **References vs scalars** are in `documentPathsMapping`:
    - document reference identities and their JSON paths (`referenceJsonPaths`)
    - descriptor paths (`path`)
-3. **Identity + uniqueness** is in `identityJsonPaths` and `arrayUniquenessConstraints`.
+3. **Identity + uniqueness** is in `identityJsonPaths`, `arrayUniquenessConstraints`, and
+   `documentPathsMapping.referenceJsonPaths` for the reference-backed persisted collection scopes that use the
+   reference-derived semantic-identity rule.
 
 So the only metadata that truly must be added is:
 - deterministic naming overrides (collisions/length/reserved words)
@@ -233,13 +235,23 @@ Note: C# types referenced below are defined in [7.3 Relational resource model](#
      - identity elements that come from document references map to the corresponding `..._DocumentId` FK columns
    - `dms.ReferentialIdentity` is the primary identity resolver for all resources (including reference-bearing identities), and must be maintained transactionally (including cascades) so `ReferentialId → DocumentId` is never stale after commit.
 
-5. Apply `arrayUniquenessConstraints`:
-   - create UNIQUE constraints on child tables based on the specified JSONPaths (mapped to columns)
-   - for each persisted multi-item collection scope, compile the semantic match identity from the applicable `arrayUniquenessConstraints` member set resolved to that scope; the compiled identity is the resulting non-empty ordered list of scope-relative bindings
-   - DMS does not synthesize collection identity from `Ordinal`, `CollectionItemId`, or a parent-only locator when that metadata is absent
-   - raw `arrayUniquenessConstraints` metadata may be empty only when no persisted multi-item collection scope in the effective schema requires semantic matching
-   - the supported DMS boundary is valid MetaEd-generated models with the relevant validator set applied; for example, common-backed collections rely on validators such as `CommonPropertyCollectionTargetMustContainIdentity` to ensure the target common exposes identity members
-   - if any persisted multi-item collection scope still cannot produce a non-empty semantic identity after that derivation, validation/compilation MUST fail before runtime merge execution
+5. Apply collection semantic-identity inputs:
+   - resolve `arrayUniquenessConstraints` into scope-relative bindings for persisted multi-item collection scopes
+   - if a persisted multi-item collection/common-type/extension-collection scope is still empty after that step and is
+     reference-backed, compile semantic identity from exactly one qualifying scope-local `DocumentReferenceBinding`
+     using `documentPathsMapping.referenceJsonPaths` order and bind every emitted member to the reference
+     `..._DocumentId` FK column rather than to propagated identity columns
+   - derive child-table API-semantic UNIQUE constraints from the compiled semantic identity rather than from raw
+     `arrayUniquenessConstraints` entries alone
+   - DMS does not synthesize collection identity from `Ordinal`, `CollectionItemId`, or a parent-only locator when
+     neither schema source yields a non-empty compiled identity
+   - raw `arrayUniquenessConstraints` metadata may be empty only when no non-reference persisted multi-item collection
+     scope in the effective schema requires semantic matching
+   - the supported DMS boundary is valid MetaEd-generated models with the relevant validator set applied; for example,
+     common-backed collections rely on validators such as `CommonPropertyCollectionTargetMustContainIdentity` to
+     ensure the target common exposes identity members
+   - if any persisted multi-item collection scope still cannot produce a non-empty semantic identity after both schema
+     sources are considered, validation/compilation MUST fail before runtime merge execution
 
 6. Apply naming rules + `nameOverrides`:
    - resolve all table and column names deterministically
@@ -264,7 +276,7 @@ To preserve stable row identity across profile-scoped merges, nested descendants
 - Nested collection parent scope: `ParentCollectionItemId`
 - Nested parent/root consistency: `(ParentCollectionItemId, <Root>_DocumentId)` → parent `(CollectionItemId, <Root>_DocumentId)`
 - Sibling order: unique `(ParentScope, Ordinal)`
-- Semantic match identity: unique `(ParentScope, <compiled collection identity...>)`; `<compiled collection identity...>` is the non-empty ordered member set derived from the applicable `arrayUniquenessConstraints` entry for that scope, and DMS does not fall back to `Ordinal`, `CollectionItemId`, or parent-only matching when that metadata is missing
+- Semantic match identity: unique `(ParentScope, <compiled collection identity...>)`; `<compiled collection identity...>` is the non-empty ordered member set compiled from either the applicable scope-resolved `arrayUniquenessConstraints` entry or, for supported reference-backed scopes whose AUC-derived identity is empty, exactly one scope-local reference binding in `documentPathsMapping.referenceJsonPaths` order. Reference-derived members bind to the reference `..._DocumentId` FK column, and DMS does not fall back to `Ordinal`, `CollectionItemId`, or parent-only matching when neither source yields identity.
 
 Example:
 

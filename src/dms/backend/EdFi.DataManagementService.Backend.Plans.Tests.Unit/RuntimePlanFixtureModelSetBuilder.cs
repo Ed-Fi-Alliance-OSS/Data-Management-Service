@@ -25,6 +25,28 @@ internal static class RuntimePlanFixtureModelSetBuilder
         return Build(fixtureRelativePath, dialect, reverseResourceSchemaOrder: false);
     }
 
+    public static EffectiveSchemaSet CreateEffectiveSchemaSet(string fixtureRelativePath)
+    {
+        return CreateEffectiveSchemaSet(
+            fixtureRelativePath,
+            reverseResourceSchemaOrder: false,
+            reverseFixtureInputOrder: false
+        );
+    }
+
+    public static EffectiveSchemaSet CreateEffectiveSchemaSet(
+        string fixtureRelativePath,
+        bool reverseResourceSchemaOrder,
+        bool reverseFixtureInputOrder
+    )
+    {
+        return LoadEffectiveSchemaSet(
+            fixtureRelativePath,
+            reverseResourceSchemaOrder,
+            reverseFixtureInputOrder
+        );
+    }
+
     public static DerivedRelationalModelSet Build(
         string fixtureRelativePath,
         SqlDialect dialect,

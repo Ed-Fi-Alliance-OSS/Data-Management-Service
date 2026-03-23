@@ -61,10 +61,10 @@ public class Given_Relational_NameOverrides
     }
 
     /// <summary>
-    /// It should apply collection overrides to table and parent ordinal names.
+    /// It should apply collection overrides to table names while preserving reserved stable locator columns.
     /// </summary>
     [Test]
-    public void It_should_apply_collection_overrides_to_table_and_parent_ordinal_names()
+    public void It_should_apply_collection_overrides_to_table_names_while_preserving_reserved_stable_locator_columns()
     {
         var tableNames = _model.TablesInDependencyOrder.Select(table => table.Table.Name).ToArray();
 
@@ -74,9 +74,9 @@ public class Given_Relational_NameOverrides
         var nestedTable = _model.TablesInDependencyOrder.Single(table =>
             table.Table.Name == "PersonSiteWindow"
         );
-        var keyColumns = nestedTable.Key.Columns.Select(column => column.ColumnName.Value).ToArray();
+        var columnNames = nestedTable.Columns.Select(column => column.ColumnName.Value).ToArray();
 
-        keyColumns.Should().Contain("SiteOrdinal");
+        columnNames.Should().Contain("ParentCollectionItemId");
     }
 }
 
@@ -121,9 +121,9 @@ public class Given_A_Collection_NameOverride_With_Missing_Descendant_Override
         var nestedTable = _model.TablesInDependencyOrder.Single(table =>
             table.Table.Name == "PersonSitePeriod"
         );
-        var keyColumns = nestedTable.Key.Columns.Select(column => column.ColumnName.Value).ToArray();
+        var columnNames = nestedTable.Columns.Select(column => column.ColumnName.Value).ToArray();
 
-        keyColumns.Should().Contain("SiteOrdinal");
+        columnNames.Should().Contain("ParentCollectionItemId");
     }
 }
 

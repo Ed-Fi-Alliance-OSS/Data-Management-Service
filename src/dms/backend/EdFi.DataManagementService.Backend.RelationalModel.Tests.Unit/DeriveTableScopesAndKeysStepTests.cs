@@ -73,28 +73,12 @@ public class Given_A_JsonSchema_With_Nested_Collections
         _addressTable
             .Key.Columns.Select(column => (column.ColumnName.Value, column.Kind))
             .Should()
-            .Equal(
-                (
-                    RelationalNameConventions.RootDocumentIdColumnName("School").Value,
-                    ColumnKind.ParentKeyPart
-                ),
-                (RelationalNameConventions.OrdinalColumnName.Value, ColumnKind.Ordinal)
-            );
+            .Equal((RelationalNameConventions.CollectionItemIdColumnName.Value, ColumnKind.CollectionKey));
 
         _periodTable
             .Key.Columns.Select(column => (column.ColumnName.Value, column.Kind))
             .Should()
-            .Equal(
-                (
-                    RelationalNameConventions.RootDocumentIdColumnName("School").Value,
-                    ColumnKind.ParentKeyPart
-                ),
-                (
-                    RelationalNameConventions.ParentCollectionOrdinalColumnName("Address").Value,
-                    ColumnKind.ParentKeyPart
-                ),
-                (RelationalNameConventions.OrdinalColumnName.Value, ColumnKind.Ordinal)
-            );
+            .Equal((RelationalNameConventions.CollectionItemIdColumnName.Value, ColumnKind.CollectionKey));
     }
 
     /// <summary>
@@ -123,6 +107,7 @@ public class Given_A_JsonSchema_With_Nested_Collections
             .Columns.Select(column => (column.ColumnName.Value, column.Kind))
             .Should()
             .Equal(
+                (RelationalNameConventions.CollectionItemIdColumnName.Value, ColumnKind.CollectionKey),
                 (
                     RelationalNameConventions.RootDocumentIdColumnName("School").Value,
                     ColumnKind.ParentKeyPart
@@ -134,15 +119,70 @@ public class Given_A_JsonSchema_With_Nested_Collections
             .Columns.Select(column => (column.ColumnName.Value, column.Kind))
             .Should()
             .Equal(
+                (RelationalNameConventions.CollectionItemIdColumnName.Value, ColumnKind.CollectionKey),
                 (
                     RelationalNameConventions.RootDocumentIdColumnName("School").Value,
                     ColumnKind.ParentKeyPart
                 ),
-                (
-                    RelationalNameConventions.ParentCollectionOrdinalColumnName("Address").Value,
-                    ColumnKind.ParentKeyPart
-                ),
+                (RelationalNameConventions.ParentCollectionItemIdColumnName.Value, ColumnKind.ParentKeyPart),
                 (RelationalNameConventions.OrdinalColumnName.Value, ColumnKind.Ordinal)
+            );
+    }
+
+    /// <summary>
+    /// It should assign expected scalar types to seeded key and locator columns.
+    /// </summary>
+    [Test]
+    public void It_should_assign_expected_scalar_types_to_seeded_key_and_locator_columns()
+    {
+        _rootTable
+            .Columns.Select(column => (column.ColumnName.Value, column.ScalarType))
+            .Should()
+            .Equal(
+                (
+                    RelationalNameConventions.DocumentIdColumnName.Value,
+                    new RelationalScalarType(ScalarKind.Int64)
+                )
+            );
+
+        _addressTable
+            .Columns.Select(column => (column.ColumnName.Value, column.ScalarType))
+            .Should()
+            .Equal(
+                (
+                    RelationalNameConventions.CollectionItemIdColumnName.Value,
+                    new RelationalScalarType(ScalarKind.Int64)
+                ),
+                (
+                    RelationalNameConventions.RootDocumentIdColumnName("School").Value,
+                    new RelationalScalarType(ScalarKind.Int64)
+                ),
+                (
+                    RelationalNameConventions.OrdinalColumnName.Value,
+                    new RelationalScalarType(ScalarKind.Int32)
+                )
+            );
+
+        _periodTable
+            .Columns.Select(column => (column.ColumnName.Value, column.ScalarType))
+            .Should()
+            .Equal(
+                (
+                    RelationalNameConventions.CollectionItemIdColumnName.Value,
+                    new RelationalScalarType(ScalarKind.Int64)
+                ),
+                (
+                    RelationalNameConventions.RootDocumentIdColumnName("School").Value,
+                    new RelationalScalarType(ScalarKind.Int64)
+                ),
+                (
+                    RelationalNameConventions.ParentCollectionItemIdColumnName.Value,
+                    new RelationalScalarType(ScalarKind.Int64)
+                ),
+                (
+                    RelationalNameConventions.OrdinalColumnName.Value,
+                    new RelationalScalarType(ScalarKind.Int32)
+                )
             );
     }
 
@@ -158,8 +198,8 @@ public class Given_A_JsonSchema_With_Nested_Collections
             .Columns.Select(column => column.Value)
             .Should()
             .Equal(
-                RelationalNameConventions.RootDocumentIdColumnName("School").Value,
-                RelationalNameConventions.ParentCollectionOrdinalColumnName("Address").Value
+                RelationalNameConventions.ParentCollectionItemIdColumnName.Value,
+                RelationalNameConventions.RootDocumentIdColumnName("School").Value
             );
 
         periodFk.TargetTable.Should().Be(new DbTableName(_schemaName, "SchoolAddress"));
@@ -167,8 +207,8 @@ public class Given_A_JsonSchema_With_Nested_Collections
             .TargetColumns.Select(column => column.Value)
             .Should()
             .Equal(
-                RelationalNameConventions.RootDocumentIdColumnName("School").Value,
-                RelationalNameConventions.OrdinalColumnName.Value
+                RelationalNameConventions.CollectionItemIdColumnName.Value,
+                RelationalNameConventions.RootDocumentIdColumnName("School").Value
             );
         periodFk.OnDelete.Should().Be(ReferentialAction.Cascade);
         periodFk.OnUpdate.Should().Be(ReferentialAction.NoAction);
@@ -209,6 +249,52 @@ public class Given_A_JsonSchema_With_Nested_Collections
             .Equal(RelationalNameConventions.DocumentIdColumnName.Value);
         rootFk.OnDelete.Should().Be(ReferentialAction.Cascade);
         rootFk.OnUpdate.Should().Be(ReferentialAction.NoAction);
+    }
+
+    /// <summary>
+    /// It should stamp explicit identity metadata for root and collection scopes.
+    /// </summary>
+    [Test]
+    public void It_should_stamp_explicit_identity_metadata_for_root_and_collection_scopes()
+    {
+        _rootTable.IdentityMetadata.TableKind.Should().Be(DbTableKind.Root);
+        _rootTable
+            .IdentityMetadata.PhysicalRowIdentityColumns.Select(column => column.Value)
+            .Should()
+            .Equal(RelationalNameConventions.DocumentIdColumnName.Value);
+        _rootTable
+            .IdentityMetadata.RootScopeLocatorColumns.Select(column => column.Value)
+            .Should()
+            .Equal(RelationalNameConventions.DocumentIdColumnName.Value);
+        _rootTable.IdentityMetadata.ImmediateParentScopeLocatorColumns.Should().BeEmpty();
+
+        _addressTable.IdentityMetadata.TableKind.Should().Be(DbTableKind.Collection);
+        _addressTable
+            .IdentityMetadata.PhysicalRowIdentityColumns.Select(column => column.Value)
+            .Should()
+            .Equal(RelationalNameConventions.CollectionItemIdColumnName.Value);
+        _addressTable
+            .IdentityMetadata.RootScopeLocatorColumns.Select(column => column.Value)
+            .Should()
+            .Equal(RelationalNameConventions.RootDocumentIdColumnName("School").Value);
+        _addressTable
+            .IdentityMetadata.ImmediateParentScopeLocatorColumns.Select(column => column.Value)
+            .Should()
+            .Equal(RelationalNameConventions.RootDocumentIdColumnName("School").Value);
+
+        _periodTable.IdentityMetadata.TableKind.Should().Be(DbTableKind.Collection);
+        _periodTable
+            .IdentityMetadata.PhysicalRowIdentityColumns.Select(column => column.Value)
+            .Should()
+            .Equal(RelationalNameConventions.CollectionItemIdColumnName.Value);
+        _periodTable
+            .IdentityMetadata.RootScopeLocatorColumns.Select(column => column.Value)
+            .Should()
+            .Equal(RelationalNameConventions.RootDocumentIdColumnName("School").Value);
+        _periodTable
+            .IdentityMetadata.ImmediateParentScopeLocatorColumns.Select(column => column.Value)
+            .Should()
+            .Equal(RelationalNameConventions.ParentCollectionItemIdColumnName.Value);
     }
 
     /// <summary>

@@ -14,6 +14,16 @@ namespace EdFi.DataManagementService.Backend.Plans;
 internal static class RelationalResourceModelCompileValidator
 {
     /// <summary>
+    /// Returns <see langword="true" /> when the table carries explicit stable-identity metadata.
+    /// </summary>
+    public static bool UsesExplicitIdentityMetadata(DbTableModel tableModel)
+    {
+        ArgumentNullException.ThrowIfNull(tableModel);
+
+        return tableModel.IdentityMetadata.TableKind is not DbTableKind.Unspecified;
+    }
+
+    /// <summary>
     /// Resolves the single root-scope table model and verifies it matches <see cref="RelationalResourceModel.Root" />.
     /// </summary>
     public static DbTableModel ResolveRootScopeTableModelOrThrow(
@@ -147,6 +157,170 @@ internal static class RelationalResourceModelCompileValidator
                 $"Cannot compile {planKind} for '{tableModel.Table}': expected Ordinal key column to be last in key order. "
                     + $"Key columns: [{FormatKeyColumnSummary(tableModel)}]."
             );
+        }
+    }
+
+    /// <summary>
+    /// Resolves the single root-document locator column used for page-keyset joins.
+    /// </summary>
+    public static DbColumnName ResolveRootScopeLocatorColumnOrThrow(
+        DbTableModel tableModel,
+        string planKind,
+        Action<DbColumnName>? validateColumn = null
+    )
+    {
+        ArgumentNullException.ThrowIfNull(tableModel);
+        ArgumentException.ThrowIfNullOrWhiteSpace(planKind);
+
+        if (!UsesExplicitIdentityMetadata(tableModel))
+        {
+            ValidateDeterministicTableKeyShapeOrThrow(tableModel, planKind);
+
+            var rootScopeLocatorColumn = tableModel.Key.Columns[0].ColumnName;
+            validateColumn?.Invoke(rootScopeLocatorColumn);
+
+            return rootScopeLocatorColumn;
+        }
+
+        if (tableModel.IdentityMetadata.RootScopeLocatorColumns.Count != 1)
+        {
+            throw new InvalidOperationException(
+                $"Cannot compile {planKind} for '{tableModel.Table}': expected exactly one explicit root-scope locator column, "
+                    + $"but found {tableModel.IdentityMetadata.RootScopeLocatorColumns.Count}."
+            );
+        }
+
+        var explicitRootScopeLocatorColumn = tableModel.IdentityMetadata.RootScopeLocatorColumns[0];
+
+        if (!RelationalNameConventions.IsDocumentIdColumn(explicitRootScopeLocatorColumn))
+        {
+            throw new InvalidOperationException(
+                $"Cannot compile {planKind} for '{tableModel.Table}': explicit root-scope locator column "
+                    + $"'{explicitRootScopeLocatorColumn.Value}' is not a document-id locator."
+            );
+        }
+
+        validateColumn?.Invoke(explicitRootScopeLocatorColumn);
+
+        return explicitRootScopeLocatorColumn;
+    }
+
+    /// <summary>
+    /// Resolves the immediate-parent scope locator columns used for non-root plan operations.
+    /// </summary>
+    public static IReadOnlyList<DbColumnName> ResolveImmediateParentScopeLocatorColumnsOrThrow(
+        DbTableModel tableModel,
+        string planKind,
+        Action<DbColumnName>? validateColumn = null
+    )
+    {
+        ArgumentNullException.ThrowIfNull(tableModel);
+        ArgumentException.ThrowIfNullOrWhiteSpace(planKind);
+
+        if (!UsesExplicitIdentityMetadata(tableModel))
+        {
+            ValidateDeterministicTableKeyShapeOrThrow(tableModel, planKind);
+
+            var inferredImmediateParentScopeLocatorColumns = tableModel
+                .Key.Columns.Where(static keyColumn => keyColumn.Kind is ColumnKind.ParentKeyPart)
+                .Select(static keyColumn => keyColumn.ColumnName)
+                .ToArray();
+
+            foreach (var column in inferredImmediateParentScopeLocatorColumns)
+            {
+                validateColumn?.Invoke(column);
+            }
+
+            return inferredImmediateParentScopeLocatorColumns;
+        }
+
+        if (tableModel.IdentityMetadata.TableKind is DbTableKind.Root)
+        {
+            return [];
+        }
+
+        if (tableModel.IdentityMetadata.ImmediateParentScopeLocatorColumns.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Cannot compile {planKind} for '{tableModel.Table}': explicit immediate-parent scope locator metadata is empty for non-root table kind "
+                    + $"'{tableModel.IdentityMetadata.TableKind}'."
+            );
+        }
+
+        var explicitImmediateParentScopeLocatorColumns =
+            tableModel.IdentityMetadata.ImmediateParentScopeLocatorColumns.ToArray();
+
+        foreach (var column in explicitImmediateParentScopeLocatorColumns)
+        {
+            validateColumn?.Invoke(column);
+        }
+
+        return explicitImmediateParentScopeLocatorColumns;
+    }
+
+    /// <summary>
+    /// Resolves the deterministic hydration ordering columns for one table.
+    /// </summary>
+    public static IReadOnlyList<DbColumnName> ResolveHydrationOrderingColumnsOrThrow(
+        DbTableModel tableModel,
+        string planKind,
+        Action<DbColumnName>? validateColumn = null
+    )
+    {
+        ArgumentNullException.ThrowIfNull(tableModel);
+        ArgumentException.ThrowIfNullOrWhiteSpace(planKind);
+
+        if (!UsesExplicitIdentityMetadata(tableModel))
+        {
+            ValidateDeterministicTableKeyShapeOrThrow(
+                tableModel,
+                planKind,
+                keyColumn => validateColumn?.Invoke(keyColumn.ColumnName)
+            );
+
+            return tableModel.Key.Columns.Select(static keyColumn => keyColumn.ColumnName).ToArray();
+        }
+
+        var rootScopeLocatorColumn = ResolveRootScopeLocatorColumnOrThrow(
+            tableModel,
+            planKind,
+            validateColumn
+        );
+        var immediateParentScopeLocatorColumns = ResolveImmediateParentScopeLocatorColumnsOrThrow(
+            tableModel,
+            planKind,
+            validateColumn
+        );
+        var ordinalColumns = tableModel
+            .Columns.Where(static column => column.Kind is ColumnKind.Ordinal)
+            .Select(static column => column.ColumnName)
+            .ToArray();
+
+        List<DbColumnName> hydrationOrderingColumns = [];
+        HashSet<DbColumnName> seenColumns = [];
+
+        AppendDistinctColumn(rootScopeLocatorColumn);
+
+        foreach (var column in immediateParentScopeLocatorColumns)
+        {
+            AppendDistinctColumn(column);
+        }
+
+        foreach (var column in ordinalColumns)
+        {
+            AppendDistinctColumn(column);
+        }
+
+        return hydrationOrderingColumns;
+
+        void AppendDistinctColumn(DbColumnName column)
+        {
+            validateColumn?.Invoke(column);
+
+            if (seenColumns.Add(column))
+            {
+                hydrationOrderingColumns.Add(column);
+            }
         }
     }
 

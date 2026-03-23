@@ -10,6 +10,16 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+internal static class ConstraintDerivationAssertionHelpers
+{
+    internal static TableConstraint.Unique FindUniqueConstraint(DbTableModel table, params string[] columns)
+    {
+        return table
+            .Constraints.OfType<TableConstraint.Unique>()
+            .Single(constraint => constraint.Columns.Select(column => column.Value).SequenceEqual(columns));
+    }
+}
+
 /// <summary>
 /// Test fixture for root unique constraint derivation.
 /// </summary>
@@ -39,6 +49,7 @@ public class Given_Root_Unique_Constraint_Derivation
                 new RootIdentityConstraintPass(),
                 new ReferenceConstraintPass(),
                 new ArrayUniquenessConstraintPass(),
+                new StableCollectionConstraintPass(),
             }
         );
 
@@ -203,7 +214,9 @@ public class Given_Incomplete_Reference_Identity_Mapping
                 new ReferenceBindingPass(),
                 new RootIdentityConstraintPass(),
                 new ReferenceConstraintPass(),
-                new ArrayUniquenessConstraintPass(),
+                new SemanticIdentityCompilationPass(),
+                new ValidateCollectionSemanticIdentityPass(),
+                new StableCollectionConstraintPass(),
             }
         );
 
@@ -1538,6 +1551,7 @@ public class Given_Array_Uniqueness_Constraint_Derivation
                 new RootIdentityConstraintPass(),
                 new ReferenceConstraintPass(),
                 new ArrayUniquenessConstraintPass(),
+                new StableCollectionConstraintPass(),
             }
         );
 
@@ -1563,7 +1577,11 @@ public class Given_Array_Uniqueness_Constraint_Derivation
     [Test]
     public void It_should_map_reference_identity_paths_to_document_id()
     {
-        var uniqueConstraint = _addressTable.Constraints.OfType<TableConstraint.Unique>().Single();
+        var uniqueConstraint = ConstraintDerivationAssertionHelpers.FindUniqueConstraint(
+            _addressTable,
+            "BusRoute_DocumentId",
+            "School_DocumentId"
+        );
 
         uniqueConstraint
             .Columns.Select(column => column.Value)
@@ -1573,18 +1591,215 @@ public class Given_Array_Uniqueness_Constraint_Derivation
     }
 
     /// <summary>
+    /// It should add sibling-order uniqueness for top-level collections.
+    /// </summary>
+    [Test]
+    public void It_should_add_sibling_order_uniqueness_for_top_level_collections()
+    {
+        var uniqueConstraint = ConstraintDerivationAssertionHelpers.FindUniqueConstraint(
+            _addressTable,
+            "BusRoute_DocumentId",
+            "Ordinal"
+        );
+
+        uniqueConstraint
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal("BusRoute_DocumentId", "Ordinal");
+    }
+
+    /// <summary>
+    /// It should add parent/root target uniqueness for collection rows with nested children.
+    /// </summary>
+    [Test]
+    public void It_should_add_parent_root_target_uniqueness_for_collection_rows_with_nested_children()
+    {
+        var uniqueConstraint = ConstraintDerivationAssertionHelpers.FindUniqueConstraint(
+            _addressTable,
+            "CollectionItemId",
+            "BusRoute_DocumentId"
+        );
+
+        uniqueConstraint
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal("CollectionItemId", "BusRoute_DocumentId");
+    }
+
+    /// <summary>
+    /// It should compile ordered semantic identity bindings for top-level collections.
+    /// </summary>
+    [Test]
+    public void It_should_compile_ordered_semantic_identity_bindings_for_top_level_collections()
+    {
+        _addressTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.RelativePath.Canonical)
+            .Should()
+            .Equal("$.schoolReference.schoolId", "$.schoolReference.educationOrganizationId");
+
+        _addressTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.ColumnName.Value)
+            .Should()
+            .Equal("School_DocumentId", "School_DocumentId");
+    }
+
+    /// <summary>
     /// It should include parent key parts for nested arrays.
     /// </summary>
     [Test]
     public void It_should_include_parent_key_parts_for_nested_arrays()
     {
-        var uniqueConstraint = _periodTable.Constraints.OfType<TableConstraint.Unique>().Single();
+        var uniqueConstraint = ConstraintDerivationAssertionHelpers.FindUniqueConstraint(
+            _periodTable,
+            "ParentCollectionItemId",
+            "BeginDate"
+        );
 
         uniqueConstraint
             .Columns.Select(column => column.Value)
             .Should()
-            .Equal("BusRoute_DocumentId", "AddressOrdinal", "BeginDate");
+            .Equal("ParentCollectionItemId", "BeginDate");
         uniqueConstraint.Columns.Should().NotContain(column => column.Value == "Ordinal");
+    }
+
+    /// <summary>
+    /// It should compile scope-relative semantic identity bindings for nested collections.
+    /// </summary>
+    [Test]
+    public void It_should_compile_scope_relative_semantic_identity_bindings_for_nested_collections()
+    {
+        _periodTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.RelativePath.Canonical)
+            .Should()
+            .Equal("$.beginDate");
+
+        _periodTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.ColumnName.Value)
+            .Should()
+            .Equal("BeginDate");
+    }
+}
+
+/// <summary>
+/// Test fixture for reference-derived semantic-identity constraint derivation.
+/// </summary>
+[TestFixture]
+public class Given_Reference_Derived_Semantic_Identity_Constraint_Derivation
+{
+    private DbTableModel _addressTable = default!;
+    private DbTableModel _periodTable = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildReferenceBackedCollectionProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { coreProject });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new ReferenceBindingPass(),
+                new RootIdentityConstraintPass(),
+                new ReferenceConstraintPass(),
+                new SemanticIdentityCompilationPass(),
+                new ValidateCollectionSemanticIdentityPass(),
+                new StableCollectionConstraintPass(),
+            }
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        var busRouteModel = result
+            .ConcreteResourcesInNameOrder.Single(model =>
+                model.ResourceKey.Resource.ResourceName == "BusRoute"
+            )
+            .RelationalModel;
+
+        _addressTable = busRouteModel.TablesInDependencyOrder.Single(table =>
+            table.Table.Name == "BusRouteAddress"
+        );
+        _periodTable = busRouteModel.TablesInDependencyOrder.Single(table =>
+            table.Table.Name == "BusRouteAddressPeriod"
+        );
+    }
+
+    /// <summary>
+    /// It should add semantic-identity uniqueness for top-level reference-backed collections.
+    /// </summary>
+    [Test]
+    public void It_should_add_semantic_identity_uniqueness_for_top_level_reference_backed_collections()
+    {
+        var uniqueConstraint = ConstraintDerivationAssertionHelpers.FindUniqueConstraint(
+            _addressTable,
+            "BusRoute_DocumentId",
+            "AddressSchool_DocumentId"
+        );
+
+        uniqueConstraint
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal("BusRoute_DocumentId", "AddressSchool_DocumentId");
+        uniqueConstraint.Columns.Should().NotContain(column => column.Value == "Ordinal");
+    }
+
+    /// <summary>
+    /// It should compile ordered semantic identity bindings for top-level reference-backed collections.
+    /// </summary>
+    [Test]
+    public void It_should_compile_ordered_semantic_identity_bindings_for_top_level_reference_backed_collections()
+    {
+        _addressTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.RelativePath.Canonical)
+            .Should()
+            .Equal("$.schoolReference.schoolId", "$.schoolReference.educationOrganizationId");
+
+        _addressTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.ColumnName.Value)
+            .Should()
+            .Equal("AddressSchool_DocumentId", "AddressSchool_DocumentId");
+    }
+
+    /// <summary>
+    /// It should add semantic-identity uniqueness for nested reference-backed collections.
+    /// </summary>
+    [Test]
+    public void It_should_add_semantic_identity_uniqueness_for_nested_reference_backed_collections()
+    {
+        var uniqueConstraint = ConstraintDerivationAssertionHelpers.FindUniqueConstraint(
+            _periodTable,
+            "ParentCollectionItemId",
+            "PeriodSchool_DocumentId"
+        );
+
+        uniqueConstraint
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal("ParentCollectionItemId", "PeriodSchool_DocumentId");
+        uniqueConstraint.Columns.Should().NotContain(column => column.Value == "Ordinal");
+    }
+
+    /// <summary>
+    /// It should compile scope-relative semantic identity bindings for nested reference-backed collections.
+    /// </summary>
+    [Test]
+    public void It_should_compile_scope_relative_semantic_identity_bindings_for_nested_reference_backed_collections()
+    {
+        _periodTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.RelativePath.Canonical)
+            .Should()
+            .Equal("$.schoolReference.schoolId", "$.schoolReference.educationOrganizationId");
+
+        _periodTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.ColumnName.Value)
+            .Should()
+            .Equal("PeriodSchool_DocumentId", "PeriodSchool_DocumentId");
     }
 }
 
@@ -1618,6 +1833,7 @@ public class Given_Nested_Array_Uniqueness_Constraint_Derivation
                 new RootIdentityConstraintPass(),
                 new ReferenceConstraintPass(),
                 new ArrayUniquenessConstraintPass(),
+                new StableCollectionConstraintPass(),
             }
         );
 
@@ -1643,12 +1859,52 @@ public class Given_Nested_Array_Uniqueness_Constraint_Derivation
     [Test]
     public void It_should_include_parent_key_parts_for_nested_constraints()
     {
-        var uniqueConstraint = _periodTable.Constraints.OfType<TableConstraint.Unique>().Single();
+        var uniqueConstraint = ConstraintDerivationAssertionHelpers.FindUniqueConstraint(
+            _periodTable,
+            "ParentCollectionItemId",
+            "BeginDate"
+        );
 
         uniqueConstraint
             .Columns.Select(column => column.Value)
             .Should()
-            .Equal("BusRoute_DocumentId", "AddressOrdinal", "BeginDate");
+            .Equal("ParentCollectionItemId", "BeginDate");
+    }
+
+    /// <summary>
+    /// It should add sibling-order uniqueness for nested collections.
+    /// </summary>
+    [Test]
+    public void It_should_add_sibling_order_uniqueness_for_nested_collections()
+    {
+        var uniqueConstraint = ConstraintDerivationAssertionHelpers.FindUniqueConstraint(
+            _periodTable,
+            "ParentCollectionItemId",
+            "Ordinal"
+        );
+
+        uniqueConstraint
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal("ParentCollectionItemId", "Ordinal");
+    }
+
+    /// <summary>
+    /// It should add parent/root target uniqueness for nested collection rows with children.
+    /// </summary>
+    [Test]
+    public void It_should_add_parent_root_target_uniqueness_for_nested_collection_rows_with_children()
+    {
+        var uniqueConstraint = ConstraintDerivationAssertionHelpers.FindUniqueConstraint(
+            _periodTable,
+            "CollectionItemId",
+            "BusRoute_DocumentId"
+        );
+
+        uniqueConstraint
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal("CollectionItemId", "BusRoute_DocumentId");
     }
 
     /// <summary>
@@ -1657,12 +1913,75 @@ public class Given_Nested_Array_Uniqueness_Constraint_Derivation
     [Test]
     public void It_should_include_parent_key_parts_for_deeper_nested_constraints()
     {
-        var uniqueConstraint = _sessionTable.Constraints.OfType<TableConstraint.Unique>().Single();
+        var uniqueConstraint = ConstraintDerivationAssertionHelpers.FindUniqueConstraint(
+            _sessionTable,
+            "ParentCollectionItemId",
+            "SessionName"
+        );
 
         uniqueConstraint
             .Columns.Select(column => column.Value)
             .Should()
-            .Equal("BusRoute_DocumentId", "AddressOrdinal", "PeriodOrdinal", "SessionName");
+            .Equal("ParentCollectionItemId", "SessionName");
+    }
+}
+
+/// <summary>
+/// Test fixture for sibling-order uniqueness when the canonical ordinal column kind is missing.
+/// </summary>
+[TestFixture]
+public class Given_A_Collection_Without_The_Canonical_Ordinal_Column_During_Stable_Constraint_Derivation
+{
+    private DbTableModel _addressTable = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema = ConstraintDerivationTestSchemaBuilder.BuildArrayUniquenessProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder([
+            new BaseTraversalAndDescriptorBindingPass(),
+            new ReferenceBindingPass(),
+            new RootIdentityConstraintPass(),
+            new ReferenceConstraintPass(),
+            new ArrayUniquenessConstraintPass(),
+            new RewriteOrdinalColumnKindPass("BusRoute", "BusRouteAddress", ColumnKind.Scalar),
+            new StableCollectionConstraintPass(),
+        ]);
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        var busRouteModel = result
+            .ConcreteResourcesInNameOrder.Single(model =>
+                model.ResourceKey.Resource.ResourceName == "BusRoute"
+            )
+            .RelationalModel;
+
+        _addressTable = busRouteModel.TablesInDependencyOrder.Single(table =>
+            table.Table.Name == "BusRouteAddress"
+        );
+    }
+
+    /// <summary>
+    /// It should not add sibling-order uniqueness without the canonical ordinal column kind.
+    /// </summary>
+    [Test]
+    public void It_should_not_add_sibling_order_uniqueness_without_the_canonical_ordinal_column_kind()
+    {
+        _addressTable
+            .Constraints.OfType<TableConstraint.Unique>()
+            .Should()
+            .NotContain(constraint =>
+                constraint
+                    .Columns.Select(column => column.Value)
+                    .SequenceEqual(new[] { "BusRoute_DocumentId", "Ordinal" })
+            );
     }
 }
 
@@ -1693,6 +2012,7 @@ public class Given_Unmappable_Array_Uniqueness_Path
                 new RootIdentityConstraintPass(),
                 new ReferenceConstraintPass(),
                 new ArrayUniquenessConstraintPass(),
+                new StableCollectionConstraintPass(),
             }
         );
 
@@ -1884,6 +2204,65 @@ public class Given_Array_Uniqueness_Constraint_With_Multiple_Candidate_Tables
     }
 }
 
+file sealed class RewriteOrdinalColumnKindPass(
+    string resourceName,
+    string tableName,
+    ColumnKind rewrittenColumnKind
+) : IRelationalModelSetPass
+{
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        for (var index = 0; index < context.ConcreteResourcesInNameOrder.Count; index++)
+        {
+            var concreteResource = context.ConcreteResourcesInNameOrder[index];
+
+            if (
+                !string.Equals(
+                    concreteResource.ResourceKey.Resource.ResourceName,
+                    resourceName,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                continue;
+            }
+
+            var updatedTables = concreteResource
+                .RelationalModel.TablesInDependencyOrder.Select(table =>
+                    string.Equals(table.Table.Name, tableName, StringComparison.Ordinal)
+                        ? table with
+                        {
+                            Columns = table
+                                .Columns.Select(column =>
+                                    column.Kind is ColumnKind.Ordinal
+                                        ? column with
+                                        {
+                                            Kind = rewrittenColumnKind,
+                                        }
+                                        : column
+                                )
+                                .ToArray(),
+                        }
+                        : table
+                )
+                .ToArray();
+            var updatedRoot = updatedTables.Single(table =>
+                table.JsonScope.Equals(concreteResource.RelationalModel.Root.JsonScope)
+            );
+            var updatedModel = concreteResource.RelationalModel with
+            {
+                Root = updatedRoot,
+                TablesInDependencyOrder = updatedTables,
+            };
+
+            context.ConcreteResourcesInNameOrder[index] = concreteResource with
+            {
+                RelationalModel = updatedModel,
+            };
+        }
+    }
+}
+
 /// <summary>
 /// Test fixture for extension array uniqueness constraint alignment.
 /// </summary>
@@ -1944,12 +2323,33 @@ public class Given_Extension_Array_Uniqueness_Constraint_Alignment
     [Test]
     public void It_should_align_extension_scoped_constraints_to_base_tables()
     {
-        var uniqueConstraint = _periodTable.Constraints.OfType<TableConstraint.Unique>().Single();
+        var uniqueConstraint = ConstraintDerivationAssertionHelpers.FindUniqueConstraint(
+            _periodTable,
+            "ParentCollectionItemId",
+            "BeginDate"
+        );
 
         uniqueConstraint
             .Columns.Select(column => column.Value)
             .Should()
-            .Equal("Contact_DocumentId", "AddressOrdinal", "BeginDate");
+            .Equal("ParentCollectionItemId", "BeginDate");
+    }
+
+    /// <summary>
+    /// It should compile scope-relative semantic identity bindings onto the aligned base table.
+    /// </summary>
+    [Test]
+    public void It_should_compile_scope_relative_semantic_identity_bindings_onto_the_aligned_base_table()
+    {
+        _periodTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.RelativePath.Canonical)
+            .Should()
+            .Equal("$.beginDate");
+
+        _periodTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.ColumnName.Value)
+            .Should()
+            .Equal("BeginDate");
     }
 }
 
@@ -2006,6 +2406,204 @@ public class Given_Extension_Array_Uniqueness_Constraint_With_Missing_Base_Table
 
         exception.Message.Should().Contain("$._ext.sample.missing[*]");
         exception.Message.Should().Contain("Contact");
+    }
+}
+
+/// <summary>
+/// Test fixture for semantic identity metadata on extension child collections.
+/// </summary>
+[TestFixture]
+public class Given_Extension_Child_Array_Uniqueness_Constraint_Derivation
+{
+    private DbTableModel _interventionTable = default!;
+    private DbTableModel _sponsorReferenceTable = default!;
+    private DbTableModel _visitTable = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema = ExtensionTableTestSchemaBuilder.BuildCoreProjectSchema();
+        var extensionProjectSchema = BuildExtensionProjectSchemaWithChildArrayUniquenessConstraints();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var extensionProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            extensionProjectSchema,
+            isExtensionProject: true
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(
+            new[] { coreProject, extensionProject }
+        );
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new ExtensionTableDerivationPass(),
+                new ReferenceBindingPass(),
+                new RootIdentityConstraintPass(),
+                new ReferenceConstraintPass(),
+                new ArrayUniquenessConstraintPass(),
+                new StableCollectionConstraintPass(),
+            }
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        var schoolModel = result
+            .ConcreteResourcesInNameOrder.Single(model =>
+                model.ResourceKey.Resource.ProjectName == "Ed-Fi"
+                && model.ResourceKey.Resource.ResourceName == "School"
+            )
+            .RelationalModel;
+
+        _interventionTable = schoolModel.TablesInDependencyOrder.Single(table =>
+            table.Table.Name == "SchoolExtensionIntervention"
+        );
+        _visitTable = schoolModel.TablesInDependencyOrder.Single(table =>
+            table.Table.Name == "SchoolExtensionInterventionVisit"
+        );
+        _sponsorReferenceTable = schoolModel.TablesInDependencyOrder.Single(table =>
+            table.Table.Name == "SchoolExtensionAddressSponsorReference"
+        );
+    }
+
+    /// <summary>
+    /// It should compile semantic identity bindings for root-level extension child collections.
+    /// </summary>
+    [Test]
+    public void It_should_compile_semantic_identity_bindings_for_root_level_extension_child_collections()
+    {
+        _interventionTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.RelativePath.Canonical)
+            .Should()
+            .Equal("$.interventionCode");
+
+        _interventionTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.ColumnName.Value)
+            .Should()
+            .Equal("InterventionCode");
+    }
+
+    /// <summary>
+    /// It should compile semantic identity bindings for nested extension child collections.
+    /// </summary>
+    [Test]
+    public void It_should_compile_semantic_identity_bindings_for_nested_extension_child_collections()
+    {
+        _visitTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.RelativePath.Canonical)
+            .Should()
+            .Equal("$.visitCode");
+
+        _visitTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.ColumnName.Value)
+            .Should()
+            .Equal("VisitCode");
+    }
+
+    /// <summary>
+    /// It should compile semantic identity bindings for collection-aligned extension child collections.
+    /// </summary>
+    [Test]
+    public void It_should_compile_semantic_identity_bindings_for_collection_aligned_extension_child_collections()
+    {
+        _sponsorReferenceTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.RelativePath.Canonical)
+            .Should()
+            .Equal("$.programReference.programName");
+
+        _sponsorReferenceTable
+            .IdentityMetadata.SemanticIdentityBindings.Select(binding => binding.ColumnName.Value)
+            .Should()
+            .Equal("Program_DocumentId");
+    }
+
+    private static JsonObject BuildExtensionProjectSchemaWithChildArrayUniquenessConstraints()
+    {
+        var extensionProjectSchema = ExtensionTableTestSchemaBuilder.BuildExtensionProjectSchema();
+        var schoolSchema = RequireObject(
+            RequireObject(extensionProjectSchema["resourceSchemas"], "resourceSchemas")["schools"],
+            "resourceSchemas.schools"
+        );
+        var jsonSchemaForInsert = RequireObject(
+            schoolSchema["jsonSchemaForInsert"],
+            "resourceSchemas.schools.jsonSchemaForInsert"
+        );
+        var sampleProperties = RequireObject(
+            RequireObject(
+                RequireObject(
+                    RequireObject(
+                        RequireObject(jsonSchemaForInsert["properties"], "jsonSchemaForInsert.properties")[
+                            "_ext"
+                        ],
+                        "jsonSchemaForInsert.properties._ext"
+                    )["properties"],
+                    "jsonSchemaForInsert.properties._ext.properties"
+                )["sample"],
+                "jsonSchemaForInsert.properties._ext.properties.sample"
+            )["properties"],
+            "jsonSchemaForInsert.properties._ext.properties.sample.properties"
+        );
+
+        sampleProperties["interventions"] = new JsonObject
+        {
+            ["type"] = "array",
+            ["items"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["interventionCode"] = new JsonObject { ["type"] = "string", ["maxLength"] = 20 },
+                    ["visits"] = new JsonObject
+                    {
+                        ["type"] = "array",
+                        ["items"] = new JsonObject
+                        {
+                            ["type"] = "object",
+                            ["properties"] = new JsonObject
+                            {
+                                ["visitCode"] = new JsonObject { ["type"] = "string", ["maxLength"] = 20 },
+                            },
+                        },
+                    },
+                },
+            },
+        };
+
+        schoolSchema["arrayUniquenessConstraints"] = new JsonArray
+        {
+            new JsonObject
+            {
+                ["paths"] = new JsonArray { "$._ext.sample.interventions[*].interventionCode" },
+                ["nestedConstraints"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["basePath"] = "$._ext.sample.interventions[*]",
+                        ["paths"] = new JsonArray { "$.visits[*].visitCode" },
+                    },
+                },
+            },
+            new JsonObject
+            {
+                ["paths"] = new JsonArray
+                {
+                    "$._ext.sample.addresses[*]._ext.sample.sponsorReferences[*].programReference.programName",
+                },
+            },
+        };
+
+        return extensionProjectSchema;
+    }
+
+    private static JsonObject RequireObject(JsonNode? node, string path)
+    {
+        return node as JsonObject
+            ?? throw new InvalidOperationException($"Expected '{path}' to be a JSON object.");
     }
 }
 
@@ -2068,6 +2666,24 @@ internal static class ConstraintDerivationTestSchemaBuilder
                 ["busRoutes"] = BuildBusRouteArrayUniquenessSchema(new JsonArray()),
                 ["schools"] = BuildReferenceConstraintSchoolSchema(),
                 ["students"] = BuildStudentSchema(),
+            },
+        };
+    }
+
+    /// <summary>
+    /// Build reference-backed collection project schema.
+    /// </summary>
+    internal static JsonObject BuildReferenceBackedCollectionProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["busRoutes"] = BuildBusRouteReferenceBackedCollectionSchema(),
+                ["schools"] = BuildReferenceConstraintSchoolSchema(),
             },
         };
     }
@@ -2917,6 +3533,128 @@ internal static class ConstraintDerivationTestSchemaBuilder
             ["arrayUniquenessConstraints"] = arrayUniquenessConstraints,
             ["identityJsonPaths"] = new JsonArray(),
             ["documentPathsMapping"] = new JsonObject(),
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    /// <summary>
+    /// Build bus route schema with reference-backed top-level and nested collection identity.
+    /// </summary>
+    private static JsonObject BuildBusRouteReferenceBackedCollectionSchema()
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["addresses"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["items"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["streetNumberName"] = new JsonObject { ["type"] = "string", ["maxLength"] = 20 },
+                            ["schoolReference"] = new JsonObject
+                            {
+                                ["type"] = "object",
+                                ["properties"] = new JsonObject
+                                {
+                                    ["schoolId"] = new JsonObject { ["type"] = "integer" },
+                                    ["educationOrganizationId"] = new JsonObject { ["type"] = "integer" },
+                                    ["link"] = new JsonObject { ["type"] = "string", ["maxLength"] = 255 },
+                                },
+                            },
+                            ["periods"] = new JsonObject
+                            {
+                                ["type"] = "array",
+                                ["items"] = new JsonObject
+                                {
+                                    ["type"] = "object",
+                                    ["properties"] = new JsonObject
+                                    {
+                                        ["schoolReference"] = new JsonObject
+                                        {
+                                            ["type"] = "object",
+                                            ["properties"] = new JsonObject
+                                            {
+                                                ["schoolId"] = new JsonObject { ["type"] = "integer" },
+                                                ["educationOrganizationId"] = new JsonObject
+                                                {
+                                                    ["type"] = "integer",
+                                                },
+                                                ["link"] = new JsonObject
+                                                {
+                                                    ["type"] = "string",
+                                                    ["maxLength"] = 255,
+                                                },
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "BusRoute",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray(),
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["AddressSchool"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "School",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.schoolId",
+                            ["referenceJsonPath"] = "$.addresses[*].schoolReference.schoolId",
+                        },
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.educationOrganizationId",
+                            ["referenceJsonPath"] = "$.addresses[*].schoolReference.educationOrganizationId",
+                        },
+                    },
+                },
+                ["PeriodSchool"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "School",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.schoolId",
+                            ["referenceJsonPath"] = "$.addresses[*].periods[*].schoolReference.schoolId",
+                        },
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.educationOrganizationId",
+                            ["referenceJsonPath"] =
+                                "$.addresses[*].periods[*].schoolReference.educationOrganizationId",
+                        },
+                    },
+                },
+            },
             ["jsonSchemaForInsert"] = jsonSchemaForInsert,
         };
     }

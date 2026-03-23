@@ -92,15 +92,12 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
             // DocumentStamping trigger for each table (root, child, extension).
             foreach (var table in resourceModel.TablesInDependencyOrder)
             {
-                var documentIdKeyColumn = table.Key.Columns.FirstOrDefault(c =>
-                    c.Kind == ColumnKind.ParentKeyPart
-                    && RelationalNameConventions.IsDocumentIdColumn(c.ColumnName)
-                );
+                var documentIdKeyColumn = ResolveRootScopeLocatorColumn(table, rootTable);
 
                 if (documentIdKeyColumn is null)
                 {
                     throw new InvalidOperationException(
-                        $"DocumentStamping trigger derivation requires a DocumentId key column, "
+                        $"DocumentStamping trigger derivation requires a root DocumentId locator column, "
                             + $"but none was found on table '{table.Table.Schema.Value}.{table.Table.Name}' "
                             + $"for resource '{FormatResource(resource)}'."
                     );
@@ -892,6 +889,32 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
         }
 
         return result.ToArray();
+    }
+
+    /// <summary>
+    /// Resolves the root document locator column used by document-stamping triggers. Stable-key collection
+    /// tables surface this through explicit identity metadata instead of through PK shape.
+    /// </summary>
+    private static DbKeyColumn? ResolveRootScopeLocatorColumn(DbTableModel table, DbTableModel rootTable)
+    {
+        if (table.Table.Equals(rootTable.Table))
+        {
+            return new DbKeyColumn(RelationalNameConventions.DocumentIdColumnName, ColumnKind.ParentKeyPart);
+        }
+
+        var metadataLocator = table.IdentityMetadata.RootScopeLocatorColumns.FirstOrDefault(column =>
+            RelationalNameConventions.IsDocumentIdColumn(column)
+        );
+
+        if (metadataLocator != default)
+        {
+            return new DbKeyColumn(metadataLocator, ColumnKind.ParentKeyPart);
+        }
+
+        return table.Key.Columns.FirstOrDefault(column =>
+            column.Kind == ColumnKind.ParentKeyPart
+            && RelationalNameConventions.IsDocumentIdColumn(column.ColumnName)
+        );
     }
 
     /// <summary>

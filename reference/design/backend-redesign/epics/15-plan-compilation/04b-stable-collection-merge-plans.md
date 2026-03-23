@@ -1,3 +1,8 @@
+---
+jira: DMS-1108
+jira_url: https://edfi.atlassian.net/browse/DMS-1108
+---
+
 # Story: Retrofit Write Plans for Stable-Identity Collection Merge Semantics
 
 ## Description
@@ -22,6 +27,11 @@ That is incompatible with profile-aware writes, which require:
 - inserts to reserve new `CollectionItemId` values only for unmatched rows, and
 - deterministic post-merge sibling ordering that preserves hidden stored rows.
 
+This story is also the runtime-boundary follow-on to `DMS-1103`'s relational-model contract split:
+
+- shared/default relational-model compilation remains permissive for DDL, manifests, snapshots, and generic fixtures, but
+- runtime/write-plan compilation in this story must opt into the strict relational-model pipeline so executable merge plans never compile against a persisted multi-item collection scope with missing semantic identity.
+
 ## Acceptance Criteria
 
 ### Executor-facing contract changes
@@ -37,11 +47,12 @@ That is incompatible with profile-aware writes, which require:
 
 ### Stable-identity compilation
 
-- Write-plan compilation consumes the `CollectionItemId`-based relational model shape from `DMS-1100`.
-- `CollectionMergePlan.SemanticIdentityBindings` compile directly from the non-empty semantic identity already derived for the scope from `arrayUniquenessConstraints`; plan compilation does not invent a runtime fallback key.
+- Write-plan compilation consumes the `CollectionItemId`-based relational model shape from `DMS-1103`.
+- Runtime mapping/write-plan compilation explicitly opts into the strict relational-model pass set (`CreateStrict()` or equivalent) rather than assuming `CreateDefault()` is globally validating.
+- `CollectionMergePlan.SemanticIdentityBindings` compile directly from the non-empty semantic identity already derived for the scope from the allowed upstream schema source: scope-resolved `arrayUniquenessConstraints` for non-reference-backed scopes, or exactly one qualifying scope-local `documentPathsMapping.referenceJsonPaths` binding set for reference-backed scopes; plan compilation does not invent a runtime fallback key.
 - Collection/common-type extension scope plans align to base-row stable identity rather than ancestor ordinals.
 - Plan metadata is sufficient for runtime code to compare current rows and post-merge rows without SQL parsing.
-- If the upstream relational model for a persisted multi-item collection scope does not expose a non-empty semantic identity, plan compilation fails deterministically instead of emitting a merge plan with ambiguous matching semantics.
+- If the upstream relational model for a persisted multi-item collection scope does not expose a non-empty semantic identity, strict runtime plan compilation fails deterministically instead of emitting a merge plan with ambiguous matching semantics; default/shared compilation remains permissive unless a caller deliberately opts into strict mode.
 
 ### Compare-order and guarded no-op metadata
 
@@ -72,7 +83,7 @@ That is incompatible with profile-aware writes, which require:
 ## Tasks
 
 1. Extend the write-plan contract types to distinguish collection merge operations from non-root 1:1 delete-by-parent behavior, including the deterministic compare/no-op metadata required for stable-identity collection scopes.
-2. Update write-plan compilation to emit deterministic stable-identity collection DML/metadata from the `CollectionItemId`-based relational model, including the metadata needed to project hydrated current rows into write-plan compare order and the non-empty semantic identity bindings already derived from `arrayUniquenessConstraints`.
+2. Update runtime/write-plan compilation to opt into the strict relational-model pipeline and emit deterministic stable-identity collection DML/metadata from the `CollectionItemId`-based relational model, including the metadata needed to project hydrated current rows into write-plan compare order and the non-empty semantic identity bindings already derived from the allowed upstream schema source.
 3. Preserve the existing non-root 1:1 scope contract while removing replace-semantics assumptions for collections and keeping non-collection presence/absence behavior intact.
 4. Update manifest emission, normalized DTO/codecs, and any pack-facing serialization for the revised contract and compare/no-op metadata.
 5. Add unit tests and golden fixtures that lock down stable-identity collection plan compilation, compare-order invariants, and no-op candidate projection behavior for both dialects.

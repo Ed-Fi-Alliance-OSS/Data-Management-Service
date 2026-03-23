@@ -453,19 +453,24 @@ CREATE TABLE IF NOT EXISTS "edfi"."School"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SchoolAddress"
 (
-    "School_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "School_DocumentId" bigint NOT NULL,
     "Street" varchar(100) NOT NULL,
-    CONSTRAINT "PK_SchoolAddress" PRIMARY KEY ("School_DocumentId", "Ordinal")
+    CONSTRAINT "PK_SchoolAddress" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_SchoolAddress_CollectionItemId_School_DocumentId" UNIQUE ("CollectionItemId", "School_DocumentId"),
+    CONSTRAINT "UX_SchoolAddress_Ordinal_School_DocumentId" UNIQUE ("School_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."SchoolAddressPhoneNumber"
 (
-    "School_DocumentId" bigint NOT NULL,
-    "AddressOrdinal" integer NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
+    "School_DocumentId" bigint NOT NULL,
     "PhoneNumber" varchar(20) NOT NULL,
-    CONSTRAINT "PK_SchoolAddressPhoneNumber" PRIMARY KEY ("School_DocumentId", "AddressOrdinal", "Ordinal")
+    CONSTRAINT "PK_SchoolAddressPhoneNumber" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_SchoolAddressPhoneNumber_Ordinal_ParentCollectionItemId" UNIQUE ("ParentCollectionItemId", "Ordinal")
 );
 
 DO $$
@@ -512,12 +517,14 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."SchoolAddressPhoneNumber"
         ADD CONSTRAINT "FK_SchoolAddressPhoneNumber_SchoolAddress"
-        FOREIGN KEY ("School_DocumentId", "AddressOrdinal")
-        REFERENCES "edfi"."SchoolAddress" ("School_DocumentId", "Ordinal")
+        FOREIGN KEY ("ParentCollectionItemId", "School_DocumentId")
+        REFERENCES "edfi"."SchoolAddress" ("CollectionItemId", "School_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
 END $$;
+
+CREATE INDEX IF NOT EXISTS "IX_SchoolAddressPhoneNumber_ParentCollectionItemId_S_9002c7691c" ON "edfi"."SchoolAddressPhoneNumber" ("ParentCollectionItemId", "School_DocumentId");
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_ReferentialIdentity"()
 RETURNS TRIGGER AS $func$

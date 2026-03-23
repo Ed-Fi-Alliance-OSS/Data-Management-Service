@@ -290,6 +290,13 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         );
         changed |= keyUnificationClassesChanged;
 
+        var updatedIdentityMetadata = ApplyToIdentityMetadata(
+            table.IdentityMetadata,
+            dialectRules,
+            out var identityMetadataChanged
+        );
+        changed |= identityMetadataChanged;
+
         if (!changed)
         {
             return table;
@@ -302,7 +309,98 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             Columns = updatedColumns,
             Constraints = updatedConstraints,
             KeyUnificationClasses = updatedKeyUnificationClasses,
+            IdentityMetadata = updatedIdentityMetadata,
         };
+    }
+
+    /// <summary>
+    /// Applies dialect shortening to stable-identity metadata and reports whether any identifiers changed.
+    /// </summary>
+    private static DbTableIdentityMetadata ApplyToIdentityMetadata(
+        DbTableIdentityMetadata identityMetadata,
+        ISqlDialectRules dialectRules,
+        out bool changed
+    )
+    {
+        var updatedPhysicalRowIdentityColumns = ShortenColumns(
+            identityMetadata.PhysicalRowIdentityColumns,
+            dialectRules,
+            out var physicalRowIdentityColumnsChanged
+        );
+        var updatedRootScopeLocatorColumns = ShortenColumns(
+            identityMetadata.RootScopeLocatorColumns,
+            dialectRules,
+            out var rootScopeLocatorColumnsChanged
+        );
+        var updatedImmediateParentScopeLocatorColumns = ShortenColumns(
+            identityMetadata.ImmediateParentScopeLocatorColumns,
+            dialectRules,
+            out var immediateParentScopeLocatorColumnsChanged
+        );
+        var updatedSemanticIdentityBindings = ApplyToSemanticIdentityBindings(
+            identityMetadata.SemanticIdentityBindings,
+            dialectRules,
+            out var semanticIdentityBindingsChanged
+        );
+
+        changed =
+            physicalRowIdentityColumnsChanged
+            || rootScopeLocatorColumnsChanged
+            || immediateParentScopeLocatorColumnsChanged
+            || semanticIdentityBindingsChanged;
+
+        if (!changed)
+        {
+            return identityMetadata;
+        }
+
+        return identityMetadata with
+        {
+            PhysicalRowIdentityColumns = updatedPhysicalRowIdentityColumns,
+            RootScopeLocatorColumns = updatedRootScopeLocatorColumns,
+            ImmediateParentScopeLocatorColumns = updatedImmediateParentScopeLocatorColumns,
+            SemanticIdentityBindings = updatedSemanticIdentityBindings,
+        };
+    }
+
+    /// <summary>
+    /// Applies dialect shortening to semantic-identity binding column references and reports whether any
+    /// identifiers changed.
+    /// </summary>
+    private static IReadOnlyList<CollectionSemanticIdentityBinding> ApplyToSemanticIdentityBindings(
+        IReadOnlyList<CollectionSemanticIdentityBinding> semanticIdentityBindings,
+        ISqlDialectRules dialectRules,
+        out bool changed
+    )
+    {
+        changed = false;
+
+        if (semanticIdentityBindings.Count == 0)
+        {
+            return semanticIdentityBindings;
+        }
+
+        var updatedBindings = new CollectionSemanticIdentityBinding[semanticIdentityBindings.Count];
+
+        for (var index = 0; index < semanticIdentityBindings.Count; index++)
+        {
+            var binding = semanticIdentityBindings[index];
+            var updatedColumnName = ShortenColumn(binding.ColumnName, dialectRules);
+
+            if (!updatedColumnName.Equals(binding.ColumnName))
+            {
+                changed = true;
+            }
+
+            updatedBindings[index] = updatedColumnName.Equals(binding.ColumnName)
+                ? binding
+                : binding with
+                {
+                    ColumnName = updatedColumnName,
+                };
+        }
+
+        return changed ? updatedBindings : semanticIdentityBindings;
     }
 
     /// <summary>

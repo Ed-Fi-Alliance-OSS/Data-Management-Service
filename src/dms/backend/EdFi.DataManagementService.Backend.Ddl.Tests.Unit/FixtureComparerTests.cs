@@ -20,7 +20,7 @@ public class Given_FixtureComparer_When_Actual_Directory_Missing
         _tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
         Directory.CreateDirectory(_tempDir);
 
-        _result = FixtureComparer.Compare(_tempDir);
+        _result = FixtureComparer.Compare(_tempDir, updateGoldens: false);
     }
 
     [TearDown]
@@ -60,7 +60,7 @@ public class Given_FixtureComparer_When_Expected_Directory_Missing
 
         File.WriteAllText(Path.Combine(_tempDir, "actual", "test.txt"), "content");
 
-        _result = FixtureComparer.Compare(_tempDir);
+        _result = FixtureComparer.Compare(_tempDir, updateGoldens: false);
     }
 
     [TearDown]
@@ -101,7 +101,7 @@ public class Given_FixtureComparer_When_Expected_Directory_Empty
 
         File.WriteAllText(Path.Combine(_tempDir, "actual", "test.txt"), "content");
 
-        _result = FixtureComparer.Compare(_tempDir);
+        _result = FixtureComparer.Compare(_tempDir, updateGoldens: false);
     }
 
     [TearDown]
@@ -143,7 +143,7 @@ public class Given_FixtureComparer_When_Files_Match
         File.WriteAllText(Path.Combine(_tempDir, "expected", "test.txt"), "same content\n");
         File.WriteAllText(Path.Combine(_tempDir, "actual", "test.txt"), "same content\n");
 
-        _result = FixtureComparer.Compare(_tempDir);
+        _result = FixtureComparer.Compare(_tempDir, updateGoldens: false);
     }
 
     [TearDown]
@@ -185,7 +185,7 @@ public class Given_FixtureComparer_When_Files_Differ
         File.WriteAllText(Path.Combine(_tempDir, "expected", "test.txt"), "expected content\n");
         File.WriteAllText(Path.Combine(_tempDir, "actual", "test.txt"), "actual content\n");
 
-        _result = FixtureComparer.Compare(_tempDir);
+        _result = FixtureComparer.Compare(_tempDir, updateGoldens: false);
     }
 
     [TearDown]
@@ -229,7 +229,7 @@ public class Given_FixtureComparer_When_File_Missing_In_Actual
             "this file is only in expected\n"
         );
 
-        _result = FixtureComparer.Compare(_tempDir);
+        _result = FixtureComparer.Compare(_tempDir, updateGoldens: false);
     }
 
     [TearDown]
@@ -272,7 +272,7 @@ public class Given_FixtureComparer_When_Extra_Files_In_Actual
         File.WriteAllText(Path.Combine(_tempDir, "actual", "shared.txt"), "content\n");
         File.WriteAllText(Path.Combine(_tempDir, "actual", "extra.txt"), "extra content\n");
 
-        _result = FixtureComparer.Compare(_tempDir);
+        _result = FixtureComparer.Compare(_tempDir, updateGoldens: false);
     }
 
     [TearDown]

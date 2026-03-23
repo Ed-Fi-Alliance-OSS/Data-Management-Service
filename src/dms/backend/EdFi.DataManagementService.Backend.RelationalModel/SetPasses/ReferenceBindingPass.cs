@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using static EdFi.DataManagementService.Backend.RelationalModel.Constraints.ConstraintDerivationHelpers;
 using static EdFi.DataManagementService.Backend.RelationalModel.Schema.RelationalModelSetSchemaHelpers;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
@@ -23,7 +24,7 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
 
         var baseResourcesByName = SetPassHelpers.BuildExtensionBaseResourceLookup(
             context,
-            static (index, model) => new BaseResourceEntry(index, model)
+            static (index, model) => new ResourceEntry(index, model)
         );
         var resourceIndexByKey = context
             .ConcreteResourcesInNameOrder.Select(

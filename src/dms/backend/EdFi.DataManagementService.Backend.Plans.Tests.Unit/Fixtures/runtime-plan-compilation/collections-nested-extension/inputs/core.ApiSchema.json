@@ -11,7 +11,21 @@
         "isResourceExtension": false,
         "isSubclass": false,
         "allowIdentityUpdates": false,
-        "arrayUniquenessConstraints": [],
+        "arrayUniquenessConstraints": [
+          {
+            "paths": [
+              "$.addresses[*].city"
+            ],
+            "nestedConstraints": [
+              {
+                "basePath": "$.addresses[*]",
+                "paths": [
+                  "$.periods[*].periodName"
+                ]
+              }
+            ]
+          }
+        ],
         "identityJsonPaths": [
           "$.schoolId"
         ],

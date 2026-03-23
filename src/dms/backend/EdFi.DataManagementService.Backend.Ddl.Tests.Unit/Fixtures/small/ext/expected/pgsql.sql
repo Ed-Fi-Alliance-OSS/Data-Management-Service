@@ -461,18 +461,21 @@ CREATE TABLE IF NOT EXISTS "sample"."SchoolExtension"
 
 CREATE TABLE IF NOT EXISTS "sample"."SchoolExtensionAddress"
 (
+    "BaseCollectionItemId" bigint NOT NULL,
     "School_DocumentId" bigint NOT NULL,
-    "Ordinal" integer NOT NULL,
     "AddressExtData" varchar(100) NULL,
-    CONSTRAINT "PK_SchoolExtensionAddress" PRIMARY KEY ("School_DocumentId", "Ordinal")
+    CONSTRAINT "PK_SchoolExtensionAddress" PRIMARY KEY ("BaseCollectionItemId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."SchoolAddress"
 (
-    "School_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "School_DocumentId" bigint NOT NULL,
     "Street" varchar(100) NOT NULL,
-    CONSTRAINT "PK_SchoolAddress" PRIMARY KEY ("School_DocumentId", "Ordinal")
+    CONSTRAINT "PK_SchoolAddress" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_SchoolAddress_CollectionItemId_School_DocumentId" UNIQUE ("CollectionItemId", "School_DocumentId"),
+    CONSTRAINT "UX_SchoolAddress_Ordinal_School_DocumentId" UNIQUE ("School_DocumentId", "Ordinal")
 );
 
 DO $$
@@ -519,8 +522,8 @@ BEGIN
     THEN
         ALTER TABLE "sample"."SchoolExtensionAddress"
         ADD CONSTRAINT "FK_SchoolExtensionAddress_SchoolAddress"
-        FOREIGN KEY ("School_DocumentId", "Ordinal")
-        REFERENCES "edfi"."SchoolAddress" ("School_DocumentId", "Ordinal")
+        FOREIGN KEY ("BaseCollectionItemId", "School_DocumentId")
+        REFERENCES "edfi"."SchoolAddress" ("CollectionItemId", "School_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -542,6 +545,8 @@ BEGIN
         ON UPDATE NO ACTION;
     END IF;
 END $$;
+
+CREATE INDEX IF NOT EXISTS "IX_SchoolExtensionAddress_BaseCollectionItemId_Schoo_8db7cde2b1" ON "sample"."SchoolExtensionAddress" ("BaseCollectionItemId", "School_DocumentId");
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_ReferentialIdentity"()
 RETURNS TRIGGER AS $func$

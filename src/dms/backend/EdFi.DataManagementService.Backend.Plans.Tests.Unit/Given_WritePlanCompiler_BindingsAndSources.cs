@@ -240,6 +240,75 @@ public class Given_WritePlanCompiler_BindingsAndSources : WritePlanCompilerTestB
     }
 
     [Test]
+    public void It_should_bind_collection_aligned_extension_scope_locators_from_explicit_identity_metadata()
+    {
+        var tablePlan = CompileCollectionsNestedExtensionFixtureTablePlan(
+            SqlDialect.Pgsql,
+            "SchoolExtensionAddress"
+        );
+
+        tablePlan
+            .ColumnBindings.Select(static binding => binding.Column.ColumnName.Value)
+            .Should()
+            .Equal("BaseCollectionItemId", "School_DocumentId", "Zone");
+
+        tablePlan
+            .ColumnBindings[0]
+            .Source.Should()
+            .BeEquivalentTo(new WriteValueSource.ParentKeyPart(Index: 0));
+        tablePlan.ColumnBindings[1].Source.Should().BeOfType<WriteValueSource.DocumentId>();
+        tablePlan
+            .ColumnBindings[2]
+            .Source.Should()
+            .BeEquivalentTo(
+                new WriteValueSource.Scalar(
+                    RelativePath: new JsonPathExpression("$.zone", [new JsonPathSegment.Property("zone")]),
+                    Type: new RelationalScalarType(ScalarKind.String, MaxLength: 20)
+                )
+            );
+    }
+
+    [TestCase("SchoolAddress")]
+    [TestCase("SchoolAddressPeriod")]
+    [TestCase("SchoolExtensionIntervention")]
+    public void It_should_emit_collection_key_preallocation_plan_for_collection_insert_tables(
+        string tableName
+    )
+    {
+        var tablePlan = CompileFocusedStableKeyFixtureTablePlan(SqlDialect.Pgsql, tableName);
+        var collectionKeyBindingIndex = Array.FindIndex(
+            [.. tablePlan.ColumnBindings],
+            binding => binding.Column.Kind is ColumnKind.CollectionKey
+        );
+
+        collectionKeyBindingIndex.Should().BeGreaterThanOrEqualTo(0);
+        tablePlan.CollectionKeyPreallocationPlan.Should().NotBeNull();
+        tablePlan
+            .CollectionKeyPreallocationPlan!.Should()
+            .Be(
+                new CollectionKeyPreallocationPlan(
+                    ColumnName: new DbColumnName("CollectionItemId"),
+                    BindingIndex: collectionKeyBindingIndex
+                )
+            );
+        tablePlan
+            .ColumnBindings[collectionKeyBindingIndex]
+            .Source.Should()
+            .BeOfType<WriteValueSource.Precomputed>();
+        tablePlan.InsertSql.Should().Contain("@collectionItemId");
+    }
+
+    [Test]
+    public void It_should_not_emit_collection_key_preallocation_plan_for_non_collection_tables()
+    {
+        var tablePlan = new WritePlanCompiler(SqlDialect.Pgsql)
+            .Compile(_supportedRootOnlyModel)
+            .TablePlansInDependencyOrder.Single();
+
+        tablePlan.CollectionKeyPreallocationPlan.Should().BeNull();
+    }
+
+    [Test]
     public void It_should_fail_fast_when_document_reference_binding_is_missing_for_document_fk_column()
     {
         var model = CreateSingleTableModelWithMissingDocumentReferenceBinding();

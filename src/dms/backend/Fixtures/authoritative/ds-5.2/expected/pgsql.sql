@@ -512,53 +512,64 @@ CREATE TABLE IF NOT EXISTS "edfi"."Assessment"
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAcademicSubject"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Assessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AcademicSubjectDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_AssessmentAcademicSubject" PRIMARY KEY ("Assessment_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_AssessmentAcademicSubject_AcademicSubjectDescript_55a54903f9" UNIQUE ("Assessment_DocumentId", "AcademicSubjectDescriptor_DescriptorId")
+    CONSTRAINT "PK_AssessmentAcademicSubject" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_AssessmentAcademicSubject_AcademicSubjectDescript_55a54903f9" UNIQUE ("Assessment_DocumentId", "AcademicSubjectDescriptor_DescriptorId"),
+    CONSTRAINT "UX_AssessmentAcademicSubject_Ordinal_Assessment_DocumentId" UNIQUE ("Assessment_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAssessedGradeLevel"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Assessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_AssessmentAssessedGradeLevel" PRIMARY KEY ("Assessment_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_AssessmentAssessedGradeLevel_Assessment_DocumentI_cce16f742a" UNIQUE ("Assessment_DocumentId", "GradeLevelDescriptor_DescriptorId")
+    CONSTRAINT "PK_AssessmentAssessedGradeLevel" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_AssessmentAssessedGradeLevel_Assessment_DocumentI_cce16f742a" UNIQUE ("Assessment_DocumentId", "GradeLevelDescriptor_DescriptorId"),
+    CONSTRAINT "UX_AssessmentAssessedGradeLevel_Ordinal_Assessment_DocumentId" UNIQUE ("Assessment_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAuthor"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Assessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "Author" varchar(100) NOT NULL,
-    CONSTRAINT "PK_AssessmentAuthor" PRIMARY KEY ("Assessment_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_AssessmentAuthor_Author_Assessment_DocumentId" UNIQUE ("Assessment_DocumentId", "Author")
+    CONSTRAINT "PK_AssessmentAuthor" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_AssessmentAuthor_Author_Assessment_DocumentId" UNIQUE ("Assessment_DocumentId", "Author"),
+    CONSTRAINT "UX_AssessmentAuthor_Ordinal_Assessment_DocumentId" UNIQUE ("Assessment_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentIdentificationCode"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Assessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AssessmentIdentificationSystemDescriptor_DescriptorId" bigint NOT NULL,
     "AssigningOrganizationIdentificationCode" varchar(60) NULL,
     "IdentificationCode" varchar(60) NOT NULL,
-    CONSTRAINT "PK_AssessmentIdentificationCode" PRIMARY KEY ("Assessment_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_AssessmentIdentificationCode_Assessment_DocumentI_a59dddacc0" UNIQUE ("Assessment_DocumentId", "AssessmentIdentificationSystemDescriptor_DescriptorId")
+    CONSTRAINT "PK_AssessmentIdentificationCode" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_AssessmentIdentificationCode_Assessment_DocumentI_a59dddacc0" UNIQUE ("Assessment_DocumentId", "AssessmentIdentificationSystemDescriptor_DescriptorId"),
+    CONSTRAINT "UX_AssessmentIdentificationCode_Ordinal_Assessment_DocumentId" UNIQUE ("Assessment_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentLanguage"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Assessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "LanguageDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_AssessmentLanguage" PRIMARY KEY ("Assessment_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_AssessmentLanguage_Assessment_DocumentId_Language_646d0f67d7" UNIQUE ("Assessment_DocumentId", "LanguageDescriptor_DescriptorId")
+    CONSTRAINT "PK_AssessmentLanguage" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_AssessmentLanguage_Assessment_DocumentId_Language_646d0f67d7" UNIQUE ("Assessment_DocumentId", "LanguageDescriptor_DescriptorId"),
+    CONSTRAINT "UX_AssessmentLanguage_Ordinal_Assessment_DocumentId" UNIQUE ("Assessment_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentPerformanceLevel"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Assessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AssessmentReportingMethodDescriptor_DescriptorId" bigint NOT NULL,
@@ -567,56 +578,67 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentPerformanceLevel"
     "MaximumScore" varchar(35) NULL,
     "MinimumScore" varchar(35) NULL,
     "PerformanceLevelIndicatorName" varchar(60) NULL,
-    CONSTRAINT "PK_AssessmentPerformanceLevel" PRIMARY KEY ("Assessment_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_AssessmentPerformanceLevel_Assessment_DocumentId__f374026cb7" UNIQUE ("Assessment_DocumentId", "AssessmentReportingMethodDescriptor_DescriptorId", "PerformanceLevelDescriptor_DescriptorId")
+    CONSTRAINT "PK_AssessmentPerformanceLevel" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_AssessmentPerformanceLevel_Assessment_DocumentId__f374026cb7" UNIQUE ("Assessment_DocumentId", "AssessmentReportingMethodDescriptor_DescriptorId", "PerformanceLevelDescriptor_DescriptorId"),
+    CONSTRAINT "UX_AssessmentPerformanceLevel_Ordinal_Assessment_DocumentId" UNIQUE ("Assessment_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentPeriod"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Assessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AssessmentPeriodDescriptor_DescriptorId" bigint NOT NULL,
     "BeginDate" date NULL,
     "EndDate" date NULL,
-    CONSTRAINT "PK_AssessmentPeriod" PRIMARY KEY ("Assessment_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_AssessmentPeriod_Assessment_DocumentId_Assessment_cd1624f99e" UNIQUE ("Assessment_DocumentId", "AssessmentPeriodDescriptor_DescriptorId")
+    CONSTRAINT "PK_AssessmentPeriod" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_AssessmentPeriod_Assessment_DocumentId_Assessment_cd1624f99e" UNIQUE ("Assessment_DocumentId", "AssessmentPeriodDescriptor_DescriptorId"),
+    CONSTRAINT "UX_AssessmentPeriod_Ordinal_Assessment_DocumentId" UNIQUE ("Assessment_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentPlatformType"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Assessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "PlatformTypeDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_AssessmentPlatformType" PRIMARY KEY ("Assessment_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_AssessmentPlatformType_Assessment_DocumentId_Plat_008b024f07" UNIQUE ("Assessment_DocumentId", "PlatformTypeDescriptor_DescriptorId")
+    CONSTRAINT "PK_AssessmentPlatformType" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_AssessmentPlatformType_Assessment_DocumentId_Plat_008b024f07" UNIQUE ("Assessment_DocumentId", "PlatformTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_AssessmentPlatformType_Ordinal_Assessment_DocumentId" UNIQUE ("Assessment_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentProgram"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Assessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "SectionOrProgramChoiceProgram_DocumentId" bigint NULL,
     "SectionOrProgramChoiceProgram_EducationOrganizationId" integer NULL,
     "SectionOrProgramChoiceProgram_ProgramName" varchar(60) NULL,
     "SectionOrProgramChoiceProgram_ProgramTypeDescriptor__106025b7ce" bigint NULL,
-    CONSTRAINT "PK_AssessmentProgram" PRIMARY KEY ("Assessment_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_AssessmentProgram" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_AssessmentProgram_Assessment_DocumentId_SectionOr_3491ec6823" UNIQUE ("Assessment_DocumentId", "SectionOrProgramChoiceProgram_DocumentId"),
+    CONSTRAINT "UX_AssessmentProgram_Ordinal_Assessment_DocumentId" UNIQUE ("Assessment_DocumentId", "Ordinal"),
     CONSTRAINT "CK_AssessmentProgram_SectionOrProgramChoiceProgram_AllNone" CHECK (("SectionOrProgramChoiceProgram_DocumentId" IS NULL AND "SectionOrProgramChoiceProgram_EducationOrganizationId" IS NULL AND "SectionOrProgramChoiceProgram_ProgramName" IS NULL AND "SectionOrProgramChoiceProgram_ProgramTypeDescriptor__106025b7ce" IS NULL) OR ("SectionOrProgramChoiceProgram_DocumentId" IS NOT NULL AND "SectionOrProgramChoiceProgram_EducationOrganizationId" IS NOT NULL AND "SectionOrProgramChoiceProgram_ProgramName" IS NOT NULL AND "SectionOrProgramChoiceProgram_ProgramTypeDescriptor__106025b7ce" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentScore"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Assessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AssessmentReportingMethodDescriptor_DescriptorId" bigint NOT NULL,
     "ResultDatatypeTypeDescriptor_DescriptorId" bigint NULL,
     "MaximumScore" varchar(35) NULL,
     "MinimumScore" varchar(35) NULL,
-    CONSTRAINT "PK_AssessmentScore" PRIMARY KEY ("Assessment_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_AssessmentScore_Assessment_DocumentId_AssessmentR_3ff10540ff" UNIQUE ("Assessment_DocumentId", "AssessmentReportingMethodDescriptor_DescriptorId")
+    CONSTRAINT "PK_AssessmentScore" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_AssessmentScore_Assessment_DocumentId_AssessmentR_3ff10540ff" UNIQUE ("Assessment_DocumentId", "AssessmentReportingMethodDescriptor_DescriptorId"),
+    CONSTRAINT "UX_AssessmentScore_Ordinal_Assessment_DocumentId" UNIQUE ("Assessment_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentSection"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Assessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "SectionOrProgramChoiceSection_DocumentId" bigint NULL,
@@ -625,7 +647,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentSection"
     "SectionOrProgramChoiceSection_SchoolYear" integer NULL,
     "SectionOrProgramChoiceSection_SessionName" varchar(60) NULL,
     "SectionOrProgramChoiceSection_SectionIdentifier" varchar(255) NULL,
-    CONSTRAINT "PK_AssessmentSection" PRIMARY KEY ("Assessment_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_AssessmentSection" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_AssessmentSection_Assessment_DocumentId_SectionOr_9a956ae02c" UNIQUE ("Assessment_DocumentId", "SectionOrProgramChoiceSection_DocumentId"),
+    CONSTRAINT "UX_AssessmentSection_Ordinal_Assessment_DocumentId" UNIQUE ("Assessment_DocumentId", "Ordinal"),
     CONSTRAINT "CK_AssessmentSection_SectionOrProgramChoiceSection_AllNone" CHECK (("SectionOrProgramChoiceSection_DocumentId" IS NULL AND "SectionOrProgramChoiceSection_LocalCourseCode" IS NULL AND "SectionOrProgramChoiceSection_SchoolId" IS NULL AND "SectionOrProgramChoiceSection_SchoolYear" IS NULL AND "SectionOrProgramChoiceSection_SessionName" IS NULL AND "SectionOrProgramChoiceSection_SectionIdentifier" IS NULL) OR ("SectionOrProgramChoiceSection_DocumentId" IS NOT NULL AND "SectionOrProgramChoiceSection_LocalCourseCode" IS NOT NULL AND "SectionOrProgramChoiceSection_SchoolId" IS NOT NULL AND "SectionOrProgramChoiceSection_SchoolYear" IS NOT NULL AND "SectionOrProgramChoiceSection_SessionName" IS NOT NULL AND "SectionOrProgramChoiceSection_SectionIdentifier" IS NOT NULL))
 );
 
@@ -647,24 +671,29 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAdministration"
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAdministrationAssessmentBatteryPart"
 (
+    "CollectionItemId" bigint NOT NULL,
     "AssessmentAdministration_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AssessmentBatteryPart_DocumentId" bigint NULL,
     "AssessmentBatteryPart_AssessmentBatteryPartName" varchar(65) NULL,
     "AssessmentBatteryPart_AssessmentIdentifier" varchar(60) NULL,
     "AssessmentBatteryPart_Namespace" varchar(255) NULL,
-    CONSTRAINT "PK_AssessmentAdministrationAssessmentBatteryPart" PRIMARY KEY ("AssessmentAdministration_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_AssessmentAdministrationAssessmentBatteryPart" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_AssessmentAdministrationAssessmentBatteryPart_Ass_f82da38521" UNIQUE ("AssessmentAdministration_DocumentId", "AssessmentBatteryPart_DocumentId"),
+    CONSTRAINT "UX_AssessmentAdministrationAssessmentBatteryPart_Ord_d486c4ed4f" UNIQUE ("AssessmentAdministration_DocumentId", "Ordinal"),
     CONSTRAINT "CK_AssessmentAdministrationAssessmentBatteryPart_Ass_1e5a040b5b" CHECK (("AssessmentBatteryPart_DocumentId" IS NULL AND "AssessmentBatteryPart_AssessmentBatteryPartName" IS NULL AND "AssessmentBatteryPart_AssessmentIdentifier" IS NULL AND "AssessmentBatteryPart_Namespace" IS NULL) OR ("AssessmentBatteryPart_DocumentId" IS NOT NULL AND "AssessmentBatteryPart_AssessmentBatteryPartName" IS NOT NULL AND "AssessmentBatteryPart_AssessmentIdentifier" IS NOT NULL AND "AssessmentBatteryPart_Namespace" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAdministrationPeriod"
 (
+    "CollectionItemId" bigint NOT NULL,
     "AssessmentAdministration_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AssessmentAdministrationBeginDate" date NOT NULL,
     "AssessmentAdministrationEndDate" date NULL,
-    CONSTRAINT "PK_AssessmentAdministrationPeriod" PRIMARY KEY ("AssessmentAdministration_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_AssessmentAdministrationPeriod_AssessmentAdminist_f6c06a9263" UNIQUE ("AssessmentAdministration_DocumentId", "AssessmentAdministrationBeginDate")
+    CONSTRAINT "PK_AssessmentAdministrationPeriod" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_AssessmentAdministrationPeriod_AssessmentAdminist_f6c06a9263" UNIQUE ("AssessmentAdministration_DocumentId", "AssessmentAdministrationBeginDate"),
+    CONSTRAINT "UX_AssessmentAdministrationPeriod_Ordinal_Assessment_d94fe7be4f" UNIQUE ("AssessmentAdministration_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAdministrationParticipation"
@@ -685,6 +714,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAdministrationParticipation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAdministrationParticipationAdministrationP_c63833eb57"
 (
+    "CollectionItemId" bigint NOT NULL,
     "AssessmentAdministrationParticipation_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AdministrationPointOfContactEducationOrganization_DocumentId" bigint NOT NULL,
@@ -693,7 +723,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAdministrationParticipationAdminist
     "FirstName" varchar(75) NOT NULL,
     "LastSurname" varchar(75) NOT NULL,
     "LoginId" varchar(60) NULL,
-    CONSTRAINT "PK_AssessmentAdministrationParticipationAdministrati_e047dbf194" PRIMARY KEY ("AssessmentAdministrationParticipation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_AssessmentAdministrationParticipationAdministrati_34716c11e4" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_AssessmentAdministrationParticipationAdministrati_8dbd03f2ec" UNIQUE ("AssessmentAdministrationParticipation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_AssessmentAdministrationParticipationAdministrati_b37704df03" UNIQUE ("AssessmentAdministrationParticipation_DocumentId", "AdministrationPointOfContactEducationOrganization_DocumentId", "ElectronicMailAddress"),
     CONSTRAINT "CK_AssessmentAdministrationParticipationAdministrati_2542fdbab1" CHECK (("AdministrationPointOfContactEducationOrganization_DocumentId" IS NULL AND "AdministrationPointOfContactEducationOrganization_Ed_205063b290" IS NULL) OR ("AdministrationPointOfContactEducationOrganization_DocumentId" IS NOT NULL AND "AdministrationPointOfContactEducationOrganization_Ed_205063b290" IS NOT NULL))
 );
@@ -713,13 +744,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentBatteryPart"
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentBatteryPartObjectiveAssessment"
 (
+    "CollectionItemId" bigint NOT NULL,
     "AssessmentBatteryPart_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ObjectiveAssessment_DocumentId" bigint NULL,
     "ObjectiveAssessment_AssessmentIdentifier" varchar(60) NULL,
     "ObjectiveAssessment_Namespace" varchar(255) NULL,
     "ObjectiveAssessment_IdentificationCode" varchar(60) NULL,
-    CONSTRAINT "PK_AssessmentBatteryPartObjectiveAssessment" PRIMARY KEY ("AssessmentBatteryPart_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_AssessmentBatteryPartObjectiveAssessment" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_AssessmentBatteryPartObjectiveAssessment_Assessme_7a38152000" UNIQUE ("AssessmentBatteryPart_DocumentId", "ObjectiveAssessment_DocumentId"),
+    CONSTRAINT "UX_AssessmentBatteryPartObjectiveAssessment_Ordinal__f014360295" UNIQUE ("AssessmentBatteryPart_DocumentId", "Ordinal"),
     CONSTRAINT "CK_AssessmentBatteryPartObjectiveAssessment_Objectiv_ade19199cf" CHECK (("ObjectiveAssessment_DocumentId" IS NULL AND "ObjectiveAssessment_AssessmentIdentifier" IS NULL AND "ObjectiveAssessment_Namespace" IS NULL AND "ObjectiveAssessment_IdentificationCode" IS NULL) OR ("ObjectiveAssessment_DocumentId" IS NOT NULL AND "ObjectiveAssessment_AssessmentIdentifier" IS NOT NULL AND "ObjectiveAssessment_Namespace" IS NOT NULL AND "ObjectiveAssessment_IdentificationCode" IS NOT NULL))
 );
 
@@ -744,22 +778,27 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentItem"
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentItemLearningStandard"
 (
+    "CollectionItemId" bigint NOT NULL,
     "AssessmentItem_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "LearningStandard_DocumentId" bigint NULL,
     "LearningStandard_LearningStandardId" varchar(60) NULL,
-    CONSTRAINT "PK_AssessmentItemLearningStandard" PRIMARY KEY ("AssessmentItem_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_AssessmentItemLearningStandard" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_AssessmentItemLearningStandard_AssessmentItem_Doc_da085e0260" UNIQUE ("AssessmentItem_DocumentId", "LearningStandard_DocumentId"),
+    CONSTRAINT "UX_AssessmentItemLearningStandard_Ordinal_Assessment_ece4718a8d" UNIQUE ("AssessmentItem_DocumentId", "Ordinal"),
     CONSTRAINT "CK_AssessmentItemLearningStandard_LearningStandard_AllNone" CHECK (("LearningStandard_DocumentId" IS NULL AND "LearningStandard_LearningStandardId" IS NULL) OR ("LearningStandard_DocumentId" IS NOT NULL AND "LearningStandard_LearningStandardId" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentItemPossibleRespons"
 (
+    "CollectionItemId" bigint NOT NULL,
     "AssessmentItem_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "CorrectResponse" boolean NULL,
     "ResponseDescription" varchar(1024) NULL,
     "ResponseValue" varchar(60) NOT NULL,
-    CONSTRAINT "PK_AssessmentItemPossibleRespons" PRIMARY KEY ("AssessmentItem_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_AssessmentItemPossibleRespons" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_AssessmentItemPossibleRespons_Ordinal_AssessmentI_52e5868623" UNIQUE ("AssessmentItem_DocumentId", "Ordinal"),
     CONSTRAINT "UX_AssessmentItemPossibleRespons_ResponseValue_Asses_a4dc68f7c7" UNIQUE ("AssessmentItem_DocumentId", "ResponseValue")
 );
 
@@ -787,11 +826,14 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentScoreRangeLearningStandard"
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentScoreRangeLearningStandardLearningStandard"
 (
+    "CollectionItemId" bigint NOT NULL,
     "AssessmentScoreRangeLearningStandard_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "LearningStandard_DocumentId" bigint NULL,
     "LearningStandard_LearningStandardId" varchar(60) NULL,
-    CONSTRAINT "PK_AssessmentScoreRangeLearningStandardLearningStandard" PRIMARY KEY ("AssessmentScoreRangeLearningStandard_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_AssessmentScoreRangeLearningStandardLearningStandard" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_AssessmentScoreRangeLearningStandardLearningStand_a09b7bf908" UNIQUE ("AssessmentScoreRangeLearningStandard_DocumentId", "Ordinal"),
+    CONSTRAINT "UX_AssessmentScoreRangeLearningStandardLearningStand_ee43f2bbdf" UNIQUE ("AssessmentScoreRangeLearningStandard_DocumentId", "LearningStandard_DocumentId"),
     CONSTRAINT "CK_AssessmentScoreRangeLearningStandardLearningStand_a5ae381a8e" CHECK (("LearningStandard_DocumentId" IS NULL AND "LearningStandard_LearningStandardId" IS NULL) OR ("LearningStandard_DocumentId" IS NOT NULL AND "LearningStandard_LearningStandardId" IS NOT NULL))
 );
 
@@ -808,11 +850,13 @@ CREATE TABLE IF NOT EXISTS "edfi"."BalanceSheetDimension"
 
 CREATE TABLE IF NOT EXISTS "edfi"."BalanceSheetDimensionReportingTag"
 (
+    "CollectionItemId" bigint NOT NULL,
     "BalanceSheetDimension_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ReportingTagDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_BalanceSheetDimensionReportingTag" PRIMARY KEY ("BalanceSheetDimension_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_BalanceSheetDimensionReportingTag_BalanceSheetDim_11949afdd1" UNIQUE ("BalanceSheetDimension_DocumentId", "ReportingTagDescriptor_DescriptorId")
+    CONSTRAINT "PK_BalanceSheetDimensionReportingTag" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_BalanceSheetDimensionReportingTag_BalanceSheetDim_11949afdd1" UNIQUE ("BalanceSheetDimension_DocumentId", "ReportingTagDescriptor_DescriptorId"),
+    CONSTRAINT "UX_BalanceSheetDimensionReportingTag_Ordinal_Balance_57f176c4b3" UNIQUE ("BalanceSheetDimension_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."BellSchedule"
@@ -832,31 +876,38 @@ CREATE TABLE IF NOT EXISTS "edfi"."BellSchedule"
 
 CREATE TABLE IF NOT EXISTS "edfi"."BellScheduleClassPeriod"
 (
+    "CollectionItemId" bigint NOT NULL,
     "BellSchedule_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ClassPeriod_DocumentId" bigint NULL,
     "ClassPeriod_ClassPeriodName" varchar(60) NULL,
     "ClassPeriod_SchoolId" integer NULL,
-    CONSTRAINT "PK_BellScheduleClassPeriod" PRIMARY KEY ("BellSchedule_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_BellScheduleClassPeriod" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_BellScheduleClassPeriod_BellSchedule_DocumentId_C_92e01df297" UNIQUE ("BellSchedule_DocumentId", "ClassPeriod_DocumentId"),
+    CONSTRAINT "UX_BellScheduleClassPeriod_Ordinal_BellSchedule_DocumentId" UNIQUE ("BellSchedule_DocumentId", "Ordinal"),
     CONSTRAINT "CK_BellScheduleClassPeriod_ClassPeriod_AllNone" CHECK (("ClassPeriod_DocumentId" IS NULL AND "ClassPeriod_ClassPeriodName" IS NULL AND "ClassPeriod_SchoolId" IS NULL) OR ("ClassPeriod_DocumentId" IS NOT NULL AND "ClassPeriod_ClassPeriodName" IS NOT NULL AND "ClassPeriod_SchoolId" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."BellScheduleDate"
 (
+    "CollectionItemId" bigint NOT NULL,
     "BellSchedule_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "Date" date NOT NULL,
-    CONSTRAINT "PK_BellScheduleDate" PRIMARY KEY ("BellSchedule_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_BellScheduleDate_Date_BellSchedule_DocumentId" UNIQUE ("BellSchedule_DocumentId", "Date")
+    CONSTRAINT "PK_BellScheduleDate" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_BellScheduleDate_Date_BellSchedule_DocumentId" UNIQUE ("BellSchedule_DocumentId", "Date"),
+    CONSTRAINT "UX_BellScheduleDate_Ordinal_BellSchedule_DocumentId" UNIQUE ("BellSchedule_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."BellScheduleGradeLevel"
 (
+    "CollectionItemId" bigint NOT NULL,
     "BellSchedule_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_BellScheduleGradeLevel" PRIMARY KEY ("BellSchedule_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_BellScheduleGradeLevel_BellSchedule_DocumentId_Gr_782d18182f" UNIQUE ("BellSchedule_DocumentId", "GradeLevelDescriptor_DescriptorId")
+    CONSTRAINT "PK_BellScheduleGradeLevel" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_BellScheduleGradeLevel_BellSchedule_DocumentId_Gr_782d18182f" UNIQUE ("BellSchedule_DocumentId", "GradeLevelDescriptor_DescriptorId"),
+    CONSTRAINT "UX_BellScheduleGradeLevel_Ordinal_BellSchedule_DocumentId" UNIQUE ("BellSchedule_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."Calendar"
@@ -877,11 +928,13 @@ CREATE TABLE IF NOT EXISTS "edfi"."Calendar"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CalendarGradeLevel"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Calendar_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_CalendarGradeLevel" PRIMARY KEY ("Calendar_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_CalendarGradeLevel_Calendar_DocumentId_GradeLevel_e0e705f518" UNIQUE ("Calendar_DocumentId", "GradeLevelDescriptor_DescriptorId")
+    CONSTRAINT "PK_CalendarGradeLevel" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CalendarGradeLevel_Calendar_DocumentId_GradeLevel_e0e705f518" UNIQUE ("Calendar_DocumentId", "GradeLevelDescriptor_DescriptorId"),
+    CONSTRAINT "UX_CalendarGradeLevel_Ordinal_Calendar_DocumentId" UNIQUE ("Calendar_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CalendarDate"
@@ -900,11 +953,13 @@ CREATE TABLE IF NOT EXISTS "edfi"."CalendarDate"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CalendarDateCalendarEvent"
 (
+    "CollectionItemId" bigint NOT NULL,
     "CalendarDate_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "CalendarEventDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_CalendarDateCalendarEvent" PRIMARY KEY ("CalendarDate_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_CalendarDateCalendarEvent_CalendarDate_DocumentId_6f5997a783" UNIQUE ("CalendarDate_DocumentId", "CalendarEventDescriptor_DescriptorId")
+    CONSTRAINT "PK_CalendarDateCalendarEvent" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CalendarDateCalendarEvent_CalendarDate_DocumentId_6f5997a783" UNIQUE ("CalendarDate_DocumentId", "CalendarEventDescriptor_DescriptorId"),
+    CONSTRAINT "UX_CalendarDateCalendarEvent_Ordinal_CalendarDate_DocumentId" UNIQUE ("CalendarDate_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."ChartOfAccount"
@@ -957,12 +1012,14 @@ CREATE TABLE IF NOT EXISTS "edfi"."ChartOfAccount"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ChartOfAccountReportingTag"
 (
+    "CollectionItemId" bigint NOT NULL,
     "ChartOfAccount_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ReportingTagDescriptor_DescriptorId" bigint NOT NULL,
     "TagValue" varchar(100) NULL,
-    CONSTRAINT "PK_ChartOfAccountReportingTag" PRIMARY KEY ("ChartOfAccount_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_ChartOfAccountReportingTag_ChartOfAccount_Documen_c76af8a320" UNIQUE ("ChartOfAccount_DocumentId", "ReportingTagDescriptor_DescriptorId")
+    CONSTRAINT "PK_ChartOfAccountReportingTag" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_ChartOfAccountReportingTag_ChartOfAccount_Documen_c76af8a320" UNIQUE ("ChartOfAccount_DocumentId", "ReportingTagDescriptor_DescriptorId"),
+    CONSTRAINT "UX_ChartOfAccountReportingTag_Ordinal_ChartOfAccount_DocumentId" UNIQUE ("ChartOfAccount_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."ClassPeriod"
@@ -980,12 +1037,14 @@ CREATE TABLE IF NOT EXISTS "edfi"."ClassPeriod"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ClassPeriodMeetingTime"
 (
+    "CollectionItemId" bigint NOT NULL,
     "ClassPeriod_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "EndTime" time NOT NULL,
     "StartTime" time NOT NULL,
-    CONSTRAINT "PK_ClassPeriodMeetingTime" PRIMARY KEY ("ClassPeriod_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_ClassPeriodMeetingTime_EndTime_StartTime_ClassPer_786d688d6f" UNIQUE ("ClassPeriod_DocumentId", "EndTime", "StartTime")
+    CONSTRAINT "PK_ClassPeriodMeetingTime" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_ClassPeriodMeetingTime_EndTime_StartTime_ClassPer_786d688d6f" UNIQUE ("ClassPeriod_DocumentId", "EndTime", "StartTime"),
+    CONSTRAINT "UX_ClassPeriodMeetingTime_Ordinal_ClassPeriod_DocumentId" UNIQUE ("ClassPeriod_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."Cohort"
@@ -1006,13 +1065,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."Cohort"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CohortProgram"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Cohort_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ProgramProgram_DocumentId" bigint NULL,
     "ProgramProgram_EducationOrganizationId" integer NULL,
     "ProgramProgram_ProgramName" varchar(60) NULL,
     "ProgramProgram_ProgramTypeDescriptor_DescriptorId" bigint NULL,
-    CONSTRAINT "PK_CohortProgram" PRIMARY KEY ("Cohort_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_CohortProgram" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CohortProgram_Cohort_DocumentId_ProgramProgram_DocumentId" UNIQUE ("Cohort_DocumentId", "ProgramProgram_DocumentId"),
+    CONSTRAINT "UX_CohortProgram_Ordinal_Cohort_DocumentId" UNIQUE ("Cohort_DocumentId", "Ordinal"),
     CONSTRAINT "CK_CohortProgram_ProgramProgram_AllNone" CHECK (("ProgramProgram_DocumentId" IS NULL AND "ProgramProgram_EducationOrganizationId" IS NULL AND "ProgramProgram_ProgramName" IS NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("ProgramProgram_DocumentId" IS NOT NULL AND "ProgramProgram_EducationOrganizationId" IS NOT NULL AND "ProgramProgram_ProgramName" IS NOT NULL AND "ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS NOT NULL))
 );
 
@@ -1031,6 +1093,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganization"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationAddress"
 (
+    "CollectionItemId" bigint NOT NULL,
     "CommunityOrganization_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -1047,31 +1110,38 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationAddress"
     "NameOfCounty" varchar(30) NULL,
     "PostalCode" varchar(17) NOT NULL,
     "StreetNumberName" varchar(150) NOT NULL,
-    CONSTRAINT "PK_CommunityOrganizationAddress" PRIMARY KEY ("CommunityOrganization_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_CommunityOrganizationAddress_City_PostalCode_Stre_d71814df77" UNIQUE ("CommunityOrganization_DocumentId", "AddressTypeDescriptor_DescriptorId", "City", "PostalCode", "StateAbbreviationDescriptor_DescriptorId", "StreetNumberName")
+    CONSTRAINT "PK_CommunityOrganizationAddress" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CommunityOrganizationAddress_City_PostalCode_Stre_d71814df77" UNIQUE ("CommunityOrganization_DocumentId", "AddressTypeDescriptor_DescriptorId", "City", "PostalCode", "StateAbbreviationDescriptor_DescriptorId", "StreetNumberName"),
+    CONSTRAINT "UX_CommunityOrganizationAddress_CollectionItemId_Com_4a4403d6b0" UNIQUE ("CollectionItemId", "CommunityOrganization_DocumentId"),
+    CONSTRAINT "UX_CommunityOrganizationAddress_Ordinal_CommunityOrg_ac4fdbc0f8" UNIQUE ("CommunityOrganization_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationCategory"
 (
+    "CollectionItemId" bigint NOT NULL,
     "CommunityOrganization_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "EducationOrganizationCategoryDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_CommunityOrganizationCategory" PRIMARY KEY ("CommunityOrganization_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_CommunityOrganizationCategory_CommunityOrganizati_c806fd6da1" UNIQUE ("CommunityOrganization_DocumentId", "EducationOrganizationCategoryDescriptor_DescriptorId")
+    CONSTRAINT "PK_CommunityOrganizationCategory" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CommunityOrganizationCategory_CommunityOrganizati_c806fd6da1" UNIQUE ("CommunityOrganization_DocumentId", "EducationOrganizationCategoryDescriptor_DescriptorId"),
+    CONSTRAINT "UX_CommunityOrganizationCategory_Ordinal_CommunityOr_9b9f57386e" UNIQUE ("CommunityOrganization_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationIdentificationCode"
 (
+    "CollectionItemId" bigint NOT NULL,
     "CommunityOrganization_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" bigint NOT NULL,
     "IdentificationCode" varchar(60) NOT NULL,
-    CONSTRAINT "PK_CommunityOrganizationIdentificationCode" PRIMARY KEY ("CommunityOrganization_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_CommunityOrganizationIdentificationCode_Community_82956715bc" UNIQUE ("CommunityOrganization_DocumentId", "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede")
+    CONSTRAINT "PK_CommunityOrganizationIdentificationCode" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CommunityOrganizationIdentificationCode_Community_82956715bc" UNIQUE ("CommunityOrganization_DocumentId", "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede"),
+    CONSTRAINT "UX_CommunityOrganizationIdentificationCode_Ordinal_C_108bfbab97" UNIQUE ("CommunityOrganization_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationIndicator"
 (
+    "CollectionItemId" bigint NOT NULL,
     "CommunityOrganization_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "IndicatorDescriptor_DescriptorId" bigint NOT NULL,
@@ -1079,22 +1149,27 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationIndicator"
     "IndicatorLevelDescriptor_DescriptorId" bigint NULL,
     "DesignatedBy" varchar(60) NULL,
     "IndicatorValue" varchar(60) NULL,
-    CONSTRAINT "PK_CommunityOrganizationIndicator" PRIMARY KEY ("CommunityOrganization_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_CommunityOrganizationIndicator_CommunityOrganizat_51d42b6bae" UNIQUE ("CommunityOrganization_DocumentId", "IndicatorDescriptor_DescriptorId")
+    CONSTRAINT "PK_CommunityOrganizationIndicator" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CommunityOrganizationIndicator_CollectionItemId_C_2aa64956ab" UNIQUE ("CollectionItemId", "CommunityOrganization_DocumentId"),
+    CONSTRAINT "UX_CommunityOrganizationIndicator_CommunityOrganizat_51d42b6bae" UNIQUE ("CommunityOrganization_DocumentId", "IndicatorDescriptor_DescriptorId"),
+    CONSTRAINT "UX_CommunityOrganizationIndicator_Ordinal_CommunityO_63641f3984" UNIQUE ("CommunityOrganization_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationInstitutionTelephone"
 (
+    "CollectionItemId" bigint NOT NULL,
     "CommunityOrganization_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
     "TelephoneNumber" varchar(24) NOT NULL,
-    CONSTRAINT "PK_CommunityOrganizationInstitutionTelephone" PRIMARY KEY ("CommunityOrganization_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_CommunityOrganizationInstitutionTelephone_Communi_237f8def85" UNIQUE ("CommunityOrganization_DocumentId", "InstitutionTelephoneNumberTypeDescriptor_DescriptorId")
+    CONSTRAINT "PK_CommunityOrganizationInstitutionTelephone" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CommunityOrganizationInstitutionTelephone_Communi_237f8def85" UNIQUE ("CommunityOrganization_DocumentId", "InstitutionTelephoneNumberTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_CommunityOrganizationInstitutionTelephone_Ordinal_b0411fb610" UNIQUE ("CommunityOrganization_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationInternationalAddress"
 (
+    "CollectionItemId" bigint NOT NULL,
     "CommunityOrganization_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -1107,30 +1182,35 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationInternationalAddress"
     "EndDate" date NULL,
     "Latitude" varchar(20) NULL,
     "Longitude" varchar(20) NULL,
-    CONSTRAINT "PK_CommunityOrganizationInternationalAddress" PRIMARY KEY ("CommunityOrganization_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_CommunityOrganizationInternationalAddress_Address_320066eeeb" UNIQUE ("CommunityOrganization_DocumentId", "AddressTypeDescriptor_DescriptorId")
+    CONSTRAINT "PK_CommunityOrganizationInternationalAddress" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CommunityOrganizationInternationalAddress_Address_320066eeeb" UNIQUE ("CommunityOrganization_DocumentId", "AddressTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_CommunityOrganizationInternationalAddress_Ordinal_06ddb27e55" UNIQUE ("CommunityOrganization_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationAddressPeriod"
 (
+    "CollectionItemId" bigint NOT NULL,
     "CommunityOrganization_DocumentId" bigint NOT NULL,
-    "AddressOrdinal" integer NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
-    CONSTRAINT "PK_CommunityOrganizationAddressPeriod" PRIMARY KEY ("CommunityOrganization_DocumentId", "AddressOrdinal", "Ordinal"),
-    CONSTRAINT "UX_CommunityOrganizationAddressPeriod_AddressOrdinal_66e9921271" UNIQUE ("CommunityOrganization_DocumentId", "AddressOrdinal", "BeginDate")
+    CONSTRAINT "PK_CommunityOrganizationAddressPeriod" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CommunityOrganizationAddressPeriod_BeginDate_Pare_6b654353f5" UNIQUE ("ParentCollectionItemId", "BeginDate"),
+    CONSTRAINT "UX_CommunityOrganizationAddressPeriod_Ordinal_Parent_504aed6625" UNIQUE ("ParentCollectionItemId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationIndicatorPeriod"
 (
+    "CollectionItemId" bigint NOT NULL,
     "CommunityOrganization_DocumentId" bigint NOT NULL,
-    "IndicatorOrdinal" integer NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
-    CONSTRAINT "PK_CommunityOrganizationIndicatorPeriod" PRIMARY KEY ("CommunityOrganization_DocumentId", "IndicatorOrdinal", "Ordinal"),
-    CONSTRAINT "UX_CommunityOrganizationIndicatorPeriod_BeginDate_In_0f3699d61f" UNIQUE ("CommunityOrganization_DocumentId", "IndicatorOrdinal", "BeginDate")
+    CONSTRAINT "PK_CommunityOrganizationIndicatorPeriod" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CommunityOrganizationIndicatorPeriod_BeginDate_Pa_6def6f30d6" UNIQUE ("ParentCollectionItemId", "BeginDate"),
+    CONSTRAINT "UX_CommunityOrganizationIndicatorPeriod_Ordinal_Pare_2995ea6ece" UNIQUE ("ParentCollectionItemId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityProvider"
@@ -1156,6 +1236,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityProvider"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderAddress"
 (
+    "CollectionItemId" bigint NOT NULL,
     "CommunityProvider_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -1172,31 +1253,38 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderAddress"
     "NameOfCounty" varchar(30) NULL,
     "PostalCode" varchar(17) NOT NULL,
     "StreetNumberName" varchar(150) NOT NULL,
-    CONSTRAINT "PK_CommunityProviderAddress" PRIMARY KEY ("CommunityProvider_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_CommunityProviderAddress_City_PostalCode_StreetNu_953d75d754" UNIQUE ("CommunityProvider_DocumentId", "AddressTypeDescriptor_DescriptorId", "City", "PostalCode", "StateAbbreviationDescriptor_DescriptorId", "StreetNumberName")
+    CONSTRAINT "PK_CommunityProviderAddress" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CommunityProviderAddress_City_PostalCode_StreetNu_953d75d754" UNIQUE ("CommunityProvider_DocumentId", "AddressTypeDescriptor_DescriptorId", "City", "PostalCode", "StateAbbreviationDescriptor_DescriptorId", "StreetNumberName"),
+    CONSTRAINT "UX_CommunityProviderAddress_CollectionItemId_Communi_690ccb5391" UNIQUE ("CollectionItemId", "CommunityProvider_DocumentId"),
+    CONSTRAINT "UX_CommunityProviderAddress_Ordinal_CommunityProvide_ab373cb08e" UNIQUE ("CommunityProvider_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderCategory"
 (
+    "CollectionItemId" bigint NOT NULL,
     "CommunityProvider_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "EducationOrganizationCategoryDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_CommunityProviderCategory" PRIMARY KEY ("CommunityProvider_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_CommunityProviderCategory_CommunityProvider_Docum_d7967c5847" UNIQUE ("CommunityProvider_DocumentId", "EducationOrganizationCategoryDescriptor_DescriptorId")
+    CONSTRAINT "PK_CommunityProviderCategory" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CommunityProviderCategory_CommunityProvider_Docum_d7967c5847" UNIQUE ("CommunityProvider_DocumentId", "EducationOrganizationCategoryDescriptor_DescriptorId"),
+    CONSTRAINT "UX_CommunityProviderCategory_Ordinal_CommunityProvid_a37a285df5" UNIQUE ("CommunityProvider_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderIdentificationCode"
 (
+    "CollectionItemId" bigint NOT NULL,
     "CommunityProvider_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" bigint NOT NULL,
     "IdentificationCode" varchar(60) NOT NULL,
-    CONSTRAINT "PK_CommunityProviderIdentificationCode" PRIMARY KEY ("CommunityProvider_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_CommunityProviderIdentificationCode_CommunityProv_a0137882c2" UNIQUE ("CommunityProvider_DocumentId", "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede")
+    CONSTRAINT "PK_CommunityProviderIdentificationCode" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CommunityProviderIdentificationCode_CommunityProv_a0137882c2" UNIQUE ("CommunityProvider_DocumentId", "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede"),
+    CONSTRAINT "UX_CommunityProviderIdentificationCode_Ordinal_Commu_e4e1476ad2" UNIQUE ("CommunityProvider_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderIndicator"
 (
+    "CollectionItemId" bigint NOT NULL,
     "CommunityProvider_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "IndicatorDescriptor_DescriptorId" bigint NOT NULL,
@@ -1204,22 +1292,27 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderIndicator"
     "IndicatorLevelDescriptor_DescriptorId" bigint NULL,
     "DesignatedBy" varchar(60) NULL,
     "IndicatorValue" varchar(60) NULL,
-    CONSTRAINT "PK_CommunityProviderIndicator" PRIMARY KEY ("CommunityProvider_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_CommunityProviderIndicator_CommunityProvider_Docu_80c97dd0b1" UNIQUE ("CommunityProvider_DocumentId", "IndicatorDescriptor_DescriptorId")
+    CONSTRAINT "PK_CommunityProviderIndicator" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CommunityProviderIndicator_CollectionItemId_Commu_4bba5d6e3e" UNIQUE ("CollectionItemId", "CommunityProvider_DocumentId"),
+    CONSTRAINT "UX_CommunityProviderIndicator_CommunityProvider_Docu_80c97dd0b1" UNIQUE ("CommunityProvider_DocumentId", "IndicatorDescriptor_DescriptorId"),
+    CONSTRAINT "UX_CommunityProviderIndicator_Ordinal_CommunityProvi_e3e5d180fb" UNIQUE ("CommunityProvider_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderInstitutionTelephone"
 (
+    "CollectionItemId" bigint NOT NULL,
     "CommunityProvider_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
     "TelephoneNumber" varchar(24) NOT NULL,
-    CONSTRAINT "PK_CommunityProviderInstitutionTelephone" PRIMARY KEY ("CommunityProvider_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_CommunityProviderInstitutionTelephone_CommunityPr_88d98300ed" UNIQUE ("CommunityProvider_DocumentId", "InstitutionTelephoneNumberTypeDescriptor_DescriptorId")
+    CONSTRAINT "PK_CommunityProviderInstitutionTelephone" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CommunityProviderInstitutionTelephone_CommunityPr_88d98300ed" UNIQUE ("CommunityProvider_DocumentId", "InstitutionTelephoneNumberTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_CommunityProviderInstitutionTelephone_Ordinal_Com_775962ed35" UNIQUE ("CommunityProvider_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderInternationalAddress"
 (
+    "CollectionItemId" bigint NOT NULL,
     "CommunityProvider_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -1232,30 +1325,35 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderInternationalAddress"
     "EndDate" date NULL,
     "Latitude" varchar(20) NULL,
     "Longitude" varchar(20) NULL,
-    CONSTRAINT "PK_CommunityProviderInternationalAddress" PRIMARY KEY ("CommunityProvider_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_CommunityProviderInternationalAddress_AddressType_95703a08f6" UNIQUE ("CommunityProvider_DocumentId", "AddressTypeDescriptor_DescriptorId")
+    CONSTRAINT "PK_CommunityProviderInternationalAddress" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CommunityProviderInternationalAddress_AddressType_95703a08f6" UNIQUE ("CommunityProvider_DocumentId", "AddressTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_CommunityProviderInternationalAddress_Ordinal_Com_f9bdc4ebbd" UNIQUE ("CommunityProvider_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderAddressPeriod"
 (
+    "CollectionItemId" bigint NOT NULL,
     "CommunityProvider_DocumentId" bigint NOT NULL,
-    "AddressOrdinal" integer NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
-    CONSTRAINT "PK_CommunityProviderAddressPeriod" PRIMARY KEY ("CommunityProvider_DocumentId", "AddressOrdinal", "Ordinal"),
-    CONSTRAINT "UX_CommunityProviderAddressPeriod_AddressOrdinal_Beg_a48c838b35" UNIQUE ("CommunityProvider_DocumentId", "AddressOrdinal", "BeginDate")
+    CONSTRAINT "PK_CommunityProviderAddressPeriod" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CommunityProviderAddressPeriod_BeginDate_ParentCo_8c16445a37" UNIQUE ("ParentCollectionItemId", "BeginDate"),
+    CONSTRAINT "UX_CommunityProviderAddressPeriod_Ordinal_ParentColl_8217b0204d" UNIQUE ("ParentCollectionItemId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderIndicatorPeriod"
 (
+    "CollectionItemId" bigint NOT NULL,
     "CommunityProvider_DocumentId" bigint NOT NULL,
-    "IndicatorOrdinal" integer NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
-    CONSTRAINT "PK_CommunityProviderIndicatorPeriod" PRIMARY KEY ("CommunityProvider_DocumentId", "IndicatorOrdinal", "Ordinal"),
-    CONSTRAINT "UX_CommunityProviderIndicatorPeriod_BeginDate_Indica_3b986e391c" UNIQUE ("CommunityProvider_DocumentId", "IndicatorOrdinal", "BeginDate")
+    CONSTRAINT "PK_CommunityProviderIndicatorPeriod" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CommunityProviderIndicatorPeriod_BeginDate_Parent_664ac1d165" UNIQUE ("ParentCollectionItemId", "BeginDate"),
+    CONSTRAINT "UX_CommunityProviderIndicatorPeriod_Ordinal_ParentCo_9adff378c8" UNIQUE ("ParentCollectionItemId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderLicense"
@@ -1321,6 +1419,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Contact"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ContactAddress"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Contact_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -1337,24 +1436,29 @@ CREATE TABLE IF NOT EXISTS "edfi"."ContactAddress"
     "NameOfCounty" varchar(30) NULL,
     "PostalCode" varchar(17) NOT NULL,
     "StreetNumberName" varchar(150) NOT NULL,
-    CONSTRAINT "PK_ContactAddress" PRIMARY KEY ("Contact_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_ContactAddress_City_PostalCode_StreetNumberName_A_e8e80fdb6a" UNIQUE ("Contact_DocumentId", "AddressTypeDescriptor_DescriptorId", "City", "PostalCode", "StateAbbreviationDescriptor_DescriptorId", "StreetNumberName")
+    CONSTRAINT "PK_ContactAddress" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_ContactAddress_City_PostalCode_StreetNumberName_A_e8e80fdb6a" UNIQUE ("Contact_DocumentId", "AddressTypeDescriptor_DescriptorId", "City", "PostalCode", "StateAbbreviationDescriptor_DescriptorId", "StreetNumberName"),
+    CONSTRAINT "UX_ContactAddress_CollectionItemId_Contact_DocumentId" UNIQUE ("CollectionItemId", "Contact_DocumentId"),
+    CONSTRAINT "UX_ContactAddress_Ordinal_Contact_DocumentId" UNIQUE ("Contact_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."ContactElectronicMail"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Contact_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ElectronicMailTypeDescriptor_DescriptorId" bigint NOT NULL,
     "DoNotPublishIndicator" boolean NULL,
     "ElectronicMailAddress" varchar(128) NOT NULL,
     "PrimaryEmailAddressIndicator" boolean NULL,
-    CONSTRAINT "PK_ContactElectronicMail" PRIMARY KEY ("Contact_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_ContactElectronicMail_ElectronicMailAddress_Conta_ed1fae2465" UNIQUE ("Contact_DocumentId", "ElectronicMailAddress", "ElectronicMailTypeDescriptor_DescriptorId")
+    CONSTRAINT "PK_ContactElectronicMail" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_ContactElectronicMail_ElectronicMailAddress_Conta_ed1fae2465" UNIQUE ("Contact_DocumentId", "ElectronicMailAddress", "ElectronicMailTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_ContactElectronicMail_Ordinal_Contact_DocumentId" UNIQUE ("Contact_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."ContactInternationalAddress"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Contact_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -1367,21 +1471,26 @@ CREATE TABLE IF NOT EXISTS "edfi"."ContactInternationalAddress"
     "EndDate" date NULL,
     "Latitude" varchar(20) NULL,
     "Longitude" varchar(20) NULL,
-    CONSTRAINT "PK_ContactInternationalAddress" PRIMARY KEY ("Contact_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_ContactInternationalAddress_AddressTypeDescriptor_25c947dcf4" UNIQUE ("Contact_DocumentId", "AddressTypeDescriptor_DescriptorId")
+    CONSTRAINT "PK_ContactInternationalAddress" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_ContactInternationalAddress_AddressTypeDescriptor_25c947dcf4" UNIQUE ("Contact_DocumentId", "AddressTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_ContactInternationalAddress_Ordinal_Contact_DocumentId" UNIQUE ("Contact_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."ContactLanguage"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Contact_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "LanguageDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_ContactLanguage" PRIMARY KEY ("Contact_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_ContactLanguage_Contact_DocumentId_LanguageDescri_0ee41b631a" UNIQUE ("Contact_DocumentId", "LanguageDescriptor_DescriptorId")
+    CONSTRAINT "PK_ContactLanguage" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_ContactLanguage_CollectionItemId_Contact_DocumentId" UNIQUE ("CollectionItemId", "Contact_DocumentId"),
+    CONSTRAINT "UX_ContactLanguage_Contact_DocumentId_LanguageDescri_0ee41b631a" UNIQUE ("Contact_DocumentId", "LanguageDescriptor_DescriptorId"),
+    CONSTRAINT "UX_ContactLanguage_Ordinal_Contact_DocumentId" UNIQUE ("Contact_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."ContactOtherName"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Contact_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "OtherNameTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -1390,12 +1499,14 @@ CREATE TABLE IF NOT EXISTS "edfi"."ContactOtherName"
     "LastSurname" varchar(75) NOT NULL,
     "MiddleName" varchar(75) NULL,
     "PersonalTitlePrefix" varchar(30) NULL,
-    CONSTRAINT "PK_ContactOtherName" PRIMARY KEY ("Contact_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_ContactOtherName_Contact_DocumentId_OtherNameType_759448ba2b" UNIQUE ("Contact_DocumentId", "OtherNameTypeDescriptor_DescriptorId")
+    CONSTRAINT "PK_ContactOtherName" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_ContactOtherName_Contact_DocumentId_OtherNameType_759448ba2b" UNIQUE ("Contact_DocumentId", "OtherNameTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_ContactOtherName_Ordinal_Contact_DocumentId" UNIQUE ("Contact_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."ContactPersonalIdentificationDocument"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Contact_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "IdentificationDocumentUseDescriptor_DescriptorId" bigint NOT NULL,
@@ -1405,12 +1516,14 @@ CREATE TABLE IF NOT EXISTS "edfi"."ContactPersonalIdentificationDocument"
     "PersonalDocumentTitle" varchar(60) NULL,
     "PersonalIssuerDocumentIdentificationCode" varchar(60) NULL,
     "PersonalIssuerName" varchar(150) NULL,
-    CONSTRAINT "PK_ContactPersonalIdentificationDocument" PRIMARY KEY ("Contact_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_ContactPersonalIdentificationDocument_Contact_Doc_db7ba1cd2f" UNIQUE ("Contact_DocumentId", "IdentificationDocumentUseDescriptor_DescriptorId", "PersonalInformationVerificationDescriptor_DescriptorId")
+    CONSTRAINT "PK_ContactPersonalIdentificationDocument" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_ContactPersonalIdentificationDocument_Contact_Doc_db7ba1cd2f" UNIQUE ("Contact_DocumentId", "IdentificationDocumentUseDescriptor_DescriptorId", "PersonalInformationVerificationDescriptor_DescriptorId"),
+    CONSTRAINT "UX_ContactPersonalIdentificationDocument_Ordinal_Con_a943343905" UNIQUE ("Contact_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."ContactTelephone"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Contact_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "TelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -1418,29 +1531,34 @@ CREATE TABLE IF NOT EXISTS "edfi"."ContactTelephone"
     "OrderOfPriority" integer NULL,
     "TelephoneNumber" varchar(24) NOT NULL,
     "TextMessageCapabilityIndicator" boolean NULL,
-    CONSTRAINT "PK_ContactTelephone" PRIMARY KEY ("Contact_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_ContactTelephone" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_ContactTelephone_Ordinal_Contact_DocumentId" UNIQUE ("Contact_DocumentId", "Ordinal"),
     CONSTRAINT "UX_ContactTelephone_TelephoneNumber_Contact_Document_a0c4b5a39e" UNIQUE ("Contact_DocumentId", "TelephoneNumber", "TelephoneNumberTypeDescriptor_DescriptorId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."ContactAddressPeriod"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Contact_DocumentId" bigint NOT NULL,
-    "AddressOrdinal" integer NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
-    CONSTRAINT "PK_ContactAddressPeriod" PRIMARY KEY ("Contact_DocumentId", "AddressOrdinal", "Ordinal"),
-    CONSTRAINT "UX_ContactAddressPeriod_AddressOrdinal_BeginDate_Con_804d3ddc1b" UNIQUE ("Contact_DocumentId", "AddressOrdinal", "BeginDate")
+    CONSTRAINT "PK_ContactAddressPeriod" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_ContactAddressPeriod_BeginDate_ParentCollectionItemId" UNIQUE ("ParentCollectionItemId", "BeginDate"),
+    CONSTRAINT "UX_ContactAddressPeriod_Ordinal_ParentCollectionItemId" UNIQUE ("ParentCollectionItemId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."ContactLanguageUs"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Contact_DocumentId" bigint NOT NULL,
-    "LanguageOrdinal" integer NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
     "LanguageUseDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_ContactLanguageUs" PRIMARY KEY ("Contact_DocumentId", "LanguageOrdinal", "Ordinal"),
-    CONSTRAINT "UX_ContactLanguageUs_LanguageOrdinal_Contact_Documen_e9c6b31698" UNIQUE ("Contact_DocumentId", "LanguageOrdinal", "LanguageUseDescriptor_DescriptorId")
+    CONSTRAINT "PK_ContactLanguageUs" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_ContactLanguageUs_Ordinal_ParentCollectionItemId" UNIQUE ("ParentCollectionItemId", "Ordinal"),
+    CONSTRAINT "UX_ContactLanguageUs_ParentCollectionItemId_Language_cef7c35816" UNIQUE ("ParentCollectionItemId", "LanguageUseDescriptor_DescriptorId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."Course"
@@ -1473,60 +1591,73 @@ CREATE TABLE IF NOT EXISTS "edfi"."Course"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseAcademicSubject"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Course_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AcademicSubjectDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_CourseAcademicSubject" PRIMARY KEY ("Course_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_CourseAcademicSubject_AcademicSubjectDescriptor_D_258d86b3b7" UNIQUE ("Course_DocumentId", "AcademicSubjectDescriptor_DescriptorId")
+    CONSTRAINT "PK_CourseAcademicSubject" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CourseAcademicSubject_AcademicSubjectDescriptor_D_258d86b3b7" UNIQUE ("Course_DocumentId", "AcademicSubjectDescriptor_DescriptorId"),
+    CONSTRAINT "UX_CourseAcademicSubject_Ordinal_Course_DocumentId" UNIQUE ("Course_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseCompetencyLevel"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Course_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "CompetencyLevelDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_CourseCompetencyLevel" PRIMARY KEY ("Course_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_CourseCompetencyLevel_CompetencyLevelDescriptor_D_af7ea0c320" UNIQUE ("Course_DocumentId", "CompetencyLevelDescriptor_DescriptorId")
+    CONSTRAINT "PK_CourseCompetencyLevel" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CourseCompetencyLevel_CompetencyLevelDescriptor_D_af7ea0c320" UNIQUE ("Course_DocumentId", "CompetencyLevelDescriptor_DescriptorId"),
+    CONSTRAINT "UX_CourseCompetencyLevel_Ordinal_Course_DocumentId" UNIQUE ("Course_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseIdentificationCode"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Course_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "CourseIdentificationSystemDescriptor_DescriptorId" bigint NOT NULL,
     "AssigningOrganizationIdentificationCode" varchar(60) NULL,
     "CourseCatalogURL" varchar(255) NULL,
     "IdentificationCode" varchar(60) NOT NULL,
-    CONSTRAINT "PK_CourseIdentificationCode" PRIMARY KEY ("Course_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_CourseIdentificationCode_Course_DocumentId_Course_e8b2aacd34" UNIQUE ("Course_DocumentId", "CourseIdentificationSystemDescriptor_DescriptorId")
+    CONSTRAINT "PK_CourseIdentificationCode" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CourseIdentificationCode_Course_DocumentId_Course_e8b2aacd34" UNIQUE ("Course_DocumentId", "CourseIdentificationSystemDescriptor_DescriptorId"),
+    CONSTRAINT "UX_CourseIdentificationCode_Ordinal_Course_DocumentId" UNIQUE ("Course_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseLearningStandard"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Course_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "LearningStandard_DocumentId" bigint NULL,
     "LearningStandard_LearningStandardId" varchar(60) NULL,
-    CONSTRAINT "PK_CourseLearningStandard" PRIMARY KEY ("Course_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_CourseLearningStandard" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CourseLearningStandard_Course_DocumentId_Learning_911d755b74" UNIQUE ("Course_DocumentId", "LearningStandard_DocumentId"),
+    CONSTRAINT "UX_CourseLearningStandard_Ordinal_Course_DocumentId" UNIQUE ("Course_DocumentId", "Ordinal"),
     CONSTRAINT "CK_CourseLearningStandard_LearningStandard_AllNone" CHECK (("LearningStandard_DocumentId" IS NULL AND "LearningStandard_LearningStandardId" IS NULL) OR ("LearningStandard_DocumentId" IS NOT NULL AND "LearningStandard_LearningStandardId" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseLevelCharacteristic"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Course_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "CourseLevelCharacteristicDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_CourseLevelCharacteristic" PRIMARY KEY ("Course_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_CourseLevelCharacteristic_Course_DocumentId_Cours_c239fe52c9" UNIQUE ("Course_DocumentId", "CourseLevelCharacteristicDescriptor_DescriptorId")
+    CONSTRAINT "PK_CourseLevelCharacteristic" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CourseLevelCharacteristic_Course_DocumentId_Cours_c239fe52c9" UNIQUE ("Course_DocumentId", "CourseLevelCharacteristicDescriptor_DescriptorId"),
+    CONSTRAINT "UX_CourseLevelCharacteristic_Ordinal_Course_DocumentId" UNIQUE ("Course_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseOfferedGradeLevel"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Course_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_CourseOfferedGradeLevel" PRIMARY KEY ("Course_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_CourseOfferedGradeLevel_Course_DocumentId_GradeLe_be9d4fd05a" UNIQUE ("Course_DocumentId", "GradeLevelDescriptor_DescriptorId")
+    CONSTRAINT "PK_CourseOfferedGradeLevel" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CourseOfferedGradeLevel_Course_DocumentId_GradeLe_be9d4fd05a" UNIQUE ("Course_DocumentId", "GradeLevelDescriptor_DescriptorId"),
+    CONSTRAINT "UX_CourseOfferedGradeLevel_Ordinal_Course_DocumentId" UNIQUE ("Course_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseOffering"
@@ -1555,29 +1686,35 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseOffering"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseOfferingCourseLevelCharacteristic"
 (
+    "CollectionItemId" bigint NOT NULL,
     "CourseOffering_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "CourseLevelCharacteristicDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_CourseOfferingCourseLevelCharacteristic" PRIMARY KEY ("CourseOffering_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_CourseOfferingCourseLevelCharacteristic_CourseLev_2820839f6a" UNIQUE ("CourseOffering_DocumentId", "CourseLevelCharacteristicDescriptor_DescriptorId")
+    CONSTRAINT "PK_CourseOfferingCourseLevelCharacteristic" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CourseOfferingCourseLevelCharacteristic_CourseLev_2820839f6a" UNIQUE ("CourseOffering_DocumentId", "CourseLevelCharacteristicDescriptor_DescriptorId"),
+    CONSTRAINT "UX_CourseOfferingCourseLevelCharacteristic_Ordinal_C_3321155053" UNIQUE ("CourseOffering_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseOfferingCurriculumUsed"
 (
+    "CollectionItemId" bigint NOT NULL,
     "CourseOffering_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "CurriculumUsedDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_CourseOfferingCurriculumUsed" PRIMARY KEY ("CourseOffering_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_CourseOfferingCurriculumUsed_CourseOffering_Docum_e8ebc5dfb7" UNIQUE ("CourseOffering_DocumentId", "CurriculumUsedDescriptor_DescriptorId")
+    CONSTRAINT "PK_CourseOfferingCurriculumUsed" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CourseOfferingCurriculumUsed_CourseOffering_Docum_e8ebc5dfb7" UNIQUE ("CourseOffering_DocumentId", "CurriculumUsedDescriptor_DescriptorId"),
+    CONSTRAINT "UX_CourseOfferingCurriculumUsed_Ordinal_CourseOfferi_fa659d1ee5" UNIQUE ("CourseOffering_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseOfferingOfferedGradeLevel"
 (
+    "CollectionItemId" bigint NOT NULL,
     "CourseOffering_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_CourseOfferingOfferedGradeLevel" PRIMARY KEY ("CourseOffering_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_CourseOfferingOfferedGradeLevel_CourseOffering_Do_538d6e83fb" UNIQUE ("CourseOffering_DocumentId", "GradeLevelDescriptor_DescriptorId")
+    CONSTRAINT "PK_CourseOfferingOfferedGradeLevel" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CourseOfferingOfferedGradeLevel_CourseOffering_Do_538d6e83fb" UNIQUE ("CourseOffering_DocumentId", "GradeLevelDescriptor_DescriptorId"),
+    CONSTRAINT "UX_CourseOfferingOfferedGradeLevel_Ordinal_CourseOff_95457d1555" UNIQUE ("CourseOffering_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscript"
@@ -1622,58 +1759,70 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscript"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptAcademicSubject"
 (
+    "CollectionItemId" bigint NOT NULL,
     "CourseTranscript_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AcademicSubjectDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_CourseTranscriptAcademicSubject" PRIMARY KEY ("CourseTranscript_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_CourseTranscriptAcademicSubject_AcademicSubjectDe_5d08deb079" UNIQUE ("CourseTranscript_DocumentId", "AcademicSubjectDescriptor_DescriptorId")
+    CONSTRAINT "PK_CourseTranscriptAcademicSubject" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CourseTranscriptAcademicSubject_AcademicSubjectDe_5d08deb079" UNIQUE ("CourseTranscript_DocumentId", "AcademicSubjectDescriptor_DescriptorId"),
+    CONSTRAINT "UX_CourseTranscriptAcademicSubject_Ordinal_CourseTra_0d474dc196" UNIQUE ("CourseTranscript_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptAlternativeCourseIdentificationCode"
 (
+    "CollectionItemId" bigint NOT NULL,
     "CourseTranscript_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "CourseIdentificationSystemDescriptor_DescriptorId" bigint NOT NULL,
     "AlternativeAssigningOrganizationIdentificationCode" varchar(60) NULL,
     "AlternativeCourseCatalogURL" varchar(255) NULL,
     "AlternativeIdentificationCode" varchar(60) NOT NULL,
-    CONSTRAINT "PK_CourseTranscriptAlternativeCourseIdentificationCode" PRIMARY KEY ("CourseTranscript_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_CourseTranscriptAlternativeCourseIdentificationCode" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CourseTranscriptAlternativeCourseIdentificationCo_0c45700811" UNIQUE ("CourseTranscript_DocumentId", "Ordinal"),
     CONSTRAINT "UX_CourseTranscriptAlternativeCourseIdentificationCo_5f3c874950" UNIQUE ("CourseTranscript_DocumentId", "CourseIdentificationSystemDescriptor_DescriptorId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptCourseProgram"
 (
+    "CollectionItemId" bigint NOT NULL,
     "CourseTranscript_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "CourseProgram_DocumentId" bigint NULL,
     "CourseProgram_EducationOrganizationId" integer NULL,
     "CourseProgram_ProgramName" varchar(60) NULL,
     "CourseProgram_ProgramTypeDescriptor_DescriptorId" bigint NULL,
-    CONSTRAINT "PK_CourseTranscriptCourseProgram" PRIMARY KEY ("CourseTranscript_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_CourseTranscriptCourseProgram" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CourseTranscriptCourseProgram_CourseProgram_Docum_c44523dbfa" UNIQUE ("CourseTranscript_DocumentId", "CourseProgram_DocumentId"),
+    CONSTRAINT "UX_CourseTranscriptCourseProgram_Ordinal_CourseTrans_b17878ced7" UNIQUE ("CourseTranscript_DocumentId", "Ordinal"),
     CONSTRAINT "CK_CourseTranscriptCourseProgram_CourseProgram_AllNone" CHECK (("CourseProgram_DocumentId" IS NULL AND "CourseProgram_EducationOrganizationId" IS NULL AND "CourseProgram_ProgramName" IS NULL AND "CourseProgram_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("CourseProgram_DocumentId" IS NOT NULL AND "CourseProgram_EducationOrganizationId" IS NOT NULL AND "CourseProgram_ProgramName" IS NOT NULL AND "CourseProgram_ProgramTypeDescriptor_DescriptorId" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptCreditCategory"
 (
+    "CollectionItemId" bigint NOT NULL,
     "CourseTranscript_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "CreditCategoryDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_CourseTranscriptCreditCategory" PRIMARY KEY ("CourseTranscript_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_CourseTranscriptCreditCategory_CourseTranscript_D_9d05126794" UNIQUE ("CourseTranscript_DocumentId", "CreditCategoryDescriptor_DescriptorId")
+    CONSTRAINT "PK_CourseTranscriptCreditCategory" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CourseTranscriptCreditCategory_CourseTranscript_D_9d05126794" UNIQUE ("CourseTranscript_DocumentId", "CreditCategoryDescriptor_DescriptorId"),
+    CONSTRAINT "UX_CourseTranscriptCreditCategory_Ordinal_CourseTran_bda6ef2d2e" UNIQUE ("CourseTranscript_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptEarnedAdditionalCredits"
 (
+    "CollectionItemId" bigint NOT NULL,
     "CourseTranscript_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AdditionalCreditTypeDescriptor_DescriptorId" bigint NOT NULL,
     "EarnedCredits" numeric(9,3) NOT NULL,
-    CONSTRAINT "PK_CourseTranscriptEarnedAdditionalCredits" PRIMARY KEY ("CourseTranscript_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_CourseTranscriptEarnedAdditionalCredits_Additiona_cb429c36fa" UNIQUE ("CourseTranscript_DocumentId", "AdditionalCreditTypeDescriptor_DescriptorId")
+    CONSTRAINT "PK_CourseTranscriptEarnedAdditionalCredits" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CourseTranscriptEarnedAdditionalCredits_Additiona_cb429c36fa" UNIQUE ("CourseTranscript_DocumentId", "AdditionalCreditTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_CourseTranscriptEarnedAdditionalCredits_Ordinal_C_5de6bea135" UNIQUE ("CourseTranscript_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptPartialCourseTranscriptAwards"
 (
+    "CollectionItemId" bigint NOT NULL,
     "CourseTranscript_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "MethodCreditEarnedDescriptor_DescriptorId" bigint NULL,
@@ -1681,12 +1830,14 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptPartialCourseTranscriptAwards
     "EarnedCredits" numeric(9,3) NOT NULL,
     "LetterGradeEarned" varchar(20) NULL,
     "NumericGradeEarned" varchar(20) NULL,
-    CONSTRAINT "PK_CourseTranscriptPartialCourseTranscriptAwards" PRIMARY KEY ("CourseTranscript_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_CourseTranscriptPartialCourseTranscriptAwards_Awa_c46bbb080f" UNIQUE ("CourseTranscript_DocumentId", "AwardDate")
+    CONSTRAINT "PK_CourseTranscriptPartialCourseTranscriptAwards" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CourseTranscriptPartialCourseTranscriptAwards_Awa_c46bbb080f" UNIQUE ("CourseTranscript_DocumentId", "AwardDate"),
+    CONSTRAINT "UX_CourseTranscriptPartialCourseTranscriptAwards_Ord_152bc3b18b" UNIQUE ("CourseTranscript_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptSection"
 (
+    "CollectionItemId" bigint NOT NULL,
     "CourseTranscript_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "Section_DocumentId" bigint NULL,
@@ -1695,7 +1846,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptSection"
     "Section_SchoolYear" integer NULL,
     "Section_SessionName" varchar(60) NULL,
     "Section_SectionIdentifier" varchar(255) NULL,
-    CONSTRAINT "PK_CourseTranscriptSection" PRIMARY KEY ("CourseTranscript_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_CourseTranscriptSection" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CourseTranscriptSection_CourseTranscript_Document_49864a49c3" UNIQUE ("CourseTranscript_DocumentId", "Section_DocumentId"),
+    CONSTRAINT "UX_CourseTranscriptSection_Ordinal_CourseTranscript_DocumentId" UNIQUE ("CourseTranscript_DocumentId", "Ordinal"),
     CONSTRAINT "CK_CourseTranscriptSection_Section_AllNone" CHECK (("Section_DocumentId" IS NULL AND "Section_LocalCourseCode" IS NULL AND "Section_SchoolId" IS NULL AND "Section_SchoolYear" IS NULL AND "Section_SessionName" IS NULL AND "Section_SectionIdentifier" IS NULL) OR ("Section_DocumentId" IS NOT NULL AND "Section_LocalCourseCode" IS NOT NULL AND "Section_SchoolId" IS NOT NULL AND "Section_SchoolYear" IS NOT NULL AND "Section_SessionName" IS NOT NULL AND "Section_SectionIdentifier" IS NOT NULL))
 );
 
@@ -1719,29 +1872,35 @@ CREATE TABLE IF NOT EXISTS "edfi"."Credential"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CredentialAcademicSubject"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Credential_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AcademicSubjectDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_CredentialAcademicSubject" PRIMARY KEY ("Credential_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_CredentialAcademicSubject_AcademicSubjectDescript_b3c5cb7d44" UNIQUE ("Credential_DocumentId", "AcademicSubjectDescriptor_DescriptorId")
+    CONSTRAINT "PK_CredentialAcademicSubject" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CredentialAcademicSubject_AcademicSubjectDescript_b3c5cb7d44" UNIQUE ("Credential_DocumentId", "AcademicSubjectDescriptor_DescriptorId"),
+    CONSTRAINT "UX_CredentialAcademicSubject_Ordinal_Credential_DocumentId" UNIQUE ("Credential_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CredentialEndorsement"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Credential_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "CredentialEndorsement" varchar(255) NOT NULL,
-    CONSTRAINT "PK_CredentialEndorsement" PRIMARY KEY ("Credential_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_CredentialEndorsement_CredentialEndorsement_Crede_348e03e2b5" UNIQUE ("Credential_DocumentId", "CredentialEndorsement")
+    CONSTRAINT "PK_CredentialEndorsement" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CredentialEndorsement_CredentialEndorsement_Crede_348e03e2b5" UNIQUE ("Credential_DocumentId", "CredentialEndorsement"),
+    CONSTRAINT "UX_CredentialEndorsement_Ordinal_Credential_DocumentId" UNIQUE ("Credential_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CredentialGradeLevel"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Credential_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_CredentialGradeLevel" PRIMARY KEY ("Credential_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_CredentialGradeLevel_Credential_DocumentId_GradeL_bcba2a68f9" UNIQUE ("Credential_DocumentId", "GradeLevelDescriptor_DescriptorId")
+    CONSTRAINT "PK_CredentialGradeLevel" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_CredentialGradeLevel_Credential_DocumentId_GradeL_bcba2a68f9" UNIQUE ("Credential_DocumentId", "GradeLevelDescriptor_DescriptorId"),
+    CONSTRAINT "UX_CredentialGradeLevel_Ordinal_Credential_DocumentId" UNIQUE ("Credential_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."CrisisEvent"
@@ -1770,11 +1929,13 @@ CREATE TABLE IF NOT EXISTS "edfi"."DescriptorMapping"
 
 CREATE TABLE IF NOT EXISTS "edfi"."DescriptorMappingModelEntity"
 (
+    "CollectionItemId" bigint NOT NULL,
     "DescriptorMapping_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ModelEntityDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_DescriptorMappingModelEntity" PRIMARY KEY ("DescriptorMapping_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_DescriptorMappingModelEntity_DescriptorMapping_Do_267d920f70" UNIQUE ("DescriptorMapping_DocumentId", "ModelEntityDescriptor_DescriptorId")
+    CONSTRAINT "PK_DescriptorMappingModelEntity" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_DescriptorMappingModelEntity_DescriptorMapping_Do_267d920f70" UNIQUE ("DescriptorMapping_DocumentId", "ModelEntityDescriptor_DescriptorId"),
+    CONSTRAINT "UX_DescriptorMappingModelEntity_Ordinal_DescriptorMa_c3c12ec275" UNIQUE ("DescriptorMapping_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."DisciplineAction"
@@ -1802,25 +1963,31 @@ CREATE TABLE IF NOT EXISTS "edfi"."DisciplineAction"
 
 CREATE TABLE IF NOT EXISTS "edfi"."DisciplineActionDiscipline"
 (
+    "CollectionItemId" bigint NOT NULL,
     "DisciplineAction_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "DisciplineDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_DisciplineActionDiscipline" PRIMARY KEY ("DisciplineAction_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_DisciplineActionDiscipline_DisciplineAction_Docum_ea1b91b615" UNIQUE ("DisciplineAction_DocumentId", "DisciplineDescriptor_DescriptorId")
+    CONSTRAINT "PK_DisciplineActionDiscipline" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_DisciplineActionDiscipline_DisciplineAction_Docum_ea1b91b615" UNIQUE ("DisciplineAction_DocumentId", "DisciplineDescriptor_DescriptorId"),
+    CONSTRAINT "UX_DisciplineActionDiscipline_Ordinal_DisciplineActi_766bd062ba" UNIQUE ("DisciplineAction_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."DisciplineActionStaff"
 (
+    "CollectionItemId" bigint NOT NULL,
     "DisciplineAction_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NULL,
     "Staff_StaffUniqueId" varchar(32) NULL,
-    CONSTRAINT "PK_DisciplineActionStaff" PRIMARY KEY ("DisciplineAction_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_DisciplineActionStaff" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_DisciplineActionStaff_DisciplineAction_DocumentId_124e7952b7" UNIQUE ("DisciplineAction_DocumentId", "Staff_DocumentId"),
+    CONSTRAINT "UX_DisciplineActionStaff_Ordinal_DisciplineAction_DocumentId" UNIQUE ("DisciplineAction_DocumentId", "Ordinal"),
     CONSTRAINT "CK_DisciplineActionStaff_Staff_AllNone" CHECK (("Staff_DocumentId" IS NULL AND "Staff_StaffUniqueId" IS NULL) OR ("Staff_DocumentId" IS NOT NULL AND "Staff_StaffUniqueId" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."DisciplineActionStudentDisciplineIncidentBehaviorAssociation"
 (
+    "CollectionItemId" bigint NOT NULL,
     "DisciplineAction_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "StudentDisciplineIncidentBehaviorAssociation_DocumentId" bigint NULL,
@@ -1828,7 +1995,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."DisciplineActionStudentDisciplineIncidentBeha
     "StudentDisciplineIncidentBehaviorAssociation_IncidentIdentifier" varchar(36) NULL,
     "StudentDisciplineIncidentBehaviorAssociation_SchoolId" integer NULL,
     "StudentDisciplineIncidentBehaviorAssociation_StudentUniqueId" varchar(32) NULL,
-    CONSTRAINT "PK_DisciplineActionStudentDisciplineIncidentBehaviorAssociation" PRIMARY KEY ("DisciplineAction_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_DisciplineActionStudentDisciplineIncidentBehaviorAssociation" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_DisciplineActionStudentDisciplineIncidentBehavior_10ccb6b8f8" UNIQUE ("DisciplineAction_DocumentId", "Ordinal"),
+    CONSTRAINT "UX_DisciplineActionStudentDisciplineIncidentBehavior_7cf2b5d17f" UNIQUE ("DisciplineAction_DocumentId", "StudentDisciplineIncidentBehaviorAssociation_DocumentId"),
     CONSTRAINT "CK_DisciplineActionStudentDisciplineIncidentBehavior_df0c4bd841" CHECK (("StudentDisciplineIncidentBehaviorAssociation_DocumentId" IS NULL AND "StudentDisciplineIncidentBehaviorAssociation_Behavio_4bed9fbe3b" IS NULL AND "StudentDisciplineIncidentBehaviorAssociation_IncidentIdentifier" IS NULL AND "StudentDisciplineIncidentBehaviorAssociation_SchoolId" IS NULL AND "StudentDisciplineIncidentBehaviorAssociation_StudentUniqueId" IS NULL) OR ("StudentDisciplineIncidentBehaviorAssociation_DocumentId" IS NOT NULL AND "StudentDisciplineIncidentBehaviorAssociation_Behavio_4bed9fbe3b" IS NOT NULL AND "StudentDisciplineIncidentBehaviorAssociation_IncidentIdentifier" IS NOT NULL AND "StudentDisciplineIncidentBehaviorAssociation_SchoolId" IS NOT NULL AND "StudentDisciplineIncidentBehaviorAssociation_StudentUniqueId" IS NOT NULL))
 );
 
@@ -1855,32 +2024,38 @@ CREATE TABLE IF NOT EXISTS "edfi"."DisciplineIncident"
 
 CREATE TABLE IF NOT EXISTS "edfi"."DisciplineIncidentBehavior"
 (
+    "CollectionItemId" bigint NOT NULL,
     "DisciplineIncident_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "BehaviorDescriptor_DescriptorId" bigint NOT NULL,
     "BehaviorDetailedDescription" varchar(1024) NULL,
-    CONSTRAINT "PK_DisciplineIncidentBehavior" PRIMARY KEY ("DisciplineIncident_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_DisciplineIncidentBehavior_BehaviorDescriptor_Des_070583410c" UNIQUE ("DisciplineIncident_DocumentId", "BehaviorDescriptor_DescriptorId")
+    CONSTRAINT "PK_DisciplineIncidentBehavior" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_DisciplineIncidentBehavior_BehaviorDescriptor_Des_070583410c" UNIQUE ("DisciplineIncident_DocumentId", "BehaviorDescriptor_DescriptorId"),
+    CONSTRAINT "UX_DisciplineIncidentBehavior_Ordinal_DisciplineInci_a244c0c279" UNIQUE ("DisciplineIncident_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."DisciplineIncidentExternalParticipant"
 (
+    "CollectionItemId" bigint NOT NULL,
     "DisciplineIncident_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "DisciplineIncidentParticipationCodeDescriptor_DescriptorId" bigint NOT NULL,
     "FirstName" varchar(75) NOT NULL,
     "LastSurname" varchar(75) NOT NULL,
-    CONSTRAINT "PK_DisciplineIncidentExternalParticipant" PRIMARY KEY ("DisciplineIncident_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_DisciplineIncidentExternalParticipant_FirstName_L_5945b94f16" UNIQUE ("DisciplineIncident_DocumentId", "DisciplineIncidentParticipationCodeDescriptor_DescriptorId", "FirstName", "LastSurname")
+    CONSTRAINT "PK_DisciplineIncidentExternalParticipant" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_DisciplineIncidentExternalParticipant_FirstName_L_5945b94f16" UNIQUE ("DisciplineIncident_DocumentId", "DisciplineIncidentParticipationCodeDescriptor_DescriptorId", "FirstName", "LastSurname"),
+    CONSTRAINT "UX_DisciplineIncidentExternalParticipant_Ordinal_Dis_16d962b41d" UNIQUE ("DisciplineIncident_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."DisciplineIncidentWeapon"
 (
+    "CollectionItemId" bigint NOT NULL,
     "DisciplineIncident_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "WeaponDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_DisciplineIncidentWeapon" PRIMARY KEY ("DisciplineIncident_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_DisciplineIncidentWeapon_DisciplineIncident_Docum_112f0543b1" UNIQUE ("DisciplineIncident_DocumentId", "WeaponDescriptor_DescriptorId")
+    CONSTRAINT "PK_DisciplineIncidentWeapon" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_DisciplineIncidentWeapon_DisciplineIncident_Docum_112f0543b1" UNIQUE ("DisciplineIncident_DocumentId", "WeaponDescriptor_DescriptorId"),
+    CONSTRAINT "UX_DisciplineIncidentWeapon_Ordinal_DisciplineIncide_eb59ced6d5" UNIQUE ("DisciplineIncident_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationContent"
@@ -1912,66 +2087,81 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationContent"
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationContentAppropriateGradeLevel"
 (
+    "CollectionItemId" bigint NOT NULL,
     "EducationContent_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_EducationContentAppropriateGradeLevel" PRIMARY KEY ("EducationContent_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_EducationContentAppropriateGradeLevel_EducationCo_b44a96c330" UNIQUE ("EducationContent_DocumentId", "GradeLevelDescriptor_DescriptorId")
+    CONSTRAINT "PK_EducationContentAppropriateGradeLevel" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_EducationContentAppropriateGradeLevel_EducationCo_b44a96c330" UNIQUE ("EducationContent_DocumentId", "GradeLevelDescriptor_DescriptorId"),
+    CONSTRAINT "UX_EducationContentAppropriateGradeLevel_Ordinal_Edu_ab782b7ac5" UNIQUE ("EducationContent_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationContentAppropriateSex"
 (
+    "CollectionItemId" bigint NOT NULL,
     "EducationContent_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "SexDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_EducationContentAppropriateSex" PRIMARY KEY ("EducationContent_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_EducationContentAppropriateSex_EducationContent_D_269a36e08e" UNIQUE ("EducationContent_DocumentId", "SexDescriptor_DescriptorId")
+    CONSTRAINT "PK_EducationContentAppropriateSex" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_EducationContentAppropriateSex_EducationContent_D_269a36e08e" UNIQUE ("EducationContent_DocumentId", "SexDescriptor_DescriptorId"),
+    CONSTRAINT "UX_EducationContentAppropriateSex_Ordinal_EducationC_70a7c29e39" UNIQUE ("EducationContent_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationContentAuthor"
 (
+    "CollectionItemId" bigint NOT NULL,
     "EducationContent_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "Author" varchar(100) NOT NULL,
-    CONSTRAINT "PK_EducationContentAuthor" PRIMARY KEY ("EducationContent_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_EducationContentAuthor_Author_EducationContent_DocumentId" UNIQUE ("EducationContent_DocumentId", "Author")
+    CONSTRAINT "PK_EducationContentAuthor" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_EducationContentAuthor_Author_EducationContent_DocumentId" UNIQUE ("EducationContent_DocumentId", "Author"),
+    CONSTRAINT "UX_EducationContentAuthor_Ordinal_EducationContent_DocumentId" UNIQUE ("EducationContent_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationContentDerivativeSourceEducationContent"
 (
+    "CollectionItemId" bigint NOT NULL,
     "EducationContent_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "DerivativeSourceEducationContent_DocumentId" bigint NULL,
     "DerivativeSourceEducationContent_ContentIdentifier" varchar(225) NULL,
-    CONSTRAINT "PK_EducationContentDerivativeSourceEducationContent" PRIMARY KEY ("EducationContent_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_EducationContentDerivativeSourceEducationContent" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_EducationContentDerivativeSourceEducationContent__89fc2a26d9" UNIQUE ("EducationContent_DocumentId", "DerivativeSourceEducationContent_DocumentId"),
+    CONSTRAINT "UX_EducationContentDerivativeSourceEducationContent__9c38152014" UNIQUE ("EducationContent_DocumentId", "Ordinal"),
     CONSTRAINT "CK_EducationContentDerivativeSourceEducationContent__4e0b2cb655" CHECK (("DerivativeSourceEducationContent_DocumentId" IS NULL AND "DerivativeSourceEducationContent_ContentIdentifier" IS NULL) OR ("DerivativeSourceEducationContent_DocumentId" IS NOT NULL AND "DerivativeSourceEducationContent_ContentIdentifier" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationContentDerivativeSourceLearningResourceMetadataURI"
 (
+    "CollectionItemId" bigint NOT NULL,
     "EducationContent_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "DerivativeSourceLearningResourceMetadataURI" varchar(255) NOT NULL,
-    CONSTRAINT "PK_EducationContentDerivativeSourceLearningResourceMetadataURI" PRIMARY KEY ("EducationContent_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_EducationContentDerivativeSourceLearningResourceMetadataURI" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_EducationContentDerivativeSourceLearningResourceM_17d9ded3d8" UNIQUE ("EducationContent_DocumentId", "Ordinal"),
     CONSTRAINT "UX_EducationContentDerivativeSourceLearningResourceM_cf7280ce0e" UNIQUE ("EducationContent_DocumentId", "DerivativeSourceLearningResourceMetadataURI")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationContentDerivativeSourceURI"
 (
+    "CollectionItemId" bigint NOT NULL,
     "EducationContent_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "DerivativeSourceURI" varchar(255) NOT NULL,
-    CONSTRAINT "PK_EducationContentDerivativeSourceURI" PRIMARY KEY ("EducationContent_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_EducationContentDerivativeSourceURI_DerivativeSou_203dcc70bf" UNIQUE ("EducationContent_DocumentId", "DerivativeSourceURI")
+    CONSTRAINT "PK_EducationContentDerivativeSourceURI" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_EducationContentDerivativeSourceURI_DerivativeSou_203dcc70bf" UNIQUE ("EducationContent_DocumentId", "DerivativeSourceURI"),
+    CONSTRAINT "UX_EducationContentDerivativeSourceURI_Ordinal_Educa_32b3f95f65" UNIQUE ("EducationContent_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationContentLanguage"
 (
+    "CollectionItemId" bigint NOT NULL,
     "EducationContent_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "LanguageDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_EducationContentLanguage" PRIMARY KEY ("EducationContent_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_EducationContentLanguage_EducationContent_Documen_1437e9e29c" UNIQUE ("EducationContent_DocumentId", "LanguageDescriptor_DescriptorId")
+    CONSTRAINT "PK_EducationContentLanguage" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_EducationContentLanguage_EducationContent_Documen_1437e9e29c" UNIQUE ("EducationContent_DocumentId", "LanguageDescriptor_DescriptorId"),
+    CONSTRAINT "UX_EducationContentLanguage_Ordinal_EducationContent_DocumentId" UNIQUE ("EducationContent_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationInterventionPrescriptionAssociation"
@@ -2006,6 +2196,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetwork"
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkAddress"
 (
+    "CollectionItemId" bigint NOT NULL,
     "EducationOrganizationNetwork_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -2022,31 +2213,38 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkAddress"
     "NameOfCounty" varchar(30) NULL,
     "PostalCode" varchar(17) NOT NULL,
     "StreetNumberName" varchar(150) NOT NULL,
-    CONSTRAINT "PK_EducationOrganizationNetworkAddress" PRIMARY KEY ("EducationOrganizationNetwork_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_EducationOrganizationNetworkAddress_City_PostalCo_27a935cbcb" UNIQUE ("EducationOrganizationNetwork_DocumentId", "AddressTypeDescriptor_DescriptorId", "City", "PostalCode", "StateAbbreviationDescriptor_DescriptorId", "StreetNumberName")
+    CONSTRAINT "PK_EducationOrganizationNetworkAddress" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_EducationOrganizationNetworkAddress_City_PostalCo_27a935cbcb" UNIQUE ("EducationOrganizationNetwork_DocumentId", "AddressTypeDescriptor_DescriptorId", "City", "PostalCode", "StateAbbreviationDescriptor_DescriptorId", "StreetNumberName"),
+    CONSTRAINT "UX_EducationOrganizationNetworkAddress_CollectionIte_11edead4db" UNIQUE ("CollectionItemId", "EducationOrganizationNetwork_DocumentId"),
+    CONSTRAINT "UX_EducationOrganizationNetworkAddress_Ordinal_Educa_a76e860920" UNIQUE ("EducationOrganizationNetwork_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkCategory"
 (
+    "CollectionItemId" bigint NOT NULL,
     "EducationOrganizationNetwork_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "EducationOrganizationCategoryDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_EducationOrganizationNetworkCategory" PRIMARY KEY ("EducationOrganizationNetwork_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_EducationOrganizationNetworkCategory_EducationOrg_5558d272d7" UNIQUE ("EducationOrganizationNetwork_DocumentId", "EducationOrganizationCategoryDescriptor_DescriptorId")
+    CONSTRAINT "PK_EducationOrganizationNetworkCategory" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_EducationOrganizationNetworkCategory_EducationOrg_5558d272d7" UNIQUE ("EducationOrganizationNetwork_DocumentId", "EducationOrganizationCategoryDescriptor_DescriptorId"),
+    CONSTRAINT "UX_EducationOrganizationNetworkCategory_Ordinal_Educ_e458e4c914" UNIQUE ("EducationOrganizationNetwork_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkIdentificationCode"
 (
+    "CollectionItemId" bigint NOT NULL,
     "EducationOrganizationNetwork_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" bigint NOT NULL,
     "IdentificationCode" varchar(60) NOT NULL,
-    CONSTRAINT "PK_EducationOrganizationNetworkIdentificationCode" PRIMARY KEY ("EducationOrganizationNetwork_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_EducationOrganizationNetworkIdentificationCode_Ed_03791941a4" UNIQUE ("EducationOrganizationNetwork_DocumentId", "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede")
+    CONSTRAINT "PK_EducationOrganizationNetworkIdentificationCode" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_EducationOrganizationNetworkIdentificationCode_Ed_03791941a4" UNIQUE ("EducationOrganizationNetwork_DocumentId", "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede"),
+    CONSTRAINT "UX_EducationOrganizationNetworkIdentificationCode_Or_6c2ea9c3c8" UNIQUE ("EducationOrganizationNetwork_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkIndicator"
 (
+    "CollectionItemId" bigint NOT NULL,
     "EducationOrganizationNetwork_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "IndicatorDescriptor_DescriptorId" bigint NOT NULL,
@@ -2054,22 +2252,27 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkIndicator"
     "IndicatorLevelDescriptor_DescriptorId" bigint NULL,
     "DesignatedBy" varchar(60) NULL,
     "IndicatorValue" varchar(60) NULL,
-    CONSTRAINT "PK_EducationOrganizationNetworkIndicator" PRIMARY KEY ("EducationOrganizationNetwork_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_EducationOrganizationNetworkIndicator_EducationOr_4424841a32" UNIQUE ("EducationOrganizationNetwork_DocumentId", "IndicatorDescriptor_DescriptorId")
+    CONSTRAINT "PK_EducationOrganizationNetworkIndicator" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_EducationOrganizationNetworkIndicator_CollectionI_d39af8c187" UNIQUE ("CollectionItemId", "EducationOrganizationNetwork_DocumentId"),
+    CONSTRAINT "UX_EducationOrganizationNetworkIndicator_EducationOr_4424841a32" UNIQUE ("EducationOrganizationNetwork_DocumentId", "IndicatorDescriptor_DescriptorId"),
+    CONSTRAINT "UX_EducationOrganizationNetworkIndicator_Ordinal_Edu_0c5ee1f2f1" UNIQUE ("EducationOrganizationNetwork_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkInstitutionTelephone"
 (
+    "CollectionItemId" bigint NOT NULL,
     "EducationOrganizationNetwork_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
     "TelephoneNumber" varchar(24) NOT NULL,
-    CONSTRAINT "PK_EducationOrganizationNetworkInstitutionTelephone" PRIMARY KEY ("EducationOrganizationNetwork_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_EducationOrganizationNetworkInstitutionTelephone__b4175ce89e" UNIQUE ("EducationOrganizationNetwork_DocumentId", "InstitutionTelephoneNumberTypeDescriptor_DescriptorId")
+    CONSTRAINT "PK_EducationOrganizationNetworkInstitutionTelephone" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_EducationOrganizationNetworkInstitutionTelephone__b4175ce89e" UNIQUE ("EducationOrganizationNetwork_DocumentId", "InstitutionTelephoneNumberTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_EducationOrganizationNetworkInstitutionTelephone__f9b6266f6f" UNIQUE ("EducationOrganizationNetwork_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkInternationalAddress"
 (
+    "CollectionItemId" bigint NOT NULL,
     "EducationOrganizationNetwork_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -2082,30 +2285,35 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkInternationalAddr
     "EndDate" date NULL,
     "Latitude" varchar(20) NULL,
     "Longitude" varchar(20) NULL,
-    CONSTRAINT "PK_EducationOrganizationNetworkInternationalAddress" PRIMARY KEY ("EducationOrganizationNetwork_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_EducationOrganizationNetworkInternationalAddress__6144f48953" UNIQUE ("EducationOrganizationNetwork_DocumentId", "AddressTypeDescriptor_DescriptorId")
+    CONSTRAINT "PK_EducationOrganizationNetworkInternationalAddress" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_EducationOrganizationNetworkInternationalAddress__6144f48953" UNIQUE ("EducationOrganizationNetwork_DocumentId", "AddressTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_EducationOrganizationNetworkInternationalAddress__f4de699113" UNIQUE ("EducationOrganizationNetwork_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkAddressPeriod"
 (
+    "CollectionItemId" bigint NOT NULL,
     "EducationOrganizationNetwork_DocumentId" bigint NOT NULL,
-    "AddressOrdinal" integer NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
-    CONSTRAINT "PK_EducationOrganizationNetworkAddressPeriod" PRIMARY KEY ("EducationOrganizationNetwork_DocumentId", "AddressOrdinal", "Ordinal"),
-    CONSTRAINT "UX_EducationOrganizationNetworkAddressPeriod_Address_1a55c0a94c" UNIQUE ("EducationOrganizationNetwork_DocumentId", "AddressOrdinal", "BeginDate")
+    CONSTRAINT "PK_EducationOrganizationNetworkAddressPeriod" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_EducationOrganizationNetworkAddressPeriod_BeginDa_12fda0fddb" UNIQUE ("ParentCollectionItemId", "BeginDate"),
+    CONSTRAINT "UX_EducationOrganizationNetworkAddressPeriod_Ordinal_7358cde0dd" UNIQUE ("ParentCollectionItemId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkIndicatorPeriod"
 (
+    "CollectionItemId" bigint NOT NULL,
     "EducationOrganizationNetwork_DocumentId" bigint NOT NULL,
-    "IndicatorOrdinal" integer NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
-    CONSTRAINT "PK_EducationOrganizationNetworkIndicatorPeriod" PRIMARY KEY ("EducationOrganizationNetwork_DocumentId", "IndicatorOrdinal", "Ordinal"),
-    CONSTRAINT "UX_EducationOrganizationNetworkIndicatorPeriod_Begin_d20d820174" UNIQUE ("EducationOrganizationNetwork_DocumentId", "IndicatorOrdinal", "BeginDate")
+    CONSTRAINT "PK_EducationOrganizationNetworkIndicatorPeriod" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_EducationOrganizationNetworkIndicatorPeriod_Begin_0de42e0694" UNIQUE ("ParentCollectionItemId", "BeginDate"),
+    CONSTRAINT "UX_EducationOrganizationNetworkIndicatorPeriod_Ordin_a21e1c9c03" UNIQUE ("ParentCollectionItemId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkAssociation"
@@ -2154,6 +2362,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenter"
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterAddress"
 (
+    "CollectionItemId" bigint NOT NULL,
     "EducationServiceCenter_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -2170,31 +2379,38 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterAddress"
     "NameOfCounty" varchar(30) NULL,
     "PostalCode" varchar(17) NOT NULL,
     "StreetNumberName" varchar(150) NOT NULL,
-    CONSTRAINT "PK_EducationServiceCenterAddress" PRIMARY KEY ("EducationServiceCenter_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_EducationServiceCenterAddress_City_PostalCode_Str_d6a467a3df" UNIQUE ("EducationServiceCenter_DocumentId", "AddressTypeDescriptor_DescriptorId", "City", "PostalCode", "StateAbbreviationDescriptor_DescriptorId", "StreetNumberName")
+    CONSTRAINT "PK_EducationServiceCenterAddress" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_EducationServiceCenterAddress_City_PostalCode_Str_d6a467a3df" UNIQUE ("EducationServiceCenter_DocumentId", "AddressTypeDescriptor_DescriptorId", "City", "PostalCode", "StateAbbreviationDescriptor_DescriptorId", "StreetNumberName"),
+    CONSTRAINT "UX_EducationServiceCenterAddress_CollectionItemId_Ed_1163a84cc1" UNIQUE ("CollectionItemId", "EducationServiceCenter_DocumentId"),
+    CONSTRAINT "UX_EducationServiceCenterAddress_Ordinal_EducationSe_7e3c3a64bd" UNIQUE ("EducationServiceCenter_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterCategory"
 (
+    "CollectionItemId" bigint NOT NULL,
     "EducationServiceCenter_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "EducationOrganizationCategoryDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_EducationServiceCenterCategory" PRIMARY KEY ("EducationServiceCenter_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_EducationServiceCenterCategory_EducationOrganizat_fe61275ffc" UNIQUE ("EducationServiceCenter_DocumentId", "EducationOrganizationCategoryDescriptor_DescriptorId")
+    CONSTRAINT "PK_EducationServiceCenterCategory" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_EducationServiceCenterCategory_EducationOrganizat_fe61275ffc" UNIQUE ("EducationServiceCenter_DocumentId", "EducationOrganizationCategoryDescriptor_DescriptorId"),
+    CONSTRAINT "UX_EducationServiceCenterCategory_Ordinal_EducationS_d01e2a2f01" UNIQUE ("EducationServiceCenter_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterIdentificationCode"
 (
+    "CollectionItemId" bigint NOT NULL,
     "EducationServiceCenter_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" bigint NOT NULL,
     "IdentificationCode" varchar(60) NOT NULL,
-    CONSTRAINT "PK_EducationServiceCenterIdentificationCode" PRIMARY KEY ("EducationServiceCenter_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_EducationServiceCenterIdentificationCode_Educatio_8eb2a3d118" UNIQUE ("EducationServiceCenter_DocumentId", "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede")
+    CONSTRAINT "PK_EducationServiceCenterIdentificationCode" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_EducationServiceCenterIdentificationCode_Educatio_8eb2a3d118" UNIQUE ("EducationServiceCenter_DocumentId", "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede"),
+    CONSTRAINT "UX_EducationServiceCenterIdentificationCode_Ordinal__0f4ddc88c1" UNIQUE ("EducationServiceCenter_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterIndicator"
 (
+    "CollectionItemId" bigint NOT NULL,
     "EducationServiceCenter_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "IndicatorDescriptor_DescriptorId" bigint NOT NULL,
@@ -2202,22 +2418,27 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterIndicator"
     "IndicatorLevelDescriptor_DescriptorId" bigint NULL,
     "DesignatedBy" varchar(60) NULL,
     "IndicatorValue" varchar(60) NULL,
-    CONSTRAINT "PK_EducationServiceCenterIndicator" PRIMARY KEY ("EducationServiceCenter_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_EducationServiceCenterIndicator_EducationServiceC_8759491028" UNIQUE ("EducationServiceCenter_DocumentId", "IndicatorDescriptor_DescriptorId")
+    CONSTRAINT "PK_EducationServiceCenterIndicator" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_EducationServiceCenterIndicator_CollectionItemId__9746748450" UNIQUE ("CollectionItemId", "EducationServiceCenter_DocumentId"),
+    CONSTRAINT "UX_EducationServiceCenterIndicator_EducationServiceC_8759491028" UNIQUE ("EducationServiceCenter_DocumentId", "IndicatorDescriptor_DescriptorId"),
+    CONSTRAINT "UX_EducationServiceCenterIndicator_Ordinal_Education_837934a5f3" UNIQUE ("EducationServiceCenter_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterInstitutionTelephone"
 (
+    "CollectionItemId" bigint NOT NULL,
     "EducationServiceCenter_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
     "TelephoneNumber" varchar(24) NOT NULL,
-    CONSTRAINT "PK_EducationServiceCenterInstitutionTelephone" PRIMARY KEY ("EducationServiceCenter_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_EducationServiceCenterInstitutionTelephone_Educat_8ff825b876" UNIQUE ("EducationServiceCenter_DocumentId", "InstitutionTelephoneNumberTypeDescriptor_DescriptorId")
+    CONSTRAINT "PK_EducationServiceCenterInstitutionTelephone" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_EducationServiceCenterInstitutionTelephone_Educat_8ff825b876" UNIQUE ("EducationServiceCenter_DocumentId", "InstitutionTelephoneNumberTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_EducationServiceCenterInstitutionTelephone_Ordina_3bf4febf0f" UNIQUE ("EducationServiceCenter_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterInternationalAddress"
 (
+    "CollectionItemId" bigint NOT NULL,
     "EducationServiceCenter_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -2230,30 +2451,35 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterInternationalAddress"
     "EndDate" date NULL,
     "Latitude" varchar(20) NULL,
     "Longitude" varchar(20) NULL,
-    CONSTRAINT "PK_EducationServiceCenterInternationalAddress" PRIMARY KEY ("EducationServiceCenter_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_EducationServiceCenterInternationalAddress_Addres_2df23d9c25" UNIQUE ("EducationServiceCenter_DocumentId", "AddressTypeDescriptor_DescriptorId")
+    CONSTRAINT "PK_EducationServiceCenterInternationalAddress" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_EducationServiceCenterInternationalAddress_Addres_2df23d9c25" UNIQUE ("EducationServiceCenter_DocumentId", "AddressTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_EducationServiceCenterInternationalAddress_Ordina_dc4da819d9" UNIQUE ("EducationServiceCenter_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterAddressPeriod"
 (
+    "CollectionItemId" bigint NOT NULL,
     "EducationServiceCenter_DocumentId" bigint NOT NULL,
-    "AddressOrdinal" integer NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
-    CONSTRAINT "PK_EducationServiceCenterAddressPeriod" PRIMARY KEY ("EducationServiceCenter_DocumentId", "AddressOrdinal", "Ordinal"),
-    CONSTRAINT "UX_EducationServiceCenterAddressPeriod_AddressOrdina_b984eaf6f4" UNIQUE ("EducationServiceCenter_DocumentId", "AddressOrdinal", "BeginDate")
+    CONSTRAINT "PK_EducationServiceCenterAddressPeriod" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_EducationServiceCenterAddressPeriod_BeginDate_Par_9c2d53142d" UNIQUE ("ParentCollectionItemId", "BeginDate"),
+    CONSTRAINT "UX_EducationServiceCenterAddressPeriod_Ordinal_Paren_3e5710717b" UNIQUE ("ParentCollectionItemId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterIndicatorPeriod"
 (
+    "CollectionItemId" bigint NOT NULL,
     "EducationServiceCenter_DocumentId" bigint NOT NULL,
-    "IndicatorOrdinal" integer NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
-    CONSTRAINT "PK_EducationServiceCenterIndicatorPeriod" PRIMARY KEY ("EducationServiceCenter_DocumentId", "IndicatorOrdinal", "Ordinal"),
-    CONSTRAINT "UX_EducationServiceCenterIndicatorPeriod_BeginDate_I_6b1c95bf55" UNIQUE ("EducationServiceCenter_DocumentId", "IndicatorOrdinal", "BeginDate")
+    CONSTRAINT "PK_EducationServiceCenterIndicatorPeriod" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_EducationServiceCenterIndicatorPeriod_BeginDate_P_f506a62274" UNIQUE ("ParentCollectionItemId", "BeginDate"),
+    CONSTRAINT "UX_EducationServiceCenterIndicatorPeriod_Ordinal_Par_d5d2042cb0" UNIQUE ("ParentCollectionItemId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."EvaluationRubricDimension"
@@ -2305,11 +2531,13 @@ CREATE TABLE IF NOT EXISTS "edfi"."FunctionDimension"
 
 CREATE TABLE IF NOT EXISTS "edfi"."FunctionDimensionReportingTag"
 (
+    "CollectionItemId" bigint NOT NULL,
     "FunctionDimension_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ReportingTagDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_FunctionDimensionReportingTag" PRIMARY KEY ("FunctionDimension_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_FunctionDimensionReportingTag_FunctionDimension_D_020c9561c9" UNIQUE ("FunctionDimension_DocumentId", "ReportingTagDescriptor_DescriptorId")
+    CONSTRAINT "PK_FunctionDimensionReportingTag" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_FunctionDimensionReportingTag_FunctionDimension_D_020c9561c9" UNIQUE ("FunctionDimension_DocumentId", "ReportingTagDescriptor_DescriptorId"),
+    CONSTRAINT "UX_FunctionDimensionReportingTag_Ordinal_FunctionDim_6a39f5eb08" UNIQUE ("FunctionDimension_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."FundDimension"
@@ -2325,11 +2553,13 @@ CREATE TABLE IF NOT EXISTS "edfi"."FundDimension"
 
 CREATE TABLE IF NOT EXISTS "edfi"."FundDimensionReportingTag"
 (
+    "CollectionItemId" bigint NOT NULL,
     "FundDimension_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ReportingTagDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_FundDimensionReportingTag" PRIMARY KEY ("FundDimension_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_FundDimensionReportingTag_FundDimension_DocumentI_3ae463b294" UNIQUE ("FundDimension_DocumentId", "ReportingTagDescriptor_DescriptorId")
+    CONSTRAINT "PK_FundDimensionReportingTag" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_FundDimensionReportingTag_FundDimension_DocumentI_3ae463b294" UNIQUE ("FundDimension_DocumentId", "ReportingTagDescriptor_DescriptorId"),
+    CONSTRAINT "UX_FundDimensionReportingTag_Ordinal_FundDimension_DocumentId" UNIQUE ("FundDimension_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."Grade"
@@ -2367,6 +2597,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Grade"
 
 CREATE TABLE IF NOT EXISTS "edfi"."GradeLearningStandardGrade"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Grade_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "LearningStandardGradeLearningStandard_DocumentId" bigint NOT NULL,
@@ -2375,8 +2606,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."GradeLearningStandardGrade"
     "DiagnosticStatement" varchar(1024) NULL,
     "LetterGradeEarned" varchar(20) NULL,
     "NumericGradeEarned" numeric(9,2) NULL,
-    CONSTRAINT "PK_GradeLearningStandardGrade" PRIMARY KEY ("Grade_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_GradeLearningStandardGrade" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_GradeLearningStandardGrade_Grade_DocumentId_Learn_0359ea72b8" UNIQUE ("Grade_DocumentId", "LearningStandardGradeLearningStandard_DocumentId"),
+    CONSTRAINT "UX_GradeLearningStandardGrade_Ordinal_Grade_DocumentId" UNIQUE ("Grade_DocumentId", "Ordinal"),
     CONSTRAINT "CK_GradeLearningStandardGrade_LearningStandardGradeL_1f16dbc03d" CHECK (("LearningStandardGradeLearningStandard_DocumentId" IS NULL AND "LearningStandardGradeLearningStandard_LearningStandardId" IS NULL) OR ("LearningStandardGradeLearningStandard_DocumentId" IS NOT NULL AND "LearningStandardGradeLearningStandard_LearningStandardId" IS NOT NULL))
 );
 
@@ -2415,11 +2647,14 @@ CREATE TABLE IF NOT EXISTS "edfi"."GradebookEntry"
 
 CREATE TABLE IF NOT EXISTS "edfi"."GradebookEntryLearningStandard"
 (
+    "CollectionItemId" bigint NOT NULL,
     "GradebookEntry_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "LearningStandard_DocumentId" bigint NULL,
     "LearningStandard_LearningStandardId" varchar(60) NULL,
-    CONSTRAINT "PK_GradebookEntryLearningStandard" PRIMARY KEY ("GradebookEntry_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_GradebookEntryLearningStandard" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_GradebookEntryLearningStandard_GradebookEntry_Doc_1bf44ab247" UNIQUE ("GradebookEntry_DocumentId", "LearningStandard_DocumentId"),
+    CONSTRAINT "UX_GradebookEntryLearningStandard_Ordinal_GradebookE_6d6dcdd200" UNIQUE ("GradebookEntry_DocumentId", "Ordinal"),
     CONSTRAINT "CK_GradebookEntryLearningStandard_LearningStandard_AllNone" CHECK (("LearningStandard_DocumentId" IS NULL AND "LearningStandard_LearningStandardId" IS NULL) OR ("LearningStandard_DocumentId" IS NOT NULL AND "LearningStandard_LearningStandardId" IS NOT NULL))
 );
 
@@ -2464,6 +2699,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlan"
 
 CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlanCreditsByCours"
 (
+    "CollectionItemId" bigint NOT NULL,
     "GraduationPlan_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "CreditTypeDescriptor_DescriptorId" bigint NULL,
@@ -2471,36 +2707,43 @@ CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlanCreditsByCours"
     "CourseSetName" varchar(120) NOT NULL,
     "CreditConversion" numeric(9,2) NULL,
     "Credits" numeric(9,3) NOT NULL,
-    CONSTRAINT "PK_GraduationPlanCreditsByCours" PRIMARY KEY ("GraduationPlan_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_GraduationPlanCreditsByCours_CourseSetName_Gradua_061d2d698a" UNIQUE ("GraduationPlan_DocumentId", "CourseSetName")
+    CONSTRAINT "PK_GraduationPlanCreditsByCours" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_GraduationPlanCreditsByCours_CollectionItemId_Gra_d953daff1c" UNIQUE ("CollectionItemId", "GraduationPlan_DocumentId"),
+    CONSTRAINT "UX_GraduationPlanCreditsByCours_CourseSetName_Gradua_061d2d698a" UNIQUE ("GraduationPlan_DocumentId", "CourseSetName"),
+    CONSTRAINT "UX_GraduationPlanCreditsByCours_Ordinal_GraduationPl_c730a68955" UNIQUE ("GraduationPlan_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlanCreditsByCreditCategory"
 (
+    "CollectionItemId" bigint NOT NULL,
     "GraduationPlan_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "CreditCategoryDescriptor_DescriptorId" bigint NOT NULL,
     "CreditTypeDescriptor_DescriptorId" bigint NULL,
     "CreditConversion" numeric(9,2) NULL,
     "Credits" numeric(9,3) NOT NULL,
-    CONSTRAINT "PK_GraduationPlanCreditsByCreditCategory" PRIMARY KEY ("GraduationPlan_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_GraduationPlanCreditsByCreditCategory_CreditCateg_d72eebb787" UNIQUE ("GraduationPlan_DocumentId", "CreditCategoryDescriptor_DescriptorId")
+    CONSTRAINT "PK_GraduationPlanCreditsByCreditCategory" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_GraduationPlanCreditsByCreditCategory_CreditCateg_d72eebb787" UNIQUE ("GraduationPlan_DocumentId", "CreditCategoryDescriptor_DescriptorId"),
+    CONSTRAINT "UX_GraduationPlanCreditsByCreditCategory_Ordinal_Gra_6f3bee312d" UNIQUE ("GraduationPlan_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlanCreditsBySubject"
 (
+    "CollectionItemId" bigint NOT NULL,
     "GraduationPlan_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AcademicSubjectDescriptor_DescriptorId" bigint NOT NULL,
     "CreditTypeDescriptor_DescriptorId" bigint NULL,
     "CreditConversion" numeric(9,2) NULL,
     "Credits" numeric(9,3) NOT NULL,
-    CONSTRAINT "PK_GraduationPlanCreditsBySubject" PRIMARY KEY ("GraduationPlan_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_GraduationPlanCreditsBySubject_AcademicSubjectDes_84b3f31eab" UNIQUE ("GraduationPlan_DocumentId", "AcademicSubjectDescriptor_DescriptorId")
+    CONSTRAINT "PK_GraduationPlanCreditsBySubject" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_GraduationPlanCreditsBySubject_AcademicSubjectDes_84b3f31eab" UNIQUE ("GraduationPlan_DocumentId", "AcademicSubjectDescriptor_DescriptorId"),
+    CONSTRAINT "UX_GraduationPlanCreditsBySubject_Ordinal_Graduation_50c43682c3" UNIQUE ("GraduationPlan_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlanRequiredAssessment"
 (
+    "CollectionItemId" bigint NOT NULL,
     "GraduationPlan_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "RequiredAssessmentAssessment_DocumentId" bigint NOT NULL,
@@ -2512,34 +2755,41 @@ CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlanRequiredAssessment"
     "RequiredMaximumScore" varchar(35) NULL,
     "RequiredMinimumScore" varchar(35) NULL,
     "RequiredPerformanceLevelIndicatorName" varchar(60) NULL,
-    CONSTRAINT "PK_GraduationPlanRequiredAssessment" PRIMARY KEY ("GraduationPlan_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_GraduationPlanRequiredAssessment" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_GraduationPlanRequiredAssessment_CollectionItemId_91af066ac8" UNIQUE ("CollectionItemId", "GraduationPlan_DocumentId"),
     CONSTRAINT "UX_GraduationPlanRequiredAssessment_GraduationPlan_D_36d58b154d" UNIQUE ("GraduationPlan_DocumentId", "RequiredAssessmentAssessment_DocumentId"),
+    CONSTRAINT "UX_GraduationPlanRequiredAssessment_Ordinal_Graduati_ef919944b6" UNIQUE ("GraduationPlan_DocumentId", "Ordinal"),
     CONSTRAINT "CK_GraduationPlanRequiredAssessment_RequiredAssessme_a433388704" CHECK (("RequiredAssessmentAssessment_DocumentId" IS NULL AND "RequiredAssessmentAssessment_AssessmentIdentifier" IS NULL AND "RequiredAssessmentAssessment_Namespace" IS NULL) OR ("RequiredAssessmentAssessment_DocumentId" IS NOT NULL AND "RequiredAssessmentAssessment_AssessmentIdentifier" IS NOT NULL AND "RequiredAssessmentAssessment_Namespace" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlanCreditsByCoursCours"
 (
+    "CollectionItemId" bigint NOT NULL,
     "GraduationPlan_DocumentId" bigint NOT NULL,
-    "CreditsByCoursOrdinal" integer NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
     "CourseCourse_DocumentId" bigint NULL,
     "CourseCourse_CourseCode" varchar(60) NULL,
     "CourseCourse_EducationOrganizationId" integer NULL,
-    CONSTRAINT "PK_GraduationPlanCreditsByCoursCours" PRIMARY KEY ("GraduationPlan_DocumentId", "CreditsByCoursOrdinal", "Ordinal"),
+    CONSTRAINT "PK_GraduationPlanCreditsByCoursCours" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_GraduationPlanCreditsByCoursCours_Ordinal_ParentC_aa33a1c93b" UNIQUE ("ParentCollectionItemId", "Ordinal"),
+    CONSTRAINT "UX_GraduationPlanCreditsByCoursCours_ParentCollectio_6bc659eb69" UNIQUE ("ParentCollectionItemId", "CourseCourse_DocumentId"),
     CONSTRAINT "CK_GraduationPlanCreditsByCoursCours_CourseCourse_AllNone" CHECK (("CourseCourse_DocumentId" IS NULL AND "CourseCourse_CourseCode" IS NULL AND "CourseCourse_EducationOrganizationId" IS NULL) OR ("CourseCourse_DocumentId" IS NOT NULL AND "CourseCourse_CourseCode" IS NOT NULL AND "CourseCourse_EducationOrganizationId" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlanRequiredAssessmentScore"
 (
+    "CollectionItemId" bigint NOT NULL,
     "GraduationPlan_DocumentId" bigint NOT NULL,
-    "RequiredAssessmentOrdinal" integer NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
     "AssessmentReportingMethodDescriptor_DescriptorId" bigint NOT NULL,
     "ResultDatatypeTypeDescriptor_DescriptorId" bigint NULL,
     "RequiredMaximumScore" varchar(35) NULL,
     "RequiredMinimumScore" varchar(35) NULL,
-    CONSTRAINT "PK_GraduationPlanRequiredAssessmentScore" PRIMARY KEY ("GraduationPlan_DocumentId", "RequiredAssessmentOrdinal", "Ordinal"),
-    CONSTRAINT "UX_GraduationPlanRequiredAssessmentScore_RequiredAss_173a5aab54" UNIQUE ("GraduationPlan_DocumentId", "RequiredAssessmentOrdinal", "AssessmentReportingMethodDescriptor_DescriptorId")
+    CONSTRAINT "PK_GraduationPlanRequiredAssessmentScore" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_GraduationPlanRequiredAssessmentScore_Ordinal_Par_c7baf8371a" UNIQUE ("ParentCollectionItemId", "Ordinal"),
+    CONSTRAINT "UX_GraduationPlanRequiredAssessmentScore_ParentColle_7db2e3c45e" UNIQUE ("ParentCollectionItemId", "AssessmentReportingMethodDescriptor_DescriptorId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."Intervention"
@@ -2563,96 +2813,119 @@ CREATE TABLE IF NOT EXISTS "edfi"."Intervention"
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionAppropriateGradeLevel"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Intervention_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_InterventionAppropriateGradeLevel" PRIMARY KEY ("Intervention_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_InterventionAppropriateGradeLevel_GradeLevelDescr_76e6cdb6a4" UNIQUE ("Intervention_DocumentId", "GradeLevelDescriptor_DescriptorId")
+    CONSTRAINT "PK_InterventionAppropriateGradeLevel" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_InterventionAppropriateGradeLevel_GradeLevelDescr_76e6cdb6a4" UNIQUE ("Intervention_DocumentId", "GradeLevelDescriptor_DescriptorId"),
+    CONSTRAINT "UX_InterventionAppropriateGradeLevel_Ordinal_Interve_08514b6ebb" UNIQUE ("Intervention_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionAppropriateSex"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Intervention_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "SexDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_InterventionAppropriateSex" PRIMARY KEY ("Intervention_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_InterventionAppropriateSex_Intervention_DocumentI_277831b55a" UNIQUE ("Intervention_DocumentId", "SexDescriptor_DescriptorId")
+    CONSTRAINT "PK_InterventionAppropriateSex" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_InterventionAppropriateSex_Intervention_DocumentI_277831b55a" UNIQUE ("Intervention_DocumentId", "SexDescriptor_DescriptorId"),
+    CONSTRAINT "UX_InterventionAppropriateSex_Ordinal_Intervention_DocumentId" UNIQUE ("Intervention_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionDiagnos"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Intervention_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "DiagnosisDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_InterventionDiagnos" PRIMARY KEY ("Intervention_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_InterventionDiagnos_DiagnosisDescriptor_Descripto_1fcc7db5bb" UNIQUE ("Intervention_DocumentId", "DiagnosisDescriptor_DescriptorId")
+    CONSTRAINT "PK_InterventionDiagnos" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_InterventionDiagnos_DiagnosisDescriptor_Descripto_1fcc7db5bb" UNIQUE ("Intervention_DocumentId", "DiagnosisDescriptor_DescriptorId"),
+    CONSTRAINT "UX_InterventionDiagnos_Ordinal_Intervention_DocumentId" UNIQUE ("Intervention_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionEducationContent"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Intervention_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "EducationContentSourceEducationContent_DocumentId" bigint NULL,
     "EducationContentSourceEducationContent_ContentIdentifier" varchar(225) NULL,
-    CONSTRAINT "PK_InterventionEducationContent" PRIMARY KEY ("Intervention_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_InterventionEducationContent" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_InterventionEducationContent_EducationContentSour_462424c1aa" UNIQUE ("Intervention_DocumentId", "EducationContentSourceEducationContent_DocumentId"),
+    CONSTRAINT "UX_InterventionEducationContent_Ordinal_Intervention_DocumentId" UNIQUE ("Intervention_DocumentId", "Ordinal"),
     CONSTRAINT "CK_InterventionEducationContent_EducationContentSour_d80b5eb036" CHECK (("EducationContentSourceEducationContent_DocumentId" IS NULL AND "EducationContentSourceEducationContent_ContentIdentifier" IS NULL) OR ("EducationContentSourceEducationContent_DocumentId" IS NOT NULL AND "EducationContentSourceEducationContent_ContentIdentifier" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionInterventionPrescription"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Intervention_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "InterventionPrescriptionInterventionPrescription_DocumentId" bigint NULL,
     "InterventionPrescriptionInterventionPrescription_Edu_532babb247" integer NULL,
     "InterventionPrescriptionInterventionPrescription_Int_409fc39d28" varchar(60) NULL,
-    CONSTRAINT "PK_InterventionInterventionPrescription" PRIMARY KEY ("Intervention_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_InterventionInterventionPrescription" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_InterventionInterventionPrescription_Intervention_ffb7d2a7c8" UNIQUE ("Intervention_DocumentId", "InterventionPrescriptionInterventionPrescription_DocumentId"),
+    CONSTRAINT "UX_InterventionInterventionPrescription_Ordinal_Inte_36922280a8" UNIQUE ("Intervention_DocumentId", "Ordinal"),
     CONSTRAINT "CK_InterventionInterventionPrescription_Intervention_8208563813" CHECK (("InterventionPrescriptionInterventionPrescription_DocumentId" IS NULL AND "InterventionPrescriptionInterventionPrescription_Edu_532babb247" IS NULL AND "InterventionPrescriptionInterventionPrescription_Int_409fc39d28" IS NULL) OR ("InterventionPrescriptionInterventionPrescription_DocumentId" IS NOT NULL AND "InterventionPrescriptionInterventionPrescription_Edu_532babb247" IS NOT NULL AND "InterventionPrescriptionInterventionPrescription_Int_409fc39d28" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionLearningResourceMetadataURI"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Intervention_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "LearningResourceMetadataURI" varchar(255) NOT NULL,
-    CONSTRAINT "PK_InterventionLearningResourceMetadataURI" PRIMARY KEY ("Intervention_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_InterventionLearningResourceMetadataURI_LearningR_0624dd9614" UNIQUE ("Intervention_DocumentId", "LearningResourceMetadataURI")
+    CONSTRAINT "PK_InterventionLearningResourceMetadataURI" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_InterventionLearningResourceMetadataURI_LearningR_0624dd9614" UNIQUE ("Intervention_DocumentId", "LearningResourceMetadataURI"),
+    CONSTRAINT "UX_InterventionLearningResourceMetadataURI_Ordinal_I_c41118b4ac" UNIQUE ("Intervention_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionMeetingTime"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Intervention_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "EndTime" time NOT NULL,
     "StartTime" time NOT NULL,
-    CONSTRAINT "PK_InterventionMeetingTime" PRIMARY KEY ("Intervention_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_InterventionMeetingTime_EndTime_StartTime_Interve_f76714e7d6" UNIQUE ("Intervention_DocumentId", "EndTime", "StartTime")
+    CONSTRAINT "PK_InterventionMeetingTime" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_InterventionMeetingTime_EndTime_StartTime_Interve_f76714e7d6" UNIQUE ("Intervention_DocumentId", "EndTime", "StartTime"),
+    CONSTRAINT "UX_InterventionMeetingTime_Ordinal_Intervention_DocumentId" UNIQUE ("Intervention_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionPopulationServed"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Intervention_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "PopulationServedDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_InterventionPopulationServed" PRIMARY KEY ("Intervention_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_InterventionPopulationServed_Intervention_Documen_bbffd68f0d" UNIQUE ("Intervention_DocumentId", "PopulationServedDescriptor_DescriptorId")
+    CONSTRAINT "PK_InterventionPopulationServed" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_InterventionPopulationServed_Intervention_Documen_bbffd68f0d" UNIQUE ("Intervention_DocumentId", "PopulationServedDescriptor_DescriptorId"),
+    CONSTRAINT "UX_InterventionPopulationServed_Ordinal_Intervention_DocumentId" UNIQUE ("Intervention_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionStaff"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Intervention_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NULL,
     "Staff_StaffUniqueId" varchar(32) NULL,
-    CONSTRAINT "PK_InterventionStaff" PRIMARY KEY ("Intervention_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_InterventionStaff" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_InterventionStaff_Intervention_DocumentId_Staff_DocumentId" UNIQUE ("Intervention_DocumentId", "Staff_DocumentId"),
+    CONSTRAINT "UX_InterventionStaff_Ordinal_Intervention_DocumentId" UNIQUE ("Intervention_DocumentId", "Ordinal"),
     CONSTRAINT "CK_InterventionStaff_Staff_AllNone" CHECK (("Staff_DocumentId" IS NULL AND "Staff_StaffUniqueId" IS NULL) OR ("Staff_DocumentId" IS NOT NULL AND "Staff_StaffUniqueId" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionUri"
 (
+    "CollectionItemId" bigint NOT NULL,
     "Intervention_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "Uri" varchar(255) NOT NULL,
-    CONSTRAINT "PK_InterventionUri" PRIMARY KEY ("Intervention_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_InterventionUri" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_InterventionUri_Ordinal_Intervention_DocumentId" UNIQUE ("Intervention_DocumentId", "Ordinal"),
     CONSTRAINT "UX_InterventionUri_Uri_Intervention_DocumentId" UNIQUE ("Intervention_DocumentId", "Uri")
 );
 
@@ -2675,65 +2948,80 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescription"
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescriptionAppropriateGradeLevel"
 (
+    "CollectionItemId" bigint NOT NULL,
     "InterventionPrescription_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_InterventionPrescriptionAppropriateGradeLevel" PRIMARY KEY ("InterventionPrescription_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_InterventionPrescriptionAppropriateGradeLevel_Gra_e09e6f005a" UNIQUE ("InterventionPrescription_DocumentId", "GradeLevelDescriptor_DescriptorId")
+    CONSTRAINT "PK_InterventionPrescriptionAppropriateGradeLevel" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_InterventionPrescriptionAppropriateGradeLevel_Gra_e09e6f005a" UNIQUE ("InterventionPrescription_DocumentId", "GradeLevelDescriptor_DescriptorId"),
+    CONSTRAINT "UX_InterventionPrescriptionAppropriateGradeLevel_Ord_d94f80eff1" UNIQUE ("InterventionPrescription_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescriptionAppropriateSex"
 (
+    "CollectionItemId" bigint NOT NULL,
     "InterventionPrescription_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "SexDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_InterventionPrescriptionAppropriateSex" PRIMARY KEY ("InterventionPrescription_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_InterventionPrescriptionAppropriateSex_Interventi_27b943c969" UNIQUE ("InterventionPrescription_DocumentId", "SexDescriptor_DescriptorId")
+    CONSTRAINT "PK_InterventionPrescriptionAppropriateSex" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_InterventionPrescriptionAppropriateSex_Interventi_27b943c969" UNIQUE ("InterventionPrescription_DocumentId", "SexDescriptor_DescriptorId"),
+    CONSTRAINT "UX_InterventionPrescriptionAppropriateSex_Ordinal_In_7ba55569bc" UNIQUE ("InterventionPrescription_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescriptionDiagnos"
 (
+    "CollectionItemId" bigint NOT NULL,
     "InterventionPrescription_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "DiagnosisDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_InterventionPrescriptionDiagnos" PRIMARY KEY ("InterventionPrescription_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_InterventionPrescriptionDiagnos_DiagnosisDescript_1f7c5bd11b" UNIQUE ("InterventionPrescription_DocumentId", "DiagnosisDescriptor_DescriptorId")
+    CONSTRAINT "PK_InterventionPrescriptionDiagnos" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_InterventionPrescriptionDiagnos_DiagnosisDescript_1f7c5bd11b" UNIQUE ("InterventionPrescription_DocumentId", "DiagnosisDescriptor_DescriptorId"),
+    CONSTRAINT "UX_InterventionPrescriptionDiagnos_Ordinal_Intervent_3a68ccfeed" UNIQUE ("InterventionPrescription_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescriptionEducationContent"
 (
+    "CollectionItemId" bigint NOT NULL,
     "InterventionPrescription_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "EducationContentSourceEducationContent_DocumentId" bigint NULL,
     "EducationContentSourceEducationContent_ContentIdentifier" varchar(225) NULL,
-    CONSTRAINT "PK_InterventionPrescriptionEducationContent" PRIMARY KEY ("InterventionPrescription_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_InterventionPrescriptionEducationContent" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_InterventionPrescriptionEducationContent_Educatio_869ba11ab6" UNIQUE ("InterventionPrescription_DocumentId", "EducationContentSourceEducationContent_DocumentId"),
+    CONSTRAINT "UX_InterventionPrescriptionEducationContent_Ordinal__9d31a04054" UNIQUE ("InterventionPrescription_DocumentId", "Ordinal"),
     CONSTRAINT "CK_InterventionPrescriptionEducationContent_Educatio_eada5cca98" CHECK (("EducationContentSourceEducationContent_DocumentId" IS NULL AND "EducationContentSourceEducationContent_ContentIdentifier" IS NULL) OR ("EducationContentSourceEducationContent_DocumentId" IS NOT NULL AND "EducationContentSourceEducationContent_ContentIdentifier" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescriptionLearningResourceMetadataURI"
 (
+    "CollectionItemId" bigint NOT NULL,
     "InterventionPrescription_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "LearningResourceMetadataURI" varchar(255) NOT NULL,
-    CONSTRAINT "PK_InterventionPrescriptionLearningResourceMetadataURI" PRIMARY KEY ("InterventionPrescription_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_InterventionPrescriptionLearningResourceMetadataURI" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_InterventionPrescriptionLearningResourceMetadataU_1a7eb9a0f3" UNIQUE ("InterventionPrescription_DocumentId", "Ordinal"),
     CONSTRAINT "UX_InterventionPrescriptionLearningResourceMetadataU_f253ef0c0d" UNIQUE ("InterventionPrescription_DocumentId", "LearningResourceMetadataURI")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescriptionPopulationServed"
 (
+    "CollectionItemId" bigint NOT NULL,
     "InterventionPrescription_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "PopulationServedDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_InterventionPrescriptionPopulationServed" PRIMARY KEY ("InterventionPrescription_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_InterventionPrescriptionPopulationServed_Interven_79844bd5d6" UNIQUE ("InterventionPrescription_DocumentId", "PopulationServedDescriptor_DescriptorId")
+    CONSTRAINT "PK_InterventionPrescriptionPopulationServed" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_InterventionPrescriptionPopulationServed_Interven_79844bd5d6" UNIQUE ("InterventionPrescription_DocumentId", "PopulationServedDescriptor_DescriptorId"),
+    CONSTRAINT "UX_InterventionPrescriptionPopulationServed_Ordinal__2504226136" UNIQUE ("InterventionPrescription_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescriptionUri"
 (
+    "CollectionItemId" bigint NOT NULL,
     "InterventionPrescription_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "Uri" varchar(255) NOT NULL,
-    CONSTRAINT "PK_InterventionPrescriptionUri" PRIMARY KEY ("InterventionPrescription_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_InterventionPrescriptionUri" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_InterventionPrescriptionUri_Ordinal_InterventionP_9b34905c3b" UNIQUE ("InterventionPrescription_DocumentId", "Ordinal"),
     CONSTRAINT "UX_InterventionPrescriptionUri_Uri_InterventionPresc_e094abaede" UNIQUE ("InterventionPrescription_DocumentId", "Uri")
 );
 
@@ -2757,34 +3045,42 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudy"
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyAppropriateGradeLevel"
 (
+    "CollectionItemId" bigint NOT NULL,
     "InterventionStudy_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_InterventionStudyAppropriateGradeLevel" PRIMARY KEY ("InterventionStudy_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_InterventionStudyAppropriateGradeLevel_GradeLevel_d06ac47522" UNIQUE ("InterventionStudy_DocumentId", "GradeLevelDescriptor_DescriptorId")
+    CONSTRAINT "PK_InterventionStudyAppropriateGradeLevel" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_InterventionStudyAppropriateGradeLevel_GradeLevel_d06ac47522" UNIQUE ("InterventionStudy_DocumentId", "GradeLevelDescriptor_DescriptorId"),
+    CONSTRAINT "UX_InterventionStudyAppropriateGradeLevel_Ordinal_In_8a6c348aea" UNIQUE ("InterventionStudy_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyAppropriateSex"
 (
+    "CollectionItemId" bigint NOT NULL,
     "InterventionStudy_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "SexDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_InterventionStudyAppropriateSex" PRIMARY KEY ("InterventionStudy_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_InterventionStudyAppropriateSex_InterventionStudy_34b07c0f37" UNIQUE ("InterventionStudy_DocumentId", "SexDescriptor_DescriptorId")
+    CONSTRAINT "PK_InterventionStudyAppropriateSex" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_InterventionStudyAppropriateSex_InterventionStudy_34b07c0f37" UNIQUE ("InterventionStudy_DocumentId", "SexDescriptor_DescriptorId"),
+    CONSTRAINT "UX_InterventionStudyAppropriateSex_Ordinal_Intervent_87e75e54fe" UNIQUE ("InterventionStudy_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyEducationContent"
 (
+    "CollectionItemId" bigint NOT NULL,
     "InterventionStudy_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "EducationContentSourceEducationContent_DocumentId" bigint NULL,
     "EducationContentSourceEducationContent_ContentIdentifier" varchar(225) NULL,
-    CONSTRAINT "PK_InterventionStudyEducationContent" PRIMARY KEY ("InterventionStudy_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_InterventionStudyEducationContent" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_InterventionStudyEducationContent_EducationConten_f642697bf7" UNIQUE ("InterventionStudy_DocumentId", "EducationContentSourceEducationContent_DocumentId"),
+    CONSTRAINT "UX_InterventionStudyEducationContent_Ordinal_Interve_fa4c1634e7" UNIQUE ("InterventionStudy_DocumentId", "Ordinal"),
     CONSTRAINT "CK_InterventionStudyEducationContent_EducationConten_22028ad2e5" CHECK (("EducationContentSourceEducationContent_DocumentId" IS NULL AND "EducationContentSourceEducationContent_ContentIdentifier" IS NULL) OR ("EducationContentSourceEducationContent_DocumentId" IS NOT NULL AND "EducationContentSourceEducationContent_ContentIdentifier" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyInterventionEffectiveness"
 (
+    "CollectionItemId" bigint NOT NULL,
     "InterventionStudy_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "DiagnosisDescriptor_DescriptorId" bigint NOT NULL,
@@ -2792,43 +3088,52 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyInterventionEffectiveness"
     "InterventionEffectivenessRatingDescriptor_DescriptorId" bigint NOT NULL,
     "PopulationServedDescriptor_DescriptorId" bigint NOT NULL,
     "ImprovementIndex" integer NULL,
-    CONSTRAINT "PK_InterventionStudyInterventionEffectiveness" PRIMARY KEY ("InterventionStudy_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_InterventionStudyInterventionEffectiveness_Diagno_d84d897426" UNIQUE ("InterventionStudy_DocumentId", "DiagnosisDescriptor_DescriptorId", "GradeLevelDescriptor_DescriptorId", "PopulationServedDescriptor_DescriptorId")
+    CONSTRAINT "PK_InterventionStudyInterventionEffectiveness" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_InterventionStudyInterventionEffectiveness_Diagno_d84d897426" UNIQUE ("InterventionStudy_DocumentId", "DiagnosisDescriptor_DescriptorId", "GradeLevelDescriptor_DescriptorId", "PopulationServedDescriptor_DescriptorId"),
+    CONSTRAINT "UX_InterventionStudyInterventionEffectiveness_Ordina_6713055eed" UNIQUE ("InterventionStudy_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyLearningResourceMetadataURI"
 (
+    "CollectionItemId" bigint NOT NULL,
     "InterventionStudy_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "LearningResourceMetadataURI" varchar(255) NOT NULL,
-    CONSTRAINT "PK_InterventionStudyLearningResourceMetadataURI" PRIMARY KEY ("InterventionStudy_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_InterventionStudyLearningResourceMetadataURI_Lear_cefb93e309" UNIQUE ("InterventionStudy_DocumentId", "LearningResourceMetadataURI")
+    CONSTRAINT "PK_InterventionStudyLearningResourceMetadataURI" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_InterventionStudyLearningResourceMetadataURI_Lear_cefb93e309" UNIQUE ("InterventionStudy_DocumentId", "LearningResourceMetadataURI"),
+    CONSTRAINT "UX_InterventionStudyLearningResourceMetadataURI_Ordi_5c79f23f77" UNIQUE ("InterventionStudy_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyPopulationServed"
 (
+    "CollectionItemId" bigint NOT NULL,
     "InterventionStudy_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "PopulationServedDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_InterventionStudyPopulationServed" PRIMARY KEY ("InterventionStudy_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_InterventionStudyPopulationServed_InterventionStu_65a1215f3f" UNIQUE ("InterventionStudy_DocumentId", "PopulationServedDescriptor_DescriptorId")
+    CONSTRAINT "PK_InterventionStudyPopulationServed" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_InterventionStudyPopulationServed_InterventionStu_65a1215f3f" UNIQUE ("InterventionStudy_DocumentId", "PopulationServedDescriptor_DescriptorId"),
+    CONSTRAINT "UX_InterventionStudyPopulationServed_Ordinal_Interve_7f8e4c7a50" UNIQUE ("InterventionStudy_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyStateAbbreviation"
 (
+    "CollectionItemId" bigint NOT NULL,
     "InterventionStudy_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "StateAbbreviationDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_InterventionStudyStateAbbreviation" PRIMARY KEY ("InterventionStudy_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_InterventionStudyStateAbbreviation_InterventionSt_b78e237c7f" UNIQUE ("InterventionStudy_DocumentId", "StateAbbreviationDescriptor_DescriptorId")
+    CONSTRAINT "PK_InterventionStudyStateAbbreviation" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_InterventionStudyStateAbbreviation_InterventionSt_b78e237c7f" UNIQUE ("InterventionStudy_DocumentId", "StateAbbreviationDescriptor_DescriptorId"),
+    CONSTRAINT "UX_InterventionStudyStateAbbreviation_Ordinal_Interv_66f5c33ed8" UNIQUE ("InterventionStudy_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyUri"
 (
+    "CollectionItemId" bigint NOT NULL,
     "InterventionStudy_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "Uri" varchar(255) NOT NULL,
-    CONSTRAINT "PK_InterventionStudyUri" PRIMARY KEY ("InterventionStudy_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_InterventionStudyUri" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_InterventionStudyUri_Ordinal_InterventionStudy_DocumentId" UNIQUE ("InterventionStudy_DocumentId", "Ordinal"),
     CONSTRAINT "UX_InterventionStudyUri_Uri_InterventionStudy_DocumentId" UNIQUE ("InterventionStudy_DocumentId", "Uri")
 );
 
@@ -2865,39 +3170,47 @@ CREATE TABLE IF NOT EXISTS "edfi"."LearningStandard"
 
 CREATE TABLE IF NOT EXISTS "edfi"."LearningStandardAcademicSubject"
 (
+    "CollectionItemId" bigint NOT NULL,
     "LearningStandard_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AcademicSubjectDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_LearningStandardAcademicSubject" PRIMARY KEY ("LearningStandard_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_LearningStandardAcademicSubject_AcademicSubjectDe_a2d19f6d74" UNIQUE ("LearningStandard_DocumentId", "AcademicSubjectDescriptor_DescriptorId")
+    CONSTRAINT "PK_LearningStandardAcademicSubject" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_LearningStandardAcademicSubject_AcademicSubjectDe_a2d19f6d74" UNIQUE ("LearningStandard_DocumentId", "AcademicSubjectDescriptor_DescriptorId"),
+    CONSTRAINT "UX_LearningStandardAcademicSubject_Ordinal_LearningS_0093833af8" UNIQUE ("LearningStandard_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."LearningStandardAuthor"
 (
+    "CollectionItemId" bigint NOT NULL,
     "LearningStandard_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "Author" varchar(100) NOT NULL,
-    CONSTRAINT "PK_LearningStandardAuthor" PRIMARY KEY ("LearningStandard_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_LearningStandardAuthor_Author_LearningStandard_DocumentId" UNIQUE ("LearningStandard_DocumentId", "Author")
+    CONSTRAINT "PK_LearningStandardAuthor" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_LearningStandardAuthor_Author_LearningStandard_DocumentId" UNIQUE ("LearningStandard_DocumentId", "Author"),
+    CONSTRAINT "UX_LearningStandardAuthor_Ordinal_LearningStandard_DocumentId" UNIQUE ("LearningStandard_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."LearningStandardGradeLevel"
 (
+    "CollectionItemId" bigint NOT NULL,
     "LearningStandard_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_LearningStandardGradeLevel" PRIMARY KEY ("LearningStandard_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_LearningStandardGradeLevel_GradeLevelDescriptor_D_ff015843f5" UNIQUE ("LearningStandard_DocumentId", "GradeLevelDescriptor_DescriptorId")
+    CONSTRAINT "PK_LearningStandardGradeLevel" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_LearningStandardGradeLevel_GradeLevelDescriptor_D_ff015843f5" UNIQUE ("LearningStandard_DocumentId", "GradeLevelDescriptor_DescriptorId"),
+    CONSTRAINT "UX_LearningStandardGradeLevel_Ordinal_LearningStanda_cafbbc9317" UNIQUE ("LearningStandard_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."LearningStandardIdentificationCode"
 (
+    "CollectionItemId" bigint NOT NULL,
     "LearningStandard_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ContentStandardName" varchar(65) NOT NULL,
     "IdentificationCode" varchar(60) NOT NULL,
-    CONSTRAINT "PK_LearningStandardIdentificationCode" PRIMARY KEY ("LearningStandard_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_LearningStandardIdentificationCode_ContentStandar_07e0325fcd" UNIQUE ("LearningStandard_DocumentId", "ContentStandardName", "IdentificationCode")
+    CONSTRAINT "PK_LearningStandardIdentificationCode" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_LearningStandardIdentificationCode_ContentStandar_07e0325fcd" UNIQUE ("LearningStandard_DocumentId", "ContentStandardName", "IdentificationCode"),
+    CONSTRAINT "UX_LearningStandardIdentificationCode_Ordinal_Learni_7355712dea" UNIQUE ("LearningStandard_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."LearningStandardEquivalenceAssociation"
@@ -2939,12 +3252,14 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalAccount"
 
 CREATE TABLE IF NOT EXISTS "edfi"."LocalAccountReportingTag"
 (
+    "CollectionItemId" bigint NOT NULL,
     "LocalAccount_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ReportingTagDescriptor_DescriptorId" bigint NOT NULL,
     "TagValue" varchar(100) NULL,
-    CONSTRAINT "PK_LocalAccountReportingTag" PRIMARY KEY ("LocalAccount_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_LocalAccountReportingTag_LocalAccount_DocumentId__cf159e479b" UNIQUE ("LocalAccount_DocumentId", "ReportingTagDescriptor_DescriptorId")
+    CONSTRAINT "PK_LocalAccountReportingTag" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_LocalAccountReportingTag_LocalAccount_DocumentId__cf159e479b" UNIQUE ("LocalAccount_DocumentId", "ReportingTagDescriptor_DescriptorId"),
+    CONSTRAINT "UX_LocalAccountReportingTag_Ordinal_LocalAccount_DocumentId" UNIQUE ("LocalAccount_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."LocalActual"
@@ -3021,19 +3336,22 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgency"
 
 CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyAccountability"
 (
+    "CollectionItemId" bigint NOT NULL,
     "LocalEducationAgency_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "LocalEducationAgencyAccountabilitySchoolYear_DocumentId" bigint NOT NULL,
     "LocalEducationAgencyAccountabilitySchoolYear_SchoolYear" integer NOT NULL,
     "GunFreeSchoolsActReportingStatusDescriptor_DescriptorId" bigint NULL,
     "SchoolChoiceImplementStatusDescriptor_DescriptorId" bigint NULL,
-    CONSTRAINT "PK_LocalEducationAgencyAccountability" PRIMARY KEY ("LocalEducationAgency_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_LocalEducationAgencyAccountability" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_LocalEducationAgencyAccountability_LocalEducation_ccf851bf3d" UNIQUE ("LocalEducationAgency_DocumentId", "LocalEducationAgencyAccountabilitySchoolYear_DocumentId"),
+    CONSTRAINT "UX_LocalEducationAgencyAccountability_Ordinal_LocalE_196048a6ee" UNIQUE ("LocalEducationAgency_DocumentId", "Ordinal"),
     CONSTRAINT "CK_LocalEducationAgencyAccountability_LocalEducation_62f14354a9" CHECK (("LocalEducationAgencyAccountabilitySchoolYear_DocumentId" IS NULL AND "LocalEducationAgencyAccountabilitySchoolYear_SchoolYear" IS NULL) OR ("LocalEducationAgencyAccountabilitySchoolYear_DocumentId" IS NOT NULL AND "LocalEducationAgencyAccountabilitySchoolYear_SchoolYear" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyAddress"
 (
+    "CollectionItemId" bigint NOT NULL,
     "LocalEducationAgency_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -3050,21 +3368,26 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyAddress"
     "NameOfCounty" varchar(30) NULL,
     "PostalCode" varchar(17) NOT NULL,
     "StreetNumberName" varchar(150) NOT NULL,
-    CONSTRAINT "PK_LocalEducationAgencyAddress" PRIMARY KEY ("LocalEducationAgency_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_LocalEducationAgencyAddress_City_PostalCode_Stree_c2fc329650" UNIQUE ("LocalEducationAgency_DocumentId", "AddressTypeDescriptor_DescriptorId", "City", "PostalCode", "StateAbbreviationDescriptor_DescriptorId", "StreetNumberName")
+    CONSTRAINT "PK_LocalEducationAgencyAddress" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_LocalEducationAgencyAddress_City_PostalCode_Stree_c2fc329650" UNIQUE ("LocalEducationAgency_DocumentId", "AddressTypeDescriptor_DescriptorId", "City", "PostalCode", "StateAbbreviationDescriptor_DescriptorId", "StreetNumberName"),
+    CONSTRAINT "UX_LocalEducationAgencyAddress_CollectionItemId_Loca_7c0f35b337" UNIQUE ("CollectionItemId", "LocalEducationAgency_DocumentId"),
+    CONSTRAINT "UX_LocalEducationAgencyAddress_Ordinal_LocalEducatio_a93635d7a4" UNIQUE ("LocalEducationAgency_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyCategory"
 (
+    "CollectionItemId" bigint NOT NULL,
     "LocalEducationAgency_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "EducationOrganizationCategoryDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_LocalEducationAgencyCategory" PRIMARY KEY ("LocalEducationAgency_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_LocalEducationAgencyCategory_EducationOrganizatio_99bd89dd4e" UNIQUE ("LocalEducationAgency_DocumentId", "EducationOrganizationCategoryDescriptor_DescriptorId")
+    CONSTRAINT "PK_LocalEducationAgencyCategory" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_LocalEducationAgencyCategory_EducationOrganizatio_99bd89dd4e" UNIQUE ("LocalEducationAgency_DocumentId", "EducationOrganizationCategoryDescriptor_DescriptorId"),
+    CONSTRAINT "UX_LocalEducationAgencyCategory_Ordinal_LocalEducati_91837f8a40" UNIQUE ("LocalEducationAgency_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyFederalFunds"
 (
+    "CollectionItemId" bigint NOT NULL,
     "LocalEducationAgency_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "FiscalYear" integer NOT NULL,
@@ -3076,22 +3399,26 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyFederalFunds"
     "StateAssessmentAdministrationFunding" numeric(5,4) NULL,
     "SupplementalEducationalServicesFundsSpent" numeric(19,4) NULL,
     "SupplementalEducationalServicesPerPupilExpenditure" numeric(19,4) NULL,
-    CONSTRAINT "PK_LocalEducationAgencyFederalFunds" PRIMARY KEY ("LocalEducationAgency_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_LocalEducationAgencyFederalFunds_FiscalYear_Local_60ebb1ef7e" UNIQUE ("LocalEducationAgency_DocumentId", "FiscalYear")
+    CONSTRAINT "PK_LocalEducationAgencyFederalFunds" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_LocalEducationAgencyFederalFunds_FiscalYear_Local_60ebb1ef7e" UNIQUE ("LocalEducationAgency_DocumentId", "FiscalYear"),
+    CONSTRAINT "UX_LocalEducationAgencyFederalFunds_Ordinal_LocalEdu_f1bcdb1726" UNIQUE ("LocalEducationAgency_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyIdentificationCode"
 (
+    "CollectionItemId" bigint NOT NULL,
     "LocalEducationAgency_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" bigint NOT NULL,
     "IdentificationCode" varchar(60) NOT NULL,
-    CONSTRAINT "PK_LocalEducationAgencyIdentificationCode" PRIMARY KEY ("LocalEducationAgency_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_LocalEducationAgencyIdentificationCode_EducationO_f71ca68ab2" UNIQUE ("LocalEducationAgency_DocumentId", "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede")
+    CONSTRAINT "PK_LocalEducationAgencyIdentificationCode" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_LocalEducationAgencyIdentificationCode_EducationO_f71ca68ab2" UNIQUE ("LocalEducationAgency_DocumentId", "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede"),
+    CONSTRAINT "UX_LocalEducationAgencyIdentificationCode_Ordinal_Lo_0a43ffcb81" UNIQUE ("LocalEducationAgency_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyIndicator"
 (
+    "CollectionItemId" bigint NOT NULL,
     "LocalEducationAgency_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "IndicatorDescriptor_DescriptorId" bigint NOT NULL,
@@ -3099,22 +3426,27 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyIndicator"
     "IndicatorLevelDescriptor_DescriptorId" bigint NULL,
     "DesignatedBy" varchar(60) NULL,
     "IndicatorValue" varchar(60) NULL,
-    CONSTRAINT "PK_LocalEducationAgencyIndicator" PRIMARY KEY ("LocalEducationAgency_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_LocalEducationAgencyIndicator_IndicatorDescriptor_f833e7bd73" UNIQUE ("LocalEducationAgency_DocumentId", "IndicatorDescriptor_DescriptorId")
+    CONSTRAINT "PK_LocalEducationAgencyIndicator" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_LocalEducationAgencyIndicator_CollectionItemId_Lo_965f2fd25e" UNIQUE ("CollectionItemId", "LocalEducationAgency_DocumentId"),
+    CONSTRAINT "UX_LocalEducationAgencyIndicator_IndicatorDescriptor_f833e7bd73" UNIQUE ("LocalEducationAgency_DocumentId", "IndicatorDescriptor_DescriptorId"),
+    CONSTRAINT "UX_LocalEducationAgencyIndicator_Ordinal_LocalEducat_8fecec2c6c" UNIQUE ("LocalEducationAgency_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyInstitutionTelephone"
 (
+    "CollectionItemId" bigint NOT NULL,
     "LocalEducationAgency_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
     "TelephoneNumber" varchar(24) NOT NULL,
-    CONSTRAINT "PK_LocalEducationAgencyInstitutionTelephone" PRIMARY KEY ("LocalEducationAgency_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_LocalEducationAgencyInstitutionTelephone_Institut_4a68c151c0" UNIQUE ("LocalEducationAgency_DocumentId", "InstitutionTelephoneNumberTypeDescriptor_DescriptorId")
+    CONSTRAINT "PK_LocalEducationAgencyInstitutionTelephone" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_LocalEducationAgencyInstitutionTelephone_Institut_4a68c151c0" UNIQUE ("LocalEducationAgency_DocumentId", "InstitutionTelephoneNumberTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_LocalEducationAgencyInstitutionTelephone_Ordinal__c6472c14f8" UNIQUE ("LocalEducationAgency_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyInternationalAddress"
 (
+    "CollectionItemId" bigint NOT NULL,
     "LocalEducationAgency_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -3127,30 +3459,35 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyInternationalAddress"
     "EndDate" date NULL,
     "Latitude" varchar(20) NULL,
     "Longitude" varchar(20) NULL,
-    CONSTRAINT "PK_LocalEducationAgencyInternationalAddress" PRIMARY KEY ("LocalEducationAgency_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_LocalEducationAgencyInternationalAddress_AddressT_65b83baa0f" UNIQUE ("LocalEducationAgency_DocumentId", "AddressTypeDescriptor_DescriptorId")
+    CONSTRAINT "PK_LocalEducationAgencyInternationalAddress" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_LocalEducationAgencyInternationalAddress_AddressT_65b83baa0f" UNIQUE ("LocalEducationAgency_DocumentId", "AddressTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_LocalEducationAgencyInternationalAddress_Ordinal__92b951e94b" UNIQUE ("LocalEducationAgency_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyAddressPeriod"
 (
+    "CollectionItemId" bigint NOT NULL,
     "LocalEducationAgency_DocumentId" bigint NOT NULL,
-    "AddressOrdinal" integer NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
-    CONSTRAINT "PK_LocalEducationAgencyAddressPeriod" PRIMARY KEY ("LocalEducationAgency_DocumentId", "AddressOrdinal", "Ordinal"),
-    CONSTRAINT "UX_LocalEducationAgencyAddressPeriod_AddressOrdinal__0fd8ff26fd" UNIQUE ("LocalEducationAgency_DocumentId", "AddressOrdinal", "BeginDate")
+    CONSTRAINT "PK_LocalEducationAgencyAddressPeriod" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_LocalEducationAgencyAddressPeriod_BeginDate_Paren_fae61676f7" UNIQUE ("ParentCollectionItemId", "BeginDate"),
+    CONSTRAINT "UX_LocalEducationAgencyAddressPeriod_Ordinal_ParentC_5dca431ce8" UNIQUE ("ParentCollectionItemId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyIndicatorPeriod"
 (
+    "CollectionItemId" bigint NOT NULL,
     "LocalEducationAgency_DocumentId" bigint NOT NULL,
-    "IndicatorOrdinal" integer NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
-    CONSTRAINT "PK_LocalEducationAgencyIndicatorPeriod" PRIMARY KEY ("LocalEducationAgency_DocumentId", "IndicatorOrdinal", "Ordinal"),
-    CONSTRAINT "UX_LocalEducationAgencyIndicatorPeriod_BeginDate_Ind_ecf719d682" UNIQUE ("LocalEducationAgency_DocumentId", "IndicatorOrdinal", "BeginDate")
+    CONSTRAINT "PK_LocalEducationAgencyIndicatorPeriod" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_LocalEducationAgencyIndicatorPeriod_BeginDate_Par_e00a9d2ee9" UNIQUE ("ParentCollectionItemId", "BeginDate"),
+    CONSTRAINT "UX_LocalEducationAgencyIndicatorPeriod_Ordinal_Paren_50446a3055" UNIQUE ("ParentCollectionItemId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."LocalEncumbrance"
@@ -3213,11 +3550,13 @@ CREATE TABLE IF NOT EXISTS "edfi"."ObjectDimension"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ObjectDimensionReportingTag"
 (
+    "CollectionItemId" bigint NOT NULL,
     "ObjectDimension_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ReportingTagDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_ObjectDimensionReportingTag" PRIMARY KEY ("ObjectDimension_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_ObjectDimensionReportingTag_ObjectDimension_Docum_d0122831b2" UNIQUE ("ObjectDimension_DocumentId", "ReportingTagDescriptor_DescriptorId")
+    CONSTRAINT "PK_ObjectDimensionReportingTag" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_ObjectDimensionReportingTag_ObjectDimension_Docum_d0122831b2" UNIQUE ("ObjectDimension_DocumentId", "ReportingTagDescriptor_DescriptorId"),
+    CONSTRAINT "UX_ObjectDimensionReportingTag_Ordinal_ObjectDimensi_a8086e687e" UNIQUE ("ObjectDimension_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."ObjectiveAssessment"
@@ -3247,28 +3586,35 @@ CREATE TABLE IF NOT EXISTS "edfi"."ObjectiveAssessment"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ObjectiveAssessmentAssessmentItem"
 (
+    "CollectionItemId" bigint NOT NULL,
     "ObjectiveAssessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AssessmentItemAssessmentItem_DocumentId" bigint NULL,
     "AssessmentItemAssessmentItem_AssessmentIdentifier" varchar(60) NULL,
     "AssessmentItemAssessmentItem_Namespace" varchar(255) NULL,
     "AssessmentItemAssessmentItem_IdentificationCode" varchar(60) NULL,
-    CONSTRAINT "PK_ObjectiveAssessmentAssessmentItem" PRIMARY KEY ("ObjectiveAssessment_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_ObjectiveAssessmentAssessmentItem" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_ObjectiveAssessmentAssessmentItem_AssessmentItemA_d5ab1e380e" UNIQUE ("ObjectiveAssessment_DocumentId", "AssessmentItemAssessmentItem_DocumentId"),
+    CONSTRAINT "UX_ObjectiveAssessmentAssessmentItem_Ordinal_Objecti_0ed98b769b" UNIQUE ("ObjectiveAssessment_DocumentId", "Ordinal"),
     CONSTRAINT "CK_ObjectiveAssessmentAssessmentItem_AssessmentItemA_28c5d00730" CHECK (("AssessmentItemAssessmentItem_DocumentId" IS NULL AND "AssessmentItemAssessmentItem_AssessmentIdentifier" IS NULL AND "AssessmentItemAssessmentItem_Namespace" IS NULL AND "AssessmentItemAssessmentItem_IdentificationCode" IS NULL) OR ("AssessmentItemAssessmentItem_DocumentId" IS NOT NULL AND "AssessmentItemAssessmentItem_AssessmentIdentifier" IS NOT NULL AND "AssessmentItemAssessmentItem_Namespace" IS NOT NULL AND "AssessmentItemAssessmentItem_IdentificationCode" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."ObjectiveAssessmentLearningStandard"
 (
+    "CollectionItemId" bigint NOT NULL,
     "ObjectiveAssessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "LearningStandard_DocumentId" bigint NULL,
     "LearningStandard_LearningStandardId" varchar(60) NULL,
-    CONSTRAINT "PK_ObjectiveAssessmentLearningStandard" PRIMARY KEY ("ObjectiveAssessment_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_ObjectiveAssessmentLearningStandard" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_ObjectiveAssessmentLearningStandard_LearningStand_0bc58ebc36" UNIQUE ("ObjectiveAssessment_DocumentId", "LearningStandard_DocumentId"),
+    CONSTRAINT "UX_ObjectiveAssessmentLearningStandard_Ordinal_Objec_17b21af036" UNIQUE ("ObjectiveAssessment_DocumentId", "Ordinal"),
     CONSTRAINT "CK_ObjectiveAssessmentLearningStandard_LearningStandard_AllNone" CHECK (("LearningStandard_DocumentId" IS NULL AND "LearningStandard_LearningStandardId" IS NULL) OR ("LearningStandard_DocumentId" IS NOT NULL AND "LearningStandard_LearningStandardId" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."ObjectiveAssessmentPerformanceLevel"
 (
+    "CollectionItemId" bigint NOT NULL,
     "ObjectiveAssessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AssessmentReportingMethodDescriptor_DescriptorId" bigint NOT NULL,
@@ -3277,20 +3623,23 @@ CREATE TABLE IF NOT EXISTS "edfi"."ObjectiveAssessmentPerformanceLevel"
     "MaximumScore" varchar(35) NULL,
     "MinimumScore" varchar(35) NULL,
     "PerformanceLevelIndicatorName" varchar(60) NULL,
-    CONSTRAINT "PK_ObjectiveAssessmentPerformanceLevel" PRIMARY KEY ("ObjectiveAssessment_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_ObjectiveAssessmentPerformanceLevel_AssessmentRep_a7a5e8b2a9" UNIQUE ("ObjectiveAssessment_DocumentId", "AssessmentReportingMethodDescriptor_DescriptorId", "PerformanceLevelDescriptor_DescriptorId")
+    CONSTRAINT "PK_ObjectiveAssessmentPerformanceLevel" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_ObjectiveAssessmentPerformanceLevel_AssessmentRep_a7a5e8b2a9" UNIQUE ("ObjectiveAssessment_DocumentId", "AssessmentReportingMethodDescriptor_DescriptorId", "PerformanceLevelDescriptor_DescriptorId"),
+    CONSTRAINT "UX_ObjectiveAssessmentPerformanceLevel_Ordinal_Objec_b65eb3ce76" UNIQUE ("ObjectiveAssessment_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."ObjectiveAssessmentScore"
 (
+    "CollectionItemId" bigint NOT NULL,
     "ObjectiveAssessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AssessmentReportingMethodDescriptor_DescriptorId" bigint NOT NULL,
     "ResultDatatypeTypeDescriptor_DescriptorId" bigint NULL,
     "MaximumScore" varchar(35) NULL,
     "MinimumScore" varchar(35) NULL,
-    CONSTRAINT "PK_ObjectiveAssessmentScore" PRIMARY KEY ("ObjectiveAssessment_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_ObjectiveAssessmentScore_AssessmentReportingMetho_ee59796298" UNIQUE ("ObjectiveAssessment_DocumentId", "AssessmentReportingMethodDescriptor_DescriptorId")
+    CONSTRAINT "PK_ObjectiveAssessmentScore" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_ObjectiveAssessmentScore_AssessmentReportingMetho_ee59796298" UNIQUE ("ObjectiveAssessment_DocumentId", "AssessmentReportingMethodDescriptor_DescriptorId"),
+    CONSTRAINT "UX_ObjectiveAssessmentScore_Ordinal_ObjectiveAssessm_c70380e3f1" UNIQUE ("ObjectiveAssessment_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."OpenStaffPosition"
@@ -3313,20 +3662,24 @@ CREATE TABLE IF NOT EXISTS "edfi"."OpenStaffPosition"
 
 CREATE TABLE IF NOT EXISTS "edfi"."OpenStaffPositionAcademicSubject"
 (
+    "CollectionItemId" bigint NOT NULL,
     "OpenStaffPosition_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AcademicSubjectDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_OpenStaffPositionAcademicSubject" PRIMARY KEY ("OpenStaffPosition_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_OpenStaffPositionAcademicSubject_AcademicSubjectD_fb85ce61a9" UNIQUE ("OpenStaffPosition_DocumentId", "AcademicSubjectDescriptor_DescriptorId")
+    CONSTRAINT "PK_OpenStaffPositionAcademicSubject" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_OpenStaffPositionAcademicSubject_AcademicSubjectD_fb85ce61a9" UNIQUE ("OpenStaffPosition_DocumentId", "AcademicSubjectDescriptor_DescriptorId"),
+    CONSTRAINT "UX_OpenStaffPositionAcademicSubject_Ordinal_OpenStaf_7b1a6385ee" UNIQUE ("OpenStaffPosition_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."OpenStaffPositionInstructionalGradeLevel"
 (
+    "CollectionItemId" bigint NOT NULL,
     "OpenStaffPosition_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_OpenStaffPositionInstructionalGradeLevel" PRIMARY KEY ("OpenStaffPosition_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_OpenStaffPositionInstructionalGradeLevel_GradeLev_f8b6d5d312" UNIQUE ("OpenStaffPosition_DocumentId", "GradeLevelDescriptor_DescriptorId")
+    CONSTRAINT "PK_OpenStaffPositionInstructionalGradeLevel" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_OpenStaffPositionInstructionalGradeLevel_GradeLev_f8b6d5d312" UNIQUE ("OpenStaffPosition_DocumentId", "GradeLevelDescriptor_DescriptorId"),
+    CONSTRAINT "UX_OpenStaffPositionInstructionalGradeLevel_Ordinal__674dfbeab6" UNIQUE ("OpenStaffPosition_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."OperationalUnitDimension"
@@ -3342,11 +3695,13 @@ CREATE TABLE IF NOT EXISTS "edfi"."OperationalUnitDimension"
 
 CREATE TABLE IF NOT EXISTS "edfi"."OperationalUnitDimensionReportingTag"
 (
+    "CollectionItemId" bigint NOT NULL,
     "OperationalUnitDimension_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ReportingTagDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_OperationalUnitDimensionReportingTag" PRIMARY KEY ("OperationalUnitDimension_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_OperationalUnitDimensionReportingTag_OperationalU_0822b30e5e" UNIQUE ("OperationalUnitDimension_DocumentId", "ReportingTagDescriptor_DescriptorId")
+    CONSTRAINT "PK_OperationalUnitDimensionReportingTag" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_OperationalUnitDimensionReportingTag_OperationalU_0822b30e5e" UNIQUE ("OperationalUnitDimension_DocumentId", "ReportingTagDescriptor_DescriptorId"),
+    CONSTRAINT "UX_OperationalUnitDimensionReportingTag_Ordinal_Oper_c13c1acf20" UNIQUE ("OperationalUnitDimension_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartment"
@@ -3367,8 +3722,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartment"
 
 CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentAddress"
 (
-    "OrganizationDepartment_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "OrganizationDepartment_DocumentId" bigint NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
     "LocaleDescriptor_DescriptorId" bigint NULL,
     "StateAbbreviationDescriptor_DescriptorId" bigint NOT NULL,
@@ -3383,56 +3739,68 @@ CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentAddress"
     "NameOfCounty" varchar(30) NULL,
     "PostalCode" varchar(17) NOT NULL,
     "StreetNumberName" varchar(150) NOT NULL,
-    CONSTRAINT "PK_OrganizationDepartmentAddress" PRIMARY KEY ("OrganizationDepartment_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_OrganizationDepartmentAddress_City_PostalCode_Str_6b17494ddd" UNIQUE ("OrganizationDepartment_DocumentId", "AddressTypeDescriptor_DescriptorId", "City", "PostalCode", "StateAbbreviationDescriptor_DescriptorId", "StreetNumberName")
+    CONSTRAINT "PK_OrganizationDepartmentAddress" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_OrganizationDepartmentAddress_City_PostalCode_Str_6b17494ddd" UNIQUE ("OrganizationDepartment_DocumentId", "AddressTypeDescriptor_DescriptorId", "City", "PostalCode", "StateAbbreviationDescriptor_DescriptorId", "StreetNumberName"),
+    CONSTRAINT "UX_OrganizationDepartmentAddress_CollectionItemId_Or_80ab619a1f" UNIQUE ("CollectionItemId", "OrganizationDepartment_DocumentId"),
+    CONSTRAINT "UX_OrganizationDepartmentAddress_Ordinal_Organizatio_af56fe7fb8" UNIQUE ("OrganizationDepartment_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentCategory"
 (
-    "OrganizationDepartment_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "OrganizationDepartment_DocumentId" bigint NOT NULL,
     "EducationOrganizationCategoryDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_OrganizationDepartmentCategory" PRIMARY KEY ("OrganizationDepartment_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_OrganizationDepartmentCategory_EducationOrganizat_fe828c4e3d" UNIQUE ("OrganizationDepartment_DocumentId", "EducationOrganizationCategoryDescriptor_DescriptorId")
+    CONSTRAINT "PK_OrganizationDepartmentCategory" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_OrganizationDepartmentCategory_EducationOrganizat_fe828c4e3d" UNIQUE ("OrganizationDepartment_DocumentId", "EducationOrganizationCategoryDescriptor_DescriptorId"),
+    CONSTRAINT "UX_OrganizationDepartmentCategory_Ordinal_Organizati_1b79fd86a0" UNIQUE ("OrganizationDepartment_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentIdentificationCode"
 (
-    "OrganizationDepartment_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "OrganizationDepartment_DocumentId" bigint NOT NULL,
     "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" bigint NOT NULL,
     "IdentificationCode" varchar(60) NOT NULL,
-    CONSTRAINT "PK_OrganizationDepartmentIdentificationCode" PRIMARY KEY ("OrganizationDepartment_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_OrganizationDepartmentIdentificationCode_Educatio_7b150114ab" UNIQUE ("OrganizationDepartment_DocumentId", "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede")
+    CONSTRAINT "PK_OrganizationDepartmentIdentificationCode" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_OrganizationDepartmentIdentificationCode_Educatio_7b150114ab" UNIQUE ("OrganizationDepartment_DocumentId", "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede"),
+    CONSTRAINT "UX_OrganizationDepartmentIdentificationCode_Ordinal__6d61a54cd7" UNIQUE ("OrganizationDepartment_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentIndicator"
 (
-    "OrganizationDepartment_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "OrganizationDepartment_DocumentId" bigint NOT NULL,
     "IndicatorDescriptor_DescriptorId" bigint NOT NULL,
     "IndicatorGroupDescriptor_DescriptorId" bigint NULL,
     "IndicatorLevelDescriptor_DescriptorId" bigint NULL,
     "DesignatedBy" varchar(60) NULL,
     "IndicatorValue" varchar(60) NULL,
-    CONSTRAINT "PK_OrganizationDepartmentIndicator" PRIMARY KEY ("OrganizationDepartment_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_OrganizationDepartmentIndicator_IndicatorDescript_1c484cb2d4" UNIQUE ("OrganizationDepartment_DocumentId", "IndicatorDescriptor_DescriptorId")
+    CONSTRAINT "PK_OrganizationDepartmentIndicator" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_OrganizationDepartmentIndicator_CollectionItemId__9702430bc1" UNIQUE ("CollectionItemId", "OrganizationDepartment_DocumentId"),
+    CONSTRAINT "UX_OrganizationDepartmentIndicator_IndicatorDescript_1c484cb2d4" UNIQUE ("OrganizationDepartment_DocumentId", "IndicatorDescriptor_DescriptorId"),
+    CONSTRAINT "UX_OrganizationDepartmentIndicator_Ordinal_Organizat_fc588e1f3d" UNIQUE ("OrganizationDepartment_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentInstitutionTelephone"
 (
-    "OrganizationDepartment_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "OrganizationDepartment_DocumentId" bigint NOT NULL,
     "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
     "TelephoneNumber" varchar(24) NOT NULL,
-    CONSTRAINT "PK_OrganizationDepartmentInstitutionTelephone" PRIMARY KEY ("OrganizationDepartment_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_OrganizationDepartmentInstitutionTelephone_Instit_12e9ac27b2" UNIQUE ("OrganizationDepartment_DocumentId", "InstitutionTelephoneNumberTypeDescriptor_DescriptorId")
+    CONSTRAINT "PK_OrganizationDepartmentInstitutionTelephone" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_OrganizationDepartmentInstitutionTelephone_Instit_12e9ac27b2" UNIQUE ("OrganizationDepartment_DocumentId", "InstitutionTelephoneNumberTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_OrganizationDepartmentInstitutionTelephone_Ordina_e0b4be5b48" UNIQUE ("OrganizationDepartment_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentInternationalAddress"
 (
-    "OrganizationDepartment_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "OrganizationDepartment_DocumentId" bigint NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
     "CountryDescriptor_DescriptorId" bigint NOT NULL,
     "AddressLine1" varchar(150) NOT NULL,
@@ -3443,30 +3811,35 @@ CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentInternationalAddress"
     "EndDate" date NULL,
     "Latitude" varchar(20) NULL,
     "Longitude" varchar(20) NULL,
-    CONSTRAINT "PK_OrganizationDepartmentInternationalAddress" PRIMARY KEY ("OrganizationDepartment_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_OrganizationDepartmentInternationalAddress_Addres_56606da756" UNIQUE ("OrganizationDepartment_DocumentId", "AddressTypeDescriptor_DescriptorId")
+    CONSTRAINT "PK_OrganizationDepartmentInternationalAddress" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_OrganizationDepartmentInternationalAddress_Addres_56606da756" UNIQUE ("OrganizationDepartment_DocumentId", "AddressTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_OrganizationDepartmentInternationalAddress_Ordina_1e3c58eca7" UNIQUE ("OrganizationDepartment_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentAddressPeriod"
 (
-    "OrganizationDepartment_DocumentId" bigint NOT NULL,
-    "AddressOrdinal" integer NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "OrganizationDepartment_DocumentId" bigint NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
-    CONSTRAINT "PK_OrganizationDepartmentAddressPeriod" PRIMARY KEY ("OrganizationDepartment_DocumentId", "AddressOrdinal", "Ordinal"),
-    CONSTRAINT "UX_OrganizationDepartmentAddressPeriod_AddressOrdina_5b104d25d3" UNIQUE ("OrganizationDepartment_DocumentId", "AddressOrdinal", "BeginDate")
+    CONSTRAINT "PK_OrganizationDepartmentAddressPeriod" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_OrganizationDepartmentAddressPeriod_BeginDate_Par_4838277049" UNIQUE ("ParentCollectionItemId", "BeginDate"),
+    CONSTRAINT "UX_OrganizationDepartmentAddressPeriod_Ordinal_Paren_71792aa5d4" UNIQUE ("ParentCollectionItemId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentIndicatorPeriod"
 (
-    "OrganizationDepartment_DocumentId" bigint NOT NULL,
-    "IndicatorOrdinal" integer NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "OrganizationDepartment_DocumentId" bigint NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
-    CONSTRAINT "PK_OrganizationDepartmentIndicatorPeriod" PRIMARY KEY ("OrganizationDepartment_DocumentId", "IndicatorOrdinal", "Ordinal"),
-    CONSTRAINT "UX_OrganizationDepartmentIndicatorPeriod_BeginDate_I_c1800ddd04" UNIQUE ("OrganizationDepartment_DocumentId", "IndicatorOrdinal", "BeginDate")
+    CONSTRAINT "PK_OrganizationDepartmentIndicatorPeriod" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_OrganizationDepartmentIndicatorPeriod_BeginDate_P_d6d8a14a45" UNIQUE ("ParentCollectionItemId", "BeginDate"),
+    CONSTRAINT "UX_OrganizationDepartmentIndicatorPeriod_Ordinal_Par_4206de4f5f" UNIQUE ("ParentCollectionItemId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."Person"
@@ -3511,8 +3884,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitution"
 
 CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionAddress"
 (
-    "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
     "LocaleDescriptor_DescriptorId" bigint NULL,
     "StateAbbreviationDescriptor_DescriptorId" bigint NOT NULL,
@@ -3527,56 +3901,68 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionAddress"
     "NameOfCounty" varchar(30) NULL,
     "PostalCode" varchar(17) NOT NULL,
     "StreetNumberName" varchar(150) NOT NULL,
-    CONSTRAINT "PK_PostSecondaryInstitutionAddress" PRIMARY KEY ("PostSecondaryInstitution_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_PostSecondaryInstitutionAddress_City_PostalCode_S_10a212d0db" UNIQUE ("PostSecondaryInstitution_DocumentId", "AddressTypeDescriptor_DescriptorId", "City", "PostalCode", "StateAbbreviationDescriptor_DescriptorId", "StreetNumberName")
+    CONSTRAINT "PK_PostSecondaryInstitutionAddress" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_PostSecondaryInstitutionAddress_City_PostalCode_S_10a212d0db" UNIQUE ("PostSecondaryInstitution_DocumentId", "AddressTypeDescriptor_DescriptorId", "City", "PostalCode", "StateAbbreviationDescriptor_DescriptorId", "StreetNumberName"),
+    CONSTRAINT "UX_PostSecondaryInstitutionAddress_CollectionItemId__502b99f5a6" UNIQUE ("CollectionItemId", "PostSecondaryInstitution_DocumentId"),
+    CONSTRAINT "UX_PostSecondaryInstitutionAddress_Ordinal_PostSecon_cb5a55f83a" UNIQUE ("PostSecondaryInstitution_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionCategory"
 (
-    "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
     "EducationOrganizationCategoryDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_PostSecondaryInstitutionCategory" PRIMARY KEY ("PostSecondaryInstitution_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_PostSecondaryInstitutionCategory_EducationOrganiz_add6c4803e" UNIQUE ("PostSecondaryInstitution_DocumentId", "EducationOrganizationCategoryDescriptor_DescriptorId")
+    CONSTRAINT "PK_PostSecondaryInstitutionCategory" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_PostSecondaryInstitutionCategory_EducationOrganiz_add6c4803e" UNIQUE ("PostSecondaryInstitution_DocumentId", "EducationOrganizationCategoryDescriptor_DescriptorId"),
+    CONSTRAINT "UX_PostSecondaryInstitutionCategory_Ordinal_PostSeco_fccb1af77d" UNIQUE ("PostSecondaryInstitution_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionIdentificationCode"
 (
-    "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
     "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" bigint NOT NULL,
     "IdentificationCode" varchar(60) NOT NULL,
-    CONSTRAINT "PK_PostSecondaryInstitutionIdentificationCode" PRIMARY KEY ("PostSecondaryInstitution_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_PostSecondaryInstitutionIdentificationCode_Educat_2eac965986" UNIQUE ("PostSecondaryInstitution_DocumentId", "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede")
+    CONSTRAINT "PK_PostSecondaryInstitutionIdentificationCode" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_PostSecondaryInstitutionIdentificationCode_Educat_2eac965986" UNIQUE ("PostSecondaryInstitution_DocumentId", "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede"),
+    CONSTRAINT "UX_PostSecondaryInstitutionIdentificationCode_Ordina_30741b7086" UNIQUE ("PostSecondaryInstitution_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionIndicator"
 (
-    "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
     "IndicatorDescriptor_DescriptorId" bigint NOT NULL,
     "IndicatorGroupDescriptor_DescriptorId" bigint NULL,
     "IndicatorLevelDescriptor_DescriptorId" bigint NULL,
     "DesignatedBy" varchar(60) NULL,
     "IndicatorValue" varchar(60) NULL,
-    CONSTRAINT "PK_PostSecondaryInstitutionIndicator" PRIMARY KEY ("PostSecondaryInstitution_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_PostSecondaryInstitutionIndicator_IndicatorDescri_0e2712e78e" UNIQUE ("PostSecondaryInstitution_DocumentId", "IndicatorDescriptor_DescriptorId")
+    CONSTRAINT "PK_PostSecondaryInstitutionIndicator" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_PostSecondaryInstitutionIndicator_CollectionItemI_b9770e61a3" UNIQUE ("CollectionItemId", "PostSecondaryInstitution_DocumentId"),
+    CONSTRAINT "UX_PostSecondaryInstitutionIndicator_IndicatorDescri_0e2712e78e" UNIQUE ("PostSecondaryInstitution_DocumentId", "IndicatorDescriptor_DescriptorId"),
+    CONSTRAINT "UX_PostSecondaryInstitutionIndicator_Ordinal_PostSec_c133d13f9e" UNIQUE ("PostSecondaryInstitution_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionInstitutionTelephone"
 (
-    "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
     "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
     "TelephoneNumber" varchar(24) NOT NULL,
-    CONSTRAINT "PK_PostSecondaryInstitutionInstitutionTelephone" PRIMARY KEY ("PostSecondaryInstitution_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_PostSecondaryInstitutionInstitutionTelephone_Inst_c87875ca8a" UNIQUE ("PostSecondaryInstitution_DocumentId", "InstitutionTelephoneNumberTypeDescriptor_DescriptorId")
+    CONSTRAINT "PK_PostSecondaryInstitutionInstitutionTelephone" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_PostSecondaryInstitutionInstitutionTelephone_Inst_c87875ca8a" UNIQUE ("PostSecondaryInstitution_DocumentId", "InstitutionTelephoneNumberTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_PostSecondaryInstitutionInstitutionTelephone_Ordi_407036036f" UNIQUE ("PostSecondaryInstitution_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionInternationalAddress"
 (
-    "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
     "CountryDescriptor_DescriptorId" bigint NOT NULL,
     "AddressLine1" varchar(150) NOT NULL,
@@ -3587,39 +3973,46 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionInternationalAddress"
     "EndDate" date NULL,
     "Latitude" varchar(20) NULL,
     "Longitude" varchar(20) NULL,
-    CONSTRAINT "PK_PostSecondaryInstitutionInternationalAddress" PRIMARY KEY ("PostSecondaryInstitution_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_PostSecondaryInstitutionInternationalAddress_Addr_bca2908f29" UNIQUE ("PostSecondaryInstitution_DocumentId", "AddressTypeDescriptor_DescriptorId")
+    CONSTRAINT "PK_PostSecondaryInstitutionInternationalAddress" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_PostSecondaryInstitutionInternationalAddress_Addr_bca2908f29" UNIQUE ("PostSecondaryInstitution_DocumentId", "AddressTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_PostSecondaryInstitutionInternationalAddress_Ordi_0683d1d2e6" UNIQUE ("PostSecondaryInstitution_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionMediumOfInstruction"
 (
-    "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
     "MediumOfInstructionDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_PostSecondaryInstitutionMediumOfInstruction" PRIMARY KEY ("PostSecondaryInstitution_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_PostSecondaryInstitutionMediumOfInstruction_Mediu_96af37a553" UNIQUE ("PostSecondaryInstitution_DocumentId", "MediumOfInstructionDescriptor_DescriptorId")
+    CONSTRAINT "PK_PostSecondaryInstitutionMediumOfInstruction" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_PostSecondaryInstitutionMediumOfInstruction_Mediu_96af37a553" UNIQUE ("PostSecondaryInstitution_DocumentId", "MediumOfInstructionDescriptor_DescriptorId"),
+    CONSTRAINT "UX_PostSecondaryInstitutionMediumOfInstruction_Ordin_41f3479e47" UNIQUE ("PostSecondaryInstitution_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionAddressPeriod"
 (
-    "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
-    "AddressOrdinal" integer NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
+    "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
-    CONSTRAINT "PK_PostSecondaryInstitutionAddressPeriod" PRIMARY KEY ("PostSecondaryInstitution_DocumentId", "AddressOrdinal", "Ordinal"),
-    CONSTRAINT "UX_PostSecondaryInstitutionAddressPeriod_AddressOrdi_04ad3fddeb" UNIQUE ("PostSecondaryInstitution_DocumentId", "AddressOrdinal", "BeginDate")
+    CONSTRAINT "PK_PostSecondaryInstitutionAddressPeriod" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_PostSecondaryInstitutionAddressPeriod_BeginDate_P_8e1e07571b" UNIQUE ("ParentCollectionItemId", "BeginDate"),
+    CONSTRAINT "UX_PostSecondaryInstitutionAddressPeriod_Ordinal_Par_906910c587" UNIQUE ("ParentCollectionItemId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionIndicatorPeriod"
 (
-    "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
-    "IndicatorOrdinal" integer NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
+    "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
-    CONSTRAINT "PK_PostSecondaryInstitutionIndicatorPeriod" PRIMARY KEY ("PostSecondaryInstitution_DocumentId", "IndicatorOrdinal", "Ordinal"),
-    CONSTRAINT "UX_PostSecondaryInstitutionIndicatorPeriod_BeginDate_63b2f065b7" UNIQUE ("PostSecondaryInstitution_DocumentId", "IndicatorOrdinal", "BeginDate")
+    CONSTRAINT "PK_PostSecondaryInstitutionIndicatorPeriod" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_PostSecondaryInstitutionIndicatorPeriod_BeginDate_7be64b0e9c" UNIQUE ("ParentCollectionItemId", "BeginDate"),
+    CONSTRAINT "UX_PostSecondaryInstitutionIndicatorPeriod_Ordinal_P_9c0be6f2c1" UNIQUE ("ParentCollectionItemId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."Program"
@@ -3638,29 +4031,36 @@ CREATE TABLE IF NOT EXISTS "edfi"."Program"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ProgramCharacteristic"
 (
-    "Program_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "Program_DocumentId" bigint NOT NULL,
     "ProgramCharacteristicDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_ProgramCharacteristic" PRIMARY KEY ("Program_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_ProgramCharacteristic" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_ProgramCharacteristic_Ordinal_Program_DocumentId" UNIQUE ("Program_DocumentId", "Ordinal"),
     CONSTRAINT "UX_ProgramCharacteristic_Program_DocumentId_ProgramC_08bb610cbc" UNIQUE ("Program_DocumentId", "ProgramCharacteristicDescriptor_DescriptorId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."ProgramLearningStandard"
 (
-    "Program_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "Program_DocumentId" bigint NOT NULL,
     "LearningStandard_DocumentId" bigint NULL,
     "LearningStandard_LearningStandardId" varchar(60) NULL,
-    CONSTRAINT "PK_ProgramLearningStandard" PRIMARY KEY ("Program_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_ProgramLearningStandard" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_ProgramLearningStandard_LearningStandard_Document_13485098ba" UNIQUE ("Program_DocumentId", "LearningStandard_DocumentId"),
+    CONSTRAINT "UX_ProgramLearningStandard_Ordinal_Program_DocumentId" UNIQUE ("Program_DocumentId", "Ordinal"),
     CONSTRAINT "CK_ProgramLearningStandard_LearningStandard_AllNone" CHECK (("LearningStandard_DocumentId" IS NULL AND "LearningStandard_LearningStandardId" IS NULL) OR ("LearningStandard_DocumentId" IS NOT NULL AND "LearningStandard_LearningStandardId" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."ProgramSponsor"
 (
-    "Program_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "Program_DocumentId" bigint NOT NULL,
     "ProgramSponsorDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_ProgramSponsor" PRIMARY KEY ("Program_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_ProgramSponsor" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_ProgramSponsor_Ordinal_Program_DocumentId" UNIQUE ("Program_DocumentId", "Ordinal"),
     CONSTRAINT "UX_ProgramSponsor_Program_DocumentId_ProgramSponsorD_f998dd3ded" UNIQUE ("Program_DocumentId", "ProgramSponsorDescriptor_DescriptorId")
 );
 
@@ -3677,10 +4077,12 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramDimension"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ProgramDimensionReportingTag"
 (
-    "ProgramDimension_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ProgramDimension_DocumentId" bigint NOT NULL,
     "ReportingTagDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_ProgramDimensionReportingTag" PRIMARY KEY ("ProgramDimension_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_ProgramDimensionReportingTag" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_ProgramDimensionReportingTag_Ordinal_ProgramDimen_dc03da6d78" UNIQUE ("ProgramDimension_DocumentId", "Ordinal"),
     CONSTRAINT "UX_ProgramDimensionReportingTag_ProgramDimension_Doc_0e7daeb9e2" UNIQUE ("ProgramDimension_DocumentId", "ReportingTagDescriptor_DescriptorId")
 );
 
@@ -3705,12 +4107,14 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationLevel"
 (
-    "ProgramEvaluation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ProgramEvaluation_DocumentId" bigint NOT NULL,
     "RatingLevelDescriptor_DescriptorId" bigint NOT NULL,
     "MaxNumericRating" numeric(6,3) NULL,
     "MinNumericRating" numeric(6,3) NULL,
-    CONSTRAINT "PK_ProgramEvaluationLevel" PRIMARY KEY ("ProgramEvaluation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_ProgramEvaluationLevel" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_ProgramEvaluationLevel_Ordinal_ProgramEvaluation_DocumentId" UNIQUE ("ProgramEvaluation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_ProgramEvaluationLevel_ProgramEvaluation_Document_242d1d794f" UNIQUE ("ProgramEvaluation_DocumentId", "RatingLevelDescriptor_DescriptorId")
 );
 
@@ -3752,12 +4156,14 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationElement"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationElementProgramEvaluationLevel"
 (
-    "ProgramEvaluationElement_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ProgramEvaluationElement_DocumentId" bigint NOT NULL,
     "RatingLevelDescriptor_DescriptorId" bigint NOT NULL,
     "ElementMaxNumericRating" numeric(6,3) NULL,
     "ElementMinNumericRating" numeric(6,3) NULL,
-    CONSTRAINT "PK_ProgramEvaluationElementProgramEvaluationLevel" PRIMARY KEY ("ProgramEvaluationElement_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_ProgramEvaluationElementProgramEvaluationLevel" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_ProgramEvaluationElementProgramEvaluationLevel_Or_df4f059909" UNIQUE ("ProgramEvaluationElement_DocumentId", "Ordinal"),
     CONSTRAINT "UX_ProgramEvaluationElementProgramEvaluationLevel_Pr_15e463ba4f" UNIQUE ("ProgramEvaluationElement_DocumentId", "RatingLevelDescriptor_DescriptorId")
 );
 
@@ -3784,13 +4190,15 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationObjective"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationObjectiveProgramEvaluationLevel"
 (
-    "ProgramEvaluationObjective_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ProgramEvaluationObjective_DocumentId" bigint NOT NULL,
     "RatingLevelDescriptor_DescriptorId" bigint NOT NULL,
     "ObjectiveMaxNumericRating" numeric(6,3) NULL,
     "ObjectiveMinNumericRating" numeric(6,3) NULL,
-    CONSTRAINT "PK_ProgramEvaluationObjectiveProgramEvaluationLevel" PRIMARY KEY ("ProgramEvaluationObjective_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_ProgramEvaluationObjectiveProgramEvaluationLevel__11ee7424cb" UNIQUE ("ProgramEvaluationObjective_DocumentId", "RatingLevelDescriptor_DescriptorId")
+    CONSTRAINT "PK_ProgramEvaluationObjectiveProgramEvaluationLevel" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_ProgramEvaluationObjectiveProgramEvaluationLevel__11ee7424cb" UNIQUE ("ProgramEvaluationObjective_DocumentId", "RatingLevelDescriptor_DescriptorId"),
+    CONSTRAINT "UX_ProgramEvaluationObjectiveProgramEvaluationLevel__e5fc2adeb2" UNIQUE ("ProgramEvaluationObjective_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."ProjectDimension"
@@ -3806,10 +4214,12 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProjectDimension"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ProjectDimensionReportingTag"
 (
-    "ProjectDimension_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ProjectDimension_DocumentId" bigint NOT NULL,
     "ReportingTagDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_ProjectDimensionReportingTag" PRIMARY KEY ("ProjectDimension_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_ProjectDimensionReportingTag" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_ProjectDimensionReportingTag_Ordinal_ProjectDimen_6d3aeada42" UNIQUE ("ProjectDimension_DocumentId", "Ordinal"),
     CONSTRAINT "UX_ProjectDimensionReportingTag_ProjectDimension_Doc_cf0731f1e9" UNIQUE ("ProjectDimension_DocumentId", "ReportingTagDescriptor_DescriptorId")
 );
 
@@ -3838,20 +4248,23 @@ CREATE TABLE IF NOT EXISTS "edfi"."ReportCard"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ReportCardGradePointAverage"
 (
-    "ReportCard_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ReportCard_DocumentId" bigint NOT NULL,
     "GradePointAverageTypeDescriptor_DescriptorId" bigint NOT NULL,
     "GradePointAverageValue" numeric(18,4) NOT NULL,
     "IsCumulative" boolean NULL,
     "MaxGradePointAverageValue" numeric(18,4) NULL,
-    CONSTRAINT "PK_ReportCardGradePointAverage" PRIMARY KEY ("ReportCard_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_ReportCardGradePointAverage_GradePointAverageType_f7ccda5429" UNIQUE ("ReportCard_DocumentId", "GradePointAverageTypeDescriptor_DescriptorId")
+    CONSTRAINT "PK_ReportCardGradePointAverage" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_ReportCardGradePointAverage_GradePointAverageType_f7ccda5429" UNIQUE ("ReportCard_DocumentId", "GradePointAverageTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_ReportCardGradePointAverage_Ordinal_ReportCard_DocumentId" UNIQUE ("ReportCard_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."ReportCardGrade"
 (
-    "ReportCard_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ReportCard_DocumentId" bigint NOT NULL,
     "SchoolId_Unified" integer NULL,
     "Grade_DocumentId" bigint NULL,
     "Grade_GradeTypeDescriptor_DescriptorId" bigint NULL,
@@ -3866,14 +4279,17 @@ CREATE TABLE IF NOT EXISTS "edfi"."ReportCardGrade"
     "Grade_SectionIdentifier" varchar(255) NULL,
     "Grade_SessionName" varchar(60) NULL,
     "Grade_StudentUniqueId" varchar(32) NULL,
-    CONSTRAINT "PK_ReportCardGrade" PRIMARY KEY ("ReportCard_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_ReportCardGrade" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_ReportCardGrade_Grade_DocumentId_ReportCard_DocumentId" UNIQUE ("ReportCard_DocumentId", "Grade_DocumentId"),
+    CONSTRAINT "UX_ReportCardGrade_Ordinal_ReportCard_DocumentId" UNIQUE ("ReportCard_DocumentId", "Ordinal"),
     CONSTRAINT "CK_ReportCardGrade_Grade_AllNone" CHECK (("Grade_DocumentId" IS NULL AND "Grade_GradeTypeDescriptor_DescriptorId" IS NULL AND "Grade_GradingPeriodDescriptor_DescriptorId" IS NULL AND "Grade_GradingPeriodName" IS NULL AND "Grade_GradingPeriodReferenceSchoolId" IS NULL AND "Grade_GradingPeriodSchoolYear" IS NULL AND "Grade_BeginDate" IS NULL AND "Grade_LocalCourseCode" IS NULL AND "Grade_StudentSectionAssociationReferenceSchoolId" IS NULL AND "Grade_SchoolYear" IS NULL AND "Grade_SectionIdentifier" IS NULL AND "Grade_SessionName" IS NULL AND "Grade_StudentUniqueId" IS NULL) OR ("Grade_DocumentId" IS NOT NULL AND "Grade_GradeTypeDescriptor_DescriptorId" IS NOT NULL AND "Grade_GradingPeriodDescriptor_DescriptorId" IS NOT NULL AND "Grade_GradingPeriodName" IS NOT NULL AND "Grade_GradingPeriodReferenceSchoolId" IS NOT NULL AND "Grade_GradingPeriodSchoolYear" IS NOT NULL AND "Grade_BeginDate" IS NOT NULL AND "Grade_LocalCourseCode" IS NOT NULL AND "Grade_StudentSectionAssociationReferenceSchoolId" IS NOT NULL AND "Grade_SchoolYear" IS NOT NULL AND "Grade_SectionIdentifier" IS NOT NULL AND "Grade_SessionName" IS NOT NULL AND "Grade_StudentUniqueId" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."ReportCardStudentCompetencyObjective"
 (
-    "ReportCard_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ReportCard_DocumentId" bigint NOT NULL,
     "StudentCompetencyObjective_DocumentId" bigint NULL,
     "StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId" bigint NULL,
     "StudentCompetencyObjective_GradingPeriodName" varchar(60) NULL,
@@ -3883,7 +4299,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."ReportCardStudentCompetencyObjective"
     "StudentCompetencyObjective_Objective" varchar(60) NULL,
     "StudentCompetencyObjective_ObjectiveGradeLevelDescri_16507c4e9d" bigint NULL,
     "StudentCompetencyObjective_StudentUniqueId" varchar(32) NULL,
-    CONSTRAINT "PK_ReportCardStudentCompetencyObjective" PRIMARY KEY ("ReportCard_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_ReportCardStudentCompetencyObjective" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_ReportCardStudentCompetencyObjective_Ordinal_Repo_2bd6347db0" UNIQUE ("ReportCard_DocumentId", "Ordinal"),
+    CONSTRAINT "UX_ReportCardStudentCompetencyObjective_ReportCard_D_39bd501a86" UNIQUE ("ReportCard_DocumentId", "StudentCompetencyObjective_DocumentId"),
     CONSTRAINT "CK_ReportCardStudentCompetencyObjective_StudentCompe_db810526a3" CHECK (("StudentCompetencyObjective_DocumentId" IS NULL AND "StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId" IS NULL AND "StudentCompetencyObjective_GradingPeriodName" IS NULL AND "StudentCompetencyObjective_GradingPeriodSchoolId" IS NULL AND "StudentCompetencyObjective_GradingPeriodSchoolYear" IS NULL AND "StudentCompetencyObjective_ObjectiveEducationOrganizationId" IS NULL AND "StudentCompetencyObjective_Objective" IS NULL AND "StudentCompetencyObjective_ObjectiveGradeLevelDescri_16507c4e9d" IS NULL AND "StudentCompetencyObjective_StudentUniqueId" IS NULL) OR ("StudentCompetencyObjective_DocumentId" IS NOT NULL AND "StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId" IS NOT NULL AND "StudentCompetencyObjective_GradingPeriodName" IS NOT NULL AND "StudentCompetencyObjective_GradingPeriodSchoolId" IS NOT NULL AND "StudentCompetencyObjective_GradingPeriodSchoolYear" IS NOT NULL AND "StudentCompetencyObjective_ObjectiveEducationOrganizationId" IS NOT NULL AND "StudentCompetencyObjective_Objective" IS NOT NULL AND "StudentCompetencyObjective_ObjectiveGradeLevelDescri_16507c4e9d" IS NOT NULL AND "StudentCompetencyObjective_StudentUniqueId" IS NOT NULL))
 );
 
@@ -3910,22 +4328,27 @@ CREATE TABLE IF NOT EXISTS "edfi"."RestraintEvent"
 
 CREATE TABLE IF NOT EXISTS "edfi"."RestraintEventProgram"
 (
-    "RestraintEvent_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "RestraintEvent_DocumentId" bigint NOT NULL,
     "Program_DocumentId" bigint NULL,
     "Program_EducationOrganizationId" integer NULL,
     "Program_ProgramName" varchar(60) NULL,
     "Program_ProgramTypeDescriptor_DescriptorId" bigint NULL,
-    CONSTRAINT "PK_RestraintEventProgram" PRIMARY KEY ("RestraintEvent_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_RestraintEventProgram" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_RestraintEventProgram_Ordinal_RestraintEvent_DocumentId" UNIQUE ("RestraintEvent_DocumentId", "Ordinal"),
+    CONSTRAINT "UX_RestraintEventProgram_Program_DocumentId_Restrain_4b9304020d" UNIQUE ("RestraintEvent_DocumentId", "Program_DocumentId"),
     CONSTRAINT "CK_RestraintEventProgram_Program_AllNone" CHECK (("Program_DocumentId" IS NULL AND "Program_EducationOrganizationId" IS NULL AND "Program_ProgramName" IS NULL AND "Program_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("Program_DocumentId" IS NOT NULL AND "Program_EducationOrganizationId" IS NOT NULL AND "Program_ProgramName" IS NOT NULL AND "Program_ProgramTypeDescriptor_DescriptorId" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."RestraintEventReason"
 (
-    "RestraintEvent_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "RestraintEvent_DocumentId" bigint NOT NULL,
     "RestraintEventReasonDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_RestraintEventReason" PRIMARY KEY ("RestraintEvent_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_RestraintEventReason" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_RestraintEventReason_Ordinal_RestraintEvent_DocumentId" UNIQUE ("RestraintEvent_DocumentId", "Ordinal"),
     CONSTRAINT "UX_RestraintEventReason_RestraintEvent_DocumentId_Re_3241ca1f1b" UNIQUE ("RestraintEvent_DocumentId", "RestraintEventReasonDescriptor_DescriptorId")
 );
 
@@ -3957,8 +4380,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."School"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SchoolAddress"
 (
-    "School_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "School_DocumentId" bigint NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
     "LocaleDescriptor_DescriptorId" bigint NULL,
     "StateAbbreviationDescriptor_DescriptorId" bigint NOT NULL,
@@ -3973,65 +4397,79 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolAddress"
     "NameOfCounty" varchar(30) NULL,
     "PostalCode" varchar(17) NOT NULL,
     "StreetNumberName" varchar(150) NOT NULL,
-    CONSTRAINT "PK_SchoolAddress" PRIMARY KEY ("School_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_SchoolAddress_City_PostalCode_StreetNumberName_Ad_579dce1ffa" UNIQUE ("School_DocumentId", "AddressTypeDescriptor_DescriptorId", "City", "PostalCode", "StateAbbreviationDescriptor_DescriptorId", "StreetNumberName")
+    CONSTRAINT "PK_SchoolAddress" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_SchoolAddress_City_PostalCode_StreetNumberName_Ad_579dce1ffa" UNIQUE ("School_DocumentId", "AddressTypeDescriptor_DescriptorId", "City", "PostalCode", "StateAbbreviationDescriptor_DescriptorId", "StreetNumberName"),
+    CONSTRAINT "UX_SchoolAddress_CollectionItemId_School_DocumentId" UNIQUE ("CollectionItemId", "School_DocumentId"),
+    CONSTRAINT "UX_SchoolAddress_Ordinal_School_DocumentId" UNIQUE ("School_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."SchoolEducationOrganizationCategory"
 (
-    "School_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "School_DocumentId" bigint NOT NULL,
     "EducationOrganizationCategoryDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_SchoolEducationOrganizationCategory" PRIMARY KEY ("School_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_SchoolEducationOrganizationCategory_EducationOrga_520165a25c" UNIQUE ("School_DocumentId", "EducationOrganizationCategoryDescriptor_DescriptorId")
+    CONSTRAINT "PK_SchoolEducationOrganizationCategory" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_SchoolEducationOrganizationCategory_EducationOrga_520165a25c" UNIQUE ("School_DocumentId", "EducationOrganizationCategoryDescriptor_DescriptorId"),
+    CONSTRAINT "UX_SchoolEducationOrganizationCategory_Ordinal_Schoo_bdcb9843fd" UNIQUE ("School_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."SchoolGradeLevel"
 (
-    "School_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "School_DocumentId" bigint NOT NULL,
     "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_SchoolGradeLevel" PRIMARY KEY ("School_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_SchoolGradeLevel_GradeLevelDescriptor_DescriptorI_eda0407c32" UNIQUE ("School_DocumentId", "GradeLevelDescriptor_DescriptorId")
+    CONSTRAINT "PK_SchoolGradeLevel" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_SchoolGradeLevel_GradeLevelDescriptor_DescriptorI_eda0407c32" UNIQUE ("School_DocumentId", "GradeLevelDescriptor_DescriptorId"),
+    CONSTRAINT "UX_SchoolGradeLevel_Ordinal_School_DocumentId" UNIQUE ("School_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."SchoolIdentificationCode"
 (
-    "School_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "School_DocumentId" bigint NOT NULL,
     "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" bigint NOT NULL,
     "IdentificationCode" varchar(60) NOT NULL,
-    CONSTRAINT "PK_SchoolIdentificationCode" PRIMARY KEY ("School_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_SchoolIdentificationCode_EducationOrganizationIde_9d725ee89c" UNIQUE ("School_DocumentId", "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede")
+    CONSTRAINT "PK_SchoolIdentificationCode" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_SchoolIdentificationCode_EducationOrganizationIde_9d725ee89c" UNIQUE ("School_DocumentId", "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede"),
+    CONSTRAINT "UX_SchoolIdentificationCode_Ordinal_School_DocumentId" UNIQUE ("School_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."SchoolIndicator"
 (
-    "School_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "School_DocumentId" bigint NOT NULL,
     "IndicatorDescriptor_DescriptorId" bigint NOT NULL,
     "IndicatorGroupDescriptor_DescriptorId" bigint NULL,
     "IndicatorLevelDescriptor_DescriptorId" bigint NULL,
     "DesignatedBy" varchar(60) NULL,
     "IndicatorValue" varchar(60) NULL,
-    CONSTRAINT "PK_SchoolIndicator" PRIMARY KEY ("School_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_SchoolIndicator_IndicatorDescriptor_DescriptorId__7a552118a6" UNIQUE ("School_DocumentId", "IndicatorDescriptor_DescriptorId")
+    CONSTRAINT "PK_SchoolIndicator" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_SchoolIndicator_CollectionItemId_School_DocumentId" UNIQUE ("CollectionItemId", "School_DocumentId"),
+    CONSTRAINT "UX_SchoolIndicator_IndicatorDescriptor_DescriptorId__7a552118a6" UNIQUE ("School_DocumentId", "IndicatorDescriptor_DescriptorId"),
+    CONSTRAINT "UX_SchoolIndicator_Ordinal_School_DocumentId" UNIQUE ("School_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."SchoolInstitutionTelephone"
 (
-    "School_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "School_DocumentId" bigint NOT NULL,
     "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
     "TelephoneNumber" varchar(24) NOT NULL,
-    CONSTRAINT "PK_SchoolInstitutionTelephone" PRIMARY KEY ("School_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_SchoolInstitutionTelephone_InstitutionTelephoneNu_99719d1596" UNIQUE ("School_DocumentId", "InstitutionTelephoneNumberTypeDescriptor_DescriptorId")
+    CONSTRAINT "PK_SchoolInstitutionTelephone" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_SchoolInstitutionTelephone_InstitutionTelephoneNu_99719d1596" UNIQUE ("School_DocumentId", "InstitutionTelephoneNumberTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_SchoolInstitutionTelephone_Ordinal_School_DocumentId" UNIQUE ("School_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."SchoolInternationalAddress"
 (
-    "School_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "School_DocumentId" bigint NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
     "CountryDescriptor_DescriptorId" bigint NOT NULL,
     "AddressLine1" varchar(150) NOT NULL,
@@ -4042,39 +4480,46 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolInternationalAddress"
     "EndDate" date NULL,
     "Latitude" varchar(20) NULL,
     "Longitude" varchar(20) NULL,
-    CONSTRAINT "PK_SchoolInternationalAddress" PRIMARY KEY ("School_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_SchoolInternationalAddress_AddressTypeDescriptor__0b68c8b9cd" UNIQUE ("School_DocumentId", "AddressTypeDescriptor_DescriptorId")
+    CONSTRAINT "PK_SchoolInternationalAddress" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_SchoolInternationalAddress_AddressTypeDescriptor__0b68c8b9cd" UNIQUE ("School_DocumentId", "AddressTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_SchoolInternationalAddress_Ordinal_School_DocumentId" UNIQUE ("School_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."SchoolCategory"
 (
-    "School_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "School_DocumentId" bigint NOT NULL,
     "SchoolCategoryDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_SchoolCategory" PRIMARY KEY ("School_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_SchoolCategory" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_SchoolCategory_Ordinal_School_DocumentId" UNIQUE ("School_DocumentId", "Ordinal"),
     CONSTRAINT "UX_SchoolCategory_School_DocumentId_SchoolCategoryDe_c971f139ab" UNIQUE ("School_DocumentId", "SchoolCategoryDescriptor_DescriptorId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."SchoolAddressPeriod"
 (
-    "School_DocumentId" bigint NOT NULL,
-    "AddressOrdinal" integer NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
+    "School_DocumentId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
-    CONSTRAINT "PK_SchoolAddressPeriod" PRIMARY KEY ("School_DocumentId", "AddressOrdinal", "Ordinal"),
-    CONSTRAINT "UX_SchoolAddressPeriod_AddressOrdinal_BeginDate_Scho_59b19f56bb" UNIQUE ("School_DocumentId", "AddressOrdinal", "BeginDate")
+    CONSTRAINT "PK_SchoolAddressPeriod" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_SchoolAddressPeriod_BeginDate_ParentCollectionItemId" UNIQUE ("ParentCollectionItemId", "BeginDate"),
+    CONSTRAINT "UX_SchoolAddressPeriod_Ordinal_ParentCollectionItemId" UNIQUE ("ParentCollectionItemId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."SchoolIndicatorPeriod"
 (
-    "School_DocumentId" bigint NOT NULL,
-    "IndicatorOrdinal" integer NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
+    "School_DocumentId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
-    CONSTRAINT "PK_SchoolIndicatorPeriod" PRIMARY KEY ("School_DocumentId", "IndicatorOrdinal", "Ordinal"),
-    CONSTRAINT "UX_SchoolIndicatorPeriod_BeginDate_IndicatorOrdinal__b65c807fa2" UNIQUE ("School_DocumentId", "IndicatorOrdinal", "BeginDate")
+    CONSTRAINT "PK_SchoolIndicatorPeriod" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_SchoolIndicatorPeriod_BeginDate_ParentCollectionItemId" UNIQUE ("ParentCollectionItemId", "BeginDate"),
+    CONSTRAINT "UX_SchoolIndicatorPeriod_Ordinal_ParentCollectionItemId" UNIQUE ("ParentCollectionItemId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."SchoolYearType"
@@ -4126,51 +4571,63 @@ CREATE TABLE IF NOT EXISTS "edfi"."Section"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SectionCharacteristic"
 (
-    "Section_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "Section_DocumentId" bigint NOT NULL,
     "SectionCharacteristicDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_SectionCharacteristic" PRIMARY KEY ("Section_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_SectionCharacteristic" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_SectionCharacteristic_Ordinal_Section_DocumentId" UNIQUE ("Section_DocumentId", "Ordinal"),
     CONSTRAINT "UX_SectionCharacteristic_Section_DocumentId_SectionC_81102fe604" UNIQUE ("Section_DocumentId", "SectionCharacteristicDescriptor_DescriptorId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."SectionClassPeriod"
 (
-    "Section_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "Section_DocumentId" bigint NOT NULL,
     "ClassPeriod_DocumentId" bigint NULL,
     "ClassPeriod_ClassPeriodName" varchar(60) NULL,
     "ClassPeriod_SchoolId" integer NULL,
-    CONSTRAINT "PK_SectionClassPeriod" PRIMARY KEY ("Section_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_SectionClassPeriod" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_SectionClassPeriod_ClassPeriod_DocumentId_Section_DocumentId" UNIQUE ("Section_DocumentId", "ClassPeriod_DocumentId"),
+    CONSTRAINT "UX_SectionClassPeriod_Ordinal_Section_DocumentId" UNIQUE ("Section_DocumentId", "Ordinal"),
     CONSTRAINT "CK_SectionClassPeriod_ClassPeriod_AllNone" CHECK (("ClassPeriod_DocumentId" IS NULL AND "ClassPeriod_ClassPeriodName" IS NULL AND "ClassPeriod_SchoolId" IS NULL) OR ("ClassPeriod_DocumentId" IS NOT NULL AND "ClassPeriod_ClassPeriodName" IS NOT NULL AND "ClassPeriod_SchoolId" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."SectionCourseLevelCharacteristic"
 (
-    "Section_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "Section_DocumentId" bigint NOT NULL,
     "CourseLevelCharacteristicDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_SectionCourseLevelCharacteristic" PRIMARY KEY ("Section_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_SectionCourseLevelCharacteristic_CourseLevelChara_fee025c1a5" UNIQUE ("Section_DocumentId", "CourseLevelCharacteristicDescriptor_DescriptorId")
+    CONSTRAINT "PK_SectionCourseLevelCharacteristic" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_SectionCourseLevelCharacteristic_CourseLevelChara_fee025c1a5" UNIQUE ("Section_DocumentId", "CourseLevelCharacteristicDescriptor_DescriptorId"),
+    CONSTRAINT "UX_SectionCourseLevelCharacteristic_Ordinal_Section_DocumentId" UNIQUE ("Section_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."SectionOfferedGradeLevel"
 (
-    "Section_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "Section_DocumentId" bigint NOT NULL,
     "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_SectionOfferedGradeLevel" PRIMARY KEY ("Section_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_SectionOfferedGradeLevel_GradeLevelDescriptor_Des_072ebc9985" UNIQUE ("Section_DocumentId", "GradeLevelDescriptor_DescriptorId")
+    CONSTRAINT "PK_SectionOfferedGradeLevel" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_SectionOfferedGradeLevel_GradeLevelDescriptor_Des_072ebc9985" UNIQUE ("Section_DocumentId", "GradeLevelDescriptor_DescriptorId"),
+    CONSTRAINT "UX_SectionOfferedGradeLevel_Ordinal_Section_DocumentId" UNIQUE ("Section_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."SectionProgram"
 (
-    "Section_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "Section_DocumentId" bigint NOT NULL,
     "Program_DocumentId" bigint NULL,
     "Program_EducationOrganizationId" integer NULL,
     "Program_ProgramName" varchar(60) NULL,
     "Program_ProgramTypeDescriptor_DescriptorId" bigint NULL,
-    CONSTRAINT "PK_SectionProgram" PRIMARY KEY ("Section_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_SectionProgram" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_SectionProgram_Ordinal_Section_DocumentId" UNIQUE ("Section_DocumentId", "Ordinal"),
+    CONSTRAINT "UX_SectionProgram_Program_DocumentId_Section_DocumentId" UNIQUE ("Section_DocumentId", "Program_DocumentId"),
     CONSTRAINT "CK_SectionProgram_Program_AllNone" CHECK (("Program_DocumentId" IS NULL AND "Program_EducationOrganizationId" IS NULL AND "Program_ProgramName" IS NULL AND "Program_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("Program_DocumentId" IS NOT NULL AND "Program_EducationOrganizationId" IS NOT NULL AND "Program_ProgramName" IS NOT NULL AND "Program_ProgramTypeDescriptor_DescriptorId" IS NOT NULL))
 );
 
@@ -4221,25 +4678,31 @@ CREATE TABLE IF NOT EXISTS "edfi"."Session"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SessionAcademicWeek"
 (
-    "Session_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "Session_DocumentId" bigint NOT NULL,
     "AcademicWeek_DocumentId" bigint NULL,
     "AcademicWeek_SchoolId" integer NULL,
     "AcademicWeek_WeekIdentifier" varchar(80) NULL,
-    CONSTRAINT "PK_SessionAcademicWeek" PRIMARY KEY ("Session_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_SessionAcademicWeek" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_SessionAcademicWeek_AcademicWeek_DocumentId_Sessi_687b6f9c21" UNIQUE ("Session_DocumentId", "AcademicWeek_DocumentId"),
+    CONSTRAINT "UX_SessionAcademicWeek_Ordinal_Session_DocumentId" UNIQUE ("Session_DocumentId", "Ordinal"),
     CONSTRAINT "CK_SessionAcademicWeek_AcademicWeek_AllNone" CHECK (("AcademicWeek_DocumentId" IS NULL AND "AcademicWeek_SchoolId" IS NULL AND "AcademicWeek_WeekIdentifier" IS NULL) OR ("AcademicWeek_DocumentId" IS NOT NULL AND "AcademicWeek_SchoolId" IS NOT NULL AND "AcademicWeek_WeekIdentifier" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."SessionGradingPeriod"
 (
-    "Session_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "Session_DocumentId" bigint NOT NULL,
     "GradingPeriod_DocumentId" bigint NULL,
     "GradingPeriod_GradingPeriodDescriptor_DescriptorId" bigint NULL,
     "GradingPeriod_GradingPeriodName" varchar(60) NULL,
     "GradingPeriod_SchoolId" integer NULL,
     "GradingPeriod_SchoolYear" integer NULL,
-    CONSTRAINT "PK_SessionGradingPeriod" PRIMARY KEY ("Session_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_SessionGradingPeriod" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_SessionGradingPeriod_GradingPeriod_DocumentId_Ses_a3287e9c5b" UNIQUE ("Session_DocumentId", "GradingPeriod_DocumentId"),
+    CONSTRAINT "UX_SessionGradingPeriod_Ordinal_Session_DocumentId" UNIQUE ("Session_DocumentId", "Ordinal"),
     CONSTRAINT "CK_SessionGradingPeriod_GradingPeriod_AllNone" CHECK (("GradingPeriod_DocumentId" IS NULL AND "GradingPeriod_GradingPeriodDescriptor_DescriptorId" IS NULL AND "GradingPeriod_GradingPeriodName" IS NULL AND "GradingPeriod_SchoolId" IS NULL AND "GradingPeriod_SchoolYear" IS NULL) OR ("GradingPeriod_DocumentId" IS NOT NULL AND "GradingPeriod_GradingPeriodDescriptor_DescriptorId" IS NOT NULL AND "GradingPeriod_GradingPeriodName" IS NOT NULL AND "GradingPeriod_SchoolId" IS NOT NULL AND "GradingPeriod_SchoolYear" IS NOT NULL))
 );
 
@@ -4256,10 +4719,12 @@ CREATE TABLE IF NOT EXISTS "edfi"."SourceDimension"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SourceDimensionReportingTag"
 (
-    "SourceDimension_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "SourceDimension_DocumentId" bigint NOT NULL,
     "ReportingTagDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_SourceDimensionReportingTag" PRIMARY KEY ("SourceDimension_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_SourceDimensionReportingTag" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_SourceDimensionReportingTag_Ordinal_SourceDimensi_280746a6af" UNIQUE ("SourceDimension_DocumentId", "Ordinal"),
     CONSTRAINT "UX_SourceDimensionReportingTag_ReportingTagDescripto_c35c71ba1c" UNIQUE ("SourceDimension_DocumentId", "ReportingTagDescriptor_DescriptorId")
 );
 
@@ -4296,8 +4761,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."Staff"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffAddress"
 (
-    "Staff_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "Staff_DocumentId" bigint NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
     "LocaleDescriptor_DescriptorId" bigint NULL,
     "StateAbbreviationDescriptor_DescriptorId" bigint NOT NULL,
@@ -4312,57 +4778,69 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffAddress"
     "NameOfCounty" varchar(30) NULL,
     "PostalCode" varchar(17) NOT NULL,
     "StreetNumberName" varchar(150) NOT NULL,
-    CONSTRAINT "PK_StaffAddress" PRIMARY KEY ("Staff_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StaffAddress_City_PostalCode_StreetNumberName_Add_8b9487503a" UNIQUE ("Staff_DocumentId", "AddressTypeDescriptor_DescriptorId", "City", "PostalCode", "StateAbbreviationDescriptor_DescriptorId", "StreetNumberName")
+    CONSTRAINT "PK_StaffAddress" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StaffAddress_City_PostalCode_StreetNumberName_Add_8b9487503a" UNIQUE ("Staff_DocumentId", "AddressTypeDescriptor_DescriptorId", "City", "PostalCode", "StateAbbreviationDescriptor_DescriptorId", "StreetNumberName"),
+    CONSTRAINT "UX_StaffAddress_CollectionItemId_Staff_DocumentId" UNIQUE ("CollectionItemId", "Staff_DocumentId"),
+    CONSTRAINT "UX_StaffAddress_Ordinal_Staff_DocumentId" UNIQUE ("Staff_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffAncestryEthnicOrigin"
 (
-    "Staff_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "Staff_DocumentId" bigint NOT NULL,
     "AncestryEthnicOriginDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_StaffAncestryEthnicOrigin" PRIMARY KEY ("Staff_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StaffAncestryEthnicOrigin_AncestryEthnicOriginDes_8b93971b11" UNIQUE ("Staff_DocumentId", "AncestryEthnicOriginDescriptor_DescriptorId")
+    CONSTRAINT "PK_StaffAncestryEthnicOrigin" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StaffAncestryEthnicOrigin_AncestryEthnicOriginDes_8b93971b11" UNIQUE ("Staff_DocumentId", "AncestryEthnicOriginDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StaffAncestryEthnicOrigin_Ordinal_Staff_DocumentId" UNIQUE ("Staff_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffCredential"
 (
-    "Staff_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "Staff_DocumentId" bigint NOT NULL,
     "Credential_DocumentId" bigint NULL,
     "Credential_CredentialIdentifier" varchar(60) NULL,
     "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId" bigint NULL,
-    CONSTRAINT "PK_StaffCredential" PRIMARY KEY ("Staff_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StaffCredential" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StaffCredential_Credential_DocumentId_Staff_DocumentId" UNIQUE ("Staff_DocumentId", "Credential_DocumentId"),
+    CONSTRAINT "UX_StaffCredential_Ordinal_Staff_DocumentId" UNIQUE ("Staff_DocumentId", "Ordinal"),
     CONSTRAINT "CK_StaffCredential_Credential_AllNone" CHECK (("Credential_DocumentId" IS NULL AND "Credential_CredentialIdentifier" IS NULL AND "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId" IS NULL) OR ("Credential_DocumentId" IS NOT NULL AND "Credential_CredentialIdentifier" IS NOT NULL AND "Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffElectronicMail"
 (
-    "Staff_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "Staff_DocumentId" bigint NOT NULL,
     "ElectronicMailTypeDescriptor_DescriptorId" bigint NOT NULL,
     "DoNotPublishIndicator" boolean NULL,
     "ElectronicMailAddress" varchar(128) NOT NULL,
     "PrimaryEmailAddressIndicator" boolean NULL,
-    CONSTRAINT "PK_StaffElectronicMail" PRIMARY KEY ("Staff_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StaffElectronicMail_ElectronicMailAddress_Electro_ab0243ae4d" UNIQUE ("Staff_DocumentId", "ElectronicMailAddress", "ElectronicMailTypeDescriptor_DescriptorId")
+    CONSTRAINT "PK_StaffElectronicMail" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StaffElectronicMail_ElectronicMailAddress_Electro_ab0243ae4d" UNIQUE ("Staff_DocumentId", "ElectronicMailAddress", "ElectronicMailTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StaffElectronicMail_Ordinal_Staff_DocumentId" UNIQUE ("Staff_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffIdentificationCode"
 (
-    "Staff_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "Staff_DocumentId" bigint NOT NULL,
     "StaffIdentificationSystemDescriptor_DescriptorId" bigint NOT NULL,
     "AssigningOrganizationIdentificationCode" varchar(60) NULL,
     "IdentificationCode" varchar(60) NOT NULL,
-    CONSTRAINT "PK_StaffIdentificationCode" PRIMARY KEY ("Staff_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StaffIdentificationCode" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StaffIdentificationCode_Ordinal_Staff_DocumentId" UNIQUE ("Staff_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StaffIdentificationCode_Staff_DocumentId_StaffIde_92eeb40a48" UNIQUE ("Staff_DocumentId", "StaffIdentificationSystemDescriptor_DescriptorId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffIdentificationDocument"
 (
-    "Staff_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "Staff_DocumentId" bigint NOT NULL,
     "IdentificationDocumentUseDescriptor_DescriptorId" bigint NULL,
     "IssuerCountryDescriptor_DescriptorId" bigint NULL,
     "PersonalInformationVerificationDescriptor_DescriptorId" bigint NULL,
@@ -4370,14 +4848,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffIdentificationDocument"
     "DocumentTitle" varchar(60) NULL,
     "IssuerDocumentIdentificationCode" varchar(60) NULL,
     "IssuerName" varchar(150) NULL,
-    CONSTRAINT "PK_StaffIdentificationDocument" PRIMARY KEY ("Staff_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StaffIdentificationDocument_IdentificationDocumen_7cf1661602" UNIQUE ("Staff_DocumentId", "IdentificationDocumentUseDescriptor_DescriptorId", "PersonalInformationVerificationDescriptor_DescriptorId")
+    CONSTRAINT "PK_StaffIdentificationDocument" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StaffIdentificationDocument_IdentificationDocumen_7cf1661602" UNIQUE ("Staff_DocumentId", "IdentificationDocumentUseDescriptor_DescriptorId", "PersonalInformationVerificationDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StaffIdentificationDocument_Ordinal_Staff_DocumentId" UNIQUE ("Staff_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffInternationalAddress"
 (
-    "Staff_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "Staff_DocumentId" bigint NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
     "CountryDescriptor_DescriptorId" bigint NOT NULL,
     "AddressLine1" varchar(150) NOT NULL,
@@ -4388,37 +4868,44 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffInternationalAddress"
     "EndDate" date NULL,
     "Latitude" varchar(20) NULL,
     "Longitude" varchar(20) NULL,
-    CONSTRAINT "PK_StaffInternationalAddress" PRIMARY KEY ("Staff_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StaffInternationalAddress_AddressTypeDescriptor_D_19e9d85ed4" UNIQUE ("Staff_DocumentId", "AddressTypeDescriptor_DescriptorId")
+    CONSTRAINT "PK_StaffInternationalAddress" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StaffInternationalAddress_AddressTypeDescriptor_D_19e9d85ed4" UNIQUE ("Staff_DocumentId", "AddressTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StaffInternationalAddress_Ordinal_Staff_DocumentId" UNIQUE ("Staff_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffLanguage"
 (
-    "Staff_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "Staff_DocumentId" bigint NOT NULL,
     "LanguageDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_StaffLanguage" PRIMARY KEY ("Staff_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StaffLanguage_LanguageDescriptor_DescriptorId_Sta_d8941c4f3e" UNIQUE ("Staff_DocumentId", "LanguageDescriptor_DescriptorId")
+    CONSTRAINT "PK_StaffLanguage" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StaffLanguage_CollectionItemId_Staff_DocumentId" UNIQUE ("CollectionItemId", "Staff_DocumentId"),
+    CONSTRAINT "UX_StaffLanguage_LanguageDescriptor_DescriptorId_Sta_d8941c4f3e" UNIQUE ("Staff_DocumentId", "LanguageDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StaffLanguage_Ordinal_Staff_DocumentId" UNIQUE ("Staff_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffOtherName"
 (
-    "Staff_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "Staff_DocumentId" bigint NOT NULL,
     "OtherNameTypeDescriptor_DescriptorId" bigint NOT NULL,
     "FirstName" varchar(75) NOT NULL,
     "GenerationCodeSuffix" varchar(10) NULL,
     "LastSurname" varchar(75) NOT NULL,
     "MiddleName" varchar(75) NULL,
     "PersonalTitlePrefix" varchar(30) NULL,
-    CONSTRAINT "PK_StaffOtherName" PRIMARY KEY ("Staff_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StaffOtherName" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StaffOtherName_Ordinal_Staff_DocumentId" UNIQUE ("Staff_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StaffOtherName_OtherNameTypeDescriptor_Descriptor_1b0d688e47" UNIQUE ("Staff_DocumentId", "OtherNameTypeDescriptor_DescriptorId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffPersonalIdentificationDocument"
 (
-    "Staff_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "Staff_DocumentId" bigint NOT NULL,
     "IdentificationDocumentUseDescriptor_DescriptorId" bigint NOT NULL,
     "IssuerCountryDescriptor_DescriptorId" bigint NULL,
     "PersonalInformationVerificationDescriptor_DescriptorId" bigint NOT NULL,
@@ -4426,23 +4913,27 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffPersonalIdentificationDocument"
     "PersonalDocumentTitle" varchar(60) NULL,
     "PersonalIssuerDocumentIdentificationCode" varchar(60) NULL,
     "PersonalIssuerName" varchar(150) NULL,
-    CONSTRAINT "PK_StaffPersonalIdentificationDocument" PRIMARY KEY ("Staff_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StaffPersonalIdentificationDocument_Identificatio_197547a9f2" UNIQUE ("Staff_DocumentId", "IdentificationDocumentUseDescriptor_DescriptorId", "PersonalInformationVerificationDescriptor_DescriptorId")
+    CONSTRAINT "PK_StaffPersonalIdentificationDocument" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StaffPersonalIdentificationDocument_Identificatio_197547a9f2" UNIQUE ("Staff_DocumentId", "IdentificationDocumentUseDescriptor_DescriptorId", "PersonalInformationVerificationDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StaffPersonalIdentificationDocument_Ordinal_Staff_DocumentId" UNIQUE ("Staff_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffRace"
 (
-    "Staff_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "Staff_DocumentId" bigint NOT NULL,
     "RaceDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_StaffRace" PRIMARY KEY ("Staff_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StaffRace" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StaffRace_Ordinal_Staff_DocumentId" UNIQUE ("Staff_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StaffRace_RaceDescriptor_DescriptorId_Staff_DocumentId" UNIQUE ("Staff_DocumentId", "RaceDescriptor_DescriptorId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffRecognition"
 (
-    "Staff_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "Staff_DocumentId" bigint NOT NULL,
     "AchievementCategoryDescriptor_DescriptorId" bigint NULL,
     "RecognitionTypeDescriptor_DescriptorId" bigint NOT NULL,
     "AchievementCategorySystem" varchar(60) NULL,
@@ -4456,60 +4947,71 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffRecognition"
     "RecognitionAwardDate" date NULL,
     "RecognitionAwardExpiresDate" date NULL,
     "RecognitionDescription" varchar(80) NULL,
-    CONSTRAINT "PK_StaffRecognition" PRIMARY KEY ("Staff_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StaffRecognition" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StaffRecognition_Ordinal_Staff_DocumentId" UNIQUE ("Staff_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StaffRecognition_RecognitionTypeDescriptor_Descri_a1c10efece" UNIQUE ("Staff_DocumentId", "RecognitionTypeDescriptor_DescriptorId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffTelephone"
 (
-    "Staff_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "Staff_DocumentId" bigint NOT NULL,
     "TelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
     "DoNotPublishIndicator" boolean NULL,
     "OrderOfPriority" integer NULL,
     "TelephoneNumber" varchar(24) NOT NULL,
     "TextMessageCapabilityIndicator" boolean NULL,
-    CONSTRAINT "PK_StaffTelephone" PRIMARY KEY ("Staff_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StaffTelephone" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StaffTelephone_Ordinal_Staff_DocumentId" UNIQUE ("Staff_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StaffTelephone_TelephoneNumber_Staff_DocumentId_T_866d971e2c" UNIQUE ("Staff_DocumentId", "TelephoneNumber", "TelephoneNumberTypeDescriptor_DescriptorId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffTribalAffiliation"
 (
-    "Staff_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "Staff_DocumentId" bigint NOT NULL,
     "TribalAffiliationDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_StaffTribalAffiliation" PRIMARY KEY ("Staff_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StaffTribalAffiliation" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StaffTribalAffiliation_Ordinal_Staff_DocumentId" UNIQUE ("Staff_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StaffTribalAffiliation_Staff_DocumentId_TribalAff_2743253d04" UNIQUE ("Staff_DocumentId", "TribalAffiliationDescriptor_DescriptorId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffVisa"
 (
-    "Staff_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "Staff_DocumentId" bigint NOT NULL,
     "VisaDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_StaffVisa" PRIMARY KEY ("Staff_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StaffVisa" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StaffVisa_Ordinal_Staff_DocumentId" UNIQUE ("Staff_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StaffVisa_Staff_DocumentId_VisaDescriptor_DescriptorId" UNIQUE ("Staff_DocumentId", "VisaDescriptor_DescriptorId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffAddressPeriod"
 (
-    "Staff_DocumentId" bigint NOT NULL,
-    "AddressOrdinal" integer NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
+    "Staff_DocumentId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
-    CONSTRAINT "PK_StaffAddressPeriod" PRIMARY KEY ("Staff_DocumentId", "AddressOrdinal", "Ordinal"),
-    CONSTRAINT "UX_StaffAddressPeriod_AddressOrdinal_BeginDate_Staff_DocumentId" UNIQUE ("Staff_DocumentId", "AddressOrdinal", "BeginDate")
+    CONSTRAINT "PK_StaffAddressPeriod" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StaffAddressPeriod_BeginDate_ParentCollectionItemId" UNIQUE ("ParentCollectionItemId", "BeginDate"),
+    CONSTRAINT "UX_StaffAddressPeriod_Ordinal_ParentCollectionItemId" UNIQUE ("ParentCollectionItemId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffLanguageUs"
 (
-    "Staff_DocumentId" bigint NOT NULL,
-    "LanguageOrdinal" integer NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
+    "Staff_DocumentId" bigint NOT NULL,
     "LanguageUseDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_StaffLanguageUs" PRIMARY KEY ("Staff_DocumentId", "LanguageOrdinal", "Ordinal"),
-    CONSTRAINT "UX_StaffLanguageUs_LanguageOrdinal_LanguageUseDescri_e8fbfe1576" UNIQUE ("Staff_DocumentId", "LanguageOrdinal", "LanguageUseDescriptor_DescriptorId")
+    CONSTRAINT "PK_StaffLanguageUs" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StaffLanguageUs_Ordinal_ParentCollectionItemId" UNIQUE ("ParentCollectionItemId", "Ordinal"),
+    CONSTRAINT "UX_StaffLanguageUs_ParentCollectionItemId_LanguageUs_dc5ed9d73f" UNIQUE ("ParentCollectionItemId", "LanguageUseDescriptor_DescriptorId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffAbsenceEvent"
@@ -4559,10 +5061,12 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffDisciplineIncidentAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffDisciplineIncidentAssociationDisciplineIncident_7fa4beae77"
 (
-    "StaffDisciplineIncidentAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StaffDisciplineIncidentAssociation_DocumentId" bigint NOT NULL,
     "DisciplineIncidentParticipationCodeDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_StaffDisciplineIncidentAssociationDisciplineIncid_35e25c4046" PRIMARY KEY ("StaffDisciplineIncidentAssociation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StaffDisciplineIncidentAssociationDisciplineIncid_b1d039c192" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StaffDisciplineIncidentAssociationDisciplineIncid_6ca01cabf6" UNIQUE ("StaffDisciplineIncidentAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StaffDisciplineIncidentAssociationDisciplineIncid_8ab6e4f1c6" UNIQUE ("StaffDisciplineIncidentAssociation_DocumentId", "DisciplineIncidentParticipationCodeDescriptor_DescriptorId")
 );
 
@@ -4628,24 +5132,28 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationContactAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationContactAssociationPeriod"
 (
-    "StaffEducationOrganizationContactAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StaffEducationOrganizationContactAssociation_DocumentId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
-    CONSTRAINT "PK_StaffEducationOrganizationContactAssociationPeriod" PRIMARY KEY ("StaffEducationOrganizationContactAssociation_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StaffEducationOrganizationContactAssociationPerio_8d18fd48a5" UNIQUE ("StaffEducationOrganizationContactAssociation_DocumentId", "BeginDate")
+    CONSTRAINT "PK_StaffEducationOrganizationContactAssociationPeriod" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StaffEducationOrganizationContactAssociationPerio_8d18fd48a5" UNIQUE ("StaffEducationOrganizationContactAssociation_DocumentId", "BeginDate"),
+    CONSTRAINT "UX_StaffEducationOrganizationContactAssociationPerio_f40cd5be0d" UNIQUE ("StaffEducationOrganizationContactAssociation_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationContactAssociationTelephone"
 (
-    "StaffEducationOrganizationContactAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StaffEducationOrganizationContactAssociation_DocumentId" bigint NOT NULL,
     "TelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
     "DoNotPublishIndicator" boolean NULL,
     "OrderOfPriority" integer NULL,
     "TelephoneNumber" varchar(24) NOT NULL,
     "TextMessageCapabilityIndicator" boolean NULL,
-    CONSTRAINT "PK_StaffEducationOrganizationContactAssociationTelephone" PRIMARY KEY ("StaffEducationOrganizationContactAssociation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StaffEducationOrganizationContactAssociationTelephone" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StaffEducationOrganizationContactAssociationTelep_8585e29b57" UNIQUE ("StaffEducationOrganizationContactAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StaffEducationOrganizationContactAssociationTelep_fb70afa3ea" UNIQUE ("StaffEducationOrganizationContactAssociation_DocumentId", "TelephoneNumber", "TelephoneNumberTypeDescriptor_DescriptorId")
 );
 
@@ -4736,20 +5244,24 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffSchoolAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffSchoolAssociationAcademicSubject"
 (
-    "StaffSchoolAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StaffSchoolAssociation_DocumentId" bigint NOT NULL,
     "AcademicSubjectDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_StaffSchoolAssociationAcademicSubject" PRIMARY KEY ("StaffSchoolAssociation_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StaffSchoolAssociationAcademicSubject_AcademicSub_62cfad3d6e" UNIQUE ("StaffSchoolAssociation_DocumentId", "AcademicSubjectDescriptor_DescriptorId")
+    CONSTRAINT "PK_StaffSchoolAssociationAcademicSubject" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StaffSchoolAssociationAcademicSubject_AcademicSub_62cfad3d6e" UNIQUE ("StaffSchoolAssociation_DocumentId", "AcademicSubjectDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StaffSchoolAssociationAcademicSubject_Ordinal_Sta_4fb1f1f42e" UNIQUE ("StaffSchoolAssociation_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffSchoolAssociationGradeLevel"
 (
-    "StaffSchoolAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StaffSchoolAssociation_DocumentId" bigint NOT NULL,
     "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_StaffSchoolAssociationGradeLevel" PRIMARY KEY ("StaffSchoolAssociation_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StaffSchoolAssociationGradeLevel_GradeLevelDescri_fdfd75379f" UNIQUE ("StaffSchoolAssociation_DocumentId", "GradeLevelDescriptor_DescriptorId")
+    CONSTRAINT "PK_StaffSchoolAssociationGradeLevel" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StaffSchoolAssociationGradeLevel_GradeLevelDescri_fdfd75379f" UNIQUE ("StaffSchoolAssociation_DocumentId", "GradeLevelDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StaffSchoolAssociationGradeLevel_Ordinal_StaffSch_c966135219" UNIQUE ("StaffSchoolAssociation_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffSectionAssociation"
@@ -4790,20 +5302,23 @@ CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgency"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyAccountability"
 (
-    "StateEducationAgency_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StateEducationAgency_DocumentId" bigint NOT NULL,
     "StateEducationAgencyAccountabilitySchoolYear_DocumentId" bigint NOT NULL,
     "StateEducationAgencyAccountabilitySchoolYear_SchoolYear" integer NOT NULL,
     "CteGraduationRateInclusion" boolean NULL,
-    CONSTRAINT "PK_StateEducationAgencyAccountability" PRIMARY KEY ("StateEducationAgency_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StateEducationAgencyAccountability" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StateEducationAgencyAccountability_Ordinal_StateE_fe35c06a7f" UNIQUE ("StateEducationAgency_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StateEducationAgencyAccountability_StateEducation_f8a5a91e16" UNIQUE ("StateEducationAgency_DocumentId", "StateEducationAgencyAccountabilitySchoolYear_DocumentId"),
     CONSTRAINT "CK_StateEducationAgencyAccountability_StateEducation_8c7fdef82e" CHECK (("StateEducationAgencyAccountabilitySchoolYear_DocumentId" IS NULL AND "StateEducationAgencyAccountabilitySchoolYear_SchoolYear" IS NULL) OR ("StateEducationAgencyAccountabilitySchoolYear_DocumentId" IS NOT NULL AND "StateEducationAgencyAccountabilitySchoolYear_SchoolYear" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyAddress"
 (
-    "StateEducationAgency_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StateEducationAgency_DocumentId" bigint NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
     "LocaleDescriptor_DescriptorId" bigint NULL,
     "StateAbbreviationDescriptor_DescriptorId" bigint NOT NULL,
@@ -4818,66 +5333,80 @@ CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyAddress"
     "NameOfCounty" varchar(30) NULL,
     "PostalCode" varchar(17) NOT NULL,
     "StreetNumberName" varchar(150) NOT NULL,
-    CONSTRAINT "PK_StateEducationAgencyAddress" PRIMARY KEY ("StateEducationAgency_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StateEducationAgencyAddress_City_PostalCode_Stree_4dc431df23" UNIQUE ("StateEducationAgency_DocumentId", "AddressTypeDescriptor_DescriptorId", "City", "PostalCode", "StateAbbreviationDescriptor_DescriptorId", "StreetNumberName")
+    CONSTRAINT "PK_StateEducationAgencyAddress" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StateEducationAgencyAddress_City_PostalCode_Stree_4dc431df23" UNIQUE ("StateEducationAgency_DocumentId", "AddressTypeDescriptor_DescriptorId", "City", "PostalCode", "StateAbbreviationDescriptor_DescriptorId", "StreetNumberName"),
+    CONSTRAINT "UX_StateEducationAgencyAddress_CollectionItemId_Stat_9b70e2cb36" UNIQUE ("CollectionItemId", "StateEducationAgency_DocumentId"),
+    CONSTRAINT "UX_StateEducationAgencyAddress_Ordinal_StateEducatio_55917434fd" UNIQUE ("StateEducationAgency_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyCategory"
 (
-    "StateEducationAgency_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StateEducationAgency_DocumentId" bigint NOT NULL,
     "EducationOrganizationCategoryDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_StateEducationAgencyCategory" PRIMARY KEY ("StateEducationAgency_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StateEducationAgencyCategory_EducationOrganizatio_836b47864c" UNIQUE ("StateEducationAgency_DocumentId", "EducationOrganizationCategoryDescriptor_DescriptorId")
+    CONSTRAINT "PK_StateEducationAgencyCategory" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StateEducationAgencyCategory_EducationOrganizatio_836b47864c" UNIQUE ("StateEducationAgency_DocumentId", "EducationOrganizationCategoryDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StateEducationAgencyCategory_Ordinal_StateEducati_35b73440b9" UNIQUE ("StateEducationAgency_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyFederalFunds"
 (
-    "StateEducationAgency_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StateEducationAgency_DocumentId" bigint NOT NULL,
     "FederalProgramsFundingAllocation" numeric(19,4) NULL,
     "FiscalYear" integer NOT NULL,
-    CONSTRAINT "PK_StateEducationAgencyFederalFunds" PRIMARY KEY ("StateEducationAgency_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StateEducationAgencyFederalFunds_FiscalYear_State_acc13c634e" UNIQUE ("StateEducationAgency_DocumentId", "FiscalYear")
+    CONSTRAINT "PK_StateEducationAgencyFederalFunds" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StateEducationAgencyFederalFunds_FiscalYear_State_acc13c634e" UNIQUE ("StateEducationAgency_DocumentId", "FiscalYear"),
+    CONSTRAINT "UX_StateEducationAgencyFederalFunds_Ordinal_StateEdu_d89baede57" UNIQUE ("StateEducationAgency_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyIdentificationCode"
 (
-    "StateEducationAgency_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StateEducationAgency_DocumentId" bigint NOT NULL,
     "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" bigint NOT NULL,
     "IdentificationCode" varchar(60) NOT NULL,
-    CONSTRAINT "PK_StateEducationAgencyIdentificationCode" PRIMARY KEY ("StateEducationAgency_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StateEducationAgencyIdentificationCode_EducationO_a449a8b727" UNIQUE ("StateEducationAgency_DocumentId", "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede")
+    CONSTRAINT "PK_StateEducationAgencyIdentificationCode" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StateEducationAgencyIdentificationCode_EducationO_a449a8b727" UNIQUE ("StateEducationAgency_DocumentId", "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede"),
+    CONSTRAINT "UX_StateEducationAgencyIdentificationCode_Ordinal_St_1ba6f68a99" UNIQUE ("StateEducationAgency_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyIndicator"
 (
-    "StateEducationAgency_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StateEducationAgency_DocumentId" bigint NOT NULL,
     "IndicatorDescriptor_DescriptorId" bigint NOT NULL,
     "IndicatorGroupDescriptor_DescriptorId" bigint NULL,
     "IndicatorLevelDescriptor_DescriptorId" bigint NULL,
     "DesignatedBy" varchar(60) NULL,
     "IndicatorValue" varchar(60) NULL,
-    CONSTRAINT "PK_StateEducationAgencyIndicator" PRIMARY KEY ("StateEducationAgency_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StateEducationAgencyIndicator_IndicatorDescriptor_589ae06347" UNIQUE ("StateEducationAgency_DocumentId", "IndicatorDescriptor_DescriptorId")
+    CONSTRAINT "PK_StateEducationAgencyIndicator" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StateEducationAgencyIndicator_CollectionItemId_St_ea4caac03c" UNIQUE ("CollectionItemId", "StateEducationAgency_DocumentId"),
+    CONSTRAINT "UX_StateEducationAgencyIndicator_IndicatorDescriptor_589ae06347" UNIQUE ("StateEducationAgency_DocumentId", "IndicatorDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StateEducationAgencyIndicator_Ordinal_StateEducat_2eb5942cc1" UNIQUE ("StateEducationAgency_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyInstitutionTelephone"
 (
-    "StateEducationAgency_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StateEducationAgency_DocumentId" bigint NOT NULL,
     "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
     "TelephoneNumber" varchar(24) NOT NULL,
-    CONSTRAINT "PK_StateEducationAgencyInstitutionTelephone" PRIMARY KEY ("StateEducationAgency_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StateEducationAgencyInstitutionTelephone_Institut_f14e95bf4c" UNIQUE ("StateEducationAgency_DocumentId", "InstitutionTelephoneNumberTypeDescriptor_DescriptorId")
+    CONSTRAINT "PK_StateEducationAgencyInstitutionTelephone" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StateEducationAgencyInstitutionTelephone_Institut_f14e95bf4c" UNIQUE ("StateEducationAgency_DocumentId", "InstitutionTelephoneNumberTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StateEducationAgencyInstitutionTelephone_Ordinal__37552aa76e" UNIQUE ("StateEducationAgency_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyInternationalAddress"
 (
-    "StateEducationAgency_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StateEducationAgency_DocumentId" bigint NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
     "CountryDescriptor_DescriptorId" bigint NOT NULL,
     "AddressLine1" varchar(150) NOT NULL,
@@ -4888,30 +5417,35 @@ CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyInternationalAddress"
     "EndDate" date NULL,
     "Latitude" varchar(20) NULL,
     "Longitude" varchar(20) NULL,
-    CONSTRAINT "PK_StateEducationAgencyInternationalAddress" PRIMARY KEY ("StateEducationAgency_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StateEducationAgencyInternationalAddress_AddressT_6754414552" UNIQUE ("StateEducationAgency_DocumentId", "AddressTypeDescriptor_DescriptorId")
+    CONSTRAINT "PK_StateEducationAgencyInternationalAddress" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StateEducationAgencyInternationalAddress_AddressT_6754414552" UNIQUE ("StateEducationAgency_DocumentId", "AddressTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StateEducationAgencyInternationalAddress_Ordinal__ec276aac9b" UNIQUE ("StateEducationAgency_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyAddressPeriod"
 (
-    "StateEducationAgency_DocumentId" bigint NOT NULL,
-    "AddressOrdinal" integer NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
+    "StateEducationAgency_DocumentId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
-    CONSTRAINT "PK_StateEducationAgencyAddressPeriod" PRIMARY KEY ("StateEducationAgency_DocumentId", "AddressOrdinal", "Ordinal"),
-    CONSTRAINT "UX_StateEducationAgencyAddressPeriod_AddressOrdinal__a6ac01f354" UNIQUE ("StateEducationAgency_DocumentId", "AddressOrdinal", "BeginDate")
+    CONSTRAINT "PK_StateEducationAgencyAddressPeriod" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StateEducationAgencyAddressPeriod_BeginDate_Paren_1f01ecf9f0" UNIQUE ("ParentCollectionItemId", "BeginDate"),
+    CONSTRAINT "UX_StateEducationAgencyAddressPeriod_Ordinal_ParentC_8265686919" UNIQUE ("ParentCollectionItemId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyIndicatorPeriod"
 (
-    "StateEducationAgency_DocumentId" bigint NOT NULL,
-    "IndicatorOrdinal" integer NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
+    "StateEducationAgency_DocumentId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
-    CONSTRAINT "PK_StateEducationAgencyIndicatorPeriod" PRIMARY KEY ("StateEducationAgency_DocumentId", "IndicatorOrdinal", "Ordinal"),
-    CONSTRAINT "UX_StateEducationAgencyIndicatorPeriod_BeginDate_Ind_3b454cf448" UNIQUE ("StateEducationAgency_DocumentId", "IndicatorOrdinal", "BeginDate")
+    CONSTRAINT "PK_StateEducationAgencyIndicatorPeriod" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StateEducationAgencyIndicatorPeriod_BeginDate_Par_203a864e1f" UNIQUE ("ParentCollectionItemId", "BeginDate"),
+    CONSTRAINT "UX_StateEducationAgencyIndicatorPeriod_Ordinal_Paren_cba50cd34d" UNIQUE ("ParentCollectionItemId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."Student"
@@ -4946,8 +5480,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."Student"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentIdentificationDocument"
 (
-    "Student_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "Student_DocumentId" bigint NOT NULL,
     "IdentificationDocumentUseDescriptor_DescriptorId" bigint NULL,
     "IssuerCountryDescriptor_DescriptorId" bigint NULL,
     "PersonalInformationVerificationDescriptor_DescriptorId" bigint NULL,
@@ -4955,28 +5490,32 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentIdentificationDocument"
     "DocumentTitle" varchar(60) NULL,
     "IssuerDocumentIdentificationCode" varchar(60) NULL,
     "IssuerName" varchar(150) NULL,
-    CONSTRAINT "PK_StudentIdentificationDocument" PRIMARY KEY ("Student_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentIdentificationDocument_IdentificationDocum_2c52c46619" UNIQUE ("Student_DocumentId", "IdentificationDocumentUseDescriptor_DescriptorId", "PersonalInformationVerificationDescriptor_DescriptorId")
+    CONSTRAINT "PK_StudentIdentificationDocument" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentIdentificationDocument_IdentificationDocum_2c52c46619" UNIQUE ("Student_DocumentId", "IdentificationDocumentUseDescriptor_DescriptorId", "PersonalInformationVerificationDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StudentIdentificationDocument_Ordinal_Student_DocumentId" UNIQUE ("Student_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentOtherName"
 (
-    "Student_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "Student_DocumentId" bigint NOT NULL,
     "OtherNameTypeDescriptor_DescriptorId" bigint NOT NULL,
     "FirstName" varchar(75) NOT NULL,
     "GenerationCodeSuffix" varchar(10) NULL,
     "LastSurname" varchar(75) NOT NULL,
     "MiddleName" varchar(75) NULL,
     "PersonalTitlePrefix" varchar(30) NULL,
-    CONSTRAINT "PK_StudentOtherName" PRIMARY KEY ("Student_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentOtherName" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentOtherName_Ordinal_Student_DocumentId" UNIQUE ("Student_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentOtherName_OtherNameTypeDescriptor_Descript_b3b3aedc77" UNIQUE ("Student_DocumentId", "OtherNameTypeDescriptor_DescriptorId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentPersonalIdentificationDocument"
 (
-    "Student_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "Student_DocumentId" bigint NOT NULL,
     "IdentificationDocumentUseDescriptor_DescriptorId" bigint NOT NULL,
     "IssuerCountryDescriptor_DescriptorId" bigint NULL,
     "PersonalInformationVerificationDescriptor_DescriptorId" bigint NOT NULL,
@@ -4984,16 +5523,19 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentPersonalIdentificationDocument"
     "PersonalDocumentTitle" varchar(60) NULL,
     "PersonalIssuerDocumentIdentificationCode" varchar(60) NULL,
     "PersonalIssuerName" varchar(150) NULL,
-    CONSTRAINT "PK_StudentPersonalIdentificationDocument" PRIMARY KEY ("Student_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentPersonalIdentificationDocument_Identificat_a820a4d2b3" UNIQUE ("Student_DocumentId", "IdentificationDocumentUseDescriptor_DescriptorId", "PersonalInformationVerificationDescriptor_DescriptorId")
+    CONSTRAINT "PK_StudentPersonalIdentificationDocument" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentPersonalIdentificationDocument_Identificat_a820a4d2b3" UNIQUE ("Student_DocumentId", "IdentificationDocumentUseDescriptor_DescriptorId", "PersonalInformationVerificationDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StudentPersonalIdentificationDocument_Ordinal_Stu_ec347a27e8" UNIQUE ("Student_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentVisa"
 (
-    "Student_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "Student_DocumentId" bigint NOT NULL,
     "VisaDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_StudentVisa" PRIMARY KEY ("Student_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentVisa" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentVisa_Ordinal_Student_DocumentId" UNIQUE ("Student_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentVisa_Student_DocumentId_VisaDescriptor_DescriptorId" UNIQUE ("Student_DocumentId", "VisaDescriptor_DescriptorId")
 );
 
@@ -5034,8 +5576,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecord"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecordAcademicHonor"
 (
-    "StudentAcademicRecord_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentAcademicRecord_DocumentId" bigint NOT NULL,
     "AcademicHonorCategoryDescriptor_DescriptorId" bigint NOT NULL,
     "AchievementCategoryDescriptor_DescriptorId" bigint NULL,
     "AchievementCategorySystem" varchar(60) NULL,
@@ -5049,14 +5592,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecordAcademicHonor"
     "ImageURL" varchar(255) NULL,
     "IssuerName" varchar(150) NULL,
     "IssuerOriginURL" varchar(255) NULL,
-    CONSTRAINT "PK_StudentAcademicRecordAcademicHonor" PRIMARY KEY ("StudentAcademicRecord_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentAcademicRecordAcademicHonor_HonorDescripti_8d2cfb53bd" UNIQUE ("StudentAcademicRecord_DocumentId", "AcademicHonorCategoryDescriptor_DescriptorId", "HonorDescription")
+    CONSTRAINT "PK_StudentAcademicRecordAcademicHonor" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentAcademicRecordAcademicHonor_HonorDescripti_8d2cfb53bd" UNIQUE ("StudentAcademicRecord_DocumentId", "AcademicHonorCategoryDescriptor_DescriptorId", "HonorDescription"),
+    CONSTRAINT "UX_StudentAcademicRecordAcademicHonor_Ordinal_Studen_2966a391fd" UNIQUE ("StudentAcademicRecord_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecordDiploma"
 (
-    "StudentAcademicRecord_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentAcademicRecord_DocumentId" bigint NOT NULL,
     "AchievementCategoryDescriptor_DescriptorId" bigint NULL,
     "DiplomaLevelDescriptor_DescriptorId" bigint NULL,
     "DiplomaTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -5072,26 +5617,30 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecordDiploma"
     "ImageURL" varchar(255) NULL,
     "IssuerName" varchar(150) NULL,
     "IssuerOriginURL" varchar(255) NULL,
-    CONSTRAINT "PK_StudentAcademicRecordDiploma" PRIMARY KEY ("StudentAcademicRecord_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentAcademicRecordDiploma_DiplomaAwardDate_Dip_15d02d7d93" UNIQUE ("StudentAcademicRecord_DocumentId", "DiplomaAwardDate", "DiplomaTypeDescriptor_DescriptorId")
+    CONSTRAINT "PK_StudentAcademicRecordDiploma" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentAcademicRecordDiploma_DiplomaAwardDate_Dip_15d02d7d93" UNIQUE ("StudentAcademicRecord_DocumentId", "DiplomaAwardDate", "DiplomaTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StudentAcademicRecordDiploma_Ordinal_StudentAcade_9013b0530c" UNIQUE ("StudentAcademicRecord_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecordGradePointAverage"
 (
-    "StudentAcademicRecord_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentAcademicRecord_DocumentId" bigint NOT NULL,
     "GradePointAverageTypeDescriptor_DescriptorId" bigint NOT NULL,
     "GradePointAverageValue" numeric(18,4) NOT NULL,
     "IsCumulative" boolean NULL,
     "MaxGradePointAverageValue" numeric(18,4) NULL,
-    CONSTRAINT "PK_StudentAcademicRecordGradePointAverage" PRIMARY KEY ("StudentAcademicRecord_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentAcademicRecordGradePointAverage_GradePoint_9ce932be5d" UNIQUE ("StudentAcademicRecord_DocumentId", "GradePointAverageTypeDescriptor_DescriptorId")
+    CONSTRAINT "PK_StudentAcademicRecordGradePointAverage" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentAcademicRecordGradePointAverage_GradePoint_9ce932be5d" UNIQUE ("StudentAcademicRecord_DocumentId", "GradePointAverageTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StudentAcademicRecordGradePointAverage_Ordinal_St_9cc238e145" UNIQUE ("StudentAcademicRecord_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecordRecognition"
 (
-    "StudentAcademicRecord_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentAcademicRecord_DocumentId" bigint NOT NULL,
     "AchievementCategoryDescriptor_DescriptorId" bigint NULL,
     "RecognitionTypeDescriptor_DescriptorId" bigint NOT NULL,
     "AchievementCategorySystem" varchar(60) NULL,
@@ -5105,14 +5654,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecordRecognition"
     "RecognitionAwardDate" date NULL,
     "RecognitionAwardExpiresDate" date NULL,
     "RecognitionDescription" varchar(80) NULL,
-    CONSTRAINT "PK_StudentAcademicRecordRecognition" PRIMARY KEY ("StudentAcademicRecord_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentAcademicRecordRecognition" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentAcademicRecordRecognition_Ordinal_StudentA_a83861dbc7" UNIQUE ("StudentAcademicRecord_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentAcademicRecordRecognition_RecognitionTypeD_8b9439c1ff" UNIQUE ("StudentAcademicRecord_DocumentId", "RecognitionTypeDescriptor_DescriptorId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecordReportCard"
 (
-    "StudentAcademicRecord_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentAcademicRecord_DocumentId" bigint NOT NULL,
     "ReportCard_DocumentId" bigint NULL,
     "ReportCard_EducationOrganizationId" integer NULL,
     "ReportCard_GradingPeriodDescriptor_DescriptorId" bigint NULL,
@@ -5120,7 +5671,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecordReportCard"
     "ReportCard_GradingPeriodSchoolId" integer NULL,
     "ReportCard_GradingPeriodSchoolYear" integer NULL,
     "ReportCard_StudentUniqueId" varchar(32) NULL,
-    CONSTRAINT "PK_StudentAcademicRecordReportCard" PRIMARY KEY ("StudentAcademicRecord_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentAcademicRecordReportCard" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentAcademicRecordReportCard_Ordinal_StudentAc_17f94eff71" UNIQUE ("StudentAcademicRecord_DocumentId", "Ordinal"),
+    CONSTRAINT "UX_StudentAcademicRecordReportCard_ReportCard_Docume_0ddac2c9e6" UNIQUE ("StudentAcademicRecord_DocumentId", "ReportCard_DocumentId"),
     CONSTRAINT "CK_StudentAcademicRecordReportCard_ReportCard_AllNone" CHECK (("ReportCard_DocumentId" IS NULL AND "ReportCard_EducationOrganizationId" IS NULL AND "ReportCard_GradingPeriodDescriptor_DescriptorId" IS NULL AND "ReportCard_GradingPeriodName" IS NULL AND "ReportCard_GradingPeriodSchoolId" IS NULL AND "ReportCard_GradingPeriodSchoolYear" IS NULL AND "ReportCard_StudentUniqueId" IS NULL) OR ("ReportCard_DocumentId" IS NOT NULL AND "ReportCard_EducationOrganizationId" IS NOT NULL AND "ReportCard_GradingPeriodDescriptor_DescriptorId" IS NOT NULL AND "ReportCard_GradingPeriodName" IS NOT NULL AND "ReportCard_GradingPeriodSchoolId" IS NOT NULL AND "ReportCard_GradingPeriodSchoolYear" IS NOT NULL AND "ReportCard_StudentUniqueId" IS NOT NULL))
 );
 
@@ -5164,17 +5717,20 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessment"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentAccommodation"
 (
-    "StudentAssessment_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentAssessment_DocumentId" bigint NOT NULL,
     "AccommodationDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_StudentAssessmentAccommodation" PRIMARY KEY ("StudentAssessment_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentAssessmentAccommodation_AccommodationDescr_ceeb160577" UNIQUE ("StudentAssessment_DocumentId", "AccommodationDescriptor_DescriptorId")
+    CONSTRAINT "PK_StudentAssessmentAccommodation" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentAssessmentAccommodation_AccommodationDescr_ceeb160577" UNIQUE ("StudentAssessment_DocumentId", "AccommodationDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StudentAssessmentAccommodation_Ordinal_StudentAss_fea63f1be9" UNIQUE ("StudentAssessment_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentItem"
 (
-    "StudentAssessment_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentAssessment_DocumentId" bigint NOT NULL,
     "StudentAssessmentItemAssessmentItem_DocumentId" bigint NOT NULL,
     "StudentAssessmentItemAssessmentItem_AssessmentIdentifier" varchar(60) NOT NULL,
     "StudentAssessmentItemAssessmentItem_Namespace" varchar(255) NOT NULL,
@@ -5186,37 +5742,43 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentItem"
     "ItemNumber" integer NULL,
     "RawScoreResult" numeric(15,5) NULL,
     "TimeAssessed" varchar(30) NULL,
-    CONSTRAINT "PK_StudentAssessmentItem" PRIMARY KEY ("StudentAssessment_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentAssessmentItem" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentAssessmentItem_Ordinal_StudentAssessment_DocumentId" UNIQUE ("StudentAssessment_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentAssessmentItem_StudentAssessment_DocumentI_5093686703" UNIQUE ("StudentAssessment_DocumentId", "StudentAssessmentItemAssessmentItem_DocumentId"),
     CONSTRAINT "CK_StudentAssessmentItem_StudentAssessmentItemAssess_0066564949" CHECK (("StudentAssessmentItemAssessmentItem_DocumentId" IS NULL AND "StudentAssessmentItemAssessmentItem_AssessmentIdentifier" IS NULL AND "StudentAssessmentItemAssessmentItem_Namespace" IS NULL AND "StudentAssessmentItemAssessmentItem_IdentificationCode" IS NULL) OR ("StudentAssessmentItemAssessmentItem_DocumentId" IS NOT NULL AND "StudentAssessmentItemAssessmentItem_AssessmentIdentifier" IS NOT NULL AND "StudentAssessmentItemAssessmentItem_Namespace" IS NOT NULL AND "StudentAssessmentItemAssessmentItem_IdentificationCode" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentPerformanceLevel"
 (
-    "StudentAssessment_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentAssessment_DocumentId" bigint NOT NULL,
     "AssessmentReportingMethodDescriptor_DescriptorId" bigint NOT NULL,
     "PerformanceLevelDescriptor_DescriptorId" bigint NOT NULL,
     "PerformanceLevelIndicatorName" varchar(60) NULL,
-    CONSTRAINT "PK_StudentAssessmentPerformanceLevel" PRIMARY KEY ("StudentAssessment_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentAssessmentPerformanceLevel_AssessmentRepor_ab647d5bf7" UNIQUE ("StudentAssessment_DocumentId", "AssessmentReportingMethodDescriptor_DescriptorId", "PerformanceLevelDescriptor_DescriptorId")
+    CONSTRAINT "PK_StudentAssessmentPerformanceLevel" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentAssessmentPerformanceLevel_AssessmentRepor_ab647d5bf7" UNIQUE ("StudentAssessment_DocumentId", "AssessmentReportingMethodDescriptor_DescriptorId", "PerformanceLevelDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StudentAssessmentPerformanceLevel_Ordinal_Student_e4a90f0615" UNIQUE ("StudentAssessment_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentScoreResult"
 (
-    "StudentAssessment_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentAssessment_DocumentId" bigint NOT NULL,
     "AssessmentReportingMethodDescriptor_DescriptorId" bigint NOT NULL,
     "ResultDatatypeTypeDescriptor_DescriptorId" bigint NOT NULL,
     "Result" varchar(35) NOT NULL,
-    CONSTRAINT "PK_StudentAssessmentScoreResult" PRIMARY KEY ("StudentAssessment_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentAssessmentScoreResult_AssessmentReportingM_124dd62ed1" UNIQUE ("StudentAssessment_DocumentId", "AssessmentReportingMethodDescriptor_DescriptorId")
+    CONSTRAINT "PK_StudentAssessmentScoreResult" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentAssessmentScoreResult_AssessmentReportingM_124dd62ed1" UNIQUE ("StudentAssessment_DocumentId", "AssessmentReportingMethodDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StudentAssessmentScoreResult_Ordinal_StudentAsses_de3ff683d2" UNIQUE ("StudentAssessment_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentStudentObjectiveAssessment"
 (
-    "StudentAssessment_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentAssessment_DocumentId" bigint NOT NULL,
     "StudentObjectiveAssessmentObjectiveAssessment_DocumentId" bigint NOT NULL,
     "StudentObjectiveAssessmentObjectiveAssessment_Assess_2cf36d20d7" varchar(60) NOT NULL,
     "StudentObjectiveAssessmentObjectiveAssessment_Namespace" varchar(255) NOT NULL,
@@ -5224,33 +5786,39 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentStudentObjectiveAssessment"
     "AdministrationDate" timestamp with time zone NULL,
     "AdministrationEndDate" timestamp with time zone NULL,
     "AssessedMinutes" integer NULL,
-    CONSTRAINT "PK_StudentAssessmentStudentObjectiveAssessment" PRIMARY KEY ("StudentAssessment_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentAssessmentStudentObjectiveAssessment" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentAssessmentStudentObjectiveAssessment_Colle_11cd661841" UNIQUE ("CollectionItemId", "StudentAssessment_DocumentId"),
+    CONSTRAINT "UX_StudentAssessmentStudentObjectiveAssessment_Ordin_43088e9edf" UNIQUE ("StudentAssessment_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentAssessmentStudentObjectiveAssessment_Stude_945821217e" UNIQUE ("StudentAssessment_DocumentId", "StudentObjectiveAssessmentObjectiveAssessment_DocumentId"),
     CONSTRAINT "CK_StudentAssessmentStudentObjectiveAssessment_Stude_5385c98250" CHECK (("StudentObjectiveAssessmentObjectiveAssessment_DocumentId" IS NULL AND "StudentObjectiveAssessmentObjectiveAssessment_Assess_2cf36d20d7" IS NULL AND "StudentObjectiveAssessmentObjectiveAssessment_Namespace" IS NULL AND "StudentObjectiveAssessmentObjectiveAssessment_Identi_8450435919" IS NULL) OR ("StudentObjectiveAssessmentObjectiveAssessment_DocumentId" IS NOT NULL AND "StudentObjectiveAssessmentObjectiveAssessment_Assess_2cf36d20d7" IS NOT NULL AND "StudentObjectiveAssessmentObjectiveAssessment_Namespace" IS NOT NULL AND "StudentObjectiveAssessmentObjectiveAssessment_Identi_8450435919" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentStudentObjectiveAssessmentPerformanceLevel"
 (
-    "StudentAssessment_DocumentId" bigint NOT NULL,
-    "StudentObjectiveAssessmentOrdinal" integer NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
+    "StudentAssessment_DocumentId" bigint NOT NULL,
     "AssessmentReportingMethodDescriptor_DescriptorId" bigint NOT NULL,
     "PerformanceLevelDescriptor_DescriptorId" bigint NOT NULL,
     "PerformanceLevelIndicatorName" varchar(60) NULL,
-    CONSTRAINT "PK_StudentAssessmentStudentObjectiveAssessmentPerformanceLevel" PRIMARY KEY ("StudentAssessment_DocumentId", "StudentObjectiveAssessmentOrdinal", "Ordinal"),
-    CONSTRAINT "UX_StudentAssessmentStudentObjectiveAssessmentPerfor_8e891fa9e2" UNIQUE ("StudentAssessment_DocumentId", "StudentObjectiveAssessmentOrdinal", "AssessmentReportingMethodDescriptor_DescriptorId", "PerformanceLevelDescriptor_DescriptorId")
+    CONSTRAINT "PK_StudentAssessmentStudentObjectiveAssessmentPerformanceLevel" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentAssessmentStudentObjectiveAssessmentPerfor_3a706a3d47" UNIQUE ("ParentCollectionItemId", "AssessmentReportingMethodDescriptor_DescriptorId", "PerformanceLevelDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StudentAssessmentStudentObjectiveAssessmentPerfor_d22e7be101" UNIQUE ("ParentCollectionItemId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentStudentObjectiveAssessmentScoreResult"
 (
-    "StudentAssessment_DocumentId" bigint NOT NULL,
-    "StudentObjectiveAssessmentOrdinal" integer NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
+    "StudentAssessment_DocumentId" bigint NOT NULL,
     "AssessmentReportingMethodDescriptor_DescriptorId" bigint NOT NULL,
     "ResultDatatypeTypeDescriptor_DescriptorId" bigint NOT NULL,
     "Result" varchar(35) NOT NULL,
-    CONSTRAINT "PK_StudentAssessmentStudentObjectiveAssessmentScoreResult" PRIMARY KEY ("StudentAssessment_DocumentId", "StudentObjectiveAssessmentOrdinal", "Ordinal"),
-    CONSTRAINT "UX_StudentAssessmentStudentObjectiveAssessmentScoreR_4c8a16c372" UNIQUE ("StudentAssessment_DocumentId", "StudentObjectiveAssessmentOrdinal", "AssessmentReportingMethodDescriptor_DescriptorId")
+    CONSTRAINT "PK_StudentAssessmentStudentObjectiveAssessmentScoreResult" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentAssessmentStudentObjectiveAssessmentScoreR_8bbed93e07" UNIQUE ("ParentCollectionItemId", "AssessmentReportingMethodDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StudentAssessmentStudentObjectiveAssessmentScoreR_abf1027a8a" UNIQUE ("ParentCollectionItemId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentEducationOrganizationAssociation"
@@ -5311,21 +5879,25 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentRegistration"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentRegistrationAssessmentAccommodation"
 (
-    "StudentAssessmentRegistration_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentAssessmentRegistration_DocumentId" bigint NOT NULL,
     "AccommodationDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_StudentAssessmentRegistrationAssessmentAccommodation" PRIMARY KEY ("StudentAssessmentRegistration_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentAssessmentRegistrationAssessmentAccommodation" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentAssessmentRegistrationAssessmentAccommodat_4cf25e5a37" UNIQUE ("StudentAssessmentRegistration_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentAssessmentRegistrationAssessmentAccommodat_6ba059ea60" UNIQUE ("StudentAssessmentRegistration_DocumentId", "AccommodationDescriptor_DescriptorId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentRegistrationAssessmentCustomization"
 (
-    "StudentAssessmentRegistration_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentAssessmentRegistration_DocumentId" bigint NOT NULL,
     "CustomizationKey" varchar(60) NOT NULL,
     "CustomizationValue" varchar(1024) NOT NULL,
-    CONSTRAINT "PK_StudentAssessmentRegistrationAssessmentCustomization" PRIMARY KEY ("StudentAssessmentRegistration_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentAssessmentRegistrationAssessmentCustomizat_b0491c4ea5" UNIQUE ("StudentAssessmentRegistration_DocumentId", "CustomizationKey")
+    CONSTRAINT "PK_StudentAssessmentRegistrationAssessmentCustomization" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentAssessmentRegistrationAssessmentCustomizat_b0491c4ea5" UNIQUE ("StudentAssessmentRegistration_DocumentId", "CustomizationKey"),
+    CONSTRAINT "UX_StudentAssessmentRegistrationAssessmentCustomizat_c7b46a0305" UNIQUE ("StudentAssessmentRegistration_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentRegistrationBatteryPartAssociation"
@@ -5352,10 +5924,12 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentRegistrationBatteryPartAssoc
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentRegistrationBatteryPartAssociationA_c87694eb5a"
 (
-    "StudentAssessmentRegistrationBatteryPartAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentAssessmentRegistrationBatteryPartAssociation_DocumentId" bigint NOT NULL,
     "AccommodationDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_StudentAssessmentRegistrationBatteryPartAssociati_499096f3cb" PRIMARY KEY ("StudentAssessmentRegistrationBatteryPartAssociation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentAssessmentRegistrationBatteryPartAssociati_ba8c62cd84" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentAssessmentRegistrationBatteryPartAssociati_5ae43b3f7d" UNIQUE ("StudentAssessmentRegistrationBatteryPartAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentAssessmentRegistrationBatteryPartAssociati_bcad4ff1d6" UNIQUE ("StudentAssessmentRegistrationBatteryPartAssociation_DocumentId", "AccommodationDescriptor_DescriptorId")
 );
 
@@ -5386,26 +5960,30 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCTEProgramAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentCTEProgramAssociationCteProgramService"
 (
-    "StudentCTEProgramAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentCTEProgramAssociation_DocumentId" bigint NOT NULL,
     "CteProgramServiceDescriptor_DescriptorId" bigint NOT NULL,
     "CipCode" varchar(120) NULL,
     "PrimaryIndicator" boolean NULL,
     "ServiceBeginDate" date NULL,
     "ServiceEndDate" date NULL,
-    CONSTRAINT "PK_StudentCTEProgramAssociationCteProgramService" PRIMARY KEY ("StudentCTEProgramAssociation_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentCTEProgramAssociationCteProgramService_Cte_06544f28f4" UNIQUE ("StudentCTEProgramAssociation_DocumentId", "CteProgramServiceDescriptor_DescriptorId")
+    CONSTRAINT "PK_StudentCTEProgramAssociationCteProgramService" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentCTEProgramAssociationCteProgramService_Cte_06544f28f4" UNIQUE ("StudentCTEProgramAssociation_DocumentId", "CteProgramServiceDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StudentCTEProgramAssociationCteProgramService_Ord_f50a3df6d9" UNIQUE ("StudentCTEProgramAssociation_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentCTEProgramAssociationProgramParticipationStatus"
 (
-    "StudentCTEProgramAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentCTEProgramAssociation_DocumentId" bigint NOT NULL,
     "ParticipationStatusDescriptor_DescriptorId" bigint NOT NULL,
     "DesignatedBy" varchar(60) NULL,
     "StatusBeginDate" date NOT NULL,
     "StatusEndDate" date NULL,
-    CONSTRAINT "PK_StudentCTEProgramAssociationProgramParticipationStatus" PRIMARY KEY ("StudentCTEProgramAssociation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentCTEProgramAssociationProgramParticipationStatus" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentCTEProgramAssociationProgramParticipationS_289e8e7bf3" UNIQUE ("StudentCTEProgramAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentCTEProgramAssociationProgramParticipationS_732bf2a558" UNIQUE ("StudentCTEProgramAssociation_DocumentId", "ParticipationStatusDescriptor_DescriptorId", "StatusBeginDate")
 );
 
@@ -5427,15 +6005,18 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCohortAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentCohortAssociationSection"
 (
-    "StudentCohortAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentCohortAssociation_DocumentId" bigint NOT NULL,
     "Section_DocumentId" bigint NULL,
     "Section_LocalCourseCode" varchar(60) NULL,
     "Section_SchoolId" integer NULL,
     "Section_SchoolYear" integer NULL,
     "Section_SessionName" varchar(60) NULL,
     "Section_SectionIdentifier" varchar(255) NULL,
-    CONSTRAINT "PK_StudentCohortAssociationSection" PRIMARY KEY ("StudentCohortAssociation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentCohortAssociationSection" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentCohortAssociationSection_Ordinal_StudentCo_a25c1cc981" UNIQUE ("StudentCohortAssociation_DocumentId", "Ordinal"),
+    CONSTRAINT "UX_StudentCohortAssociationSection_Section_DocumentI_e4715cd1ec" UNIQUE ("StudentCohortAssociation_DocumentId", "Section_DocumentId"),
     CONSTRAINT "CK_StudentCohortAssociationSection_Section_AllNone" CHECK (("Section_DocumentId" IS NULL AND "Section_LocalCourseCode" IS NULL AND "Section_SchoolId" IS NULL AND "Section_SchoolYear" IS NULL AND "Section_SessionName" IS NULL AND "Section_SectionIdentifier" IS NULL) OR ("Section_DocumentId" IS NOT NULL AND "Section_LocalCourseCode" IS NOT NULL AND "Section_SchoolId" IS NOT NULL AND "Section_SchoolYear" IS NOT NULL AND "Section_SessionName" IS NOT NULL AND "Section_SectionIdentifier" IS NOT NULL))
 );
 
@@ -5465,8 +6046,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCompetencyObjective"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentCompetencyObjectiveGeneralStudentProgramAssociation"
 (
-    "StudentCompetencyObjective_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentCompetencyObjective_DocumentId" bigint NOT NULL,
     "StudentCompetencyObjectiveSectionOrProgramChoiceGene_9ca396b829" bigint NULL,
     "StudentCompetencyObjectiveSectionOrProgramChoiceGene_e4556d7896" date NULL,
     "StudentCompetencyObjectiveSectionOrProgramChoiceGene_284e84bf96" integer NULL,
@@ -5474,14 +6056,17 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCompetencyObjectiveGeneralStudentProgr
     "StudentCompetencyObjectiveSectionOrProgramChoiceGene_72e6052582" varchar(60) NULL,
     "StudentCompetencyObjectiveSectionOrProgramChoiceGene_7c5bfc584c" bigint NULL,
     "StudentCompetencyObjectiveSectionOrProgramChoiceGene_d759bcc32e" varchar(32) NULL,
-    CONSTRAINT "PK_StudentCompetencyObjectiveGeneralStudentProgramAssociation" PRIMARY KEY ("StudentCompetencyObjective_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentCompetencyObjectiveGeneralStudentProgramAssociation" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentCompetencyObjectiveGeneralStudentProgramAs_857a6cc358" UNIQUE ("StudentCompetencyObjective_DocumentId", "StudentCompetencyObjectiveSectionOrProgramChoiceGene_9ca396b829"),
+    CONSTRAINT "UX_StudentCompetencyObjectiveGeneralStudentProgramAs_d11644e81b" UNIQUE ("StudentCompetencyObjective_DocumentId", "Ordinal"),
     CONSTRAINT "CK_StudentCompetencyObjectiveGeneralStudentProgramAs_2dd870e284" CHECK (("StudentCompetencyObjectiveSectionOrProgramChoiceGene_9ca396b829" IS NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceGene_e4556d7896" IS NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceGene_284e84bf96" IS NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceGene_20ceb9d821" IS NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceGene_72e6052582" IS NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceGene_7c5bfc584c" IS NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceGene_d759bcc32e" IS NULL) OR ("StudentCompetencyObjectiveSectionOrProgramChoiceGene_9ca396b829" IS NOT NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceGene_e4556d7896" IS NOT NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceGene_284e84bf96" IS NOT NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceGene_20ceb9d821" IS NOT NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceGene_72e6052582" IS NOT NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceGene_7c5bfc584c" IS NOT NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceGene_d759bcc32e" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentCompetencyObjectiveStudentSectionAssociation"
 (
-    "StudentCompetencyObjective_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentCompetencyObjective_DocumentId" bigint NOT NULL,
     "StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0" bigint NULL,
     "StudentCompetencyObjectiveSectionOrProgramChoiceStud_87433eab93" date NULL,
     "StudentCompetencyObjectiveSectionOrProgramChoiceStud_8caa9ebb36" varchar(60) NULL,
@@ -5490,7 +6075,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCompetencyObjectiveStudentSectionAssoc
     "StudentCompetencyObjectiveSectionOrProgramChoiceStud_650d92a922" varchar(255) NULL,
     "StudentCompetencyObjectiveSectionOrProgramChoiceStud_82873650ab" varchar(60) NULL,
     "StudentCompetencyObjectiveSectionOrProgramChoiceStud_1128ef7fe6" varchar(32) NULL,
-    CONSTRAINT "PK_StudentCompetencyObjectiveStudentSectionAssociation" PRIMARY KEY ("StudentCompetencyObjective_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentCompetencyObjectiveStudentSectionAssociation" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentCompetencyObjectiveStudentSectionAssociati_3f9aab491f" UNIQUE ("StudentCompetencyObjective_DocumentId", "StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0"),
+    CONSTRAINT "UX_StudentCompetencyObjectiveStudentSectionAssociati_598ed458c5" UNIQUE ("StudentCompetencyObjective_DocumentId", "Ordinal"),
     CONSTRAINT "CK_StudentCompetencyObjectiveStudentSectionAssociati_61a8755a48" CHECK (("StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0" IS NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceStud_87433eab93" IS NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceStud_8caa9ebb36" IS NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceStud_f52295ff38" IS NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceStud_c56563e4b7" IS NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceStud_650d92a922" IS NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceStud_82873650ab" IS NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceStud_1128ef7fe6" IS NULL) OR ("StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0" IS NOT NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceStud_87433eab93" IS NOT NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceStud_8caa9ebb36" IS NOT NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceStud_f52295ff38" IS NOT NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceStud_c56563e4b7" IS NOT NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceStud_650d92a922" IS NOT NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceStud_82873650ab" IS NOT NULL AND "StudentCompetencyObjectiveSectionOrProgramChoiceStud_1128ef7fe6" IS NOT NULL))
 );
 
@@ -5533,20 +6120,24 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentDisciplineIncidentBehaviorAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentDisciplineIncidentBehaviorAssociationDiscipli_ae6a215eae"
 (
-    "StudentDisciplineIncidentBehaviorAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentDisciplineIncidentBehaviorAssociation_DocumentId" bigint NOT NULL,
     "DisciplineIncidentParticipationCodeDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_StudentDisciplineIncidentBehaviorAssociationDisci_6d6c34c1d3" PRIMARY KEY ("StudentDisciplineIncidentBehaviorAssociation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentDisciplineIncidentBehaviorAssociationDisci_258569bb58" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentDisciplineIncidentBehaviorAssociationDisci_96390d3c8f" UNIQUE ("StudentDisciplineIncidentBehaviorAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentDisciplineIncidentBehaviorAssociationDisci_cf6fcb596a" UNIQUE ("StudentDisciplineIncidentBehaviorAssociation_DocumentId", "DisciplineIncidentParticipationCodeDescriptor_DescriptorId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentDisciplineIncidentBehaviorAssociationWeapon"
 (
-    "StudentDisciplineIncidentBehaviorAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentDisciplineIncidentBehaviorAssociation_DocumentId" bigint NOT NULL,
     "WeaponDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_StudentDisciplineIncidentBehaviorAssociationWeapon" PRIMARY KEY ("StudentDisciplineIncidentBehaviorAssociation_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentDisciplineIncidentBehaviorAssociationWeapo_3caa35edb7" UNIQUE ("StudentDisciplineIncidentBehaviorAssociation_DocumentId", "WeaponDescriptor_DescriptorId")
+    CONSTRAINT "PK_StudentDisciplineIncidentBehaviorAssociationWeapon" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentDisciplineIncidentBehaviorAssociationWeapo_3caa35edb7" UNIQUE ("StudentDisciplineIncidentBehaviorAssociation_DocumentId", "WeaponDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StudentDisciplineIncidentBehaviorAssociationWeapo_c8cd66e83e" UNIQUE ("StudentDisciplineIncidentBehaviorAssociation_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentDisciplineIncidentNonOffenderAssociation"
@@ -5565,10 +6156,12 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentDisciplineIncidentNonOffenderAssociati
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentDisciplineIncidentNonOffenderAssociationDisci_4c979a9f6d"
 (
-    "StudentDisciplineIncidentNonOffenderAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentDisciplineIncidentNonOffenderAssociation_DocumentId" bigint NOT NULL,
     "DisciplineIncidentParticipationCodeDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_StudentDisciplineIncidentNonOffenderAssociationDi_344e40918e" PRIMARY KEY ("StudentDisciplineIncidentNonOffenderAssociation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentDisciplineIncidentNonOffenderAssociationDi_226794a78f" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentDisciplineIncidentNonOffenderAssociationDi_70425df271" UNIQUE ("StudentDisciplineIncidentNonOffenderAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentDisciplineIncidentNonOffenderAssociationDi_e4f28c9e93" UNIQUE ("StudentDisciplineIncidentNonOffenderAssociation_DocumentId", "DisciplineIncidentParticipationCodeDescriptor_DescriptorId")
 );
 
@@ -5588,11 +6181,13 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssessmentAccommo
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssessmentAccommodationG_d1d10af462"
 (
-    "StudentEducationOrganizationAssessmentAccommodation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentEducationOrganizationAssessmentAccommodation_DocumentId" bigint NOT NULL,
     "AccommodationDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_StudentEducationOrganizationAssessmentAccommodati_91855c7297" PRIMARY KEY ("StudentEducationOrganizationAssessmentAccommodation_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentEducationOrganizationAssessmentAccommodati_3dc6aa1b56" UNIQUE ("StudentEducationOrganizationAssessmentAccommodation_DocumentId", "AccommodationDescriptor_DescriptorId")
+    CONSTRAINT "PK_StudentEducationOrganizationAssessmentAccommodati_641f4fa5b8" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssessmentAccommodati_3dc6aa1b56" UNIQUE ("StudentEducationOrganizationAssessmentAccommodation_DocumentId", "AccommodationDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssessmentAccommodati_e9c1ecc1b8" UNIQUE ("StudentEducationOrganizationAssessmentAccommodation_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociation"
@@ -5625,8 +6220,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationAddress"
 (
-    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
     "LocaleDescriptor_DescriptorId" bigint NULL,
     "StateAbbreviationDescriptor_DescriptorId" bigint NOT NULL,
@@ -5641,75 +6237,89 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationAddres
     "NameOfCounty" varchar(30) NULL,
     "PostalCode" varchar(17) NOT NULL,
     "StreetNumberName" varchar(150) NOT NULL,
-    CONSTRAINT "PK_StudentEducationOrganizationAssociationAddress" PRIMARY KEY ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentEducationOrganizationAssociationAddress_Ci_f2b693b72d" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "AddressTypeDescriptor_DescriptorId", "City", "PostalCode", "StateAbbreviationDescriptor_DescriptorId", "StreetNumberName")
+    CONSTRAINT "PK_StudentEducationOrganizationAssociationAddress" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationAddress_Ci_f2b693b72d" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "AddressTypeDescriptor_DescriptorId", "City", "PostalCode", "StateAbbreviationDescriptor_DescriptorId", "StreetNumberName"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationAddress_Co_b84aff04d3" UNIQUE ("CollectionItemId", "StudentEducationOrganizationAssociation_DocumentId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationAddress_Or_30c5d084da" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationAncestryEthnicOrigin"
 (
-    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "AncestryEthnicOriginDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_StudentEducationOrganizationAssociationAncestryEthnicOrigin" PRIMARY KEY ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentEducationOrganizationAssociationAncestryEthnicOrigin" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationAncestryEt_13f462661e" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociationAncestryEt_82c4aa29b4" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "AncestryEthnicOriginDescriptor_DescriptorId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationCohortYear"
 (
-    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "CohortYearSchoolYear_DocumentId" bigint NOT NULL,
     "CohortYearSchoolYear_SchoolYear" integer NOT NULL,
     "CohortYearTypeDescriptor_DescriptorId" bigint NOT NULL,
     "TermDescriptor_DescriptorId" bigint NULL,
-    CONSTRAINT "PK_StudentEducationOrganizationAssociationCohortYear" PRIMARY KEY ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentEducationOrganizationAssociationCohortYear" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociationCohortYear_33afeb7297" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "CohortYearTypeDescriptor_DescriptorId", "CohortYearSchoolYear_DocumentId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationCohortYear_cff344e2ac" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "CK_StudentEducationOrganizationAssociationCohortYear_7c20310bc3" CHECK (("CohortYearSchoolYear_DocumentId" IS NULL AND "CohortYearSchoolYear_SchoolYear" IS NULL) OR ("CohortYearSchoolYear_DocumentId" IS NOT NULL AND "CohortYearSchoolYear_SchoolYear" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationDisability"
 (
-    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "DisabilityDescriptor_DescriptorId" bigint NOT NULL,
     "DisabilityDeterminationSourceTypeDescriptor_DescriptorId" bigint NULL,
     "DisabilityDiagnosis" varchar(80) NULL,
     "OrderOfDisability" integer NULL,
-    CONSTRAINT "PK_StudentEducationOrganizationAssociationDisability" PRIMARY KEY ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentEducationOrganizationAssociationDisability" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationDisability_090fc9d493" UNIQUE ("CollectionItemId", "StudentEducationOrganizationAssociation_DocumentId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationDisability_b772d3cb39" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociationDisability_d3e7f29b88" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "DisabilityDescriptor_DescriptorId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationDisplacedStudent"
 (
-    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "DisplacedStudentCrisisEvent_DocumentId" bigint NOT NULL,
     "DisplacedStudentCrisisEvent_CrisisEventName" varchar(100) NOT NULL,
     "DisplacedStudentStatusDescriptor_DescriptorId" bigint NOT NULL,
     "CrisisHomelessnessIndicator" boolean NULL,
     "DisplacedStudentEndDate" date NULL,
     "DisplacedStudentStartDate" date NULL,
-    CONSTRAINT "PK_StudentEducationOrganizationAssociationDisplacedStudent" PRIMARY KEY ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentEducationOrganizationAssociationDisplacedStudent" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociationDisplacedS_6d118cf066" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "DisplacedStudentCrisisEvent_DocumentId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationDisplacedS_9cdb07e1a9" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "CK_StudentEducationOrganizationAssociationDisplacedS_0e1de149a7" CHECK (("DisplacedStudentCrisisEvent_DocumentId" IS NULL AND "DisplacedStudentCrisisEvent_CrisisEventName" IS NULL) OR ("DisplacedStudentCrisisEvent_DocumentId" IS NOT NULL AND "DisplacedStudentCrisisEvent_CrisisEventName" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationElectronicMail"
 (
-    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "ElectronicMailTypeDescriptor_DescriptorId" bigint NOT NULL,
     "DoNotPublishIndicator" boolean NULL,
     "ElectronicMailAddress" varchar(128) NOT NULL,
     "PrimaryEmailAddressIndicator" boolean NULL,
-    CONSTRAINT "PK_StudentEducationOrganizationAssociationElectronicMail" PRIMARY KEY ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentEducationOrganizationAssociationElectronic_9445a027f5" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "ElectronicMailAddress", "ElectronicMailTypeDescriptor_DescriptorId")
+    CONSTRAINT "PK_StudentEducationOrganizationAssociationElectronicMail" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationElectronic_9445a027f5" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "ElectronicMailAddress", "ElectronicMailTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationElectronic_a0d4d339fb" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationInternationalAddress"
 (
-    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
     "CountryDescriptor_DescriptorId" bigint NOT NULL,
     "AddressLine1" varchar(150) NOT NULL,
@@ -5720,134 +6330,162 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationIntern
     "EndDate" date NULL,
     "Latitude" varchar(20) NULL,
     "Longitude" varchar(20) NULL,
-    CONSTRAINT "PK_StudentEducationOrganizationAssociationInternationalAddress" PRIMARY KEY ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentEducationOrganizationAssociationInternationalAddress" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationInternatio_b956368022" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociationInternatio_c4e224db19" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "AddressTypeDescriptor_DescriptorId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationLanguage"
 (
-    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "LanguageDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_StudentEducationOrganizationAssociationLanguage" PRIMARY KEY ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentEducationOrganizationAssociationLanguage_L_b58e723050" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "LanguageDescriptor_DescriptorId")
+    CONSTRAINT "PK_StudentEducationOrganizationAssociationLanguage" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationLanguage_C_2df87199b7" UNIQUE ("CollectionItemId", "StudentEducationOrganizationAssociation_DocumentId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationLanguage_L_b58e723050" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "LanguageDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationLanguage_O_fe592d65af" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationRace"
 (
-    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "RaceDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_StudentEducationOrganizationAssociationRace" PRIMARY KEY ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentEducationOrganizationAssociationRace" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationRace_Ordin_2aae11cb13" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociationRace_RaceD_bafae5c29e" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "RaceDescriptor_DescriptorId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationStudentCharacteristic"
 (
-    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "StudentCharacteristicDescriptor_DescriptorId" bigint NOT NULL,
     "DesignatedBy" varchar(60) NULL,
-    CONSTRAINT "PK_StudentEducationOrganizationAssociationStudentCharacteristic" PRIMARY KEY ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentEducationOrganizationAssociationStudentCharacteristic" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationStudentCha_0a5d1dc795" UNIQUE ("CollectionItemId", "StudentEducationOrganizationAssociation_DocumentId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationStudentCha_4400ca728a" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociationStudentCha_ff5ab4d58a" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "StudentCharacteristicDescriptor_DescriptorId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationStudentIdenti_c15030660d"
 (
-    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "StudentIdentificationSystemDescriptor_DescriptorId" bigint NOT NULL,
     "AssigningOrganizationIdentificationCode" varchar(60) NOT NULL,
     "IdentificationCode" varchar(60) NOT NULL,
-    CONSTRAINT "PK_StudentEducationOrganizationAssociationStudentIde_132d466057" PRIMARY KEY ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentEducationOrganizationAssociationStudentIde_77441e658e" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationStudentIde_134ae4abcb" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociationStudentIde_40c6834305" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "AssigningOrganizationIdentificationCode", "StudentIdentificationSystemDescriptor_DescriptorId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationStudentIndicator"
 (
-    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "DesignatedBy" varchar(60) NULL,
     "Indicator" varchar(60) NOT NULL,
     "IndicatorGroup" varchar(200) NULL,
     "IndicatorName" varchar(200) NOT NULL,
-    CONSTRAINT "PK_StudentEducationOrganizationAssociationStudentIndicator" PRIMARY KEY ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentEducationOrganizationAssociationStudentIndicator" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationStudentInd_2bc85a8a99" UNIQUE ("CollectionItemId", "StudentEducationOrganizationAssociation_DocumentId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationStudentInd_642c5e1f43" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociationStudentInd_812b4ef387" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "IndicatorName")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationTelephone"
 (
-    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "TelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
     "DoNotPublishIndicator" boolean NULL,
     "OrderOfPriority" integer NULL,
     "TelephoneNumber" varchar(24) NOT NULL,
     "TextMessageCapabilityIndicator" boolean NULL,
-    CONSTRAINT "PK_StudentEducationOrganizationAssociationTelephone" PRIMARY KEY ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentEducationOrganizationAssociationTelephone" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationTelephone__6a136770f3" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentEducationOrganizationAssociationTelephone__d1f62930e9" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "TelephoneNumber", "TelephoneNumberTypeDescriptor_DescriptorId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationTribalAffiliation"
 (
-    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "TribalAffiliationDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_StudentEducationOrganizationAssociationTribalAffiliation" PRIMARY KEY ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentEducationOrganizationAssociationTribalAffi_8f8e9cac9d" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "TribalAffiliationDescriptor_DescriptorId")
+    CONSTRAINT "PK_StudentEducationOrganizationAssociationTribalAffiliation" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationTribalAffi_8f8e9cac9d" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "TribalAffiliationDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationTribalAffi_ed32348673" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationAddressPeriod"
 (
-    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
-    "AddressOrdinal" integer NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
+    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
-    CONSTRAINT "PK_StudentEducationOrganizationAssociationAddressPeriod" PRIMARY KEY ("StudentEducationOrganizationAssociation_DocumentId", "AddressOrdinal", "Ordinal"),
-    CONSTRAINT "UX_StudentEducationOrganizationAssociationAddressPer_20ef014fd8" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "AddressOrdinal", "BeginDate")
+    CONSTRAINT "PK_StudentEducationOrganizationAssociationAddressPeriod" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationAddressPer_01f40bb49b" UNIQUE ("ParentCollectionItemId", "Ordinal"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationAddressPer_ed6092677a" UNIQUE ("ParentCollectionItemId", "BeginDate")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationDisabilityDesignation"
 (
-    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
-    "DisabilityOrdinal" integer NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
+    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "DisabilityDesignationDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_StudentEducationOrganizationAssociationDisabilityDesignation" PRIMARY KEY ("StudentEducationOrganizationAssociation_DocumentId", "DisabilityOrdinal", "Ordinal"),
-    CONSTRAINT "UX_StudentEducationOrganizationAssociationDisability_6ba56eae41" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "DisabilityOrdinal", "DisabilityDesignationDescriptor_DescriptorId")
+    CONSTRAINT "PK_StudentEducationOrganizationAssociationDisabilityDesignation" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationDisability_0c3481bbdd" UNIQUE ("ParentCollectionItemId", "DisabilityDesignationDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationDisability_4e0f8697de" UNIQUE ("ParentCollectionItemId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationLanguageUs"
 (
-    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
-    "LanguageOrdinal" integer NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
+    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "LanguageUseDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_StudentEducationOrganizationAssociationLanguageUs" PRIMARY KEY ("StudentEducationOrganizationAssociation_DocumentId", "LanguageOrdinal", "Ordinal"),
-    CONSTRAINT "UX_StudentEducationOrganizationAssociationLanguageUs_55af30e9dc" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "LanguageOrdinal", "LanguageUseDescriptor_DescriptorId")
+    CONSTRAINT "PK_StudentEducationOrganizationAssociationLanguageUs" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationLanguageUs_577d5ed0da" UNIQUE ("ParentCollectionItemId", "LanguageUseDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationLanguageUs_7479ba86d3" UNIQUE ("ParentCollectionItemId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationStudentCharac_a18fcf0ac3"
 (
-    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
-    "StudentCharacteristicOrdinal" integer NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
+    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
-    CONSTRAINT "PK_StudentEducationOrganizationAssociationStudentCha_b81caf9cc8" PRIMARY KEY ("StudentEducationOrganizationAssociation_DocumentId", "StudentCharacteristicOrdinal", "Ordinal"),
-    CONSTRAINT "UX_StudentEducationOrganizationAssociationStudentCha_43a2d89162" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "StudentCharacteristicOrdinal", "BeginDate")
+    CONSTRAINT "PK_StudentEducationOrganizationAssociationStudentCha_9fa7a38fd3" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationStudentCha_18690f5a18" UNIQUE ("ParentCollectionItemId", "BeginDate"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationStudentCha_a980b5bb20" UNIQUE ("ParentCollectionItemId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationStudentIndicatorPeriod"
 (
-    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
-    "StudentIndicatorOrdinal" integer NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
+    "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
     "EndDate" date NULL,
-    CONSTRAINT "PK_StudentEducationOrganizationAssociationStudentInd_2078f3e3e8" PRIMARY KEY ("StudentEducationOrganizationAssociation_DocumentId", "StudentIndicatorOrdinal", "Ordinal"),
-    CONSTRAINT "UX_StudentEducationOrganizationAssociationStudentInd_db41a05d86" UNIQUE ("StudentEducationOrganizationAssociation_DocumentId", "StudentIndicatorOrdinal", "BeginDate")
+    CONSTRAINT "PK_StudentEducationOrganizationAssociationStudentInd_af5f22558b" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationStudentInd_7222a39bd5" UNIQUE ("ParentCollectionItemId", "BeginDate"),
+    CONSTRAINT "UX_StudentEducationOrganizationAssociationStudentInd_a4c0dedcee" UNIQUE ("ParentCollectionItemId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationResponsibilityAssociation"
@@ -5907,42 +6545,52 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentHealth"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentHealthAdditionalImmunization"
 (
-    "StudentHealth_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentHealth_DocumentId" bigint NOT NULL,
     "ImmunizationName" varchar(100) NOT NULL,
-    CONSTRAINT "PK_StudentHealthAdditionalImmunization" PRIMARY KEY ("StudentHealth_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentHealthAdditionalImmunization_ImmunizationN_16a975e164" UNIQUE ("StudentHealth_DocumentId", "ImmunizationName")
+    CONSTRAINT "PK_StudentHealthAdditionalImmunization" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentHealthAdditionalImmunization_CollectionIte_7e93cfd047" UNIQUE ("CollectionItemId", "StudentHealth_DocumentId"),
+    CONSTRAINT "UX_StudentHealthAdditionalImmunization_ImmunizationN_16a975e164" UNIQUE ("StudentHealth_DocumentId", "ImmunizationName"),
+    CONSTRAINT "UX_StudentHealthAdditionalImmunization_Ordinal_Stude_50f3119733" UNIQUE ("StudentHealth_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentHealthRequiredImmunization"
 (
-    "StudentHealth_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentHealth_DocumentId" bigint NOT NULL,
     "ImmunizationTypeDescriptor_DescriptorId" bigint NOT NULL,
     "MedicalExemption" varchar(1024) NULL,
     "MedicalExemptionDate" date NULL,
-    CONSTRAINT "PK_StudentHealthRequiredImmunization" PRIMARY KEY ("StudentHealth_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentHealthRequiredImmunization_ImmunizationTyp_92aa0c7f62" UNIQUE ("StudentHealth_DocumentId", "ImmunizationTypeDescriptor_DescriptorId")
+    CONSTRAINT "PK_StudentHealthRequiredImmunization" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentHealthRequiredImmunization_CollectionItemI_61f7d49e4b" UNIQUE ("CollectionItemId", "StudentHealth_DocumentId"),
+    CONSTRAINT "UX_StudentHealthRequiredImmunization_ImmunizationTyp_92aa0c7f62" UNIQUE ("StudentHealth_DocumentId", "ImmunizationTypeDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StudentHealthRequiredImmunization_Ordinal_Student_e8e80dccf4" UNIQUE ("StudentHealth_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentHealthAdditionalImmunizationDate"
 (
-    "StudentHealth_DocumentId" bigint NOT NULL,
-    "AdditionalImmunizationOrdinal" integer NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
+    "StudentHealth_DocumentId" bigint NOT NULL,
     "ImmunizationDate" date NOT NULL,
-    CONSTRAINT "PK_StudentHealthAdditionalImmunizationDate" PRIMARY KEY ("StudentHealth_DocumentId", "AdditionalImmunizationOrdinal", "Ordinal"),
-    CONSTRAINT "UX_StudentHealthAdditionalImmunizationDate_Additiona_839687d86d" UNIQUE ("StudentHealth_DocumentId", "AdditionalImmunizationOrdinal", "ImmunizationDate")
+    CONSTRAINT "PK_StudentHealthAdditionalImmunizationDate" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentHealthAdditionalImmunizationDate_Immunizat_59aee851e8" UNIQUE ("ParentCollectionItemId", "ImmunizationDate"),
+    CONSTRAINT "UX_StudentHealthAdditionalImmunizationDate_Ordinal_P_6f43235873" UNIQUE ("ParentCollectionItemId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentHealthRequiredImmunizationDate"
 (
-    "StudentHealth_DocumentId" bigint NOT NULL,
-    "RequiredImmunizationOrdinal" integer NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
+    "StudentHealth_DocumentId" bigint NOT NULL,
     "ImmunizationDate" date NOT NULL,
-    CONSTRAINT "PK_StudentHealthRequiredImmunizationDate" PRIMARY KEY ("StudentHealth_DocumentId", "RequiredImmunizationOrdinal", "Ordinal"),
-    CONSTRAINT "UX_StudentHealthRequiredImmunizationDate_Immunizatio_92c8ed3824" UNIQUE ("StudentHealth_DocumentId", "RequiredImmunizationOrdinal", "ImmunizationDate")
+    CONSTRAINT "PK_StudentHealthRequiredImmunizationDate" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentHealthRequiredImmunizationDate_Immunizatio_a08b53de9c" UNIQUE ("ParentCollectionItemId", "ImmunizationDate"),
+    CONSTRAINT "UX_StudentHealthRequiredImmunizationDate_Ordinal_Par_a27c24cb90" UNIQUE ("ParentCollectionItemId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentHomelessProgramAssociation"
@@ -5972,25 +6620,29 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentHomelessProgramAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentHomelessProgramAssociationHomelessProgramService"
 (
-    "StudentHomelessProgramAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentHomelessProgramAssociation_DocumentId" bigint NOT NULL,
     "HomelessProgramServiceDescriptor_DescriptorId" bigint NOT NULL,
     "PrimaryIndicator" boolean NULL,
     "ServiceBeginDate" date NULL,
     "ServiceEndDate" date NULL,
-    CONSTRAINT "PK_StudentHomelessProgramAssociationHomelessProgramService" PRIMARY KEY ("StudentHomelessProgramAssociation_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentHomelessProgramAssociationHomelessProgramS_42ea96eb2a" UNIQUE ("StudentHomelessProgramAssociation_DocumentId", "HomelessProgramServiceDescriptor_DescriptorId")
+    CONSTRAINT "PK_StudentHomelessProgramAssociationHomelessProgramService" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentHomelessProgramAssociationHomelessProgramS_42ea96eb2a" UNIQUE ("StudentHomelessProgramAssociation_DocumentId", "HomelessProgramServiceDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StudentHomelessProgramAssociationHomelessProgramS_99697e87f1" UNIQUE ("StudentHomelessProgramAssociation_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentHomelessProgramAssociationProgramParticipationStatus"
 (
-    "StudentHomelessProgramAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentHomelessProgramAssociation_DocumentId" bigint NOT NULL,
     "ParticipationStatusDescriptor_DescriptorId" bigint NOT NULL,
     "DesignatedBy" varchar(60) NULL,
     "StatusBeginDate" date NOT NULL,
     "StatusEndDate" date NULL,
-    CONSTRAINT "PK_StudentHomelessProgramAssociationProgramParticipationStatus" PRIMARY KEY ("StudentHomelessProgramAssociation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentHomelessProgramAssociationProgramParticipationStatus" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentHomelessProgramAssociationProgramParticipa_4eff84640b" UNIQUE ("StudentHomelessProgramAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentHomelessProgramAssociationProgramParticipa_ddfb5fbba0" UNIQUE ("StudentHomelessProgramAssociation_DocumentId", "ParticipationStatusDescriptor_DescriptorId", "StatusBeginDate")
 );
 
@@ -6016,15 +6668,17 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentInterventionAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentInterventionAssociationInterventionEffectiveness"
 (
-    "StudentInterventionAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentInterventionAssociation_DocumentId" bigint NOT NULL,
     "DiagnosisDescriptor_DescriptorId" bigint NOT NULL,
     "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
     "InterventionEffectivenessRatingDescriptor_DescriptorId" bigint NOT NULL,
     "PopulationServedDescriptor_DescriptorId" bigint NOT NULL,
     "ImprovementIndex" integer NULL,
-    CONSTRAINT "PK_StudentInterventionAssociationInterventionEffectiveness" PRIMARY KEY ("StudentInterventionAssociation_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentInterventionAssociationInterventionEffecti_d2f0f8aa0b" UNIQUE ("StudentInterventionAssociation_DocumentId", "DiagnosisDescriptor_DescriptorId", "GradeLevelDescriptor_DescriptorId", "PopulationServedDescriptor_DescriptorId")
+    CONSTRAINT "PK_StudentInterventionAssociationInterventionEffectiveness" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentInterventionAssociationInterventionEffecti_d2f0f8aa0b" UNIQUE ("StudentInterventionAssociation_DocumentId", "DiagnosisDescriptor_DescriptorId", "GradeLevelDescriptor_DescriptorId", "PopulationServedDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StudentInterventionAssociationInterventionEffecti_db18ffa44d" UNIQUE ("StudentInterventionAssociation_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentInterventionAttendanceEvent"
@@ -6073,40 +6727,46 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentLanguageInstructionProgramAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentLanguageInstructionProgramAssociationEnglishL_1ac620866d"
 (
-    "StudentLanguageInstructionProgramAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentLanguageInstructionProgramAssociation_DocumentId" bigint NOT NULL,
     "EnglishLanguageProficiencyAssessmentSchoolYear_DocumentId" bigint NOT NULL,
     "EnglishLanguageProficiencyAssessmentSchoolYear_SchoolYear" integer NOT NULL,
     "MonitoredDescriptor_DescriptorId" bigint NULL,
     "ParticipationDescriptor_DescriptorId" bigint NULL,
     "ProficiencyDescriptor_DescriptorId" bigint NULL,
     "ProgressDescriptor_DescriptorId" bigint NULL,
-    CONSTRAINT "PK_StudentLanguageInstructionProgramAssociationEngli_0e9832e6ce" PRIMARY KEY ("StudentLanguageInstructionProgramAssociation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentLanguageInstructionProgramAssociationEngli_4e9cf6c8c7" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentLanguageInstructionProgramAssociationEngli_268944e25b" UNIQUE ("StudentLanguageInstructionProgramAssociation_DocumentId", "EnglishLanguageProficiencyAssessmentSchoolYear_DocumentId"),
+    CONSTRAINT "UX_StudentLanguageInstructionProgramAssociationEngli_f0e8c9857b" UNIQUE ("StudentLanguageInstructionProgramAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "CK_StudentLanguageInstructionProgramAssociationEngli_eee4ac80b5" CHECK (("EnglishLanguageProficiencyAssessmentSchoolYear_DocumentId" IS NULL AND "EnglishLanguageProficiencyAssessmentSchoolYear_SchoolYear" IS NULL) OR ("EnglishLanguageProficiencyAssessmentSchoolYear_DocumentId" IS NOT NULL AND "EnglishLanguageProficiencyAssessmentSchoolYear_SchoolYear" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentLanguageInstructionProgramAssociationLanguage_268e074917"
 (
-    "StudentLanguageInstructionProgramAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentLanguageInstructionProgramAssociation_DocumentId" bigint NOT NULL,
     "LanguageInstructionProgramServiceDescriptor_DescriptorId" bigint NOT NULL,
     "PrimaryIndicator" boolean NULL,
     "ServiceBeginDate" date NULL,
     "ServiceEndDate" date NULL,
-    CONSTRAINT "PK_StudentLanguageInstructionProgramAssociationLangu_5b8e79b881" PRIMARY KEY ("StudentLanguageInstructionProgramAssociation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentLanguageInstructionProgramAssociationLangu_7abe5fdb0d" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentLanguageInstructionProgramAssociationLangu_7e756a322e" UNIQUE ("StudentLanguageInstructionProgramAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentLanguageInstructionProgramAssociationLangu_9917855100" UNIQUE ("StudentLanguageInstructionProgramAssociation_DocumentId", "LanguageInstructionProgramServiceDescriptor_DescriptorId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentLanguageInstructionProgramAssociationProgramP_e14347f302"
 (
-    "StudentLanguageInstructionProgramAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentLanguageInstructionProgramAssociation_DocumentId" bigint NOT NULL,
     "ParticipationStatusDescriptor_DescriptorId" bigint NOT NULL,
     "DesignatedBy" varchar(60) NULL,
     "StatusBeginDate" date NOT NULL,
     "StatusEndDate" date NULL,
-    CONSTRAINT "PK_StudentLanguageInstructionProgramAssociationProgr_2a77371231" PRIMARY KEY ("StudentLanguageInstructionProgramAssociation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentLanguageInstructionProgramAssociationProgr_8049a937ea" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentLanguageInstructionProgramAssociationProgr_5d868ab67c" UNIQUE ("StudentLanguageInstructionProgramAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentLanguageInstructionProgramAssociationProgr_a799a24bf7" UNIQUE ("StudentLanguageInstructionProgramAssociation_DocumentId", "ParticipationStatusDescriptor_DescriptorId", "StatusBeginDate")
 );
 
@@ -6143,26 +6803,30 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentMigrantEducationProgramAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentMigrantEducationProgramAssociationMigrantEduc_d9dcd7857a"
 (
-    "StudentMigrantEducationProgramAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentMigrantEducationProgramAssociation_DocumentId" bigint NOT NULL,
     "MigrantEducationProgramServiceDescriptor_DescriptorId" bigint NOT NULL,
     "PrimaryIndicator" boolean NULL,
     "ServiceBeginDate" date NULL,
     "ServiceEndDate" date NULL,
-    CONSTRAINT "PK_StudentMigrantEducationProgramAssociationMigrantE_3d794786ad" PRIMARY KEY ("StudentMigrantEducationProgramAssociation_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentMigrantEducationProgramAssociationMigrantE_558aabb61d" UNIQUE ("StudentMigrantEducationProgramAssociation_DocumentId", "MigrantEducationProgramServiceDescriptor_DescriptorId")
+    CONSTRAINT "PK_StudentMigrantEducationProgramAssociationMigrantE_160f1c5883" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentMigrantEducationProgramAssociationMigrantE_558aabb61d" UNIQUE ("StudentMigrantEducationProgramAssociation_DocumentId", "MigrantEducationProgramServiceDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StudentMigrantEducationProgramAssociationMigrantE_b843522796" UNIQUE ("StudentMigrantEducationProgramAssociation_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentMigrantEducationProgramAssociationProgramPart_491e79dcd2"
 (
-    "StudentMigrantEducationProgramAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentMigrantEducationProgramAssociation_DocumentId" bigint NOT NULL,
     "ParticipationStatusDescriptor_DescriptorId" bigint NOT NULL,
     "DesignatedBy" varchar(60) NULL,
     "StatusBeginDate" date NOT NULL,
     "StatusEndDate" date NULL,
-    CONSTRAINT "PK_StudentMigrantEducationProgramAssociationProgramP_2350f87340" PRIMARY KEY ("StudentMigrantEducationProgramAssociation_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentMigrantEducationProgramAssociationProgramP_24115cd77f" UNIQUE ("StudentMigrantEducationProgramAssociation_DocumentId", "ParticipationStatusDescriptor_DescriptorId", "StatusBeginDate")
+    CONSTRAINT "PK_StudentMigrantEducationProgramAssociationProgramP_d937c6d8e5" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentMigrantEducationProgramAssociationProgramP_24115cd77f" UNIQUE ("StudentMigrantEducationProgramAssociation_DocumentId", "ParticipationStatusDescriptor_DescriptorId", "StatusBeginDate"),
+    CONSTRAINT "UX_StudentMigrantEducationProgramAssociationProgramP_477e8ab208" UNIQUE ("StudentMigrantEducationProgramAssociation_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentNeglectedOrDelinquentProgramAssociation"
@@ -6192,26 +6856,30 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentNeglectedOrDelinquentProgramAssociatio
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentNeglectedOrDelinquentProgramAssociationNeglec_5202518bb9"
 (
-    "StudentNeglectedOrDelinquentProgramAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentNeglectedOrDelinquentProgramAssociation_DocumentId" bigint NOT NULL,
     "NeglectedOrDelinquentProgramServiceDescriptor_DescriptorId" bigint NOT NULL,
     "PrimaryIndicator" boolean NULL,
     "ServiceBeginDate" date NULL,
     "ServiceEndDate" date NULL,
-    CONSTRAINT "PK_StudentNeglectedOrDelinquentProgramAssociationNeg_fc88729966" PRIMARY KEY ("StudentNeglectedOrDelinquentProgramAssociation_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentNeglectedOrDelinquentProgramAssociationNeg_4d0f725168" UNIQUE ("StudentNeglectedOrDelinquentProgramAssociation_DocumentId", "NeglectedOrDelinquentProgramServiceDescriptor_DescriptorId")
+    CONSTRAINT "PK_StudentNeglectedOrDelinquentProgramAssociationNeg_a4bad704bb" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentNeglectedOrDelinquentProgramAssociationNeg_4d0f725168" UNIQUE ("StudentNeglectedOrDelinquentProgramAssociation_DocumentId", "NeglectedOrDelinquentProgramServiceDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StudentNeglectedOrDelinquentProgramAssociationNeg_abaf91b704" UNIQUE ("StudentNeglectedOrDelinquentProgramAssociation_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentNeglectedOrDelinquentProgramAssociationProgra_162f874239"
 (
-    "StudentNeglectedOrDelinquentProgramAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentNeglectedOrDelinquentProgramAssociation_DocumentId" bigint NOT NULL,
     "ParticipationStatusDescriptor_DescriptorId" bigint NOT NULL,
     "DesignatedBy" varchar(60) NULL,
     "StatusBeginDate" date NOT NULL,
     "StatusEndDate" date NULL,
-    CONSTRAINT "PK_StudentNeglectedOrDelinquentProgramAssociationPro_30823634b0" PRIMARY KEY ("StudentNeglectedOrDelinquentProgramAssociation_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentNeglectedOrDelinquentProgramAssociationPro_a7999f4fa2" UNIQUE ("StudentNeglectedOrDelinquentProgramAssociation_DocumentId", "ParticipationStatusDescriptor_DescriptorId", "StatusBeginDate")
+    CONSTRAINT "PK_StudentNeglectedOrDelinquentProgramAssociationPro_75944d5832" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentNeglectedOrDelinquentProgramAssociationPro_a7999f4fa2" UNIQUE ("StudentNeglectedOrDelinquentProgramAssociation_DocumentId", "ParticipationStatusDescriptor_DescriptorId", "StatusBeginDate"),
+    CONSTRAINT "UX_StudentNeglectedOrDelinquentProgramAssociationPro_ffb73e3554" UNIQUE ("StudentNeglectedOrDelinquentProgramAssociation_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramAssociation"
@@ -6238,25 +6906,29 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramAssociationProgramParticipationStatus"
 (
-    "StudentProgramAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentProgramAssociation_DocumentId" bigint NOT NULL,
     "ParticipationStatusDescriptor_DescriptorId" bigint NOT NULL,
     "DesignatedBy" varchar(60) NULL,
     "StatusBeginDate" date NOT NULL,
     "StatusEndDate" date NULL,
-    CONSTRAINT "PK_StudentProgramAssociationProgramParticipationStatus" PRIMARY KEY ("StudentProgramAssociation_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentProgramAssociationProgramParticipationStat_90e76335b9" UNIQUE ("StudentProgramAssociation_DocumentId", "ParticipationStatusDescriptor_DescriptorId", "StatusBeginDate")
+    CONSTRAINT "PK_StudentProgramAssociationProgramParticipationStatus" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentProgramAssociationProgramParticipationStat_90e76335b9" UNIQUE ("StudentProgramAssociation_DocumentId", "ParticipationStatusDescriptor_DescriptorId", "StatusBeginDate"),
+    CONSTRAINT "UX_StudentProgramAssociationProgramParticipationStat_d101bb2de9" UNIQUE ("StudentProgramAssociation_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramAssociationService"
 (
-    "StudentProgramAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentProgramAssociation_DocumentId" bigint NOT NULL,
     "ServiceDescriptor_DescriptorId" bigint NOT NULL,
     "PrimaryIndicator" boolean NULL,
     "ServiceBeginDate" date NULL,
     "ServiceEndDate" date NULL,
-    CONSTRAINT "PK_StudentProgramAssociationService" PRIMARY KEY ("StudentProgramAssociation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentProgramAssociationService" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentProgramAssociationService_Ordinal_StudentP_dd516486ad" UNIQUE ("StudentProgramAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentProgramAssociationService_ServiceDescripto_dfb802217a" UNIQUE ("StudentProgramAssociation_DocumentId", "ServiceDescriptor_DescriptorId")
 );
 
@@ -6315,17 +6987,20 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramEvaluation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramEvaluationExternalEvaluator"
 (
-    "StudentProgramEvaluation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentProgramEvaluation_DocumentId" bigint NOT NULL,
     "ExternalEvaluator" varchar(150) NOT NULL,
-    CONSTRAINT "PK_StudentProgramEvaluationExternalEvaluator" PRIMARY KEY ("StudentProgramEvaluation_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentProgramEvaluationExternalEvaluator_Externa_599e6a34e2" UNIQUE ("StudentProgramEvaluation_DocumentId", "ExternalEvaluator")
+    CONSTRAINT "PK_StudentProgramEvaluationExternalEvaluator" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentProgramEvaluationExternalEvaluator_Externa_599e6a34e2" UNIQUE ("StudentProgramEvaluation_DocumentId", "ExternalEvaluator"),
+    CONSTRAINT "UX_StudentProgramEvaluationExternalEvaluator_Ordinal_110942e92c" UNIQUE ("StudentProgramEvaluation_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramEvaluationStudentEvaluationElement"
 (
-    "StudentProgramEvaluation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentProgramEvaluation_DocumentId" bigint NOT NULL,
     "StudentEvaluationElementProgramEvaluationElement_DocumentId" bigint NOT NULL,
     "StudentEvaluationElementProgramEvaluationElement_Pro_56aa4525fb" varchar(50) NOT NULL,
     "StudentEvaluationElementProgramEvaluationElement_Pro_467059facd" integer NOT NULL,
@@ -6336,15 +7011,17 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramEvaluationStudentEvaluationElem
     "StudentEvaluationElementProgramEvaluationElement_Pro_ef497c5466" bigint NOT NULL,
     "EvaluationElementRatingLevelDescriptor_DescriptorId" bigint NULL,
     "EvaluationElementNumericRating" numeric(6,3) NULL,
-    CONSTRAINT "PK_StudentProgramEvaluationStudentEvaluationElement" PRIMARY KEY ("StudentProgramEvaluation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentProgramEvaluationStudentEvaluationElement" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentProgramEvaluationStudentEvaluationElement__2fabdcdd7e" UNIQUE ("StudentProgramEvaluation_DocumentId", "StudentEvaluationElementProgramEvaluationElement_DocumentId"),
+    CONSTRAINT "UX_StudentProgramEvaluationStudentEvaluationElement__d25487010c" UNIQUE ("StudentProgramEvaluation_DocumentId", "Ordinal"),
     CONSTRAINT "CK_StudentProgramEvaluationStudentEvaluationElement__6e8c5ffb20" CHECK (("StudentEvaluationElementProgramEvaluationElement_DocumentId" IS NULL AND "StudentEvaluationElementProgramEvaluationElement_Pro_56aa4525fb" IS NULL AND "StudentEvaluationElementProgramEvaluationElement_Pro_467059facd" IS NULL AND "StudentEvaluationElementProgramEvaluationElement_Pro_38d123670f" IS NULL AND "StudentEvaluationElementProgramEvaluationElement_Pro_57fb6d52f8" IS NULL AND "StudentEvaluationElementProgramEvaluationElement_Pro_b27b83c178" IS NULL AND "StudentEvaluationElementProgramEvaluationElement_ProgramName" IS NULL AND "StudentEvaluationElementProgramEvaluationElement_Pro_ef497c5466" IS NULL) OR ("StudentEvaluationElementProgramEvaluationElement_DocumentId" IS NOT NULL AND "StudentEvaluationElementProgramEvaluationElement_Pro_56aa4525fb" IS NOT NULL AND "StudentEvaluationElementProgramEvaluationElement_Pro_467059facd" IS NOT NULL AND "StudentEvaluationElementProgramEvaluationElement_Pro_38d123670f" IS NOT NULL AND "StudentEvaluationElementProgramEvaluationElement_Pro_57fb6d52f8" IS NOT NULL AND "StudentEvaluationElementProgramEvaluationElement_Pro_b27b83c178" IS NOT NULL AND "StudentEvaluationElementProgramEvaluationElement_ProgramName" IS NOT NULL AND "StudentEvaluationElementProgramEvaluationElement_Pro_ef497c5466" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramEvaluationStudentEvaluationObjective"
 (
-    "StudentProgramEvaluation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentProgramEvaluation_DocumentId" bigint NOT NULL,
     "StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId" bigint NOT NULL,
     "StudentEvaluationObjectiveProgramEvaluationObjective_74b56ed982" varchar(50) NOT NULL,
     "StudentEvaluationObjectiveProgramEvaluationObjective_dd70a2e950" integer NOT NULL,
@@ -6355,8 +7032,9 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramEvaluationStudentEvaluationObje
     "StudentEvaluationObjectiveProgramEvaluationObjective_344bbaad76" bigint NOT NULL,
     "EvaluationObjectiveRatingLevelDescriptor_DescriptorId" bigint NULL,
     "EvaluationObjectiveNumericRating" numeric(6,3) NULL,
-    CONSTRAINT "PK_StudentProgramEvaluationStudentEvaluationObjective" PRIMARY KEY ("StudentProgramEvaluation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentProgramEvaluationStudentEvaluationObjective" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentProgramEvaluationStudentEvaluationObjectiv_85741b6e4e" UNIQUE ("StudentProgramEvaluation_DocumentId", "StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId"),
+    CONSTRAINT "UX_StudentProgramEvaluationStudentEvaluationObjectiv_fd20066fd8" UNIQUE ("StudentProgramEvaluation_DocumentId", "Ordinal"),
     CONSTRAINT "CK_StudentProgramEvaluationStudentEvaluationObjectiv_c05b8aa27a" CHECK (("StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId" IS NULL AND "StudentEvaluationObjectiveProgramEvaluationObjective_74b56ed982" IS NULL AND "StudentEvaluationObjectiveProgramEvaluationObjective_dd70a2e950" IS NULL AND "StudentEvaluationObjectiveProgramEvaluationObjective_a646232b23" IS NULL AND "StudentEvaluationObjectiveProgramEvaluationObjective_4b2b771726" IS NULL AND "StudentEvaluationObjectiveProgramEvaluationObjective_5c8a926f84" IS NULL AND "StudentEvaluationObjectiveProgramEvaluationObjective_e1d44bbcf0" IS NULL AND "StudentEvaluationObjectiveProgramEvaluationObjective_344bbaad76" IS NULL) OR ("StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId" IS NOT NULL AND "StudentEvaluationObjectiveProgramEvaluationObjective_74b56ed982" IS NOT NULL AND "StudentEvaluationObjectiveProgramEvaluationObjective_dd70a2e950" IS NOT NULL AND "StudentEvaluationObjectiveProgramEvaluationObjective_a646232b23" IS NOT NULL AND "StudentEvaluationObjectiveProgramEvaluationObjective_4b2b771726" IS NOT NULL AND "StudentEvaluationObjectiveProgramEvaluationObjective_5c8a926f84" IS NOT NULL AND "StudentEvaluationObjectiveProgramEvaluationObjective_e1d44bbcf0" IS NOT NULL AND "StudentEvaluationObjectiveProgramEvaluationObjective_344bbaad76" IS NOT NULL))
 );
 
@@ -6414,23 +7092,28 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAssociationAlternativeGraduationPlan"
 (
-    "StudentSchoolAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentSchoolAssociation_DocumentId" bigint NOT NULL,
     "AlternativeGraduationPlan_DocumentId" bigint NULL,
     "AlternativeGraduationPlan_EducationOrganizationId" integer NULL,
     "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181" bigint NULL,
     "AlternativeGraduationPlan_GraduationSchoolYear" integer NULL,
-    CONSTRAINT "PK_StudentSchoolAssociationAlternativeGraduationPlan" PRIMARY KEY ("StudentSchoolAssociation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentSchoolAssociationAlternativeGraduationPlan" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentSchoolAssociationAlternativeGraduationPlan_620cf4ccf8" UNIQUE ("StudentSchoolAssociation_DocumentId", "Ordinal"),
+    CONSTRAINT "UX_StudentSchoolAssociationAlternativeGraduationPlan_64d4374eea" UNIQUE ("StudentSchoolAssociation_DocumentId", "AlternativeGraduationPlan_DocumentId"),
     CONSTRAINT "CK_StudentSchoolAssociationAlternativeGraduationPlan_b9e2a28562" CHECK (("AlternativeGraduationPlan_DocumentId" IS NULL AND "AlternativeGraduationPlan_EducationOrganizationId" IS NULL AND "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181" IS NULL AND "AlternativeGraduationPlan_GraduationSchoolYear" IS NULL) OR ("AlternativeGraduationPlan_DocumentId" IS NOT NULL AND "AlternativeGraduationPlan_EducationOrganizationId" IS NOT NULL AND "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181" IS NOT NULL AND "AlternativeGraduationPlan_GraduationSchoolYear" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAssociationEducationPlan"
 (
-    "StudentSchoolAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentSchoolAssociation_DocumentId" bigint NOT NULL,
     "EducationPlanDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_StudentSchoolAssociationEducationPlan" PRIMARY KEY ("StudentSchoolAssociation_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentSchoolAssociationEducationPlan_EducationPl_ded71a8fc2" UNIQUE ("StudentSchoolAssociation_DocumentId", "EducationPlanDescriptor_DescriptorId")
+    CONSTRAINT "PK_StudentSchoolAssociationEducationPlan" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentSchoolAssociationEducationPlan_EducationPl_ded71a8fc2" UNIQUE ("StudentSchoolAssociation_DocumentId", "EducationPlanDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StudentSchoolAssociationEducationPlan_Ordinal_Stu_eca187dfc6" UNIQUE ("StudentSchoolAssociation_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAttendanceEvent"
@@ -6485,26 +7168,30 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolFoodServiceProgramAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolFoodServiceProgramAssociationProgramPar_cd6be86d47"
 (
-    "StudentSchoolFoodServiceProgramAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentSchoolFoodServiceProgramAssociation_DocumentId" bigint NOT NULL,
     "ParticipationStatusDescriptor_DescriptorId" bigint NOT NULL,
     "DesignatedBy" varchar(60) NULL,
     "StatusBeginDate" date NOT NULL,
     "StatusEndDate" date NULL,
-    CONSTRAINT "PK_StudentSchoolFoodServiceProgramAssociationProgram_9980dd36c2" PRIMARY KEY ("StudentSchoolFoodServiceProgramAssociation_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentSchoolFoodServiceProgramAssociationProgram_3e1f166ffe" UNIQUE ("StudentSchoolFoodServiceProgramAssociation_DocumentId", "ParticipationStatusDescriptor_DescriptorId", "StatusBeginDate")
+    CONSTRAINT "PK_StudentSchoolFoodServiceProgramAssociationProgram_999dedfacb" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentSchoolFoodServiceProgramAssociationProgram_3e1f166ffe" UNIQUE ("StudentSchoolFoodServiceProgramAssociation_DocumentId", "ParticipationStatusDescriptor_DescriptorId", "StatusBeginDate"),
+    CONSTRAINT "UX_StudentSchoolFoodServiceProgramAssociationProgram_51568e2f19" UNIQUE ("StudentSchoolFoodServiceProgramAssociation_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolFoodServiceProgramAssociationSchoolFood_85a0eb098c"
 (
-    "StudentSchoolFoodServiceProgramAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentSchoolFoodServiceProgramAssociation_DocumentId" bigint NOT NULL,
     "SchoolFoodServiceProgramServiceDescriptor_DescriptorId" bigint NOT NULL,
     "PrimaryIndicator" boolean NULL,
     "ServiceBeginDate" date NULL,
     "ServiceEndDate" date NULL,
-    CONSTRAINT "PK_StudentSchoolFoodServiceProgramAssociationSchoolF_2a5ab065b3" PRIMARY KEY ("StudentSchoolFoodServiceProgramAssociation_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentSchoolFoodServiceProgramAssociationSchoolF_ada541e616" UNIQUE ("StudentSchoolFoodServiceProgramAssociation_DocumentId", "SchoolFoodServiceProgramServiceDescriptor_DescriptorId")
+    CONSTRAINT "PK_StudentSchoolFoodServiceProgramAssociationSchoolF_2bb6cebf35" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentSchoolFoodServiceProgramAssociationSchoolF_ada541e616" UNIQUE ("StudentSchoolFoodServiceProgramAssociation_DocumentId", "SchoolFoodServiceProgramServiceDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StudentSchoolFoodServiceProgramAssociationSchoolF_b50f5d6cb0" UNIQUE ("StudentSchoolFoodServiceProgramAssociation_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSection504ProgramAssociation"
@@ -6536,13 +7223,15 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSection504ProgramAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSection504ProgramAssociationProgramParticipationStatus"
 (
-    "StudentSection504ProgramAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentSection504ProgramAssociation_DocumentId" bigint NOT NULL,
     "ParticipationStatusDescriptor_DescriptorId" bigint NOT NULL,
     "DesignatedBy" varchar(60) NULL,
     "StatusBeginDate" date NOT NULL,
     "StatusEndDate" date NULL,
-    CONSTRAINT "PK_StudentSection504ProgramAssociationProgramPartici_4afb2449a9" PRIMARY KEY ("StudentSection504ProgramAssociation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentSection504ProgramAssociationProgramPartici_9aedb7d9ac" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentSection504ProgramAssociationProgramPartici_5b8ca76d90" UNIQUE ("StudentSection504ProgramAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentSection504ProgramAssociationProgramPartici_c063dbaa42" UNIQUE ("StudentSection504ProgramAssociation_DocumentId", "ParticipationStatusDescriptor_DescriptorId", "StatusBeginDate")
 );
 
@@ -6579,13 +7268,16 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSectionAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSectionAssociationProgram"
 (
-    "StudentSectionAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentSectionAssociation_DocumentId" bigint NOT NULL,
     "Program_DocumentId" bigint NULL,
     "Program_EducationOrganizationId" integer NULL,
     "Program_ProgramName" varchar(60) NULL,
     "Program_ProgramTypeDescriptor_DescriptorId" bigint NULL,
-    CONSTRAINT "PK_StudentSectionAssociationProgram" PRIMARY KEY ("StudentSectionAssociation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentSectionAssociationProgram" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentSectionAssociationProgram_Ordinal_StudentS_6b6c060479" UNIQUE ("StudentSectionAssociation_DocumentId", "Ordinal"),
+    CONSTRAINT "UX_StudentSectionAssociationProgram_Program_Document_e1803f1bfc" UNIQUE ("StudentSectionAssociation_DocumentId", "Program_DocumentId"),
     CONSTRAINT "CK_StudentSectionAssociationProgram_Program_AllNone" CHECK (("Program_DocumentId" IS NULL AND "Program_EducationOrganizationId" IS NULL AND "Program_ProgramName" IS NULL AND "Program_ProgramTypeDescriptor_DescriptorId" IS NULL) OR ("Program_DocumentId" IS NOT NULL AND "Program_EducationOrganizationId" IS NOT NULL AND "Program_ProgramName" IS NOT NULL AND "Program_ProgramTypeDescriptor_DescriptorId" IS NOT NULL))
 );
 
@@ -6616,12 +7308,15 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSectionAttendanceEvent"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSectionAttendanceEventClassPeriod"
 (
-    "StudentSectionAttendanceEvent_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentSectionAttendanceEvent_DocumentId" bigint NOT NULL,
     "ClassPeriod_DocumentId" bigint NULL,
     "ClassPeriod_ClassPeriodName" varchar(60) NULL,
     "ClassPeriod_SchoolId" integer NULL,
-    CONSTRAINT "PK_StudentSectionAttendanceEventClassPeriod" PRIMARY KEY ("StudentSectionAttendanceEvent_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentSectionAttendanceEventClassPeriod" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentSectionAttendanceEventClassPeriod_ClassPer_32827dac6f" UNIQUE ("StudentSectionAttendanceEvent_DocumentId", "ClassPeriod_DocumentId"),
+    CONSTRAINT "UX_StudentSectionAttendanceEventClassPeriod_Ordinal__2fbe6b01f4" UNIQUE ("StudentSectionAttendanceEvent_DocumentId", "Ordinal"),
     CONSTRAINT "CK_StudentSectionAttendanceEventClassPeriod_ClassPeriod_AllNone" CHECK (("ClassPeriod_DocumentId" IS NULL AND "ClassPeriod_ClassPeriodName" IS NULL AND "ClassPeriod_SchoolId" IS NULL) OR ("ClassPeriod_DocumentId" IS NOT NULL AND "ClassPeriod_ClassPeriodName" IS NOT NULL AND "ClassPeriod_SchoolId" IS NOT NULL))
 );
 
@@ -6664,72 +7359,86 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociationDisability"
 (
-    "StudentSpecialEducationProgramAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentSpecialEducationProgramAssociation_DocumentId" bigint NOT NULL,
     "DisabilityDescriptor_DescriptorId" bigint NOT NULL,
     "DisabilityDeterminationSourceTypeDescriptor_DescriptorId" bigint NULL,
     "DisabilityDiagnosis" varchar(80) NULL,
     "OrderOfDisability" integer NULL,
-    CONSTRAINT "PK_StudentSpecialEducationProgramAssociationDisability" PRIMARY KEY ("StudentSpecialEducationProgramAssociation_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentSpecialEducationProgramAssociationDisabili_d1c0588de7" UNIQUE ("StudentSpecialEducationProgramAssociation_DocumentId", "DisabilityDescriptor_DescriptorId")
+    CONSTRAINT "PK_StudentSpecialEducationProgramAssociationDisability" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentSpecialEducationProgramAssociationDisabili_120702bc25" UNIQUE ("CollectionItemId", "StudentSpecialEducationProgramAssociation_DocumentId"),
+    CONSTRAINT "UX_StudentSpecialEducationProgramAssociationDisabili_d1c0588de7" UNIQUE ("StudentSpecialEducationProgramAssociation_DocumentId", "DisabilityDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StudentSpecialEducationProgramAssociationDisabili_f2af3fd843" UNIQUE ("StudentSpecialEducationProgramAssociation_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociationProgramPart_63017127ef"
 (
-    "StudentSpecialEducationProgramAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentSpecialEducationProgramAssociation_DocumentId" bigint NOT NULL,
     "ParticipationStatusDescriptor_DescriptorId" bigint NOT NULL,
     "DesignatedBy" varchar(60) NULL,
     "StatusBeginDate" date NOT NULL,
     "StatusEndDate" date NULL,
-    CONSTRAINT "PK_StudentSpecialEducationProgramAssociationProgramP_713a92697a" PRIMARY KEY ("StudentSpecialEducationProgramAssociation_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentSpecialEducationProgramAssociationProgramP_5d3ef81914" UNIQUE ("StudentSpecialEducationProgramAssociation_DocumentId", "ParticipationStatusDescriptor_DescriptorId", "StatusBeginDate")
+    CONSTRAINT "PK_StudentSpecialEducationProgramAssociationProgramP_69fdcdbb35" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentSpecialEducationProgramAssociationProgramP_5d3ef81914" UNIQUE ("StudentSpecialEducationProgramAssociation_DocumentId", "ParticipationStatusDescriptor_DescriptorId", "StatusBeginDate"),
+    CONSTRAINT "UX_StudentSpecialEducationProgramAssociationProgramP_9093ffbdfb" UNIQUE ("StudentSpecialEducationProgramAssociation_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociationServiceProvider"
 (
-    "StudentSpecialEducationProgramAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentSpecialEducationProgramAssociation_DocumentId" bigint NOT NULL,
     "ServiceProviderStaff_DocumentId" bigint NOT NULL,
     "ServiceProviderStaff_StaffUniqueId" varchar(32) NOT NULL,
     "PrimaryProvider" boolean NULL,
-    CONSTRAINT "PK_StudentSpecialEducationProgramAssociationServiceProvider" PRIMARY KEY ("StudentSpecialEducationProgramAssociation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentSpecialEducationProgramAssociationServiceProvider" PRIMARY KEY ("CollectionItemId"),
     CONSTRAINT "UX_StudentSpecialEducationProgramAssociationServiceP_b990090a4c" UNIQUE ("StudentSpecialEducationProgramAssociation_DocumentId", "ServiceProviderStaff_DocumentId"),
+    CONSTRAINT "UX_StudentSpecialEducationProgramAssociationServiceP_d2796b93f8" UNIQUE ("StudentSpecialEducationProgramAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "CK_StudentSpecialEducationProgramAssociationServiceP_e5a600962c" CHECK (("ServiceProviderStaff_DocumentId" IS NULL AND "ServiceProviderStaff_StaffUniqueId" IS NULL) OR ("ServiceProviderStaff_DocumentId" IS NOT NULL AND "ServiceProviderStaff_StaffUniqueId" IS NOT NULL))
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociationSpecialEduc_a51ff9be2b"
 (
-    "StudentSpecialEducationProgramAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentSpecialEducationProgramAssociation_DocumentId" bigint NOT NULL,
     "SpecialEducationProgramServiceDescriptor_DescriptorId" bigint NOT NULL,
     "PrimaryIndicator" boolean NULL,
     "ServiceBeginDate" date NULL,
     "ServiceEndDate" date NULL,
-    CONSTRAINT "PK_StudentSpecialEducationProgramAssociationSpecialE_3952616718" PRIMARY KEY ("StudentSpecialEducationProgramAssociation_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentSpecialEducationProgramAssociationSpecialE_b4ca233046" UNIQUE ("StudentSpecialEducationProgramAssociation_DocumentId", "SpecialEducationProgramServiceDescriptor_DescriptorId")
+    CONSTRAINT "PK_StudentSpecialEducationProgramAssociationSpecialE_7db1250361" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentSpecialEducationProgramAssociationSpecialE_1aa894aebc" UNIQUE ("CollectionItemId", "StudentSpecialEducationProgramAssociation_DocumentId"),
+    CONSTRAINT "UX_StudentSpecialEducationProgramAssociationSpecialE_b4ca233046" UNIQUE ("StudentSpecialEducationProgramAssociation_DocumentId", "SpecialEducationProgramServiceDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StudentSpecialEducationProgramAssociationSpecialE_e0354c28a2" UNIQUE ("StudentSpecialEducationProgramAssociation_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociationDisabilityDesignation"
 (
-    "StudentSpecialEducationProgramAssociation_DocumentId" bigint NOT NULL,
-    "DisabilityOrdinal" integer NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
+    "StudentSpecialEducationProgramAssociation_DocumentId" bigint NOT NULL,
     "DisabilityDesignationDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_StudentSpecialEducationProgramAssociationDisabili_0dfcf6ae5f" PRIMARY KEY ("StudentSpecialEducationProgramAssociation_DocumentId", "DisabilityOrdinal", "Ordinal"),
-    CONSTRAINT "UX_StudentSpecialEducationProgramAssociationDisabili_a801e23354" UNIQUE ("StudentSpecialEducationProgramAssociation_DocumentId", "DisabilityOrdinal", "DisabilityDesignationDescriptor_DescriptorId")
+    CONSTRAINT "PK_StudentSpecialEducationProgramAssociationDisabili_06b4a409e7" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentSpecialEducationProgramAssociationDisabili_1996e0cd9e" UNIQUE ("ParentCollectionItemId", "DisabilityDesignationDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StudentSpecialEducationProgramAssociationDisabili_5c58e378d5" UNIQUE ("ParentCollectionItemId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociationSpecialEduc_8dcc58d3fd"
 (
-    "StudentSpecialEducationProgramAssociation_DocumentId" bigint NOT NULL,
-    "SpecialEducationProgramServiceOrdinal" integer NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "ParentCollectionItemId" bigint NOT NULL,
+    "StudentSpecialEducationProgramAssociation_DocumentId" bigint NOT NULL,
     "SpecialEducationProgramServiceServiceProviderStaff_DocumentId" bigint NOT NULL,
     "SpecialEducationProgramServiceServiceProviderStaff_S_464a707dc3" varchar(32) NOT NULL,
     "PrimaryProvider" boolean NULL,
-    CONSTRAINT "PK_StudentSpecialEducationProgramAssociationSpecialE_ed811c4b16" PRIMARY KEY ("StudentSpecialEducationProgramAssociation_DocumentId", "SpecialEducationProgramServiceOrdinal", "Ordinal"),
-    CONSTRAINT "UX_StudentSpecialEducationProgramAssociationSpecialE_82fbf69f77" UNIQUE ("StudentSpecialEducationProgramAssociation_DocumentId", "SpecialEducationProgramServiceOrdinal", "SpecialEducationProgramServiceServiceProviderStaff_DocumentId"),
+    CONSTRAINT "PK_StudentSpecialEducationProgramAssociationSpecialE_a4b7c2e86d" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentSpecialEducationProgramAssociationSpecialE_4725864b3d" UNIQUE ("ParentCollectionItemId", "SpecialEducationProgramServiceServiceProviderStaff_DocumentId"),
+    CONSTRAINT "UX_StudentSpecialEducationProgramAssociationSpecialE_6d70610a74" UNIQUE ("ParentCollectionItemId", "Ordinal"),
     CONSTRAINT "CK_StudentSpecialEducationProgramAssociationSpecialE_08fc636594" CHECK (("SpecialEducationProgramServiceServiceProviderStaff_DocumentId" IS NULL AND "SpecialEducationProgramServiceServiceProviderStaff_S_464a707dc3" IS NULL) OR ("SpecialEducationProgramServiceServiceProviderStaff_DocumentId" IS NOT NULL AND "SpecialEducationProgramServiceServiceProviderStaff_S_464a707dc3" IS NOT NULL))
 );
 
@@ -6792,26 +7501,30 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentTitleIPartAProgramAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentTitleIPartAProgramAssociationProgramParticipationStatus"
 (
-    "StudentTitleIPartAProgramAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentTitleIPartAProgramAssociation_DocumentId" bigint NOT NULL,
     "ParticipationStatusDescriptor_DescriptorId" bigint NOT NULL,
     "DesignatedBy" varchar(60) NULL,
     "StatusBeginDate" date NOT NULL,
     "StatusEndDate" date NULL,
-    CONSTRAINT "PK_StudentTitleIPartAProgramAssociationProgramPartic_7c937851bb" PRIMARY KEY ("StudentTitleIPartAProgramAssociation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentTitleIPartAProgramAssociationProgramPartic_a54edeb274" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentTitleIPartAProgramAssociationProgramPartic_5ceb7923d5" UNIQUE ("StudentTitleIPartAProgramAssociation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentTitleIPartAProgramAssociationProgramPartic_b61bc229ce" UNIQUE ("StudentTitleIPartAProgramAssociation_DocumentId", "ParticipationStatusDescriptor_DescriptorId", "StatusBeginDate")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentTitleIPartAProgramAssociationTitleIPartAProgramService"
 (
-    "StudentTitleIPartAProgramAssociation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentTitleIPartAProgramAssociation_DocumentId" bigint NOT NULL,
     "TitleIPartAProgramServiceDescriptor_DescriptorId" bigint NOT NULL,
     "PrimaryIndicator" boolean NULL,
     "ServiceBeginDate" date NULL,
     "ServiceEndDate" date NULL,
-    CONSTRAINT "PK_StudentTitleIPartAProgramAssociationTitleIPartAPr_9681153f2e" PRIMARY KEY ("StudentTitleIPartAProgramAssociation_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_StudentTitleIPartAProgramAssociationTitleIPartAPr_9136d50def" UNIQUE ("StudentTitleIPartAProgramAssociation_DocumentId", "TitleIPartAProgramServiceDescriptor_DescriptorId")
+    CONSTRAINT "PK_StudentTitleIPartAProgramAssociationTitleIPartAPr_9f4993934e" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentTitleIPartAProgramAssociationTitleIPartAPr_9136d50def" UNIQUE ("StudentTitleIPartAProgramAssociation_DocumentId", "TitleIPartAProgramServiceDescriptor_DescriptorId"),
+    CONSTRAINT "UX_StudentTitleIPartAProgramAssociationTitleIPartAPr_af8b139997" UNIQUE ("StudentTitleIPartAProgramAssociation_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentTransportation"
@@ -6835,19 +7548,23 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentTransportation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentTransportationTravelDayofWeek"
 (
-    "StudentTransportation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentTransportation_DocumentId" bigint NOT NULL,
     "TravelDayofWeekDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_StudentTransportationTravelDayofWeek" PRIMARY KEY ("StudentTransportation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentTransportationTravelDayofWeek" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentTransportationTravelDayofWeek_Ordinal_Stud_83598881c9" UNIQUE ("StudentTransportation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentTransportationTravelDayofWeek_StudentTrans_7734d76aff" UNIQUE ("StudentTransportation_DocumentId", "TravelDayofWeekDescriptor_DescriptorId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentTransportationTravelDirection"
 (
-    "StudentTransportation_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "StudentTransportation_DocumentId" bigint NOT NULL,
     "TravelDirectionDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_StudentTransportationTravelDirection" PRIMARY KEY ("StudentTransportation_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_StudentTransportationTravelDirection" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_StudentTransportationTravelDirection_Ordinal_Stud_b69f8adee1" UNIQUE ("StudentTransportation_DocumentId", "Ordinal"),
     CONSTRAINT "UX_StudentTransportationTravelDirection_StudentTrans_e066441640" UNIQUE ("StudentTransportation_DocumentId", "TravelDirectionDescriptor_DescriptorId")
 );
 
@@ -6931,23 +7648,27 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyQuestion"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SurveyQuestionMatrice"
 (
-    "SurveyQuestion_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "SurveyQuestion_DocumentId" bigint NOT NULL,
     "MatrixElement" varchar(255) NOT NULL,
     "MaxRawScore" integer NULL,
     "MinRawScore" integer NULL,
-    CONSTRAINT "PK_SurveyQuestionMatrice" PRIMARY KEY ("SurveyQuestion_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_SurveyQuestionMatrice_MatrixElement_SurveyQuestio_fc8406d229" UNIQUE ("SurveyQuestion_DocumentId", "MatrixElement")
+    CONSTRAINT "PK_SurveyQuestionMatrice" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_SurveyQuestionMatrice_MatrixElement_SurveyQuestio_fc8406d229" UNIQUE ("SurveyQuestion_DocumentId", "MatrixElement"),
+    CONSTRAINT "UX_SurveyQuestionMatrice_Ordinal_SurveyQuestion_DocumentId" UNIQUE ("SurveyQuestion_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."SurveyQuestionResponseChoice"
 (
-    "SurveyQuestion_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "SurveyQuestion_DocumentId" bigint NOT NULL,
     "NumericValue" integer NULL,
     "SortOrder" integer NOT NULL,
     "TextValue" varchar(255) NULL,
-    CONSTRAINT "PK_SurveyQuestionResponseChoice" PRIMARY KEY ("SurveyQuestion_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_SurveyQuestionResponseChoice" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_SurveyQuestionResponseChoice_Ordinal_SurveyQuesti_9e3070542e" UNIQUE ("SurveyQuestion_DocumentId", "Ordinal"),
     CONSTRAINT "UX_SurveyQuestionResponseChoice_SortOrder_SurveyQues_0f80f8a09f" UNIQUE ("SurveyQuestion_DocumentId", "SortOrder")
 );
 
@@ -6974,26 +7695,30 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyQuestionResponse"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SurveyQuestionResponseSurveyQuestionMatrixElementRespons"
 (
-    "SurveyQuestionResponse_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "SurveyQuestionResponse_DocumentId" bigint NOT NULL,
     "MatrixElement" varchar(255) NOT NULL,
     "MaxNumericResponse" integer NULL,
     "MinNumericResponse" integer NULL,
     "NoResponse" boolean NULL,
     "NumericResponse" integer NULL,
     "TextResponse" varchar(2048) NULL,
-    CONSTRAINT "PK_SurveyQuestionResponseSurveyQuestionMatrixElementRespons" PRIMARY KEY ("SurveyQuestionResponse_DocumentId", "Ordinal"),
-    CONSTRAINT "UX_SurveyQuestionResponseSurveyQuestionMatrixElement_146b39b6bd" UNIQUE ("SurveyQuestionResponse_DocumentId", "MatrixElement")
+    CONSTRAINT "PK_SurveyQuestionResponseSurveyQuestionMatrixElementRespons" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_SurveyQuestionResponseSurveyQuestionMatrixElement_146b39b6bd" UNIQUE ("SurveyQuestionResponse_DocumentId", "MatrixElement"),
+    CONSTRAINT "UX_SurveyQuestionResponseSurveyQuestionMatrixElement_4e793146dd" UNIQUE ("SurveyQuestionResponse_DocumentId", "Ordinal")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."SurveyQuestionResponseValue"
 (
-    "SurveyQuestionResponse_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "SurveyQuestionResponse_DocumentId" bigint NOT NULL,
     "NumericResponse" integer NULL,
     "SurveyQuestionResponseValueIdentifier" integer NOT NULL,
     "TextResponse" varchar(2048) NULL,
-    CONSTRAINT "PK_SurveyQuestionResponseValue" PRIMARY KEY ("SurveyQuestionResponse_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_SurveyQuestionResponseValue" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_SurveyQuestionResponseValue_Ordinal_SurveyQuestio_cf7b712287" UNIQUE ("SurveyQuestionResponse_DocumentId", "Ordinal"),
     CONSTRAINT "UX_SurveyQuestionResponseValue_SurveyQuestionRespons_d43a69349f" UNIQUE ("SurveyQuestionResponse_DocumentId", "SurveyQuestionResponseValueIdentifier")
 );
 
@@ -7026,10 +7751,12 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyResponse"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SurveyResponseSurveyLevel"
 (
-    "SurveyResponse_DocumentId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
+    "SurveyResponse_DocumentId" bigint NOT NULL,
     "SurveyLevelDescriptor_DescriptorId" bigint NOT NULL,
-    CONSTRAINT "PK_SurveyResponseSurveyLevel" PRIMARY KEY ("SurveyResponse_DocumentId", "Ordinal"),
+    CONSTRAINT "PK_SurveyResponseSurveyLevel" PRIMARY KEY ("CollectionItemId"),
+    CONSTRAINT "UX_SurveyResponseSurveyLevel_Ordinal_SurveyResponse_DocumentId" UNIQUE ("SurveyResponse_DocumentId", "Ordinal"),
     CONSTRAINT "UX_SurveyResponseSurveyLevel_SurveyLevelDescriptor_D_4883faa7dd" UNIQUE ("SurveyResponse_DocumentId", "SurveyLevelDescriptor_DescriptorId")
 );
 
@@ -9316,14 +10043,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_CommunityOrganizationAddressPeriod_CommunityOrgan_33a9367e45'
+        WHERE conname = 'FK_CommunityOrganizationAddressPeriod_CommunityOrgan_e9a8529a37'
         AND conrelid = to_regclass('"edfi"."CommunityOrganizationAddressPeriod"')
     )
     THEN
         ALTER TABLE "edfi"."CommunityOrganizationAddressPeriod"
-        ADD CONSTRAINT "FK_CommunityOrganizationAddressPeriod_CommunityOrgan_33a9367e45"
-        FOREIGN KEY ("CommunityOrganization_DocumentId", "AddressOrdinal")
-        REFERENCES "edfi"."CommunityOrganizationAddress" ("CommunityOrganization_DocumentId", "Ordinal")
+        ADD CONSTRAINT "FK_CommunityOrganizationAddressPeriod_CommunityOrgan_e9a8529a37"
+        FOREIGN KEY ("ParentCollectionItemId", "CommunityOrganization_DocumentId")
+        REFERENCES "edfi"."CommunityOrganizationAddress" ("CollectionItemId", "CommunityOrganization_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -9333,14 +10060,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_CommunityOrganizationIndicatorPeriod_CommunityOrg_dec12b8acb'
+        WHERE conname = 'FK_CommunityOrganizationIndicatorPeriod_CommunityOrg_b5f903d8fa'
         AND conrelid = to_regclass('"edfi"."CommunityOrganizationIndicatorPeriod"')
     )
     THEN
         ALTER TABLE "edfi"."CommunityOrganizationIndicatorPeriod"
-        ADD CONSTRAINT "FK_CommunityOrganizationIndicatorPeriod_CommunityOrg_dec12b8acb"
-        FOREIGN KEY ("CommunityOrganization_DocumentId", "IndicatorOrdinal")
-        REFERENCES "edfi"."CommunityOrganizationIndicator" ("CommunityOrganization_DocumentId", "Ordinal")
+        ADD CONSTRAINT "FK_CommunityOrganizationIndicatorPeriod_CommunityOrg_b5f903d8fa"
+        FOREIGN KEY ("ParentCollectionItemId", "CommunityOrganization_DocumentId")
+        REFERENCES "edfi"."CommunityOrganizationIndicator" ("CollectionItemId", "CommunityOrganization_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -9747,8 +10474,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."CommunityProviderAddressPeriod"
         ADD CONSTRAINT "FK_CommunityProviderAddressPeriod_CommunityProviderAddress"
-        FOREIGN KEY ("CommunityProvider_DocumentId", "AddressOrdinal")
-        REFERENCES "edfi"."CommunityProviderAddress" ("CommunityProvider_DocumentId", "Ordinal")
+        FOREIGN KEY ("ParentCollectionItemId", "CommunityProvider_DocumentId")
+        REFERENCES "edfi"."CommunityProviderAddress" ("CollectionItemId", "CommunityProvider_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -9764,8 +10491,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."CommunityProviderIndicatorPeriod"
         ADD CONSTRAINT "FK_CommunityProviderIndicatorPeriod_CommunityProviderIndicator"
-        FOREIGN KEY ("CommunityProvider_DocumentId", "IndicatorOrdinal")
-        REFERENCES "edfi"."CommunityProviderIndicator" ("CommunityProvider_DocumentId", "Ordinal")
+        FOREIGN KEY ("ParentCollectionItemId", "CommunityProvider_DocumentId")
+        REFERENCES "edfi"."CommunityProviderIndicator" ("CollectionItemId", "CommunityProvider_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -10308,8 +11035,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."ContactAddressPeriod"
         ADD CONSTRAINT "FK_ContactAddressPeriod_ContactAddress"
-        FOREIGN KEY ("Contact_DocumentId", "AddressOrdinal")
-        REFERENCES "edfi"."ContactAddress" ("Contact_DocumentId", "Ordinal")
+        FOREIGN KEY ("ParentCollectionItemId", "Contact_DocumentId")
+        REFERENCES "edfi"."ContactAddress" ("CollectionItemId", "Contact_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -10325,8 +11052,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."ContactLanguageUs"
         ADD CONSTRAINT "FK_ContactLanguageUs_ContactLanguage"
-        FOREIGN KEY ("Contact_DocumentId", "LanguageOrdinal")
-        REFERENCES "edfi"."ContactLanguage" ("Contact_DocumentId", "Ordinal")
+        FOREIGN KEY ("ParentCollectionItemId", "Contact_DocumentId")
+        REFERENCES "edfi"."ContactLanguage" ("CollectionItemId", "Contact_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -12614,14 +13341,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationOrganizationNetworkAddressPeriod_Educati_12523300fe'
+        WHERE conname = 'FK_EducationOrganizationNetworkAddressPeriod_Educati_aa48f34d65'
         AND conrelid = to_regclass('"edfi"."EducationOrganizationNetworkAddressPeriod"')
     )
     THEN
         ALTER TABLE "edfi"."EducationOrganizationNetworkAddressPeriod"
-        ADD CONSTRAINT "FK_EducationOrganizationNetworkAddressPeriod_Educati_12523300fe"
-        FOREIGN KEY ("EducationOrganizationNetwork_DocumentId", "AddressOrdinal")
-        REFERENCES "edfi"."EducationOrganizationNetworkAddress" ("EducationOrganizationNetwork_DocumentId", "Ordinal")
+        ADD CONSTRAINT "FK_EducationOrganizationNetworkAddressPeriod_Educati_aa48f34d65"
+        FOREIGN KEY ("ParentCollectionItemId", "EducationOrganizationNetwork_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationNetworkAddress" ("CollectionItemId", "EducationOrganizationNetwork_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -12631,14 +13358,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationOrganizationNetworkIndicatorPeriod_Educa_0e245c2782'
+        WHERE conname = 'FK_EducationOrganizationNetworkIndicatorPeriod_Educa_e372b92455'
         AND conrelid = to_regclass('"edfi"."EducationOrganizationNetworkIndicatorPeriod"')
     )
     THEN
         ALTER TABLE "edfi"."EducationOrganizationNetworkIndicatorPeriod"
-        ADD CONSTRAINT "FK_EducationOrganizationNetworkIndicatorPeriod_Educa_0e245c2782"
-        FOREIGN KEY ("EducationOrganizationNetwork_DocumentId", "IndicatorOrdinal")
-        REFERENCES "edfi"."EducationOrganizationNetworkIndicator" ("EducationOrganizationNetwork_DocumentId", "Ordinal")
+        ADD CONSTRAINT "FK_EducationOrganizationNetworkIndicatorPeriod_Educa_e372b92455"
+        FOREIGN KEY ("ParentCollectionItemId", "EducationOrganizationNetwork_DocumentId")
+        REFERENCES "edfi"."EducationOrganizationNetworkIndicator" ("CollectionItemId", "EducationOrganizationNetwork_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -13090,14 +13817,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationServiceCenterAddressPeriod_EducationServ_d3d462d1cd'
+        WHERE conname = 'FK_EducationServiceCenterAddressPeriod_EducationServ_38f4905427'
         AND conrelid = to_regclass('"edfi"."EducationServiceCenterAddressPeriod"')
     )
     THEN
         ALTER TABLE "edfi"."EducationServiceCenterAddressPeriod"
-        ADD CONSTRAINT "FK_EducationServiceCenterAddressPeriod_EducationServ_d3d462d1cd"
-        FOREIGN KEY ("EducationServiceCenter_DocumentId", "AddressOrdinal")
-        REFERENCES "edfi"."EducationServiceCenterAddress" ("EducationServiceCenter_DocumentId", "Ordinal")
+        ADD CONSTRAINT "FK_EducationServiceCenterAddressPeriod_EducationServ_38f4905427"
+        FOREIGN KEY ("ParentCollectionItemId", "EducationServiceCenter_DocumentId")
+        REFERENCES "edfi"."EducationServiceCenterAddress" ("CollectionItemId", "EducationServiceCenter_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -13107,14 +13834,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_EducationServiceCenterIndicatorPeriod_EducationSe_ad377151a5'
+        WHERE conname = 'FK_EducationServiceCenterIndicatorPeriod_EducationSe_c2bed631c2'
         AND conrelid = to_regclass('"edfi"."EducationServiceCenterIndicatorPeriod"')
     )
     THEN
         ALTER TABLE "edfi"."EducationServiceCenterIndicatorPeriod"
-        ADD CONSTRAINT "FK_EducationServiceCenterIndicatorPeriod_EducationSe_ad377151a5"
-        FOREIGN KEY ("EducationServiceCenter_DocumentId", "IndicatorOrdinal")
-        REFERENCES "edfi"."EducationServiceCenterIndicator" ("EducationServiceCenter_DocumentId", "Ordinal")
+        ADD CONSTRAINT "FK_EducationServiceCenterIndicatorPeriod_EducationSe_c2bed631c2"
+        FOREIGN KEY ("ParentCollectionItemId", "EducationServiceCenter_DocumentId")
+        REFERENCES "edfi"."EducationServiceCenterIndicator" ("CollectionItemId", "EducationServiceCenter_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -14059,14 +14786,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_GraduationPlanCreditsByCoursCours_GraduationPlanC_a8fed0bf25'
+        WHERE conname = 'FK_GraduationPlanCreditsByCoursCours_GraduationPlanC_64e23de358'
         AND conrelid = to_regclass('"edfi"."GraduationPlanCreditsByCoursCours"')
     )
     THEN
         ALTER TABLE "edfi"."GraduationPlanCreditsByCoursCours"
-        ADD CONSTRAINT "FK_GraduationPlanCreditsByCoursCours_GraduationPlanC_a8fed0bf25"
-        FOREIGN KEY ("GraduationPlan_DocumentId", "CreditsByCoursOrdinal")
-        REFERENCES "edfi"."GraduationPlanCreditsByCours" ("GraduationPlan_DocumentId", "Ordinal")
+        ADD CONSTRAINT "FK_GraduationPlanCreditsByCoursCours_GraduationPlanC_64e23de358"
+        FOREIGN KEY ("ParentCollectionItemId", "GraduationPlan_DocumentId")
+        REFERENCES "edfi"."GraduationPlanCreditsByCours" ("CollectionItemId", "GraduationPlan_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -14093,14 +14820,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_GraduationPlanRequiredAssessmentScore_GraduationP_536cc26535'
+        WHERE conname = 'FK_GraduationPlanRequiredAssessmentScore_GraduationP_ca6732195e'
         AND conrelid = to_regclass('"edfi"."GraduationPlanRequiredAssessmentScore"')
     )
     THEN
         ALTER TABLE "edfi"."GraduationPlanRequiredAssessmentScore"
-        ADD CONSTRAINT "FK_GraduationPlanRequiredAssessmentScore_GraduationP_536cc26535"
-        FOREIGN KEY ("GraduationPlan_DocumentId", "RequiredAssessmentOrdinal")
-        REFERENCES "edfi"."GraduationPlanRequiredAssessment" ("GraduationPlan_DocumentId", "Ordinal")
+        ADD CONSTRAINT "FK_GraduationPlanRequiredAssessmentScore_GraduationP_ca6732195e"
+        FOREIGN KEY ("ParentCollectionItemId", "GraduationPlan_DocumentId")
+        REFERENCES "edfi"."GraduationPlanRequiredAssessment" ("CollectionItemId", "GraduationPlan_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -16150,14 +16877,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_LocalEducationAgencyAddressPeriod_LocalEducationA_31a0ef722c'
+        WHERE conname = 'FK_LocalEducationAgencyAddressPeriod_LocalEducationA_5701cbbcf0'
         AND conrelid = to_regclass('"edfi"."LocalEducationAgencyAddressPeriod"')
     )
     THEN
         ALTER TABLE "edfi"."LocalEducationAgencyAddressPeriod"
-        ADD CONSTRAINT "FK_LocalEducationAgencyAddressPeriod_LocalEducationA_31a0ef722c"
-        FOREIGN KEY ("LocalEducationAgency_DocumentId", "AddressOrdinal")
-        REFERENCES "edfi"."LocalEducationAgencyAddress" ("LocalEducationAgency_DocumentId", "Ordinal")
+        ADD CONSTRAINT "FK_LocalEducationAgencyAddressPeriod_LocalEducationA_5701cbbcf0"
+        FOREIGN KEY ("ParentCollectionItemId", "LocalEducationAgency_DocumentId")
+        REFERENCES "edfi"."LocalEducationAgencyAddress" ("CollectionItemId", "LocalEducationAgency_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -16167,14 +16894,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_LocalEducationAgencyIndicatorPeriod_LocalEducatio_a95fd4411f'
+        WHERE conname = 'FK_LocalEducationAgencyIndicatorPeriod_LocalEducatio_6ab002b0f5'
         AND conrelid = to_regclass('"edfi"."LocalEducationAgencyIndicatorPeriod"')
     )
     THEN
         ALTER TABLE "edfi"."LocalEducationAgencyIndicatorPeriod"
-        ADD CONSTRAINT "FK_LocalEducationAgencyIndicatorPeriod_LocalEducatio_a95fd4411f"
-        FOREIGN KEY ("LocalEducationAgency_DocumentId", "IndicatorOrdinal")
-        REFERENCES "edfi"."LocalEducationAgencyIndicator" ("LocalEducationAgency_DocumentId", "Ordinal")
+        ADD CONSTRAINT "FK_LocalEducationAgencyIndicatorPeriod_LocalEducatio_6ab002b0f5"
+        FOREIGN KEY ("ParentCollectionItemId", "LocalEducationAgency_DocumentId")
+        REFERENCES "edfi"."LocalEducationAgencyIndicator" ("CollectionItemId", "LocalEducationAgency_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -17221,14 +17948,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_OrganizationDepartmentAddressPeriod_OrganizationD_6a42c90e68'
+        WHERE conname = 'FK_OrganizationDepartmentAddressPeriod_OrganizationD_d208083e6c'
         AND conrelid = to_regclass('"edfi"."OrganizationDepartmentAddressPeriod"')
     )
     THEN
         ALTER TABLE "edfi"."OrganizationDepartmentAddressPeriod"
-        ADD CONSTRAINT "FK_OrganizationDepartmentAddressPeriod_OrganizationD_6a42c90e68"
-        FOREIGN KEY ("OrganizationDepartment_DocumentId", "AddressOrdinal")
-        REFERENCES "edfi"."OrganizationDepartmentAddress" ("OrganizationDepartment_DocumentId", "Ordinal")
+        ADD CONSTRAINT "FK_OrganizationDepartmentAddressPeriod_OrganizationD_d208083e6c"
+        FOREIGN KEY ("ParentCollectionItemId", "OrganizationDepartment_DocumentId")
+        REFERENCES "edfi"."OrganizationDepartmentAddress" ("CollectionItemId", "OrganizationDepartment_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -17238,14 +17965,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_OrganizationDepartmentIndicatorPeriod_Organizatio_bf273e8996'
+        WHERE conname = 'FK_OrganizationDepartmentIndicatorPeriod_Organizatio_0804f8145c'
         AND conrelid = to_regclass('"edfi"."OrganizationDepartmentIndicatorPeriod"')
     )
     THEN
         ALTER TABLE "edfi"."OrganizationDepartmentIndicatorPeriod"
-        ADD CONSTRAINT "FK_OrganizationDepartmentIndicatorPeriod_Organizatio_bf273e8996"
-        FOREIGN KEY ("OrganizationDepartment_DocumentId", "IndicatorOrdinal")
-        REFERENCES "edfi"."OrganizationDepartmentIndicator" ("OrganizationDepartment_DocumentId", "Ordinal")
+        ADD CONSTRAINT "FK_OrganizationDepartmentIndicatorPeriod_Organizatio_0804f8145c"
+        FOREIGN KEY ("ParentCollectionItemId", "OrganizationDepartment_DocumentId")
+        REFERENCES "edfi"."OrganizationDepartmentIndicator" ("CollectionItemId", "OrganizationDepartment_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -17748,14 +18475,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_PostSecondaryInstitutionAddressPeriod_PostSeconda_501596fdf1'
+        WHERE conname = 'FK_PostSecondaryInstitutionAddressPeriod_PostSeconda_5c8390972c'
         AND conrelid = to_regclass('"edfi"."PostSecondaryInstitutionAddressPeriod"')
     )
     THEN
         ALTER TABLE "edfi"."PostSecondaryInstitutionAddressPeriod"
-        ADD CONSTRAINT "FK_PostSecondaryInstitutionAddressPeriod_PostSeconda_501596fdf1"
-        FOREIGN KEY ("PostSecondaryInstitution_DocumentId", "AddressOrdinal")
-        REFERENCES "edfi"."PostSecondaryInstitutionAddress" ("PostSecondaryInstitution_DocumentId", "Ordinal")
+        ADD CONSTRAINT "FK_PostSecondaryInstitutionAddressPeriod_PostSeconda_5c8390972c"
+        FOREIGN KEY ("ParentCollectionItemId", "PostSecondaryInstitution_DocumentId")
+        REFERENCES "edfi"."PostSecondaryInstitutionAddress" ("CollectionItemId", "PostSecondaryInstitution_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -17765,14 +18492,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_PostSecondaryInstitutionIndicatorPeriod_PostSecon_df4c6c75f0'
+        WHERE conname = 'FK_PostSecondaryInstitutionIndicatorPeriod_PostSecon_c7c36c1d55'
         AND conrelid = to_regclass('"edfi"."PostSecondaryInstitutionIndicatorPeriod"')
     )
     THEN
         ALTER TABLE "edfi"."PostSecondaryInstitutionIndicatorPeriod"
-        ADD CONSTRAINT "FK_PostSecondaryInstitutionIndicatorPeriod_PostSecon_df4c6c75f0"
-        FOREIGN KEY ("PostSecondaryInstitution_DocumentId", "IndicatorOrdinal")
-        REFERENCES "edfi"."PostSecondaryInstitutionIndicator" ("PostSecondaryInstitution_DocumentId", "Ordinal")
+        ADD CONSTRAINT "FK_PostSecondaryInstitutionIndicatorPeriod_PostSecon_c7c36c1d55"
+        FOREIGN KEY ("ParentCollectionItemId", "PostSecondaryInstitution_DocumentId")
+        REFERENCES "edfi"."PostSecondaryInstitutionIndicator" ("CollectionItemId", "PostSecondaryInstitution_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -19386,8 +20113,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."SchoolAddressPeriod"
         ADD CONSTRAINT "FK_SchoolAddressPeriod_SchoolAddress"
-        FOREIGN KEY ("School_DocumentId", "AddressOrdinal")
-        REFERENCES "edfi"."SchoolAddress" ("School_DocumentId", "Ordinal")
+        FOREIGN KEY ("ParentCollectionItemId", "School_DocumentId")
+        REFERENCES "edfi"."SchoolAddress" ("CollectionItemId", "School_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -19403,8 +20130,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."SchoolIndicatorPeriod"
         ADD CONSTRAINT "FK_SchoolIndicatorPeriod_SchoolIndicator"
-        FOREIGN KEY ("School_DocumentId", "IndicatorOrdinal")
-        REFERENCES "edfi"."SchoolIndicator" ("School_DocumentId", "Ordinal")
+        FOREIGN KEY ("ParentCollectionItemId", "School_DocumentId")
+        REFERENCES "edfi"."SchoolIndicator" ("CollectionItemId", "School_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -20831,8 +21558,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StaffAddressPeriod"
         ADD CONSTRAINT "FK_StaffAddressPeriod_StaffAddress"
-        FOREIGN KEY ("Staff_DocumentId", "AddressOrdinal")
-        REFERENCES "edfi"."StaffAddress" ("Staff_DocumentId", "Ordinal")
+        FOREIGN KEY ("ParentCollectionItemId", "Staff_DocumentId")
+        REFERENCES "edfi"."StaffAddress" ("CollectionItemId", "Staff_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -20865,8 +21592,8 @@ BEGIN
     THEN
         ALTER TABLE "edfi"."StaffLanguageUs"
         ADD CONSTRAINT "FK_StaffLanguageUs_StaffLanguage"
-        FOREIGN KEY ("Staff_DocumentId", "LanguageOrdinal")
-        REFERENCES "edfi"."StaffLanguage" ("Staff_DocumentId", "Ordinal")
+        FOREIGN KEY ("ParentCollectionItemId", "Staff_DocumentId")
+        REFERENCES "edfi"."StaffLanguage" ("CollectionItemId", "Staff_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -22236,14 +22963,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StateEducationAgencyAddressPeriod_StateEducationA_42f8be2abd'
+        WHERE conname = 'FK_StateEducationAgencyAddressPeriod_StateEducationA_855404dd70'
         AND conrelid = to_regclass('"edfi"."StateEducationAgencyAddressPeriod"')
     )
     THEN
         ALTER TABLE "edfi"."StateEducationAgencyAddressPeriod"
-        ADD CONSTRAINT "FK_StateEducationAgencyAddressPeriod_StateEducationA_42f8be2abd"
-        FOREIGN KEY ("StateEducationAgency_DocumentId", "AddressOrdinal")
-        REFERENCES "edfi"."StateEducationAgencyAddress" ("StateEducationAgency_DocumentId", "Ordinal")
+        ADD CONSTRAINT "FK_StateEducationAgencyAddressPeriod_StateEducationA_855404dd70"
+        FOREIGN KEY ("ParentCollectionItemId", "StateEducationAgency_DocumentId")
+        REFERENCES "edfi"."StateEducationAgencyAddress" ("CollectionItemId", "StateEducationAgency_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -22253,14 +22980,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StateEducationAgencyIndicatorPeriod_StateEducatio_5fc7a5504a'
+        WHERE conname = 'FK_StateEducationAgencyIndicatorPeriod_StateEducatio_6948880c33'
         AND conrelid = to_regclass('"edfi"."StateEducationAgencyIndicatorPeriod"')
     )
     THEN
         ALTER TABLE "edfi"."StateEducationAgencyIndicatorPeriod"
-        ADD CONSTRAINT "FK_StateEducationAgencyIndicatorPeriod_StateEducatio_5fc7a5504a"
-        FOREIGN KEY ("StateEducationAgency_DocumentId", "IndicatorOrdinal")
-        REFERENCES "edfi"."StateEducationAgencyIndicator" ("StateEducationAgency_DocumentId", "Ordinal")
+        ADD CONSTRAINT "FK_StateEducationAgencyIndicatorPeriod_StateEducatio_6948880c33"
+        FOREIGN KEY ("ParentCollectionItemId", "StateEducationAgency_DocumentId")
+        REFERENCES "edfi"."StateEducationAgencyIndicator" ("CollectionItemId", "StateEducationAgency_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -23460,14 +24187,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentStudentObjectiveAssessmentPerfor_74724f9046'
+        WHERE conname = 'FK_StudentAssessmentStudentObjectiveAssessmentPerfor_3ccc22f916'
         AND conrelid = to_regclass('"edfi"."StudentAssessmentStudentObjectiveAssessmentPerformanceLevel"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAssessmentStudentObjectiveAssessmentPerformanceLevel"
-        ADD CONSTRAINT "FK_StudentAssessmentStudentObjectiveAssessmentPerfor_74724f9046"
-        FOREIGN KEY ("StudentAssessment_DocumentId", "StudentObjectiveAssessmentOrdinal")
-        REFERENCES "edfi"."StudentAssessmentStudentObjectiveAssessment" ("StudentAssessment_DocumentId", "Ordinal")
+        ADD CONSTRAINT "FK_StudentAssessmentStudentObjectiveAssessmentPerfor_3ccc22f916"
+        FOREIGN KEY ("ParentCollectionItemId", "StudentAssessment_DocumentId")
+        REFERENCES "edfi"."StudentAssessmentStudentObjectiveAssessment" ("CollectionItemId", "StudentAssessment_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -23528,14 +24255,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentAssessmentStudentObjectiveAssessmentScoreR_c3d788d3be'
+        WHERE conname = 'FK_StudentAssessmentStudentObjectiveAssessmentScoreR_ab1c9acbb5'
         AND conrelid = to_regclass('"edfi"."StudentAssessmentStudentObjectiveAssessmentScoreResult"')
     )
     THEN
         ALTER TABLE "edfi"."StudentAssessmentStudentObjectiveAssessmentScoreResult"
-        ADD CONSTRAINT "FK_StudentAssessmentStudentObjectiveAssessmentScoreR_c3d788d3be"
-        FOREIGN KEY ("StudentAssessment_DocumentId", "StudentObjectiveAssessmentOrdinal")
-        REFERENCES "edfi"."StudentAssessmentStudentObjectiveAssessment" ("StudentAssessment_DocumentId", "Ordinal")
+        ADD CONSTRAINT "FK_StudentAssessmentStudentObjectiveAssessmentScoreR_ab1c9acbb5"
+        FOREIGN KEY ("ParentCollectionItemId", "StudentAssessment_DocumentId")
+        REFERENCES "edfi"."StudentAssessmentStudentObjectiveAssessment" ("CollectionItemId", "StudentAssessment_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -25568,14 +26295,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociationAddressPer_882344fb2c'
+        WHERE conname = 'FK_StudentEducationOrganizationAssociationAddressPer_13ffaeb11b'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationAddressPeriod"')
     )
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationAssociationAddressPeriod"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationAddressPer_882344fb2c"
-        FOREIGN KEY ("StudentEducationOrganizationAssociation_DocumentId", "AddressOrdinal")
-        REFERENCES "edfi"."StudentEducationOrganizationAssociationAddress" ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal")
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationAddressPer_13ffaeb11b"
+        FOREIGN KEY ("ParentCollectionItemId", "StudentEducationOrganizationAssociation_DocumentId")
+        REFERENCES "edfi"."StudentEducationOrganizationAssociationAddress" ("CollectionItemId", "StudentEducationOrganizationAssociation_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -25602,31 +26329,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociationDisability_5bf2fe67fc'
+        WHERE conname = 'FK_StudentEducationOrganizationAssociationDisability_544699a9b3'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationDisabilityDesignation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationAssociationDisabilityDesignation"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationDisability_5bf2fe67fc"
-        FOREIGN KEY ("StudentEducationOrganizationAssociation_DocumentId", "DisabilityOrdinal")
-        REFERENCES "edfi"."StudentEducationOrganizationAssociationDisability" ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal")
-        ON DELETE CASCADE
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociationLanguageUs_59614d5e72'
-        AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationLanguageUs"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentEducationOrganizationAssociationLanguageUs"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationLanguageUs_59614d5e72"
-        FOREIGN KEY ("StudentEducationOrganizationAssociation_DocumentId", "LanguageOrdinal")
-        REFERENCES "edfi"."StudentEducationOrganizationAssociationLanguage" ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal")
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationDisability_544699a9b3"
+        FOREIGN KEY ("ParentCollectionItemId", "StudentEducationOrganizationAssociation_DocumentId")
+        REFERENCES "edfi"."StudentEducationOrganizationAssociationDisability" ("CollectionItemId", "StudentEducationOrganizationAssociation_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -25653,14 +26363,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociationStudentCha_c57ff508ac'
-        AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationStudentCharac_a18fcf0ac3"')
+        WHERE conname = 'FK_StudentEducationOrganizationAssociationLanguageUs_ea236b4594'
+        AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationLanguageUs"')
     )
     THEN
-        ALTER TABLE "edfi"."StudentEducationOrganizationAssociationStudentCharac_a18fcf0ac3"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationStudentCha_c57ff508ac"
-        FOREIGN KEY ("StudentEducationOrganizationAssociation_DocumentId", "StudentCharacteristicOrdinal")
-        REFERENCES "edfi"."StudentEducationOrganizationAssociationStudentCharacteristic" ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal")
+        ALTER TABLE "edfi"."StudentEducationOrganizationAssociationLanguageUs"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationLanguageUs_ea236b4594"
+        FOREIGN KEY ("ParentCollectionItemId", "StudentEducationOrganizationAssociation_DocumentId")
+        REFERENCES "edfi"."StudentEducationOrganizationAssociationLanguage" ("CollectionItemId", "StudentEducationOrganizationAssociation_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -25670,14 +26380,31 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentEducationOrganizationAssociationStudentInd_5c7428b153'
+        WHERE conname = 'FK_StudentEducationOrganizationAssociationStudentCha_acf4a255c4'
+        AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationStudentCharac_a18fcf0ac3"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentEducationOrganizationAssociationStudentCharac_a18fcf0ac3"
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationStudentCha_acf4a255c4"
+        FOREIGN KEY ("ParentCollectionItemId", "StudentEducationOrganizationAssociation_DocumentId")
+        REFERENCES "edfi"."StudentEducationOrganizationAssociationStudentCharacteristic" ("CollectionItemId", "StudentEducationOrganizationAssociation_DocumentId")
+        ON DELETE CASCADE
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentEducationOrganizationAssociationStudentInd_7cddc78ee5'
         AND conrelid = to_regclass('"edfi"."StudentEducationOrganizationAssociationStudentIndicatorPeriod"')
     )
     THEN
         ALTER TABLE "edfi"."StudentEducationOrganizationAssociationStudentIndicatorPeriod"
-        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationStudentInd_5c7428b153"
-        FOREIGN KEY ("StudentEducationOrganizationAssociation_DocumentId", "StudentIndicatorOrdinal")
-        REFERENCES "edfi"."StudentEducationOrganizationAssociationStudentIndicator" ("StudentEducationOrganizationAssociation_DocumentId", "Ordinal")
+        ADD CONSTRAINT "FK_StudentEducationOrganizationAssociationStudentInd_7cddc78ee5"
+        FOREIGN KEY ("ParentCollectionItemId", "StudentEducationOrganizationAssociation_DocumentId")
+        REFERENCES "edfi"."StudentEducationOrganizationAssociationStudentIndicator" ("CollectionItemId", "StudentEducationOrganizationAssociation_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -25976,14 +26703,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentHealthAdditionalImmunizationDate_StudentHe_8dfa0308c9'
+        WHERE conname = 'FK_StudentHealthAdditionalImmunizationDate_StudentHe_12bb1e27d2'
         AND conrelid = to_regclass('"edfi"."StudentHealthAdditionalImmunizationDate"')
     )
     THEN
         ALTER TABLE "edfi"."StudentHealthAdditionalImmunizationDate"
-        ADD CONSTRAINT "FK_StudentHealthAdditionalImmunizationDate_StudentHe_8dfa0308c9"
-        FOREIGN KEY ("StudentHealth_DocumentId", "AdditionalImmunizationOrdinal")
-        REFERENCES "edfi"."StudentHealthAdditionalImmunization" ("StudentHealth_DocumentId", "Ordinal")
+        ADD CONSTRAINT "FK_StudentHealthAdditionalImmunizationDate_StudentHe_12bb1e27d2"
+        FOREIGN KEY ("ParentCollectionItemId", "StudentHealth_DocumentId")
+        REFERENCES "edfi"."StudentHealthAdditionalImmunization" ("CollectionItemId", "StudentHealth_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -25993,14 +26720,14 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentHealthRequiredImmunizationDate_StudentHeal_8dfb06c379'
+        WHERE conname = 'FK_StudentHealthRequiredImmunizationDate_StudentHeal_e78d432c3d'
         AND conrelid = to_regclass('"edfi"."StudentHealthRequiredImmunizationDate"')
     )
     THEN
         ALTER TABLE "edfi"."StudentHealthRequiredImmunizationDate"
-        ADD CONSTRAINT "FK_StudentHealthRequiredImmunizationDate_StudentHeal_8dfb06c379"
-        FOREIGN KEY ("StudentHealth_DocumentId", "RequiredImmunizationOrdinal")
-        REFERENCES "edfi"."StudentHealthRequiredImmunization" ("StudentHealth_DocumentId", "Ordinal")
+        ADD CONSTRAINT "FK_StudentHealthRequiredImmunizationDate_StudentHeal_e78d432c3d"
+        FOREIGN KEY ("ParentCollectionItemId", "StudentHealth_DocumentId")
+        REFERENCES "edfi"."StudentHealthRequiredImmunization" ("CollectionItemId", "StudentHealth_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -29189,14 +29916,31 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSpecialEducationProgramAssociationDisabili_96a851150a'
+        WHERE conname = 'FK_StudentSpecialEducationProgramAssociationDisabili_806d9516c0'
         AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramAssociationDisabilityDesignation"')
     )
     THEN
         ALTER TABLE "edfi"."StudentSpecialEducationProgramAssociationDisabilityDesignation"
-        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociationDisabili_96a851150a"
-        FOREIGN KEY ("StudentSpecialEducationProgramAssociation_DocumentId", "DisabilityOrdinal")
-        REFERENCES "edfi"."StudentSpecialEducationProgramAssociationDisability" ("StudentSpecialEducationProgramAssociation_DocumentId", "Ordinal")
+        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociationDisabili_806d9516c0"
+        FOREIGN KEY ("ParentCollectionItemId", "StudentSpecialEducationProgramAssociation_DocumentId")
+        REFERENCES "edfi"."StudentSpecialEducationProgramAssociationDisability" ("CollectionItemId", "StudentSpecialEducationProgramAssociation_DocumentId")
+        ON DELETE CASCADE
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentSpecialEducationProgramAssociationSpecialE_6a294f85cb'
+        AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramAssociationSpecialEduc_8dcc58d3fd"')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentSpecialEducationProgramAssociationSpecialEduc_8dcc58d3fd"
+        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociationSpecialE_6a294f85cb"
+        FOREIGN KEY ("ParentCollectionItemId", "StudentSpecialEducationProgramAssociation_DocumentId")
+        REFERENCES "edfi"."StudentSpecialEducationProgramAssociationSpecialEduc_a51ff9be2b" ("CollectionItemId", "StudentSpecialEducationProgramAssociation_DocumentId")
         ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
@@ -29215,23 +29959,6 @@ BEGIN
         FOREIGN KEY ("SpecialEducationProgramServiceServiceProviderStaff_DocumentId", "SpecialEducationProgramServiceServiceProviderStaff_S_464a707dc3")
         REFERENCES "edfi"."Staff" ("DocumentId", "StaffUniqueId")
         ON DELETE NO ACTION
-        ON UPDATE NO ACTION;
-    END IF;
-END $$;
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_StudentSpecialEducationProgramAssociationSpecialE_e3f7f6f5a5'
-        AND conrelid = to_regclass('"edfi"."StudentSpecialEducationProgramAssociationSpecialEduc_8dcc58d3fd"')
-    )
-    THEN
-        ALTER TABLE "edfi"."StudentSpecialEducationProgramAssociationSpecialEduc_8dcc58d3fd"
-        ADD CONSTRAINT "FK_StudentSpecialEducationProgramAssociationSpecialE_e3f7f6f5a5"
-        FOREIGN KEY ("StudentSpecialEducationProgramAssociation_DocumentId", "SpecialEducationProgramServiceOrdinal")
-        REFERENCES "edfi"."StudentSpecialEducationProgramAssociationSpecialEduc_a51ff9be2b" ("StudentSpecialEducationProgramAssociation_DocumentId", "Ordinal")
-        ON DELETE CASCADE
         ON UPDATE NO ACTION;
     END IF;
 END $$;
@@ -30768,6 +31495,8 @@ CREATE INDEX IF NOT EXISTS "IX_CommunityOrganizationAddress_LocaleDescriptor_Des
 
 CREATE INDEX IF NOT EXISTS "IX_CommunityOrganizationAddress_StateAbbreviationDes_a7582c4913" ON "edfi"."CommunityOrganizationAddress" ("StateAbbreviationDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_CommunityOrganizationAddressPeriod_ParentCollecti_6aa8425e21" ON "edfi"."CommunityOrganizationAddressPeriod" ("ParentCollectionItemId", "CommunityOrganization_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_CommunityOrganizationCategory_EducationOrganizati_9db6c60219" ON "edfi"."CommunityOrganizationCategory" ("EducationOrganizationCategoryDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_CommunityOrganizationIdentificationCode_Education_0ff4b282c2" ON "edfi"."CommunityOrganizationIdentificationCode" ("EducationOrganizationIdentificationSystemDescriptor__f63fb21ede");
@@ -30777,6 +31506,8 @@ CREATE INDEX IF NOT EXISTS "IX_CommunityOrganizationIndicator_IndicatorDescripto
 CREATE INDEX IF NOT EXISTS "IX_CommunityOrganizationIndicator_IndicatorGroupDesc_2d5d7a2e22" ON "edfi"."CommunityOrganizationIndicator" ("IndicatorGroupDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_CommunityOrganizationIndicator_IndicatorLevelDesc_6b9d6cc94c" ON "edfi"."CommunityOrganizationIndicator" ("IndicatorLevelDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_CommunityOrganizationIndicatorPeriod_ParentCollec_9e62b652f1" ON "edfi"."CommunityOrganizationIndicatorPeriod" ("ParentCollectionItemId", "CommunityOrganization_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_CommunityOrganizationInstitutionTelephone_Institu_d95bc0e80f" ON "edfi"."CommunityOrganizationInstitutionTelephone" ("InstitutionTelephoneNumberTypeDescriptor_DescriptorId");
 
@@ -30800,6 +31531,8 @@ CREATE INDEX IF NOT EXISTS "IX_CommunityProviderAddress_LocaleDescriptor_Descrip
 
 CREATE INDEX IF NOT EXISTS "IX_CommunityProviderAddress_StateAbbreviationDescrip_2b35938e53" ON "edfi"."CommunityProviderAddress" ("StateAbbreviationDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_CommunityProviderAddressPeriod_ParentCollectionIt_480a9a5eaa" ON "edfi"."CommunityProviderAddressPeriod" ("ParentCollectionItemId", "CommunityProvider_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_CommunityProviderCategory_EducationOrganizationCa_0e8d7c6d91" ON "edfi"."CommunityProviderCategory" ("EducationOrganizationCategoryDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_CommunityProviderIdentificationCode_EducationOrga_d42e9ecae2" ON "edfi"."CommunityProviderIdentificationCode" ("EducationOrganizationIdentificationSystemDescriptor__f63fb21ede");
@@ -30809,6 +31542,8 @@ CREATE INDEX IF NOT EXISTS "IX_CommunityProviderIndicator_IndicatorDescriptor_De
 CREATE INDEX IF NOT EXISTS "IX_CommunityProviderIndicator_IndicatorGroupDescript_fcd4b598d0" ON "edfi"."CommunityProviderIndicator" ("IndicatorGroupDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_CommunityProviderIndicator_IndicatorLevelDescript_7c7e18ecec" ON "edfi"."CommunityProviderIndicator" ("IndicatorLevelDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_CommunityProviderIndicatorPeriod_ParentCollection_a22d09009d" ON "edfi"."CommunityProviderIndicatorPeriod" ("ParentCollectionItemId", "CommunityProvider_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_CommunityProviderInstitutionTelephone_Institution_45a18fc25b" ON "edfi"."CommunityProviderInstitutionTelephone" ("InstitutionTelephoneNumberTypeDescriptor_DescriptorId");
 
@@ -30840,6 +31575,8 @@ CREATE INDEX IF NOT EXISTS "IX_ContactAddress_LocaleDescriptor_DescriptorId" ON 
 
 CREATE INDEX IF NOT EXISTS "IX_ContactAddress_StateAbbreviationDescriptor_DescriptorId" ON "edfi"."ContactAddress" ("StateAbbreviationDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_ContactAddressPeriod_ParentCollectionItemId_Conta_4010624d8b" ON "edfi"."ContactAddressPeriod" ("ParentCollectionItemId", "Contact_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_ContactElectronicMail_ElectronicMailTypeDescripto_542280c0e8" ON "edfi"."ContactElectronicMail" ("ElectronicMailTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_ContactInternationalAddress_AddressTypeDescriptor_9bf3eb6a88" ON "edfi"."ContactInternationalAddress" ("AddressTypeDescriptor_DescriptorId");
@@ -30849,6 +31586,8 @@ CREATE INDEX IF NOT EXISTS "IX_ContactInternationalAddress_CountryDescriptor_Des
 CREATE INDEX IF NOT EXISTS "IX_ContactLanguage_LanguageDescriptor_DescriptorId" ON "edfi"."ContactLanguage" ("LanguageDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_ContactLanguageUs_LanguageUseDescriptor_DescriptorId" ON "edfi"."ContactLanguageUs" ("LanguageUseDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_ContactLanguageUs_ParentCollectionItemId_Contact_DocumentId" ON "edfi"."ContactLanguageUs" ("ParentCollectionItemId", "Contact_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_ContactOtherName_OtherNameTypeDescriptor_DescriptorId" ON "edfi"."ContactOtherName" ("OtherNameTypeDescriptor_DescriptorId");
 
@@ -31008,6 +31747,8 @@ CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkAddress_LocaleDescrip
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkAddress_StateAbbrevia_d47eeda2a0" ON "edfi"."EducationOrganizationNetworkAddress" ("StateAbbreviationDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkAddressPeriod_ParentC_114960f234" ON "edfi"."EducationOrganizationNetworkAddressPeriod" ("ParentCollectionItemId", "EducationOrganizationNetwork_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkAssociation_Education_2f301c8099" ON "edfi"."EducationOrganizationNetworkAssociation" ("EducationOrganizationNetwork_DocumentId", "EducationOrganizationNetwork_EducationOrganizationNetworkId");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkAssociation_MemberEdu_de04a516ed" ON "edfi"."EducationOrganizationNetworkAssociation" ("MemberEducationOrganization_DocumentId", "MemberEducationOrganization_EducationOrganizationId");
@@ -31021,6 +31762,8 @@ CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkIndicator_IndicatorDe
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkIndicator_IndicatorGr_8c50988a26" ON "edfi"."EducationOrganizationNetworkIndicator" ("IndicatorGroupDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkIndicator_IndicatorLe_09b7eed2f6" ON "edfi"."EducationOrganizationNetworkIndicator" ("IndicatorLevelDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkIndicatorPeriod_Paren_ee23069fb8" ON "edfi"."EducationOrganizationNetworkIndicatorPeriod" ("ParentCollectionItemId", "EducationOrganizationNetwork_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationOrganizationNetworkInstitutionTelephone__c7de807761" ON "edfi"."EducationOrganizationNetworkInstitutionTelephone" ("InstitutionTelephoneNumberTypeDescriptor_DescriptorId");
 
@@ -31042,6 +31785,8 @@ CREATE INDEX IF NOT EXISTS "IX_EducationServiceCenterAddress_LocaleDescriptor_De
 
 CREATE INDEX IF NOT EXISTS "IX_EducationServiceCenterAddress_StateAbbreviationDe_48536b3c24" ON "edfi"."EducationServiceCenterAddress" ("StateAbbreviationDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_EducationServiceCenterAddressPeriod_ParentCollect_d3aed3c8a5" ON "edfi"."EducationServiceCenterAddressPeriod" ("ParentCollectionItemId", "EducationServiceCenter_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_EducationServiceCenterCategory_EducationOrganizat_d56e08dd6a" ON "edfi"."EducationServiceCenterCategory" ("EducationOrganizationCategoryDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationServiceCenterIdentificationCode_Educatio_493f499667" ON "edfi"."EducationServiceCenterIdentificationCode" ("EducationOrganizationIdentificationSystemDescriptor__f63fb21ede");
@@ -31051,6 +31796,8 @@ CREATE INDEX IF NOT EXISTS "IX_EducationServiceCenterIndicator_IndicatorDescript
 CREATE INDEX IF NOT EXISTS "IX_EducationServiceCenterIndicator_IndicatorGroupDes_cdb232e75b" ON "edfi"."EducationServiceCenterIndicator" ("IndicatorGroupDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationServiceCenterIndicator_IndicatorLevelDes_000581382c" ON "edfi"."EducationServiceCenterIndicator" ("IndicatorLevelDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_EducationServiceCenterIndicatorPeriod_ParentColle_fc5991af5b" ON "edfi"."EducationServiceCenterIndicatorPeriod" ("ParentCollectionItemId", "EducationServiceCenter_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_EducationServiceCenterInstitutionTelephone_Instit_9a980e8778" ON "edfi"."EducationServiceCenterInstitutionTelephone" ("InstitutionTelephoneNumberTypeDescriptor_DescriptorId");
 
@@ -31116,6 +31863,8 @@ CREATE INDEX IF NOT EXISTS "IX_GraduationPlanCreditsByCours_WhenTakenGradeLevelD
 
 CREATE INDEX IF NOT EXISTS "IX_GraduationPlanCreditsByCoursCours_CourseCourse_Do_e4b419eea1" ON "edfi"."GraduationPlanCreditsByCoursCours" ("CourseCourse_DocumentId", "CourseCourse_CourseCode", "CourseCourse_EducationOrganizationId");
 
+CREATE INDEX IF NOT EXISTS "IX_GraduationPlanCreditsByCoursCours_ParentCollectio_3ca0b1bd77" ON "edfi"."GraduationPlanCreditsByCoursCours" ("ParentCollectionItemId", "GraduationPlan_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_GraduationPlanCreditsByCreditCategory_CreditCateg_e8c54e1810" ON "edfi"."GraduationPlanCreditsByCreditCategory" ("CreditCategoryDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_GraduationPlanCreditsByCreditCategory_CreditTypeD_777b92d7a4" ON "edfi"."GraduationPlanCreditsByCreditCategory" ("CreditTypeDescriptor_DescriptorId");
@@ -31133,6 +31882,8 @@ CREATE INDEX IF NOT EXISTS "IX_GraduationPlanRequiredAssessment_PerformanceLevel
 CREATE INDEX IF NOT EXISTS "IX_GraduationPlanRequiredAssessment_RequiredAssessme_70adae54f9" ON "edfi"."GraduationPlanRequiredAssessment" ("RequiredAssessmentAssessment_DocumentId", "RequiredAssessmentAssessment_AssessmentIdentifier", "RequiredAssessmentAssessment_Namespace");
 
 CREATE INDEX IF NOT EXISTS "IX_GraduationPlanRequiredAssessmentScore_AssessmentR_a87b789155" ON "edfi"."GraduationPlanRequiredAssessmentScore" ("AssessmentReportingMethodDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_GraduationPlanRequiredAssessmentScore_ParentColle_6344b15e70" ON "edfi"."GraduationPlanRequiredAssessmentScore" ("ParentCollectionItemId", "GraduationPlan_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_GraduationPlanRequiredAssessmentScore_ResultDatat_34d8007272" ON "edfi"."GraduationPlanRequiredAssessmentScore" ("ResultDatatypeTypeDescriptor_DescriptorId");
 
@@ -31262,6 +32013,8 @@ CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgencyAddress_LocaleDescriptor_Desc
 
 CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgencyAddress_StateAbbreviationDesc_9261cd238d" ON "edfi"."LocalEducationAgencyAddress" ("StateAbbreviationDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgencyAddressPeriod_ParentCollectio_9cf4585ef5" ON "edfi"."LocalEducationAgencyAddressPeriod" ("ParentCollectionItemId", "LocalEducationAgency_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgencyCategory_EducationOrganizatio_84b5d6f9db" ON "edfi"."LocalEducationAgencyCategory" ("EducationOrganizationCategoryDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgencyIdentificationCode_EducationO_5f5617e985" ON "edfi"."LocalEducationAgencyIdentificationCode" ("EducationOrganizationIdentificationSystemDescriptor__f63fb21ede");
@@ -31271,6 +32024,8 @@ CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgencyIndicator_IndicatorDescriptor
 CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgencyIndicator_IndicatorGroupDescr_5c276d50ec" ON "edfi"."LocalEducationAgencyIndicator" ("IndicatorGroupDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgencyIndicator_IndicatorLevelDescr_fc40c2908d" ON "edfi"."LocalEducationAgencyIndicator" ("IndicatorLevelDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgencyIndicatorPeriod_ParentCollect_fdb78f11d5" ON "edfi"."LocalEducationAgencyIndicatorPeriod" ("ParentCollectionItemId", "LocalEducationAgency_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_LocalEducationAgencyInstitutionTelephone_Institut_3217df39e6" ON "edfi"."LocalEducationAgencyInstitutionTelephone" ("InstitutionTelephoneNumberTypeDescriptor_DescriptorId");
 
@@ -31340,6 +32095,8 @@ CREATE INDEX IF NOT EXISTS "IX_OrganizationDepartmentAddress_LocaleDescriptor_De
 
 CREATE INDEX IF NOT EXISTS "IX_OrganizationDepartmentAddress_StateAbbreviationDe_93f66f6c78" ON "edfi"."OrganizationDepartmentAddress" ("StateAbbreviationDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_OrganizationDepartmentAddressPeriod_ParentCollect_b350b6d2ef" ON "edfi"."OrganizationDepartmentAddressPeriod" ("ParentCollectionItemId", "OrganizationDepartment_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_OrganizationDepartmentCategory_EducationOrganizat_835e0e4465" ON "edfi"."OrganizationDepartmentCategory" ("EducationOrganizationCategoryDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_OrganizationDepartmentIdentificationCode_Educatio_15d3142921" ON "edfi"."OrganizationDepartmentIdentificationCode" ("EducationOrganizationIdentificationSystemDescriptor__f63fb21ede");
@@ -31349,6 +32106,8 @@ CREATE INDEX IF NOT EXISTS "IX_OrganizationDepartmentIndicator_IndicatorDescript
 CREATE INDEX IF NOT EXISTS "IX_OrganizationDepartmentIndicator_IndicatorGroupDes_834f140e5e" ON "edfi"."OrganizationDepartmentIndicator" ("IndicatorGroupDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_OrganizationDepartmentIndicator_IndicatorLevelDes_b77b1184f8" ON "edfi"."OrganizationDepartmentIndicator" ("IndicatorLevelDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_OrganizationDepartmentIndicatorPeriod_ParentColle_6550b2ce6a" ON "edfi"."OrganizationDepartmentIndicatorPeriod" ("ParentCollectionItemId", "OrganizationDepartment_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_OrganizationDepartmentInstitutionTelephone_Instit_423a33fd12" ON "edfi"."OrganizationDepartmentInstitutionTelephone" ("InstitutionTelephoneNumberTypeDescriptor_DescriptorId");
 
@@ -31376,6 +32135,8 @@ CREATE INDEX IF NOT EXISTS "IX_PostSecondaryInstitutionAddress_LocaleDescriptor_
 
 CREATE INDEX IF NOT EXISTS "IX_PostSecondaryInstitutionAddress_StateAbbreviation_3b19bb40f0" ON "edfi"."PostSecondaryInstitutionAddress" ("StateAbbreviationDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_PostSecondaryInstitutionAddressPeriod_ParentColle_f104119516" ON "edfi"."PostSecondaryInstitutionAddressPeriod" ("ParentCollectionItemId", "PostSecondaryInstitution_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_PostSecondaryInstitutionCategory_EducationOrganiz_b08286e750" ON "edfi"."PostSecondaryInstitutionCategory" ("EducationOrganizationCategoryDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_PostSecondaryInstitutionIdentificationCode_Educat_0fbbd2c625" ON "edfi"."PostSecondaryInstitutionIdentificationCode" ("EducationOrganizationIdentificationSystemDescriptor__f63fb21ede");
@@ -31385,6 +32146,8 @@ CREATE INDEX IF NOT EXISTS "IX_PostSecondaryInstitutionIndicator_IndicatorDescri
 CREATE INDEX IF NOT EXISTS "IX_PostSecondaryInstitutionIndicator_IndicatorGroupD_bcad61aa80" ON "edfi"."PostSecondaryInstitutionIndicator" ("IndicatorGroupDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_PostSecondaryInstitutionIndicator_IndicatorLevelD_43f3858c65" ON "edfi"."PostSecondaryInstitutionIndicator" ("IndicatorLevelDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_PostSecondaryInstitutionIndicatorPeriod_ParentCol_2f6540959c" ON "edfi"."PostSecondaryInstitutionIndicatorPeriod" ("ParentCollectionItemId", "PostSecondaryInstitution_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_PostSecondaryInstitutionInstitutionTelephone_Inst_09ea72b4c6" ON "edfi"."PostSecondaryInstitutionInstitutionTelephone" ("InstitutionTelephoneNumberTypeDescriptor_DescriptorId");
 
@@ -31500,6 +32263,8 @@ CREATE INDEX IF NOT EXISTS "IX_SchoolAddress_LocaleDescriptor_DescriptorId" ON "
 
 CREATE INDEX IF NOT EXISTS "IX_SchoolAddress_StateAbbreviationDescriptor_DescriptorId" ON "edfi"."SchoolAddress" ("StateAbbreviationDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_SchoolAddressPeriod_ParentCollectionItemId_School_DocumentId" ON "edfi"."SchoolAddressPeriod" ("ParentCollectionItemId", "School_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_SchoolCategory_SchoolCategoryDescriptor_DescriptorId" ON "edfi"."SchoolCategory" ("SchoolCategoryDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_SchoolEducationOrganizationCategory_EducationOrga_e6457af06c" ON "edfi"."SchoolEducationOrganizationCategory" ("EducationOrganizationCategoryDescriptor_DescriptorId");
@@ -31513,6 +32278,8 @@ CREATE INDEX IF NOT EXISTS "IX_SchoolIndicator_IndicatorDescriptor_DescriptorId"
 CREATE INDEX IF NOT EXISTS "IX_SchoolIndicator_IndicatorGroupDescriptor_DescriptorId" ON "edfi"."SchoolIndicator" ("IndicatorGroupDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_SchoolIndicator_IndicatorLevelDescriptor_DescriptorId" ON "edfi"."SchoolIndicator" ("IndicatorLevelDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_SchoolIndicatorPeriod_ParentCollectionItemId_Scho_c989d4508b" ON "edfi"."SchoolIndicatorPeriod" ("ParentCollectionItemId", "School_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_SchoolInstitutionTelephone_InstitutionTelephoneNu_7ec8b6e46d" ON "edfi"."SchoolInstitutionTelephone" ("InstitutionTelephoneNumberTypeDescriptor_DescriptorId");
 
@@ -31587,6 +32354,8 @@ CREATE INDEX IF NOT EXISTS "IX_StaffAddress_AddressTypeDescriptor_DescriptorId" 
 CREATE INDEX IF NOT EXISTS "IX_StaffAddress_LocaleDescriptor_DescriptorId" ON "edfi"."StaffAddress" ("LocaleDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffAddress_StateAbbreviationDescriptor_DescriptorId" ON "edfi"."StaffAddress" ("StateAbbreviationDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_StaffAddressPeriod_ParentCollectionItemId_Staff_DocumentId" ON "edfi"."StaffAddressPeriod" ("ParentCollectionItemId", "Staff_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffAncestryEthnicOrigin_AncestryEthnicOriginDes_feaf40f85c" ON "edfi"."StaffAncestryEthnicOrigin" ("AncestryEthnicOriginDescriptor_DescriptorId");
 
@@ -31664,6 +32433,8 @@ CREATE INDEX IF NOT EXISTS "IX_StaffLanguage_LanguageDescriptor_DescriptorId" ON
 
 CREATE INDEX IF NOT EXISTS "IX_StaffLanguageUs_LanguageUseDescriptor_DescriptorId" ON "edfi"."StaffLanguageUs" ("LanguageUseDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StaffLanguageUs_ParentCollectionItemId_Staff_DocumentId" ON "edfi"."StaffLanguageUs" ("ParentCollectionItemId", "Staff_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_StaffLeave_StaffLeaveEventCategoryDescriptor_DescriptorId" ON "edfi"."StaffLeave" ("StaffLeaveEventCategoryDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StaffLeave_Staff_DocumentId_Staff_StaffUniqueId" ON "edfi"."StaffLeave" ("Staff_DocumentId", "Staff_StaffUniqueId");
@@ -31722,6 +32493,8 @@ CREATE INDEX IF NOT EXISTS "IX_StateEducationAgencyAddress_LocaleDescriptor_Desc
 
 CREATE INDEX IF NOT EXISTS "IX_StateEducationAgencyAddress_StateAbbreviationDesc_bfead78592" ON "edfi"."StateEducationAgencyAddress" ("StateAbbreviationDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StateEducationAgencyAddressPeriod_ParentCollectio_03eb7349ce" ON "edfi"."StateEducationAgencyAddressPeriod" ("ParentCollectionItemId", "StateEducationAgency_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_StateEducationAgencyCategory_EducationOrganizatio_303fee0ca3" ON "edfi"."StateEducationAgencyCategory" ("EducationOrganizationCategoryDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StateEducationAgencyIdentificationCode_EducationO_c63186d5fd" ON "edfi"."StateEducationAgencyIdentificationCode" ("EducationOrganizationIdentificationSystemDescriptor__f63fb21ede");
@@ -31731,6 +32504,8 @@ CREATE INDEX IF NOT EXISTS "IX_StateEducationAgencyIndicator_IndicatorDescriptor
 CREATE INDEX IF NOT EXISTS "IX_StateEducationAgencyIndicator_IndicatorGroupDescr_7174d62c6f" ON "edfi"."StateEducationAgencyIndicator" ("IndicatorGroupDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StateEducationAgencyIndicator_IndicatorLevelDescr_aa6995f2e9" ON "edfi"."StateEducationAgencyIndicator" ("IndicatorLevelDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_StateEducationAgencyIndicatorPeriod_ParentCollect_60a11db9c8" ON "edfi"."StateEducationAgencyIndicatorPeriod" ("ParentCollectionItemId", "StateEducationAgency_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StateEducationAgencyInstitutionTelephone_Institut_ba57c82349" ON "edfi"."StateEducationAgencyInstitutionTelephone" ("InstitutionTelephoneNumberTypeDescriptor_DescriptorId");
 
@@ -31862,9 +32637,13 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentStudentObjectiveAssessmentPerfor
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentStudentObjectiveAssessmentPerfor_50f2141293" ON "edfi"."StudentAssessmentStudentObjectiveAssessmentPerformanceLevel" ("PerformanceLevelDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentStudentObjectiveAssessmentPerfor_60228f2e1e" ON "edfi"."StudentAssessmentStudentObjectiveAssessmentPerformanceLevel" ("ParentCollectionItemId", "StudentAssessment_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentStudentObjectiveAssessmentScoreR_6f77b39bed" ON "edfi"."StudentAssessmentStudentObjectiveAssessmentScoreResult" ("ResultDatatypeTypeDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentStudentObjectiveAssessmentScoreR_acce2b2224" ON "edfi"."StudentAssessmentStudentObjectiveAssessmentScoreResult" ("AssessmentReportingMethodDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentStudentObjectiveAssessmentScoreR_cef8b8adde" ON "edfi"."StudentAssessmentStudentObjectiveAssessmentScoreResult" ("ParentCollectionItemId", "StudentAssessment_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentCTEProgramAssociation_EducationOrganizatio_49d2cfb257" ON "edfi"."StudentCTEProgramAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
@@ -31960,6 +32739,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationAddress_Lo
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationAddress_St_352002e299" ON "edfi"."StudentEducationOrganizationAssociationAddress" ("StateAbbreviationDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationAddressPer_7f7de14569" ON "edfi"."StudentEducationOrganizationAssociationAddressPeriod" ("ParentCollectionItemId", "StudentEducationOrganizationAssociation_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationAncestryEt_9fea37dad3" ON "edfi"."StudentEducationOrganizationAssociationAncestryEthnicOrigin" ("AncestryEthnicOriginDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationCohortYear_9029471523" ON "edfi"."StudentEducationOrganizationAssociationCohortYear" ("CohortYearTypeDescriptor_DescriptorId");
@@ -31974,6 +32755,8 @@ CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationDisability
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationDisability_01b2afca0a" ON "edfi"."StudentEducationOrganizationAssociationDisabilityDesignation" ("DisabilityDesignationDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationDisability_070f6c39eb" ON "edfi"."StudentEducationOrganizationAssociationDisabilityDesignation" ("ParentCollectionItemId", "StudentEducationOrganizationAssociation_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationDisplacedS_0b0523a172" ON "edfi"."StudentEducationOrganizationAssociationDisplacedStudent" ("DisplacedStudentStatusDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationDisplacedS_61b3223270" ON "edfi"."StudentEducationOrganizationAssociationDisplacedStudent" ("DisplacedStudentCrisisEvent_DocumentId", "DisplacedStudentCrisisEvent_CrisisEventName");
@@ -31986,13 +32769,19 @@ CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationInternatio
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationLanguage_L_7fc82767d9" ON "edfi"."StudentEducationOrganizationAssociationLanguage" ("LanguageDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationLanguageUs_451b6546b9" ON "edfi"."StudentEducationOrganizationAssociationLanguageUs" ("ParentCollectionItemId", "StudentEducationOrganizationAssociation_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationLanguageUs_92b28c1bcd" ON "edfi"."StudentEducationOrganizationAssociationLanguageUs" ("LanguageUseDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationRace_RaceD_5d0c1a3cfa" ON "edfi"."StudentEducationOrganizationAssociationRace" ("RaceDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationStudentCha_9da524c027" ON "edfi"."StudentEducationOrganizationAssociationStudentCharac_a18fcf0ac3" ("ParentCollectionItemId", "StudentEducationOrganizationAssociation_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationStudentCha_7d804cc85d" ON "edfi"."StudentEducationOrganizationAssociationStudentCharacteristic" ("StudentCharacteristicDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationStudentIde_d0afa56b75" ON "edfi"."StudentEducationOrganizationAssociationStudentIdenti_c15030660d" ("StudentIdentificationSystemDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationStudentInd_60ef3eeb54" ON "edfi"."StudentEducationOrganizationAssociationStudentIndicatorPeriod" ("ParentCollectionItemId", "StudentEducationOrganizationAssociation_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentEducationOrganizationAssociationTelephone__f8bb45e322" ON "edfi"."StudentEducationOrganizationAssociationTelephone" ("TelephoneNumberTypeDescriptor_DescriptorId");
 
@@ -32020,7 +32809,11 @@ CREATE INDEX IF NOT EXISTS "IX_StudentHealth_NonMedicalImmunizationExemptionDesc
 
 CREATE INDEX IF NOT EXISTS "IX_StudentHealth_Student_DocumentId_Student_StudentUniqueId" ON "edfi"."StudentHealth" ("Student_DocumentId", "Student_StudentUniqueId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentHealthAdditionalImmunizationDate_ParentCol_55c7491026" ON "edfi"."StudentHealthAdditionalImmunizationDate" ("ParentCollectionItemId", "StudentHealth_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentHealthRequiredImmunization_ImmunizationTyp_47ef97afc9" ON "edfi"."StudentHealthRequiredImmunization" ("ImmunizationTypeDescriptor_DescriptorId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentHealthRequiredImmunizationDate_ParentColle_ba182f2b4a" ON "edfi"."StudentHealthRequiredImmunizationDate" ("ParentCollectionItemId", "StudentHealth_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentHomelessProgramAssociation_EducationOrgani_a1a781f908" ON "edfi"."StudentHomelessProgramAssociation" ("EducationOrganization_DocumentId", "EducationOrganization_EducationOrganizationId");
 
@@ -32312,9 +33105,13 @@ CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociationDisabili
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociationDisabili_5c034a375d" ON "edfi"."StudentSpecialEducationProgramAssociationDisabilityDesignation" ("DisabilityDesignationDescriptor_DescriptorId");
 
+CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociationDisabili_eb07dbe4ec" ON "edfi"."StudentSpecialEducationProgramAssociationDisabilityDesignation" ("ParentCollectionItemId", "StudentSpecialEducationProgramAssociation_DocumentId");
+
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociationProgramP_ce9710977a" ON "edfi"."StudentSpecialEducationProgramAssociationProgramPart_63017127ef" ("ParticipationStatusDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociationServiceP_11c1ea70ee" ON "edfi"."StudentSpecialEducationProgramAssociationServiceProvider" ("ServiceProviderStaff_DocumentId", "ServiceProviderStaff_StaffUniqueId");
+
+CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociationSpecialE_2d80214f4c" ON "edfi"."StudentSpecialEducationProgramAssociationSpecialEduc_8dcc58d3fd" ("ParentCollectionItemId", "StudentSpecialEducationProgramAssociation_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentSpecialEducationProgramAssociationSpecialE_97abf2be71" ON "edfi"."StudentSpecialEducationProgramAssociationSpecialEduc_8dcc58d3fd" ("SpecialEducationProgramServiceServiceProviderStaff_DocumentId", "SpecialEducationProgramServiceServiceProviderStaff_S_464a707dc3");
 

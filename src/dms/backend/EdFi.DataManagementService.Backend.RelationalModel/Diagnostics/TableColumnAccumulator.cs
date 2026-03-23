@@ -25,6 +25,7 @@ internal sealed class TableColumnAccumulator
         _resourceLabel = resourceLabel;
         Columns = new List<DbColumnModel>(table.Columns);
         Constraints = new List<TableConstraint>(table.Constraints);
+        IdentityMetadata = table.IdentityMetadata;
 
         var columnNames = table
             .Columns.Select(column => column.ColumnName.Value)
@@ -65,6 +66,11 @@ internal sealed class TableColumnAccumulator
     /// The accumulated constraint collection.
     /// </summary>
     public List<TableConstraint> Constraints { get; }
+
+    /// <summary>
+    /// The accumulated identity metadata for the table.
+    /// </summary>
+    public DbTableIdentityMetadata IdentityMetadata { get; set; }
 
     /// <summary>
     /// Adds a column and throws on name collision.
@@ -139,7 +145,12 @@ internal sealed class TableColumnAccumulator
     /// <returns>The updated table model.</returns>
     public DbTableModel Build()
     {
-        return Definition with { Columns = Columns.ToArray(), Constraints = Constraints.ToArray() };
+        return Definition with
+        {
+            Columns = Columns.ToArray(),
+            Constraints = Constraints.ToArray(),
+            IdentityMetadata = IdentityMetadata,
+        };
     }
 
     /// <summary>
