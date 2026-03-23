@@ -374,7 +374,9 @@ public sealed class MssqlDialect : SqlDialectBase
             IF NOT EXISTS (
                 SELECT 1 FROM sys.types t
                 JOIN sys.schemas s ON t.schema_id = s.schema_id
-                WHERE s.name = N'{escapedSchema}' AND t.name = N'{escapedType}'
+                WHERE s.name = N'{escapedSchema}'
+                  AND t.name = N'{escapedType}'
+                  AND t.is_table_type = 1
             )
             CREATE TYPE {qualifiedType} AS TABLE(
                 {QuoteIdentifier(columnName)} {columnType} NOT NULL

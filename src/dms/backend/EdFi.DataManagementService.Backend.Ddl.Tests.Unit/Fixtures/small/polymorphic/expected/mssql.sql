@@ -88,7 +88,9 @@ GO
 IF NOT EXISTS (
     SELECT 1 FROM sys.types t
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'dms' AND t.name = N'BigIntTable'
+    WHERE s.name = N'dms'
+      AND t.name = N'BigIntTable'
+      AND t.is_table_type = 1
 )
 CREATE TYPE [dms].[BigIntTable] AS TABLE(
     [Id] bigint NOT NULL
@@ -97,7 +99,9 @@ CREATE TYPE [dms].[BigIntTable] AS TABLE(
 IF NOT EXISTS (
     SELECT 1 FROM sys.types t
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'dms' AND t.name = N'UniqueIdentifierTable'
+    WHERE s.name = N'dms'
+      AND t.name = N'UniqueIdentifierTable'
+      AND t.is_table_type = 1
 )
 CREATE TYPE [dms].[UniqueIdentifierTable] AS TABLE(
     [Id] uniqueidentifier NOT NULL
