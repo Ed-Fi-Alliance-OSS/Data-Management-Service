@@ -46,13 +46,13 @@ The current authorization model also depends on companion tables and triggers th
 | `dms.StaffSecurableDocument` | Maps staff identifiers to securable documents. | Unchanged. |
 | `dms.StudentEducationOrganizationResponsibilityAuthorization` | Derives student responsibility authorization values. | Unchanged, but the projection must be preserved in tombstones. |
 
-The Change Queries feature does not alter these companion tables or their triggers. The transitional `EdFi.DataManagementService.Old.Postgresql` project may still be consulted to verify current authorization behavior, but the design does not depend on that project remaining the long-term implementation.
+The Change Queries feature does not alter these companion tables or their triggers. The transitional `EdFi.DataManagementService.Old.Postgresql` project may still be consulted to verify current authorization behavior, but the design does not depend on that project remaining the long-term implementation, and the resulting authorization semantics must hold for both PostgreSQL and MSSQL relational backends.
 
 ## Live Changed-Resource Authorization
 
 Implementation rule:
 
-- add `ChangeVersion` predicates to the existing live collection query logic
+- apply the existing live collection authorization filters after `dms.DocumentChangeEvent` candidate selection and verification against `dms.Document.ChangeVersion`
 - do not redesign the authorization predicates
 
 Expected effect:
@@ -205,7 +205,7 @@ Current authorization-maintenance triggers can update derived authorization colu
 Required behavior:
 
 - those updates must not change `dms.Document.ChangeVersion`
-- those updates must not create `dms.DocumentChangeEvent` rows if the optional journal is enabled
+- those updates must not create `dms.DocumentChangeEvent` rows
 - those updates must not create `dms.DocumentKeyChangeTracking` rows
 
 Reason:

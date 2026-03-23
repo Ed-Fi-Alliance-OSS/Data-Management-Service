@@ -42,13 +42,13 @@ Informative current touchpoints:
 
 Responsibilities:
 
-- issue changed-resource queries
+- issue redesign-aligned `journal + verify` changed-resource queries
 - issue delete queries
 - issue key-change queries
 - compute `availableChangeVersions`
 - insert tombstones on delete
 - insert key-change tracking rows when natural keys change
-- optionally issue journal-backed candidate queries when `dms.DocumentChangeEvent` is enabled
+- provision and resolve resource-key lookups for changed-resource execution
 
 Informative design-target touchpoints:
 
@@ -60,6 +60,7 @@ Informative design-target touchpoints:
 - `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/Steps/ExtractInputs/IdentityJsonPathsExtractor.cs`
 - `src/dms/backend/EdFi.DataManagementService.Backend.Plans`
 - `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql`
+- `src/dms/backend/EdFi.DataManagementService.Backend.Mssql`
 
 The transitional `EdFi.DataManagementService.Old.Postgresql` compatibility project may still be consulted as a current-behavior reference, but these touchpoints define the intended implementation seams so the planned replacement backend can absorb the feature without reframing the architecture.
 
@@ -68,17 +69,19 @@ The transitional `EdFi.DataManagementService.Old.Postgresql` compatibility proje
 Responsibilities:
 
 - maintain the global sequence
-- stamp canonical rows on insert and representation change
+- maintain resource-key lookup rows
+- stamp canonical rows on insert, representation change, and identity change
+- retain the live change journal
 - retain delete tombstones
 - retain key-change tracking rows
-- optionally retain live change journal entries
 
 Key tables:
 
+- `dms.ResourceKey`
 - `dms.Document`
+- `dms.DocumentChangeEvent`
 - `dms.DocumentDeleteTracking`
 - `dms.DocumentKeyChangeTracking`
-- optional `dms.DocumentChangeEvent`
 - `dms.EducationOrganizationHierarchyTermsLookup`
 - current authorization companion tables
 
@@ -116,60 +119,28 @@ The dedicated `/deletes` and `/keyChanges` routes must be registered before the 
 
 ## Execution Model
 
-The public feature contract supports two compatible internal execution patterns for changed-resource queries.
-
-## Pattern A: live-row execution
-
-This pattern queries `dms.Document` directly.
+Changed-resource execution uses the backend-redesign `journal + verify` model.
 
 Behavior:
 
-- filter by `ProjectName`, `ResourceName`, and the requested `ChangeVersion` window
-- apply the existing authorization filters
-- apply public `totalCount`, `offset`, and `limit` over the final authorized changed-resource result set
-- order by `ChangeVersion`, `DocumentPartitionKey`, and `Id`
-- return the current `EdfiDoc` payloads
-
-Why it exists:
-
-- it is the minimum required implementation for the feature
-- it does not require a new live-change journal table
-- it satisfies the spike preference for a canonical `ChangeVersion` column model
-
-## Pattern B: journal-assisted execution
-
-This pattern queries `dms.DocumentChangeEvent` first and verifies candidates against `dms.Document`.
-
-Behavior:
-
-1. read candidate rows from `dms.DocumentChangeEvent`
-2. filter candidates by resource and `ChangeVersion` window
-3. join back to `dms.Document`
-4. keep only rows where `dms.Document.ChangeVersion = dms.DocumentChangeEvent.ChangeVersion`
-5. apply the existing authorization filters
-6. continue candidate processing as needed so public `totalCount`, `offset`, and `limit` are evaluated over the surviving verified authorized rows rather than over raw journal candidates
-7. return the current `EdfiDoc` payloads for surviving documents
-
-Why it exists:
-
-- it aligns to the backend-redesign `journal + verify` model
-- it reduces direct scanning of the hot canonical table for large change windows
-- it does not change the public API contract
+1. resolve the routed resource to `dms.ResourceKey.ResourceKeyId`
+2. read candidate rows from `dms.DocumentChangeEvent`
+3. filter candidates by `ResourceKeyId` and the requested `ChangeVersion` window
+4. join candidates back to `dms.Document`
+5. keep only rows where `dms.Document.ChangeVersion = dms.DocumentChangeEvent.ChangeVersion`
+6. apply the existing authorization filters
+7. continue candidate processing as needed so public `totalCount`, `offset`, and `limit` are evaluated over the surviving verified authorized rows rather than over raw journal candidates
+8. return the current `EdfiDoc` payloads for surviving documents
 
 Required paging rule:
 
-- the journal-assisted path may over-fetch candidates or use an equivalent query shape, but it must preserve the same public paging and `totalCount` semantics as live-row execution
+- the `journal + verify` path may over-fetch candidates or use an equivalent query shape, but it must preserve the public paging and `totalCount` semantics of the changed-resource contract
 - internal candidate rows eliminated by verification or authorization must not consume public page slots
 
-## Execution model selection
+Required architectural rule:
 
-The feature design deliberately separates public contract from internal selection strategy.
-
-Required rule:
-
-- the same API contract must work whether the implementation uses direct live-row scans or the optional journal-assisted path
-
-This allows implementation planning to treat `dms.DocumentChangeEvent` as a conditional story without reopening the feature contract.
+- do not treat direct `dms.Document` range scans as the normative changed-resource execution model for DMS-843
+- the required live-query path is the same narrow-journal approach described in the backend-redesign update-tracking docs
 
 ## Delete Query Execution
 
@@ -213,17 +184,11 @@ The endpoint returns one synchronization surface regardless of the internal exec
 
 This follows the Ed-Fi ODS/API client workflow, which captures one synchronization version from `availableChangeVersions` and reuses it across `keyChanges`, changed-resource queries, and `deletes`; see the [client guide](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/using-the-changed-record-queries/).
 
-If the journal is not enabled:
+The participating sources are:
 
-- live side derives from `dms.Document.ChangeVersion`
-- delete side derives from `dms.DocumentDeleteTracking.ChangeVersion`
-- key-change side derives from `dms.DocumentKeyChangeTracking.ChangeVersion`
-
-If the journal is enabled:
-
-- live side derives from `dms.DocumentChangeEvent.ChangeVersion`
-- delete side derives from `dms.DocumentDeleteTracking.ChangeVersion`
-- key-change side derives from `dms.DocumentKeyChangeTracking.ChangeVersion`
+- live side from `dms.DocumentChangeEvent.ChangeVersion`
+- delete side from `dms.DocumentDeleteTracking.ChangeVersion`
+- key-change side from `dms.DocumentKeyChangeTracking.ChangeVersion`
 
 The response remains:
 
@@ -234,12 +199,9 @@ Required meaning:
 
 - `newestChangeVersion` is the ceiling across the active synchronization surface
 - if retained participating rows exist, `newestChangeVersion` is the greatest retained `ChangeVersion` across them
-- `oldestChangeVersion` is the replay floor for that same surface, meaning the lowest valid inclusive `minChangeVersion` from which the API can still return complete results
-- if the participating live, delete, and key-change surfaces have different replay floors, `oldestChangeVersion` is the greatest of those floors
-- when no purge-driven replay-floor advancement has occurred, `oldestChangeVersion` is `0`
-- when all participating sources are empty but replay-floor metadata exists, `newestChangeVersion = oldestChangeVersion =` the greatest participating replay floor
+- for the initial DMS-843 scope, `oldestChangeVersion` is `0`
 - when all participating sources are empty and no replay-floor metadata exists, both bounds are `0`; that bootstrap value is a starting watermark sentinel rather than a retained change row
-- the endpoint derives those bounds from retained tracking artifacts and, when purge is enabled, persisted replay-floor metadata, not from the current `dms.ChangeVersionSequence` value
+- if a later retention phase introduces purge, `oldestChangeVersion` becomes the replay floor for that same surface and the endpoint derives non-zero floors from persisted replay-floor metadata rather than from the current `dms.ChangeVersionSequence` value
 
 ## Multi-Resource Synchronization Ordering
 
@@ -272,7 +234,7 @@ Required rules:
 - acquire a row-level write lock on the target `dms.Document` row before step 1 of either write path
 - hold that lock until the tracking-row insert and final commit or rollback are complete
 - concurrent update/update, update/delete, and delete/delete operations against the same document must serialize so only one committed path observes and records each pre-change state
-- PostgreSQL implementations should use `SELECT ... FOR UPDATE`; other engines must use an equivalent row-level serialization mechanism
+- PostgreSQL implementations should use `SELECT ... FOR UPDATE`; MSSQL implementations must use an equivalent row-level update-locking pattern on the target row; any other engine must use an equivalent row-level serialization mechanism
 
 ## Identity-Change Update Execution Order
 
@@ -282,9 +244,10 @@ Within an update transaction that changes natural-key values for a resource that
 2. authorize the update against the live row
 3. apply the update so the live row contains the new representation
 4. allocate a new live `ChangeVersion`
-5. derive the new key values and canonical key aliases from `ResourceSchema.IdentityJsonPaths`
-6. insert a row into `dms.DocumentKeyChangeTracking` containing the old key values, new key values, and copied pre-update authorization projection
-7. commit the transaction
+5. allocate a new live `IdentityVersion`
+6. derive the new key values and canonical key aliases from `ResourceSchema.IdentityJsonPaths`
+7. insert a row into `dms.DocumentKeyChangeTracking` containing the old key values, new key values, and copied pre-update authorization projection
+8. commit the transaction
 
 This ordering is mandatory because key changes must preserve both sides of the natural-key transition while staying aligned to the committed live representation.
 
@@ -301,7 +264,7 @@ Within the delete transaction, the implementation must:
 5. insert a row into `dms.DocumentDeleteTracking`
 6. perform existing hierarchy-specific cleanup where required
 7. delete the live `dms.Document` row
-8. allow existing FK cascades to remove aliases, references, authorization companion rows, and optional journal rows
+8. allow existing FK cascades to remove aliases, references, authorization companion rows, and journal rows
 
 This ordering is mandatory because the tombstone must preserve natural-key and authorization data before the live row and companion rows disappear.
 
@@ -317,7 +280,7 @@ The architecture must preserve these invariants:
 - delete-query authorization stays logically equivalent to live collection GET authorization
 - key-change-query authorization stays logically equivalent to live collection GET authorization
 - write paths serialize concurrent update and delete capture on the same live row
-- the optional journal is never used as a delete store
+- the live journal is never used as a delete store
 
 ## Implementation Surfaces for Planning
 
@@ -326,11 +289,12 @@ The main implementation workstreams implied by this architecture are:
 - API routing and request validation
 - core service branching and middleware updates
 - schema and trigger deployment
+- resource-key lookup provisioning and live-row backfill
 - tombstone insert logic in delete execution
 - key-change tracking insert logic in update execution
-- changed-resource query SQL
+- changed-resource `journal + verify` SQL
 - delete-query SQL
 - key-change-query SQL
 - `availableChangeVersions` computation
-- optional journal-assisted execution
+- `IdentityVersion` capture for identity-changing writes
 - unit, integration, and E2E validation
