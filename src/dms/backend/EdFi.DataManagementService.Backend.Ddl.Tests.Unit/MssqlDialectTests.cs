@@ -1108,6 +1108,85 @@ public class Given_MssqlDialect_Create_UniqueIdentifierTable_Type
     }
 }
 
+[TestFixture]
+public class Given_MssqlDialect_Create_TableType_With_Schema_Containing_Single_Quote
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = new MssqlDialect(new MssqlDialectRules());
+        _ddl = dialect.CreateUserDefinedTableTypeIfNotExists(
+            new DbSchemaName("dm's"),
+            "BigIntTable",
+            "Id",
+            "bigint"
+        );
+    }
+
+    [Test]
+    public void It_should_escape_single_quote_in_sys_types_guard()
+    {
+        _ddl.Should().Contain("N'dm''s'");
+    }
+
+    [Test]
+    public void It_should_quote_schema_in_create_type()
+    {
+        _ddl.Should().Contain("[dm's].[BigIntTable]");
+    }
+}
+
+[TestFixture]
+public class Given_MssqlDialect_Create_TableType_With_TypeName_Containing_Single_Quote
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = new MssqlDialect(new MssqlDialectRules());
+        _ddl = dialect.CreateUserDefinedTableTypeIfNotExists(
+            new DbSchemaName("dms"),
+            "Big'Int",
+            "Id",
+            "bigint"
+        );
+    }
+
+    [Test]
+    public void It_should_escape_single_quote_in_sys_types_guard()
+    {
+        _ddl.Should().Contain("N'Big''Int'");
+    }
+
+    [Test]
+    public void It_should_quote_type_name_in_create_type()
+    {
+        _ddl.Should().Contain("[Big'Int]");
+    }
+}
+
+[TestFixture]
+public class Given_MssqlDialect_Create_TableType_With_Disallowed_ColumnType
+{
+    [Test]
+    public void It_should_throw_argument_exception()
+    {
+        var dialect = new MssqlDialect(new MssqlDialectRules());
+        var act = () =>
+            dialect.CreateUserDefinedTableTypeIfNotExists(
+                new DbSchemaName("dms"),
+                "BadType",
+                "Id",
+                "nvarchar(max); DROP TABLE dms.Document; --"
+            );
+
+        act.Should().Throw<ArgumentException>().WithParameterName("columnType");
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Literal rendering tests
 // ═══════════════════════════════════════════════════════════════════

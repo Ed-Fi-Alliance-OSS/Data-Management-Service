@@ -167,11 +167,12 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         writer.AppendLine();
     }
 
-    // ── Phase 4: Functions ──────────────────────────────────────────────
+    // ── Phase 4: Functions and Types ──────────────────────────────────────
 
     /// <summary>
-    /// Emits database functions required by core triggers and relational model triggers.
-    /// The UUIDv5 helper must exist before any triggers that call it.
+    /// Emits database functions and type definitions required by core infrastructure.
+    /// Includes the UUIDv5 helper (both dialects), the <c>throw_error</c> function
+    /// (PostgreSQL), and user-defined table types for authorization TVPs (SQL Server).
     /// </summary>
     private void EmitFunctions(SqlWriter writer)
     {
@@ -192,7 +193,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
             writer.AppendLine(
                 _dialect.CreateUserDefinedTableTypeIfNotExists(
                     DmsTableNames.DmsSchema,
-                    "BigIntTable",
+                    DmsTableNames.BigIntTableType,
                     "Id",
                     "bigint"
                 )
@@ -201,7 +202,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
             writer.AppendLine(
                 _dialect.CreateUserDefinedTableTypeIfNotExists(
                     DmsTableNames.DmsSchema,
-                    "UniqueIdentifierTable",
+                    DmsTableNames.UniqueIdentifierTableType,
                     "Id",
                     "uniqueidentifier"
                 )

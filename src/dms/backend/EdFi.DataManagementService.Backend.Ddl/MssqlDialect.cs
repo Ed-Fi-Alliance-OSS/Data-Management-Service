@@ -333,6 +333,19 @@ public sealed class MssqlDialect : SqlDialectBase
         return string.Empty;
     }
 
+    /// <summary>
+    /// SQL Server column types that are allowed in user-defined table type definitions.
+    /// This allowlist prevents arbitrary strings from being interpolated into DDL.
+    /// </summary>
+    private static readonly HashSet<string> _allowedColumnTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "bigint",
+        "int",
+        "smallint",
+        "tinyint",
+        "uniqueidentifier",
+    };
+
     /// <inheritdoc />
     public override string CreateUserDefinedTableTypeIfNotExists(
         DbSchemaName schema,
@@ -344,6 +357,14 @@ public sealed class MssqlDialect : SqlDialectBase
         ArgumentNullException.ThrowIfNull(typeName);
         ArgumentNullException.ThrowIfNull(columnName);
         ArgumentNullException.ThrowIfNull(columnType);
+
+        if (!_allowedColumnTypes.Contains(columnType))
+        {
+            throw new ArgumentException(
+                $"Column type '{columnType}' is not in the allowed list for user-defined table types.",
+                nameof(columnType)
+            );
+        }
 
         var qualifiedType = $"{QuoteIdentifier(schema.Value)}.{QuoteIdentifier(typeName)}";
         var escapedSchema = schema.Value.Replace("'", "''");

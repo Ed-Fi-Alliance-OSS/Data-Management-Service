@@ -26,4 +26,8 @@ internal static class DmsTableNames
     public static readonly DbTableName SchemaComponent = new(DmsSchema, "SchemaComponent");
 
     public const string ChangeVersionSequence = "ChangeVersionSequence";
+
+    // User-Defined Table Types (SQL Server TVPs) for authorization query parameterization
+    public const string BigIntTableType = "BigIntTable";
+    public const string UniqueIdentifierTableType = "UniqueIdentifierTable";
 }
