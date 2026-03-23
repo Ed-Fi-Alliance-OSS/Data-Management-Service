@@ -37,10 +37,11 @@ The consolidated design preserves the approved spike decisions:
 
 - existing APIs remain non-breaking
 - server-side snapshot history tables are avoided; DMS-843 v1 does not expose a client-selectable snapshot or consistent-read mode, so synchronization under concurrent writes is intentionally documented as best-effort
-- the canonical live-row change token lives on `dms.Document`
+- the canonical live-row update-tracking stamps live on `dms.Document`
+- `dms.ResourceKey` plus `dms.Document.ResourceKeyId` align the current backend to the redesign journal filter model
 - deletes are tracked in `dms.DocumentDeleteTracking` in the `dms` schema
 - `keyChanges` are part of the feature and use dedicated tracking for old and new natural-key values
-- `dms.DocumentChangeEvent` is treated as an optional internal journal artifact for scalability and redesign alignment, not as a competing delete mechanism
+- `dms.DocumentChangeEvent` is a required internal live-change journal and not a competing delete mechanism
 - deletes and key changes use separate dedicated tracking tables rather than one mixed event table
 
 ## Required Review Set
@@ -71,9 +72,8 @@ The following documents remain useful, but they are supporting artifacts rather 
 1. `07-Jira-Story-Input.md`
 2. `08-Requirements-Traceability.md`
 3. `Appendix-A-Feature-DDL-Sketch.sql`
-4. `story-map.json`
-5. `workitems/tasks.json`
-6. `workitems/progress.json`
+4. `workitems/tasks.json`
+5. `workitems/progress.json`
 
 Supporting-artifact notes:
 
@@ -81,7 +81,7 @@ Supporting-artifact notes:
 - `08-Requirements-Traceability.md` is for auditability and coverage confirmation
 - `Appendix-A-Feature-DDL-Sketch.sql` is informative only; it is an implementation-oriented sketch, not a normative design source
 - `Strict-Review-Comments*.md` files are historical review trails; use their status notes and post-remediation sections for current package status
-- `story-map.json`, `workitems/tasks.json`, and `workitems/progress.json` are planning aids
+- `workitems/tasks.json` and `workitems/progress.json` are planning aids
 
 ## Output Coverage
 
@@ -106,5 +106,5 @@ This package is aligned to:
 ## How to Use This Package for Jira Story Creation
 
 - Use `07-Jira-Story-Input.md` for the narrative decomposition.
-- Use `story-map.json` for machine-readable story grouping, dependencies, and acceptance themes.
+- Use `workitems/tasks.json` for machine-readable workstream grouping, dependencies, and acceptance themes.
 - Use `08-Requirements-Traceability.md` to confirm each story group maps back to the spike constraints and expected outputs.

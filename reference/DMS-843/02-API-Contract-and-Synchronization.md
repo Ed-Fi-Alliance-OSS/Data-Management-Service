@@ -1,5 +1,15 @@
 # API Contract and Synchronization
 
+## Feature Availability
+
+The Change Queries API surface is controlled by `AppSettings.EnableChangeQueries`.
+
+Required contract:
+
+- if the flag is absent, DMS treats it as `false`
+- the flag makes Change Queries an explicit opt-in capability in DMS
+- when the flag is off, DMS must not silently treat Change Query requests as ordinary non-Change-Query requests
+
 ## Public Endpoints
 
 ## 1. Available change versions
@@ -27,13 +37,11 @@ Semantics:
 - readable profile headers do not apply to this endpoint; any profile media type is ignored and the response remains ordinary `application/json`
 - aligned to the Ed-Fi ODS/API single synchronization surface used across `keyChanges`, changed-resource queries, and `deletes`; see the [platform guide](https://docs.ed-fi.org/reference/ods-api/platform-dev-guide/features/changed-record-queries/) and [client guide](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/using-the-changed-record-queries/)
 - provides the watermarks used to define a bounded synchronization window
-- `oldestChangeVersion` is the lowest valid inclusive `minChangeVersion` from which the instance-wide change-query synchronization surface advertised by this endpoint can still return complete results
-- if the participating live, delete, and key-change surfaces have different replay floors, `oldestChangeVersion` is the greatest of those floors
-- when no purge-driven replay-floor advancement has occurred, `oldestChangeVersion` is `0`
+- for the initial DMS-843 scope, no purge-driven replay-floor advancement is assumed, so `oldestChangeVersion` is `0`
 - `newestChangeVersion` is the current synchronization ceiling for that same surface
 - if retained participating rows exist, `newestChangeVersion` is the greatest retained `ChangeVersion` across them
-- if all participating sources are empty but replay-floor metadata exists, `newestChangeVersion = oldestChangeVersion =` the greatest participating replay floor
 - when the synchronization surface is empty and no replay-floor metadata exists, the endpoint returns `0` for both values; in that bootstrap case, `0` is a starting watermark sentinel rather than a retained change row
+- if a later retention phase introduces replay-floor metadata, `oldestChangeVersion` becomes the lowest valid inclusive `minChangeVersion` that can still return complete results, and `newestChangeVersion = oldestChangeVersion =` the greatest participating replay floor when all participating sources are empty after purge
 
 ## 2. Changed-resource collection query
 
@@ -286,7 +294,7 @@ Required status behavior:
 - invalid or negative `minChangeVersion` returns `400 Bad Request`
 - invalid or negative `maxChangeVersion` returns `400 Bad Request`
 - `maxChangeVersion < minChangeVersion` returns `400 Bad Request`
-- `minChangeVersion < oldestChangeVersion` returns `409 Conflict`
+- if a later retention phase introduces replay-floor advancement, `minChangeVersion < oldestChangeVersion` returns `409 Conflict`
 
 Required body behavior:
 
@@ -319,7 +327,7 @@ Required body behavior:
 - `detail`: `The change query parameters are invalid.`
 - `errors`: exactly one entry, `The 'maxChangeVersion' parameter must be greater than or equal to 'minChangeVersion'.`
 
-`409 Conflict` for replay-floor miss:
+`409 Conflict` for replay-floor miss in a later retention phase:
 
 - `type`: `urn:ed-fi:api:change-queries:sync:window-unavailable`
 - `title`: `Change Query Window No Longer Available`
