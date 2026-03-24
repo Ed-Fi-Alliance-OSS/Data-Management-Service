@@ -2991,3 +2991,339 @@ internal static class AuthEdOrgHierarchyFixture
         );
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Fixture: People Auth Views
+// ═══════════════════════════════════════════════════════════════════
+
+internal static class AuthPeopleViewsFixture
+{
+    internal static DerivedRelationalModelSet Build(SqlDialect dialect)
+    {
+        var schema = new DbSchemaName("edfi");
+        var documentIdColumn = new DbColumnName("DocumentId");
+        var organizationIdColumn = new DbColumnName("EducationOrganizationId");
+
+        // Column names used by the people auth views
+        var schoolIdColumn = new DbColumnName("SchoolId");
+        var studentDocIdColumn = new DbColumnName("Student_DocumentId");
+        var contactDocIdColumn = new DbColumnName("Contact_DocumentId");
+        var staffDocIdColumn = new DbColumnName("Staff_DocumentId");
+        var edOrgIdColumn = new DbColumnName("EducationOrganization_EducationOrganizationId");
+
+        // Resource keys (alphabetical by resource name for deterministic ordering)
+        var ssaResource = new QualifiedResourceName("Ed-Fi", "StudentSchoolAssociation");
+        var ssaResourceKey = new ResourceKeyEntry(1, ssaResource, "1.0.0", false);
+
+        var scaResource = new QualifiedResourceName("Ed-Fi", "StudentContactAssociation");
+        var scaResourceKey = new ResourceKeyEntry(2, scaResource, "1.0.0", false);
+
+        var seoaaResource = new QualifiedResourceName(
+            "Ed-Fi",
+            "StaffEducationOrganizationAssignmentAssociation"
+        );
+        var seoaaResourceKey = new ResourceKeyEntry(3, seoaaResource, "1.0.0", false);
+
+        var seoeaResource = new QualifiedResourceName(
+            "Ed-Fi",
+            "StaffEducationOrganizationEmploymentAssociation"
+        );
+        var seoeaResourceKey = new ResourceKeyEntry(4, seoeaResource, "1.0.0", false);
+
+        var seoraResource = new QualifiedResourceName(
+            "Ed-Fi",
+            "StudentEducationOrganizationResponsibilityAssociation"
+        );
+        var seoraResourceKey = new ResourceKeyEntry(5, seoraResource, "1.0.0", false);
+
+        // ── Association tables ──────────────────────────────────────────
+
+        // StudentSchoolAssociation (DocumentId, Student_DocumentId, SchoolId)
+        var ssaTableName = new DbTableName(schema, "StudentSchoolAssociation");
+        var ssaTable = new DbTableModel(
+            ssaTableName,
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_StudentSchoolAssociation",
+                [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    studentDocIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    schoolIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            []
+        );
+
+        // StudentContactAssociation (DocumentId, Student_DocumentId, Contact_DocumentId)
+        var scaTableName = new DbTableName(schema, "StudentContactAssociation");
+        var scaTable = new DbTableModel(
+            scaTableName,
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_StudentContactAssociation",
+                [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    studentDocIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    contactDocIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            []
+        );
+
+        // StaffEducationOrganizationAssignmentAssociation (DocumentId, Staff_DocumentId, EducationOrganization_EducationOrganizationId)
+        var seoaaTableName = new DbTableName(schema, "StaffEducationOrganizationAssignmentAssociation");
+        var seoaaTable = new DbTableModel(
+            seoaaTableName,
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_StaffEducationOrganizationAssignmentAssociation",
+                [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    staffDocIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    edOrgIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            []
+        );
+
+        // StaffEducationOrganizationEmploymentAssociation (DocumentId, Staff_DocumentId, EducationOrganization_EducationOrganizationId)
+        var seoeaTableName = new DbTableName(schema, "StaffEducationOrganizationEmploymentAssociation");
+        var seoeaTable = new DbTableModel(
+            seoeaTableName,
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_StaffEducationOrganizationEmploymentAssociation",
+                [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    staffDocIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    edOrgIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            []
+        );
+
+        // StudentEducationOrganizationResponsibilityAssociation (DocumentId, Student_DocumentId, EducationOrganization_EducationOrganizationId)
+        var seoraTableName = new DbTableName(schema, "StudentEducationOrganizationResponsibilityAssociation");
+        var seoraTable = new DbTableModel(
+            seoraTableName,
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_StudentEducationOrganizationResponsibilityAssociation",
+                [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    studentDocIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    edOrgIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            []
+        );
+
+        // ── Relational resource models ──────────────────────────────────
+
+        var ssaModel = new RelationalResourceModel(
+            ssaResource,
+            schema,
+            ResourceStorageKind.RelationalTables,
+            ssaTable,
+            [ssaTable],
+            [],
+            []
+        );
+
+        var scaModel = new RelationalResourceModel(
+            scaResource,
+            schema,
+            ResourceStorageKind.RelationalTables,
+            scaTable,
+            [scaTable],
+            [],
+            []
+        );
+
+        var seoaaModel = new RelationalResourceModel(
+            seoaaResource,
+            schema,
+            ResourceStorageKind.RelationalTables,
+            seoaaTable,
+            [seoaaTable],
+            [],
+            []
+        );
+
+        var seoeaModel = new RelationalResourceModel(
+            seoeaResource,
+            schema,
+            ResourceStorageKind.RelationalTables,
+            seoeaTable,
+            [seoeaTable],
+            [],
+            []
+        );
+
+        var seoraModel = new RelationalResourceModel(
+            seoraResource,
+            schema,
+            ResourceStorageKind.RelationalTables,
+            seoraTable,
+            [seoraTable],
+            [],
+            []
+        );
+
+        // ── Auth hierarchy (minimal: single leaf entity to activate view emission) ──
+
+        var seaTableName = new DbTableName(schema, "StateEducationAgency");
+        var seaEntity = new AuthEdOrgEntity("StateEducationAgency", seaTableName, organizationIdColumn, []);
+        var authHierarchy = new AuthEdOrgHierarchy([seaEntity]);
+
+        // Auth covering index
+        var authIndex = new DbIndexInfo(
+            new DbIndexName("IX_EducationOrganizationIdToEducationOrganizationId_Target"),
+            AuthTableNames.EdOrgIdToEdOrgId,
+            KeyColumns: [AuthTableNames.TargetEdOrgId],
+            IsUnique: false,
+            Kind: DbIndexKind.Explicit,
+            IncludeColumns: [AuthTableNames.SourceEdOrgId]
+        );
+
+        return new DerivedRelationalModelSet(
+            GoldenEffectiveSchemaFixtureData.Create(
+                "auth-people-views",
+                [
+                    new SchemaComponentInfo(
+                        "ed-fi",
+                        "Ed-Fi",
+                        "1.0.0",
+                        false,
+                        "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+                    ),
+                ],
+                [ssaResourceKey, scaResourceKey, seoaaResourceKey, seoeaResourceKey, seoraResourceKey]
+            ),
+            dialect,
+            [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
+            [
+                new ConcreteResourceModel(ssaResourceKey, ResourceStorageKind.RelationalTables, ssaModel),
+                new ConcreteResourceModel(scaResourceKey, ResourceStorageKind.RelationalTables, scaModel),
+                new ConcreteResourceModel(seoaaResourceKey, ResourceStorageKind.RelationalTables, seoaaModel),
+                new ConcreteResourceModel(seoeaResourceKey, ResourceStorageKind.RelationalTables, seoeaModel),
+                new ConcreteResourceModel(seoraResourceKey, ResourceStorageKind.RelationalTables, seoraModel),
+            ],
+            [],
+            [],
+            [authIndex],
+            [],
+            authHierarchy
+        );
+    }
+}
