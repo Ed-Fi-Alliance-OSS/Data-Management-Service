@@ -127,7 +127,13 @@ public class Given_A_Page_With_Multiple_Documents
         if (_dataSource is not null)
         {
             await using var connection = await _dataSource.OpenConnectionAsync();
-            await ExecuteSql(connection, "DROP SCHEMA IF EXISTS hydtest CASCADE;");
+            await ExecuteSql(
+                connection,
+                """
+                DROP SCHEMA IF EXISTS hydtest CASCADE;
+                DELETE FROM dms."Document" WHERE "DocumentId" IN (101, 102);
+                """
+            );
             await _dataSource.DisposeAsync();
         }
     }
@@ -215,109 +221,8 @@ public class Given_A_Page_With_Multiple_Documents
         _result.TotalCount.Should().BeNull();
     }
 
-    private static ResourceReadPlan BuildSchoolReadPlan()
-    {
-        var rootTable = new DbTableModel(
-            Table: new DbTableName(new DbSchemaName(TestSchema), "School"),
-            JsonScope: new JsonPathExpression("$", []),
-            Key: new TableKey(
-                ConstraintName: "PK_School",
-                Columns: [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
-            ),
-            Columns:
-            [
-                new DbColumnModel(
-                    ColumnName: new DbColumnName("DocumentId"),
-                    Kind: ColumnKind.ParentKeyPart,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    ColumnName: new DbColumnName("SchoolId"),
-                    Kind: ColumnKind.Scalar,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
-                    IsNullable: false,
-                    SourceJsonPath: new JsonPathExpression(
-                        "$.schoolId",
-                        [new JsonPathSegment.Property("schoolId")]
-                    ),
-                    TargetResource: null
-                ),
-            ],
-            Constraints: []
-        );
-
-        var childTable = new DbTableModel(
-            Table: new DbTableName(new DbSchemaName(TestSchema), "SchoolAddress"),
-            JsonScope: new JsonPathExpression(
-                "$.addresses[*]",
-                [new JsonPathSegment.Property("addresses"), new JsonPathSegment.AnyArrayElement()]
-            ),
-            Key: new TableKey(
-                ConstraintName: "PK_SchoolAddress",
-                Columns: [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
-            ),
-            Columns:
-            [
-                new DbColumnModel(
-                    ColumnName: new DbColumnName("CollectionItemId"),
-                    Kind: ColumnKind.CollectionKey,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    ColumnName: new DbColumnName("School_DocumentId"),
-                    Kind: ColumnKind.DocumentFk,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    ColumnName: new DbColumnName("Ordinal"),
-                    Kind: ColumnKind.Ordinal,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    ColumnName: new DbColumnName("City"),
-                    Kind: ColumnKind.Scalar,
-                    ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 100),
-                    IsNullable: false,
-                    SourceJsonPath: new JsonPathExpression(
-                        "$.addresses[*].city",
-                        [
-                            new JsonPathSegment.Property("addresses"),
-                            new JsonPathSegment.AnyArrayElement(),
-                            new JsonPathSegment.Property("city"),
-                        ]
-                    ),
-                    TargetResource: null
-                ),
-            ],
-            Constraints: []
-        );
-
-        var model = new RelationalResourceModel(
-            Resource: new QualifiedResourceName("Ed-Fi", "School"),
-            PhysicalSchema: new DbSchemaName(TestSchema),
-            StorageKind: ResourceStorageKind.RelationalTables,
-            Root: rootTable,
-            TablesInDependencyOrder: [rootTable, childTable],
-            DocumentReferenceBindings: [],
-            DescriptorEdgeSources: []
-        );
-
-        // Use the ReadPlanCompiler to generate real hydration SQL
-        var compiler = new ReadPlanCompiler(SqlDialect.Pgsql);
-        return compiler.Compile(model);
-    }
+    private static ResourceReadPlan BuildSchoolReadPlan() =>
+        HydrationTestHelper.BuildSchoolReadPlan(TestSchema);
 
     private static async Task ExecuteSql(NpgsqlConnection connection, string sql)
     {
@@ -390,7 +295,7 @@ public class Given_A_Single_DocumentId_Keyset
         );
 
         // Build plan using the hydsingle schema
-        var plan = BuildSingleTestReadPlan();
+        var plan = HydrationTestHelper.BuildSchoolReadPlan(TestSchema);
         var keyset = new PageKeysetSpec.Single(201L);
 
         await using var hydrationConnection = await _dataSource.OpenConnectionAsync();
@@ -409,7 +314,13 @@ public class Given_A_Single_DocumentId_Keyset
         if (_dataSource is not null)
         {
             await using var connection = await _dataSource.OpenConnectionAsync();
-            await ExecuteSql(connection, "DROP SCHEMA IF EXISTS hydsingle CASCADE;");
+            await ExecuteSql(
+                connection,
+                """
+                DROP SCHEMA IF EXISTS hydsingle CASCADE;
+                DELETE FROM dms."Document" WHERE "DocumentId" IN (201, 202);
+                """
+            );
             await _dataSource.DisposeAsync();
         }
     }
@@ -442,10 +353,26 @@ public class Given_A_Single_DocumentId_Keyset
         ((string)childRows.Rows[0][3]!).Should().Be("Alpha");
     }
 
-    private static ResourceReadPlan BuildSingleTestReadPlan()
+    private static async Task ExecuteSql(NpgsqlConnection connection, string sql)
+    {
+        await using var cmd = new NpgsqlCommand(sql, connection);
+        await cmd.ExecuteNonQueryAsync();
+    }
+}
+
+/// <summary>
+/// Shared test model builder for hydration executor integration tests.
+/// </summary>
+internal static class HydrationTestHelper
+{
+    /// <summary>
+    /// Builds a <see cref="ResourceReadPlan"/> for a School resource with an Address child table
+    /// in the given schema, using the <see cref="ReadPlanCompiler"/> to generate real SQL.
+    /// </summary>
+    public static ResourceReadPlan BuildSchoolReadPlan(string schemaName)
     {
         var rootTable = new DbTableModel(
-            Table: new DbTableName(new DbSchemaName(TestSchema), "School"),
+            Table: new DbTableName(new DbSchemaName(schemaName), "School"),
             JsonScope: new JsonPathExpression("$", []),
             Key: new TableKey(
                 ConstraintName: "PK_School",
@@ -477,7 +404,7 @@ public class Given_A_Single_DocumentId_Keyset
         );
 
         var childTable = new DbTableModel(
-            Table: new DbTableName(new DbSchemaName(TestSchema), "SchoolAddress"),
+            Table: new DbTableName(new DbSchemaName(schemaName), "SchoolAddress"),
             JsonScope: new JsonPathExpression(
                 "$.addresses[*]",
                 [new JsonPathSegment.Property("addresses"), new JsonPathSegment.AnyArrayElement()]
@@ -533,7 +460,7 @@ public class Given_A_Single_DocumentId_Keyset
 
         var model = new RelationalResourceModel(
             Resource: new QualifiedResourceName("Ed-Fi", "School"),
-            PhysicalSchema: new DbSchemaName(TestSchema),
+            PhysicalSchema: new DbSchemaName(schemaName),
             StorageKind: ResourceStorageKind.RelationalTables,
             Root: rootTable,
             TablesInDependencyOrder: [rootTable, childTable],
@@ -542,11 +469,5 @@ public class Given_A_Single_DocumentId_Keyset
         );
 
         return new ReadPlanCompiler(SqlDialect.Pgsql).Compile(model);
-    }
-
-    private static async Task ExecuteSql(NpgsqlConnection connection, string sql)
-    {
-        await using var cmd = new NpgsqlCommand(sql, connection);
-        await cmd.ExecuteNonQueryAsync();
     }
 }

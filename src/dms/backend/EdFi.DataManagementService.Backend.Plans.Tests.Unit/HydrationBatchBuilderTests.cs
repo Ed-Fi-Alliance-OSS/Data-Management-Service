@@ -70,6 +70,13 @@ public class Given_HydrationBatchBuilder_With_Single_Keyset
     }
 
     [Test]
+    public void It_should_emit_deterministic_order_by_on_document_metadata()
+    {
+        _pgsqlBatch.Should().Contain("ORDER BY d.\"DocumentId\"");
+        _mssqlBatch.Should().Contain("ORDER BY d.[DocumentId]");
+    }
+
+    [Test]
     public void It_should_emit_table_hydration_selects()
     {
         _pgsqlBatch.Should().Contain("SELECT root columns FROM root");

@@ -36,10 +36,17 @@ public static class HydrationReader
     }
 
     /// <summary>
+    /// Expected column count for the document metadata result set:
+    /// DocumentId (ordinal 0) + the columns defined in <see cref="DocumentMetadataColumns.ColumnsInOrdinalOrder"/>.
+    /// </summary>
+    private static readonly int ExpectedDocumentMetadataColumnCount =
+        1 + DocumentMetadataColumns.ColumnsInOrdinalOrder.Length;
+
+    /// <summary>
     /// Reads <c>dms.Document</c> metadata rows from the current result set.
     /// </summary>
     /// <remarks>
-    /// Expects columns at fixed ordinals:
+    /// Expects columns at fixed ordinals aligned to <see cref="DocumentMetadataColumns"/>:
     /// 0=DocumentId, 1=DocumentUuid, 2=ContentVersion, 3=IdentityVersion,
     /// 4=ContentLastModifiedAt, 5=IdentityLastModifiedAt.
     /// </remarks>
@@ -57,6 +64,13 @@ public static class HydrationReader
 
         while (await reader.ReadAsync(ct))
         {
+            if (rows.Count == 0 && reader.FieldCount != ExpectedDocumentMetadataColumnCount)
+            {
+                throw new InvalidOperationException(
+                    $"Document metadata result set has {reader.FieldCount} columns but expected {ExpectedDocumentMetadataColumnCount}."
+                );
+            }
+
             rows.Add(
                 new DocumentMetadataRow(
                     DocumentId: reader.GetInt64(0),
@@ -94,6 +108,13 @@ public static class HydrationReader
 
         while (await reader.ReadAsync(ct))
         {
+            if (rows.Count == 0 && reader.FieldCount != columnCount)
+            {
+                throw new InvalidOperationException(
+                    $"Table '{tablePlan.TableModel.Table}' result set has {reader.FieldCount} columns but expected {columnCount}."
+                );
+            }
+
             var row = new object?[columnCount];
 
             for (var i = 0; i < columnCount; i++)

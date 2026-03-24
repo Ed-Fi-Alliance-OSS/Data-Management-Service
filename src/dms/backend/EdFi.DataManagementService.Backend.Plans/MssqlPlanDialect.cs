@@ -57,25 +57,6 @@ internal sealed class MssqlPlanDialect : IPlanSqlDialect
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(keyset);
 
-        writer
-            .AppendLine("SELECT")
-            .Append("    d.")
-            .Append(writer.Dialect.QuoteIdentifier(keyset.DocumentIdColumnName.Value))
-            .AppendLine(",")
-            .AppendLine("    d.[DocumentUuid],")
-            .AppendLine("    d.[ContentVersion],")
-            .AppendLine("    d.[IdentityVersion],")
-            .AppendLine("    d.[ContentLastModifiedAt],")
-            .AppendLine("    d.[IdentityLastModifiedAt]")
-            .Append("FROM ")
-            .AppendTable(DocumentTable)
-            .AppendLine(" d")
-            .Append("INNER JOIN ")
-            .AppendRelation(keyset.Table)
-            .Append(" k ON d.")
-            .Append(writer.Dialect.QuoteIdentifier(keyset.DocumentIdColumnName.Value))
-            .Append(" = k.")
-            .Append(writer.Dialect.QuoteIdentifier(keyset.DocumentIdColumnName.Value))
-            .AppendLine(";");
+        DocumentMetadataColumns.AppendDocumentMetadataSelectBody(writer, keyset, DocumentTable);
     }
 }
