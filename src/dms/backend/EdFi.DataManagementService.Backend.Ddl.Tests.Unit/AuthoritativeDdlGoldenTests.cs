@@ -14,3 +14,11 @@ public class Given_AuthoritativeDdl_With_Ds52Core : DdlGoldenFixtureTestBase
     protected override string ResolveFixtureDirectory(string projectRoot) =>
         Path.Combine(projectRoot, "..", "Fixtures", "authoritative", "ds-5.2");
 }
+
+[TestFixture]
+[Category("Authoritative")]
+public class Given_AuthoritativeDdl_With_Ds52Core_And_SampleExtension : DdlGoldenFixtureTestBase
+{
+    protected override string ResolveFixtureDirectory(string projectRoot) =>
+        Path.Combine(projectRoot, "..", "Fixtures", "authoritative", "sample");
+}
