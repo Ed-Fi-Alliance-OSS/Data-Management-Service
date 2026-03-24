@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.SchemaTools.Introspection;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 
@@ -182,10 +183,11 @@ public class Given_Mssql_Provisioning_Rerun_On_Same_Database
     private int _secondExitCode;
     private string _secondOutput = null!;
     private string _secondError = null!;
-    private long _firstResourceKeyCount;
+    private string? _firstManifestJson;
+    private string? _secondManifestJson;
 
-    [SetUp]
-    public void SetUp()
+    [OneTimeSetUp]
+    public void OneTimeSetUp()
     {
         if (!MssqlTestDatabaseHelper.IsConfigured())
         {
@@ -201,24 +203,32 @@ public class Given_Mssql_Provisioning_Rerun_On_Same_Database
         (_firstExitCode, _, _) = ProvisionTestHelper.RunProvision(
             "mssql",
             connectionString,
+            CliTestHelper.GetAuthoritativeSchemaPaths(),
             createDatabase: true
         );
 
-        // Capture resource key count after first run
-        using var connection = new SqlConnection(connectionString);
-        connection.Open();
-        _firstResourceKeyCount = ProvisionTestHelper.GetDmsTableCount(connection, "mssql", "ResourceKey");
+        // Introspect after first run
+        var schemaAllowlist = ProvisionTestHelper.DiscoverProvisionedSchemasMssql(connectionString);
+        var introspector = new MssqlSchemaIntrospector();
+        var firstManifest = introspector.Introspect(connectionString, schemaAllowlist);
+        _firstManifestJson = ProvisionedSchemaManifestEmitter.Emit(firstManifest);
 
         // Second provisioning run (idempotent rerun)
         (_secondExitCode, _secondOutput, _secondError) = ProvisionTestHelper.RunProvision(
             "mssql",
             connectionString,
+            CliTestHelper.GetAuthoritativeSchemaPaths(),
             createDatabase: true
         );
+
+        // Introspect after second run (rediscover schemas to catch accidental new schemas)
+        var secondSchemaAllowlist = ProvisionTestHelper.DiscoverProvisionedSchemasMssql(connectionString);
+        var secondManifest = introspector.Introspect(connectionString, secondSchemaAllowlist);
+        _secondManifestJson = ProvisionedSchemaManifestEmitter.Emit(secondManifest);
     }
 
-    [TearDown]
-    public void TearDown()
+    [OneTimeTearDown]
+    public void OneTimeTearDown()
     {
         if (MssqlTestDatabaseHelper.IsConfigured())
         {
@@ -239,31 +249,34 @@ public class Given_Mssql_Provisioning_Rerun_On_Same_Database
     }
 
     [Test]
-    public void It_still_has_exactly_one_effective_schema_row()
+    public void It_produces_identical_schema_manifests_on_both_runs()
     {
-        using var connection = new SqlConnection(
-            MssqlTestDatabaseHelper.BuildConnectionString(_databaseName)
-        );
-        connection.Open();
-
-        ProvisionTestHelper
-            .GetDmsTableCount(connection, "mssql", "EffectiveSchema")
+        _secondManifestJson
             .Should()
-            .Be(1, "rerun should not duplicate the EffectiveSchema row");
+            .Be(
+                _firstManifestJson,
+                "the schema manifest after the second provisioning should be identical to the first"
+            );
     }
 
     [Test]
-    public void It_has_the_same_resource_key_count()
+    public void It_emits_journal_row_on_document_insert()
     {
         using var connection = new SqlConnection(
             MssqlTestDatabaseHelper.BuildConnectionString(_databaseName)
         );
         connection.Open();
+        ProvisionTestHelper.AssertJournalRowOnInsert(connection, "mssql");
+    }
 
-        ProvisionTestHelper
-            .GetDmsTableCount(connection, "mssql", "ResourceKey")
-            .Should()
-            .Be(_firstResourceKeyCount, "rerun should not duplicate ResourceKey rows");
+    [Test]
+    public void It_emits_distinct_change_versions_on_multi_row_update()
+    {
+        using var connection = new SqlConnection(
+            MssqlTestDatabaseHelper.BuildConnectionString(_databaseName)
+        );
+        connection.Open();
+        ProvisionTestHelper.AssertDistinctChangeVersionsOnMultiRowUpdate(connection, "mssql");
     }
 }
 
@@ -459,20 +472,20 @@ public class Given_Mssql_Schema_Hash_Mismatch_On_Provisioning
         var connectionString = MssqlTestDatabaseHelper.BuildConnectionString(_databaseName);
 
         // First provisioning run with schema A (minimal)
-        var fixturePathA = CliTestHelper.GetMinimalFixturePath();
+        var schemaPathA = CliTestHelper.GetMinimalSchemaPath();
         (_firstExitCode, _firstOutput, _) = ProvisionTestHelper.RunProvision(
             "mssql",
             connectionString,
-            fixturePathA,
+            [schemaPathA],
             createDatabase: true
         );
 
         // Second provisioning run with schema B (alternate minimal)
-        var fixturePathB = CliTestHelper.GetAlternateMinimalFixturePath();
+        var schemaPathB = CliTestHelper.GetAlternateMinimalSchemaPath();
         (_secondExitCode, _, _secondError) = ProvisionTestHelper.RunProvision(
             "mssql",
             connectionString,
-            fixturePathB
+            [schemaPathB]
         );
     }
 

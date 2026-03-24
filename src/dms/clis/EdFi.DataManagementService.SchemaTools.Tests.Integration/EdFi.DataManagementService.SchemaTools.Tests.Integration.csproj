@@ -34,6 +34,7 @@
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DataManagementService.SchemaTools\EdFi.DataManagementService.SchemaTools.csproj" />
+        <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.Tests.Common\EdFi.DataManagementService.Backend.Tests.Common.csproj" />
     </ItemGroup>
     <ItemGroup>
         <None Update="Fixtures\**\*.json">

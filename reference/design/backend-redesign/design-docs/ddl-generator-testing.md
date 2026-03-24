@@ -260,30 +260,25 @@ Practical considerations:
 
 Goal: prove the emitted DDL actually provisions an empty database on each engine and creates the expected objects.
 
-Test shape:
-
-- A script-first harness (so it’s usable outside tests), e.g.:
-  - `eng/verify-relational-ddl.ps1` (and/or `.sh`)
-- A small NUnit wrapper can call the script (optional), but the script should be runnable standalone.
-
-Workflow per engine:
-1. Start a fresh DB via docker compose (separate compose files or profiles for pgsql/mssql).
-2. Provision the database using the generated DDL:
-   - PostgreSQL: `psql -v ON_ERROR_STOP=1 -f ...`
-   - SQL Server: `sqlcmd -b -i ...`
+A workflow that:
+1. Starts fresh DBs (pgsql and mssql).
+2. Provisions the database using the generated DDL.
    - Recommended additional check: run the **same** DDL a second time and assert it succeeds and the provisioned schema manifest is unchanged (validates existence-check patterns and insert-if-missing seed semantics).
-3. Run a minimal journaling smoke check (required because journaling triggers are correctness-critical):
+3. Runs a minimal journaling smoke check (required because journaling triggers are correctness-critical):
    - insert one row into `dms.Document` (using a seeded `ResourceKeyId`) and assert:
      - `dms.DocumentChangeEvent` has one new row for that `DocumentId`
    - update `ContentVersion` and assert one new `dms.DocumentChangeEvent` row is emitted
-4. Run engine-specific introspection queries and emit a stable **provisioned schema manifest** artifact:
+4. Runs engine-specific introspection queries and emit a stable **provisioned schema manifest** artifact:
    - tables, columns, types, nullability,
    - PK/UK/FK constraints,
    - indexes,
    - views,
    - triggers (required for journaling),
+   - sequences 
+   - functions
+   - SQL Server User-Defined Table Types
    - rows in `dms.EffectiveSchema`, `dms.SchemaComponent`, `dms.ResourceKey` (as applicable).
-5. Compare the manifest to `expected/provisioned-schema.{dialect}.manifest.json` committed alongside the fixture.
+5. Compares the manifest to `expected/provisioned-schema.{dialect}.manifest.json` committed alongside the fixture.
 
 ### 5) Runtime compatibility tests (pack selection + DB validation gate)
 

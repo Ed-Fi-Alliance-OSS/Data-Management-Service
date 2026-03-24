@@ -93,40 +93,49 @@ public static class CliTestHelper
         return (process.ExitCode, output, error);
     }
 
-    public static string GetAuthoritativeFixturePath()
+    public static string[] GetAuthoritativeSchemaPaths()
     {
-        var assemblyLocation = typeof(CliTestHelper).Assembly.Location;
-        var testBinDir = Path.GetDirectoryName(assemblyLocation)!;
+        var assemblyDir = Path.GetDirectoryName(typeof(CliTestHelper).Assembly.Location)!;
 
         // Navigate from test bin to backend Fixtures
         // Path: .../clis/SchemaTools.Tests.Integration/bin/Debug/net10.0/
         // Go up 5 levels to reach .../dms/, then down to backend/Fixtures
-        var fixturePath = Path.Combine(
-            testBinDir,
+        var fixturesDir = Path.Combine(
+            assemblyDir,
             "..",
             "..",
             "..",
             "..",
             "..",
             "backend",
-            "Fixtures",
-            "authoritative",
-            "ds-5.2",
-            "inputs",
-            "ds-5.2-api-schema-authoritative.json"
+            "Fixtures"
         );
 
-        return Path.GetFullPath(fixturePath);
+        return
+        [
+            Path.GetFullPath(Path.Combine(fixturesDir,
+                "authoritative",
+                "ds-5.2",
+                "inputs",
+                "ds-5.2-api-schema-authoritative.json"
+            )),
+            Path.GetFullPath(Path.Combine(fixturesDir,
+                "authoritative",
+                "sample",
+                "inputs",
+                "sample-api-schema-authoritative.json"
+            )),
+        ];
     }
 
-    public static string GetMinimalFixturePath()
+    public static string GetMinimalSchemaPath()
     {
         var assemblyLocation = typeof(CliTestHelper).Assembly.Location;
         var testBinDir = Path.GetDirectoryName(assemblyLocation)!;
         return Path.Combine(testBinDir, "Fixtures", "minimal-api-schema.json");
     }
 
-    public static string GetAlternateMinimalFixturePath()
+    public static string GetAlternateMinimalSchemaPath()
     {
         var assemblyLocation = typeof(CliTestHelper).Assembly.Location;
         var testBinDir = Path.GetDirectoryName(assemblyLocation)!;
