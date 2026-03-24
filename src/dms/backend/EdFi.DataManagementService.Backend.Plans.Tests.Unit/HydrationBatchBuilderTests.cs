@@ -159,6 +159,75 @@ public class Given_HydrationBatchBuilder_With_Query_Keyset
 }
 
 [TestFixture]
+public class Given_HydrationBatchBuilder_With_Compiled_Query_Keyset
+{
+    private string _pgsqlBatch = null!;
+    private string _mssqlBatch = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        foreach (var dialect in new[] { SqlDialect.Pgsql, SqlDialect.Mssql })
+        {
+            var plan = BuildTestReadPlan(dialect);
+            var compiler = new PageDocumentIdSqlCompiler(dialect);
+            var compiledQueryPlan = compiler.Compile(
+                new PageDocumentIdQuerySpec(
+                    RootTable: new DbTableName(new DbSchemaName("edfi"), "School"),
+                    Predicates: [],
+                    UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
+                    IncludeTotalCountSql: true
+                )
+            );
+            var keyset = new PageKeysetSpec.Query(
+                compiledQueryPlan,
+                new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 25L }
+            );
+
+            var batch = HydrationBatchBuilder.Build(plan, keyset, dialect);
+
+            if (dialect == SqlDialect.Pgsql)
+            {
+                _pgsqlBatch = batch;
+            }
+            else
+            {
+                _mssqlBatch = batch;
+            }
+        }
+    }
+
+    [Test]
+    public void It_should_not_embed_semicolon_inside_cte_body()
+    {
+        // PageDocumentIdSqlCompiler emits a trailing semicolon on its SQL.
+        // HydrationBatchBuilder must strip it before embedding in the CTE.
+        var pgsqlCteStart = _pgsqlBatch.IndexOf("WITH page_ids AS (", StringComparison.Ordinal);
+        var pgsqlCteEnd = _pgsqlBatch.IndexOf(")\nINSERT INTO", StringComparison.Ordinal);
+        pgsqlCteStart.Should().BePositive();
+        pgsqlCteEnd.Should().BeGreaterThan(pgsqlCteStart);
+        var pgsqlCteBody = _pgsqlBatch[(pgsqlCteStart + "WITH page_ids AS (".Length)..pgsqlCteEnd];
+        pgsqlCteBody.Should().NotContain(";", "semicolons inside a CTE body produce invalid SQL");
+
+        var mssqlCteStart = _mssqlBatch.IndexOf("WITH page_ids AS (", StringComparison.Ordinal);
+        var mssqlCteEnd = _mssqlBatch.IndexOf(")\nINSERT INTO", StringComparison.Ordinal);
+        mssqlCteStart.Should().BePositive();
+        mssqlCteEnd.Should().BeGreaterThan(mssqlCteStart);
+        var mssqlCteBody = _mssqlBatch[(mssqlCteStart + "WITH page_ids AS (".Length)..mssqlCteEnd];
+        mssqlCteBody.Should().NotContain(";", "semicolons inside a CTE body produce invalid SQL");
+    }
+
+    [Test]
+    public void It_should_emit_valid_cte_structure()
+    {
+        _pgsqlBatch.Should().Contain("WITH page_ids AS (");
+        _pgsqlBatch.Should().Contain("FROM page_ids;");
+        _mssqlBatch.Should().Contain("WITH page_ids AS (");
+        _mssqlBatch.Should().Contain("FROM page_ids;");
+    }
+}
+
+[TestFixture]
 public class Given_HydrationBatchBuilder_With_Query_Keyset_Without_TotalCount
 {
     private string _pgsqlBatch = null!;

@@ -91,6 +91,13 @@ public static class HydrationBatchBuilder
             case PageKeysetSpec.Query query:
                 AddQueryParameters(command, query);
                 break;
+
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(keyset),
+                    keyset,
+                    "Unexpected PageKeysetSpec variant."
+                );
         }
     }
 
@@ -118,7 +125,7 @@ public static class HydrationBatchBuilder
             case PageKeysetSpec.Query query:
                 writer
                     .AppendLine("WITH page_ids AS (")
-                    .AppendLine(query.Plan.PageDocumentIdSql)
+                    .AppendLine(StripTrailingSemicolon(query.Plan.PageDocumentIdSql))
                     .AppendLine(")")
                     .Append("INSERT INTO ")
                     .AppendRelation(keyset.Table)
@@ -129,6 +136,13 @@ public static class HydrationBatchBuilder
                     .Append(quotedDocIdCol)
                     .AppendLine(" FROM page_ids;");
                 break;
+
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(spec),
+                    spec,
+                    "Unexpected PageKeysetSpec variant."
+                );
         }
     }
 
@@ -166,5 +180,22 @@ public static class HydrationBatchBuilder
         parameter.ParameterName = $"@{bareName}";
         parameter.Value = value ?? DBNull.Value;
         command.Parameters.Add(parameter);
+    }
+
+    /// <summary>
+    /// Strips a trailing semicolon (and surrounding whitespace) from compiled SQL so it can
+    /// be safely embedded inside a CTE body. Compiled plan SQL (e.g. from
+    /// <see cref="PageDocumentIdSqlCompiler"/>) includes a trailing semicolon as a statement
+    /// terminator, which is invalid inside <c>WITH ... AS (...)</c>.
+    /// </summary>
+    private static string StripTrailingSemicolon(string sql)
+    {
+        var trimmed = sql.AsSpan().TrimEnd();
+        if (trimmed.Length > 0 && trimmed[^1] == ';')
+        {
+            trimmed = trimmed[..^1].TrimEnd();
+        }
+
+        return trimmed.ToString();
     }
 }
