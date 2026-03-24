@@ -7,22 +7,16 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 using FluentAssertions;
-using Npgsql;
+using Microsoft.Data.SqlClient;
 using NUnit.Framework;
 
-namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
+namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
-/// <summary>
-/// Integration tests for <see cref="HydrationExecutor"/> against a real PostgreSQL database.
-/// </summary>
-/// <remarks>
-/// These tests provision a temporary schema with <c>dms.Document</c> and test resource tables,
-/// insert known data, execute hydration, and assert the returned row structure.
-/// </remarks>
 [TestFixture]
-public class Given_A_Page_With_Multiple_Documents
+public class Given_A_Page_With_Multiple_Documents_Mssql
 {
-    private NpgsqlDataSource _dataSource = null!;
+    private string _databaseName = null!;
+    private string _connectionString = null!;
     private HydratedPage _result = null!;
 
     private const string TestSchema = "hydtest";
@@ -30,37 +24,44 @@ public class Given_A_Page_With_Multiple_Documents
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
     {
-        _dataSource = NpgsqlDataSource.Create(Configuration.DatabaseConnectionString);
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore("MSSQL connection string not configured.");
+        }
 
-        await using var connection = await _dataSource.OpenConnectionAsync();
+        _databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
+        MssqlTestDatabaseHelper.CreateDatabase(_databaseName);
+        _connectionString = MssqlTestDatabaseHelper.BuildConnectionString(_databaseName);
 
-        // Provision schemas
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        // Provision schemas and tables
         await ExecuteSql(
             connection,
             """
-            DROP SCHEMA IF EXISTS hydtest CASCADE;
-            CREATE SCHEMA hydtest;
-            CREATE SCHEMA IF NOT EXISTS dms;
+            IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'dms') EXEC('CREATE SCHEMA [dms]');
+            IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'hydtest') EXEC('CREATE SCHEMA [hydtest]');
 
-            CREATE TABLE IF NOT EXISTS dms."Document" (
-                "DocumentId" bigint PRIMARY KEY,
-                "DocumentUuid" uuid NOT NULL,
-                "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "IdentityVersion" bigint NOT NULL DEFAULT 1,
-                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now()
+            CREATE TABLE dms.Document (
+                DocumentId bigint PRIMARY KEY,
+                DocumentUuid uniqueidentifier NOT NULL,
+                ContentVersion bigint NOT NULL DEFAULT 1,
+                IdentityVersion bigint NOT NULL DEFAULT 1,
+                ContentLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
+                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
             );
 
-            CREATE TABLE hydtest."School" (
-                "DocumentId" bigint PRIMARY KEY,
-                "SchoolId" integer NOT NULL
+            CREATE TABLE hydtest.School (
+                DocumentId bigint PRIMARY KEY,
+                SchoolId int NOT NULL
             );
 
-            CREATE TABLE hydtest."SchoolAddress" (
-                "CollectionItemId" bigint PRIMARY KEY,
-                "School_DocumentId" bigint NOT NULL REFERENCES hydtest."School"("DocumentId"),
-                "Ordinal" integer NOT NULL,
-                "City" varchar(100) NOT NULL
+            CREATE TABLE hydtest.SchoolAddress (
+                CollectionItemId bigint PRIMARY KEY,
+                School_DocumentId bigint NOT NULL REFERENCES hydtest.School(DocumentId),
+                Ordinal int NOT NULL,
+                City varchar(100) NOT NULL
             );
             """
         );
@@ -69,19 +70,17 @@ public class Given_A_Page_With_Multiple_Documents
         await ExecuteSql(
             connection,
             """
-            DELETE FROM dms."Document" WHERE "DocumentId" IN (101, 102);
-
-            INSERT INTO dms."Document" ("DocumentId", "DocumentUuid", "ContentVersion", "IdentityVersion")
+            INSERT INTO dms.Document (DocumentId, DocumentUuid, ContentVersion, IdentityVersion)
             VALUES
                 (101, 'aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa', 10, 10),
                 (102, 'bbbbbbbb-2222-2222-2222-bbbbbbbbbbbb', 20, 20);
 
-            INSERT INTO hydtest."School" ("DocumentId", "SchoolId")
+            INSERT INTO hydtest.School (DocumentId, SchoolId)
             VALUES
                 (101, 255901),
                 (102, 255902);
 
-            INSERT INTO hydtest."SchoolAddress" ("CollectionItemId", "School_DocumentId", "Ordinal", "City")
+            INSERT INTO hydtest.SchoolAddress (CollectionItemId, School_DocumentId, Ordinal, City)
             VALUES
                 (1001, 101, 0, 'Springfield'),
                 (1002, 101, 1, 'Shelbyville'),
@@ -90,15 +89,15 @@ public class Given_A_Page_With_Multiple_Documents
         );
 
         // Build read plan
-        var plan = BuildSchoolReadPlan();
+        var plan = HydrationTestHelper.BuildSchoolReadPlan(TestSchema);
 
         // Execute hydration
         var keyset = new PageKeysetSpec.Query(
             new PageDocumentIdSqlPlan(
                 PageDocumentIdSql: """
-                SELECT "DocumentId" FROM hydtest."School"
-                ORDER BY "DocumentId"
-                LIMIT @limit OFFSET @offset
+                SELECT DocumentId FROM hydtest.School
+                ORDER BY DocumentId
+                OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
                 """,
                 TotalCountSql: null,
                 PageParametersInOrder:
@@ -111,30 +110,24 @@ public class Given_A_Page_With_Multiple_Documents
             new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 25L }
         );
 
-        await using var hydrationConnection = await _dataSource.OpenConnectionAsync();
+        await using var hydrationConnection = new SqlConnection(_connectionString);
+        await hydrationConnection.OpenAsync();
+
         _result = await HydrationExecutor.ExecuteAsync(
             hydrationConnection,
             plan,
             keyset,
-            SqlDialect.Pgsql,
+            SqlDialect.Mssql,
             CancellationToken.None
         );
     }
 
     [OneTimeTearDown]
-    public async Task OneTimeTearDown()
+    public void OneTimeTearDown()
     {
-        if (_dataSource is not null)
+        if (_databaseName is not null && MssqlTestDatabaseHelper.IsConfigured())
         {
-            await using var connection = await _dataSource.OpenConnectionAsync();
-            await ExecuteSql(
-                connection,
-                """
-                DROP SCHEMA IF EXISTS hydtest CASCADE;
-                DELETE FROM dms."Document" WHERE "DocumentId" IN (101, 102);
-                """
-            );
-            await _dataSource.DisposeAsync();
+            MssqlTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
         }
     }
 
@@ -221,20 +214,18 @@ public class Given_A_Page_With_Multiple_Documents
         _result.TotalCount.Should().BeNull();
     }
 
-    private static ResourceReadPlan BuildSchoolReadPlan() =>
-        HydrationTestHelper.BuildSchoolReadPlan(TestSchema);
-
-    private static async Task ExecuteSql(NpgsqlConnection connection, string sql)
+    private static async Task ExecuteSql(SqlConnection connection, string sql)
     {
-        await using var cmd = new NpgsqlCommand(sql, connection);
+        await using var cmd = new SqlCommand(sql, connection);
         await cmd.ExecuteNonQueryAsync();
     }
 }
 
 [TestFixture]
-public class Given_A_Single_DocumentId_Keyset
+public class Given_A_Single_DocumentId_Keyset_Mssql
 {
-    private NpgsqlDataSource _dataSource = null!;
+    private string _databaseName = null!;
+    private string _connectionString = null!;
     private HydratedPage _result = null!;
 
     private const string TestSchema = "hydsingle";
@@ -242,36 +233,43 @@ public class Given_A_Single_DocumentId_Keyset
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
     {
-        _dataSource = NpgsqlDataSource.Create(Configuration.DatabaseConnectionString);
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore("MSSQL connection string not configured.");
+        }
 
-        await using var connection = await _dataSource.OpenConnectionAsync();
+        _databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
+        MssqlTestDatabaseHelper.CreateDatabase(_databaseName);
+        _connectionString = MssqlTestDatabaseHelper.BuildConnectionString(_databaseName);
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
 
         await ExecuteSql(
             connection,
             """
-            DROP SCHEMA IF EXISTS hydsingle CASCADE;
-            CREATE SCHEMA hydsingle;
-            CREATE SCHEMA IF NOT EXISTS dms;
+            IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'dms') EXEC('CREATE SCHEMA [dms]');
+            IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'hydsingle') EXEC('CREATE SCHEMA [hydsingle]');
 
-            CREATE TABLE IF NOT EXISTS dms."Document" (
-                "DocumentId" bigint PRIMARY KEY,
-                "DocumentUuid" uuid NOT NULL,
-                "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "IdentityVersion" bigint NOT NULL DEFAULT 1,
-                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now()
+            CREATE TABLE dms.Document (
+                DocumentId bigint PRIMARY KEY,
+                DocumentUuid uniqueidentifier NOT NULL,
+                ContentVersion bigint NOT NULL DEFAULT 1,
+                IdentityVersion bigint NOT NULL DEFAULT 1,
+                ContentLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
+                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
             );
 
-            CREATE TABLE hydsingle."School" (
-                "DocumentId" bigint PRIMARY KEY,
-                "SchoolId" integer NOT NULL
+            CREATE TABLE hydsingle.School (
+                DocumentId bigint PRIMARY KEY,
+                SchoolId int NOT NULL
             );
 
-            CREATE TABLE hydsingle."SchoolAddress" (
-                "CollectionItemId" bigint PRIMARY KEY,
-                "School_DocumentId" bigint NOT NULL REFERENCES hydsingle."School"("DocumentId"),
-                "Ordinal" integer NOT NULL,
-                "City" varchar(100) NOT NULL
+            CREATE TABLE hydsingle.SchoolAddress (
+                CollectionItemId bigint PRIMARY KEY,
+                School_DocumentId bigint NOT NULL REFERENCES hydsingle.School(DocumentId),
+                Ordinal int NOT NULL,
+                City varchar(100) NOT NULL
             );
             """
         );
@@ -279,17 +277,15 @@ public class Given_A_Single_DocumentId_Keyset
         await ExecuteSql(
             connection,
             """
-            DELETE FROM dms."Document" WHERE "DocumentId" IN (201, 202);
-
-            INSERT INTO dms."Document" ("DocumentId", "DocumentUuid")
+            INSERT INTO dms.Document (DocumentId, DocumentUuid)
             VALUES
                 (201, 'cccccccc-3333-3333-3333-cccccccccccc'),
                 (202, 'dddddddd-4444-4444-4444-dddddddddddd');
 
-            INSERT INTO hydsingle."School" ("DocumentId", "SchoolId")
+            INSERT INTO hydsingle.School (DocumentId, SchoolId)
             VALUES (201, 100001), (202, 100002);
 
-            INSERT INTO hydsingle."SchoolAddress" ("CollectionItemId", "School_DocumentId", "Ordinal", "City")
+            INSERT INTO hydsingle.SchoolAddress (CollectionItemId, School_DocumentId, Ordinal, City)
             VALUES (2001, 201, 0, 'Alpha'), (2002, 202, 0, 'Beta');
             """
         );
@@ -298,30 +294,24 @@ public class Given_A_Single_DocumentId_Keyset
         var plan = HydrationTestHelper.BuildSchoolReadPlan(TestSchema);
         var keyset = new PageKeysetSpec.Single(201L);
 
-        await using var hydrationConnection = await _dataSource.OpenConnectionAsync();
+        await using var hydrationConnection = new SqlConnection(_connectionString);
+        await hydrationConnection.OpenAsync();
+
         _result = await HydrationExecutor.ExecuteAsync(
             hydrationConnection,
             plan,
             keyset,
-            SqlDialect.Pgsql,
+            SqlDialect.Mssql,
             CancellationToken.None
         );
     }
 
     [OneTimeTearDown]
-    public async Task OneTimeTearDown()
+    public void OneTimeTearDown()
     {
-        if (_dataSource is not null)
+        if (_databaseName is not null && MssqlTestDatabaseHelper.IsConfigured())
         {
-            await using var connection = await _dataSource.OpenConnectionAsync();
-            await ExecuteSql(
-                connection,
-                """
-                DROP SCHEMA IF EXISTS hydsingle CASCADE;
-                DELETE FROM dms."Document" WHERE "DocumentId" IN (201, 202);
-                """
-            );
-            await _dataSource.DisposeAsync();
+            MssqlTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
         }
     }
 
@@ -353,9 +343,9 @@ public class Given_A_Single_DocumentId_Keyset
         ((string)childRows.Rows[0][3]!).Should().Be("Alpha");
     }
 
-    private static async Task ExecuteSql(NpgsqlConnection connection, string sql)
+    private static async Task ExecuteSql(SqlConnection connection, string sql)
     {
-        await using var cmd = new NpgsqlCommand(sql, connection);
+        await using var cmd = new SqlCommand(sql, connection);
         await cmd.ExecuteNonQueryAsync();
     }
 }
@@ -472,6 +462,6 @@ internal static class HydrationTestHelper
             DescriptorEdgeSources: []
         );
 
-        return new ReadPlanCompiler(SqlDialect.Pgsql).Compile(model);
+        return new ReadPlanCompiler(SqlDialect.Mssql).Compile(model);
     }
 }
