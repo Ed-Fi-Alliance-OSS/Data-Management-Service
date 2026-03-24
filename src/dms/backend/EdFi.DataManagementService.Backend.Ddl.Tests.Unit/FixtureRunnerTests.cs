@@ -46,6 +46,14 @@ public class Given_FixtureRunner_With_Ext_Fixture : DdlGoldenFixtureTestBase
 }
 
 [TestFixture]
+public class Given_FixtureRunner_With_Focused_Stable_Key_Extension_Child_Collections_Fixture
+    : DdlGoldenFixtureTestBase
+{
+    protected override string ResolveFixtureDirectory(string projectRoot) =>
+        Path.Combine(projectRoot, "Fixtures", "focused", "stable-key-extension-child-collections");
+}
+
+[TestFixture]
 public class Given_FixtureRunner_With_NamingStress_Fixture : DdlGoldenFixtureTestBase
 {
     protected override string ResolveFixtureDirectory(string projectRoot) =>
