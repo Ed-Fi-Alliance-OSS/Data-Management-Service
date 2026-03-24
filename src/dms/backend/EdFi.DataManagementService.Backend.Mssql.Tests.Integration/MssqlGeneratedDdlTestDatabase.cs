@@ -259,6 +259,19 @@ internal sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
         return rows;
     }
 
+    public async Task<int> ExecuteNonQueryAsync(string sql, params SqlParameter[] parameters)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sql);
+
+        await using SqlConnection connection = new(ConnectionString);
+        await connection.OpenAsync();
+        await using SqlCommand command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.Parameters.AddRange(parameters);
+
+        return await command.ExecuteNonQueryAsync();
+    }
+
     public async Task<T> ExecuteScalarAsync<T>(string sql, params SqlParameter[] parameters)
     {
         var result = await ExecuteScalarOrDefaultAsync<T>(sql, parameters);
