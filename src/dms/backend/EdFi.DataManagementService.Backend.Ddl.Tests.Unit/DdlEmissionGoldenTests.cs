@@ -890,6 +890,176 @@ public class Given_DdlManifest_For_AuthEdOrgHierarchy : DdlEmissionGoldenTestBas
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// Golden File Tests - People Auth Views
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_DdlEmitter_With_AuthPeopleViews_For_Pgsql : DdlEmissionGoldenTestBase
+{
+    private GoldenTestPaths _paths = default!;
+    private string _ddlContent = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var modelSet = AuthPeopleViewsFixture.Build(SqlDialect.Pgsql);
+        _paths = EmitDdl("auth-people-views", SqlDialect.Pgsql, modelSet);
+        _ddlContent = File.ReadAllText(_paths.ActualPath);
+    }
+
+    [Test]
+    public void It_should_emit_ddl_matching_golden_file()
+    {
+        AssertGoldenMatch(_paths);
+    }
+
+    [Test]
+    public void It_should_emit_student_view()
+    {
+        _ddlContent
+            .Should()
+            .Contain(
+                "EducationOrganizationIdToStudentDocumentId",
+                "Student people auth view should be created"
+            );
+    }
+
+    [Test]
+    public void It_should_emit_contact_view()
+    {
+        _ddlContent
+            .Should()
+            .Contain(
+                "EducationOrganizationIdToContactDocumentId",
+                "Contact people auth view should be created"
+            );
+    }
+
+    [Test]
+    public void It_should_emit_staff_view()
+    {
+        _ddlContent
+            .Should()
+            .Contain("EducationOrganizationIdToStaffDocumentId", "Staff people auth view should be created");
+    }
+
+    [Test]
+    public void It_should_emit_student_through_responsibility_view()
+    {
+        _ddlContent
+            .Should()
+            .Contain(
+                "EducationOrganizationIdToStudentDocumentIdThroughResponsibility",
+                "StudentThroughResponsibility people auth view should be created"
+            );
+    }
+
+    [Test]
+    public void It_should_use_create_or_replace_view()
+    {
+        _ddlContent.Should().Contain("CREATE OR REPLACE VIEW", "PgSQL should use CREATE OR REPLACE VIEW");
+    }
+
+    [Test]
+    public void It_should_use_select_distinct()
+    {
+        _ddlContent.Should().Contain("SELECT DISTINCT", "People auth views should use SELECT DISTINCT");
+    }
+}
+
+[TestFixture]
+public class Given_DdlEmitter_With_AuthPeopleViews_For_Mssql : DdlEmissionGoldenTestBase
+{
+    private GoldenTestPaths _paths = default!;
+    private string _ddlContent = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var modelSet = AuthPeopleViewsFixture.Build(SqlDialect.Mssql);
+        _paths = EmitDdl("auth-people-views", SqlDialect.Mssql, modelSet);
+        _ddlContent = File.ReadAllText(_paths.ActualPath);
+    }
+
+    [Test]
+    public void It_should_emit_ddl_matching_golden_file()
+    {
+        AssertGoldenMatch(_paths);
+    }
+
+    [Test]
+    public void It_should_emit_student_view()
+    {
+        _ddlContent
+            .Should()
+            .Contain(
+                "EducationOrganizationIdToStudentDocumentId",
+                "Student people auth view should be created"
+            );
+    }
+
+    [Test]
+    public void It_should_emit_contact_view()
+    {
+        _ddlContent
+            .Should()
+            .Contain(
+                "EducationOrganizationIdToContactDocumentId",
+                "Contact people auth view should be created"
+            );
+    }
+
+    [Test]
+    public void It_should_emit_staff_view()
+    {
+        _ddlContent
+            .Should()
+            .Contain("EducationOrganizationIdToStaffDocumentId", "Staff people auth view should be created");
+    }
+
+    [Test]
+    public void It_should_emit_student_through_responsibility_view()
+    {
+        _ddlContent
+            .Should()
+            .Contain(
+                "EducationOrganizationIdToStudentDocumentIdThroughResponsibility",
+                "StudentThroughResponsibility people auth view should be created"
+            );
+    }
+
+    [Test]
+    public void It_should_use_create_or_alter_view()
+    {
+        _ddlContent.Should().Contain("CREATE OR ALTER VIEW", "MSSQL should use CREATE OR ALTER VIEW");
+    }
+
+    [Test]
+    public void It_should_emit_go_batch_separators()
+    {
+        _ddlContent.Should().Contain("GO\n", "MSSQL should emit GO batch separators before views");
+    }
+}
+
+[TestFixture]
+public class Given_DdlManifest_For_AuthPeopleViews : DdlEmissionGoldenTestBase
+{
+    private GoldenTestPaths _paths = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _paths = EmitDdlManifest("auth-people-views", AuthPeopleViewsFixture.Build);
+    }
+
+    [Test]
+    public void It_should_emit_manifest_matching_golden_file()
+    {
+        AssertGoldenMatch(_paths);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Fixture Builders
 // ═══════════════════════════════════════════════════════════════════
 
