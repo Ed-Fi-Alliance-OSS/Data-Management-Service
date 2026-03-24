@@ -1,0 +1,6 @@
+2026-03-23 DMS-1107 reference/design/backend-redesign/epics/02-ddl-emission/07-stable-collection-row-identity-ddl.md
+- Completed: Core DDL task. Emit dms.CollectionItemIdSequence in core phase 3 for pgsql + mssql.
+- Decisions: add shared DmsTableNames constant; keep ChangeVersionSequence statement unchanged and first in sequence phase; assert CollectionItemIdSequence exists and appears before table DDL.
+- Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Ddl/DmsTableNames.cs; src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CoreDdlEmitter.cs; src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/CoreDdlEmitterTests.cs; DDL expected SQL + ddl.manifest goldens under src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures and src/dms/backend/Fixtures/authoritative/ds-5.2/expected.
+- Verify: UPDATE_GOLDENS=1 dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj; dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj.
+- Notes next: relational emitter still needs task 2 to put CollectionItemId defaults on collection + extension-child tables using stable identity metadata.
