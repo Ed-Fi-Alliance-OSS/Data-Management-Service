@@ -306,13 +306,17 @@ internal static class HydrationBatchBuilderTestHelper
             ),
             Key: new TableKey(
                 ConstraintName: "PK_SchoolAddress",
-                Columns: [new DbKeyColumn(new DbColumnName("CollectionItemId"), ColumnKind.CollectionKey)]
+                Columns:
+                [
+                    new DbKeyColumn(new DbColumnName("School_DocumentId"), ColumnKind.ParentKeyPart),
+                    new DbKeyColumn(new DbColumnName("Ordinal"), ColumnKind.Ordinal),
+                ]
             ),
             Columns:
             [
                 new DbColumnModel(
                     ColumnName: new DbColumnName("CollectionItemId"),
-                    Kind: ColumnKind.CollectionKey,
+                    Kind: ColumnKind.Scalar,
                     ScalarType: new RelationalScalarType(ScalarKind.Int64),
                     IsNullable: false,
                     SourceJsonPath: null,
