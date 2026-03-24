@@ -36,6 +36,15 @@
     "completed": false
   },
   {
+    "category": "Indexes and Ordering",
+    "description": "Update FK-supporting index emission and deterministic ordering rules for the stable-identity constraint inventory introduced by this story. Acceptance: new composite parent/root and extension-parent FKs receive the expected supporting indexes without duplicates, canonical SQL ordering remains stable across both dialects, and focused regression coverage proves constraint/index ordering does not drift when stable-identity metadata is present.",
+    "steps-to-verify": [
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj",
+      "Inspect updated focused fixture and regression snapshots to confirm new FK-support indexes and stable statement ordering."
+    ],
+    "completed": false
+  },
+  {
     "category": "Authoritative Fixture",
     "description": "Add a new authoritative fixture that combines DS 5.2 core input with the Sample extension input, rather than Sample alone. Acceptance: the new fixture directory has a `fixture.json` that lists both schema inputs, expected PostgreSQL and SQL Server SQL plus DDL/effective-schema/relational-model manifests are committed, and the authoritative outputs show stable collection row identity on real extension attachment scenarios against actual Ed-Fi base resources.",
     "steps-to-verify": [
@@ -45,8 +54,8 @@
     "completed": false
   },
   {
-    "category": "PostgreSQL Integration",
-    "description": "Add narrow PostgreSQL generated-DDL apply smoke tests for the new focused stable-key fixture and the new authoritative DS+Sample fixture. Acceptance: tests generate full DDL via the shared emitter, provision a fresh database, apply the same DDL a second time successfully, assert `dms.CollectionItemIdSequence` exists, confirm representative tables allocate `CollectionItemId` via defaults, prove representative nested and extension-child inserts satisfy the emitted FK shapes, and verify delete cascades follow the immediate-parent chain.",
+    "category": "PostgreSQL Integration Harness",
+    "description": "Add or extend PostgreSQL generated-DDL apply test helpers so a test can provision a fresh database from the shared full emitter, apply the same generated DDL a second time, and run targeted schema/data assertions safely. Acceptance: the harness can be reused by stable-key smoke tests, supports second-apply idempotency checks, and exposes enough helpers to query sequence existence, column defaults, FK metadata, and representative inserted rows.",
     "steps-to-verify": [
       "Ensure the PostgreSQL integration test database is configured and reachable.",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj"
@@ -54,8 +63,44 @@
     "completed": false
   },
   {
-    "category": "SQL Server Integration",
-    "description": "Add narrow SQL Server generated-DDL apply smoke tests for the new focused stable-key fixture and the new authoritative DS+Sample fixture. Acceptance: tests generate full DDL via the shared emitter, provision a fresh database, apply the same DDL a second time successfully, assert `dms.CollectionItemIdSequence` exists, confirm representative tables allocate `CollectionItemId` via defaults, prove representative nested and extension-child inserts satisfy the emitted FK shapes, and verify delete cascades follow the immediate-parent chain.",
+    "category": "PostgreSQL Focused Smoke",
+    "description": "Add narrow PostgreSQL generated-DDL apply smoke tests for the focused stable-key fixture. Acceptance: tests generate full DDL via the shared emitter, provision a fresh database, apply the same DDL a second time successfully, assert `dms.CollectionItemIdSequence` exists, confirm representative collection and extension-child tables allocate `CollectionItemId` via defaults, assert targeted FK metadata for the immediate-parent chain and the absence of redundant root-cascade paths, prove representative nested and extension-child inserts satisfy the emitted FK shapes, and verify delete cascades follow the immediate-parent chain.",
+    "steps-to-verify": [
+      "Ensure the PostgreSQL integration test database is configured and reachable.",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "PostgreSQL Authoritative Smoke",
+    "description": "Add narrow PostgreSQL generated-DDL apply smoke tests for the authoritative DS+Sample fixture. Acceptance: tests generate full DDL via the shared emitter, provision a fresh database, apply the same DDL a second time successfully, assert `dms.CollectionItemIdSequence` exists, confirm representative stable-identity defaults on real DS+Sample collection tables, assert targeted FK metadata for the specific stable-identity and extension-parent relationships under test, and prove representative inserts and delete cascades succeed on the intended immediate-parent chain.",
+    "steps-to-verify": [
+      "Ensure the PostgreSQL integration test database is configured and reachable.",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "SQL Server Integration Harness",
+    "description": "Add or extend SQL Server generated-DDL apply test helpers so a test can provision a fresh database from the shared full emitter, apply the same generated DDL a second time, and run targeted schema/data assertions safely. Acceptance: the harness can be reused by stable-key smoke tests, supports second-apply idempotency checks, and exposes enough helpers to query sequence existence, default constraints, FK metadata, and representative inserted rows.",
+    "steps-to-verify": [
+      "Ensure the SQL Server integration test database is configured and reachable.",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "SQL Server Focused Smoke",
+    "description": "Add narrow SQL Server generated-DDL apply smoke tests for the focused stable-key fixture. Acceptance: tests generate full DDL via the shared emitter, provision a fresh database, apply the same DDL a second time successfully, assert `dms.CollectionItemIdSequence` exists, confirm representative collection and extension-child tables allocate `CollectionItemId` via defaults, assert targeted FK metadata for the immediate-parent chain and the absence of redundant root-cascade paths, prove representative nested and extension-child inserts satisfy the emitted FK shapes, and verify delete cascades follow the immediate-parent chain.",
+    "steps-to-verify": [
+      "Ensure the SQL Server integration test database is configured and reachable.",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "SQL Server Authoritative Smoke",
+    "description": "Add narrow SQL Server generated-DDL apply smoke tests for the authoritative DS+Sample fixture. Acceptance: tests generate full DDL via the shared emitter, provision a fresh database, apply the same DDL a second time successfully, assert `dms.CollectionItemIdSequence` exists, confirm representative stable-identity defaults on real DS+Sample collection tables, assert targeted FK metadata for the specific stable-identity and extension-parent relationships under test, and prove representative inserts and delete cascades succeed on the intended immediate-parent chain.",
     "steps-to-verify": [
       "Ensure the SQL Server integration test database is configured and reachable.",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj"
