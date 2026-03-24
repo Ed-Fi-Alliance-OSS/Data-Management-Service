@@ -21,6 +21,8 @@ public class DatabaseSetupFixture
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
     {
+        await EnsureDatabaseExistsAsync();
+
         var dialect = new PgsqlDialect(new PgsqlDialectRules());
         var schema = new DbSchemaName("dms");
 
@@ -62,5 +64,33 @@ public class DatabaseSetupFixture
     public async Task OneTimeTearDown()
     {
         await Uuidv5ParityTestBase.DisposeDataSourceAsync();
+    }
+
+    /// <summary>
+    /// Connects to the default 'postgres' database and creates the test database
+    /// if it does not already exist. This isolates the new backend integration tests
+    /// from the old DbUp-based tests that share the same PostgreSQL instance in CI.
+    /// </summary>
+    private static async Task EnsureDatabaseExistsAsync()
+    {
+        var builder = new NpgsqlConnectionStringBuilder(Configuration.DatabaseConnectionString);
+        var databaseName = builder.Database!;
+        builder.Database = "postgres";
+
+        await using var connection = new NpgsqlConnection(builder.ConnectionString);
+        await connection.OpenAsync();
+
+        await using var checkCmd = new NpgsqlCommand(
+            "SELECT 1 FROM pg_database WHERE datname = @name",
+            connection
+        );
+        checkCmd.Parameters.AddWithValue("name", databaseName);
+
+        if (await checkCmd.ExecuteScalarAsync() is null)
+        {
+            // Database names are safe identifiers from appsettings, not user input
+            await using var createCmd = new NpgsqlCommand($"CREATE DATABASE \"{databaseName}\"", connection);
+            await createCmd.ExecuteNonQueryAsync();
+        }
     }
 }
