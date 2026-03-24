@@ -1,0 +1,74 @@
+[
+  {
+    "category": "Core DDL",
+    "description": "Emit `dms.CollectionItemIdSequence` unconditionally in the core DDL phase for PostgreSQL and SQL Server, add any shared constants needed for the new core object, and preserve deterministic ordering so the sequence is created before any table definitions that can reference it. Acceptance: both dialects create the sequence idempotently, existing `ChangeVersionSequence` behavior is unchanged, and unit tests explicitly assert presence and ordering.",
+    "steps-to-verify": [
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj",
+      "Inspect the updated core DDL assertions or snapshots to confirm `CollectionItemIdSequence` is emitted before any collection table defaults."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Relational DDL",
+    "description": "Teach relational table emission to use stable-table identity metadata when rendering columns so `CollectionItemId` gets the correct engine-specific default sourced from `dms.CollectionItemIdSequence` on `DbTableKind.Collection` and `DbTableKind.ExtensionCollection` tables only. Acceptance: PostgreSQL emits `nextval(...)`, SQL Server emits `NEXT VALUE FOR ...`, `BaseCollectionItemId` and `ParentCollectionItemId` remain plain locator columns, and root tables plus collection-aligned extension-scope tables do not gain unintended defaults.",
+    "steps-to-verify": [
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj",
+      "Inspect focused relational-emitter assertions to confirm defaults appear only on `CollectionItemId` columns for collection and extension-child tables."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Pipeline Boundary",
+    "description": "Add or refresh regression coverage that locks DDL emission to the permissive shared relational-model pipeline and prevents this story from reintroducing global semantic-identity fail-fast. Acceptance: DDL continues to build from `RelationalModelSetPasses.CreateDefault()`, generic fixtures without semantic identity still emit DDL, and fixtures with compiled semantic identity prove DDL consumes the metadata when it exists.",
+    "steps-to-verify": [
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Focused Fixture",
+    "description": "Add a dedicated DDL golden fixture based on the focused stable-key sample scenario already used by relational-model tests. Acceptance: committed PostgreSQL and SQL Server SQL plus relational-model manifests cover root-level collections, nested collections, collection-aligned extension scopes, root-level `_ext` child collections, nested extension child collections, and collection-aligned `_ext` child collections; the fixture proves `CollectionItemId` defaults, PKs on stable identity, sibling-order uniques, semantic-identity uniques when present, conditional `(CollectionItemId, <Root>_DocumentId)` target uniques only where needed, and immediate-parent cascade FKs without redundant root-cascade edges.",
+    "steps-to-verify": [
+      "If snapshots changed intentionally, run: UPDATE_GOLDENS=1 dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj",
+      "Run again without blessing: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Authoritative Fixture",
+    "description": "Add a new authoritative fixture that combines DS 5.2 core input with the Sample extension input, rather than Sample alone. Acceptance: the new fixture directory has a `fixture.json` that lists both schema inputs, expected PostgreSQL and SQL Server SQL plus DDL/effective-schema/relational-model manifests are committed, and the authoritative outputs show stable collection row identity on real extension attachment scenarios against actual Ed-Fi base resources.",
+    "steps-to-verify": [
+      "If snapshots changed intentionally, run: UPDATE_GOLDENS=1 dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter \"Category=Authoritative\"",
+      "Run again without blessing: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj --filter \"Category=Authoritative\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "PostgreSQL Integration",
+    "description": "Add narrow PostgreSQL generated-DDL apply smoke tests for the new focused stable-key fixture and the new authoritative DS+Sample fixture. Acceptance: tests generate full DDL via the shared emitter, provision a fresh database, apply the same DDL a second time successfully, assert `dms.CollectionItemIdSequence` exists, confirm representative tables allocate `CollectionItemId` via defaults, prove representative nested and extension-child inserts satisfy the emitted FK shapes, and verify delete cascades follow the immediate-parent chain.",
+    "steps-to-verify": [
+      "Ensure the PostgreSQL integration test database is configured and reachable.",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "SQL Server Integration",
+    "description": "Add narrow SQL Server generated-DDL apply smoke tests for the new focused stable-key fixture and the new authoritative DS+Sample fixture. Acceptance: tests generate full DDL via the shared emitter, provision a fresh database, apply the same DDL a second time successfully, assert `dms.CollectionItemIdSequence` exists, confirm representative tables allocate `CollectionItemId` via defaults, prove representative nested and extension-child inserts satisfy the emitted FK shapes, and verify delete cascades follow the immediate-parent chain.",
+    "steps-to-verify": [
+      "Ensure the SQL Server integration test database is configured and reachable.",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Snapshot Review",
+    "description": "Refresh regression goldens and manifests affected as fallout from stable collection row identity, then review the branch diff for deterministic-artifact churn before closing the story. Acceptance: small regression fixtures such as `small/nested` and `small/ext` are updated only where the new sequence/default or constraint ordering changes require it, authoritative fixture churn is limited to stable-identity-related DDL changes, and the final diff review calls out anything unexpected before merge.",
+    "steps-to-verify": [
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj",
+      "Run: git diff -- tasks.json src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures src/dms/backend/Fixtures/authoritative"
+    ],
+    "completed": false
+  }
+]
