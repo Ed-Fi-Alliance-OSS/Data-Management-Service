@@ -386,10 +386,10 @@ public abstract class SchemaIntrospectorBase : ISchemaIntrospector
             .ToList();
     }
 
-    private sealed record RawFunction(string SchemaName, string FunctionName, string ReturnType, string Definition);
+    private sealed record RawFunction(string SchemaName, string FunctionName, string SpecificName, string ReturnType, string Definition);
 
     private sealed record RawFunctionParameter(
-        string SchemaName, string FunctionName, string ParameterType, int OrdinalPosition
+        string SchemaName, string FunctionName, string SpecificName, string ParameterType, int OrdinalPosition
     );
 
     private List<RawFunction> ReadFunctions(
@@ -399,6 +399,7 @@ public abstract class SchemaIntrospectorBase : ISchemaIntrospector
             r => new RawFunction(
                 r.GetString(r.GetOrdinal("schema_name")),
                 r.GetString(r.GetOrdinal("function_name")),
+                r.GetString(r.GetOrdinal("specific_name")),
                 r.GetString(r.GetOrdinal("return_type")),
                 r.GetString(r.GetOrdinal("definition"))));
 
@@ -409,6 +410,7 @@ public abstract class SchemaIntrospectorBase : ISchemaIntrospector
             r => new RawFunctionParameter(
                 r.GetString(r.GetOrdinal("schema_name")),
                 r.GetString(r.GetOrdinal("function_name")),
+                r.GetString(r.GetOrdinal("specific_name")),
                 r.GetString(r.GetOrdinal("parameter_type")),
                 r.GetInt32(r.GetOrdinal("ordinal_position"))));
 
@@ -416,19 +418,20 @@ public abstract class SchemaIntrospectorBase : ISchemaIntrospector
         List<RawFunction> functions, List<RawFunctionParameter> parameters)
     {
         var paramLookup = parameters
-            .GroupBy(p => (p.SchemaName, p.FunctionName))
+            .GroupBy(p => (p.SchemaName, p.SpecificName))
             .ToDictionary(g => g.Key, g => g.OrderBy(p => p.OrdinalPosition).Select(p => p.ParameterType).ToList());
 
         var results = new List<FunctionEntry>();
         foreach (var f in functions)
         {
-            var key = (f.SchemaName, f.FunctionName);
+            var key = (f.SchemaName, f.SpecificName);
             var paramTypes = paramLookup.GetValueOrDefault(key, []);
             results.Add(new FunctionEntry(f.SchemaName, f.FunctionName, f.ReturnType, paramTypes, f.Definition));
         }
         return results
             .OrderBy(x => x.SchemaName, StringComparer.Ordinal)
             .ThenBy(x => x.FunctionName, StringComparer.Ordinal)
+            .ThenBy(x => string.Join(",", x.ParameterTypes), StringComparer.Ordinal)
             .ToList();
     }
 

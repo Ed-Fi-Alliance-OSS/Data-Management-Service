@@ -14,26 +14,37 @@ namespace EdFi.DataManagementService.SchemaTools.Tests.Integration;
 public class Given_Provisioned_Pgsql_Database_When_Introspecting_Schema
 {
     private string _databaseName = null!;
+    private string? _ddlOutputDir;
     private string _actualManifestPath = null!;
     private string _expectedManifestPath = null!;
 
     [OneTimeSetUp]
     public void OneTimeSetUp()
     {
+        // Emit DDL to a temp directory
+        _ddlOutputDir = Path.Combine(Path.GetTempPath(), $"dms_emit_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(_ddlOutputDir);
+
+        var (emitExitCode, emitOutput, emitError) = ProvisionTestHelper.RunEmit("pgsql", _ddlOutputDir);
+
+        if (emitExitCode != 0)
+        {
+            Assert.Fail($"ddl emit failed (exit code {emitExitCode}).\nstdout: {emitOutput}\nstderr: {emitError}");
+        }
+
+        var sqlFilePath = Path.Combine(_ddlOutputDir, "pgsql.sql");
+        Assert.That(File.Exists(sqlFilePath), Is.True, $"Expected emitted DDL file not found: {sqlFilePath}");
+
+        // Create a fresh database and apply DDL via psql
         _databaseName = PostgresTestDatabaseHelper.GenerateUniqueDatabaseName();
         var connectionString = PostgresTestDatabaseHelper.BuildConnectionString(_databaseName);
+        PostgresTestDatabaseHelper.CreateDatabase(_databaseName);
 
-        // Provision the database via CLI
-        var (exitCode, output, error) = ProvisionTestHelper.RunProvision(
-            "pgsql",
-            connectionString,
-            CliTestHelper.GetAuthoritativeSchemaPaths(),
-            createDatabase: true
-        );
+        var (psqlExitCode, psqlOutput, psqlError) = ProvisionTestHelper.RunPsql(connectionString, sqlFilePath);
 
-        if (exitCode != 0)
+        if (psqlExitCode != 0)
         {
-            Assert.Fail($"Provisioning failed (exit code {exitCode}).\nstdout: {output}\nstderr: {error}");
+            Assert.Fail($"psql failed (exit code {psqlExitCode}).\nstdout: {psqlOutput}\nstderr: {psqlError}");
         }
 
         // Discover schemas created by the DDL
@@ -77,6 +88,11 @@ public class Given_Provisioned_Pgsql_Database_When_Introspecting_Schema
     public void OneTimeTearDown()
     {
         PostgresTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+
+        if (_ddlOutputDir is not null && Directory.Exists(_ddlOutputDir))
+        {
+            Directory.Delete(_ddlOutputDir, recursive: true);
+        }
     }
 
     [Test]

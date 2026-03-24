@@ -175,9 +175,9 @@ internal static partial class ProvisionTestHelper
 
     internal static void AssertDistinctChangeVersionsOnMultiRowUpdate(DbConnection connection, string dialect)
     {
-        using var rkCommand = connection.CreateCommand();
-        rkCommand.CommandText = $"SELECT MIN({Quote(dialect, "ResourceKeyId")}) FROM {QualifyTable(dialect, "dms", "ResourceKey")};";
-        var resourceKeyId = Convert.ToInt16(rkCommand.ExecuteScalar());
+        using var resourceKeyCommand = connection.CreateCommand();
+        resourceKeyCommand.CommandText = $"SELECT MIN({Quote(dialect, "ResourceKeyId")}) FROM {QualifyTable(dialect, "dms", "ResourceKey")};";
+        var resourceKeyId = Convert.ToInt16(resourceKeyCommand.ExecuteScalar());
 
         var documentIds = new long[3];
         for (int i = 0; i < 3; i++)
@@ -268,7 +268,6 @@ internal static partial class ProvisionTestHelper
             "pg_catalog",
             "information_schema",
             "pg_toast",
-            "public",
         };
 
         using var connection = new NpgsqlConnection(connectionString);
@@ -297,7 +296,6 @@ internal static partial class ProvisionTestHelper
             "sys",
             "INFORMATION_SCHEMA",
             "guest",
-            "dbo",
         };
 
         using var connection = new SqlConnection(connectionString);
@@ -320,5 +318,68 @@ internal static partial class ProvisionTestHelper
             }
         }
         return schemas;
+    }
+
+    internal static (int ExitCode, string Output, string Error) RunEmit(
+        string dialect,
+        string outputDir,
+        string[]? schemaPaths = null
+    )
+    {
+        schemaPaths ??= CliTestHelper.GetAuthoritativeSchemaPaths();
+        List<string> args =
+        [
+            "ddl",
+            "emit",
+            "--schema",
+            ..schemaPaths,
+            "--output",
+            outputDir,
+            "--dialect",
+            dialect,
+        ];
+        return CliTestHelper.RunCli([.. args]);
+    }
+
+    internal static (int ExitCode, string Output, string Error) RunPsql(
+        string connectionString,
+        string sqlFilePath
+    )
+    {
+        var builder = new NpgsqlConnectionStringBuilder(connectionString);
+
+        var args = new List<string>
+        {
+            "-h", builder.Host!,
+            "-p", builder.Port.ToString(),
+            "-U", builder.Username!,
+            "-d", builder.Database!,
+            "-v", "ON_ERROR_STOP=1",
+            "-f", sqlFilePath,
+        };
+
+        var env = new Dictionary<string, string> { ["PGPASSWORD"] = builder.Password! };
+
+        return CliTestHelper.RunProcess("psql", args, env);
+    }
+
+    internal static (int ExitCode, string Output, string Error) RunSqlcmd(
+        string connectionString,
+        string sqlFilePath
+    )
+    {
+        var builder = new SqlConnectionStringBuilder(connectionString);
+
+        var args = new List<string>
+        {
+            "-S", builder.DataSource,
+            "-U", builder.UserID,
+            "-P", builder.Password,
+            "-d", builder.InitialCatalog,
+            "-b",
+            "-i", sqlFilePath,
+        };
+
+        return CliTestHelper.RunProcess("sqlcmd", args);
     }
 }

@@ -15,6 +15,7 @@ namespace EdFi.DataManagementService.SchemaTools.Tests.Integration;
 public class Given_Provisioned_Mssql_Database_When_Introspecting_Schema
 {
     private string _databaseName = null!;
+    private string? _ddlOutputDir;
     private string _actualManifestPath = null!;
     private string _expectedManifestPath = null!;
     private bool _isConfigured;
@@ -28,21 +29,38 @@ public class Given_Provisioned_Mssql_Database_When_Introspecting_Schema
             return;
         }
 
-        _databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
-        var connectionString = MssqlTestDatabaseHelper.BuildConnectionString(_databaseName);
+        // Emit DDL to a temp directory
+        _ddlOutputDir = Path.Combine(Path.GetTempPath(), $"dms_emit_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(_ddlOutputDir);
 
-        var (exitCode, output, error) = ProvisionTestHelper.RunProvision(
-            "mssql",
-            connectionString,
-            CliTestHelper.GetAuthoritativeSchemaPaths(),
-            createDatabase: true
-        );
+        var (emitExitCode, emitOutput, emitError) = ProvisionTestHelper.RunEmit("mssql", _ddlOutputDir);
 
-        if (exitCode != 0)
+        if (emitExitCode != 0)
         {
-            Assert.Fail($"Provisioning failed (exit code {exitCode}).\nstdout: {output}\nstderr: {error}");
+            Assert.Fail($"ddl emit failed (exit code {emitExitCode}).\nstdout: {emitOutput}\nstderr: {emitError}");
         }
 
+        var sqlFilePath = Path.Combine(_ddlOutputDir, "mssql.sql");
+        Assert.That(File.Exists(sqlFilePath), Is.True, $"Expected emitted DDL file not found: {sqlFilePath}");
+
+        // Create a fresh database and apply DDL via sqlcmd
+        _databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
+        var connectionString = MssqlTestDatabaseHelper.BuildConnectionString(_databaseName);
+        MssqlTestDatabaseHelper.CreateDatabase(_databaseName);
+
+        var (sqlcmdExitCode, sqlcmdOutput, sqlcmdError) = ProvisionTestHelper.RunSqlcmd(
+            connectionString,
+            sqlFilePath
+        );
+
+        if (sqlcmdExitCode != 0)
+        {
+            Assert.Fail(
+                $"sqlcmd failed (exit code {sqlcmdExitCode}).\nstdout: {sqlcmdOutput}\nstderr: {sqlcmdError}"
+            );
+        }
+
+        // Introspect
         var schemaAllowlist = ProvisionTestHelper.DiscoverProvisionedSchemasMssql(connectionString);
 
         var introspector = new MssqlSchemaIntrospector();
@@ -80,6 +98,11 @@ public class Given_Provisioned_Mssql_Database_When_Introspecting_Schema
         if (_isConfigured)
         {
             MssqlTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+        }
+
+        if (_ddlOutputDir is not null && Directory.Exists(_ddlOutputDir))
+        {
+            Directory.Delete(_ddlOutputDir, recursive: true);
         }
     }
 

@@ -243,6 +243,7 @@ public class MssqlSchemaIntrospector : SchemaIntrospectorBase
                 SELECT
                     s.name AS schema_name,
                     o.name AS function_name,
+                    CAST(o.object_id AS varchar) AS specific_name,
                     CASE o.type
                         WHEN 'FN' THEN 'scalar'
                         WHEN 'IF' THEN 'table'
@@ -260,6 +261,7 @@ public class MssqlSchemaIntrospector : SchemaIntrospectorBase
                 SELECT
                     s.name AS schema_name,
                     o.name AS function_name,
+                    CAST(o.object_id AS varchar) AS specific_name,
                     tp.name AS parameter_type,
                     p.parameter_id AS ordinal_position
                 FROM sys.parameters p

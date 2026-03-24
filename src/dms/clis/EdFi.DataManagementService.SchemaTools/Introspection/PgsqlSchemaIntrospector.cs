@@ -187,6 +187,7 @@ public class PgsqlSchemaIntrospector : SchemaIntrospectorBase
                 SELECT
                     n.nspname AS schema_name,
                     p.proname AS function_name,
+                    p.oid::text AS specific_name,
                     pg_get_function_result(p.oid) AS return_type,
                     pg_get_functiondef(p.oid) AS definition
                 FROM pg_catalog.pg_proc p
@@ -198,6 +199,7 @@ public class PgsqlSchemaIntrospector : SchemaIntrospectorBase
                 SELECT
                     n.nspname AS schema_name,
                     p.proname AS function_name,
+                    p.oid::text AS specific_name,
                     format_type(unnest_type, NULL) AS parameter_type,
                     ord::int AS ordinal_position
                 FROM pg_catalog.pg_proc p
