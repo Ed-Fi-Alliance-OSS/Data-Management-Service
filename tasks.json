@@ -78,7 +78,7 @@
       "Ensure the PostgreSQL integration test database is configured and reachable.",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "SQL Server Integration Harness",
