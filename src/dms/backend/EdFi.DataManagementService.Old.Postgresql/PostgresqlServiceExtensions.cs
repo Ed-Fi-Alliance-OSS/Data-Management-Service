@@ -77,6 +77,7 @@ public static class PostgresqlServiceExtensions
         services.AddScoped<IUpsertDocument, UpsertDocument>();
         services.AddScoped<IDeleteDocumentById, DeleteDocumentById>();
         services.AddScoped<ISqlAction, SqlAction>();
+        services.AddScoped<IDocumentHydrator, PostgresqlDocumentHydrator>();
 
         return services;
     }
