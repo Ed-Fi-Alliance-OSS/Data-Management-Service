@@ -118,8 +118,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         // Phase 5: Indexes
         EmitIndexes(writer, indexes);
 
-        // Phase 6: Abstract Union Views (must precede Triggers per design)
+        // Phase 6: Views (must precede Triggers per design)
         EmitAbstractUnionViews(writer, abstractUnionViews);
+        EmitPeopleAuthViews(writer, authHierarchy);
 
         // Phase 7: Triggers (includes auth hierarchy triggers)
         EmitTriggers(writer, triggers);
@@ -1929,6 +1930,156 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                     "Unsupported projection expression"
                 );
         }
+    }
+
+    /// <summary>
+    /// Emits hard-coded <c>CREATE VIEW</c> statements for the four people authorization views
+    /// in the <c>auth</c> schema. These views map <c>SourceEducationOrganizationId</c> to person
+    /// <c>DocumentId</c> values through their respective association tables and the EdOrg hierarchy.
+    /// </summary>
+    /// <remarks>
+    /// Views are emitted in alphabetical order by name:
+    /// <list type="number">
+    ///   <item><c>auth.EducationOrganizationIdToContactDocumentId</c></item>
+    ///   <item><c>auth.EducationOrganizationIdToStaffDocumentId</c></item>
+    ///   <item><c>auth.EducationOrganizationIdToStudentDocumentId</c></item>
+    ///   <item><c>auth.EducationOrganizationIdToStudentDocumentIdThroughResponsibility</c></item>
+    /// </list>
+    /// The definitions are hard-coded because people types are rarely added/modified and their
+    /// join structures are not easily generalizable (e.g., Staff joins against two association
+    /// tables; Contact goes through Student). See <c>auth.md</c> ("People auth views") for design.
+    /// </remarks>
+    private void EmitPeopleAuthViews(SqlWriter writer, AuthEdOrgHierarchy? authHierarchy)
+    {
+        if (authHierarchy is not { EntitiesInNameOrder.Count: > 0 })
+        {
+            return;
+        }
+
+        var authSchema = AuthTableNames.AuthSchema;
+        string edOrgTable = Quote(AuthTableNames.EdOrgIdToEdOrgId);
+        string srcEdOrgId = Quote(AuthTableNames.SourceEdOrgId);
+        string tgtEdOrgId = Quote(AuthTableNames.TargetEdOrgId);
+
+        // Alphabetical order: Contact, Staff, Student, StudentThroughResponsibility
+
+        // 1. auth.EducationOrganizationIdToContactDocumentId
+        //    EdOrg hierarchy -> StudentSchoolAssociation -> StudentContactAssociation
+        EmitPeopleAuthViewHeader(writer, authSchema, "EducationOrganizationIdToContactDocumentId");
+        writer.AppendLine($"SELECT DISTINCT");
+        using (writer.Indent())
+        {
+            writer.AppendLine($"edOrg.{srcEdOrgId},");
+            writer.AppendLine($"sca.{Quote("Contact_DocumentId")}");
+        }
+        writer.AppendLine($"FROM {edOrgTable} edOrg");
+        writer.AppendLine(
+            $"INNER JOIN {Quote(new DbTableName(new DbSchemaName("edfi"), "StudentSchoolAssociation"))} ssa"
+                + $" ON edOrg.{tgtEdOrgId} = ssa.{Quote("SchoolId")}"
+        );
+        writer.AppendLine(
+            $"INNER JOIN {Quote(new DbTableName(new DbSchemaName("edfi"), "StudentContactAssociation"))} sca"
+                + $" ON ssa.{Quote("Student_DocumentId")} = sca.{Quote("Student_DocumentId")}"
+        );
+        writer.AppendLine(";");
+        writer.AppendLine();
+
+        // 2. auth.EducationOrganizationIdToStaffDocumentId
+        //    UNION of two arms: StaffEducationOrganizationAssignmentAssociation
+        //    and StaffEducationOrganizationEmploymentAssociation
+        EmitPeopleAuthViewHeader(writer, authSchema, "EducationOrganizationIdToStaffDocumentId");
+        writer.AppendLine($"SELECT DISTINCT");
+        using (writer.Indent())
+        {
+            writer.AppendLine($"edOrg.{srcEdOrgId},");
+            writer.AppendLine($"seoaa.{Quote("Staff_DocumentId")}");
+        }
+        writer.AppendLine($"FROM {edOrgTable} edOrg");
+        writer.AppendLine(
+            $"INNER JOIN {Quote(new DbTableName(new DbSchemaName("edfi"), "StaffEducationOrganizationAssignmentAssociation"))} seoaa"
+                + $" ON edOrg.{tgtEdOrgId} = seoaa.{Quote("EducationOrganization_EducationOrganizationId")}"
+        );
+        writer.AppendLine("UNION");
+        writer.AppendLine($"SELECT DISTINCT");
+        using (writer.Indent())
+        {
+            writer.AppendLine($"edOrg.{srcEdOrgId},");
+            writer.AppendLine($"seoea.{Quote("Staff_DocumentId")}");
+        }
+        writer.AppendLine($"FROM {edOrgTable} edOrg");
+        writer.AppendLine(
+            $"INNER JOIN {Quote(new DbTableName(new DbSchemaName("edfi"), "StaffEducationOrganizationEmploymentAssociation"))} seoea"
+                + $" ON edOrg.{tgtEdOrgId} = seoea.{Quote("EducationOrganization_EducationOrganizationId")}"
+        );
+        writer.AppendLine(";");
+        writer.AppendLine();
+
+        // 3. auth.EducationOrganizationIdToStudentDocumentId
+        //    EdOrg hierarchy -> StudentSchoolAssociation
+        EmitPeopleAuthViewHeader(writer, authSchema, "EducationOrganizationIdToStudentDocumentId");
+        writer.AppendLine($"SELECT DISTINCT");
+        using (writer.Indent())
+        {
+            writer.AppendLine($"edOrg.{srcEdOrgId},");
+            writer.AppendLine($"ssa.{Quote("Student_DocumentId")}");
+        }
+        writer.AppendLine($"FROM {edOrgTable} edOrg");
+        writer.AppendLine(
+            $"INNER JOIN {Quote(new DbTableName(new DbSchemaName("edfi"), "StudentSchoolAssociation"))} ssa"
+                + $" ON edOrg.{tgtEdOrgId} = ssa.{Quote("SchoolId")}"
+        );
+        writer.AppendLine(";");
+        writer.AppendLine();
+
+        // 4. auth.EducationOrganizationIdToStudentDocumentIdThroughResponsibility
+        //    EdOrg hierarchy -> StudentEducationOrganizationResponsibilityAssociation
+        EmitPeopleAuthViewHeader(
+            writer,
+            authSchema,
+            "EducationOrganizationIdToStudentDocumentIdThroughResponsibility"
+        );
+        writer.AppendLine($"SELECT DISTINCT");
+        using (writer.Indent())
+        {
+            writer.AppendLine($"edOrg.{srcEdOrgId},");
+            writer.AppendLine($"seora.{Quote("Student_DocumentId")}");
+        }
+        writer.AppendLine($"FROM {edOrgTable} edOrg");
+        writer.AppendLine(
+            $"INNER JOIN {Quote(new DbTableName(new DbSchemaName("edfi"), "StudentEducationOrganizationResponsibilityAssociation"))} seora"
+                + $" ON edOrg.{tgtEdOrgId} = seora.{Quote("EducationOrganization_EducationOrganizationId")}"
+        );
+        writer.AppendLine(";");
+        writer.AppendLine();
+    }
+
+    /// <summary>
+    /// Emits the <c>CREATE VIEW</c> header for a people auth view, including the dialect-specific
+    /// <c>GO</c> batch separator for MSSQL.
+    /// </summary>
+    private void EmitPeopleAuthViewHeader(SqlWriter writer, DbSchemaName schema, string viewName)
+    {
+        if (_dialect.ViewCreationPattern == DdlPattern.CreateOrAlter)
+        {
+            writer.AppendLine("GO");
+        }
+
+        var createKeyword = _dialect.ViewCreationPattern switch
+        {
+            DdlPattern.CreateOrReplace => "CREATE OR REPLACE VIEW",
+            DdlPattern.CreateOrAlter => "CREATE OR ALTER VIEW",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(_dialect.ViewCreationPattern),
+                _dialect.ViewCreationPattern,
+                "Unsupported view creation pattern."
+            ),
+        };
+
+        var qualifiedName = $"{Quote(schema)}.{Quote(viewName)}";
+        writer.Append(createKeyword);
+        writer.Append(" ");
+        writer.Append(qualifiedName);
+        writer.AppendLine(" AS");
     }
 
     /// <summary>
