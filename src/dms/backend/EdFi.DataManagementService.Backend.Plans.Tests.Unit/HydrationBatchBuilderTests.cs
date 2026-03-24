@@ -46,6 +46,7 @@ public class Given_HydrationBatchBuilder_With_Single_Keyset
     {
         _mssqlBatch.Should().Contain("CREATE TABLE");
         _mssqlBatch.Should().Contain("[#page]");
+        _mssqlBatch.Should().Contain("IF OBJECT_ID('tempdb..");
     }
 
     [Test]

@@ -44,6 +44,12 @@ internal sealed class MssqlPlanDialect : IPlanSqlDialect
         ArgumentNullException.ThrowIfNull(keyset);
 
         writer
+            .Append("IF OBJECT_ID('tempdb..")
+            .AppendRelation(keyset.Table)
+            .AppendLine("') IS NOT NULL")
+            .Append("    DROP TABLE ")
+            .AppendRelation(keyset.Table)
+            .AppendLine(";")
             .Append("CREATE TABLE ")
             .AppendRelation(keyset.Table)
             .Append(" (")
