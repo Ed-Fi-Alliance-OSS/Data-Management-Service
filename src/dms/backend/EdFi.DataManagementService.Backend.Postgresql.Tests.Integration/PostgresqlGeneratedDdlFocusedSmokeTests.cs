@@ -14,7 +14,6 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 internal sealed record FocusedStableKeySmokeSeedData(
     long SchoolDocumentId,
     long OtherSchoolDocumentId,
-    long ProgramDocumentId,
     long AddressCollectionItemId,
     long PeriodCollectionItemId,
     long InterventionCollectionItemId,
@@ -389,7 +388,6 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_A_Focused_Stabl
         return new(
             schoolDocumentId,
             otherSchoolDocumentId,
-            programDocumentId,
             addressCollectionItemId,
             periodCollectionItemId,
             interventionCollectionItemId,

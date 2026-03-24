@@ -13,7 +13,6 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 internal sealed record FocusedStableKeySmokeSeedData(
     long SchoolDocumentId,
     long OtherSchoolDocumentId,
-    long ProgramDocumentId,
     long AddressCollectionItemId,
     long PeriodCollectionItemId,
     long InterventionCollectionItemId,
@@ -318,7 +317,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
         return new(
             schoolDocumentId,
             otherSchoolDocumentId,
-            programDocumentId,
             addressCollectionItemId,
             periodCollectionItemId,
             interventionCollectionItemId,

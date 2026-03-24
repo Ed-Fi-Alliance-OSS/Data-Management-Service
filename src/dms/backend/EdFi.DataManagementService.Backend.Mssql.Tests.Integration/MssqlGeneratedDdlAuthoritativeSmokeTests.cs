@@ -12,7 +12,6 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 internal sealed record AuthoritativeSampleSmokeSeedData(
     long ContactDocumentId,
     long OtherContactDocumentId,
-    long TermDescriptorDocumentId,
     long AlternateTermDescriptorDocumentId,
     long ContactExtensionAuthorCollectionItemId,
     long ContactAddressCollectionItemId,
@@ -419,7 +418,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         return new(
             contactDocumentId,
             otherContactDocumentId,
-            termDescriptorDocumentId,
             alternateTermDescriptorDocumentId,
             contactExtensionAuthorCollectionItemId,
             contactAddressCollectionItemId,
