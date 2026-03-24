@@ -108,8 +108,8 @@
     "completed": false
   },
   {
-    "category": "Snapshot Review",
-    "description": "Refresh regression goldens and manifests affected as fallout from stable collection row identity, then review the branch diff for deterministic-artifact churn before closing the story. Acceptance: small regression fixtures such as `small/nested` and `small/ext` are updated only where the new sequence/default or constraint ordering changes require it, authoritative fixture churn is limited to stable-identity-related DDL changes, and the final diff review calls out anything unexpected before merge.",
+    "category": "Final Snapshot Review",
+    "description": "This is the last task. Refresh regression goldens and manifests affected as fallout from stable collection row identity, then review the branch diff from main for deterministic-artifact churn before closing the story. Acceptance: small regression fixtures such as `small/nested` and `small/ext` are updated only where the new sequence/default or constraint ordering changes require it, authoritative fixture churn is limited to stable-identity-related DDL changes, and the final diff review calls out anything unexpected before merge. If there is an issue, write out a PROBLEMS.md file",
     "steps-to-verify": [
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj",
       "Run: git diff -- tasks.json src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures src/dms/backend/Fixtures/authoritative"
