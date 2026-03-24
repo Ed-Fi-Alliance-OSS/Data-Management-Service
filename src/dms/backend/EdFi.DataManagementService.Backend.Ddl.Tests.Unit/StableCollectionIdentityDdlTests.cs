@@ -142,6 +142,43 @@ internal static class FocusedStableKeyFixtureEffectiveSchemaSetLoader
 
 internal static class StableCollectionIdentityDdlTestHelper
 {
+    public static DbIndexInfo RequireForeignKeySupportIndex(
+        DerivedRelationalModelSet modelSet,
+        string schema,
+        string tableName,
+        params string[] columns
+    )
+    {
+        return modelSet.IndexesInCreateOrder.Single(index =>
+            index.Kind == DbIndexKind.ForeignKeySupport
+            && index.Table.Schema.Value.Equals(schema, StringComparison.Ordinal)
+            && index.Table.Name.Equals(tableName, StringComparison.Ordinal)
+            && index.KeyColumns.Select(static column => column.Value).SequenceEqual(columns)
+        );
+    }
+
+    public static TableConstraint.ForeignKey RequireForeignKeyConstraint(
+        DerivedRelationalModelSet modelSet,
+        string schema,
+        string tableName,
+        params string[] columns
+    )
+    {
+        return modelSet
+            .ConcreteResourcesInNameOrder.SelectMany(resource =>
+                resource.RelationalModel.TablesInDependencyOrder
+            )
+            .Concat(modelSet.AbstractIdentityTablesInNameOrder.Select(tableInfo => tableInfo.TableModel))
+            .Single(table =>
+                table.Table.Schema.Value.Equals(schema, StringComparison.Ordinal)
+                && table.Table.Name.Equals(tableName, StringComparison.Ordinal)
+            )
+            .Constraints.OfType<TableConstraint.ForeignKey>()
+            .Single(foreignKey =>
+                foreignKey.Columns.Select(static column => column.Value).SequenceEqual(columns)
+            );
+    }
+
     public static DbTableModel RequireTableByScope(
         DerivedRelationalModelSet modelSet,
         string scope,
@@ -196,6 +233,28 @@ public class Given_DdlPipelineHelpers_With_Focused_Stable_Key_Fixture
 {
     private const string FixturePath =
         "Fixtures/focused-stable-key/positive/extension-child-collections/fixture.manifest.json";
+    private static readonly StableKeyForeignKeyIndexExpectation[] _stableKeyForeignKeyIndexExpectations =
+    [
+        new("edfi", "SchoolAddressPeriod", ["ParentCollectionItemId", "School_DocumentId"]),
+        new(
+            "sample",
+            "SchoolExtensionAddressSponsorReference",
+            ["BaseCollectionItemId", "School_DocumentId"]
+        ),
+        new(
+            "sample",
+            "SchoolExtensionAddressSponsorReference",
+            ["Program_DocumentId", "Program_ProgramName"]
+        ),
+        new("sample", "SchoolExtensionInterventionVisit", ["ParentCollectionItemId", "School_DocumentId"]),
+    ];
+    private static readonly string[] _expectedStableKeyFkSupportIndexSignatures =
+    [
+        "edfi.SchoolAddressPeriod|ParentCollectionItemId|School_DocumentId",
+        "sample.SchoolExtensionAddressSponsorReference|BaseCollectionItemId|School_DocumentId",
+        "sample.SchoolExtensionAddressSponsorReference|Program_DocumentId|Program_ProgramName",
+        "sample.SchoolExtensionInterventionVisit|ParentCollectionItemId|School_DocumentId",
+    ];
 
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
@@ -308,6 +367,72 @@ public class Given_DdlPipelineHelpers_With_Focused_Stable_Key_Fixture
         sponsorReferenceTableDdl.Should().NotContain(baseCollectionItemColumnDefinitionWithDefault);
     }
 
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_emit_stable_key_FK_support_indexes_once_in_canonical_order_after_foreign_keys(
+        SqlDialect dialect
+    )
+    {
+        var effectiveSchemaSet = FocusedStableKeyFixtureEffectiveSchemaSetLoader.Load(FixturePath);
+        var (modelSet, combinedSql) = DdlPipelineHelpers.BuildDdlForDialect(effectiveSchemaSet, dialect);
+
+        var stableKeyFkSupportIndexes = modelSet
+            .IndexesInCreateOrder.Where(index =>
+                index.Kind == DbIndexKind.ForeignKeySupport
+                && index.Table.Name
+                    is "SchoolAddressPeriod"
+                        or "SchoolExtensionAddress"
+                        or "SchoolExtensionAddressSponsorReference"
+                        or "SchoolExtensionIntervention"
+                        or "SchoolExtensionInterventionVisit"
+            )
+            .ToArray();
+
+        stableKeyFkSupportIndexes
+            .Select(static index =>
+                $"{index.Table.Schema.Value}.{index.Table.Name}|"
+                + $"{string.Join("|", index.KeyColumns.Select(static column => column.Value))}"
+            )
+            .Should()
+            .Equal(_expectedStableKeyFkSupportIndexSignatures);
+
+        stableKeyFkSupportIndexes
+            .GroupBy(
+                static index =>
+                    $"{index.Table.Schema.Value}.{index.Table.Name}|"
+                    + $"{string.Join("|", index.KeyColumns.Select(static column => column.Value))}",
+                StringComparer.Ordinal
+            )
+            .Should()
+            .OnlyContain(static group => group.Count() == 1);
+
+        var indexPositions = new List<int>(_stableKeyForeignKeyIndexExpectations.Length);
+
+        foreach (var expectation in _stableKeyForeignKeyIndexExpectations)
+        {
+            var foreignKey = StableCollectionIdentityDdlTestHelper.RequireForeignKeyConstraint(
+                modelSet,
+                expectation.Schema,
+                expectation.TableName,
+                expectation.Columns
+            );
+            var index = StableCollectionIdentityDdlTestHelper.RequireForeignKeySupportIndex(
+                modelSet,
+                expectation.Schema,
+                expectation.TableName,
+                expectation.Columns
+            );
+            var foreignKeyPosition = combinedSql.IndexOf(foreignKey.Name, StringComparison.Ordinal);
+            var indexPosition = combinedSql.IndexOf(index.Name.Value, StringComparison.Ordinal);
+
+            foreignKeyPosition.Should().BeGreaterThanOrEqualTo(0);
+            indexPosition.Should().BeGreaterThan(foreignKeyPosition);
+            indexPositions.Add(indexPosition);
+        }
+
+        indexPositions.Should().BeInAscendingOrder();
+    }
+
     private static string TableDdlForScope(
         DerivedRelationalModelSet modelSet,
         string ddl,
@@ -326,3 +451,9 @@ public class Given_DdlPipelineHelpers_With_Focused_Stable_Key_Fixture
         return StableCollectionIdentityDdlTestHelper.ExtractCreateTableBlock(ddl, table.Table, dialect);
     }
 }
+
+internal readonly record struct StableKeyForeignKeyIndexExpectation(
+    string Schema,
+    string TableName,
+    string[] Columns
+);
