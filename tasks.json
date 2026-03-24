@@ -115,5 +115,45 @@
       "Run: git diff -- tasks.json src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures src/dms/backend/Fixtures/authoritative"
     ],
     "completed": true
+  },
+  {
+    "category": "Focused Smoke Tests",
+    "description": "Remove hard-coded `ResourceKeyId` assumptions from the focused PostgreSQL and SQL Server stable-key smoke tests by hiding resource-key lookup behind a test helper such as `InsertDocumentAsync(Guid, projectName, resourceName)` or an equivalent fixture-scoped abstraction. Acceptance: the focused smoke suites no longer pass literal resource-key ids like `1` or `2` when inserting into `dms.Document`, each inserted document resolves its `ResourceKeyId` from `dms.ResourceKey` using `(ProjectName, ResourceName)`, and the tests remain independent of seed ordering or future `ResourceKeyId` reassignment.",
+    "steps-to-verify": [
+      "Inspect the focused smoke test seed paths to confirm they no longer pass numeric `ResourceKeyId` literals when creating `dms.Document` rows.",
+      "Run: dotnet build --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj",
+      "Run: dotnet build --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Fixture Loading",
+    "description": "Remove avoidable authoritative-fixture duplication by refactoring generated-DDL fixture loading into shared test infrastructure and allowing fixture manifests to reference shared repo-relative input files without escaping the repository root. Acceptance: PostgreSQL and SQL Server fixture loaders stop duplicating the same parsing/normalization/path-validation logic, authoritative sample fixtures can reuse the existing DS 5.2 core input instead of carrying a second byte-identical copy, repo-root safety checks remain in place, and the duplicated `sample/inputs/ds-5.2-api-schema-authoritative.json` artifact is deleted if no longer needed.",
+    "steps-to-verify": [
+      "Inspect the PostgreSQL and SQL Server generated-DDL fixture loaders to confirm the shared loading/path-validation logic lives in one place.",
+      "Run: sha256sum ./src/dms/backend/Fixtures/authoritative/ds-5.2/inputs/ds-5.2-api-schema-authoritative.json ./src/dms/backend/Fixtures/authoritative/sample/inputs/ds-5.2-api-schema-authoritative.json",
+      "Confirm the authoritative sample fixture manifest references shared input instead of requiring a duplicated local DS 5.2 core schema file."
+    ],
+    "completed": false
+  },
+  {
+    "category": "PostgreSQL Smoke Assertions",
+    "description": "Reduce PostgreSQL stable-key smoke-test brittleness by deriving physical table and constraint names from `_fixture.ModelSet` instead of hard-coding shortened identifier strings. Acceptance: PostgreSQL focused and authoritative smoke tests no longer embed shortened FK or table names that are implementation details of identifier shortening, the tests resolve the relevant physical table/constraint names from the generated model set before querying metadata, and the assertions continue to validate the intended immediate-parent FK chains and cascade semantics rather than naming internals.",
+    "steps-to-verify": [
+      "Inspect the PostgreSQL smoke suites to confirm hard-coded shortened FK and table names have been removed from the targeted assertions.",
+      "Run: dotnet build --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj",
+      "If the PostgreSQL integration database is configured, run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Integration Test Cleanup",
+    "description": "Remove dead seed-data fields and other unused state from the new stable-key smoke suites so the test contract only carries values that are actually asserted. Acceptance: seed-data record types in the focused and authoritative PostgreSQL/SQL Server smoke suites no longer expose unused values such as `ProgramDocumentId` or descriptor ids that are only local seeding intermediates, any value needed only during `SeedSmokeRowsAsync()` remains local to that method, and the smoke tests still read clearly with no loss of behavioral coverage.",
+    "steps-to-verify": [
+      "Inspect the smoke-suite seed-data records and confirm each field is referenced by at least one assertion or helper outside the seeding method.",
+      "Run: dotnet build --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj",
+      "Run: dotnet build --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj"
+    ],
+    "completed": false
   }
 ]
