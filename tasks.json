@@ -124,7 +124,7 @@
       "Run: dotnet build --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj",
       "Run: dotnet build --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Fixture Loading",

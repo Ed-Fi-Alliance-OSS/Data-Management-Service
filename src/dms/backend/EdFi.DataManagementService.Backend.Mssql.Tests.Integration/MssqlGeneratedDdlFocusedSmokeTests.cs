@@ -268,15 +268,18 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
     {
         var schoolDocumentId = await InsertDocumentAsync(
             Guid.Parse("11111111-1111-1111-1111-111111111111"),
-            2
+            "Ed-Fi",
+            "School"
         );
         var otherSchoolDocumentId = await InsertDocumentAsync(
             Guid.Parse("22222222-2222-2222-2222-222222222222"),
-            2
+            "Ed-Fi",
+            "School"
         );
         var programDocumentId = await InsertDocumentAsync(
             Guid.Parse("33333333-3333-3333-3333-333333333333"),
-            1
+            "Ed-Fi",
+            "Program"
         );
 
         await InsertSchoolAsync(schoolDocumentId, 100);
@@ -324,8 +327,24 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
         );
     }
 
-    private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
+    private async Task<short> GetResourceKeyIdAsync(string projectName, string resourceName)
     {
+        return await _database.ExecuteScalarAsync<short>(
+            """
+            SELECT [ResourceKeyId]
+            FROM [dms].[ResourceKey]
+            WHERE [ProjectName] = @projectName
+              AND [ResourceName] = @resourceName;
+            """,
+            new SqlParameter("@projectName", projectName),
+            new SqlParameter("@resourceName", resourceName)
+        );
+    }
+
+    private async Task<long> InsertDocumentAsync(Guid documentUuid, string projectName, string resourceName)
+    {
+        var resourceKeyId = await GetResourceKeyIdAsync(projectName, resourceName);
+
         return await _database.ExecuteScalarAsync<long>(
             """
             DECLARE @Inserted TABLE ([DocumentId] bigint);
