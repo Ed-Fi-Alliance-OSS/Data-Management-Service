@@ -15,7 +15,7 @@
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj",
       "Inspect focused relational-emitter assertions to confirm defaults appear only on `CollectionItemId` columns for collection and extension-child tables."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Pipeline Boundary",

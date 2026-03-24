@@ -512,7 +512,7 @@ CREATE TABLE [edfi].[Assessment]
 IF OBJECT_ID(N'edfi.AssessmentAcademicSubject', N'U') IS NULL
 CREATE TABLE [edfi].[AssessmentAcademicSubject]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Assessment_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [AcademicSubjectDescriptor_DescriptorId] bigint NOT NULL,
@@ -524,7 +524,7 @@ CREATE TABLE [edfi].[AssessmentAcademicSubject]
 IF OBJECT_ID(N'edfi.AssessmentAssessedGradeLevel', N'U') IS NULL
 CREATE TABLE [edfi].[AssessmentAssessedGradeLevel]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Assessment_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
@@ -536,7 +536,7 @@ CREATE TABLE [edfi].[AssessmentAssessedGradeLevel]
 IF OBJECT_ID(N'edfi.AssessmentAuthor', N'U') IS NULL
 CREATE TABLE [edfi].[AssessmentAuthor]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Assessment_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [Author] nvarchar(100) NOT NULL,
@@ -548,7 +548,7 @@ CREATE TABLE [edfi].[AssessmentAuthor]
 IF OBJECT_ID(N'edfi.AssessmentIdentificationCode', N'U') IS NULL
 CREATE TABLE [edfi].[AssessmentIdentificationCode]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Assessment_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [AssessmentIdentificationSystemDescriptor_DescriptorId] bigint NOT NULL,
@@ -562,7 +562,7 @@ CREATE TABLE [edfi].[AssessmentIdentificationCode]
 IF OBJECT_ID(N'edfi.AssessmentLanguage', N'U') IS NULL
 CREATE TABLE [edfi].[AssessmentLanguage]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Assessment_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [LanguageDescriptor_DescriptorId] bigint NOT NULL,
@@ -574,7 +574,7 @@ CREATE TABLE [edfi].[AssessmentLanguage]
 IF OBJECT_ID(N'edfi.AssessmentPerformanceLevel', N'U') IS NULL
 CREATE TABLE [edfi].[AssessmentPerformanceLevel]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Assessment_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [AssessmentReportingMethodDescriptor_DescriptorId] bigint NOT NULL,
@@ -591,7 +591,7 @@ CREATE TABLE [edfi].[AssessmentPerformanceLevel]
 IF OBJECT_ID(N'edfi.AssessmentPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[AssessmentPeriod]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Assessment_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [AssessmentPeriodDescriptor_DescriptorId] bigint NOT NULL,
@@ -605,7 +605,7 @@ CREATE TABLE [edfi].[AssessmentPeriod]
 IF OBJECT_ID(N'edfi.AssessmentPlatformType', N'U') IS NULL
 CREATE TABLE [edfi].[AssessmentPlatformType]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Assessment_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [PlatformTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -617,7 +617,7 @@ CREATE TABLE [edfi].[AssessmentPlatformType]
 IF OBJECT_ID(N'edfi.AssessmentProgram', N'U') IS NULL
 CREATE TABLE [edfi].[AssessmentProgram]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Assessment_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [SectionOrProgramChoiceProgram_DocumentId] bigint NULL,
@@ -633,7 +633,7 @@ CREATE TABLE [edfi].[AssessmentProgram]
 IF OBJECT_ID(N'edfi.AssessmentScore', N'U') IS NULL
 CREATE TABLE [edfi].[AssessmentScore]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Assessment_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [AssessmentReportingMethodDescriptor_DescriptorId] bigint NOT NULL,
@@ -648,7 +648,7 @@ CREATE TABLE [edfi].[AssessmentScore]
 IF OBJECT_ID(N'edfi.AssessmentSection', N'U') IS NULL
 CREATE TABLE [edfi].[AssessmentSection]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Assessment_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [SectionOrProgramChoiceSection_DocumentId] bigint NULL,
@@ -683,7 +683,7 @@ CREATE TABLE [edfi].[AssessmentAdministration]
 IF OBJECT_ID(N'edfi.AssessmentAdministrationAssessmentBatteryPart', N'U') IS NULL
 CREATE TABLE [edfi].[AssessmentAdministrationAssessmentBatteryPart]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [AssessmentAdministration_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [AssessmentBatteryPart_DocumentId] bigint NULL,
@@ -699,7 +699,7 @@ CREATE TABLE [edfi].[AssessmentAdministrationAssessmentBatteryPart]
 IF OBJECT_ID(N'edfi.AssessmentAdministrationPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[AssessmentAdministrationPeriod]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [AssessmentAdministration_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [AssessmentAdministrationBeginDate] date NOT NULL,
@@ -729,7 +729,7 @@ CREATE TABLE [edfi].[AssessmentAdministrationParticipation]
 IF OBJECT_ID(N'edfi.AssessmentAdministrationParticipationAdministrationPointOfContact', N'U') IS NULL
 CREATE TABLE [edfi].[AssessmentAdministrationParticipationAdministrationPointOfContact]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [AssessmentAdministrationParticipation_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [AdministrationPointOfContactEducationOrganization_DocumentId] bigint NOT NULL,
@@ -761,7 +761,7 @@ CREATE TABLE [edfi].[AssessmentBatteryPart]
 IF OBJECT_ID(N'edfi.AssessmentBatteryPartObjectiveAssessment', N'U') IS NULL
 CREATE TABLE [edfi].[AssessmentBatteryPartObjectiveAssessment]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [AssessmentBatteryPart_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [ObjectiveAssessment_DocumentId] bigint NULL,
@@ -797,7 +797,7 @@ CREATE TABLE [edfi].[AssessmentItem]
 IF OBJECT_ID(N'edfi.AssessmentItemLearningStandard', N'U') IS NULL
 CREATE TABLE [edfi].[AssessmentItemLearningStandard]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [AssessmentItem_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [LearningStandard_DocumentId] bigint NULL,
@@ -811,7 +811,7 @@ CREATE TABLE [edfi].[AssessmentItemLearningStandard]
 IF OBJECT_ID(N'edfi.AssessmentItemPossibleRespons', N'U') IS NULL
 CREATE TABLE [edfi].[AssessmentItemPossibleRespons]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [AssessmentItem_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [CorrectResponse] bit NULL,
@@ -848,7 +848,7 @@ CREATE TABLE [edfi].[AssessmentScoreRangeLearningStandard]
 IF OBJECT_ID(N'edfi.AssessmentScoreRangeLearningStandardLearningStandard', N'U') IS NULL
 CREATE TABLE [edfi].[AssessmentScoreRangeLearningStandardLearningStandard]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [AssessmentScoreRangeLearningStandard_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [LearningStandard_DocumentId] bigint NULL,
@@ -874,7 +874,7 @@ CREATE TABLE [edfi].[BalanceSheetDimension]
 IF OBJECT_ID(N'edfi.BalanceSheetDimensionReportingTag', N'U') IS NULL
 CREATE TABLE [edfi].[BalanceSheetDimensionReportingTag]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [BalanceSheetDimension_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [ReportingTagDescriptor_DescriptorId] bigint NOT NULL,
@@ -902,7 +902,7 @@ CREATE TABLE [edfi].[BellSchedule]
 IF OBJECT_ID(N'edfi.BellScheduleClassPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[BellScheduleClassPeriod]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [BellSchedule_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [ClassPeriod_DocumentId] bigint NULL,
@@ -917,7 +917,7 @@ CREATE TABLE [edfi].[BellScheduleClassPeriod]
 IF OBJECT_ID(N'edfi.BellScheduleDate', N'U') IS NULL
 CREATE TABLE [edfi].[BellScheduleDate]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [BellSchedule_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [Date] date NOT NULL,
@@ -929,7 +929,7 @@ CREATE TABLE [edfi].[BellScheduleDate]
 IF OBJECT_ID(N'edfi.BellScheduleGradeLevel', N'U') IS NULL
 CREATE TABLE [edfi].[BellScheduleGradeLevel]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [BellSchedule_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
@@ -958,7 +958,7 @@ CREATE TABLE [edfi].[Calendar]
 IF OBJECT_ID(N'edfi.CalendarGradeLevel', N'U') IS NULL
 CREATE TABLE [edfi].[CalendarGradeLevel]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Calendar_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
@@ -985,7 +985,7 @@ CREATE TABLE [edfi].[CalendarDate]
 IF OBJECT_ID(N'edfi.CalendarDateCalendarEvent', N'U') IS NULL
 CREATE TABLE [edfi].[CalendarDateCalendarEvent]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CalendarDate_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [CalendarEventDescriptor_DescriptorId] bigint NOT NULL,
@@ -1046,7 +1046,7 @@ CREATE TABLE [edfi].[ChartOfAccount]
 IF OBJECT_ID(N'edfi.ChartOfAccountReportingTag', N'U') IS NULL
 CREATE TABLE [edfi].[ChartOfAccountReportingTag]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [ChartOfAccount_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [ReportingTagDescriptor_DescriptorId] bigint NOT NULL,
@@ -1073,7 +1073,7 @@ CREATE TABLE [edfi].[ClassPeriod]
 IF OBJECT_ID(N'edfi.ClassPeriodMeetingTime', N'U') IS NULL
 CREATE TABLE [edfi].[ClassPeriodMeetingTime]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [ClassPeriod_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [EndTime] time(7) NOT NULL,
@@ -1103,7 +1103,7 @@ CREATE TABLE [edfi].[Cohort]
 IF OBJECT_ID(N'edfi.CohortProgram', N'U') IS NULL
 CREATE TABLE [edfi].[CohortProgram]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Cohort_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [ProgramProgram_DocumentId] bigint NULL,
@@ -1133,7 +1133,7 @@ CREATE TABLE [edfi].[CommunityOrganization]
 IF OBJECT_ID(N'edfi.CommunityOrganizationAddress', N'U') IS NULL
 CREATE TABLE [edfi].[CommunityOrganizationAddress]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CommunityOrganization_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -1159,7 +1159,7 @@ CREATE TABLE [edfi].[CommunityOrganizationAddress]
 IF OBJECT_ID(N'edfi.CommunityOrganizationCategory', N'U') IS NULL
 CREATE TABLE [edfi].[CommunityOrganizationCategory]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CommunityOrganization_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [EducationOrganizationCategoryDescriptor_DescriptorId] bigint NOT NULL,
@@ -1171,7 +1171,7 @@ CREATE TABLE [edfi].[CommunityOrganizationCategory]
 IF OBJECT_ID(N'edfi.CommunityOrganizationIdentificationCode', N'U') IS NULL
 CREATE TABLE [edfi].[CommunityOrganizationIdentificationCode]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CommunityOrganization_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [EducationOrganizationIdentificationSystemDescriptor_DescriptorId] bigint NOT NULL,
@@ -1184,7 +1184,7 @@ CREATE TABLE [edfi].[CommunityOrganizationIdentificationCode]
 IF OBJECT_ID(N'edfi.CommunityOrganizationIndicator', N'U') IS NULL
 CREATE TABLE [edfi].[CommunityOrganizationIndicator]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CommunityOrganization_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [IndicatorDescriptor_DescriptorId] bigint NOT NULL,
@@ -1201,7 +1201,7 @@ CREATE TABLE [edfi].[CommunityOrganizationIndicator]
 IF OBJECT_ID(N'edfi.CommunityOrganizationInstitutionTelephone', N'U') IS NULL
 CREATE TABLE [edfi].[CommunityOrganizationInstitutionTelephone]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CommunityOrganization_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [InstitutionTelephoneNumberTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -1214,7 +1214,7 @@ CREATE TABLE [edfi].[CommunityOrganizationInstitutionTelephone]
 IF OBJECT_ID(N'edfi.CommunityOrganizationInternationalAddress', N'U') IS NULL
 CREATE TABLE [edfi].[CommunityOrganizationInternationalAddress]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CommunityOrganization_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -1235,7 +1235,7 @@ CREATE TABLE [edfi].[CommunityOrganizationInternationalAddress]
 IF OBJECT_ID(N'edfi.CommunityOrganizationAddressPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[CommunityOrganizationAddressPeriod]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CommunityOrganization_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
@@ -1249,7 +1249,7 @@ CREATE TABLE [edfi].[CommunityOrganizationAddressPeriod]
 IF OBJECT_ID(N'edfi.CommunityOrganizationIndicatorPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[CommunityOrganizationIndicatorPeriod]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CommunityOrganization_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
@@ -1285,7 +1285,7 @@ CREATE TABLE [edfi].[CommunityProvider]
 IF OBJECT_ID(N'edfi.CommunityProviderAddress', N'U') IS NULL
 CREATE TABLE [edfi].[CommunityProviderAddress]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CommunityProvider_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -1311,7 +1311,7 @@ CREATE TABLE [edfi].[CommunityProviderAddress]
 IF OBJECT_ID(N'edfi.CommunityProviderCategory', N'U') IS NULL
 CREATE TABLE [edfi].[CommunityProviderCategory]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CommunityProvider_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [EducationOrganizationCategoryDescriptor_DescriptorId] bigint NOT NULL,
@@ -1323,7 +1323,7 @@ CREATE TABLE [edfi].[CommunityProviderCategory]
 IF OBJECT_ID(N'edfi.CommunityProviderIdentificationCode', N'U') IS NULL
 CREATE TABLE [edfi].[CommunityProviderIdentificationCode]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CommunityProvider_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [EducationOrganizationIdentificationSystemDescriptor_DescriptorId] bigint NOT NULL,
@@ -1336,7 +1336,7 @@ CREATE TABLE [edfi].[CommunityProviderIdentificationCode]
 IF OBJECT_ID(N'edfi.CommunityProviderIndicator', N'U') IS NULL
 CREATE TABLE [edfi].[CommunityProviderIndicator]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CommunityProvider_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [IndicatorDescriptor_DescriptorId] bigint NOT NULL,
@@ -1353,7 +1353,7 @@ CREATE TABLE [edfi].[CommunityProviderIndicator]
 IF OBJECT_ID(N'edfi.CommunityProviderInstitutionTelephone', N'U') IS NULL
 CREATE TABLE [edfi].[CommunityProviderInstitutionTelephone]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CommunityProvider_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [InstitutionTelephoneNumberTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -1366,7 +1366,7 @@ CREATE TABLE [edfi].[CommunityProviderInstitutionTelephone]
 IF OBJECT_ID(N'edfi.CommunityProviderInternationalAddress', N'U') IS NULL
 CREATE TABLE [edfi].[CommunityProviderInternationalAddress]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CommunityProvider_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -1387,7 +1387,7 @@ CREATE TABLE [edfi].[CommunityProviderInternationalAddress]
 IF OBJECT_ID(N'edfi.CommunityProviderAddressPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[CommunityProviderAddressPeriod]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CommunityProvider_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
@@ -1401,7 +1401,7 @@ CREATE TABLE [edfi].[CommunityProviderAddressPeriod]
 IF OBJECT_ID(N'edfi.CommunityProviderIndicatorPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[CommunityProviderIndicatorPeriod]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CommunityProvider_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
@@ -1479,7 +1479,7 @@ CREATE TABLE [edfi].[Contact]
 IF OBJECT_ID(N'edfi.ContactAddress', N'U') IS NULL
 CREATE TABLE [edfi].[ContactAddress]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Contact_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -1505,7 +1505,7 @@ CREATE TABLE [edfi].[ContactAddress]
 IF OBJECT_ID(N'edfi.ContactElectronicMail', N'U') IS NULL
 CREATE TABLE [edfi].[ContactElectronicMail]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Contact_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [ElectronicMailTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -1520,7 +1520,7 @@ CREATE TABLE [edfi].[ContactElectronicMail]
 IF OBJECT_ID(N'edfi.ContactInternationalAddress', N'U') IS NULL
 CREATE TABLE [edfi].[ContactInternationalAddress]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Contact_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -1541,7 +1541,7 @@ CREATE TABLE [edfi].[ContactInternationalAddress]
 IF OBJECT_ID(N'edfi.ContactLanguage', N'U') IS NULL
 CREATE TABLE [edfi].[ContactLanguage]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Contact_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [LanguageDescriptor_DescriptorId] bigint NOT NULL,
@@ -1554,7 +1554,7 @@ CREATE TABLE [edfi].[ContactLanguage]
 IF OBJECT_ID(N'edfi.ContactOtherName', N'U') IS NULL
 CREATE TABLE [edfi].[ContactOtherName]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Contact_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [OtherNameTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -1571,7 +1571,7 @@ CREATE TABLE [edfi].[ContactOtherName]
 IF OBJECT_ID(N'edfi.ContactPersonalIdentificationDocument', N'U') IS NULL
 CREATE TABLE [edfi].[ContactPersonalIdentificationDocument]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Contact_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [IdentificationDocumentUseDescriptor_DescriptorId] bigint NOT NULL,
@@ -1589,7 +1589,7 @@ CREATE TABLE [edfi].[ContactPersonalIdentificationDocument]
 IF OBJECT_ID(N'edfi.ContactTelephone', N'U') IS NULL
 CREATE TABLE [edfi].[ContactTelephone]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Contact_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [TelephoneNumberTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -1605,7 +1605,7 @@ CREATE TABLE [edfi].[ContactTelephone]
 IF OBJECT_ID(N'edfi.ContactAddressPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[ContactAddressPeriod]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Contact_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
@@ -1619,7 +1619,7 @@ CREATE TABLE [edfi].[ContactAddressPeriod]
 IF OBJECT_ID(N'edfi.ContactLanguageUs', N'U') IS NULL
 CREATE TABLE [edfi].[ContactLanguageUs]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Contact_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
@@ -1661,7 +1661,7 @@ CREATE TABLE [edfi].[Course]
 IF OBJECT_ID(N'edfi.CourseAcademicSubject', N'U') IS NULL
 CREATE TABLE [edfi].[CourseAcademicSubject]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Course_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [AcademicSubjectDescriptor_DescriptorId] bigint NOT NULL,
@@ -1673,7 +1673,7 @@ CREATE TABLE [edfi].[CourseAcademicSubject]
 IF OBJECT_ID(N'edfi.CourseCompetencyLevel', N'U') IS NULL
 CREATE TABLE [edfi].[CourseCompetencyLevel]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Course_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [CompetencyLevelDescriptor_DescriptorId] bigint NOT NULL,
@@ -1685,7 +1685,7 @@ CREATE TABLE [edfi].[CourseCompetencyLevel]
 IF OBJECT_ID(N'edfi.CourseIdentificationCode', N'U') IS NULL
 CREATE TABLE [edfi].[CourseIdentificationCode]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Course_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [CourseIdentificationSystemDescriptor_DescriptorId] bigint NOT NULL,
@@ -1700,7 +1700,7 @@ CREATE TABLE [edfi].[CourseIdentificationCode]
 IF OBJECT_ID(N'edfi.CourseLearningStandard', N'U') IS NULL
 CREATE TABLE [edfi].[CourseLearningStandard]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Course_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [LearningStandard_DocumentId] bigint NULL,
@@ -1714,7 +1714,7 @@ CREATE TABLE [edfi].[CourseLearningStandard]
 IF OBJECT_ID(N'edfi.CourseLevelCharacteristic', N'U') IS NULL
 CREATE TABLE [edfi].[CourseLevelCharacteristic]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Course_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [CourseLevelCharacteristicDescriptor_DescriptorId] bigint NOT NULL,
@@ -1726,7 +1726,7 @@ CREATE TABLE [edfi].[CourseLevelCharacteristic]
 IF OBJECT_ID(N'edfi.CourseOfferedGradeLevel', N'U') IS NULL
 CREATE TABLE [edfi].[CourseOfferedGradeLevel]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Course_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
@@ -1763,7 +1763,7 @@ CREATE TABLE [edfi].[CourseOffering]
 IF OBJECT_ID(N'edfi.CourseOfferingCourseLevelCharacteristic', N'U') IS NULL
 CREATE TABLE [edfi].[CourseOfferingCourseLevelCharacteristic]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CourseOffering_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [CourseLevelCharacteristicDescriptor_DescriptorId] bigint NOT NULL,
@@ -1775,7 +1775,7 @@ CREATE TABLE [edfi].[CourseOfferingCourseLevelCharacteristic]
 IF OBJECT_ID(N'edfi.CourseOfferingCurriculumUsed', N'U') IS NULL
 CREATE TABLE [edfi].[CourseOfferingCurriculumUsed]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CourseOffering_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [CurriculumUsedDescriptor_DescriptorId] bigint NOT NULL,
@@ -1787,7 +1787,7 @@ CREATE TABLE [edfi].[CourseOfferingCurriculumUsed]
 IF OBJECT_ID(N'edfi.CourseOfferingOfferedGradeLevel', N'U') IS NULL
 CREATE TABLE [edfi].[CourseOfferingOfferedGradeLevel]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CourseOffering_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
@@ -1840,7 +1840,7 @@ CREATE TABLE [edfi].[CourseTranscript]
 IF OBJECT_ID(N'edfi.CourseTranscriptAcademicSubject', N'U') IS NULL
 CREATE TABLE [edfi].[CourseTranscriptAcademicSubject]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CourseTranscript_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [AcademicSubjectDescriptor_DescriptorId] bigint NOT NULL,
@@ -1852,7 +1852,7 @@ CREATE TABLE [edfi].[CourseTranscriptAcademicSubject]
 IF OBJECT_ID(N'edfi.CourseTranscriptAlternativeCourseIdentificationCode', N'U') IS NULL
 CREATE TABLE [edfi].[CourseTranscriptAlternativeCourseIdentificationCode]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CourseTranscript_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [CourseIdentificationSystemDescriptor_DescriptorId] bigint NOT NULL,
@@ -1867,7 +1867,7 @@ CREATE TABLE [edfi].[CourseTranscriptAlternativeCourseIdentificationCode]
 IF OBJECT_ID(N'edfi.CourseTranscriptCourseProgram', N'U') IS NULL
 CREATE TABLE [edfi].[CourseTranscriptCourseProgram]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CourseTranscript_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [CourseProgram_DocumentId] bigint NULL,
@@ -1883,7 +1883,7 @@ CREATE TABLE [edfi].[CourseTranscriptCourseProgram]
 IF OBJECT_ID(N'edfi.CourseTranscriptCreditCategory', N'U') IS NULL
 CREATE TABLE [edfi].[CourseTranscriptCreditCategory]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CourseTranscript_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [CreditCategoryDescriptor_DescriptorId] bigint NOT NULL,
@@ -1895,7 +1895,7 @@ CREATE TABLE [edfi].[CourseTranscriptCreditCategory]
 IF OBJECT_ID(N'edfi.CourseTranscriptEarnedAdditionalCredits', N'U') IS NULL
 CREATE TABLE [edfi].[CourseTranscriptEarnedAdditionalCredits]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CourseTranscript_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [AdditionalCreditTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -1908,7 +1908,7 @@ CREATE TABLE [edfi].[CourseTranscriptEarnedAdditionalCredits]
 IF OBJECT_ID(N'edfi.CourseTranscriptPartialCourseTranscriptAwards', N'U') IS NULL
 CREATE TABLE [edfi].[CourseTranscriptPartialCourseTranscriptAwards]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CourseTranscript_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [MethodCreditEarnedDescriptor_DescriptorId] bigint NULL,
@@ -1924,7 +1924,7 @@ CREATE TABLE [edfi].[CourseTranscriptPartialCourseTranscriptAwards]
 IF OBJECT_ID(N'edfi.CourseTranscriptSection', N'U') IS NULL
 CREATE TABLE [edfi].[CourseTranscriptSection]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [CourseTranscript_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [Section_DocumentId] bigint NULL,
@@ -1961,7 +1961,7 @@ CREATE TABLE [edfi].[Credential]
 IF OBJECT_ID(N'edfi.CredentialAcademicSubject', N'U') IS NULL
 CREATE TABLE [edfi].[CredentialAcademicSubject]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Credential_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [AcademicSubjectDescriptor_DescriptorId] bigint NOT NULL,
@@ -1973,7 +1973,7 @@ CREATE TABLE [edfi].[CredentialAcademicSubject]
 IF OBJECT_ID(N'edfi.CredentialEndorsement', N'U') IS NULL
 CREATE TABLE [edfi].[CredentialEndorsement]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Credential_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [CredentialEndorsement] nvarchar(255) NOT NULL,
@@ -1985,7 +1985,7 @@ CREATE TABLE [edfi].[CredentialEndorsement]
 IF OBJECT_ID(N'edfi.CredentialGradeLevel', N'U') IS NULL
 CREATE TABLE [edfi].[CredentialGradeLevel]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Credential_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
@@ -2023,7 +2023,7 @@ CREATE TABLE [edfi].[DescriptorMapping]
 IF OBJECT_ID(N'edfi.DescriptorMappingModelEntity', N'U') IS NULL
 CREATE TABLE [edfi].[DescriptorMappingModelEntity]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [DescriptorMapping_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [ModelEntityDescriptor_DescriptorId] bigint NOT NULL,
@@ -2059,7 +2059,7 @@ CREATE TABLE [edfi].[DisciplineAction]
 IF OBJECT_ID(N'edfi.DisciplineActionDiscipline', N'U') IS NULL
 CREATE TABLE [edfi].[DisciplineActionDiscipline]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [DisciplineAction_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [DisciplineDescriptor_DescriptorId] bigint NOT NULL,
@@ -2071,7 +2071,7 @@ CREATE TABLE [edfi].[DisciplineActionDiscipline]
 IF OBJECT_ID(N'edfi.DisciplineActionStaff', N'U') IS NULL
 CREATE TABLE [edfi].[DisciplineActionStaff]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [DisciplineAction_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [Staff_DocumentId] bigint NULL,
@@ -2085,7 +2085,7 @@ CREATE TABLE [edfi].[DisciplineActionStaff]
 IF OBJECT_ID(N'edfi.DisciplineActionStudentDisciplineIncidentBehaviorAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[DisciplineActionStudentDisciplineIncidentBehaviorAssociation]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [DisciplineAction_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [StudentDisciplineIncidentBehaviorAssociation_DocumentId] bigint NULL,
@@ -2124,7 +2124,7 @@ CREATE TABLE [edfi].[DisciplineIncident]
 IF OBJECT_ID(N'edfi.DisciplineIncidentBehavior', N'U') IS NULL
 CREATE TABLE [edfi].[DisciplineIncidentBehavior]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [DisciplineIncident_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [BehaviorDescriptor_DescriptorId] bigint NOT NULL,
@@ -2137,7 +2137,7 @@ CREATE TABLE [edfi].[DisciplineIncidentBehavior]
 IF OBJECT_ID(N'edfi.DisciplineIncidentExternalParticipant', N'U') IS NULL
 CREATE TABLE [edfi].[DisciplineIncidentExternalParticipant]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [DisciplineIncident_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [DisciplineIncidentParticipationCodeDescriptor_DescriptorId] bigint NOT NULL,
@@ -2151,7 +2151,7 @@ CREATE TABLE [edfi].[DisciplineIncidentExternalParticipant]
 IF OBJECT_ID(N'edfi.DisciplineIncidentWeapon', N'U') IS NULL
 CREATE TABLE [edfi].[DisciplineIncidentWeapon]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [DisciplineIncident_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [WeaponDescriptor_DescriptorId] bigint NOT NULL,
@@ -2191,7 +2191,7 @@ CREATE TABLE [edfi].[EducationContent]
 IF OBJECT_ID(N'edfi.EducationContentAppropriateGradeLevel', N'U') IS NULL
 CREATE TABLE [edfi].[EducationContentAppropriateGradeLevel]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationContent_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
@@ -2203,7 +2203,7 @@ CREATE TABLE [edfi].[EducationContentAppropriateGradeLevel]
 IF OBJECT_ID(N'edfi.EducationContentAppropriateSex', N'U') IS NULL
 CREATE TABLE [edfi].[EducationContentAppropriateSex]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationContent_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [SexDescriptor_DescriptorId] bigint NOT NULL,
@@ -2215,7 +2215,7 @@ CREATE TABLE [edfi].[EducationContentAppropriateSex]
 IF OBJECT_ID(N'edfi.EducationContentAuthor', N'U') IS NULL
 CREATE TABLE [edfi].[EducationContentAuthor]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationContent_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [Author] nvarchar(100) NOT NULL,
@@ -2227,7 +2227,7 @@ CREATE TABLE [edfi].[EducationContentAuthor]
 IF OBJECT_ID(N'edfi.EducationContentDerivativeSourceEducationContent', N'U') IS NULL
 CREATE TABLE [edfi].[EducationContentDerivativeSourceEducationContent]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationContent_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [DerivativeSourceEducationContent_DocumentId] bigint NULL,
@@ -2241,7 +2241,7 @@ CREATE TABLE [edfi].[EducationContentDerivativeSourceEducationContent]
 IF OBJECT_ID(N'edfi.EducationContentDerivativeSourceLearningResourceMetadataURI', N'U') IS NULL
 CREATE TABLE [edfi].[EducationContentDerivativeSourceLearningResourceMetadataURI]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationContent_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [DerivativeSourceLearningResourceMetadataURI] nvarchar(255) NOT NULL,
@@ -2253,7 +2253,7 @@ CREATE TABLE [edfi].[EducationContentDerivativeSourceLearningResourceMetadataURI
 IF OBJECT_ID(N'edfi.EducationContentDerivativeSourceURI', N'U') IS NULL
 CREATE TABLE [edfi].[EducationContentDerivativeSourceURI]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationContent_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [DerivativeSourceURI] nvarchar(255) NOT NULL,
@@ -2265,7 +2265,7 @@ CREATE TABLE [edfi].[EducationContentDerivativeSourceURI]
 IF OBJECT_ID(N'edfi.EducationContentLanguage', N'U') IS NULL
 CREATE TABLE [edfi].[EducationContentLanguage]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationContent_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [LanguageDescriptor_DescriptorId] bigint NOT NULL,
@@ -2309,7 +2309,7 @@ CREATE TABLE [edfi].[EducationOrganizationNetwork]
 IF OBJECT_ID(N'edfi.EducationOrganizationNetworkAddress', N'U') IS NULL
 CREATE TABLE [edfi].[EducationOrganizationNetworkAddress]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationOrganizationNetwork_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -2335,7 +2335,7 @@ CREATE TABLE [edfi].[EducationOrganizationNetworkAddress]
 IF OBJECT_ID(N'edfi.EducationOrganizationNetworkCategory', N'U') IS NULL
 CREATE TABLE [edfi].[EducationOrganizationNetworkCategory]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationOrganizationNetwork_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [EducationOrganizationCategoryDescriptor_DescriptorId] bigint NOT NULL,
@@ -2347,7 +2347,7 @@ CREATE TABLE [edfi].[EducationOrganizationNetworkCategory]
 IF OBJECT_ID(N'edfi.EducationOrganizationNetworkIdentificationCode', N'U') IS NULL
 CREATE TABLE [edfi].[EducationOrganizationNetworkIdentificationCode]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationOrganizationNetwork_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [EducationOrganizationIdentificationSystemDescriptor_DescriptorId] bigint NOT NULL,
@@ -2360,7 +2360,7 @@ CREATE TABLE [edfi].[EducationOrganizationNetworkIdentificationCode]
 IF OBJECT_ID(N'edfi.EducationOrganizationNetworkIndicator', N'U') IS NULL
 CREATE TABLE [edfi].[EducationOrganizationNetworkIndicator]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationOrganizationNetwork_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [IndicatorDescriptor_DescriptorId] bigint NOT NULL,
@@ -2377,7 +2377,7 @@ CREATE TABLE [edfi].[EducationOrganizationNetworkIndicator]
 IF OBJECT_ID(N'edfi.EducationOrganizationNetworkInstitutionTelephone', N'U') IS NULL
 CREATE TABLE [edfi].[EducationOrganizationNetworkInstitutionTelephone]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationOrganizationNetwork_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [InstitutionTelephoneNumberTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -2390,7 +2390,7 @@ CREATE TABLE [edfi].[EducationOrganizationNetworkInstitutionTelephone]
 IF OBJECT_ID(N'edfi.EducationOrganizationNetworkInternationalAddress', N'U') IS NULL
 CREATE TABLE [edfi].[EducationOrganizationNetworkInternationalAddress]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationOrganizationNetwork_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -2411,7 +2411,7 @@ CREATE TABLE [edfi].[EducationOrganizationNetworkInternationalAddress]
 IF OBJECT_ID(N'edfi.EducationOrganizationNetworkAddressPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[EducationOrganizationNetworkAddressPeriod]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationOrganizationNetwork_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
@@ -2425,7 +2425,7 @@ CREATE TABLE [edfi].[EducationOrganizationNetworkAddressPeriod]
 IF OBJECT_ID(N'edfi.EducationOrganizationNetworkIndicatorPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[EducationOrganizationNetworkIndicatorPeriod]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationOrganizationNetwork_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
@@ -2486,7 +2486,7 @@ CREATE TABLE [edfi].[EducationServiceCenter]
 IF OBJECT_ID(N'edfi.EducationServiceCenterAddress', N'U') IS NULL
 CREATE TABLE [edfi].[EducationServiceCenterAddress]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationServiceCenter_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -2512,7 +2512,7 @@ CREATE TABLE [edfi].[EducationServiceCenterAddress]
 IF OBJECT_ID(N'edfi.EducationServiceCenterCategory', N'U') IS NULL
 CREATE TABLE [edfi].[EducationServiceCenterCategory]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationServiceCenter_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [EducationOrganizationCategoryDescriptor_DescriptorId] bigint NOT NULL,
@@ -2524,7 +2524,7 @@ CREATE TABLE [edfi].[EducationServiceCenterCategory]
 IF OBJECT_ID(N'edfi.EducationServiceCenterIdentificationCode', N'U') IS NULL
 CREATE TABLE [edfi].[EducationServiceCenterIdentificationCode]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationServiceCenter_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [EducationOrganizationIdentificationSystemDescriptor_DescriptorId] bigint NOT NULL,
@@ -2537,7 +2537,7 @@ CREATE TABLE [edfi].[EducationServiceCenterIdentificationCode]
 IF OBJECT_ID(N'edfi.EducationServiceCenterIndicator', N'U') IS NULL
 CREATE TABLE [edfi].[EducationServiceCenterIndicator]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationServiceCenter_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [IndicatorDescriptor_DescriptorId] bigint NOT NULL,
@@ -2554,7 +2554,7 @@ CREATE TABLE [edfi].[EducationServiceCenterIndicator]
 IF OBJECT_ID(N'edfi.EducationServiceCenterInstitutionTelephone', N'U') IS NULL
 CREATE TABLE [edfi].[EducationServiceCenterInstitutionTelephone]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationServiceCenter_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [InstitutionTelephoneNumberTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -2567,7 +2567,7 @@ CREATE TABLE [edfi].[EducationServiceCenterInstitutionTelephone]
 IF OBJECT_ID(N'edfi.EducationServiceCenterInternationalAddress', N'U') IS NULL
 CREATE TABLE [edfi].[EducationServiceCenterInternationalAddress]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationServiceCenter_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -2588,7 +2588,7 @@ CREATE TABLE [edfi].[EducationServiceCenterInternationalAddress]
 IF OBJECT_ID(N'edfi.EducationServiceCenterAddressPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[EducationServiceCenterAddressPeriod]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationServiceCenter_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
@@ -2602,7 +2602,7 @@ CREATE TABLE [edfi].[EducationServiceCenterAddressPeriod]
 IF OBJECT_ID(N'edfi.EducationServiceCenterIndicatorPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[EducationServiceCenterIndicatorPeriod]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [EducationServiceCenter_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
@@ -2666,7 +2666,7 @@ CREATE TABLE [edfi].[FunctionDimension]
 IF OBJECT_ID(N'edfi.FunctionDimensionReportingTag', N'U') IS NULL
 CREATE TABLE [edfi].[FunctionDimensionReportingTag]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [FunctionDimension_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [ReportingTagDescriptor_DescriptorId] bigint NOT NULL,
@@ -2690,7 +2690,7 @@ CREATE TABLE [edfi].[FundDimension]
 IF OBJECT_ID(N'edfi.FundDimensionReportingTag', N'U') IS NULL
 CREATE TABLE [edfi].[FundDimensionReportingTag]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [FundDimension_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [ReportingTagDescriptor_DescriptorId] bigint NOT NULL,
@@ -2736,7 +2736,7 @@ CREATE TABLE [edfi].[Grade]
 IF OBJECT_ID(N'edfi.GradeLearningStandardGrade', N'U') IS NULL
 CREATE TABLE [edfi].[GradeLearningStandardGrade]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Grade_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [LearningStandardGradeLearningStandard_DocumentId] bigint NOT NULL,
@@ -2788,7 +2788,7 @@ CREATE TABLE [edfi].[GradebookEntry]
 IF OBJECT_ID(N'edfi.GradebookEntryLearningStandard', N'U') IS NULL
 CREATE TABLE [edfi].[GradebookEntryLearningStandard]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [GradebookEntry_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [LearningStandard_DocumentId] bigint NULL,
@@ -2843,7 +2843,7 @@ CREATE TABLE [edfi].[GraduationPlan]
 IF OBJECT_ID(N'edfi.GraduationPlanCreditsByCours', N'U') IS NULL
 CREATE TABLE [edfi].[GraduationPlanCreditsByCours]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [GraduationPlan_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [CreditTypeDescriptor_DescriptorId] bigint NULL,
@@ -2860,7 +2860,7 @@ CREATE TABLE [edfi].[GraduationPlanCreditsByCours]
 IF OBJECT_ID(N'edfi.GraduationPlanCreditsByCreditCategory', N'U') IS NULL
 CREATE TABLE [edfi].[GraduationPlanCreditsByCreditCategory]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [GraduationPlan_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [CreditCategoryDescriptor_DescriptorId] bigint NOT NULL,
@@ -2875,7 +2875,7 @@ CREATE TABLE [edfi].[GraduationPlanCreditsByCreditCategory]
 IF OBJECT_ID(N'edfi.GraduationPlanCreditsBySubject', N'U') IS NULL
 CREATE TABLE [edfi].[GraduationPlanCreditsBySubject]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [GraduationPlan_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [AcademicSubjectDescriptor_DescriptorId] bigint NOT NULL,
@@ -2890,7 +2890,7 @@ CREATE TABLE [edfi].[GraduationPlanCreditsBySubject]
 IF OBJECT_ID(N'edfi.GraduationPlanRequiredAssessment', N'U') IS NULL
 CREATE TABLE [edfi].[GraduationPlanRequiredAssessment]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [GraduationPlan_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [RequiredAssessmentAssessment_DocumentId] bigint NOT NULL,
@@ -2912,7 +2912,7 @@ CREATE TABLE [edfi].[GraduationPlanRequiredAssessment]
 IF OBJECT_ID(N'edfi.GraduationPlanCreditsByCoursCours', N'U') IS NULL
 CREATE TABLE [edfi].[GraduationPlanCreditsByCoursCours]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [GraduationPlan_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
@@ -2928,7 +2928,7 @@ CREATE TABLE [edfi].[GraduationPlanCreditsByCoursCours]
 IF OBJECT_ID(N'edfi.GraduationPlanRequiredAssessmentScore', N'U') IS NULL
 CREATE TABLE [edfi].[GraduationPlanRequiredAssessmentScore]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [GraduationPlan_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
@@ -2964,7 +2964,7 @@ CREATE TABLE [edfi].[Intervention]
 IF OBJECT_ID(N'edfi.InterventionAppropriateGradeLevel', N'U') IS NULL
 CREATE TABLE [edfi].[InterventionAppropriateGradeLevel]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Intervention_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
@@ -2976,7 +2976,7 @@ CREATE TABLE [edfi].[InterventionAppropriateGradeLevel]
 IF OBJECT_ID(N'edfi.InterventionAppropriateSex', N'U') IS NULL
 CREATE TABLE [edfi].[InterventionAppropriateSex]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Intervention_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [SexDescriptor_DescriptorId] bigint NOT NULL,
@@ -2988,7 +2988,7 @@ CREATE TABLE [edfi].[InterventionAppropriateSex]
 IF OBJECT_ID(N'edfi.InterventionDiagnos', N'U') IS NULL
 CREATE TABLE [edfi].[InterventionDiagnos]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Intervention_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [DiagnosisDescriptor_DescriptorId] bigint NOT NULL,
@@ -3000,7 +3000,7 @@ CREATE TABLE [edfi].[InterventionDiagnos]
 IF OBJECT_ID(N'edfi.InterventionEducationContent', N'U') IS NULL
 CREATE TABLE [edfi].[InterventionEducationContent]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Intervention_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [EducationContentSourceEducationContent_DocumentId] bigint NULL,
@@ -3014,7 +3014,7 @@ CREATE TABLE [edfi].[InterventionEducationContent]
 IF OBJECT_ID(N'edfi.InterventionInterventionPrescription', N'U') IS NULL
 CREATE TABLE [edfi].[InterventionInterventionPrescription]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Intervention_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [InterventionPrescriptionInterventionPrescription_DocumentId] bigint NULL,
@@ -3029,7 +3029,7 @@ CREATE TABLE [edfi].[InterventionInterventionPrescription]
 IF OBJECT_ID(N'edfi.InterventionLearningResourceMetadataURI', N'U') IS NULL
 CREATE TABLE [edfi].[InterventionLearningResourceMetadataURI]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Intervention_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [LearningResourceMetadataURI] nvarchar(255) NOT NULL,
@@ -3041,7 +3041,7 @@ CREATE TABLE [edfi].[InterventionLearningResourceMetadataURI]
 IF OBJECT_ID(N'edfi.InterventionMeetingTime', N'U') IS NULL
 CREATE TABLE [edfi].[InterventionMeetingTime]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Intervention_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [EndTime] time(7) NOT NULL,
@@ -3054,7 +3054,7 @@ CREATE TABLE [edfi].[InterventionMeetingTime]
 IF OBJECT_ID(N'edfi.InterventionPopulationServed', N'U') IS NULL
 CREATE TABLE [edfi].[InterventionPopulationServed]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Intervention_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [PopulationServedDescriptor_DescriptorId] bigint NOT NULL,
@@ -3066,7 +3066,7 @@ CREATE TABLE [edfi].[InterventionPopulationServed]
 IF OBJECT_ID(N'edfi.InterventionStaff', N'U') IS NULL
 CREATE TABLE [edfi].[InterventionStaff]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Intervention_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [Staff_DocumentId] bigint NULL,
@@ -3080,7 +3080,7 @@ CREATE TABLE [edfi].[InterventionStaff]
 IF OBJECT_ID(N'edfi.InterventionUri', N'U') IS NULL
 CREATE TABLE [edfi].[InterventionUri]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Intervention_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [Uri] nvarchar(255) NOT NULL,
@@ -3110,7 +3110,7 @@ CREATE TABLE [edfi].[InterventionPrescription]
 IF OBJECT_ID(N'edfi.InterventionPrescriptionAppropriateGradeLevel', N'U') IS NULL
 CREATE TABLE [edfi].[InterventionPrescriptionAppropriateGradeLevel]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [InterventionPrescription_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
@@ -3122,7 +3122,7 @@ CREATE TABLE [edfi].[InterventionPrescriptionAppropriateGradeLevel]
 IF OBJECT_ID(N'edfi.InterventionPrescriptionAppropriateSex', N'U') IS NULL
 CREATE TABLE [edfi].[InterventionPrescriptionAppropriateSex]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [InterventionPrescription_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [SexDescriptor_DescriptorId] bigint NOT NULL,
@@ -3134,7 +3134,7 @@ CREATE TABLE [edfi].[InterventionPrescriptionAppropriateSex]
 IF OBJECT_ID(N'edfi.InterventionPrescriptionDiagnos', N'U') IS NULL
 CREATE TABLE [edfi].[InterventionPrescriptionDiagnos]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [InterventionPrescription_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [DiagnosisDescriptor_DescriptorId] bigint NOT NULL,
@@ -3146,7 +3146,7 @@ CREATE TABLE [edfi].[InterventionPrescriptionDiagnos]
 IF OBJECT_ID(N'edfi.InterventionPrescriptionEducationContent', N'U') IS NULL
 CREATE TABLE [edfi].[InterventionPrescriptionEducationContent]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [InterventionPrescription_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [EducationContentSourceEducationContent_DocumentId] bigint NULL,
@@ -3160,7 +3160,7 @@ CREATE TABLE [edfi].[InterventionPrescriptionEducationContent]
 IF OBJECT_ID(N'edfi.InterventionPrescriptionLearningResourceMetadataURI', N'U') IS NULL
 CREATE TABLE [edfi].[InterventionPrescriptionLearningResourceMetadataURI]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [InterventionPrescription_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [LearningResourceMetadataURI] nvarchar(255) NOT NULL,
@@ -3172,7 +3172,7 @@ CREATE TABLE [edfi].[InterventionPrescriptionLearningResourceMetadataURI]
 IF OBJECT_ID(N'edfi.InterventionPrescriptionPopulationServed', N'U') IS NULL
 CREATE TABLE [edfi].[InterventionPrescriptionPopulationServed]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [InterventionPrescription_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [PopulationServedDescriptor_DescriptorId] bigint NOT NULL,
@@ -3184,7 +3184,7 @@ CREATE TABLE [edfi].[InterventionPrescriptionPopulationServed]
 IF OBJECT_ID(N'edfi.InterventionPrescriptionUri', N'U') IS NULL
 CREATE TABLE [edfi].[InterventionPrescriptionUri]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [InterventionPrescription_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [Uri] nvarchar(255) NOT NULL,
@@ -3215,7 +3215,7 @@ CREATE TABLE [edfi].[InterventionStudy]
 IF OBJECT_ID(N'edfi.InterventionStudyAppropriateGradeLevel', N'U') IS NULL
 CREATE TABLE [edfi].[InterventionStudyAppropriateGradeLevel]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [InterventionStudy_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
@@ -3227,7 +3227,7 @@ CREATE TABLE [edfi].[InterventionStudyAppropriateGradeLevel]
 IF OBJECT_ID(N'edfi.InterventionStudyAppropriateSex', N'U') IS NULL
 CREATE TABLE [edfi].[InterventionStudyAppropriateSex]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [InterventionStudy_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [SexDescriptor_DescriptorId] bigint NOT NULL,
@@ -3239,7 +3239,7 @@ CREATE TABLE [edfi].[InterventionStudyAppropriateSex]
 IF OBJECT_ID(N'edfi.InterventionStudyEducationContent', N'U') IS NULL
 CREATE TABLE [edfi].[InterventionStudyEducationContent]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [InterventionStudy_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [EducationContentSourceEducationContent_DocumentId] bigint NULL,
@@ -3253,7 +3253,7 @@ CREATE TABLE [edfi].[InterventionStudyEducationContent]
 IF OBJECT_ID(N'edfi.InterventionStudyInterventionEffectiveness', N'U') IS NULL
 CREATE TABLE [edfi].[InterventionStudyInterventionEffectiveness]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [InterventionStudy_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [DiagnosisDescriptor_DescriptorId] bigint NOT NULL,
@@ -3269,7 +3269,7 @@ CREATE TABLE [edfi].[InterventionStudyInterventionEffectiveness]
 IF OBJECT_ID(N'edfi.InterventionStudyLearningResourceMetadataURI', N'U') IS NULL
 CREATE TABLE [edfi].[InterventionStudyLearningResourceMetadataURI]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [InterventionStudy_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [LearningResourceMetadataURI] nvarchar(255) NOT NULL,
@@ -3281,7 +3281,7 @@ CREATE TABLE [edfi].[InterventionStudyLearningResourceMetadataURI]
 IF OBJECT_ID(N'edfi.InterventionStudyPopulationServed', N'U') IS NULL
 CREATE TABLE [edfi].[InterventionStudyPopulationServed]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [InterventionStudy_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [PopulationServedDescriptor_DescriptorId] bigint NOT NULL,
@@ -3293,7 +3293,7 @@ CREATE TABLE [edfi].[InterventionStudyPopulationServed]
 IF OBJECT_ID(N'edfi.InterventionStudyStateAbbreviation', N'U') IS NULL
 CREATE TABLE [edfi].[InterventionStudyStateAbbreviation]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [InterventionStudy_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [StateAbbreviationDescriptor_DescriptorId] bigint NOT NULL,
@@ -3305,7 +3305,7 @@ CREATE TABLE [edfi].[InterventionStudyStateAbbreviation]
 IF OBJECT_ID(N'edfi.InterventionStudyUri', N'U') IS NULL
 CREATE TABLE [edfi].[InterventionStudyUri]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [InterventionStudy_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [Uri] nvarchar(255) NOT NULL,
@@ -3349,7 +3349,7 @@ CREATE TABLE [edfi].[LearningStandard]
 IF OBJECT_ID(N'edfi.LearningStandardAcademicSubject', N'U') IS NULL
 CREATE TABLE [edfi].[LearningStandardAcademicSubject]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [LearningStandard_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [AcademicSubjectDescriptor_DescriptorId] bigint NOT NULL,
@@ -3361,7 +3361,7 @@ CREATE TABLE [edfi].[LearningStandardAcademicSubject]
 IF OBJECT_ID(N'edfi.LearningStandardAuthor', N'U') IS NULL
 CREATE TABLE [edfi].[LearningStandardAuthor]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [LearningStandard_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [Author] nvarchar(100) NOT NULL,
@@ -3373,7 +3373,7 @@ CREATE TABLE [edfi].[LearningStandardAuthor]
 IF OBJECT_ID(N'edfi.LearningStandardGradeLevel', N'U') IS NULL
 CREATE TABLE [edfi].[LearningStandardGradeLevel]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [LearningStandard_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
@@ -3385,7 +3385,7 @@ CREATE TABLE [edfi].[LearningStandardGradeLevel]
 IF OBJECT_ID(N'edfi.LearningStandardIdentificationCode', N'U') IS NULL
 CREATE TABLE [edfi].[LearningStandardIdentificationCode]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [LearningStandard_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [ContentStandardName] nvarchar(65) NOT NULL,
@@ -3437,7 +3437,7 @@ CREATE TABLE [edfi].[LocalAccount]
 IF OBJECT_ID(N'edfi.LocalAccountReportingTag', N'U') IS NULL
 CREATE TABLE [edfi].[LocalAccountReportingTag]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [LocalAccount_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [ReportingTagDescriptor_DescriptorId] bigint NOT NULL,
@@ -3526,7 +3526,7 @@ CREATE TABLE [edfi].[LocalEducationAgency]
 IF OBJECT_ID(N'edfi.LocalEducationAgencyAccountability', N'U') IS NULL
 CREATE TABLE [edfi].[LocalEducationAgencyAccountability]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [LocalEducationAgency_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [LocalEducationAgencyAccountabilitySchoolYear_DocumentId] bigint NOT NULL,
@@ -3542,7 +3542,7 @@ CREATE TABLE [edfi].[LocalEducationAgencyAccountability]
 IF OBJECT_ID(N'edfi.LocalEducationAgencyAddress', N'U') IS NULL
 CREATE TABLE [edfi].[LocalEducationAgencyAddress]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [LocalEducationAgency_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -3568,7 +3568,7 @@ CREATE TABLE [edfi].[LocalEducationAgencyAddress]
 IF OBJECT_ID(N'edfi.LocalEducationAgencyCategory', N'U') IS NULL
 CREATE TABLE [edfi].[LocalEducationAgencyCategory]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [LocalEducationAgency_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [EducationOrganizationCategoryDescriptor_DescriptorId] bigint NOT NULL,
@@ -3580,7 +3580,7 @@ CREATE TABLE [edfi].[LocalEducationAgencyCategory]
 IF OBJECT_ID(N'edfi.LocalEducationAgencyFederalFunds', N'U') IS NULL
 CREATE TABLE [edfi].[LocalEducationAgencyFederalFunds]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [LocalEducationAgency_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [FiscalYear] int NOT NULL,
@@ -3600,7 +3600,7 @@ CREATE TABLE [edfi].[LocalEducationAgencyFederalFunds]
 IF OBJECT_ID(N'edfi.LocalEducationAgencyIdentificationCode', N'U') IS NULL
 CREATE TABLE [edfi].[LocalEducationAgencyIdentificationCode]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [LocalEducationAgency_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [EducationOrganizationIdentificationSystemDescriptor_DescriptorId] bigint NOT NULL,
@@ -3613,7 +3613,7 @@ CREATE TABLE [edfi].[LocalEducationAgencyIdentificationCode]
 IF OBJECT_ID(N'edfi.LocalEducationAgencyIndicator', N'U') IS NULL
 CREATE TABLE [edfi].[LocalEducationAgencyIndicator]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [LocalEducationAgency_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [IndicatorDescriptor_DescriptorId] bigint NOT NULL,
@@ -3630,7 +3630,7 @@ CREATE TABLE [edfi].[LocalEducationAgencyIndicator]
 IF OBJECT_ID(N'edfi.LocalEducationAgencyInstitutionTelephone', N'U') IS NULL
 CREATE TABLE [edfi].[LocalEducationAgencyInstitutionTelephone]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [LocalEducationAgency_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [InstitutionTelephoneNumberTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -3643,7 +3643,7 @@ CREATE TABLE [edfi].[LocalEducationAgencyInstitutionTelephone]
 IF OBJECT_ID(N'edfi.LocalEducationAgencyInternationalAddress', N'U') IS NULL
 CREATE TABLE [edfi].[LocalEducationAgencyInternationalAddress]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [LocalEducationAgency_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -3664,7 +3664,7 @@ CREATE TABLE [edfi].[LocalEducationAgencyInternationalAddress]
 IF OBJECT_ID(N'edfi.LocalEducationAgencyAddressPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[LocalEducationAgencyAddressPeriod]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [LocalEducationAgency_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
@@ -3678,7 +3678,7 @@ CREATE TABLE [edfi].[LocalEducationAgencyAddressPeriod]
 IF OBJECT_ID(N'edfi.LocalEducationAgencyIndicatorPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[LocalEducationAgencyIndicatorPeriod]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [LocalEducationAgency_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
@@ -3754,7 +3754,7 @@ CREATE TABLE [edfi].[ObjectDimension]
 IF OBJECT_ID(N'edfi.ObjectDimensionReportingTag', N'U') IS NULL
 CREATE TABLE [edfi].[ObjectDimensionReportingTag]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [ObjectDimension_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [ReportingTagDescriptor_DescriptorId] bigint NOT NULL,
@@ -3792,7 +3792,7 @@ CREATE TABLE [edfi].[ObjectiveAssessment]
 IF OBJECT_ID(N'edfi.ObjectiveAssessmentAssessmentItem', N'U') IS NULL
 CREATE TABLE [edfi].[ObjectiveAssessmentAssessmentItem]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [ObjectiveAssessment_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [AssessmentItemAssessmentItem_DocumentId] bigint NULL,
@@ -3808,7 +3808,7 @@ CREATE TABLE [edfi].[ObjectiveAssessmentAssessmentItem]
 IF OBJECT_ID(N'edfi.ObjectiveAssessmentLearningStandard', N'U') IS NULL
 CREATE TABLE [edfi].[ObjectiveAssessmentLearningStandard]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [ObjectiveAssessment_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [LearningStandard_DocumentId] bigint NULL,
@@ -3822,7 +3822,7 @@ CREATE TABLE [edfi].[ObjectiveAssessmentLearningStandard]
 IF OBJECT_ID(N'edfi.ObjectiveAssessmentPerformanceLevel', N'U') IS NULL
 CREATE TABLE [edfi].[ObjectiveAssessmentPerformanceLevel]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [ObjectiveAssessment_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [AssessmentReportingMethodDescriptor_DescriptorId] bigint NOT NULL,
@@ -3839,7 +3839,7 @@ CREATE TABLE [edfi].[ObjectiveAssessmentPerformanceLevel]
 IF OBJECT_ID(N'edfi.ObjectiveAssessmentScore', N'U') IS NULL
 CREATE TABLE [edfi].[ObjectiveAssessmentScore]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [ObjectiveAssessment_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [AssessmentReportingMethodDescriptor_DescriptorId] bigint NOT NULL,
@@ -3873,7 +3873,7 @@ CREATE TABLE [edfi].[OpenStaffPosition]
 IF OBJECT_ID(N'edfi.OpenStaffPositionAcademicSubject', N'U') IS NULL
 CREATE TABLE [edfi].[OpenStaffPositionAcademicSubject]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [OpenStaffPosition_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [AcademicSubjectDescriptor_DescriptorId] bigint NOT NULL,
@@ -3885,7 +3885,7 @@ CREATE TABLE [edfi].[OpenStaffPositionAcademicSubject]
 IF OBJECT_ID(N'edfi.OpenStaffPositionInstructionalGradeLevel', N'U') IS NULL
 CREATE TABLE [edfi].[OpenStaffPositionInstructionalGradeLevel]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [OpenStaffPosition_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
@@ -3909,7 +3909,7 @@ CREATE TABLE [edfi].[OperationalUnitDimension]
 IF OBJECT_ID(N'edfi.OperationalUnitDimensionReportingTag', N'U') IS NULL
 CREATE TABLE [edfi].[OperationalUnitDimensionReportingTag]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [OperationalUnitDimension_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [ReportingTagDescriptor_DescriptorId] bigint NOT NULL,
@@ -3938,7 +3938,7 @@ CREATE TABLE [edfi].[OrganizationDepartment]
 IF OBJECT_ID(N'edfi.OrganizationDepartmentAddress', N'U') IS NULL
 CREATE TABLE [edfi].[OrganizationDepartmentAddress]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [OrganizationDepartment_DocumentId] bigint NOT NULL,
     [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -3964,7 +3964,7 @@ CREATE TABLE [edfi].[OrganizationDepartmentAddress]
 IF OBJECT_ID(N'edfi.OrganizationDepartmentCategory', N'U') IS NULL
 CREATE TABLE [edfi].[OrganizationDepartmentCategory]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [OrganizationDepartment_DocumentId] bigint NOT NULL,
     [EducationOrganizationCategoryDescriptor_DescriptorId] bigint NOT NULL,
@@ -3976,7 +3976,7 @@ CREATE TABLE [edfi].[OrganizationDepartmentCategory]
 IF OBJECT_ID(N'edfi.OrganizationDepartmentIdentificationCode', N'U') IS NULL
 CREATE TABLE [edfi].[OrganizationDepartmentIdentificationCode]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [OrganizationDepartment_DocumentId] bigint NOT NULL,
     [EducationOrganizationIdentificationSystemDescriptor_DescriptorId] bigint NOT NULL,
@@ -3989,7 +3989,7 @@ CREATE TABLE [edfi].[OrganizationDepartmentIdentificationCode]
 IF OBJECT_ID(N'edfi.OrganizationDepartmentIndicator', N'U') IS NULL
 CREATE TABLE [edfi].[OrganizationDepartmentIndicator]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [OrganizationDepartment_DocumentId] bigint NOT NULL,
     [IndicatorDescriptor_DescriptorId] bigint NOT NULL,
@@ -4006,7 +4006,7 @@ CREATE TABLE [edfi].[OrganizationDepartmentIndicator]
 IF OBJECT_ID(N'edfi.OrganizationDepartmentInstitutionTelephone', N'U') IS NULL
 CREATE TABLE [edfi].[OrganizationDepartmentInstitutionTelephone]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [OrganizationDepartment_DocumentId] bigint NOT NULL,
     [InstitutionTelephoneNumberTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -4019,7 +4019,7 @@ CREATE TABLE [edfi].[OrganizationDepartmentInstitutionTelephone]
 IF OBJECT_ID(N'edfi.OrganizationDepartmentInternationalAddress', N'U') IS NULL
 CREATE TABLE [edfi].[OrganizationDepartmentInternationalAddress]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [OrganizationDepartment_DocumentId] bigint NOT NULL,
     [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -4040,7 +4040,7 @@ CREATE TABLE [edfi].[OrganizationDepartmentInternationalAddress]
 IF OBJECT_ID(N'edfi.OrganizationDepartmentAddressPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[OrganizationDepartmentAddressPeriod]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [OrganizationDepartment_DocumentId] bigint NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
@@ -4054,7 +4054,7 @@ CREATE TABLE [edfi].[OrganizationDepartmentAddressPeriod]
 IF OBJECT_ID(N'edfi.OrganizationDepartmentIndicatorPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[OrganizationDepartmentIndicatorPeriod]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [OrganizationDepartment_DocumentId] bigint NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
@@ -4111,7 +4111,7 @@ CREATE TABLE [edfi].[PostSecondaryInstitution]
 IF OBJECT_ID(N'edfi.PostSecondaryInstitutionAddress', N'U') IS NULL
 CREATE TABLE [edfi].[PostSecondaryInstitutionAddress]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [PostSecondaryInstitution_DocumentId] bigint NOT NULL,
     [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -4137,7 +4137,7 @@ CREATE TABLE [edfi].[PostSecondaryInstitutionAddress]
 IF OBJECT_ID(N'edfi.PostSecondaryInstitutionCategory', N'U') IS NULL
 CREATE TABLE [edfi].[PostSecondaryInstitutionCategory]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [PostSecondaryInstitution_DocumentId] bigint NOT NULL,
     [EducationOrganizationCategoryDescriptor_DescriptorId] bigint NOT NULL,
@@ -4149,7 +4149,7 @@ CREATE TABLE [edfi].[PostSecondaryInstitutionCategory]
 IF OBJECT_ID(N'edfi.PostSecondaryInstitutionIdentificationCode', N'U') IS NULL
 CREATE TABLE [edfi].[PostSecondaryInstitutionIdentificationCode]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [PostSecondaryInstitution_DocumentId] bigint NOT NULL,
     [EducationOrganizationIdentificationSystemDescriptor_DescriptorId] bigint NOT NULL,
@@ -4162,7 +4162,7 @@ CREATE TABLE [edfi].[PostSecondaryInstitutionIdentificationCode]
 IF OBJECT_ID(N'edfi.PostSecondaryInstitutionIndicator', N'U') IS NULL
 CREATE TABLE [edfi].[PostSecondaryInstitutionIndicator]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [PostSecondaryInstitution_DocumentId] bigint NOT NULL,
     [IndicatorDescriptor_DescriptorId] bigint NOT NULL,
@@ -4179,7 +4179,7 @@ CREATE TABLE [edfi].[PostSecondaryInstitutionIndicator]
 IF OBJECT_ID(N'edfi.PostSecondaryInstitutionInstitutionTelephone', N'U') IS NULL
 CREATE TABLE [edfi].[PostSecondaryInstitutionInstitutionTelephone]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [PostSecondaryInstitution_DocumentId] bigint NOT NULL,
     [InstitutionTelephoneNumberTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -4192,7 +4192,7 @@ CREATE TABLE [edfi].[PostSecondaryInstitutionInstitutionTelephone]
 IF OBJECT_ID(N'edfi.PostSecondaryInstitutionInternationalAddress', N'U') IS NULL
 CREATE TABLE [edfi].[PostSecondaryInstitutionInternationalAddress]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [PostSecondaryInstitution_DocumentId] bigint NOT NULL,
     [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -4213,7 +4213,7 @@ CREATE TABLE [edfi].[PostSecondaryInstitutionInternationalAddress]
 IF OBJECT_ID(N'edfi.PostSecondaryInstitutionMediumOfInstruction', N'U') IS NULL
 CREATE TABLE [edfi].[PostSecondaryInstitutionMediumOfInstruction]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [PostSecondaryInstitution_DocumentId] bigint NOT NULL,
     [MediumOfInstructionDescriptor_DescriptorId] bigint NOT NULL,
@@ -4225,7 +4225,7 @@ CREATE TABLE [edfi].[PostSecondaryInstitutionMediumOfInstruction]
 IF OBJECT_ID(N'edfi.PostSecondaryInstitutionAddressPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[PostSecondaryInstitutionAddressPeriod]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
     [PostSecondaryInstitution_DocumentId] bigint NOT NULL,
@@ -4239,7 +4239,7 @@ CREATE TABLE [edfi].[PostSecondaryInstitutionAddressPeriod]
 IF OBJECT_ID(N'edfi.PostSecondaryInstitutionIndicatorPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[PostSecondaryInstitutionIndicatorPeriod]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
     [PostSecondaryInstitution_DocumentId] bigint NOT NULL,
@@ -4268,7 +4268,7 @@ CREATE TABLE [edfi].[Program]
 IF OBJECT_ID(N'edfi.ProgramCharacteristic', N'U') IS NULL
 CREATE TABLE [edfi].[ProgramCharacteristic]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Program_DocumentId] bigint NOT NULL,
     [ProgramCharacteristicDescriptor_DescriptorId] bigint NOT NULL,
@@ -4280,7 +4280,7 @@ CREATE TABLE [edfi].[ProgramCharacteristic]
 IF OBJECT_ID(N'edfi.ProgramLearningStandard', N'U') IS NULL
 CREATE TABLE [edfi].[ProgramLearningStandard]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Program_DocumentId] bigint NOT NULL,
     [LearningStandard_DocumentId] bigint NULL,
@@ -4294,7 +4294,7 @@ CREATE TABLE [edfi].[ProgramLearningStandard]
 IF OBJECT_ID(N'edfi.ProgramSponsor', N'U') IS NULL
 CREATE TABLE [edfi].[ProgramSponsor]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Program_DocumentId] bigint NOT NULL,
     [ProgramSponsorDescriptor_DescriptorId] bigint NOT NULL,
@@ -4318,7 +4318,7 @@ CREATE TABLE [edfi].[ProgramDimension]
 IF OBJECT_ID(N'edfi.ProgramDimensionReportingTag', N'U') IS NULL
 CREATE TABLE [edfi].[ProgramDimensionReportingTag]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ProgramDimension_DocumentId] bigint NOT NULL,
     [ReportingTagDescriptor_DescriptorId] bigint NOT NULL,
@@ -4350,7 +4350,7 @@ CREATE TABLE [edfi].[ProgramEvaluation]
 IF OBJECT_ID(N'edfi.ProgramEvaluationLevel', N'U') IS NULL
 CREATE TABLE [edfi].[ProgramEvaluationLevel]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ProgramEvaluation_DocumentId] bigint NOT NULL,
     [RatingLevelDescriptor_DescriptorId] bigint NOT NULL,
@@ -4401,7 +4401,7 @@ CREATE TABLE [edfi].[ProgramEvaluationElement]
 IF OBJECT_ID(N'edfi.ProgramEvaluationElementProgramEvaluationLevel', N'U') IS NULL
 CREATE TABLE [edfi].[ProgramEvaluationElementProgramEvaluationLevel]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ProgramEvaluationElement_DocumentId] bigint NOT NULL,
     [RatingLevelDescriptor_DescriptorId] bigint NOT NULL,
@@ -4437,7 +4437,7 @@ CREATE TABLE [edfi].[ProgramEvaluationObjective]
 IF OBJECT_ID(N'edfi.ProgramEvaluationObjectiveProgramEvaluationLevel', N'U') IS NULL
 CREATE TABLE [edfi].[ProgramEvaluationObjectiveProgramEvaluationLevel]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ProgramEvaluationObjective_DocumentId] bigint NOT NULL,
     [RatingLevelDescriptor_DescriptorId] bigint NOT NULL,
@@ -4463,7 +4463,7 @@ CREATE TABLE [edfi].[ProjectDimension]
 IF OBJECT_ID(N'edfi.ProjectDimensionReportingTag', N'U') IS NULL
 CREATE TABLE [edfi].[ProjectDimensionReportingTag]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ProjectDimension_DocumentId] bigint NOT NULL,
     [ReportingTagDescriptor_DescriptorId] bigint NOT NULL,
@@ -4499,7 +4499,7 @@ CREATE TABLE [edfi].[ReportCard]
 IF OBJECT_ID(N'edfi.ReportCardGradePointAverage', N'U') IS NULL
 CREATE TABLE [edfi].[ReportCardGradePointAverage]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ReportCard_DocumentId] bigint NOT NULL,
     [GradePointAverageTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -4514,7 +4514,7 @@ CREATE TABLE [edfi].[ReportCardGradePointAverage]
 IF OBJECT_ID(N'edfi.ReportCardGrade', N'U') IS NULL
 CREATE TABLE [edfi].[ReportCardGrade]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ReportCard_DocumentId] bigint NOT NULL,
     [SchoolId_Unified] int NULL,
@@ -4540,7 +4540,7 @@ CREATE TABLE [edfi].[ReportCardGrade]
 IF OBJECT_ID(N'edfi.ReportCardStudentCompetencyObjective', N'U') IS NULL
 CREATE TABLE [edfi].[ReportCardStudentCompetencyObjective]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ReportCard_DocumentId] bigint NOT NULL,
     [StudentCompetencyObjective_DocumentId] bigint NULL,
@@ -4583,7 +4583,7 @@ CREATE TABLE [edfi].[RestraintEvent]
 IF OBJECT_ID(N'edfi.RestraintEventProgram', N'U') IS NULL
 CREATE TABLE [edfi].[RestraintEventProgram]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [RestraintEvent_DocumentId] bigint NOT NULL,
     [Program_DocumentId] bigint NULL,
@@ -4599,7 +4599,7 @@ CREATE TABLE [edfi].[RestraintEventProgram]
 IF OBJECT_ID(N'edfi.RestraintEventReason', N'U') IS NULL
 CREATE TABLE [edfi].[RestraintEventReason]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [RestraintEvent_DocumentId] bigint NOT NULL,
     [RestraintEventReasonDescriptor_DescriptorId] bigint NOT NULL,
@@ -4638,7 +4638,7 @@ CREATE TABLE [edfi].[School]
 IF OBJECT_ID(N'edfi.SchoolAddress', N'U') IS NULL
 CREATE TABLE [edfi].[SchoolAddress]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [School_DocumentId] bigint NOT NULL,
     [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -4664,7 +4664,7 @@ CREATE TABLE [edfi].[SchoolAddress]
 IF OBJECT_ID(N'edfi.SchoolEducationOrganizationCategory', N'U') IS NULL
 CREATE TABLE [edfi].[SchoolEducationOrganizationCategory]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [School_DocumentId] bigint NOT NULL,
     [EducationOrganizationCategoryDescriptor_DescriptorId] bigint NOT NULL,
@@ -4676,7 +4676,7 @@ CREATE TABLE [edfi].[SchoolEducationOrganizationCategory]
 IF OBJECT_ID(N'edfi.SchoolGradeLevel', N'U') IS NULL
 CREATE TABLE [edfi].[SchoolGradeLevel]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [School_DocumentId] bigint NOT NULL,
     [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
@@ -4688,7 +4688,7 @@ CREATE TABLE [edfi].[SchoolGradeLevel]
 IF OBJECT_ID(N'edfi.SchoolIdentificationCode', N'U') IS NULL
 CREATE TABLE [edfi].[SchoolIdentificationCode]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [School_DocumentId] bigint NOT NULL,
     [EducationOrganizationIdentificationSystemDescriptor_DescriptorId] bigint NOT NULL,
@@ -4701,7 +4701,7 @@ CREATE TABLE [edfi].[SchoolIdentificationCode]
 IF OBJECT_ID(N'edfi.SchoolIndicator', N'U') IS NULL
 CREATE TABLE [edfi].[SchoolIndicator]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [School_DocumentId] bigint NOT NULL,
     [IndicatorDescriptor_DescriptorId] bigint NOT NULL,
@@ -4718,7 +4718,7 @@ CREATE TABLE [edfi].[SchoolIndicator]
 IF OBJECT_ID(N'edfi.SchoolInstitutionTelephone', N'U') IS NULL
 CREATE TABLE [edfi].[SchoolInstitutionTelephone]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [School_DocumentId] bigint NOT NULL,
     [InstitutionTelephoneNumberTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -4731,7 +4731,7 @@ CREATE TABLE [edfi].[SchoolInstitutionTelephone]
 IF OBJECT_ID(N'edfi.SchoolInternationalAddress', N'U') IS NULL
 CREATE TABLE [edfi].[SchoolInternationalAddress]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [School_DocumentId] bigint NOT NULL,
     [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -4752,7 +4752,7 @@ CREATE TABLE [edfi].[SchoolInternationalAddress]
 IF OBJECT_ID(N'edfi.SchoolCategory', N'U') IS NULL
 CREATE TABLE [edfi].[SchoolCategory]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [School_DocumentId] bigint NOT NULL,
     [SchoolCategoryDescriptor_DescriptorId] bigint NOT NULL,
@@ -4764,7 +4764,7 @@ CREATE TABLE [edfi].[SchoolCategory]
 IF OBJECT_ID(N'edfi.SchoolAddressPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[SchoolAddressPeriod]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
     [School_DocumentId] bigint NOT NULL,
@@ -4778,7 +4778,7 @@ CREATE TABLE [edfi].[SchoolAddressPeriod]
 IF OBJECT_ID(N'edfi.SchoolIndicatorPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[SchoolIndicatorPeriod]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
     [School_DocumentId] bigint NOT NULL,
@@ -4841,7 +4841,7 @@ CREATE TABLE [edfi].[Section]
 IF OBJECT_ID(N'edfi.SectionCharacteristic', N'U') IS NULL
 CREATE TABLE [edfi].[SectionCharacteristic]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Section_DocumentId] bigint NOT NULL,
     [SectionCharacteristicDescriptor_DescriptorId] bigint NOT NULL,
@@ -4853,7 +4853,7 @@ CREATE TABLE [edfi].[SectionCharacteristic]
 IF OBJECT_ID(N'edfi.SectionClassPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[SectionClassPeriod]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Section_DocumentId] bigint NOT NULL,
     [ClassPeriod_DocumentId] bigint NULL,
@@ -4868,7 +4868,7 @@ CREATE TABLE [edfi].[SectionClassPeriod]
 IF OBJECT_ID(N'edfi.SectionCourseLevelCharacteristic', N'U') IS NULL
 CREATE TABLE [edfi].[SectionCourseLevelCharacteristic]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Section_DocumentId] bigint NOT NULL,
     [CourseLevelCharacteristicDescriptor_DescriptorId] bigint NOT NULL,
@@ -4880,7 +4880,7 @@ CREATE TABLE [edfi].[SectionCourseLevelCharacteristic]
 IF OBJECT_ID(N'edfi.SectionOfferedGradeLevel', N'U') IS NULL
 CREATE TABLE [edfi].[SectionOfferedGradeLevel]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Section_DocumentId] bigint NOT NULL,
     [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
@@ -4892,7 +4892,7 @@ CREATE TABLE [edfi].[SectionOfferedGradeLevel]
 IF OBJECT_ID(N'edfi.SectionProgram', N'U') IS NULL
 CREATE TABLE [edfi].[SectionProgram]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Section_DocumentId] bigint NOT NULL,
     [Program_DocumentId] bigint NULL,
@@ -4955,7 +4955,7 @@ CREATE TABLE [edfi].[Session]
 IF OBJECT_ID(N'edfi.SessionAcademicWeek', N'U') IS NULL
 CREATE TABLE [edfi].[SessionAcademicWeek]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Session_DocumentId] bigint NOT NULL,
     [AcademicWeek_DocumentId] bigint NULL,
@@ -4970,7 +4970,7 @@ CREATE TABLE [edfi].[SessionAcademicWeek]
 IF OBJECT_ID(N'edfi.SessionGradingPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[SessionGradingPeriod]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Session_DocumentId] bigint NOT NULL,
     [GradingPeriod_DocumentId] bigint NULL,
@@ -4999,7 +4999,7 @@ CREATE TABLE [edfi].[SourceDimension]
 IF OBJECT_ID(N'edfi.SourceDimensionReportingTag', N'U') IS NULL
 CREATE TABLE [edfi].[SourceDimensionReportingTag]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [SourceDimension_DocumentId] bigint NOT NULL,
     [ReportingTagDescriptor_DescriptorId] bigint NOT NULL,
@@ -5043,7 +5043,7 @@ CREATE TABLE [edfi].[Staff]
 IF OBJECT_ID(N'edfi.StaffAddress', N'U') IS NULL
 CREATE TABLE [edfi].[StaffAddress]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
     [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -5069,7 +5069,7 @@ CREATE TABLE [edfi].[StaffAddress]
 IF OBJECT_ID(N'edfi.StaffAncestryEthnicOrigin', N'U') IS NULL
 CREATE TABLE [edfi].[StaffAncestryEthnicOrigin]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
     [AncestryEthnicOriginDescriptor_DescriptorId] bigint NOT NULL,
@@ -5081,7 +5081,7 @@ CREATE TABLE [edfi].[StaffAncestryEthnicOrigin]
 IF OBJECT_ID(N'edfi.StaffCredential', N'U') IS NULL
 CREATE TABLE [edfi].[StaffCredential]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
     [Credential_DocumentId] bigint NULL,
@@ -5096,7 +5096,7 @@ CREATE TABLE [edfi].[StaffCredential]
 IF OBJECT_ID(N'edfi.StaffElectronicMail', N'U') IS NULL
 CREATE TABLE [edfi].[StaffElectronicMail]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
     [ElectronicMailTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -5111,7 +5111,7 @@ CREATE TABLE [edfi].[StaffElectronicMail]
 IF OBJECT_ID(N'edfi.StaffIdentificationCode', N'U') IS NULL
 CREATE TABLE [edfi].[StaffIdentificationCode]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
     [StaffIdentificationSystemDescriptor_DescriptorId] bigint NOT NULL,
@@ -5125,7 +5125,7 @@ CREATE TABLE [edfi].[StaffIdentificationCode]
 IF OBJECT_ID(N'edfi.StaffIdentificationDocument', N'U') IS NULL
 CREATE TABLE [edfi].[StaffIdentificationDocument]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
     [IdentificationDocumentUseDescriptor_DescriptorId] bigint NULL,
@@ -5143,7 +5143,7 @@ CREATE TABLE [edfi].[StaffIdentificationDocument]
 IF OBJECT_ID(N'edfi.StaffInternationalAddress', N'U') IS NULL
 CREATE TABLE [edfi].[StaffInternationalAddress]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
     [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -5164,7 +5164,7 @@ CREATE TABLE [edfi].[StaffInternationalAddress]
 IF OBJECT_ID(N'edfi.StaffLanguage', N'U') IS NULL
 CREATE TABLE [edfi].[StaffLanguage]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
     [LanguageDescriptor_DescriptorId] bigint NOT NULL,
@@ -5177,7 +5177,7 @@ CREATE TABLE [edfi].[StaffLanguage]
 IF OBJECT_ID(N'edfi.StaffOtherName', N'U') IS NULL
 CREATE TABLE [edfi].[StaffOtherName]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
     [OtherNameTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -5194,7 +5194,7 @@ CREATE TABLE [edfi].[StaffOtherName]
 IF OBJECT_ID(N'edfi.StaffPersonalIdentificationDocument', N'U') IS NULL
 CREATE TABLE [edfi].[StaffPersonalIdentificationDocument]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
     [IdentificationDocumentUseDescriptor_DescriptorId] bigint NOT NULL,
@@ -5212,7 +5212,7 @@ CREATE TABLE [edfi].[StaffPersonalIdentificationDocument]
 IF OBJECT_ID(N'edfi.StaffRace', N'U') IS NULL
 CREATE TABLE [edfi].[StaffRace]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
     [RaceDescriptor_DescriptorId] bigint NOT NULL,
@@ -5224,7 +5224,7 @@ CREATE TABLE [edfi].[StaffRace]
 IF OBJECT_ID(N'edfi.StaffRecognition', N'U') IS NULL
 CREATE TABLE [edfi].[StaffRecognition]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
     [AchievementCategoryDescriptor_DescriptorId] bigint NULL,
@@ -5248,7 +5248,7 @@ CREATE TABLE [edfi].[StaffRecognition]
 IF OBJECT_ID(N'edfi.StaffTelephone', N'U') IS NULL
 CREATE TABLE [edfi].[StaffTelephone]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
     [TelephoneNumberTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -5264,7 +5264,7 @@ CREATE TABLE [edfi].[StaffTelephone]
 IF OBJECT_ID(N'edfi.StaffTribalAffiliation', N'U') IS NULL
 CREATE TABLE [edfi].[StaffTribalAffiliation]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
     [TribalAffiliationDescriptor_DescriptorId] bigint NOT NULL,
@@ -5276,7 +5276,7 @@ CREATE TABLE [edfi].[StaffTribalAffiliation]
 IF OBJECT_ID(N'edfi.StaffVisa', N'U') IS NULL
 CREATE TABLE [edfi].[StaffVisa]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
     [VisaDescriptor_DescriptorId] bigint NOT NULL,
@@ -5288,7 +5288,7 @@ CREATE TABLE [edfi].[StaffVisa]
 IF OBJECT_ID(N'edfi.StaffAddressPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[StaffAddressPeriod]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
@@ -5302,7 +5302,7 @@ CREATE TABLE [edfi].[StaffAddressPeriod]
 IF OBJECT_ID(N'edfi.StaffLanguageUs', N'U') IS NULL
 CREATE TABLE [edfi].[StaffLanguageUs]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
@@ -5363,7 +5363,7 @@ CREATE TABLE [edfi].[StaffDisciplineIncidentAssociation]
 IF OBJECT_ID(N'edfi.StaffDisciplineIncidentAssociationDisciplineIncidentParticipationCode', N'U') IS NULL
 CREATE TABLE [edfi].[StaffDisciplineIncidentAssociationDisciplineIncidentParticipationCode]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StaffDisciplineIncidentAssociation_DocumentId] bigint NOT NULL,
     [DisciplineIncidentParticipationCodeDescriptor_DescriptorId] bigint NOT NULL,
@@ -5437,7 +5437,7 @@ CREATE TABLE [edfi].[StaffEducationOrganizationContactAssociation]
 IF OBJECT_ID(N'edfi.StaffEducationOrganizationContactAssociationPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[StaffEducationOrganizationContactAssociationPeriod]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StaffEducationOrganizationContactAssociation_DocumentId] bigint NOT NULL,
     [BeginDate] date NOT NULL,
@@ -5450,7 +5450,7 @@ CREATE TABLE [edfi].[StaffEducationOrganizationContactAssociationPeriod]
 IF OBJECT_ID(N'edfi.StaffEducationOrganizationContactAssociationTelephone', N'U') IS NULL
 CREATE TABLE [edfi].[StaffEducationOrganizationContactAssociationTelephone]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StaffEducationOrganizationContactAssociation_DocumentId] bigint NOT NULL,
     [TelephoneNumberTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -5555,7 +5555,7 @@ CREATE TABLE [edfi].[StaffSchoolAssociation]
 IF OBJECT_ID(N'edfi.StaffSchoolAssociationAcademicSubject', N'U') IS NULL
 CREATE TABLE [edfi].[StaffSchoolAssociationAcademicSubject]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StaffSchoolAssociation_DocumentId] bigint NOT NULL,
     [AcademicSubjectDescriptor_DescriptorId] bigint NOT NULL,
@@ -5567,7 +5567,7 @@ CREATE TABLE [edfi].[StaffSchoolAssociationAcademicSubject]
 IF OBJECT_ID(N'edfi.StaffSchoolAssociationGradeLevel', N'U') IS NULL
 CREATE TABLE [edfi].[StaffSchoolAssociationGradeLevel]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StaffSchoolAssociation_DocumentId] bigint NOT NULL,
     [GradeLevelDescriptor_DescriptorId] bigint NOT NULL,
@@ -5617,7 +5617,7 @@ CREATE TABLE [edfi].[StateEducationAgency]
 IF OBJECT_ID(N'edfi.StateEducationAgencyAccountability', N'U') IS NULL
 CREATE TABLE [edfi].[StateEducationAgencyAccountability]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StateEducationAgency_DocumentId] bigint NOT NULL,
     [StateEducationAgencyAccountabilitySchoolYear_DocumentId] bigint NOT NULL,
@@ -5632,7 +5632,7 @@ CREATE TABLE [edfi].[StateEducationAgencyAccountability]
 IF OBJECT_ID(N'edfi.StateEducationAgencyAddress', N'U') IS NULL
 CREATE TABLE [edfi].[StateEducationAgencyAddress]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StateEducationAgency_DocumentId] bigint NOT NULL,
     [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -5658,7 +5658,7 @@ CREATE TABLE [edfi].[StateEducationAgencyAddress]
 IF OBJECT_ID(N'edfi.StateEducationAgencyCategory', N'U') IS NULL
 CREATE TABLE [edfi].[StateEducationAgencyCategory]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StateEducationAgency_DocumentId] bigint NOT NULL,
     [EducationOrganizationCategoryDescriptor_DescriptorId] bigint NOT NULL,
@@ -5670,7 +5670,7 @@ CREATE TABLE [edfi].[StateEducationAgencyCategory]
 IF OBJECT_ID(N'edfi.StateEducationAgencyFederalFunds', N'U') IS NULL
 CREATE TABLE [edfi].[StateEducationAgencyFederalFunds]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StateEducationAgency_DocumentId] bigint NOT NULL,
     [FederalProgramsFundingAllocation] decimal(19,4) NULL,
@@ -5683,7 +5683,7 @@ CREATE TABLE [edfi].[StateEducationAgencyFederalFunds]
 IF OBJECT_ID(N'edfi.StateEducationAgencyIdentificationCode', N'U') IS NULL
 CREATE TABLE [edfi].[StateEducationAgencyIdentificationCode]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StateEducationAgency_DocumentId] bigint NOT NULL,
     [EducationOrganizationIdentificationSystemDescriptor_DescriptorId] bigint NOT NULL,
@@ -5696,7 +5696,7 @@ CREATE TABLE [edfi].[StateEducationAgencyIdentificationCode]
 IF OBJECT_ID(N'edfi.StateEducationAgencyIndicator', N'U') IS NULL
 CREATE TABLE [edfi].[StateEducationAgencyIndicator]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StateEducationAgency_DocumentId] bigint NOT NULL,
     [IndicatorDescriptor_DescriptorId] bigint NOT NULL,
@@ -5713,7 +5713,7 @@ CREATE TABLE [edfi].[StateEducationAgencyIndicator]
 IF OBJECT_ID(N'edfi.StateEducationAgencyInstitutionTelephone', N'U') IS NULL
 CREATE TABLE [edfi].[StateEducationAgencyInstitutionTelephone]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StateEducationAgency_DocumentId] bigint NOT NULL,
     [InstitutionTelephoneNumberTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -5726,7 +5726,7 @@ CREATE TABLE [edfi].[StateEducationAgencyInstitutionTelephone]
 IF OBJECT_ID(N'edfi.StateEducationAgencyInternationalAddress', N'U') IS NULL
 CREATE TABLE [edfi].[StateEducationAgencyInternationalAddress]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StateEducationAgency_DocumentId] bigint NOT NULL,
     [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -5747,7 +5747,7 @@ CREATE TABLE [edfi].[StateEducationAgencyInternationalAddress]
 IF OBJECT_ID(N'edfi.StateEducationAgencyAddressPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[StateEducationAgencyAddressPeriod]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
     [StateEducationAgency_DocumentId] bigint NOT NULL,
@@ -5761,7 +5761,7 @@ CREATE TABLE [edfi].[StateEducationAgencyAddressPeriod]
 IF OBJECT_ID(N'edfi.StateEducationAgencyIndicatorPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[StateEducationAgencyIndicatorPeriod]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
     [StateEducationAgency_DocumentId] bigint NOT NULL,
@@ -5806,7 +5806,7 @@ CREATE TABLE [edfi].[Student]
 IF OBJECT_ID(N'edfi.StudentIdentificationDocument', N'U') IS NULL
 CREATE TABLE [edfi].[StudentIdentificationDocument]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [IdentificationDocumentUseDescriptor_DescriptorId] bigint NULL,
@@ -5824,7 +5824,7 @@ CREATE TABLE [edfi].[StudentIdentificationDocument]
 IF OBJECT_ID(N'edfi.StudentOtherName', N'U') IS NULL
 CREATE TABLE [edfi].[StudentOtherName]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [OtherNameTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -5841,7 +5841,7 @@ CREATE TABLE [edfi].[StudentOtherName]
 IF OBJECT_ID(N'edfi.StudentPersonalIdentificationDocument', N'U') IS NULL
 CREATE TABLE [edfi].[StudentPersonalIdentificationDocument]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [IdentificationDocumentUseDescriptor_DescriptorId] bigint NOT NULL,
@@ -5859,7 +5859,7 @@ CREATE TABLE [edfi].[StudentPersonalIdentificationDocument]
 IF OBJECT_ID(N'edfi.StudentVisa', N'U') IS NULL
 CREATE TABLE [edfi].[StudentVisa]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [VisaDescriptor_DescriptorId] bigint NOT NULL,
@@ -5907,7 +5907,7 @@ CREATE TABLE [edfi].[StudentAcademicRecord]
 IF OBJECT_ID(N'edfi.StudentAcademicRecordAcademicHonor', N'U') IS NULL
 CREATE TABLE [edfi].[StudentAcademicRecordAcademicHonor]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentAcademicRecord_DocumentId] bigint NOT NULL,
     [AcademicHonorCategoryDescriptor_DescriptorId] bigint NOT NULL,
@@ -5931,7 +5931,7 @@ CREATE TABLE [edfi].[StudentAcademicRecordAcademicHonor]
 IF OBJECT_ID(N'edfi.StudentAcademicRecordDiploma', N'U') IS NULL
 CREATE TABLE [edfi].[StudentAcademicRecordDiploma]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentAcademicRecord_DocumentId] bigint NOT NULL,
     [AchievementCategoryDescriptor_DescriptorId] bigint NULL,
@@ -5957,7 +5957,7 @@ CREATE TABLE [edfi].[StudentAcademicRecordDiploma]
 IF OBJECT_ID(N'edfi.StudentAcademicRecordGradePointAverage', N'U') IS NULL
 CREATE TABLE [edfi].[StudentAcademicRecordGradePointAverage]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentAcademicRecord_DocumentId] bigint NOT NULL,
     [GradePointAverageTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -5972,7 +5972,7 @@ CREATE TABLE [edfi].[StudentAcademicRecordGradePointAverage]
 IF OBJECT_ID(N'edfi.StudentAcademicRecordRecognition', N'U') IS NULL
 CREATE TABLE [edfi].[StudentAcademicRecordRecognition]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentAcademicRecord_DocumentId] bigint NOT NULL,
     [AchievementCategoryDescriptor_DescriptorId] bigint NULL,
@@ -5996,7 +5996,7 @@ CREATE TABLE [edfi].[StudentAcademicRecordRecognition]
 IF OBJECT_ID(N'edfi.StudentAcademicRecordReportCard', N'U') IS NULL
 CREATE TABLE [edfi].[StudentAcademicRecordReportCard]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentAcademicRecord_DocumentId] bigint NOT NULL,
     [ReportCard_DocumentId] bigint NULL,
@@ -6054,7 +6054,7 @@ CREATE TABLE [edfi].[StudentAssessment]
 IF OBJECT_ID(N'edfi.StudentAssessmentAccommodation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentAssessmentAccommodation]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentAssessment_DocumentId] bigint NOT NULL,
     [AccommodationDescriptor_DescriptorId] bigint NOT NULL,
@@ -6066,7 +6066,7 @@ CREATE TABLE [edfi].[StudentAssessmentAccommodation]
 IF OBJECT_ID(N'edfi.StudentAssessmentItem', N'U') IS NULL
 CREATE TABLE [edfi].[StudentAssessmentItem]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentAssessment_DocumentId] bigint NOT NULL,
     [StudentAssessmentItemAssessmentItem_DocumentId] bigint NOT NULL,
@@ -6089,7 +6089,7 @@ CREATE TABLE [edfi].[StudentAssessmentItem]
 IF OBJECT_ID(N'edfi.StudentAssessmentPerformanceLevel', N'U') IS NULL
 CREATE TABLE [edfi].[StudentAssessmentPerformanceLevel]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentAssessment_DocumentId] bigint NOT NULL,
     [AssessmentReportingMethodDescriptor_DescriptorId] bigint NOT NULL,
@@ -6103,7 +6103,7 @@ CREATE TABLE [edfi].[StudentAssessmentPerformanceLevel]
 IF OBJECT_ID(N'edfi.StudentAssessmentScoreResult', N'U') IS NULL
 CREATE TABLE [edfi].[StudentAssessmentScoreResult]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentAssessment_DocumentId] bigint NOT NULL,
     [AssessmentReportingMethodDescriptor_DescriptorId] bigint NOT NULL,
@@ -6117,7 +6117,7 @@ CREATE TABLE [edfi].[StudentAssessmentScoreResult]
 IF OBJECT_ID(N'edfi.StudentAssessmentStudentObjectiveAssessment', N'U') IS NULL
 CREATE TABLE [edfi].[StudentAssessmentStudentObjectiveAssessment]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentAssessment_DocumentId] bigint NOT NULL,
     [StudentObjectiveAssessmentObjectiveAssessment_DocumentId] bigint NOT NULL,
@@ -6137,7 +6137,7 @@ CREATE TABLE [edfi].[StudentAssessmentStudentObjectiveAssessment]
 IF OBJECT_ID(N'edfi.StudentAssessmentStudentObjectiveAssessmentPerformanceLevel', N'U') IS NULL
 CREATE TABLE [edfi].[StudentAssessmentStudentObjectiveAssessmentPerformanceLevel]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
     [StudentAssessment_DocumentId] bigint NOT NULL,
@@ -6152,7 +6152,7 @@ CREATE TABLE [edfi].[StudentAssessmentStudentObjectiveAssessmentPerformanceLevel
 IF OBJECT_ID(N'edfi.StudentAssessmentStudentObjectiveAssessmentScoreResult', N'U') IS NULL
 CREATE TABLE [edfi].[StudentAssessmentStudentObjectiveAssessmentScoreResult]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
     [StudentAssessment_DocumentId] bigint NOT NULL,
@@ -6225,7 +6225,7 @@ CREATE TABLE [edfi].[StudentAssessmentRegistration]
 IF OBJECT_ID(N'edfi.StudentAssessmentRegistrationAssessmentAccommodation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentAssessmentRegistrationAssessmentAccommodation]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentAssessmentRegistration_DocumentId] bigint NOT NULL,
     [AccommodationDescriptor_DescriptorId] bigint NOT NULL,
@@ -6237,7 +6237,7 @@ CREATE TABLE [edfi].[StudentAssessmentRegistrationAssessmentAccommodation]
 IF OBJECT_ID(N'edfi.StudentAssessmentRegistrationAssessmentCustomization', N'U') IS NULL
 CREATE TABLE [edfi].[StudentAssessmentRegistrationAssessmentCustomization]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentAssessmentRegistration_DocumentId] bigint NOT NULL,
     [CustomizationKey] nvarchar(60) NOT NULL,
@@ -6273,7 +6273,7 @@ CREATE TABLE [edfi].[StudentAssessmentRegistrationBatteryPartAssociation]
 IF OBJECT_ID(N'edfi.StudentAssessmentRegistrationBatteryPartAssociationAccommodation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentAssessmentRegistrationBatteryPartAssociationAccommodation]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentAssessmentRegistrationBatteryPartAssociation_DocumentId] bigint NOT NULL,
     [AccommodationDescriptor_DescriptorId] bigint NOT NULL,
@@ -6311,7 +6311,7 @@ CREATE TABLE [edfi].[StudentCTEProgramAssociation]
 IF OBJECT_ID(N'edfi.StudentCTEProgramAssociationCteProgramService', N'U') IS NULL
 CREATE TABLE [edfi].[StudentCTEProgramAssociationCteProgramService]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentCTEProgramAssociation_DocumentId] bigint NOT NULL,
     [CteProgramServiceDescriptor_DescriptorId] bigint NOT NULL,
@@ -6327,7 +6327,7 @@ CREATE TABLE [edfi].[StudentCTEProgramAssociationCteProgramService]
 IF OBJECT_ID(N'edfi.StudentCTEProgramAssociationProgramParticipationStatus', N'U') IS NULL
 CREATE TABLE [edfi].[StudentCTEProgramAssociationProgramParticipationStatus]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentCTEProgramAssociation_DocumentId] bigint NOT NULL,
     [ParticipationStatusDescriptor_DescriptorId] bigint NOT NULL,
@@ -6359,7 +6359,7 @@ CREATE TABLE [edfi].[StudentCohortAssociation]
 IF OBJECT_ID(N'edfi.StudentCohortAssociationSection', N'U') IS NULL
 CREATE TABLE [edfi].[StudentCohortAssociationSection]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentCohortAssociation_DocumentId] bigint NOT NULL,
     [Section_DocumentId] bigint NULL,
@@ -6402,7 +6402,7 @@ CREATE TABLE [edfi].[StudentCompetencyObjective]
 IF OBJECT_ID(N'edfi.StudentCompetencyObjectiveGeneralStudentProgramAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentCompetencyObjectiveGeneralStudentProgramAssociation]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentCompetencyObjective_DocumentId] bigint NOT NULL,
     [StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_DocumentId] bigint NULL,
@@ -6421,7 +6421,7 @@ CREATE TABLE [edfi].[StudentCompetencyObjectiveGeneralStudentProgramAssociation]
 IF OBJECT_ID(N'edfi.StudentCompetencyObjectiveStudentSectionAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentCompetencyObjectiveStudentSectionAssociation]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentCompetencyObjective_DocumentId] bigint NOT NULL,
     [StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_DocumentId] bigint NULL,
@@ -6480,7 +6480,7 @@ CREATE TABLE [edfi].[StudentDisciplineIncidentBehaviorAssociation]
 IF OBJECT_ID(N'edfi.StudentDisciplineIncidentBehaviorAssociationDisciplineIncidentParticipationCode', N'U') IS NULL
 CREATE TABLE [edfi].[StudentDisciplineIncidentBehaviorAssociationDisciplineIncidentParticipationCode]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentDisciplineIncidentBehaviorAssociation_DocumentId] bigint NOT NULL,
     [DisciplineIncidentParticipationCodeDescriptor_DescriptorId] bigint NOT NULL,
@@ -6492,7 +6492,7 @@ CREATE TABLE [edfi].[StudentDisciplineIncidentBehaviorAssociationDisciplineIncid
 IF OBJECT_ID(N'edfi.StudentDisciplineIncidentBehaviorAssociationWeapon', N'U') IS NULL
 CREATE TABLE [edfi].[StudentDisciplineIncidentBehaviorAssociationWeapon]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentDisciplineIncidentBehaviorAssociation_DocumentId] bigint NOT NULL,
     [WeaponDescriptor_DescriptorId] bigint NOT NULL,
@@ -6519,7 +6519,7 @@ CREATE TABLE [edfi].[StudentDisciplineIncidentNonOffenderAssociation]
 IF OBJECT_ID(N'edfi.StudentDisciplineIncidentNonOffenderAssociationDisciplineIncidentParticipationCode', N'U') IS NULL
 CREATE TABLE [edfi].[StudentDisciplineIncidentNonOffenderAssociationDisciplineIncidentParticipationCode]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentDisciplineIncidentNonOffenderAssociation_DocumentId] bigint NOT NULL,
     [DisciplineIncidentParticipationCodeDescriptor_DescriptorId] bigint NOT NULL,
@@ -6546,7 +6546,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssessmentAccommodation]
 IF OBJECT_ID(N'edfi.StudentEducationOrganizationAssessmentAccommodationGeneralAccommodation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentEducationOrganizationAssessmentAccommodationGeneralAccommodation]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentEducationOrganizationAssessmentAccommodation_DocumentId] bigint NOT NULL,
     [AccommodationDescriptor_DescriptorId] bigint NOT NULL,
@@ -6587,7 +6587,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociation]
 IF OBJECT_ID(N'edfi.StudentEducationOrganizationAssociationAddress', N'U') IS NULL
 CREATE TABLE [edfi].[StudentEducationOrganizationAssociationAddress]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
     [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -6613,7 +6613,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationAddress]
 IF OBJECT_ID(N'edfi.StudentEducationOrganizationAssociationAncestryEthnicOrigin', N'U') IS NULL
 CREATE TABLE [edfi].[StudentEducationOrganizationAssociationAncestryEthnicOrigin]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
     [AncestryEthnicOriginDescriptor_DescriptorId] bigint NOT NULL,
@@ -6625,7 +6625,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationAncestryEthnicOrigin
 IF OBJECT_ID(N'edfi.StudentEducationOrganizationAssociationCohortYear', N'U') IS NULL
 CREATE TABLE [edfi].[StudentEducationOrganizationAssociationCohortYear]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
     [CohortYearSchoolYear_DocumentId] bigint NOT NULL,
@@ -6641,7 +6641,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationCohortYear]
 IF OBJECT_ID(N'edfi.StudentEducationOrganizationAssociationDisability', N'U') IS NULL
 CREATE TABLE [edfi].[StudentEducationOrganizationAssociationDisability]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
     [DisabilityDescriptor_DescriptorId] bigint NOT NULL,
@@ -6657,7 +6657,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationDisability]
 IF OBJECT_ID(N'edfi.StudentEducationOrganizationAssociationDisplacedStudent', N'U') IS NULL
 CREATE TABLE [edfi].[StudentEducationOrganizationAssociationDisplacedStudent]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
     [DisplacedStudentCrisisEvent_DocumentId] bigint NOT NULL,
@@ -6675,7 +6675,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationDisplacedStudent]
 IF OBJECT_ID(N'edfi.StudentEducationOrganizationAssociationElectronicMail', N'U') IS NULL
 CREATE TABLE [edfi].[StudentEducationOrganizationAssociationElectronicMail]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
     [ElectronicMailTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -6690,7 +6690,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationElectronicMail]
 IF OBJECT_ID(N'edfi.StudentEducationOrganizationAssociationInternationalAddress', N'U') IS NULL
 CREATE TABLE [edfi].[StudentEducationOrganizationAssociationInternationalAddress]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
     [AddressTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -6711,7 +6711,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationInternationalAddress
 IF OBJECT_ID(N'edfi.StudentEducationOrganizationAssociationLanguage', N'U') IS NULL
 CREATE TABLE [edfi].[StudentEducationOrganizationAssociationLanguage]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
     [LanguageDescriptor_DescriptorId] bigint NOT NULL,
@@ -6724,7 +6724,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationLanguage]
 IF OBJECT_ID(N'edfi.StudentEducationOrganizationAssociationRace', N'U') IS NULL
 CREATE TABLE [edfi].[StudentEducationOrganizationAssociationRace]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
     [RaceDescriptor_DescriptorId] bigint NOT NULL,
@@ -6736,7 +6736,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationRace]
 IF OBJECT_ID(N'edfi.StudentEducationOrganizationAssociationStudentCharacteristic', N'U') IS NULL
 CREATE TABLE [edfi].[StudentEducationOrganizationAssociationStudentCharacteristic]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
     [StudentCharacteristicDescriptor_DescriptorId] bigint NOT NULL,
@@ -6750,7 +6750,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationStudentCharacteristi
 IF OBJECT_ID(N'edfi.StudentEducationOrganizationAssociationStudentIdentificationCode', N'U') IS NULL
 CREATE TABLE [edfi].[StudentEducationOrganizationAssociationStudentIdentificationCode]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
     [StudentIdentificationSystemDescriptor_DescriptorId] bigint NOT NULL,
@@ -6764,7 +6764,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationStudentIdentificatio
 IF OBJECT_ID(N'edfi.StudentEducationOrganizationAssociationStudentIndicator', N'U') IS NULL
 CREATE TABLE [edfi].[StudentEducationOrganizationAssociationStudentIndicator]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
     [DesignatedBy] nvarchar(60) NULL,
@@ -6780,7 +6780,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationStudentIndicator]
 IF OBJECT_ID(N'edfi.StudentEducationOrganizationAssociationTelephone', N'U') IS NULL
 CREATE TABLE [edfi].[StudentEducationOrganizationAssociationTelephone]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
     [TelephoneNumberTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -6796,7 +6796,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationTelephone]
 IF OBJECT_ID(N'edfi.StudentEducationOrganizationAssociationTribalAffiliation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentEducationOrganizationAssociationTribalAffiliation]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
     [TribalAffiliationDescriptor_DescriptorId] bigint NOT NULL,
@@ -6808,7 +6808,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationTribalAffiliation]
 IF OBJECT_ID(N'edfi.StudentEducationOrganizationAssociationAddressPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[StudentEducationOrganizationAssociationAddressPeriod]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
@@ -6822,7 +6822,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationAddressPeriod]
 IF OBJECT_ID(N'edfi.StudentEducationOrganizationAssociationDisabilityDesignation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentEducationOrganizationAssociationDisabilityDesignation]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
@@ -6835,7 +6835,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationDisabilityDesignatio
 IF OBJECT_ID(N'edfi.StudentEducationOrganizationAssociationLanguageUs', N'U') IS NULL
 CREATE TABLE [edfi].[StudentEducationOrganizationAssociationLanguageUs]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
@@ -6848,7 +6848,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationLanguageUs]
 IF OBJECT_ID(N'edfi.StudentEducationOrganizationAssociationStudentCharacteristicPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[StudentEducationOrganizationAssociationStudentCharacteristicPeriod]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
@@ -6862,7 +6862,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationStudentCharacteristi
 IF OBJECT_ID(N'edfi.StudentEducationOrganizationAssociationStudentIndicatorPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[StudentEducationOrganizationAssociationStudentIndicatorPeriod]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
@@ -6934,7 +6934,7 @@ CREATE TABLE [edfi].[StudentHealth]
 IF OBJECT_ID(N'edfi.StudentHealthAdditionalImmunization', N'U') IS NULL
 CREATE TABLE [edfi].[StudentHealthAdditionalImmunization]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentHealth_DocumentId] bigint NOT NULL,
     [ImmunizationName] nvarchar(100) NOT NULL,
@@ -6947,7 +6947,7 @@ CREATE TABLE [edfi].[StudentHealthAdditionalImmunization]
 IF OBJECT_ID(N'edfi.StudentHealthRequiredImmunization', N'U') IS NULL
 CREATE TABLE [edfi].[StudentHealthRequiredImmunization]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentHealth_DocumentId] bigint NOT NULL,
     [ImmunizationTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -6962,7 +6962,7 @@ CREATE TABLE [edfi].[StudentHealthRequiredImmunization]
 IF OBJECT_ID(N'edfi.StudentHealthAdditionalImmunizationDate', N'U') IS NULL
 CREATE TABLE [edfi].[StudentHealthAdditionalImmunizationDate]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
     [StudentHealth_DocumentId] bigint NOT NULL,
@@ -6975,7 +6975,7 @@ CREATE TABLE [edfi].[StudentHealthAdditionalImmunizationDate]
 IF OBJECT_ID(N'edfi.StudentHealthRequiredImmunizationDate', N'U') IS NULL
 CREATE TABLE [edfi].[StudentHealthRequiredImmunizationDate]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
     [StudentHealth_DocumentId] bigint NOT NULL,
@@ -7014,7 +7014,7 @@ CREATE TABLE [edfi].[StudentHomelessProgramAssociation]
 IF OBJECT_ID(N'edfi.StudentHomelessProgramAssociationHomelessProgramService', N'U') IS NULL
 CREATE TABLE [edfi].[StudentHomelessProgramAssociationHomelessProgramService]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentHomelessProgramAssociation_DocumentId] bigint NOT NULL,
     [HomelessProgramServiceDescriptor_DescriptorId] bigint NOT NULL,
@@ -7029,7 +7029,7 @@ CREATE TABLE [edfi].[StudentHomelessProgramAssociationHomelessProgramService]
 IF OBJECT_ID(N'edfi.StudentHomelessProgramAssociationProgramParticipationStatus', N'U') IS NULL
 CREATE TABLE [edfi].[StudentHomelessProgramAssociationProgramParticipationStatus]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentHomelessProgramAssociation_DocumentId] bigint NOT NULL,
     [ParticipationStatusDescriptor_DescriptorId] bigint NOT NULL,
@@ -7065,7 +7065,7 @@ CREATE TABLE [edfi].[StudentInterventionAssociation]
 IF OBJECT_ID(N'edfi.StudentInterventionAssociationInterventionEffectiveness', N'U') IS NULL
 CREATE TABLE [edfi].[StudentInterventionAssociationInterventionEffectiveness]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentInterventionAssociation_DocumentId] bigint NOT NULL,
     [DiagnosisDescriptor_DescriptorId] bigint NOT NULL,
@@ -7127,7 +7127,7 @@ CREATE TABLE [edfi].[StudentLanguageInstructionProgramAssociation]
 IF OBJECT_ID(N'edfi.StudentLanguageInstructionProgramAssociationEnglishLanguageProficiencyAssessment', N'U') IS NULL
 CREATE TABLE [edfi].[StudentLanguageInstructionProgramAssociationEnglishLanguageProficiencyAssessment]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentLanguageInstructionProgramAssociation_DocumentId] bigint NOT NULL,
     [EnglishLanguageProficiencyAssessmentSchoolYear_DocumentId] bigint NOT NULL,
@@ -7145,7 +7145,7 @@ CREATE TABLE [edfi].[StudentLanguageInstructionProgramAssociationEnglishLanguage
 IF OBJECT_ID(N'edfi.StudentLanguageInstructionProgramAssociationLanguageInstructionProgramService', N'U') IS NULL
 CREATE TABLE [edfi].[StudentLanguageInstructionProgramAssociationLanguageInstructionProgramService]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentLanguageInstructionProgramAssociation_DocumentId] bigint NOT NULL,
     [LanguageInstructionProgramServiceDescriptor_DescriptorId] bigint NOT NULL,
@@ -7160,7 +7160,7 @@ CREATE TABLE [edfi].[StudentLanguageInstructionProgramAssociationLanguageInstruc
 IF OBJECT_ID(N'edfi.StudentLanguageInstructionProgramAssociationProgramParticipationStatus', N'U') IS NULL
 CREATE TABLE [edfi].[StudentLanguageInstructionProgramAssociationProgramParticipationStatus]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentLanguageInstructionProgramAssociation_DocumentId] bigint NOT NULL,
     [ParticipationStatusDescriptor_DescriptorId] bigint NOT NULL,
@@ -7207,7 +7207,7 @@ CREATE TABLE [edfi].[StudentMigrantEducationProgramAssociation]
 IF OBJECT_ID(N'edfi.StudentMigrantEducationProgramAssociationMigrantEducationProgramService', N'U') IS NULL
 CREATE TABLE [edfi].[StudentMigrantEducationProgramAssociationMigrantEducationProgramService]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentMigrantEducationProgramAssociation_DocumentId] bigint NOT NULL,
     [MigrantEducationProgramServiceDescriptor_DescriptorId] bigint NOT NULL,
@@ -7222,7 +7222,7 @@ CREATE TABLE [edfi].[StudentMigrantEducationProgramAssociationMigrantEducationPr
 IF OBJECT_ID(N'edfi.StudentMigrantEducationProgramAssociationProgramParticipationStatus', N'U') IS NULL
 CREATE TABLE [edfi].[StudentMigrantEducationProgramAssociationProgramParticipationStatus]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentMigrantEducationProgramAssociation_DocumentId] bigint NOT NULL,
     [ParticipationStatusDescriptor_DescriptorId] bigint NOT NULL,
@@ -7263,7 +7263,7 @@ CREATE TABLE [edfi].[StudentNeglectedOrDelinquentProgramAssociation]
 IF OBJECT_ID(N'edfi.StudentNeglectedOrDelinquentProgramAssociationNeglectedOrDelinquentProgramService', N'U') IS NULL
 CREATE TABLE [edfi].[StudentNeglectedOrDelinquentProgramAssociationNeglectedOrDelinquentProgramService]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentNeglectedOrDelinquentProgramAssociation_DocumentId] bigint NOT NULL,
     [NeglectedOrDelinquentProgramServiceDescriptor_DescriptorId] bigint NOT NULL,
@@ -7278,7 +7278,7 @@ CREATE TABLE [edfi].[StudentNeglectedOrDelinquentProgramAssociationNeglectedOrDe
 IF OBJECT_ID(N'edfi.StudentNeglectedOrDelinquentProgramAssociationProgramParticipationStatus', N'U') IS NULL
 CREATE TABLE [edfi].[StudentNeglectedOrDelinquentProgramAssociationProgramParticipationStatus]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentNeglectedOrDelinquentProgramAssociation_DocumentId] bigint NOT NULL,
     [ParticipationStatusDescriptor_DescriptorId] bigint NOT NULL,
@@ -7316,7 +7316,7 @@ CREATE TABLE [edfi].[StudentProgramAssociation]
 IF OBJECT_ID(N'edfi.StudentProgramAssociationProgramParticipationStatus', N'U') IS NULL
 CREATE TABLE [edfi].[StudentProgramAssociationProgramParticipationStatus]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentProgramAssociation_DocumentId] bigint NOT NULL,
     [ParticipationStatusDescriptor_DescriptorId] bigint NOT NULL,
@@ -7331,7 +7331,7 @@ CREATE TABLE [edfi].[StudentProgramAssociationProgramParticipationStatus]
 IF OBJECT_ID(N'edfi.StudentProgramAssociationService', N'U') IS NULL
 CREATE TABLE [edfi].[StudentProgramAssociationService]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentProgramAssociation_DocumentId] bigint NOT NULL,
     [ServiceDescriptor_DescriptorId] bigint NOT NULL,
@@ -7401,7 +7401,7 @@ CREATE TABLE [edfi].[StudentProgramEvaluation]
 IF OBJECT_ID(N'edfi.StudentProgramEvaluationExternalEvaluator', N'U') IS NULL
 CREATE TABLE [edfi].[StudentProgramEvaluationExternalEvaluator]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentProgramEvaluation_DocumentId] bigint NOT NULL,
     [ExternalEvaluator] nvarchar(150) NOT NULL,
@@ -7413,7 +7413,7 @@ CREATE TABLE [edfi].[StudentProgramEvaluationExternalEvaluator]
 IF OBJECT_ID(N'edfi.StudentProgramEvaluationStudentEvaluationElement', N'U') IS NULL
 CREATE TABLE [edfi].[StudentProgramEvaluationStudentEvaluationElement]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentProgramEvaluation_DocumentId] bigint NOT NULL,
     [StudentEvaluationElementProgramEvaluationElement_DocumentId] bigint NOT NULL,
@@ -7435,7 +7435,7 @@ CREATE TABLE [edfi].[StudentProgramEvaluationStudentEvaluationElement]
 IF OBJECT_ID(N'edfi.StudentProgramEvaluationStudentEvaluationObjective', N'U') IS NULL
 CREATE TABLE [edfi].[StudentProgramEvaluationStudentEvaluationObjective]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentProgramEvaluation_DocumentId] bigint NOT NULL,
     [StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId] bigint NOT NULL,
@@ -7510,7 +7510,7 @@ CREATE TABLE [edfi].[StudentSchoolAssociation]
 IF OBJECT_ID(N'edfi.StudentSchoolAssociationAlternativeGraduationPlan', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSchoolAssociationAlternativeGraduationPlan]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentSchoolAssociation_DocumentId] bigint NOT NULL,
     [AlternativeGraduationPlan_DocumentId] bigint NULL,
@@ -7526,7 +7526,7 @@ CREATE TABLE [edfi].[StudentSchoolAssociationAlternativeGraduationPlan]
 IF OBJECT_ID(N'edfi.StudentSchoolAssociationEducationPlan', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSchoolAssociationEducationPlan]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentSchoolAssociation_DocumentId] bigint NOT NULL,
     [EducationPlanDescriptor_DescriptorId] bigint NOT NULL,
@@ -7590,7 +7590,7 @@ CREATE TABLE [edfi].[StudentSchoolFoodServiceProgramAssociation]
 IF OBJECT_ID(N'edfi.StudentSchoolFoodServiceProgramAssociationProgramParticipationStatus', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSchoolFoodServiceProgramAssociationProgramParticipationStatus]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentSchoolFoodServiceProgramAssociation_DocumentId] bigint NOT NULL,
     [ParticipationStatusDescriptor_DescriptorId] bigint NOT NULL,
@@ -7605,7 +7605,7 @@ CREATE TABLE [edfi].[StudentSchoolFoodServiceProgramAssociationProgramParticipat
 IF OBJECT_ID(N'edfi.StudentSchoolFoodServiceProgramAssociationSchoolFoodServiceProgramService', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSchoolFoodServiceProgramAssociationSchoolFoodServiceProgramService]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentSchoolFoodServiceProgramAssociation_DocumentId] bigint NOT NULL,
     [SchoolFoodServiceProgramServiceDescriptor_DescriptorId] bigint NOT NULL,
@@ -7648,7 +7648,7 @@ CREATE TABLE [edfi].[StudentSection504ProgramAssociation]
 IF OBJECT_ID(N'edfi.StudentSection504ProgramAssociationProgramParticipationStatus', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSection504ProgramAssociationProgramParticipationStatus]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentSection504ProgramAssociation_DocumentId] bigint NOT NULL,
     [ParticipationStatusDescriptor_DescriptorId] bigint NOT NULL,
@@ -7695,7 +7695,7 @@ CREATE TABLE [edfi].[StudentSectionAssociation]
 IF OBJECT_ID(N'edfi.StudentSectionAssociationProgram', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSectionAssociationProgram]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentSectionAssociation_DocumentId] bigint NOT NULL,
     [Program_DocumentId] bigint NULL,
@@ -7737,7 +7737,7 @@ CREATE TABLE [edfi].[StudentSectionAttendanceEvent]
 IF OBJECT_ID(N'edfi.StudentSectionAttendanceEventClassPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSectionAttendanceEventClassPeriod]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentSectionAttendanceEvent_DocumentId] bigint NOT NULL,
     [ClassPeriod_DocumentId] bigint NULL,
@@ -7790,7 +7790,7 @@ CREATE TABLE [edfi].[StudentSpecialEducationProgramAssociation]
 IF OBJECT_ID(N'edfi.StudentSpecialEducationProgramAssociationDisability', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSpecialEducationProgramAssociationDisability]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentSpecialEducationProgramAssociation_DocumentId] bigint NOT NULL,
     [DisabilityDescriptor_DescriptorId] bigint NOT NULL,
@@ -7806,7 +7806,7 @@ CREATE TABLE [edfi].[StudentSpecialEducationProgramAssociationDisability]
 IF OBJECT_ID(N'edfi.StudentSpecialEducationProgramAssociationProgramParticipationStatus', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSpecialEducationProgramAssociationProgramParticipationStatus]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentSpecialEducationProgramAssociation_DocumentId] bigint NOT NULL,
     [ParticipationStatusDescriptor_DescriptorId] bigint NOT NULL,
@@ -7821,7 +7821,7 @@ CREATE TABLE [edfi].[StudentSpecialEducationProgramAssociationProgramParticipati
 IF OBJECT_ID(N'edfi.StudentSpecialEducationProgramAssociationServiceProvider', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSpecialEducationProgramAssociationServiceProvider]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentSpecialEducationProgramAssociation_DocumentId] bigint NOT NULL,
     [ServiceProviderStaff_DocumentId] bigint NOT NULL,
@@ -7836,7 +7836,7 @@ CREATE TABLE [edfi].[StudentSpecialEducationProgramAssociationServiceProvider]
 IF OBJECT_ID(N'edfi.StudentSpecialEducationProgramAssociationSpecialEducationProgramService', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSpecialEducationProgramAssociationSpecialEducationProgramService]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentSpecialEducationProgramAssociation_DocumentId] bigint NOT NULL,
     [SpecialEducationProgramServiceDescriptor_DescriptorId] bigint NOT NULL,
@@ -7852,7 +7852,7 @@ CREATE TABLE [edfi].[StudentSpecialEducationProgramAssociationSpecialEducationPr
 IF OBJECT_ID(N'edfi.StudentSpecialEducationProgramAssociationDisabilityDesignation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSpecialEducationProgramAssociationDisabilityDesignation]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
     [StudentSpecialEducationProgramAssociation_DocumentId] bigint NOT NULL,
@@ -7865,7 +7865,7 @@ CREATE TABLE [edfi].[StudentSpecialEducationProgramAssociationDisabilityDesignat
 IF OBJECT_ID(N'edfi.StudentSpecialEducationProgramAssociationSpecialEducationProgramServiceProvider', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSpecialEducationProgramAssociationSpecialEducationProgramServiceProvider]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
     [StudentSpecialEducationProgramAssociation_DocumentId] bigint NOT NULL,
@@ -7940,7 +7940,7 @@ CREATE TABLE [edfi].[StudentTitleIPartAProgramAssociation]
 IF OBJECT_ID(N'edfi.StudentTitleIPartAProgramAssociationProgramParticipationStatus', N'U') IS NULL
 CREATE TABLE [edfi].[StudentTitleIPartAProgramAssociationProgramParticipationStatus]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentTitleIPartAProgramAssociation_DocumentId] bigint NOT NULL,
     [ParticipationStatusDescriptor_DescriptorId] bigint NOT NULL,
@@ -7955,7 +7955,7 @@ CREATE TABLE [edfi].[StudentTitleIPartAProgramAssociationProgramParticipationSta
 IF OBJECT_ID(N'edfi.StudentTitleIPartAProgramAssociationTitleIPartAProgramService', N'U') IS NULL
 CREATE TABLE [edfi].[StudentTitleIPartAProgramAssociationTitleIPartAProgramService]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentTitleIPartAProgramAssociation_DocumentId] bigint NOT NULL,
     [TitleIPartAProgramServiceDescriptor_DescriptorId] bigint NOT NULL,
@@ -7990,7 +7990,7 @@ CREATE TABLE [edfi].[StudentTransportation]
 IF OBJECT_ID(N'edfi.StudentTransportationTravelDayofWeek', N'U') IS NULL
 CREATE TABLE [edfi].[StudentTransportationTravelDayofWeek]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentTransportation_DocumentId] bigint NOT NULL,
     [TravelDayofWeekDescriptor_DescriptorId] bigint NOT NULL,
@@ -8002,7 +8002,7 @@ CREATE TABLE [edfi].[StudentTransportationTravelDayofWeek]
 IF OBJECT_ID(N'edfi.StudentTransportationTravelDirection', N'U') IS NULL
 CREATE TABLE [edfi].[StudentTransportationTravelDirection]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [StudentTransportation_DocumentId] bigint NOT NULL,
     [TravelDirectionDescriptor_DescriptorId] bigint NOT NULL,
@@ -8096,7 +8096,7 @@ CREATE TABLE [edfi].[SurveyQuestion]
 IF OBJECT_ID(N'edfi.SurveyQuestionMatrice', N'U') IS NULL
 CREATE TABLE [edfi].[SurveyQuestionMatrice]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [SurveyQuestion_DocumentId] bigint NOT NULL,
     [MatrixElement] nvarchar(255) NOT NULL,
@@ -8110,7 +8110,7 @@ CREATE TABLE [edfi].[SurveyQuestionMatrice]
 IF OBJECT_ID(N'edfi.SurveyQuestionResponseChoice', N'U') IS NULL
 CREATE TABLE [edfi].[SurveyQuestionResponseChoice]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [SurveyQuestion_DocumentId] bigint NOT NULL,
     [NumericValue] int NULL,
@@ -8146,7 +8146,7 @@ CREATE TABLE [edfi].[SurveyQuestionResponse]
 IF OBJECT_ID(N'edfi.SurveyQuestionResponseSurveyQuestionMatrixElementRespons', N'U') IS NULL
 CREATE TABLE [edfi].[SurveyQuestionResponseSurveyQuestionMatrixElementRespons]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [SurveyQuestionResponse_DocumentId] bigint NOT NULL,
     [MatrixElement] nvarchar(255) NOT NULL,
@@ -8163,7 +8163,7 @@ CREATE TABLE [edfi].[SurveyQuestionResponseSurveyQuestionMatrixElementRespons]
 IF OBJECT_ID(N'edfi.SurveyQuestionResponseValue', N'U') IS NULL
 CREATE TABLE [edfi].[SurveyQuestionResponseValue]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [SurveyQuestionResponse_DocumentId] bigint NOT NULL,
     [NumericResponse] int NULL,
@@ -8205,7 +8205,7 @@ CREATE TABLE [edfi].[SurveyResponse]
 IF OBJECT_ID(N'edfi.SurveyResponseSurveyLevel', N'U') IS NULL
 CREATE TABLE [edfi].[SurveyResponseSurveyLevel]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [SurveyResponse_DocumentId] bigint NOT NULL,
     [SurveyLevelDescriptor_DescriptorId] bigint NOT NULL,

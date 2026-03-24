@@ -464,7 +464,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."School"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SchoolAddress"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "School_DocumentId" bigint NOT NULL,
     "Street" varchar(100) NOT NULL,
@@ -475,7 +475,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolAddress"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SchoolAddressPhoneNumber"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
     "School_DocumentId" bigint NOT NULL,

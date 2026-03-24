@@ -523,7 +523,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Assessment"
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAcademicSubject"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Assessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AcademicSubjectDescriptor_DescriptorId" bigint NOT NULL,
@@ -534,7 +534,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAcademicSubject"
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAssessedGradeLevel"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Assessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
@@ -545,7 +545,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAssessedGradeLevel"
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAuthor"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Assessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "Author" varchar(100) NOT NULL,
@@ -556,7 +556,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAuthor"
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentIdentificationCode"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Assessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AssessmentIdentificationSystemDescriptor_DescriptorId" bigint NOT NULL,
@@ -569,7 +569,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentIdentificationCode"
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentLanguage"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Assessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "LanguageDescriptor_DescriptorId" bigint NOT NULL,
@@ -580,7 +580,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentLanguage"
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentPerformanceLevel"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Assessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AssessmentReportingMethodDescriptor_DescriptorId" bigint NOT NULL,
@@ -596,7 +596,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentPerformanceLevel"
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentPeriod"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Assessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AssessmentPeriodDescriptor_DescriptorId" bigint NOT NULL,
@@ -609,7 +609,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentPeriod"
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentPlatformType"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Assessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "PlatformTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -620,7 +620,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentPlatformType"
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentProgram"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Assessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "SectionOrProgramChoiceProgram_DocumentId" bigint NULL,
@@ -635,7 +635,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentProgram"
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentScore"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Assessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AssessmentReportingMethodDescriptor_DescriptorId" bigint NOT NULL,
@@ -649,7 +649,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentScore"
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentSection"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Assessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "SectionOrProgramChoiceSection_DocumentId" bigint NULL,
@@ -682,7 +682,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAdministration"
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAdministrationAssessmentBatteryPart"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "AssessmentAdministration_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AssessmentBatteryPart_DocumentId" bigint NULL,
@@ -697,7 +697,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAdministrationAssessmentBatteryPart
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAdministrationPeriod"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "AssessmentAdministration_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AssessmentAdministrationBeginDate" date NOT NULL,
@@ -725,7 +725,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAdministrationParticipation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAdministrationParticipationAdministrationP_c63833eb57"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "AssessmentAdministrationParticipation_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AdministrationPointOfContactEducationOrganization_DocumentId" bigint NOT NULL,
@@ -755,7 +755,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentBatteryPart"
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentBatteryPartObjectiveAssessment"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "AssessmentBatteryPart_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ObjectiveAssessment_DocumentId" bigint NULL,
@@ -789,7 +789,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentItem"
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentItemLearningStandard"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "AssessmentItem_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "LearningStandard_DocumentId" bigint NULL,
@@ -802,7 +802,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentItemLearningStandard"
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentItemPossibleRespons"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "AssessmentItem_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "CorrectResponse" boolean NULL,
@@ -837,7 +837,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentScoreRangeLearningStandard"
 
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentScoreRangeLearningStandardLearningStandard"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "AssessmentScoreRangeLearningStandard_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "LearningStandard_DocumentId" bigint NULL,
@@ -861,7 +861,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."BalanceSheetDimension"
 
 CREATE TABLE IF NOT EXISTS "edfi"."BalanceSheetDimensionReportingTag"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "BalanceSheetDimension_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ReportingTagDescriptor_DescriptorId" bigint NOT NULL,
@@ -887,7 +887,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."BellSchedule"
 
 CREATE TABLE IF NOT EXISTS "edfi"."BellScheduleClassPeriod"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "BellSchedule_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ClassPeriod_DocumentId" bigint NULL,
@@ -901,7 +901,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."BellScheduleClassPeriod"
 
 CREATE TABLE IF NOT EXISTS "edfi"."BellScheduleDate"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "BellSchedule_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "Date" date NOT NULL,
@@ -912,7 +912,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."BellScheduleDate"
 
 CREATE TABLE IF NOT EXISTS "edfi"."BellScheduleGradeLevel"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "BellSchedule_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
@@ -939,7 +939,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Calendar"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CalendarGradeLevel"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Calendar_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
@@ -964,7 +964,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CalendarDate"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CalendarDateCalendarEvent"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CalendarDate_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "CalendarEventDescriptor_DescriptorId" bigint NOT NULL,
@@ -1023,7 +1023,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ChartOfAccount"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ChartOfAccountReportingTag"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "ChartOfAccount_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ReportingTagDescriptor_DescriptorId" bigint NOT NULL,
@@ -1048,7 +1048,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ClassPeriod"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ClassPeriodMeetingTime"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "ClassPeriod_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "EndTime" time NOT NULL,
@@ -1076,7 +1076,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Cohort"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CohortProgram"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Cohort_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ProgramProgram_DocumentId" bigint NULL,
@@ -1104,7 +1104,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganization"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationAddress"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CommunityOrganization_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -1129,7 +1129,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationAddress"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationCategory"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CommunityOrganization_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "EducationOrganizationCategoryDescriptor_DescriptorId" bigint NOT NULL,
@@ -1140,7 +1140,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationCategory"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationIdentificationCode"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CommunityOrganization_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" bigint NOT NULL,
@@ -1152,7 +1152,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationIdentificationCode"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationIndicator"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CommunityOrganization_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "IndicatorDescriptor_DescriptorId" bigint NOT NULL,
@@ -1168,7 +1168,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationIndicator"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationInstitutionTelephone"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CommunityOrganization_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -1180,7 +1180,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationInstitutionTelephone"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationInternationalAddress"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CommunityOrganization_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -1200,7 +1200,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationInternationalAddress"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationAddressPeriod"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CommunityOrganization_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
@@ -1213,7 +1213,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationAddressPeriod"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationIndicatorPeriod"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CommunityOrganization_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
@@ -1247,7 +1247,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityProvider"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderAddress"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CommunityProvider_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -1272,7 +1272,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderAddress"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderCategory"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CommunityProvider_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "EducationOrganizationCategoryDescriptor_DescriptorId" bigint NOT NULL,
@@ -1283,7 +1283,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderCategory"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderIdentificationCode"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CommunityProvider_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" bigint NOT NULL,
@@ -1295,7 +1295,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderIdentificationCode"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderIndicator"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CommunityProvider_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "IndicatorDescriptor_DescriptorId" bigint NOT NULL,
@@ -1311,7 +1311,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderIndicator"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderInstitutionTelephone"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CommunityProvider_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -1323,7 +1323,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderInstitutionTelephone"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderInternationalAddress"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CommunityProvider_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -1343,7 +1343,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderInternationalAddress"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderAddressPeriod"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CommunityProvider_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
@@ -1356,7 +1356,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderAddressPeriod"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderIndicatorPeriod"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CommunityProvider_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
@@ -1430,7 +1430,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Contact"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ContactAddress"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Contact_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -1455,7 +1455,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ContactAddress"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ContactElectronicMail"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Contact_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ElectronicMailTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -1469,7 +1469,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ContactElectronicMail"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ContactInternationalAddress"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Contact_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -1489,7 +1489,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ContactInternationalAddress"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ContactLanguage"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Contact_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "LanguageDescriptor_DescriptorId" bigint NOT NULL,
@@ -1501,7 +1501,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ContactLanguage"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ContactOtherName"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Contact_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "OtherNameTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -1517,7 +1517,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ContactOtherName"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ContactPersonalIdentificationDocument"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Contact_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "IdentificationDocumentUseDescriptor_DescriptorId" bigint NOT NULL,
@@ -1534,7 +1534,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ContactPersonalIdentificationDocument"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ContactTelephone"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Contact_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "TelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -1549,7 +1549,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ContactTelephone"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ContactAddressPeriod"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Contact_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
@@ -1562,7 +1562,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ContactAddressPeriod"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ContactLanguageUs"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Contact_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
@@ -1602,7 +1602,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Course"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseAcademicSubject"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Course_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AcademicSubjectDescriptor_DescriptorId" bigint NOT NULL,
@@ -1613,7 +1613,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseAcademicSubject"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseCompetencyLevel"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Course_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "CompetencyLevelDescriptor_DescriptorId" bigint NOT NULL,
@@ -1624,7 +1624,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseCompetencyLevel"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseIdentificationCode"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Course_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "CourseIdentificationSystemDescriptor_DescriptorId" bigint NOT NULL,
@@ -1638,7 +1638,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseIdentificationCode"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseLearningStandard"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Course_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "LearningStandard_DocumentId" bigint NULL,
@@ -1651,7 +1651,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseLearningStandard"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseLevelCharacteristic"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Course_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "CourseLevelCharacteristicDescriptor_DescriptorId" bigint NOT NULL,
@@ -1662,7 +1662,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseLevelCharacteristic"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseOfferedGradeLevel"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Course_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
@@ -1697,7 +1697,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseOffering"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseOfferingCourseLevelCharacteristic"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CourseOffering_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "CourseLevelCharacteristicDescriptor_DescriptorId" bigint NOT NULL,
@@ -1708,7 +1708,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseOfferingCourseLevelCharacteristic"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseOfferingCurriculumUsed"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CourseOffering_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "CurriculumUsedDescriptor_DescriptorId" bigint NOT NULL,
@@ -1719,7 +1719,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseOfferingCurriculumUsed"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseOfferingOfferedGradeLevel"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CourseOffering_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
@@ -1770,7 +1770,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscript"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptAcademicSubject"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CourseTranscript_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AcademicSubjectDescriptor_DescriptorId" bigint NOT NULL,
@@ -1781,7 +1781,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptAcademicSubject"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptAlternativeCourseIdentificationCode"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CourseTranscript_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "CourseIdentificationSystemDescriptor_DescriptorId" bigint NOT NULL,
@@ -1795,7 +1795,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptAlternativeCourseIdentificati
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptCourseProgram"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CourseTranscript_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "CourseProgram_DocumentId" bigint NULL,
@@ -1810,7 +1810,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptCourseProgram"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptCreditCategory"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CourseTranscript_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "CreditCategoryDescriptor_DescriptorId" bigint NOT NULL,
@@ -1821,7 +1821,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptCreditCategory"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptEarnedAdditionalCredits"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CourseTranscript_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AdditionalCreditTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -1833,7 +1833,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptEarnedAdditionalCredits"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptPartialCourseTranscriptAwards"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CourseTranscript_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "MethodCreditEarnedDescriptor_DescriptorId" bigint NULL,
@@ -1848,7 +1848,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptPartialCourseTranscriptAwards
 
 CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptSection"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "CourseTranscript_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "Section_DocumentId" bigint NULL,
@@ -1883,7 +1883,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Credential"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CredentialAcademicSubject"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Credential_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AcademicSubjectDescriptor_DescriptorId" bigint NOT NULL,
@@ -1894,7 +1894,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CredentialAcademicSubject"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CredentialEndorsement"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Credential_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "CredentialEndorsement" varchar(255) NOT NULL,
@@ -1905,7 +1905,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CredentialEndorsement"
 
 CREATE TABLE IF NOT EXISTS "edfi"."CredentialGradeLevel"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Credential_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
@@ -1940,7 +1940,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DescriptorMapping"
 
 CREATE TABLE IF NOT EXISTS "edfi"."DescriptorMappingModelEntity"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "DescriptorMapping_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ModelEntityDescriptor_DescriptorId" bigint NOT NULL,
@@ -1974,7 +1974,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DisciplineAction"
 
 CREATE TABLE IF NOT EXISTS "edfi"."DisciplineActionDiscipline"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "DisciplineAction_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "DisciplineDescriptor_DescriptorId" bigint NOT NULL,
@@ -1985,7 +1985,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DisciplineActionDiscipline"
 
 CREATE TABLE IF NOT EXISTS "edfi"."DisciplineActionStaff"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "DisciplineAction_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NULL,
@@ -1998,7 +1998,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DisciplineActionStaff"
 
 CREATE TABLE IF NOT EXISTS "edfi"."DisciplineActionStudentDisciplineIncidentBehaviorAssociation"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "DisciplineAction_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "StudentDisciplineIncidentBehaviorAssociation_DocumentId" bigint NULL,
@@ -2035,7 +2035,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DisciplineIncident"
 
 CREATE TABLE IF NOT EXISTS "edfi"."DisciplineIncidentBehavior"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "DisciplineIncident_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "BehaviorDescriptor_DescriptorId" bigint NOT NULL,
@@ -2047,7 +2047,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DisciplineIncidentBehavior"
 
 CREATE TABLE IF NOT EXISTS "edfi"."DisciplineIncidentExternalParticipant"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "DisciplineIncident_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "DisciplineIncidentParticipationCodeDescriptor_DescriptorId" bigint NOT NULL,
@@ -2060,7 +2060,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DisciplineIncidentExternalParticipant"
 
 CREATE TABLE IF NOT EXISTS "edfi"."DisciplineIncidentWeapon"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "DisciplineIncident_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "WeaponDescriptor_DescriptorId" bigint NOT NULL,
@@ -2098,7 +2098,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationContent"
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationContentAppropriateGradeLevel"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationContent_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
@@ -2109,7 +2109,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationContentAppropriateGradeLevel"
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationContentAppropriateSex"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationContent_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "SexDescriptor_DescriptorId" bigint NOT NULL,
@@ -2120,7 +2120,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationContentAppropriateSex"
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationContentAuthor"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationContent_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "Author" varchar(100) NOT NULL,
@@ -2131,7 +2131,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationContentAuthor"
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationContentDerivativeSourceEducationContent"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationContent_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "DerivativeSourceEducationContent_DocumentId" bigint NULL,
@@ -2144,7 +2144,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationContentDerivativeSourceEducationCont
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationContentDerivativeSourceLearningResourceMetadataURI"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationContent_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "DerivativeSourceLearningResourceMetadataURI" varchar(255) NOT NULL,
@@ -2155,7 +2155,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationContentDerivativeSourceLearningResou
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationContentDerivativeSourceURI"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationContent_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "DerivativeSourceURI" varchar(255) NOT NULL,
@@ -2166,7 +2166,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationContentDerivativeSourceURI"
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationContentLanguage"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationContent_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "LanguageDescriptor_DescriptorId" bigint NOT NULL,
@@ -2207,7 +2207,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetwork"
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkAddress"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationOrganizationNetwork_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -2232,7 +2232,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkAddress"
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkCategory"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationOrganizationNetwork_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "EducationOrganizationCategoryDescriptor_DescriptorId" bigint NOT NULL,
@@ -2243,7 +2243,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkCategory"
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkIdentificationCode"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationOrganizationNetwork_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" bigint NOT NULL,
@@ -2255,7 +2255,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkIdentificationCod
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkIndicator"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationOrganizationNetwork_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "IndicatorDescriptor_DescriptorId" bigint NOT NULL,
@@ -2271,7 +2271,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkIndicator"
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkInstitutionTelephone"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationOrganizationNetwork_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -2283,7 +2283,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkInstitutionTeleph
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkInternationalAddress"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationOrganizationNetwork_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -2303,7 +2303,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkInternationalAddr
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkAddressPeriod"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationOrganizationNetwork_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
@@ -2316,7 +2316,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkAddressPeriod"
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkIndicatorPeriod"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationOrganizationNetwork_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
@@ -2373,7 +2373,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenter"
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterAddress"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationServiceCenter_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -2398,7 +2398,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterAddress"
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterCategory"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationServiceCenter_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "EducationOrganizationCategoryDescriptor_DescriptorId" bigint NOT NULL,
@@ -2409,7 +2409,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterCategory"
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterIdentificationCode"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationServiceCenter_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" bigint NOT NULL,
@@ -2421,7 +2421,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterIdentificationCode"
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterIndicator"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationServiceCenter_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "IndicatorDescriptor_DescriptorId" bigint NOT NULL,
@@ -2437,7 +2437,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterIndicator"
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterInstitutionTelephone"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationServiceCenter_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -2449,7 +2449,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterInstitutionTelephone"
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterInternationalAddress"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationServiceCenter_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -2469,7 +2469,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterInternationalAddress"
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterAddressPeriod"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationServiceCenter_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
@@ -2482,7 +2482,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterAddressPeriod"
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterIndicatorPeriod"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "EducationServiceCenter_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
@@ -2542,7 +2542,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."FunctionDimension"
 
 CREATE TABLE IF NOT EXISTS "edfi"."FunctionDimensionReportingTag"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "FunctionDimension_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ReportingTagDescriptor_DescriptorId" bigint NOT NULL,
@@ -2564,7 +2564,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."FundDimension"
 
 CREATE TABLE IF NOT EXISTS "edfi"."FundDimensionReportingTag"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "FundDimension_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ReportingTagDescriptor_DescriptorId" bigint NOT NULL,
@@ -2608,7 +2608,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Grade"
 
 CREATE TABLE IF NOT EXISTS "edfi"."GradeLearningStandardGrade"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Grade_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "LearningStandardGradeLearningStandard_DocumentId" bigint NOT NULL,
@@ -2658,7 +2658,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GradebookEntry"
 
 CREATE TABLE IF NOT EXISTS "edfi"."GradebookEntryLearningStandard"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "GradebookEntry_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "LearningStandard_DocumentId" bigint NULL,
@@ -2710,7 +2710,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlan"
 
 CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlanCreditsByCours"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "GraduationPlan_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "CreditTypeDescriptor_DescriptorId" bigint NULL,
@@ -2726,7 +2726,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlanCreditsByCours"
 
 CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlanCreditsByCreditCategory"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "GraduationPlan_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "CreditCategoryDescriptor_DescriptorId" bigint NOT NULL,
@@ -2740,7 +2740,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlanCreditsByCreditCategory"
 
 CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlanCreditsBySubject"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "GraduationPlan_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AcademicSubjectDescriptor_DescriptorId" bigint NOT NULL,
@@ -2754,7 +2754,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlanCreditsBySubject"
 
 CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlanRequiredAssessment"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "GraduationPlan_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "RequiredAssessmentAssessment_DocumentId" bigint NOT NULL,
@@ -2775,7 +2775,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlanRequiredAssessment"
 
 CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlanCreditsByCoursCours"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "GraduationPlan_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
@@ -2790,7 +2790,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlanCreditsByCoursCours"
 
 CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlanRequiredAssessmentScore"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "GraduationPlan_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
@@ -2824,7 +2824,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Intervention"
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionAppropriateGradeLevel"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Intervention_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
@@ -2835,7 +2835,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionAppropriateGradeLevel"
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionAppropriateSex"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Intervention_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "SexDescriptor_DescriptorId" bigint NOT NULL,
@@ -2846,7 +2846,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionAppropriateSex"
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionDiagnos"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Intervention_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "DiagnosisDescriptor_DescriptorId" bigint NOT NULL,
@@ -2857,7 +2857,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionDiagnos"
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionEducationContent"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Intervention_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "EducationContentSourceEducationContent_DocumentId" bigint NULL,
@@ -2870,7 +2870,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionEducationContent"
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionInterventionPrescription"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Intervention_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "InterventionPrescriptionInterventionPrescription_DocumentId" bigint NULL,
@@ -2884,7 +2884,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionInterventionPrescription"
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionLearningResourceMetadataURI"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Intervention_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "LearningResourceMetadataURI" varchar(255) NOT NULL,
@@ -2895,7 +2895,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionLearningResourceMetadataURI"
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionMeetingTime"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Intervention_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "EndTime" time NOT NULL,
@@ -2907,7 +2907,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionMeetingTime"
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionPopulationServed"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Intervention_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "PopulationServedDescriptor_DescriptorId" bigint NOT NULL,
@@ -2918,7 +2918,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionPopulationServed"
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionStaff"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Intervention_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NULL,
@@ -2931,7 +2931,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionStaff"
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionUri"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Intervention_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "Uri" varchar(255) NOT NULL,
@@ -2959,7 +2959,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescription"
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescriptionAppropriateGradeLevel"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "InterventionPrescription_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
@@ -2970,7 +2970,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescriptionAppropriateGradeLevel
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescriptionAppropriateSex"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "InterventionPrescription_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "SexDescriptor_DescriptorId" bigint NOT NULL,
@@ -2981,7 +2981,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescriptionAppropriateSex"
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescriptionDiagnos"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "InterventionPrescription_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "DiagnosisDescriptor_DescriptorId" bigint NOT NULL,
@@ -2992,7 +2992,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescriptionDiagnos"
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescriptionEducationContent"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "InterventionPrescription_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "EducationContentSourceEducationContent_DocumentId" bigint NULL,
@@ -3005,7 +3005,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescriptionEducationContent"
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescriptionLearningResourceMetadataURI"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "InterventionPrescription_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "LearningResourceMetadataURI" varchar(255) NOT NULL,
@@ -3016,7 +3016,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescriptionLearningResourceMetad
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescriptionPopulationServed"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "InterventionPrescription_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "PopulationServedDescriptor_DescriptorId" bigint NOT NULL,
@@ -3027,7 +3027,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescriptionPopulationServed"
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescriptionUri"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "InterventionPrescription_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "Uri" varchar(255) NOT NULL,
@@ -3056,7 +3056,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudy"
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyAppropriateGradeLevel"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "InterventionStudy_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
@@ -3067,7 +3067,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyAppropriateGradeLevel"
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyAppropriateSex"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "InterventionStudy_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "SexDescriptor_DescriptorId" bigint NOT NULL,
@@ -3078,7 +3078,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyAppropriateSex"
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyEducationContent"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "InterventionStudy_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "EducationContentSourceEducationContent_DocumentId" bigint NULL,
@@ -3091,7 +3091,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyEducationContent"
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyInterventionEffectiveness"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "InterventionStudy_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "DiagnosisDescriptor_DescriptorId" bigint NOT NULL,
@@ -3106,7 +3106,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyInterventionEffectiveness"
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyLearningResourceMetadataURI"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "InterventionStudy_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "LearningResourceMetadataURI" varchar(255) NOT NULL,
@@ -3117,7 +3117,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyLearningResourceMetadataURI"
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyPopulationServed"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "InterventionStudy_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "PopulationServedDescriptor_DescriptorId" bigint NOT NULL,
@@ -3128,7 +3128,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyPopulationServed"
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyStateAbbreviation"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "InterventionStudy_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "StateAbbreviationDescriptor_DescriptorId" bigint NOT NULL,
@@ -3139,7 +3139,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyStateAbbreviation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyUri"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "InterventionStudy_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "Uri" varchar(255) NOT NULL,
@@ -3181,7 +3181,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LearningStandard"
 
 CREATE TABLE IF NOT EXISTS "edfi"."LearningStandardAcademicSubject"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "LearningStandard_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AcademicSubjectDescriptor_DescriptorId" bigint NOT NULL,
@@ -3192,7 +3192,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LearningStandardAcademicSubject"
 
 CREATE TABLE IF NOT EXISTS "edfi"."LearningStandardAuthor"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "LearningStandard_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "Author" varchar(100) NOT NULL,
@@ -3203,7 +3203,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LearningStandardAuthor"
 
 CREATE TABLE IF NOT EXISTS "edfi"."LearningStandardGradeLevel"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "LearningStandard_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
@@ -3214,7 +3214,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LearningStandardGradeLevel"
 
 CREATE TABLE IF NOT EXISTS "edfi"."LearningStandardIdentificationCode"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "LearningStandard_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ContentStandardName" varchar(65) NOT NULL,
@@ -3263,7 +3263,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalAccount"
 
 CREATE TABLE IF NOT EXISTS "edfi"."LocalAccountReportingTag"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "LocalAccount_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ReportingTagDescriptor_DescriptorId" bigint NOT NULL,
@@ -3347,7 +3347,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgency"
 
 CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyAccountability"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "LocalEducationAgency_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "LocalEducationAgencyAccountabilitySchoolYear_DocumentId" bigint NOT NULL,
@@ -3362,7 +3362,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyAccountability"
 
 CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyAddress"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "LocalEducationAgency_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -3387,7 +3387,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyAddress"
 
 CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyCategory"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "LocalEducationAgency_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "EducationOrganizationCategoryDescriptor_DescriptorId" bigint NOT NULL,
@@ -3398,7 +3398,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyCategory"
 
 CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyFederalFunds"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "LocalEducationAgency_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "FiscalYear" integer NOT NULL,
@@ -3417,7 +3417,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyFederalFunds"
 
 CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyIdentificationCode"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "LocalEducationAgency_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" bigint NOT NULL,
@@ -3429,7 +3429,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyIdentificationCode"
 
 CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyIndicator"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "LocalEducationAgency_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "IndicatorDescriptor_DescriptorId" bigint NOT NULL,
@@ -3445,7 +3445,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyIndicator"
 
 CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyInstitutionTelephone"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "LocalEducationAgency_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -3457,7 +3457,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyInstitutionTelephone"
 
 CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyInternationalAddress"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "LocalEducationAgency_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -3477,7 +3477,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyInternationalAddress"
 
 CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyAddressPeriod"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "LocalEducationAgency_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
@@ -3490,7 +3490,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyAddressPeriod"
 
 CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyIndicatorPeriod"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "LocalEducationAgency_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
@@ -3561,7 +3561,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ObjectDimension"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ObjectDimensionReportingTag"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "ObjectDimension_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ReportingTagDescriptor_DescriptorId" bigint NOT NULL,
@@ -3597,7 +3597,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ObjectiveAssessment"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ObjectiveAssessmentAssessmentItem"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "ObjectiveAssessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AssessmentItemAssessmentItem_DocumentId" bigint NULL,
@@ -3612,7 +3612,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ObjectiveAssessmentAssessmentItem"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ObjectiveAssessmentLearningStandard"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "ObjectiveAssessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "LearningStandard_DocumentId" bigint NULL,
@@ -3625,7 +3625,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ObjectiveAssessmentLearningStandard"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ObjectiveAssessmentPerformanceLevel"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "ObjectiveAssessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AssessmentReportingMethodDescriptor_DescriptorId" bigint NOT NULL,
@@ -3641,7 +3641,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ObjectiveAssessmentPerformanceLevel"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ObjectiveAssessmentScore"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "ObjectiveAssessment_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AssessmentReportingMethodDescriptor_DescriptorId" bigint NOT NULL,
@@ -3673,7 +3673,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."OpenStaffPosition"
 
 CREATE TABLE IF NOT EXISTS "edfi"."OpenStaffPositionAcademicSubject"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "OpenStaffPosition_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "AcademicSubjectDescriptor_DescriptorId" bigint NOT NULL,
@@ -3684,7 +3684,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."OpenStaffPositionAcademicSubject"
 
 CREATE TABLE IF NOT EXISTS "edfi"."OpenStaffPositionInstructionalGradeLevel"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "OpenStaffPosition_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
@@ -3706,7 +3706,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."OperationalUnitDimension"
 
 CREATE TABLE IF NOT EXISTS "edfi"."OperationalUnitDimensionReportingTag"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "OperationalUnitDimension_DocumentId" bigint NOT NULL,
     "Ordinal" integer NOT NULL,
     "ReportingTagDescriptor_DescriptorId" bigint NOT NULL,
@@ -3733,7 +3733,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartment"
 
 CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentAddress"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "OrganizationDepartment_DocumentId" bigint NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -3758,7 +3758,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentAddress"
 
 CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentCategory"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "OrganizationDepartment_DocumentId" bigint NOT NULL,
     "EducationOrganizationCategoryDescriptor_DescriptorId" bigint NOT NULL,
@@ -3769,7 +3769,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentCategory"
 
 CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentIdentificationCode"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "OrganizationDepartment_DocumentId" bigint NOT NULL,
     "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" bigint NOT NULL,
@@ -3781,7 +3781,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentIdentificationCode"
 
 CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentIndicator"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "OrganizationDepartment_DocumentId" bigint NOT NULL,
     "IndicatorDescriptor_DescriptorId" bigint NOT NULL,
@@ -3797,7 +3797,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentIndicator"
 
 CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentInstitutionTelephone"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "OrganizationDepartment_DocumentId" bigint NOT NULL,
     "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -3809,7 +3809,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentInstitutionTelephone"
 
 CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentInternationalAddress"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "OrganizationDepartment_DocumentId" bigint NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -3829,7 +3829,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentInternationalAddress"
 
 CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentAddressPeriod"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "OrganizationDepartment_DocumentId" bigint NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
@@ -3842,7 +3842,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentAddressPeriod"
 
 CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentIndicatorPeriod"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "OrganizationDepartment_DocumentId" bigint NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
@@ -3895,7 +3895,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitution"
 
 CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionAddress"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -3920,7 +3920,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionAddress"
 
 CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionCategory"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
     "EducationOrganizationCategoryDescriptor_DescriptorId" bigint NOT NULL,
@@ -3931,7 +3931,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionCategory"
 
 CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionIdentificationCode"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
     "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" bigint NOT NULL,
@@ -3943,7 +3943,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionIdentificationCode"
 
 CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionIndicator"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
     "IndicatorDescriptor_DescriptorId" bigint NOT NULL,
@@ -3959,7 +3959,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionIndicator"
 
 CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionInstitutionTelephone"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
     "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -3971,7 +3971,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionInstitutionTelephone"
 
 CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionInternationalAddress"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -3991,7 +3991,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionInternationalAddress"
 
 CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionMediumOfInstruction"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
     "MediumOfInstructionDescriptor_DescriptorId" bigint NOT NULL,
@@ -4002,7 +4002,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionMediumOfInstruction"
 
 CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionAddressPeriod"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
     "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
@@ -4015,7 +4015,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionAddressPeriod"
 
 CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionIndicatorPeriod"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
     "PostSecondaryInstitution_DocumentId" bigint NOT NULL,
@@ -4042,7 +4042,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Program"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ProgramCharacteristic"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Program_DocumentId" bigint NOT NULL,
     "ProgramCharacteristicDescriptor_DescriptorId" bigint NOT NULL,
@@ -4053,7 +4053,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramCharacteristic"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ProgramLearningStandard"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Program_DocumentId" bigint NOT NULL,
     "LearningStandard_DocumentId" bigint NULL,
@@ -4066,7 +4066,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramLearningStandard"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ProgramSponsor"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Program_DocumentId" bigint NOT NULL,
     "ProgramSponsorDescriptor_DescriptorId" bigint NOT NULL,
@@ -4088,7 +4088,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramDimension"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ProgramDimensionReportingTag"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ProgramDimension_DocumentId" bigint NOT NULL,
     "ReportingTagDescriptor_DescriptorId" bigint NOT NULL,
@@ -4118,7 +4118,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationLevel"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ProgramEvaluation_DocumentId" bigint NOT NULL,
     "RatingLevelDescriptor_DescriptorId" bigint NOT NULL,
@@ -4167,7 +4167,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationElement"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationElementProgramEvaluationLevel"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ProgramEvaluationElement_DocumentId" bigint NOT NULL,
     "RatingLevelDescriptor_DescriptorId" bigint NOT NULL,
@@ -4201,7 +4201,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationObjective"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationObjectiveProgramEvaluationLevel"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ProgramEvaluationObjective_DocumentId" bigint NOT NULL,
     "RatingLevelDescriptor_DescriptorId" bigint NOT NULL,
@@ -4225,7 +4225,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProjectDimension"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ProjectDimensionReportingTag"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ProjectDimension_DocumentId" bigint NOT NULL,
     "ReportingTagDescriptor_DescriptorId" bigint NOT NULL,
@@ -4259,7 +4259,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ReportCard"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ReportCardGradePointAverage"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ReportCard_DocumentId" bigint NOT NULL,
     "GradePointAverageTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -4273,7 +4273,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ReportCardGradePointAverage"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ReportCardGrade"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ReportCard_DocumentId" bigint NOT NULL,
     "SchoolId_Unified" integer NULL,
@@ -4298,7 +4298,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ReportCardGrade"
 
 CREATE TABLE IF NOT EXISTS "edfi"."ReportCardStudentCompetencyObjective"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ReportCard_DocumentId" bigint NOT NULL,
     "StudentCompetencyObjective_DocumentId" bigint NULL,
@@ -4339,7 +4339,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."RestraintEvent"
 
 CREATE TABLE IF NOT EXISTS "edfi"."RestraintEventProgram"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "RestraintEvent_DocumentId" bigint NOT NULL,
     "Program_DocumentId" bigint NULL,
@@ -4354,7 +4354,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."RestraintEventProgram"
 
 CREATE TABLE IF NOT EXISTS "edfi"."RestraintEventReason"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "RestraintEvent_DocumentId" bigint NOT NULL,
     "RestraintEventReasonDescriptor_DescriptorId" bigint NOT NULL,
@@ -4391,7 +4391,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."School"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SchoolAddress"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "School_DocumentId" bigint NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -4416,7 +4416,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolAddress"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SchoolEducationOrganizationCategory"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "School_DocumentId" bigint NOT NULL,
     "EducationOrganizationCategoryDescriptor_DescriptorId" bigint NOT NULL,
@@ -4427,7 +4427,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolEducationOrganizationCategory"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SchoolGradeLevel"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "School_DocumentId" bigint NOT NULL,
     "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
@@ -4438,7 +4438,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolGradeLevel"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SchoolIdentificationCode"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "School_DocumentId" bigint NOT NULL,
     "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" bigint NOT NULL,
@@ -4450,7 +4450,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolIdentificationCode"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SchoolIndicator"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "School_DocumentId" bigint NOT NULL,
     "IndicatorDescriptor_DescriptorId" bigint NOT NULL,
@@ -4466,7 +4466,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolIndicator"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SchoolInstitutionTelephone"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "School_DocumentId" bigint NOT NULL,
     "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -4478,7 +4478,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolInstitutionTelephone"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SchoolInternationalAddress"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "School_DocumentId" bigint NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -4498,7 +4498,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolInternationalAddress"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SchoolCategory"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "School_DocumentId" bigint NOT NULL,
     "SchoolCategoryDescriptor_DescriptorId" bigint NOT NULL,
@@ -4509,7 +4509,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolCategory"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SchoolAddressPeriod"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
     "School_DocumentId" bigint NOT NULL,
@@ -4522,7 +4522,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolAddressPeriod"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SchoolIndicatorPeriod"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
     "School_DocumentId" bigint NOT NULL,
@@ -4582,7 +4582,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Section"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SectionCharacteristic"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Section_DocumentId" bigint NOT NULL,
     "SectionCharacteristicDescriptor_DescriptorId" bigint NOT NULL,
@@ -4593,7 +4593,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SectionCharacteristic"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SectionClassPeriod"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Section_DocumentId" bigint NOT NULL,
     "ClassPeriod_DocumentId" bigint NULL,
@@ -4607,7 +4607,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SectionClassPeriod"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SectionCourseLevelCharacteristic"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Section_DocumentId" bigint NOT NULL,
     "CourseLevelCharacteristicDescriptor_DescriptorId" bigint NOT NULL,
@@ -4618,7 +4618,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SectionCourseLevelCharacteristic"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SectionOfferedGradeLevel"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Section_DocumentId" bigint NOT NULL,
     "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
@@ -4629,7 +4629,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SectionOfferedGradeLevel"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SectionProgram"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Section_DocumentId" bigint NOT NULL,
     "Program_DocumentId" bigint NULL,
@@ -4689,7 +4689,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Session"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SessionAcademicWeek"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Session_DocumentId" bigint NOT NULL,
     "AcademicWeek_DocumentId" bigint NULL,
@@ -4703,7 +4703,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SessionAcademicWeek"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SessionGradingPeriod"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Session_DocumentId" bigint NOT NULL,
     "GradingPeriod_DocumentId" bigint NULL,
@@ -4730,7 +4730,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SourceDimension"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SourceDimensionReportingTag"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "SourceDimension_DocumentId" bigint NOT NULL,
     "ReportingTagDescriptor_DescriptorId" bigint NOT NULL,
@@ -4772,7 +4772,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Staff"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffAddress"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -4797,7 +4797,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffAddress"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffAncestryEthnicOrigin"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
     "AncestryEthnicOriginDescriptor_DescriptorId" bigint NOT NULL,
@@ -4808,7 +4808,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffAncestryEthnicOrigin"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffCredential"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
     "Credential_DocumentId" bigint NULL,
@@ -4822,7 +4822,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffCredential"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffElectronicMail"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
     "ElectronicMailTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -4836,7 +4836,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffElectronicMail"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffIdentificationCode"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
     "StaffIdentificationSystemDescriptor_DescriptorId" bigint NOT NULL,
@@ -4849,7 +4849,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffIdentificationCode"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffIdentificationDocument"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
     "IdentificationDocumentUseDescriptor_DescriptorId" bigint NULL,
@@ -4866,7 +4866,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffIdentificationDocument"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffInternationalAddress"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -4886,7 +4886,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffInternationalAddress"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffLanguage"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
     "LanguageDescriptor_DescriptorId" bigint NOT NULL,
@@ -4898,7 +4898,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffLanguage"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffOtherName"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
     "OtherNameTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -4914,7 +4914,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffOtherName"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffPersonalIdentificationDocument"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
     "IdentificationDocumentUseDescriptor_DescriptorId" bigint NOT NULL,
@@ -4931,7 +4931,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffPersonalIdentificationDocument"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffRace"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
     "RaceDescriptor_DescriptorId" bigint NOT NULL,
@@ -4942,7 +4942,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffRace"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffRecognition"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
     "AchievementCategoryDescriptor_DescriptorId" bigint NULL,
@@ -4965,7 +4965,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffRecognition"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffTelephone"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
     "TelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -4980,7 +4980,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffTelephone"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffTribalAffiliation"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
     "TribalAffiliationDescriptor_DescriptorId" bigint NOT NULL,
@@ -4991,7 +4991,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffTribalAffiliation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffVisa"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
     "VisaDescriptor_DescriptorId" bigint NOT NULL,
@@ -5002,7 +5002,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffVisa"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffAddressPeriod"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
@@ -5015,7 +5015,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffAddressPeriod"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffLanguageUs"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
     "Staff_DocumentId" bigint NOT NULL,
@@ -5072,7 +5072,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffDisciplineIncidentAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffDisciplineIncidentAssociationDisciplineIncident_7fa4beae77"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StaffDisciplineIncidentAssociation_DocumentId" bigint NOT NULL,
     "DisciplineIncidentParticipationCodeDescriptor_DescriptorId" bigint NOT NULL,
@@ -5143,7 +5143,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationContactAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationContactAssociationPeriod"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StaffEducationOrganizationContactAssociation_DocumentId" bigint NOT NULL,
     "BeginDate" date NOT NULL,
@@ -5155,7 +5155,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationContactAssociationP
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationContactAssociationTelephone"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StaffEducationOrganizationContactAssociation_DocumentId" bigint NOT NULL,
     "TelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -5255,7 +5255,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffSchoolAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffSchoolAssociationAcademicSubject"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StaffSchoolAssociation_DocumentId" bigint NOT NULL,
     "AcademicSubjectDescriptor_DescriptorId" bigint NOT NULL,
@@ -5266,7 +5266,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffSchoolAssociationAcademicSubject"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StaffSchoolAssociationGradeLevel"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StaffSchoolAssociation_DocumentId" bigint NOT NULL,
     "GradeLevelDescriptor_DescriptorId" bigint NOT NULL,
@@ -5313,7 +5313,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgency"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyAccountability"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StateEducationAgency_DocumentId" bigint NOT NULL,
     "StateEducationAgencyAccountabilitySchoolYear_DocumentId" bigint NOT NULL,
@@ -5327,7 +5327,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyAccountability"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyAddress"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StateEducationAgency_DocumentId" bigint NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -5352,7 +5352,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyAddress"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyCategory"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StateEducationAgency_DocumentId" bigint NOT NULL,
     "EducationOrganizationCategoryDescriptor_DescriptorId" bigint NOT NULL,
@@ -5363,7 +5363,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyCategory"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyFederalFunds"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StateEducationAgency_DocumentId" bigint NOT NULL,
     "FederalProgramsFundingAllocation" numeric(19,4) NULL,
@@ -5375,7 +5375,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyFederalFunds"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyIdentificationCode"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StateEducationAgency_DocumentId" bigint NOT NULL,
     "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" bigint NOT NULL,
@@ -5387,7 +5387,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyIdentificationCode"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyIndicator"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StateEducationAgency_DocumentId" bigint NOT NULL,
     "IndicatorDescriptor_DescriptorId" bigint NOT NULL,
@@ -5403,7 +5403,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyIndicator"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyInstitutionTelephone"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StateEducationAgency_DocumentId" bigint NOT NULL,
     "InstitutionTelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -5415,7 +5415,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyInstitutionTelephone"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyInternationalAddress"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StateEducationAgency_DocumentId" bigint NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -5435,7 +5435,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyInternationalAddress"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyAddressPeriod"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
     "StateEducationAgency_DocumentId" bigint NOT NULL,
@@ -5448,7 +5448,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyAddressPeriod"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyIndicatorPeriod"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
     "StateEducationAgency_DocumentId" bigint NOT NULL,
@@ -5491,7 +5491,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Student"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentIdentificationDocument"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "IdentificationDocumentUseDescriptor_DescriptorId" bigint NULL,
@@ -5508,7 +5508,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentIdentificationDocument"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentOtherName"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "OtherNameTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -5524,7 +5524,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentOtherName"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentPersonalIdentificationDocument"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "IdentificationDocumentUseDescriptor_DescriptorId" bigint NOT NULL,
@@ -5541,7 +5541,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentPersonalIdentificationDocument"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentVisa"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
     "VisaDescriptor_DescriptorId" bigint NOT NULL,
@@ -5587,7 +5587,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecord"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecordAcademicHonor"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentAcademicRecord_DocumentId" bigint NOT NULL,
     "AcademicHonorCategoryDescriptor_DescriptorId" bigint NOT NULL,
@@ -5610,7 +5610,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecordAcademicHonor"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecordDiploma"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentAcademicRecord_DocumentId" bigint NOT NULL,
     "AchievementCategoryDescriptor_DescriptorId" bigint NULL,
@@ -5635,7 +5635,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecordDiploma"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecordGradePointAverage"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentAcademicRecord_DocumentId" bigint NOT NULL,
     "GradePointAverageTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -5649,7 +5649,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecordGradePointAverage"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecordRecognition"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentAcademicRecord_DocumentId" bigint NOT NULL,
     "AchievementCategoryDescriptor_DescriptorId" bigint NULL,
@@ -5672,7 +5672,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecordRecognition"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecordReportCard"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentAcademicRecord_DocumentId" bigint NOT NULL,
     "ReportCard_DocumentId" bigint NULL,
@@ -5728,7 +5728,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessment"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentAccommodation"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentAssessment_DocumentId" bigint NOT NULL,
     "AccommodationDescriptor_DescriptorId" bigint NOT NULL,
@@ -5739,7 +5739,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentAccommodation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentItem"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentAssessment_DocumentId" bigint NOT NULL,
     "StudentAssessmentItemAssessmentItem_DocumentId" bigint NOT NULL,
@@ -5761,7 +5761,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentItem"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentPerformanceLevel"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentAssessment_DocumentId" bigint NOT NULL,
     "AssessmentReportingMethodDescriptor_DescriptorId" bigint NOT NULL,
@@ -5774,7 +5774,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentPerformanceLevel"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentScoreResult"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentAssessment_DocumentId" bigint NOT NULL,
     "AssessmentReportingMethodDescriptor_DescriptorId" bigint NOT NULL,
@@ -5787,7 +5787,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentScoreResult"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentStudentObjectiveAssessment"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentAssessment_DocumentId" bigint NOT NULL,
     "StudentObjectiveAssessmentObjectiveAssessment_DocumentId" bigint NOT NULL,
@@ -5806,7 +5806,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentStudentObjectiveAssessment"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentStudentObjectiveAssessmentPerformanceLevel"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
     "StudentAssessment_DocumentId" bigint NOT NULL,
@@ -5820,7 +5820,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentStudentObjectiveAssessmentPe
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentStudentObjectiveAssessmentScoreResult"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
     "StudentAssessment_DocumentId" bigint NOT NULL,
@@ -5890,7 +5890,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentRegistration"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentRegistrationAssessmentAccommodation"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentAssessmentRegistration_DocumentId" bigint NOT NULL,
     "AccommodationDescriptor_DescriptorId" bigint NOT NULL,
@@ -5901,7 +5901,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentRegistrationAssessmentAccomm
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentRegistrationAssessmentCustomization"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentAssessmentRegistration_DocumentId" bigint NOT NULL,
     "CustomizationKey" varchar(60) NOT NULL,
@@ -5935,7 +5935,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentRegistrationBatteryPartAssoc
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentRegistrationBatteryPartAssociationA_c87694eb5a"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentAssessmentRegistrationBatteryPartAssociation_DocumentId" bigint NOT NULL,
     "AccommodationDescriptor_DescriptorId" bigint NOT NULL,
@@ -5971,7 +5971,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCTEProgramAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentCTEProgramAssociationCteProgramService"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentCTEProgramAssociation_DocumentId" bigint NOT NULL,
     "CteProgramServiceDescriptor_DescriptorId" bigint NOT NULL,
@@ -5986,7 +5986,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCTEProgramAssociationCteProgramService
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentCTEProgramAssociationProgramParticipationStatus"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentCTEProgramAssociation_DocumentId" bigint NOT NULL,
     "ParticipationStatusDescriptor_DescriptorId" bigint NOT NULL,
@@ -6016,7 +6016,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCohortAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentCohortAssociationSection"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentCohortAssociation_DocumentId" bigint NOT NULL,
     "Section_DocumentId" bigint NULL,
@@ -6057,7 +6057,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCompetencyObjective"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentCompetencyObjectiveGeneralStudentProgramAssociation"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentCompetencyObjective_DocumentId" bigint NOT NULL,
     "StudentCompetencyObjectiveSectionOrProgramChoiceGene_9ca396b829" bigint NULL,
@@ -6075,7 +6075,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCompetencyObjectiveGeneralStudentProgr
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentCompetencyObjectiveStudentSectionAssociation"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentCompetencyObjective_DocumentId" bigint NOT NULL,
     "StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0" bigint NULL,
@@ -6131,7 +6131,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentDisciplineIncidentBehaviorAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentDisciplineIncidentBehaviorAssociationDiscipli_ae6a215eae"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentDisciplineIncidentBehaviorAssociation_DocumentId" bigint NOT NULL,
     "DisciplineIncidentParticipationCodeDescriptor_DescriptorId" bigint NOT NULL,
@@ -6142,7 +6142,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentDisciplineIncidentBehaviorAssociationD
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentDisciplineIncidentBehaviorAssociationWeapon"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentDisciplineIncidentBehaviorAssociation_DocumentId" bigint NOT NULL,
     "WeaponDescriptor_DescriptorId" bigint NOT NULL,
@@ -6167,7 +6167,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentDisciplineIncidentNonOffenderAssociati
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentDisciplineIncidentNonOffenderAssociationDisci_4c979a9f6d"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentDisciplineIncidentNonOffenderAssociation_DocumentId" bigint NOT NULL,
     "DisciplineIncidentParticipationCodeDescriptor_DescriptorId" bigint NOT NULL,
@@ -6192,7 +6192,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssessmentAccommo
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssessmentAccommodationG_d1d10af462"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentEducationOrganizationAssessmentAccommodation_DocumentId" bigint NOT NULL,
     "AccommodationDescriptor_DescriptorId" bigint NOT NULL,
@@ -6231,7 +6231,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationAddress"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -6256,7 +6256,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationAddres
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationAncestryEthnicOrigin"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "AncestryEthnicOriginDescriptor_DescriptorId" bigint NOT NULL,
@@ -6267,7 +6267,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationAncest
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationCohortYear"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "CohortYearSchoolYear_DocumentId" bigint NOT NULL,
@@ -6282,7 +6282,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationCohort
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationDisability"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "DisabilityDescriptor_DescriptorId" bigint NOT NULL,
@@ -6297,7 +6297,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationDisabi
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationDisplacedStudent"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "DisplacedStudentCrisisEvent_DocumentId" bigint NOT NULL,
@@ -6314,7 +6314,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationDispla
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationElectronicMail"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "ElectronicMailTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -6328,7 +6328,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationElectr
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationInternationalAddress"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "AddressTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -6348,7 +6348,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationIntern
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationLanguage"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "LanguageDescriptor_DescriptorId" bigint NOT NULL,
@@ -6360,7 +6360,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationLangua
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationRace"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "RaceDescriptor_DescriptorId" bigint NOT NULL,
@@ -6371,7 +6371,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationRace"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationStudentCharacteristic"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "StudentCharacteristicDescriptor_DescriptorId" bigint NOT NULL,
@@ -6384,7 +6384,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationStuden
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationStudentIdenti_c15030660d"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "StudentIdentificationSystemDescriptor_DescriptorId" bigint NOT NULL,
@@ -6397,7 +6397,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationStuden
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationStudentIndicator"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "DesignatedBy" varchar(60) NULL,
@@ -6412,7 +6412,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationStuden
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationTelephone"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "TelephoneNumberTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -6427,7 +6427,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationTeleph
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationTribalAffiliation"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
     "TribalAffiliationDescriptor_DescriptorId" bigint NOT NULL,
@@ -6438,7 +6438,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationTribal
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationAddressPeriod"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
@@ -6451,7 +6451,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationAddres
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationDisabilityDesignation"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
@@ -6463,7 +6463,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationDisabi
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationLanguageUs"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
@@ -6475,7 +6475,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationLangua
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationStudentCharac_a18fcf0ac3"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
@@ -6488,7 +6488,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationStuden
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationStudentIndicatorPeriod"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
     "StudentEducationOrganizationAssociation_DocumentId" bigint NOT NULL,
@@ -6556,7 +6556,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentHealth"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentHealthAdditionalImmunization"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentHealth_DocumentId" bigint NOT NULL,
     "ImmunizationName" varchar(100) NOT NULL,
@@ -6568,7 +6568,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentHealthAdditionalImmunization"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentHealthRequiredImmunization"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentHealth_DocumentId" bigint NOT NULL,
     "ImmunizationTypeDescriptor_DescriptorId" bigint NOT NULL,
@@ -6582,7 +6582,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentHealthRequiredImmunization"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentHealthAdditionalImmunizationDate"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
     "StudentHealth_DocumentId" bigint NOT NULL,
@@ -6594,7 +6594,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentHealthAdditionalImmunizationDate"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentHealthRequiredImmunizationDate"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
     "StudentHealth_DocumentId" bigint NOT NULL,
@@ -6631,7 +6631,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentHomelessProgramAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentHomelessProgramAssociationHomelessProgramService"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentHomelessProgramAssociation_DocumentId" bigint NOT NULL,
     "HomelessProgramServiceDescriptor_DescriptorId" bigint NOT NULL,
@@ -6645,7 +6645,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentHomelessProgramAssociationHomelessProg
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentHomelessProgramAssociationProgramParticipationStatus"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentHomelessProgramAssociation_DocumentId" bigint NOT NULL,
     "ParticipationStatusDescriptor_DescriptorId" bigint NOT NULL,
@@ -6679,7 +6679,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentInterventionAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentInterventionAssociationInterventionEffectiveness"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentInterventionAssociation_DocumentId" bigint NOT NULL,
     "DiagnosisDescriptor_DescriptorId" bigint NOT NULL,
@@ -6738,7 +6738,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentLanguageInstructionProgramAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentLanguageInstructionProgramAssociationEnglishL_1ac620866d"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentLanguageInstructionProgramAssociation_DocumentId" bigint NOT NULL,
     "EnglishLanguageProficiencyAssessmentSchoolYear_DocumentId" bigint NOT NULL,
@@ -6755,7 +6755,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentLanguageInstructionProgramAssociationE
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentLanguageInstructionProgramAssociationLanguage_268e074917"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentLanguageInstructionProgramAssociation_DocumentId" bigint NOT NULL,
     "LanguageInstructionProgramServiceDescriptor_DescriptorId" bigint NOT NULL,
@@ -6769,7 +6769,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentLanguageInstructionProgramAssociationL
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentLanguageInstructionProgramAssociationProgramP_e14347f302"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentLanguageInstructionProgramAssociation_DocumentId" bigint NOT NULL,
     "ParticipationStatusDescriptor_DescriptorId" bigint NOT NULL,
@@ -6814,7 +6814,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentMigrantEducationProgramAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentMigrantEducationProgramAssociationMigrantEduc_d9dcd7857a"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentMigrantEducationProgramAssociation_DocumentId" bigint NOT NULL,
     "MigrantEducationProgramServiceDescriptor_DescriptorId" bigint NOT NULL,
@@ -6828,7 +6828,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentMigrantEducationProgramAssociationMigr
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentMigrantEducationProgramAssociationProgramPart_491e79dcd2"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentMigrantEducationProgramAssociation_DocumentId" bigint NOT NULL,
     "ParticipationStatusDescriptor_DescriptorId" bigint NOT NULL,
@@ -6867,7 +6867,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentNeglectedOrDelinquentProgramAssociatio
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentNeglectedOrDelinquentProgramAssociationNeglec_5202518bb9"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentNeglectedOrDelinquentProgramAssociation_DocumentId" bigint NOT NULL,
     "NeglectedOrDelinquentProgramServiceDescriptor_DescriptorId" bigint NOT NULL,
@@ -6881,7 +6881,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentNeglectedOrDelinquentProgramAssociatio
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentNeglectedOrDelinquentProgramAssociationProgra_162f874239"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentNeglectedOrDelinquentProgramAssociation_DocumentId" bigint NOT NULL,
     "ParticipationStatusDescriptor_DescriptorId" bigint NOT NULL,
@@ -6917,7 +6917,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramAssociationProgramParticipationStatus"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentProgramAssociation_DocumentId" bigint NOT NULL,
     "ParticipationStatusDescriptor_DescriptorId" bigint NOT NULL,
@@ -6931,7 +6931,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramAssociationProgramParticipation
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramAssociationService"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentProgramAssociation_DocumentId" bigint NOT NULL,
     "ServiceDescriptor_DescriptorId" bigint NOT NULL,
@@ -6998,7 +6998,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramEvaluation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramEvaluationExternalEvaluator"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentProgramEvaluation_DocumentId" bigint NOT NULL,
     "ExternalEvaluator" varchar(150) NOT NULL,
@@ -7009,7 +7009,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramEvaluationExternalEvaluator"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramEvaluationStudentEvaluationElement"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentProgramEvaluation_DocumentId" bigint NOT NULL,
     "StudentEvaluationElementProgramEvaluationElement_DocumentId" bigint NOT NULL,
@@ -7030,7 +7030,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramEvaluationStudentEvaluationElem
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramEvaluationStudentEvaluationObjective"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentProgramEvaluation_DocumentId" bigint NOT NULL,
     "StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId" bigint NOT NULL,
@@ -7103,7 +7103,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAssociationAlternativeGraduationPlan"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentSchoolAssociation_DocumentId" bigint NOT NULL,
     "AlternativeGraduationPlan_DocumentId" bigint NULL,
@@ -7118,7 +7118,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAssociationAlternativeGraduation
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAssociationEducationPlan"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentSchoolAssociation_DocumentId" bigint NOT NULL,
     "EducationPlanDescriptor_DescriptorId" bigint NOT NULL,
@@ -7179,7 +7179,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolFoodServiceProgramAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolFoodServiceProgramAssociationProgramPar_cd6be86d47"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentSchoolFoodServiceProgramAssociation_DocumentId" bigint NOT NULL,
     "ParticipationStatusDescriptor_DescriptorId" bigint NOT NULL,
@@ -7193,7 +7193,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolFoodServiceProgramAssociationPro
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolFoodServiceProgramAssociationSchoolFood_85a0eb098c"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentSchoolFoodServiceProgramAssociation_DocumentId" bigint NOT NULL,
     "SchoolFoodServiceProgramServiceDescriptor_DescriptorId" bigint NOT NULL,
@@ -7234,7 +7234,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSection504ProgramAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSection504ProgramAssociationProgramParticipationStatus"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentSection504ProgramAssociation_DocumentId" bigint NOT NULL,
     "ParticipationStatusDescriptor_DescriptorId" bigint NOT NULL,
@@ -7279,7 +7279,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSectionAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSectionAssociationProgram"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentSectionAssociation_DocumentId" bigint NOT NULL,
     "Program_DocumentId" bigint NULL,
@@ -7319,7 +7319,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSectionAttendanceEvent"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSectionAttendanceEventClassPeriod"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentSectionAttendanceEvent_DocumentId" bigint NOT NULL,
     "ClassPeriod_DocumentId" bigint NULL,
@@ -7370,7 +7370,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociationDisability"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentSpecialEducationProgramAssociation_DocumentId" bigint NOT NULL,
     "DisabilityDescriptor_DescriptorId" bigint NOT NULL,
@@ -7385,7 +7385,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociationDisa
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociationProgramPart_63017127ef"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentSpecialEducationProgramAssociation_DocumentId" bigint NOT NULL,
     "ParticipationStatusDescriptor_DescriptorId" bigint NOT NULL,
@@ -7399,7 +7399,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociationProg
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociationServiceProvider"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentSpecialEducationProgramAssociation_DocumentId" bigint NOT NULL,
     "ServiceProviderStaff_DocumentId" bigint NOT NULL,
@@ -7413,7 +7413,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociationServ
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociationSpecialEduc_a51ff9be2b"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentSpecialEducationProgramAssociation_DocumentId" bigint NOT NULL,
     "SpecialEducationProgramServiceDescriptor_DescriptorId" bigint NOT NULL,
@@ -7428,7 +7428,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociationSpec
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociationDisabilityDesignation"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
     "StudentSpecialEducationProgramAssociation_DocumentId" bigint NOT NULL,
@@ -7440,7 +7440,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociationDisa
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociationSpecialEduc_8dcc58d3fd"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "ParentCollectionItemId" bigint NOT NULL,
     "StudentSpecialEducationProgramAssociation_DocumentId" bigint NOT NULL,
@@ -7512,7 +7512,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentTitleIPartAProgramAssociation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentTitleIPartAProgramAssociationProgramParticipationStatus"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentTitleIPartAProgramAssociation_DocumentId" bigint NOT NULL,
     "ParticipationStatusDescriptor_DescriptorId" bigint NOT NULL,
@@ -7526,7 +7526,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentTitleIPartAProgramAssociationProgramPa
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentTitleIPartAProgramAssociationTitleIPartAProgramService"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentTitleIPartAProgramAssociation_DocumentId" bigint NOT NULL,
     "TitleIPartAProgramServiceDescriptor_DescriptorId" bigint NOT NULL,
@@ -7559,7 +7559,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentTransportation"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentTransportationTravelDayofWeek"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentTransportation_DocumentId" bigint NOT NULL,
     "TravelDayofWeekDescriptor_DescriptorId" bigint NOT NULL,
@@ -7570,7 +7570,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentTransportationTravelDayofWeek"
 
 CREATE TABLE IF NOT EXISTS "edfi"."StudentTransportationTravelDirection"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "StudentTransportation_DocumentId" bigint NOT NULL,
     "TravelDirectionDescriptor_DescriptorId" bigint NOT NULL,
@@ -7659,7 +7659,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyQuestion"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SurveyQuestionMatrice"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "SurveyQuestion_DocumentId" bigint NOT NULL,
     "MatrixElement" varchar(255) NOT NULL,
@@ -7672,7 +7672,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyQuestionMatrice"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SurveyQuestionResponseChoice"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "SurveyQuestion_DocumentId" bigint NOT NULL,
     "NumericValue" integer NULL,
@@ -7706,7 +7706,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyQuestionResponse"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SurveyQuestionResponseSurveyQuestionMatrixElementRespons"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "SurveyQuestionResponse_DocumentId" bigint NOT NULL,
     "MatrixElement" varchar(255) NOT NULL,
@@ -7722,7 +7722,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyQuestionResponseSurveyQuestionMatrixEle
 
 CREATE TABLE IF NOT EXISTS "edfi"."SurveyQuestionResponseValue"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "SurveyQuestionResponse_DocumentId" bigint NOT NULL,
     "NumericResponse" integer NULL,
@@ -7762,7 +7762,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyResponse"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SurveyResponseSurveyLevel"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "SurveyResponse_DocumentId" bigint NOT NULL,
     "SurveyLevelDescriptor_DescriptorId" bigint NOT NULL,

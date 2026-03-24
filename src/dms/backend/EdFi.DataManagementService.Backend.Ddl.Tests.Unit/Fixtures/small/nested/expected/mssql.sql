@@ -450,7 +450,7 @@ CREATE TABLE [edfi].[School]
 IF OBJECT_ID(N'edfi.SchoolAddress', N'U') IS NULL
 CREATE TABLE [edfi].[SchoolAddress]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [School_DocumentId] bigint NOT NULL,
     [Street] nvarchar(100) NOT NULL,
@@ -462,7 +462,7 @@ CREATE TABLE [edfi].[SchoolAddress]
 IF OBJECT_ID(N'edfi.SchoolAddressPhoneNumber', N'U') IS NULL
 CREATE TABLE [edfi].[SchoolAddressPhoneNumber]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
     [School_DocumentId] bigint NOT NULL,
