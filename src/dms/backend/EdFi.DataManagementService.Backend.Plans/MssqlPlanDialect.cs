@@ -4,6 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.Ddl;
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
 
 namespace EdFi.DataManagementService.Backend.Plans;
 
@@ -12,6 +14,8 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// </summary>
 internal sealed class MssqlPlanDialect : IPlanSqlDialect
 {
+    private static readonly DbTableName DocumentTable = new(new DbSchemaName("dms"), "Document");
+
     /// <summary>
     /// Appends a SQL Server <c>OFFSET</c>/<c>FETCH NEXT</c> paging clause.
     /// </summary>
@@ -31,5 +35,47 @@ internal sealed class MssqlPlanDialect : IPlanSqlDialect
             .Append(" ROWS FETCH NEXT ")
             .AppendParameter(limitParameterName)
             .AppendLine(" ROWS ONLY");
+    }
+
+    /// <inheritdoc />
+    public void AppendCreateKeysetTempTable(SqlWriter writer, KeysetTableContract keyset)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        ArgumentNullException.ThrowIfNull(keyset);
+
+        writer
+            .Append("CREATE TABLE ")
+            .AppendRelation(keyset.Table)
+            .Append(" (")
+            .AppendQuoted(keyset.DocumentIdColumnName.Value)
+            .AppendLine(" bigint PRIMARY KEY);");
+    }
+
+    /// <inheritdoc />
+    public void AppendDocumentMetadataSelect(SqlWriter writer, KeysetTableContract keyset)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        ArgumentNullException.ThrowIfNull(keyset);
+
+        writer
+            .AppendLine("SELECT")
+            .Append("    d.")
+            .Append(writer.Dialect.QuoteIdentifier(keyset.DocumentIdColumnName.Value))
+            .AppendLine(",")
+            .AppendLine("    d.[DocumentUuid],")
+            .AppendLine("    d.[ContentVersion],")
+            .AppendLine("    d.[IdentityVersion],")
+            .AppendLine("    d.[ContentLastModifiedAt],")
+            .AppendLine("    d.[IdentityLastModifiedAt]")
+            .Append("FROM ")
+            .AppendTable(DocumentTable)
+            .AppendLine(" d")
+            .Append("INNER JOIN ")
+            .AppendRelation(keyset.Table)
+            .Append(" k ON d.")
+            .Append(writer.Dialect.QuoteIdentifier(keyset.DocumentIdColumnName.Value))
+            .Append(" = k.")
+            .Append(writer.Dialect.QuoteIdentifier(keyset.DocumentIdColumnName.Value))
+            .AppendLine(";");
     }
 }
