@@ -45,10 +45,12 @@ public class Given_A_Page_With_Multiple_Documents
             CREATE TABLE IF NOT EXISTS dms."Document" (
                 "DocumentId" bigint PRIMARY KEY,
                 "DocumentUuid" uuid NOT NULL,
+                "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
                 "IdentityVersion" bigint NOT NULL DEFAULT 1,
                 "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now()
+                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
+                "CreatedAt" timestamptz NOT NULL DEFAULT now()
             );
 
             CREATE TABLE hydtest."School" (
@@ -256,10 +258,12 @@ public class Given_A_Single_DocumentId_Keyset
             CREATE TABLE IF NOT EXISTS dms."Document" (
                 "DocumentId" bigint PRIMARY KEY,
                 "DocumentUuid" uuid NOT NULL,
+                "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
                 "IdentityVersion" bigint NOT NULL DEFAULT 1,
                 "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now()
+                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
+                "CreatedAt" timestamptz NOT NULL DEFAULT now()
             );
 
             CREATE TABLE hydsingle."School" (
