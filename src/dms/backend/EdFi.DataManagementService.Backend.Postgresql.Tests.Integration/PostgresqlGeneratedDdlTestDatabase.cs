@@ -257,6 +257,18 @@ internal sealed class PostgresqlGeneratedDdlTestDatabase : IAsyncDisposable
         return rows;
     }
 
+    public async Task<int> ExecuteNonQueryAsync(string sql, params NpgsqlParameter[] parameters)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sql);
+
+        await using var connection = await _dataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.Parameters.AddRange(parameters);
+
+        return await command.ExecuteNonQueryAsync();
+    }
+
     public async Task<T> ExecuteScalarAsync<T>(string sql, params NpgsqlParameter[] parameters)
     {
         var result = await ExecuteScalarOrDefaultAsync<T>(sql, parameters);
