@@ -2,7 +2,7 @@
 
 ## Status
 
-Review-ready spike package for implementing Ed-Fi Change Queries in the current DMS architecture while staying aligned to the backend-redesign artifact responsibilities and Ed-Fi Change Query behavior.
+Review-ready spike package for implementing Ed-Fi Change Queries in the current DMS architecture while staying aligned to backend-redesign artifact responsibilities and the selected Ed-Fi ODS/API behaviors for windows and tracked-change authorization, while explicitly excluding client-selectable snapshot parity in v1.
 
 ## Purpose
 
@@ -24,11 +24,14 @@ This package is the DMS-843 design for the current backend shape. It is not the 
 
 The alignment target is semantic and behavioral parity with the redesign where responsibilities are the same, while still using current-backend bridge artifacts where names or storage differ.
 
+This package also makes one explicit non-parity choice: DMS-843 v1 does not implement ODS `Use-Snapshot` behavior or any other client-selectable consistent-read mode.
+
 The most important current-backend to redesign mappings used throughout this package are:
 
 - current-backend `dms.Document.ChangeVersion` is the semantic equivalent of redesign `dms.Document.ContentVersion`
 - `dms.Document.IdentityVersion` remains required for identity-tracking alignment, but it is not the public `/keyChanges` token
 - `dms.DocumentChangeEvent` is the required live-change journal used for changed-resource `journal + verify`
+- tracked-change artifacts must preserve redesign-relevant authorization inputs such as `CreatedByOwnershipTokenId` and row-local authorization basis data for DocumentId-based authorization strategies
 - `dms.DocumentDeleteTracking` and `dms.DocumentKeyChangeTracking` remain separate required artifacts
 - `availableChangeVersions` is computed from committed tracking surfaces, not from the raw sequence value
 
@@ -74,7 +77,7 @@ For a quick design check, the key approval questions are:
 - Does the package preserve existing non-Change-Query API behavior while adding the required Change Query surface?
 - Is changed-resource execution clearly defined as required `journal + verify` rather than an open-ended live-row scan?
 - Are `DocumentChangeEvent`, tombstones, and key-change tracking separated cleanly by responsibility?
-- Is the current-backend bridge clearly aligned to backend-redesign concepts without pretending the physical schemas are identical?
+- Is the current-backend bridge clearly aligned to backend-redesign update-tracking and authorization concepts without pretending the physical schemas are identical?
 - Are authorization, rollout, and validation obligations explicit enough to implement without relying on external notes?
 
 ## Relationship To Backend Redesign Docs
@@ -88,7 +91,7 @@ Recommended cross-reference points:
 | whole-feature alignment and bridge posture | [`overview.md`](../design/backend-redesign/design-docs/overview.md), [`update-tracking.md`](../design/backend-redesign/design-docs/update-tracking.md) | explains why the package uses redesign-aligned artifact responsibilities |
 | changed-resource execution and concurrency | [`transactions-and-concurrency.md`](../design/backend-redesign/design-docs/transactions-and-concurrency.md), [`update-tracking.md`](../design/backend-redesign/design-docs/update-tracking.md) | provides the broader `journal + verify` and committed-state execution context |
 | live-row stamps, journal, and core tracking artifacts | [`data-model.md`](../design/backend-redesign/design-docs/data-model.md), [`update-tracking.md`](../design/backend-redesign/design-docs/update-tracking.md), [`ddl-generation.md`](../design/backend-redesign/design-docs/ddl-generation.md) | aligns `ResourceKey`, live stamps, journal responsibilities, indexing, and deterministic provisioning |
-| authorization semantics | [`auth.md`](../design/backend-redesign/design-docs/auth.md) | companion context for SQL-layer authorization behavior |
+| authorization semantics | [`auth.md`](../design/backend-redesign/design-docs/auth.md) | companion context for ownership and DocumentId-based authorization behavior, including tracked-change implications |
 | optional downstream projections and ETL ideas | [`etl-view-sketch.md`](../design/backend-redesign/design-docs/etl-view-sketch.md) | informative only; not required for DMS-843 approval |
 
 Important boundary:
@@ -134,4 +137,4 @@ This package is designed to align to the Ed-Fi ODS/API Change Query behavior whe
 - Ed-Fi ODS/API platform guide, Changed Record Queries: <https://docs.ed-fi.org/reference/ods-api/platform-dev-guide/features/changed-record-queries/>
 - Ed-Fi ODS/API client guide, Using the Changed Record Queries: <https://docs.ed-fi.org/reference/ods-api/client-developers-guide/using-the-changed-record-queries/>
 
-The alignment target is behavioral and contract parity where appropriate, with explicit package-level decisions wherever DMS makes a product-specific choice.
+The alignment target is behavioral and contract parity where appropriate, with explicit package-level decisions wherever DMS makes a product-specific choice. The main explicit non-parity choice in this package is the absence of ODS `Use-Snapshot` support in DMS-843 v1.

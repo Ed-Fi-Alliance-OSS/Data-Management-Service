@@ -51,6 +51,7 @@ The story owns:
 
 - creation and seeding of `dms.ResourceKey`
 - addition of `dms.Document.ResourceKeyId`
+- addition of `dms.Document.CreatedByOwnershipTokenId` if it is not already present through redesign-auth work
 - addition of `dms.Document.ChangeVersion`
 - addition of `dms.Document.IdentityVersion`
 - supporting indexes on the live row
@@ -64,6 +65,7 @@ This story does not own the live journal, delete tombstones, key-change tracking
 - `dms.ResourceKey` is seeded from the deployed effective schema inventory rather than from currently populated rows.
 - Resources with zero current live rows still receive `dms.ResourceKey` seed rows.
 - Every live row has non-null `ResourceKeyId`, `ChangeVersion`, and `IdentityVersion` after backfill.
+- If redesign-auth work has not already added it, `dms.Document.CreatedByOwnershipTokenId` exists and is available for tracked-change capture.
 - Inserted documents allocate unique `ChangeVersion` and `IdentityVersion` values.
 - Representation-changing writes allocate a new `ChangeVersion`.
 - Identity-changing writes allocate a new `IdentityVersion`.
@@ -74,8 +76,9 @@ This story does not own the live journal, delete tombstones, key-change tracking
 ### Tasks
 
 - Add `dms.ResourceKey` with stable seeded `ResourceKeyId` values derived from the deployed effective schema manifest.
-- Add nullable `ResourceKeyId`, `ChangeVersion`, and `IdentityVersion` columns to `dms.Document`.
+- Add nullable `ResourceKeyId`, `CreatedByOwnershipTokenId` if required, `ChangeVersion`, and `IdentityVersion` columns to `dms.Document`.
 - Add the required live-row support index for redesign-aligned joins and diagnostics.
+- Add the required ownership support index when `CreatedByOwnershipTokenId` is present on `dms.Document`.
 - Implement insert-time defaulting or trigger behavior for `ChangeVersion` and `IdentityVersion`.
 - Implement representation-change stamping for updates that change `EdfiDoc`.
 - Ensure authorization-only maintenance updates do not change the live-row stamps.
@@ -152,7 +155,7 @@ This story does not own the public changed-resource endpoint behavior. It provid
 - `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql`
 - `src/dms/backend/EdFi.DataManagementService.Backend.Mssql`
 
-## CQ-STORY-03: Add delete tombstones with natural-key and authorization projection capture
+## CQ-STORY-03: Add delete tombstones with natural-key and tracked-change authorization capture
 
 ### Description
 
@@ -164,7 +167,7 @@ The story owns:
 - tombstone insertion in the delete transaction
 - extraction of `keyValues` from `ResourceSchema.IdentityJsonPaths`
 - shortest-unique-suffix aliasing for repeated identity leaf names
-- copied authorization projection on the tombstone
+- copied tracked-change authorization data on the tombstone, including ownership and authorization basis values
 
 This story is about write-path capture. It does not own the public `/deletes` query execution route.
 
@@ -175,7 +178,7 @@ This story is about write-path capture. It does not own the public `/deletes` qu
 - Tombstones contain `id`, `changeVersion`, and `keyValues`.
 - `id` is sourced from the canonical public `DocumentUuid`.
 - `keyValues` remain deterministic for simple, composite, and repeated-leaf identity shapes.
-- Tombstones preserve the authorization projection required for delete-query filtering after the live row is removed.
+- Tombstones preserve the tracked-change authorization data required for delete-query filtering after the live row and related relationship rows are removed.
 - Tombstone insertion occurs before the live row and companion authorization rows disappear.
 
 ### Tasks
@@ -183,7 +186,7 @@ This story is about write-path capture. It does not own the public `/deletes` qu
 - Create `dms.DocumentDeleteTracking` and its resource-window index.
 - Capture tombstones in the delete transaction before deleting the live `dms.Document` row.
 - Extract `keyValues` from the pre-delete `EdfiDoc` using the canonical identity-path and key-alias rules.
-- Copy the current live authorization projection into the tombstone row.
+- Copy the current live tracked-change authorization data into the tombstone row, including `CreatedByOwnershipTokenId` and authorization basis values.
 - Preserve existing delete authorization behavior so unauthorized callers cannot create tombstone side effects.
 - Keep education-organization cleanup ordering compatible with tombstone capture.
 
@@ -206,7 +209,7 @@ This story is about write-path capture. It does not own the public `/deletes` qu
 - `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql`
 - `src/dms/backend/EdFi.DataManagementService.Backend.Mssql`
 
-## CQ-STORY-04: Add key-change tracking with old-key, new-key, and authorization projection capture
+## CQ-STORY-04: Add key-change tracking with old-key, new-key, and tracked-change authorization capture
 
 ### Description
 
@@ -218,7 +221,7 @@ The story owns:
 - capture of one tracking row per committed identity-changing update
 - extraction of `oldKeyValues` and `newKeyValues` from `ResourceSchema.IdentityJsonPaths`
 - canonical key-alias derivation for repeated identity leaf names
-- copied pre-update authorization projection on the tracking row
+- copied pre-update tracked-change authorization data on the tracking row, including ownership and authorization basis values
 - use of the new live `dms.Document.ChangeVersion` as the public synchronization token on the tracking row
 
 This story does not own the public `/keyChanges` endpoint behavior or collapse semantics. It owns the write-path capture artifact that endpoint depends on.
@@ -230,14 +233,14 @@ This story does not own the public `/keyChanges` endpoint behavior or collapse s
 - Tracking rows contain `id`, `changeVersion`, `oldKeyValues`, and `newKeyValues`.
 - Tracking-row `changeVersion` is the new live `dms.Document.ChangeVersion`, not the internal `IdentityVersion`.
 - `oldKeyValues` and `newKeyValues` remain deterministic for simple, composite, and repeated-leaf identity shapes.
-- The tracking row preserves the pre-update authorization projection required for transition visibility.
+- The tracking row preserves the pre-update tracked-change authorization data required for transition visibility.
 - No key-change row is created for authorization-only maintenance updates.
 
 ### Tasks
 
 - Create `dms.DocumentKeyChangeTracking` and its resource-window index.
 - Detect identity-changing updates by comparing the pre-update and post-update identity tuples derived from `IdentityJsonPaths`.
-- Capture the pre-update identity tuple and authorization projection before mutating the live row.
+- Capture the pre-update identity tuple and tracked-change authorization data before mutating the live row.
 - Capture the post-update identity tuple from the updated `EdfiDoc`.
 - Insert one tracking row with `ChangeVersion = dms.Document.ChangeVersion` for the committed identity-changing update.
 - Ensure dependent representation rewrites do not create key-change rows unless the dependent document's own identity tuple changed.
@@ -286,8 +289,9 @@ This story must preserve the existing collection GET and GET-by-id behavior when
 - When the flag is off, collection GET requests that supply change-query parameters return the documented feature-disabled `400 Bad Request` behavior.
 - When the flag is off, `/deletes`, `/keyChanges`, and `availableChangeVersions` resolve to `404 Not Found` and do not fall through to generic item-by-id parsing.
 - The dedicated `/deletes` and `/keyChanges` paths resolve before the generic catch-all data route.
-- Missing required `minChangeVersion` on `/deletes` and `/keyChanges` returns the documented `400 Bad Request` behavior.
-- `maxChangeVersion` without `minChangeVersion` returns the documented `400 Bad Request` behavior.
+- Changed-resource mode activates when either `minChangeVersion` or `maxChangeVersion` is supplied.
+- Max-only windows are accepted on changed-resource, `/deletes`, and `/keyChanges`.
+- `/deletes` and `/keyChanges` accept omitted bounds and return the retained tracked rows for the routed resource.
 - Invalid or inconsistent change-query windows return the documented `400 Bad Request` ProblemDetails contract.
 - Replay-floor `409 Conflict` behavior remains deferred until the later retention phase is approved.
 - Changed-resource collection GET continues normal profile behavior.
@@ -301,7 +305,7 @@ This story must preserve the existing collection GET and GET-by-id behavior when
 - Register `availableChangeVersions`, `/deletes`, and `/keyChanges` as dedicated routes ahead of the generic data route.
 - Reserve dedicated route shapes even when the feature flag is off so those paths return the documented `404 Not Found` behavior.
 - Parse and validate `minChangeVersion` and `maxChangeVersion` consistently across changed-resource, delete, and key-change requests.
-- Implement the documented `400 Bad Request` ProblemDetails contract for feature-disabled collection GET parameters, missing `minChangeVersion`, invalid values, and invalid window relationships.
+- Implement the documented `400 Bad Request` ProblemDetails contract for feature-disabled collection GET parameters, invalid values, and invalid window relationships.
 - Keep replay-floor `409 Conflict` behavior explicitly deferred to the later retention phase.
 - Route changed-resource collection GET through the normal profile pipeline.
 - Route `/deletes`, `/keyChanges`, and `availableChangeVersions` through a pipeline that bypasses profile resolution and filtering.
@@ -354,7 +358,7 @@ This story must not redefine changed-resource execution as a direct `dms.Documen
 - Stale journal candidates are filtered by verification against the current live `ChangeVersion`.
 - Paging and `totalCount` are evaluated over the final verified authorized result set rather than raw journal candidates.
 - Final changed-resource results are ordered by `ChangeVersion`, `DocumentPartitionKey`, and `DocumentId`.
-- Ordinary collection GET behavior remains unchanged when `minChangeVersion` is absent.
+- Ordinary collection GET behavior remains unchanged when both `minChangeVersion` and `maxChangeVersion` are absent.
 - The implementation does not depend on snapshot history tables or historical payload reconstruction.
 
 ### Tasks
@@ -412,8 +416,8 @@ This story does not introduce retention purge or replay-floor metadata. Later-ph
 - `/keyChanges` remains valid for resources that do not support identity updates and returns `200 OK` with an empty array for them.
 - `/deletes` and `/keyChanges` return the canonical public resource `id` sourced from `DocumentUuid`.
 - `/keyChanges` applies `totalCount`, `offset`, and `limit` after authorization filtering and collapse.
-- Delete-query authorization matches the documented live-read-equivalent semantics.
-- Key-change-query authorization uses the documented stored pre-update projection for transition visibility.
+- Delete-query authorization matches the documented ODS-style tracked-change semantics.
+- Key-change-query authorization uses the documented stored pre-update tracked-change authorization data for transition visibility.
 - `availableChangeVersions` returns one synchronization surface with correct bootstrap and retained-data bounds for the participating artifacts.
 - Multi-resource synchronization guidance remains explicit: `keyChanges` and changed resources in dependency order, deletes in reverse-dependency order.
 - Concurrent updates and deletes on the same document do not capture stale old keys or tombstones.
@@ -422,8 +426,8 @@ This story does not introduce retention purge or replay-floor metadata. Later-ph
 
 - Implement `/deletes` query execution over `dms.DocumentDeleteTracking`.
 - Implement `/keyChanges` query execution over `dms.DocumentKeyChangeTracking`.
-- Apply delete-query authorization against copied tombstone authorization columns.
-- Apply key-change authorization against the stored pre-update tracking-row authorization columns before collapse.
+- Apply delete-query authorization against the stored tracked-change authorization data on tombstones.
+- Apply key-change authorization against the stored pre-update tracked-change authorization data before collapse.
 - Implement key-change collapse semantics to preserve earliest `oldKeyValues`, latest `newKeyValues`, and latest surviving `changeVersion`.
 - Compute `availableChangeVersions` from the live journal, delete tombstones, and key-change tracking rows rather than from the raw sequence value.
 - Implement row-level locking or engine-equivalent serialization for identity-changing updates and deletes so pre-change capture is consistent.
@@ -528,8 +532,8 @@ Recommended technical order:
 
 - `CQ-STORY-01` and `CQ-STORY-05` can proceed mostly in parallel because one is schema-focused and the other is route and validation focused.
 - `CQ-STORY-02` stays separate from `CQ-STORY-01` so the live journal can be reviewed and implemented as its own redesign-aligned artifact rather than as an afterthought inside generic backfill work.
-- `CQ-STORY-03` should not be merged into `CQ-STORY-01` because the tombstone behavior depends on delete-path application logic and authorization projection copying, not just DDL.
-- `CQ-STORY-04` should not be merged into `CQ-STORY-01` because key-change behavior depends on update-path application logic and explicit old/new key capture, not just DDL.
+- `CQ-STORY-03` should not be merged into `CQ-STORY-01` because the tombstone behavior depends on delete-path application logic and tracked-change authorization capture, not just DDL.
+- `CQ-STORY-04` should not be merged into `CQ-STORY-01` because key-change behavior depends on update-path application logic and explicit old/new key plus tracked-change authorization capture, not just DDL.
 - `CQ-STORY-06` and `CQ-STORY-07` should stay separate because live-query execution and delete/key-change execution are technically different read paths.
 - Later-phase retention work should stay outside the initial story set so reviewers can approve the core feature without reopening purge policy.
 

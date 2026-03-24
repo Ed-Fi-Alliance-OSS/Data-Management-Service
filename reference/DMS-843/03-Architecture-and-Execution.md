@@ -27,7 +27,8 @@ Responsibilities:
 - parse and validate `minChangeVersion` and `maxChangeVersion`
 - preserve current GET semantics when change-query parameters are absent
 - branch into changed-resource, delete, key-change, or available-change-version handling
-- preserve current authorization and resource-schema resolution rules
+- preserve current live-read authorization and resource-schema resolution rules for changed resources
+- enforce ODS-compatible tracked-change authorization rules for `/deletes` and `/keyChanges`
 
 Informative current touchpoints:
 
@@ -48,6 +49,7 @@ Responsibilities:
 - compute `availableChangeVersions`
 - insert tombstones on delete
 - insert key-change tracking rows when natural keys change
+- preserve tracked-change authorization inputs needed for ownership and DocumentId-based authorization after deletes or later key changes
 - provision and resolve resource-key lookups for changed-resource execution
 
 Informative design-target touchpoints:
@@ -158,7 +160,7 @@ Behavior:
 
 - read from `dms.DocumentDeleteTracking`
 - filter by `ProjectName`, `ResourceName`, and the requested window
-- apply delete-query authorization predicates against the copied tombstone authorization columns
+- apply ODS-compatible tracked-change authorization predicates against the tombstone's preserved authorization data, including ownership and row-local basis values needed for delete-aware relationship and custom-view authorization
 - materialize `keyValues` in the canonical alias order derived from the routed resource's `IdentityJsonPaths`
 - order by `ChangeVersion`, `DocumentPartitionKey`, and `DocumentId`
 
@@ -172,7 +174,7 @@ Behavior:
 
 - read from `dms.DocumentKeyChangeTracking`
 - filter by `ProjectName`, `ResourceName`, and the requested window
-- apply key-change-query authorization predicates against the copied pre-update tracking-row authorization columns
+- apply ODS-compatible tracked-change authorization predicates against the copied pre-update tracking-row authorization data, including ownership and row-local basis values needed for DocumentId-based relationship and custom-view authorization
 - materialize `oldKeyValues` and `newKeyValues` in the canonical alias order derived from the routed resource's `IdentityJsonPaths`
 - collapse multiple authorized rows for the same resource within the window to the earliest `oldKeyValues`, latest `newKeyValues`, and latest `ChangeVersion`
 - apply `totalCount`, `offset`, and `limit` to that collapsed authorized result set rather than to raw tracking rows
@@ -184,7 +186,7 @@ Required semantics:
 - authorization filtering happens before collapse
 - only rows that survive authorization filtering participate in collapse
 - paging and total-count semantics apply after authorization filtering and collapse
-- the copied authorization projection on each key-change row represents pre-update visibility for that transition
+- the copied authorization data on each key-change row represents the pre-update tracked-change authorization state for that transition
 
 ## Available Change Versions Execution
 
@@ -235,7 +237,7 @@ Required interpretation:
 
 ## Write-Path Locking Contract
 
-Identity-changing updates and deletes must run inside a single transaction that locks the target live `dms.Document` row before reading old keys, current authorization projection, or delete key values.
+Identity-changing updates and deletes must run inside a single transaction that locks the target live `dms.Document` row before reading old keys, tracked-change authorization data, or delete key values.
 
 Required rules:
 
@@ -244,22 +246,41 @@ Required rules:
 - concurrent update/update, update/delete, and delete/delete operations against the same document must serialize so only one committed path observes and records each pre-change state
 - PostgreSQL implementations should use `SELECT ... FOR UPDATE`; MSSQL implementations must use an equivalent row-level update-locking pattern on the target row; any other engine must use an equivalent row-level serialization mechanism
 
+## Downstream Identity-Propagation Execution
+
+An identity-changing update can force representation rewrites on dependent documents whose stored representation embeds the changed identity values.
+
+Required execution model:
+
+1. discover directly referencing documents through a reverse-edge lookup equivalent to the current backend's `dms.Reference`
+2. rewrite each dependent document's stored representation or equivalent reference-identity storage columns in the same transaction so the dependent row reflects the new upstream identity values
+3. when the dependent row's served representation changes, allocate a new dependent `ChangeVersion` and let the normal `dms.DocumentChangeEvent` journaling rules emit a dependent live-change row
+4. when the dependent rewrite also changes the dependent document's own identity tuple, allocate a new dependent `IdentityVersion` and insert a dependent key-change tracking row using that dependent row's own pre-change tracked-change authorization data
+5. when the dependent rewrite does not change the dependent document's own identity tuple, do not insert a dependent key-change row
+6. continue recursively until no more downstream documents require identity-driven rewrites
+
+Conforming implementation note:
+
+- the current backend already demonstrates one concrete approach through reverse-edge discovery and recursive cascade handling in `dms.Reference` and `UpdateCascadeHandler`
+- a replacement relational backend may use a different implementation structure, but it must preserve the same committed-state propagation semantics
+
 ## Identity-Change Update Execution Order
 
 Within an update transaction that changes natural-key values for a resource that supports identity updates, the implementation must:
 
-1. lock and load the current document summary, current key values, and current pre-update authorization projection
+1. lock and load the current document summary, current key values, and current pre-update tracked-change authorization data
 2. authorize the update against the live row
 3. apply the update so the live row contains the new representation
 4. allocate a new live `ChangeVersion`
 5. allocate a new live `IdentityVersion`
 6. derive the new key values and canonical key aliases from `ResourceSchema.IdentityJsonPaths`
-7. insert a row into `dms.DocumentKeyChangeTracking` with `ChangeVersion =` the new live `dms.Document.ChangeVersion`, plus the old key values, new key values, and copied pre-update authorization projection
-8. commit the transaction
+7. insert a row into `dms.DocumentKeyChangeTracking` with `ChangeVersion =` the new live `dms.Document.ChangeVersion`, plus the old key values, new key values, and copied pre-update tracked-change authorization data
+8. discover and recursively process downstream dependent rewrites in the same transaction
+9. commit the transaction
 
-This ordering is mandatory because key changes must preserve both sides of the natural-key transition while staying aligned to the committed live representation.
+This ordering is mandatory because key changes must preserve both sides of the natural-key transition, and downstream referrers must be restamped and journaled before the transaction commits.
 
-The copied authorization projection on the tracking row is intentionally the pre-update authorization state. This design does not store a second post-update authorization snapshot for key-change rows.
+The copied authorization data on the tracking row is intentionally the pre-update tracked-change authorization state. This design does not store a second post-update authorization snapshot for key-change rows.
 
 The key-change row does not expose or store the internal `IdentityVersion` as its public synchronization token. `IdentityVersion` remains an internal live-row stamp used for alignment and future identity-tracking needs.
 
@@ -267,7 +288,7 @@ The key-change row does not expose or store the internal `IdentityVersion` as it
 
 Within the delete transaction, the implementation must:
 
-1. lock and load the current document summary and authorization projection
+1. lock and load the current document summary and tracked-change authorization data
 2. authorize the delete against the live row
 3. allocate a new `ChangeVersion`
 4. derive `keyValues` and canonical key aliases from `ResourceSchema.IdentityJsonPaths`
@@ -276,7 +297,7 @@ Within the delete transaction, the implementation must:
 7. delete the live `dms.Document` row
 8. allow existing FK cascades to remove aliases, references, authorization companion rows, and journal rows
 
-This ordering is mandatory because the tombstone must preserve natural-key and authorization data before the live row and companion rows disappear.
+This ordering is mandatory because the tombstone must preserve natural-key and tracked-change authorization data before the live row and companion rows disappear.
 
 ## Design Invariants
 
@@ -287,8 +308,9 @@ The architecture must preserve these invariants:
 - authorization-only maintenance updates do not emit false change records
 - delete visibility survives deletion of the live row
 - key-change visibility survives later changes to the live key state
-- delete-query authorization stays logically equivalent to live collection GET authorization
-- key-change-query authorization stays logically equivalent to live collection GET authorization
+- identity-driven downstream rewrites are restamped and journaled in the same committed write path
+- delete-query authorization targets ODS-compatible tracked-change semantics, including delete-aware relationship visibility and redesign ownership/custom-view concepts
+- key-change-query authorization targets ODS-compatible tracked-change semantics using the stored pre-update tracked-change authorization state
 - write paths serialize concurrent update and delete capture on the same live row
 - the live journal is never used as a delete store
 

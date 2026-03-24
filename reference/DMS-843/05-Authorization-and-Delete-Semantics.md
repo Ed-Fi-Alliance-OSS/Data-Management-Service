@@ -2,18 +2,18 @@
 
 ## Objective
 
-Ensure Change Queries preserve the same logical read-authorization behavior as the current DMS collection GET implementation.
+Ensure Change Queries preserve the correct authorization behavior for each surface:
 
-This requires:
+- live changed-resource queries continue to use the current live-read authorization behavior
+- `/deletes` and `/keyChanges` target the same tracked-change authorization criteria ODS applies for `ReadChanges`
+- tracked-change artifacts preserve the redesign authorization inputs needed for ownership-based and DocumentId-based authorization
+- authorization-maintenance updates do not create false change records
 
-- understanding the current authorization data sources
-- preserving authorization-relevant data for deletes
-- preserving authorization-relevant data for key changes
-- ensuring authorization-maintenance updates do not create false change records
+This document therefore distinguishes live current-state authorization from tracked-change authorization. They are related, but they are not identical read paths.
 
-## Current Read Authorization Model
+## Current Live Authorization Baseline
 
-In the current DMS storage and runtime model, collection GET authorization is enforced primarily from the authorization projection already stored on `dms.Document`, with support from education-organization hierarchy lookup tables.
+In the current DMS storage and runtime model, collection GET authorization is enforced primarily from data already stored on `dms.Document`, with support from education-organization hierarchy lookup tables.
 
 Primary live-row authorization inputs:
 
@@ -22,75 +22,64 @@ Primary live-row authorization inputs:
 - `StudentEdOrgResponsibilityAuthorizationIds`
 - `ContactStudentSchoolAuthorizationEdOrgIds`
 - `StaffEducationOrganizationAuthorizationEdOrgIds`
+- `CreatedByOwnershipTokenId` when redesign-aligned ownership authorization is enabled on the live row
 
 Supporting lookup table:
 
 - `dms.EducationOrganizationHierarchyTermsLookup`
 
-This means live changed-resource queries can preserve authorization parity by reusing the same authorization filters that current collection GET queries already apply to `dms.Document`.
+This means live changed-resource queries can preserve live-read parity by reusing the same authorization filters that current collection GET queries already apply to `dms.Document`.
 
 ## Authorization Companion Table Inventory
 
-The current authorization model also depends on companion tables and triggers that derive the live authorization projection.
+The current authorization model also depends on companion tables and triggers that derive or support the live authorization projection.
 
 | Table | Role in the current storage/runtime model | Change Queries impact |
 | --- | --- | --- |
 | `dms.EducationOrganizationHierarchy` | Stores education-organization parent-child relationships. | Unchanged. Existing cleanup remains part of delete execution. |
-| `dms.EducationOrganizationHierarchyTermsLookup` | Stores hierarchy expansion values used in EdOrg filters. | Reused by live and delete query authorization logic. |
-| `dms.StudentSchoolAssociationAuthorization` | Derives student authorization values from student-school relationships. | Unchanged. Continues feeding `dms.Document` projection columns. |
-| `dms.StudentSecurableDocument` | Maps student identifiers to securable documents. | Unchanged. Rows disappear after delete cascade. |
-| `dms.StudentContactRelation` | Bridges student-contact relationships for contact authorization. | Unchanged. |
-| `dms.ContactStudentSchoolAuthorization` | Derives contact authorization values. | Unchanged. |
-| `dms.ContactSecurableDocument` | Maps contact identifiers to securable documents. | Unchanged. |
-| `dms.StaffEducationOrganizationAuthorization` | Derives staff authorization values. | Unchanged. |
-| `dms.StaffSecurableDocument` | Maps staff identifiers to securable documents. | Unchanged. |
-| `dms.StudentEducationOrganizationResponsibilityAuthorization` | Derives student responsibility authorization values. | Unchanged, but the projection must be preserved in tombstones. |
+| `dms.EducationOrganizationHierarchyTermsLookup` | Stores hierarchy expansion values used in EdOrg filters. | Reused by live and tracked-change authorization logic. |
+| `dms.StudentSchoolAssociationAuthorization` | Derives student authorization values from student-school relationships. | Continues feeding live-row projection data, but tracked changes cannot rely on the row still existing later. |
+| `dms.StudentSecurableDocument` | Maps student identifiers to securable documents. | Live-only helper; tracked changes cannot assume it survives delete timing. |
+| `dms.StudentContactRelation` | Bridges student-contact relationships for contact authorization. | Live-only helper; tracked changes need preserved basis data when rows are gone. |
+| `dms.ContactStudentSchoolAuthorization` | Derives contact authorization values. | Continues feeding live-row projection data. |
+| `dms.ContactSecurableDocument` | Maps contact identifiers to securable documents. | Live-only helper. |
+| `dms.StaffEducationOrganizationAuthorization` | Derives staff authorization values. | Continues feeding live-row projection data. |
+| `dms.StaffSecurableDocument` | Maps staff identifiers to securable documents. | Live-only helper. |
+| `dms.StudentEducationOrganizationResponsibilityAuthorization` | Derives student responsibility authorization values. | Continues feeding live-row projection data, but tracked changes need preserved basis data after delete timing. |
 
-The Change Queries feature does not alter these companion tables or their triggers. The transitional `EdFi.DataManagementService.Old.Postgresql` project may still be consulted to verify current authorization behavior, but the design does not depend on that project remaining the long-term implementation, and the resulting authorization semantics must hold for both PostgreSQL and MSSQL relational backends.
+The Change Queries feature does not require these companion tables to become the tracked-change source of truth. The tracked-change source of truth is the authorization data preserved on the tombstone or key-change row.
 
 ## Live Changed-Resource Authorization
 
 Implementation rule:
 
 - apply the existing live collection authorization filters after `dms.DocumentChangeEvent` candidate selection and verification against `dms.Document.ChangeVersion`
-- do not redesign the authorization predicates
+- continue to use the current live-row authorization model for namespace, education-organization, relationship, custom-view, and ownership checks
 
 Expected effect:
 
 - a caller who can read a live resource in the current collection GET path can also read the same resource in changed-resource mode if it falls within the requested window
 - a caller who cannot read the live resource remains blocked in changed-resource mode
 
-## Why Deletes Need Authorization Projection Stored on Tombstones
+## Why Tracked Changes Need More Than the Current Live Projection
 
-When a document is deleted:
+ODS tracked changes do not simply reuse the current live-read query shape.
 
-- the `dms.Document` row disappears
-- authorization companion rows disappear by cascade
-- securable-document rows disappear
+Relevant ODS behavior:
 
-Without copied authorization projection data, `/deletes` would either:
+- tracked changes use `ReadChanges` authorization criteria
+- delete visibility can remain valid even when the authorizing relationship row has already been deleted
+- relationship authorization uses delete-aware semantics
+- ownership and custom-view authorization apply to tracked changes too
 
-- return deletes without adequate authorization filtering
-- or lose the ability to return deletes that an otherwise authorized caller should still see
+The redesign authorization direction has the same implication in DMS:
 
-The correct design is to copy the authorization projection from the live row into `dms.DocumentDeleteTracking` before the live row is deleted.
+- ownership-based authorization depends on `CreatedByOwnershipTokenId`
+- relationship and custom-view authorization depend on basis-resource `DocumentId` values rather than natural keys
 
-## Why Key Changes Need Authorization Projection Stored on Tracking Rows
+Therefore, copied live-row projection columns alone are not enough for tracked changes. A tombstone or key-change row must preserve the tracked-change authorization state needed to reproduce the correct outcome after the live row, companion rows, or related relationship rows are gone.
 
-When a natural key changes:
-
-- the current live row moves to a new key state
-- later updates may move it again
-- a later delete may remove the live row entirely
-
-Without copied authorization projection data, `/keyChanges` would either:
-
-- depend on the current live row and lose the ability to return historical key transitions consistently
-- or return key changes without adequate authorization filtering
-
-The correct design is to copy the authorization projection from the live row into `dms.DocumentKeyChangeTracking` when the key change is recorded.
-
-## Required Tombstone Authorization Columns
+## Required Tracked-Change Authorization Data
 
 Each tombstone row must preserve:
 
@@ -99,53 +88,115 @@ Each tombstone row must preserve:
 - `StudentEdOrgResponsibilityAuthorizationIds`
 - `ContactStudentSchoolAuthorizationEdOrgIds`
 - `StaffEducationOrganizationAuthorizationEdOrgIds`
+- `CreatedByOwnershipTokenId`
+- `AuthorizationBasis`
 
-This preserves parity with the logical authorization categories used by current collection GET queries.
-
-## Required Key-Change Authorization Columns
-
-Each key-change tracking row must preserve the pre-update authorization projection:
+Each key-change row must preserve the pre-update tracked-change authorization state:
 
 - `SecurityElements`
 - `StudentSchoolAuthorizationEdOrgIds`
 - `StudentEdOrgResponsibilityAuthorizationIds`
 - `ContactStudentSchoolAuthorizationEdOrgIds`
 - `StaffEducationOrganizationAuthorizationEdOrgIds`
+- `CreatedByOwnershipTokenId`
+- `AuthorizationBasis`
 
-The design does not store a second post-update authorization projection on the key-change row.
+The design does not store a second post-update authorization snapshot on the key-change row.
 
-## Delete Query Authorization Model
+## `AuthorizationBasis` Semantics
 
-Delete queries must apply the same logical read-authorization categories as live collection GET queries:
+`AuthorizationBasis` is a resource-scoped payload stored on tombstone and key-change rows.
+
+Required meaning:
+
+- it preserves the basis-resource `DocumentId` values needed for redesign relationship and custom-view authorization
+- it preserves any additional delete-aware relationship inputs needed to reproduce ODS-style tracked-change visibility when the authorizing relationship row has already been deleted
+- it is captured from the same pre-delete or pre-update authorization-resolution pass used to determine the row's live authorization state
+- it is interpreted only in the context of the tracked row's routed resource
+
+This design is intentionally outcome-oriented. A conforming implementation may choose any deterministic internal shape for `AuthorizationBasis` as long as it can reproduce the documented tracked-change authorization results.
+
+## Tracked-Change Authorization Model
+
+The tracked-change endpoints should follow the same authorization criteria that ODS applies for `ReadChanges`, even though DMS may satisfy that requirement with different physical SQL than ODS.
+
+The query sources are:
+
+| Query type | Source | Authorization source |
+| --- | --- | --- |
+| Live changed-resource query | `dms.Document` | live authorization columns and live authorization joins |
+| Delete query | `dms.DocumentDeleteTracking` | tracked-change authorization data captured on the tombstone |
+| Key change query | `dms.DocumentKeyChangeTracking` | tracked-change authorization data captured on the pre-update tracking row |
+
+Required tracked-change categories:
 
 - namespace-based authorization
 - direct education-organization authorization
 - student relationship authorization
 - contact relationship authorization
 - staff relationship authorization
-
-The difference is only the physical source table.
-
-| Query type | Source | Authorization source |
-| --- | --- | --- |
-| Live changed-resource query | `dms.Document` | existing live authorization columns |
-| Delete query | `dms.DocumentDeleteTracking` | copied tombstone authorization columns |
-| Key change query | `dms.DocumentKeyChangeTracking` | copied key-change tracking authorization columns |
+- ownership-based authorization
+- custom-view authorization using basis-resource `DocumentId` values
 
 Implementation guidance:
 
-- the delete-query authorization builder should mirror the current collection GET authorization behavior against tombstone columns
-- the key-change-query authorization builder should mirror the current collection GET authorization behavior against the stored pre-update key-change tracking columns
+- namespace and direct education-organization checks may reuse copied row-local projection data directly
+- ownership checks use the stored `CreatedByOwnershipTokenId`
+- relationship and custom-view checks use the stored `AuthorizationBasis` rather than assuming the required live relationship rows still exist
 - key-change-query authorization filtering must happen before collapse
 - the promised earliest `oldKeyValues`, latest `newKeyValues`, and latest `ChangeVersion` semantics apply only to the rows that remain after authorization filtering
 - rows removed by authorization filtering must not participate in collapse
-- hierarchy-based filters continue to use `dms.EducationOrganizationHierarchyTermsLookup`
+- hierarchy-based filters continue to use `dms.EducationOrganizationHierarchyTermsLookup` where they are still part of the active authorization evaluation
+
+## How Delete-Aware Relationship Visibility Is Preserved
+
+The core delete problem is timing:
+
+- the resource row disappears
+- related authorization rows may disappear
+- the relationship that originally granted access may itself have been deleted earlier in the same synchronization history
+
+ODS addresses this with delete-aware tracked-change authorization behavior.
+
+DMS-843 must preserve the same outcome. One conforming strategy is:
+
+- resolve the tracked-change authorization state before the live row is deleted or before the key change mutates the row
+- persist that state on the tombstone or key-change row
+- evaluate tracked-change authorization from the persisted row-local state later, without depending on the deleted live relationships still existing
+
+This is why `AuthorizationBasis` is a required tracked-change artifact rather than an optional optimization.
+
+## Delete Request Authorization
+
+The existing DELETE route behavior remains a live-row authorization decision first.
+
+Required order:
+
+- load and lock the live row
+- resolve the tracked-change authorization data that would be persisted on the tombstone
+- authorize the delete against the live row
+- insert the tombstone only after authorization succeeds
+- then delete the live row
+
+This prevents unauthorized callers from generating tombstone side effects.
+
+## Key-Change Capture Authorization
+
+For identity-changing updates, tracked-change authorization capture is also pre-change.
+
+Required order:
+
+- load and lock the live row
+- resolve the pre-update tracked-change authorization data
+- authorize the update against the live row
+- apply the identity-changing update
+- insert the key-change row with the pre-update tracked-change authorization data
 
 Rationale:
 
-- key changes are a transition surface rather than a pure current-state read surface
-- using the pre-update authorization projection allows a client that could read the resource before the identity change to receive the transition needed to reconcile the old key
-- this is intentionally not identical to evaluating authorization only against the current post-update live row, because that would lose transition visibility for clients that must retire an old key they were previously entitled to read
+- the caller needs visibility to retire the old key they were authorized to see
+- using only the post-update live row would lose some legitimate transitions
+- the stored pre-update state is also the only durable source once later updates or deletes occur
 
 ## Profile Behavior for Change Query GET Endpoints
 
@@ -182,21 +233,6 @@ Reason:
 - the endpoint returns only synchronization bounds
 - it does not reveal resource payloads, identifiers, or delete details
 
-## Delete Request Authorization
-
-The existing DELETE route behavior remains unchanged.
-
-Required order:
-
-- load the live row
-- authorize against the live row
-- insert the tombstone only after authorization succeeds
-- then delete the live row
-
-The live row must already be locked as part of the write-path locking contract before the authorization projection and natural-key values are read.
-
-This prevents unauthorized callers from generating tombstone side effects.
-
 ## Auth-Only Updates Must Not Emit Change Records
 
 This is a hard invariant for the feature.
@@ -222,7 +258,7 @@ That cleanup can continue, but the tombstone must already have been inserted bef
 
 Reason:
 
-- after the delete, the live authorization projection and dependent authorization rows may no longer be reconstructible
+- after the delete, the live authorization state and dependent relationship rows may no longer be reconstructible
 
 ## Descriptor Resources
 
@@ -236,10 +272,11 @@ If product policy later decides to exclude some descriptor endpoints from Change
 
 The authorization design is acceptable if reviewers agree that:
 
-- live changed-resource queries reuse the current DMS authorization semantics
-- delete queries are no more permissive and no more restrictive than logically equivalent live reads
-- key-change queries intentionally evaluate transition visibility from the stored pre-update authorization projection rather than from the current post-update live row
-- tombstones preserve enough authorization projection to survive deletion of the live row
-- key-change tracking preserves enough authorization projection to survive later key mutations or deletion of the live row
+- live changed-resource queries reuse the current live authorization semantics
+- delete queries target ODS-style tracked-change authorization criteria rather than only current live-read semantics
+- key-change queries target ODS-style tracked-change authorization criteria while preserving pre-update transition visibility
+- tombstones preserve enough tracked-change authorization data to survive deletion of the live row and related relationship rows
+- key-change tracking preserves enough tracked-change authorization data to survive later key mutations or deletion of the live row
+- redesign ownership and DocumentId-based authorization concepts are represented in the tracked-change artifacts
 - authorization-maintenance updates do not create false change records
 - changed-resource eligibility remains resource-level even when readable profiles filter the returned representation

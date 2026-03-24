@@ -4,11 +4,11 @@
 
 Implement Ed-Fi Change Queries for the current Data Management Service storage and runtime model in a way that:
 
-- preserves Ed-Fi changed-record-query semantics
+- preserves Ed-Fi changed-record-query semantics for route shape, window behavior, and tracked-change authorization criteria where DMS-843 adopts ODS parity
 - preserves existing DMS API behavior when Change Queries are not used
-- avoids snapshots if possible
+- explicitly does not implement client-selectable `Use-Snapshot` parity in v1
 - uses the canonical `dms.Document` row as the source of truth
-- keeps the design aligned to the backend-redesign update-tracking direction
+- keeps the design aligned to the backend-redesign update-tracking and authorization directions where DMS-843 introduces bridge artifacts
 
 ## Current DMS Facts That Shape the Design
 
@@ -77,9 +77,11 @@ Reasons:
 - the two routes have different read shapes, ordering concerns, and collapse rules
 - live changed-resource selection remains a current-state problem solved by the live-row content stamp and required journal, not by tombstones
 
-## 8. Backend-redesign alignment uses required bridge artifacts where the current backend differs physically
+## 8. Backend-redesign alignment uses required bridge artifacts for update tracking and tracked-change authorization
 
 The backend-redesign update-tracking docs are already normative for live representation stamping, identity stamping, `dms.ResourceKey`, and `dms.DocumentChangeEvent`.
+
+The backend-redesign authorization docs are companion context for ownership-based and DocumentId-based authorization behavior. DMS-843 therefore has to preserve not only update-tracking artifact responsibilities, but also the tracked-change authorization inputs needed to keep delete and key-change visibility aligned to the chosen ODS criteria.
 
 This design remains aligned by preserving the same artifact responsibilities:
 
@@ -87,16 +89,18 @@ This design remains aligned by preserving the same artifact responsibilities:
 - current-backend `dms.Document.ChangeVersion` is the semantic equivalent of redesign `dms.Document.ContentVersion`
 - current-backend `dms.Document.IdentityVersion` is the semantic equivalent of redesign `dms.Document.IdentityVersion`
 - current-backend `dms.DocumentChangeEvent` is the same kind of live-change journal used by redesign and is required for changed-resource execution
+- current-backend tracked-change rows must preserve redesign-relevant authorization inputs such as `CreatedByOwnershipTokenId` and row-local authorization basis data needed for DocumentId-based relationship and custom-view authorization after deletes or later key changes
 - current-backend `dms.DocumentDeleteTracking` is a bridge artifact for delete semantics that redesign will also need in semantically equivalent form
 - current-backend `dms.DocumentKeyChangeTracking` is a bridge artifact for old/new natural-key transitions that redesign will also need in semantically equivalent form
 
-The alignment target is therefore contract and behavior parity, not reuse of identical table names across storage models.
+The alignment target is therefore artifact-responsibility and behavior parity where DMS-843 explicitly chooses it, not reuse of identical table names across storage models.
 
 Required interpretation:
 
 - current-backend implementations of this design persist one live-row representation-change stamp, `dms.Document.ChangeVersion`
 - redesign references to `ContentVersion` map to that same stamp responsibility
 - current-backend implementations also persist one distinct identity-change stamp, `dms.Document.IdentityVersion`
+- tracked-change artifacts must preserve enough authorization data to support redesign ownership and DocumentId-based authorization concepts during `/deletes` and `/keyChanges`
 - the current-backend schema must not persist both `dms.Document.ChangeVersion` and `dms.Document.ContentVersion` as separate live-row fields for the same purpose
 
 ## 9. The design is not coupled to the transitional compatibility backend
@@ -139,31 +143,43 @@ Required rule:
 
 This rule is required because authoritative schemas already contain composite identities with repeated leaf names such as multiple `schoolId` or `educationOrganizationId` members.
 
-## 11. DMS-843 uses Ed-Fi-style inclusive lower-bound windows
+## 11. DMS-843 uses ODS-style independently optional ChangeVersion bounds
 
-The feature uses the following Change Query window semantics:
+The feature uses the following Change Query window semantics when both bounds are supplied:
 
 ```text
 minChangeVersion <= ChangeVersion <= maxChangeVersion
 ```
 
-When `maxChangeVersion` is omitted, the effective rule is:
+When only `minChangeVersion` is supplied, the effective rule is:
 
 ```text
 minChangeVersion <= ChangeVersion
 ```
 
-This aligns the package to current Ed-Fi client guidance, which treats `minChangeVersion` as the next starting watermark to include.
-
-## 12. Avoiding snapshot tables does not create a snapshot-free correctness guarantee
-
-The feature continues to avoid server-side snapshot history tables and uses bounded synchronization windows:
+When only `maxChangeVersion` is supplied, the effective rule is:
 
 ```text
-minChangeVersion <= ChangeVersion <= maxChangeVersion
+ChangeVersion <= maxChangeVersion
 ```
 
-The Ed-Fi ODS/API client guidance uses snapshot isolation when a client needs one correctness-safe view across a full synchronization pass.
+For the overloaded collection GET route:
+
+- if both bounds are absent, the request remains an ordinary non-Change-Query collection GET
+- if either bound is supplied, the request switches into changed-resource mode
+
+For the dedicated `/deletes` and `/keyChanges` routes:
+
+- each bound remains independently optional
+- if both bounds are absent, the route returns the full retained tracked-change surface for that resource
+
+This aligns DMS-843 to ODS query-window behavior while keeping the existing collection GET route backward-compatible when no change-query parameters are supplied.
+
+## 12. DMS-843 v1 intentionally excludes ODS snapshot parity
+
+The feature continues to avoid server-side snapshot history tables.
+
+The Ed-Fi ODS/API platform exposes `Use-Snapshot` behavior when a client needs one correctness-safe view across a synchronization pass.
 
 DMS-843 v1 does not expose a client-selectable snapshot or equivalent consistent-read mode. All Change Query requests therefore operate against current committed state, and the package treats synchronization under concurrent writes as best-effort rather than a guaranteed gap-free export.
 
@@ -186,17 +202,18 @@ Required rule:
 The full Change Queries feature defined by this package includes:
 
 - `GET /{routePrefix}changeQueries/v1/availableChangeVersions`
-- changed-resource filtering on existing collection GET routes via `minChangeVersion` and `maxChangeVersion`
+- changed-resource filtering on existing collection GET routes via independently optional `minChangeVersion` and `maxChangeVersion`
 - `GET /{routePrefix}data/{projectNamespace}/{endpointName}/deletes`
 - `GET /{routePrefix}data/{projectNamespace}/{endpointName}/keyChanges`
 - live-row `ChangeVersion` stamping on inserts and representation-changing updates
 - live-row `IdentityVersion` stamping on inserts and identity-changing updates
 - resource-key lookup and `ResourceKeyId` assignment for live rows
 - required `journal + verify` changed-resource selection through `dms.DocumentChangeEvent`
-- delete tombstones with natural-key and authorization projection data
-- key-change tracking rows with old-key and new-key values plus authorization projection data
+- delete tombstones with natural-key and tracked-change authorization data
+- key-change tracking rows with old-key and new-key values plus tracked-change authorization data
 - deterministic ordering for changed-resource and delete queries
 - deterministic ordering and window collapse for key-change queries
+- tracked-change authorization inputs sufficient for ODS-style delete and key-change authorization criteria, including redesign ownership and DocumentId-based authorization concepts
 - bootstrap `oldestChangeVersion = newestChangeVersion = 0` semantics for empty surfaces in phase 1, with replay-floor-aware bounds left available for a later retention phase
 
 ## Non-Goals
@@ -204,6 +221,7 @@ The full Change Queries feature defined by this package includes:
 This feature design does not include:
 
 - server-side snapshot tables
+- client-selectable `Use-Snapshot` parity with ODS in v1
 - CDC-based or streaming-based change-query behavior
 - event sourcing
 - a historical payload store for updates

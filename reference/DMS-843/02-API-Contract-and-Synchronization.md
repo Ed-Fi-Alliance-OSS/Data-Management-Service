@@ -59,14 +59,15 @@ Examples:
 
 ```text
 GET /data/ed-fi/students?minChangeVersion=100&maxChangeVersion=250
+GET /data/ed-fi/students?maxChangeVersion=250
 GET /tenant-a/data/ed-fi/students?minChangeVersion=100&maxChangeVersion=250&limit=25&offset=0
 GET /district-100/2026/data/ed-fi/students?minChangeVersion=100
 ```
 
 Semantics:
 
-- when `minChangeVersion` is absent, the route behaves exactly like the current collection GET route
-- when `minChangeVersion` is present, the route switches into changed-resource mode
+- when both `minChangeVersion` and `maxChangeVersion` are absent, the route behaves exactly like the current collection GET route
+- when either `minChangeVersion` or `maxChangeVersion` is present, the route switches into changed-resource mode
 - the payload shape remains the normal resource array returned by the current collection GET route
 - the API returns the latest current representation of each qualifying resource once
 - the API does not return every intermediate mutation
@@ -100,6 +101,7 @@ Example response:
 Delete query semantics:
 
 - results represent deleted resources whose delete `ChangeVersion` falls in the requested window
+- the lower and upper bounds are independently optional, following ODS behavior
 - `id` is the canonical public resource identifier for the deleted item and is sourced from the stored `DocumentUuid`
 - delete rows are ordered deterministically
 - delete rows preserve the natural-key values needed by downstream synchronization clients
@@ -134,13 +136,14 @@ Example response:
 Key change semantics:
 
 - results represent natural-key changes whose key-change `ChangeVersion` falls in the requested window
+- the lower and upper bounds are independently optional, following ODS behavior
 - the route is valid for all change-query-enabled resources
 - resources that support identity updates return key-change rows when qualifying transitions exist
 - resources that do not support identity updates return `200 OK` with an empty array and `totalCount = 0` when `totalCount` is requested
 - `id` is the canonical public resource identifier for the affected item and is sourced from the stored `DocumentUuid`
 - the row `changeVersion` is the public live representation-change stamp from the same committed identity-changing update that produced the key transition; it is not the internal `IdentityVersion`
 - key-change rows are ordered deterministically
-- key-change-query authorization is evaluated before collapse against each tracking row's stored pre-update authorization projection
+- key-change-query authorization is evaluated before collapse against each tracking row's stored pre-update tracked-change authorization data
 - if multiple key changes occur for the same resource inside one window, the API returns one collapsed row with the earliest `oldKeyValues`, the latest `newKeyValues`, and the latest `changeVersion` from the rows that remain after authorization filtering
 - `limit`, `offset`, and `totalCount` on `/keyChanges` apply to that collapsed authorized result set rather than to raw tracking rows
 - key-change rows are authorization-filtered
@@ -180,18 +183,16 @@ The field-name contract is evaluated per routed resource, so different resources
 
 ## `minChangeVersion`
 
-- required to activate changed-resource mode on the collection GET route
-- required for `/deletes`
-- required for `/keyChanges`
+- optional on changed-resource collection GET, `/deletes`, and `/keyChanges`
 - when absent and `maxChangeVersion` is also absent, the collection GET route remains an ordinary non-Change-Query request
+- when absent and `maxChangeVersion` is also absent on `/deletes` or `/keyChanges`, the route returns all retained tracked rows for the routed resource
 - must be a non-negative signed 64-bit integer
 
 ## `maxChangeVersion`
 
 - optional
-- valid only when `minChangeVersion` is also supplied
 - when supplied, must be a non-negative signed 64-bit integer
-- must be greater than or equal to `minChangeVersion`
+- when `minChangeVersion` is also supplied, `maxChangeVersion` must be greater than or equal to `minChangeVersion`
 
 ## `limit`, `offset`, `totalCount`
 
@@ -203,7 +204,7 @@ The field-name contract is evaluated per routed resource, so different resources
 
 ## Window Semantics
 
-The feature uses the Ed-Fi lower-bound-inclusive rule:
+When both bounds are supplied, the feature uses the Ed-Fi lower-bound-inclusive rule:
 
 ```text
 minChangeVersion <= ChangeVersion <= maxChangeVersion
@@ -215,17 +216,28 @@ This rule applies equally to:
 - delete queries
 - key-change queries
 
-When `maxChangeVersion` is omitted, the effective rule is:
+When only `minChangeVersion` is supplied, the effective rule is:
 
 ```text
 minChangeVersion <= ChangeVersion
 ```
 
+When only `maxChangeVersion` is supplied, the effective rule is:
+
+```text
+ChangeVersion <= maxChangeVersion
+```
+
+When neither bound is supplied:
+
+- the collection GET route remains an ordinary non-Change-Query request
+- `/deletes` and `/keyChanges` return all retained tracked rows for the routed resource
+
 `ChangeVersion` values are globally ordered and monotonic, but not guaranteed to be gap-free.
 
 ## Synchronization Algorithm
 
-DMS-843 does not define a client-selectable snapshot or other consistent-read request mode. All requests execute against current committed state.
+DMS-843 does not define a client-selectable snapshot or other consistent-read request mode. All requests execute against current committed state. This is an explicit non-parity choice versus ODS `Use-Snapshot`.
 
 The normative DMS-843 client synchronization flow is:
 
@@ -247,7 +259,7 @@ Implications of this algorithm:
 - those rows may legitimately be returned again on the next pass because the saved watermark is `synchronizationVersion`, not the highest `ChangeVersion` observed during retrieval
 - callers must treat such repeated rows as expected duplicate delivery rather than as a server bug
 
-Bounded windows using `maxChangeVersion` remain supported by the public API for caller-managed partitioning, diagnostics, or specialized workflows, but they are not the normative synchronization algorithm in DMS-843 v1.
+Bounded or max-only windows remain supported by the public API for ODS compatibility, caller-managed partitioning, diagnostics, or specialized workflows, but they are not the normative synchronization algorithm in DMS-843 v1.
 
 The ordering and algorithm above follow the Ed-Fi ODS/API client guidance for change-query synchronization without snapshots.
 
@@ -301,8 +313,6 @@ Required status behavior:
 
 - when Change Queries is disabled and a collection GET request supplies `minChangeVersion` or `maxChangeVersion`, return `400 Bad Request`
 - when Change Queries is disabled and `/deletes`, `/keyChanges`, or `availableChangeVersions` is requested, return `404 Not Found` through the reserved dedicated route rather than by falling through to generic route parsing
-- when `/deletes` or `/keyChanges` is called without `minChangeVersion`, return `400 Bad Request`
-- when `maxChangeVersion` is supplied without `minChangeVersion`, return `400 Bad Request`
 - invalid or negative `minChangeVersion` returns `400 Bad Request`
 - invalid or negative `maxChangeVersion` returns `400 Bad Request`
 - `maxChangeVersion < minChangeVersion` returns `400 Bad Request`
@@ -313,7 +323,9 @@ Required body behavior:
 - error responses use `application/problem+json`
 - all responses include RFC 9457 core members: `type`, `title`, `status`, and `detail`
 - all responses include `correlationId`
+- all responses include `validationErrors`
 - all responses include an `errors` array
+- for the change-query request-validation and replay-floor failures defined below, `validationErrors` is present as an empty object, `{}`, because these failures are request-level contract errors rather than path-keyed document-validation failures
 
 `400 Bad Request` for change-query parameters on the collection GET route when the feature is explicitly disabled:
 
@@ -321,15 +333,8 @@ Required body behavior:
 - `title`: `Change Queries Feature Disabled`
 - `status`: `400`
 - `detail`: `Change Queries is not enabled for this DMS deployment.`
+- `validationErrors`: `{}`
 - `errors`: exactly one entry, `Change query parameters cannot be used because the Change Queries feature is disabled.`
-
-`400 Bad Request` for missing required `minChangeVersion`:
-
-- `type`: `urn:ed-fi:api:change-queries:validation:min-change-version-required`
-- `title`: `Invalid Change Query Request`
-- `status`: `400`
-- `detail`: `The change query parameters are invalid.`
-- `errors`: exactly one entry, `The 'minChangeVersion' parameter is required for this Change Query request.`
 
 `400 Bad Request` for invalid `minChangeVersion`:
 
@@ -337,6 +342,7 @@ Required body behavior:
 - `title`: `Invalid Change Query Request`
 - `status`: `400`
 - `detail`: `The change query parameters are invalid.`
+- `validationErrors`: `{}`
 - `errors`: exactly one entry, `The 'minChangeVersion' parameter must be a non-negative 64-bit integer.`
 
 `400 Bad Request` for invalid `maxChangeVersion`:
@@ -345,15 +351,8 @@ Required body behavior:
 - `title`: `Invalid Change Query Request`
 - `status`: `400`
 - `detail`: `The change query parameters are invalid.`
+- `validationErrors`: `{}`
 - `errors`: exactly one entry, `The 'maxChangeVersion' parameter must be a non-negative 64-bit integer.`
-
-`400 Bad Request` for `maxChangeVersion` without `minChangeVersion`:
-
-- `type`: `urn:ed-fi:api:change-queries:validation:window`
-- `title`: `Invalid Change Query Request`
-- `status`: `400`
-- `detail`: `The change query parameters are invalid.`
-- `errors`: exactly one entry, `The 'maxChangeVersion' parameter cannot be supplied without 'minChangeVersion'.`
 
 `400 Bad Request` for invalid window relationship:
 
@@ -361,6 +360,7 @@ Required body behavior:
 - `title`: `Invalid Change Query Request`
 - `status`: `400`
 - `detail`: `The change query parameters are invalid.`
+- `validationErrors`: `{}`
 - `errors`: exactly one entry, `The 'maxChangeVersion' parameter must be greater than or equal to 'minChangeVersion'.`
 
 `409 Conflict` for replay-floor miss in a later retention phase:
@@ -369,6 +369,7 @@ Required body behavior:
 - `title`: `Change Query Window No Longer Available`
 - `status`: `409`
 - `detail`: `The requested change query window is older than the oldest available change version for complete synchronization. Reinitialize or restart from the advertised replay floor.`
+- `validationErrors`: `{}`
 - `errors`: exactly one entry, `The supplied 'minChangeVersion' is older than the current replay floor.`
 - extension members `requestedMinChangeVersion`, `oldestChangeVersion`, and `newestChangeVersion` are required
 
@@ -387,13 +388,15 @@ Therefore:
 
 - DMS does not claim that `offset` plus `limit` yields a complete synchronization result under concurrent writes
 - the normative synchronization algorithm omits `maxChangeVersion` and persists the pass-start `synchronizationVersion`
-- non-snapshot processing is supported as a best-effort current-state enumeration mode, and clients must tolerate duplicates or gaps and apply compensating controls such as overlap or periodic reinitialization when stronger assurance is required
+- non-snapshot processing is supported as a best-effort current-state enumeration mode, even though max-only and other bounded windows remain API-compatible options, and clients must tolerate duplicates or gaps and apply compensating controls such as overlap or periodic reinitialization when stronger assurance is required
 
 ## Contract Invariants
 
 The public API contract must preserve these invariants:
 
 - existing collection GET callers are unaffected when no change-query parameters are supplied
+- changed-resource mode activates on collection GET when either `minChangeVersion` or `maxChangeVersion` is supplied
+- `/deletes` and `/keyChanges` support independently optional lower and upper bounds, including max-only windows
 - change-query requests fail explicitly when the feature is disabled; DMS never silently downgrades them to ordinary non-change-query requests
 - changed-resource results are deterministically ordered by `ChangeVersion`, `DocumentPartitionKey`, and `DocumentId`
 - delete results are deterministically ordered by `ChangeVersion`, `DocumentPartitionKey`, and `DocumentId`

@@ -2,18 +2,20 @@
 
 ## Design Summary
 
-The feature uses a redesign-aligned update-tracking model centered on the canonical `dms.Document` row, a required narrow live-change journal, and dedicated tracking tables for deletes and key changes.
+The feature uses a redesign-aligned update-tracking and tracked-change-authorization model centered on the canonical `dms.Document` row, a required narrow live-change journal, and dedicated tracking tables for deletes and key changes.
 
 Core required artifacts:
 
 - `dms.ChangeVersionSequence`
 - `dms.ResourceKey`
 - `dms.Document.ResourceKeyId`
+- `dms.Document.CreatedByOwnershipTokenId` when not already present through redesign-auth work
 - `dms.Document.ChangeVersion`
 - `dms.Document.IdentityVersion`
 - `dms.DocumentChangeEvent`
 - `dms.DocumentDeleteTracking`
 - `dms.DocumentKeyChangeTracking`
+- tracked-change authorization-basis columns on delete and key-change rows
 - supporting indexes
 - change-version, identity-version, and journal-maintenance logic
 
@@ -88,6 +90,7 @@ Relevant existing columns include:
 The feature extends this table with:
 
 - `ResourceKeyId`
+- `CreatedByOwnershipTokenId` if not already available on the live row from redesign-auth work
 - `ChangeVersion`
 - `IdentityVersion`
 
@@ -123,6 +126,25 @@ Required semantics:
 - backfill derives `ResourceKeyId` from the row's current `(ProjectName, ResourceName)`
 - current-backend implementations may retain `ProjectName`, `ResourceName`, `ResourceVersion`, and `IsDescriptor` as compatibility or diagnostic copies, but `ResourceKeyId` becomes the required filter key for the live change journal
 - changed-resource candidate selection must key off `ResourceKeyId`, not off wide journal copies of resource identity text
+
+## `dms.Document.CreatedByOwnershipTokenId`
+
+To align tracked changes to redesign ownership-based authorization, the live row must expose `CreatedByOwnershipTokenId`.
+
+If another redesign-auth workstream has not already added this column, DMS-843 must add it as a bridge prerequisite.
+
+One conforming shape is:
+
+```sql
+ALTER TABLE dms.Document
+    ADD COLUMN CreatedByOwnershipTokenId smallint;
+```
+
+Required semantics:
+
+- the live row stores the ownership stamp used by redesign authorization concepts
+- tombstones and key-change rows copy the live row's value so tracked-change authorization can evaluate ownership after deletes or later key changes
+- if historical rows cannot be retroactively assigned an ownership token, null values remain valid persisted state and carry the same authorization implications they do in the redesign authorization model
 
 ## `dms.Document.ChangeVersion`
 
@@ -200,6 +222,21 @@ Identity-change consequence rule:
 
 - when an update changes the resource identity tuple, that write must allocate both a new `ChangeVersion` and a new `IdentityVersion`
 
+## Downstream identity-propagation rules
+
+An identity-changing update can force representation rewrites on dependent documents whose stored representation embeds the changed identity values.
+
+Required semantics:
+
+- the implementation must discover directly referencing documents through a reverse-edge lookup equivalent to the current backend's `dms.Reference`
+- each dependent document whose stored representation changes because of the upstream identity change must receive a new `ChangeVersion`
+- each such dependent representation change must emit a `dms.DocumentChangeEvent` row through the normal journal-maintenance rules
+- a dependent document receives a new `IdentityVersion` only if the dependent document's own identity tuple changes
+- a dependent document writes a key-change tracking row only if the dependent document's own identity tuple changes
+- propagation continues recursively until no more downstream documents require identity-driven rewrites
+
+This is the current-backend bridge equivalent of the redesign's indirect-update semantics. A conforming implementation may realize the propagation with different internal mechanics, but it must preserve the same committed-state outcomes.
+
 ## Trigger Strategy
 
 ## Insert trigger
@@ -266,6 +303,8 @@ CREATE TABLE dms.DocumentDeleteTracking (
     StudentEdOrgResponsibilityAuthorizationIds jsonb NULL,
     ContactStudentSchoolAuthorizationEdOrgIds jsonb NULL,
     StaffEducationOrganizationAuthorizationEdOrgIds jsonb NULL,
+    CreatedByOwnershipTokenId smallint NULL,
+    AuthorizationBasis jsonb NULL,
     DeletedAt timestamp NOT NULL DEFAULT now(),
     PRIMARY KEY (ChangeVersion, DocumentPartitionKey, DocumentId)
 );
@@ -277,9 +316,15 @@ Delete responses must return the resource identifier values clients use for sync
 
 Those values are derived from `ResourceSchema.IdentityJsonPaths`. Persisting them at delete time avoids dependence on a deleted live row or on new schema metadata tables that do not exist in the current backend.
 
-## Why authorization projection is stored
+## Why tracked-change authorization data is stored on tombstones
 
-Delete queries must preserve the same logical authorization semantics as live collection GET queries after the live row and authorization companion rows have been removed. The tombstone therefore stores the authorization projection copied from `dms.Document`.
+Delete queries must preserve ODS-style tracked-change authorization criteria after the live row and relationship rows have been removed.
+
+The tombstone therefore stores:
+
+- the current DMS authorization projection copied from `dms.Document`
+- `CreatedByOwnershipTokenId` for redesign ownership-based authorization
+- row-local `AuthorizationBasis` data containing the resolved basis-resource DocumentIds and other delete-aware relationship inputs needed to evaluate tracked-change authorization after the live row or relationship rows disappear
 
 ## Key Change Tracking
 
@@ -302,6 +347,8 @@ CREATE TABLE dms.DocumentKeyChangeTracking (
     StudentEdOrgResponsibilityAuthorizationIds jsonb NULL,
     ContactStudentSchoolAuthorizationEdOrgIds jsonb NULL,
     StaffEducationOrganizationAuthorizationEdOrgIds jsonb NULL,
+    CreatedByOwnershipTokenId smallint NULL,
+    AuthorizationBasis jsonb NULL,
     ChangedAt timestamp NOT NULL DEFAULT now(),
     PRIMARY KEY (ChangeVersion, DocumentPartitionKey, DocumentId)
 );
@@ -324,9 +371,29 @@ The current live row only contains the latest natural-key state.
 
 Those values cannot be reconstructed from only the current row after additional updates or deletes occur.
 
-## Why key-change authorization projection is stored
+## Why key-change tracked-change authorization data is stored
 
-Key-change results must remain authorization-filtered even if a later delete removes the live row or if later writes move the current resource to a different key state. The tracking row therefore stores the same authorization projection categories copied from the pre-update `dms.Document` row.
+Key-change results must remain authorization-filtered even if a later delete removes the live row or if later writes move the current resource to a different key state.
+
+The tracking row therefore stores:
+
+- the same authorization projection categories copied from the pre-update `dms.Document` row
+- `CreatedByOwnershipTokenId` copied from the pre-update live row
+- row-local `AuthorizationBasis` data containing the resolved basis-resource DocumentIds and other pre-update tracked-change authorization inputs needed by DocumentId-based relationship and custom-view authorization
+
+## `AuthorizationBasis` payload semantics
+
+`AuthorizationBasis` is a resource-scoped JSON document captured on tombstone and key-change rows.
+
+One conforming use of this payload is to preserve the tracked-change authorization inputs that cannot be safely reconstructed from surviving live rows after deletes or later mutations.
+
+Required semantics:
+
+- the payload is interpreted only in the context of the row's routed resource
+- it preserves the basis-resource `DocumentId` values needed for redesign relationship and custom-view authorization checks
+- it preserves any additional delete-aware relationship inputs needed to reproduce ODS tracked-change visibility when the authorizing relationship row has already been deleted
+- it is captured from the same pre-delete or pre-update authorization-resolution pass that determines the row's live authorization state
+- implementations may choose any physical JSON shape that is deterministic for the routed resource and sufficient to reproduce the documented tracked-change authorization outcomes
 
 ## Resource-scoped key payload contract for shared tracking tables
 
@@ -398,7 +465,7 @@ Reason:
 - the application update path already has the resolved `ResourceSchema`
 - the application can derive old and new key values from `ResourceSchema.IdentityJsonPaths`
 - only the application can reliably distinguish a natural-key change from a representation rewrite that leaves identity unchanged
-- the application already has the pre-update authorization projection that this design stores on the key-change row
+- the application already has the pre-update tracked-change authorization data that this design stores on the key-change row
 
 ## Key-change eligibility rules
 
@@ -421,7 +488,7 @@ The tombstone is inserted by application code, not by a database delete trigger.
 
 Reason:
 
-- the application delete path already has the resolved `ResourceSchema`, current `EdfiDoc`, current authorization projection, and resource identity rules
+- the application delete path already has the resolved `ResourceSchema`, current `EdfiDoc`, current tracked-change authorization data, and resource identity rules
 - the database alone does not currently have generic metadata that maps `(ProjectName, ResourceName)` to `identityJsonPaths`
 
 Delete-time extraction rule:
@@ -511,6 +578,18 @@ Purpose:
 
 - support redesign-aligned resource-key joins and diagnostics
 - keep the bridge schema aligned with the backend-redesign live-row shape
+
+## Required ownership support index
+
+```sql
+CREATE INDEX IX_Document_CreatedByOwnershipTokenId
+    ON dms.Document (CreatedByOwnershipTokenId);
+```
+
+Purpose:
+
+- support redesign ownership-based authorization on live reads
+- support efficient capture and validation of tracked-change ownership data
 
 ## Required tombstone index
 
@@ -604,13 +683,15 @@ The bridge design is aligned to backend-redesign change tracking by preserving a
 | Current-backend artifact | Purpose in this design | Backend-redesign relationship |
 | --- | --- | --- |
 | `dms.ResourceKey` plus `dms.Document.ResourceKeyId` | stable resource-type lookup and narrow journal filter key | same resource-key concept already defined in redesign |
+| `dms.Document.CreatedByOwnershipTokenId` | live ownership-based authorization stamp | semantic equivalent of redesign ownership stamp on `dms.Document` |
 | `dms.Document.ChangeVersion` | canonical live-row served token for changed-resource semantics | semantic equivalent of redesign `dms.Document.ContentVersion` |
 | `dms.Document.IdentityVersion` | identity-change stamp for alignment of identity-update tracking | semantic equivalent of redesign `dms.Document.IdentityVersion` |
 | `dms.DocumentChangeEvent` | append-only live-change journal for required `journal + verify` selection | same live-change-journal concept already defined in redesign |
-| `dms.DocumentDeleteTracking` | delete tombstone store with key values and authorization projection | redesign still needs a semantically equivalent delete artifact because `DocumentChangeEvent` does not survive deletes and does not store delete payload |
-| `dms.DocumentKeyChangeTracking` | old/new natural-key transition store with authorization projection | redesign still needs a semantically equivalent key-change artifact because live-row stamps and `DocumentChangeEvent` do not preserve prior key values |
+| `dms.DocumentDeleteTracking` | delete tombstone store with key values and tracked-change authorization data | redesign still needs a semantically equivalent delete artifact because `DocumentChangeEvent` does not survive deletes and does not store delete payload or delete-aware authorization inputs |
+| `dms.DocumentKeyChangeTracking` | old/new natural-key transition store with tracked-change authorization data | redesign still needs a semantically equivalent key-change artifact because live-row stamps and `DocumentChangeEvent` do not preserve prior key values or pre-update tracked-change authorization state |
+| tracked-row `AuthorizationBasis` | row-local basis-resource `DocumentId` inputs for relationship and custom-view authorization after delete or later mutation | bridge artifact required to apply redesign DocumentId-based authorization concepts to tracked changes |
 
-This means the bridge design extends the backend-redesign update-tracking model where necessary for Change Query parity, but it no longer diverges on whether the live journal, resource key, or identity stamp are core artifacts.
+This means the bridge design extends the backend-redesign update-tracking and tracked-change authorization model where necessary for Change Query parity, but it no longer diverges on whether the live journal, resource key, identity stamp, or ownership/basis authorization inputs are core artifacts.
 
 ## Backfill Strategy
 
