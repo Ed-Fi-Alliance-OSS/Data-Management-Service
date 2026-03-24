@@ -328,9 +328,11 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
     {
         return await _database.ExecuteScalarAsync<long>(
             """
+            DECLARE @Inserted TABLE ([DocumentId] bigint);
             INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-            OUTPUT INSERTED.[DocumentId]
+            OUTPUT INSERTED.[DocumentId] INTO @Inserted ([DocumentId])
             VALUES (@documentUuid, @resourceKeyId);
+            SELECT TOP (1) [DocumentId] FROM @Inserted;
             """,
             new SqlParameter("@documentUuid", documentUuid),
             new SqlParameter("@resourceKeyId", resourceKeyId)
@@ -377,9 +379,11 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
     {
         return await _database.ExecuteScalarAsync<long>(
             """
+            DECLARE @Inserted TABLE ([CollectionItemId] bigint);
             INSERT INTO [edfi].[SchoolAddress] ([Ordinal], [School_DocumentId], [City])
-            OUTPUT INSERTED.[CollectionItemId]
+            OUTPUT INSERTED.[CollectionItemId] INTO @Inserted ([CollectionItemId])
             VALUES (@ordinal, @schoolDocumentId, @city);
+            SELECT TOP (1) [CollectionItemId] FROM @Inserted;
             """,
             new SqlParameter("@ordinal", ordinal),
             new SqlParameter("@schoolDocumentId", schoolDocumentId),
@@ -412,9 +416,11 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
     {
         return await _database.ExecuteScalarAsync<long>(
             """
+            DECLARE @Inserted TABLE ([CollectionItemId] bigint);
             INSERT INTO [sample].[SchoolExtensionIntervention] ([Ordinal], [School_DocumentId], [InterventionCode])
-            OUTPUT INSERTED.[CollectionItemId]
+            OUTPUT INSERTED.[CollectionItemId] INTO @Inserted ([CollectionItemId])
             VALUES (@ordinal, @schoolDocumentId, @interventionCode);
+            SELECT TOP (1) [CollectionItemId] FROM @Inserted;
             """,
             new SqlParameter("@ordinal", ordinal),
             new SqlParameter("@schoolDocumentId", schoolDocumentId),
@@ -431,9 +437,11 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
     {
         return await _database.ExecuteScalarAsync<long>(
             """
+            DECLARE @Inserted TABLE ([CollectionItemId] bigint);
             INSERT INTO [edfi].[SchoolAddressPeriod] ([Ordinal], [ParentCollectionItemId], [School_DocumentId], [PeriodName])
-            OUTPUT INSERTED.[CollectionItemId]
+            OUTPUT INSERTED.[CollectionItemId] INTO @Inserted ([CollectionItemId])
             VALUES (@ordinal, @parentCollectionItemId, @schoolDocumentId, @periodName);
+            SELECT TOP (1) [CollectionItemId] FROM @Inserted;
             """,
             new SqlParameter("@ordinal", ordinal),
             new SqlParameter("@parentCollectionItemId", parentCollectionItemId),
@@ -451,9 +459,11 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
     {
         return await _database.ExecuteScalarAsync<long>(
             """
+            DECLARE @Inserted TABLE ([CollectionItemId] bigint);
             INSERT INTO [sample].[SchoolExtensionInterventionVisit] ([Ordinal], [ParentCollectionItemId], [School_DocumentId], [VisitCode])
-            OUTPUT INSERTED.[CollectionItemId]
+            OUTPUT INSERTED.[CollectionItemId] INTO @Inserted ([CollectionItemId])
             VALUES (@ordinal, @parentCollectionItemId, @schoolDocumentId, @visitCode);
+            SELECT TOP (1) [CollectionItemId] FROM @Inserted;
             """,
             new SqlParameter("@ordinal", ordinal),
             new SqlParameter("@parentCollectionItemId", parentCollectionItemId),
@@ -481,9 +491,11 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
 
         return await _database.ExecuteScalarAsync<long>(
             """
+            DECLARE @Inserted TABLE ([CollectionItemId] bigint);
             INSERT INTO [sample].[SchoolExtensionAddressSponsorReference] ([BaseCollectionItemId], [Ordinal], [School_DocumentId], [Program_DocumentId], [Program_ProgramName])
-            OUTPUT INSERTED.[CollectionItemId]
+            OUTPUT INSERTED.[CollectionItemId] INTO @Inserted ([CollectionItemId])
             VALUES (@baseCollectionItemId, @ordinal, @schoolDocumentId, @programDocumentId, @programName);
+            SELECT TOP (1) [CollectionItemId] FROM @Inserted;
             """,
             new SqlParameter("@baseCollectionItemId", baseCollectionItemId),
             new SqlParameter("@ordinal", ordinal),
