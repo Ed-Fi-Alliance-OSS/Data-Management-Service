@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
 using Npgsql;
 using NpgsqlTypes;
@@ -31,6 +32,18 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_A_Focused_Stabl
     private PostgresqlGeneratedDdlFixture _fixture = null!;
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
     private FocusedStableKeySmokeSeedData _seedData = null!;
+    private DbTableModel _schoolTable = null!;
+    private DbTableModel _schoolAddressTable = null!;
+    private DbTableModel _schoolExtensionTable = null!;
+    private DbTableModel _schoolExtensionAddressTable = null!;
+    private DbTableModel _addressPeriodTable = null!;
+    private DbTableModel _interventionTable = null!;
+    private DbTableModel _interventionVisitTable = null!;
+    private DbTableModel _sponsorReferenceTable = null!;
+    private TableConstraint.ForeignKey _addressPeriodForeignKeyDefinition = null!;
+    private TableConstraint.ForeignKey _interventionForeignKeyDefinition = null!;
+    private TableConstraint.ForeignKey _interventionVisitForeignKeyDefinition = null!;
+    private TableConstraint.ForeignKey _sponsorReferenceParentForeignKeyDefinition = null!;
     private IReadOnlyList<PostgresqlForeignKeyMetadata> _addressPeriodForeignKeys = null!;
     private IReadOnlyList<PostgresqlForeignKeyMetadata> _interventionForeignKeys = null!;
     private IReadOnlyList<PostgresqlForeignKeyMetadata> _interventionVisitForeignKeys = null!;
@@ -45,19 +58,82 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_A_Focused_Stabl
         // Reapply the emitted DDL so each smoke test also covers idempotent apply.
         await _database.ApplyGeneratedDdlAsync(_fixture.GeneratedDdl);
 
-        _seedData = await SeedSmokeRowsAsync();
-        _addressPeriodForeignKeys = await _database.GetForeignKeyMetadataAsync("edfi", "SchoolAddressPeriod");
-        _interventionForeignKeys = await _database.GetForeignKeyMetadataAsync(
+        _schoolTable = PostgresqlGeneratedDdlModelLookup.RequireTable(_fixture.ModelSet, "edfi", "School");
+        _schoolAddressTable = PostgresqlGeneratedDdlModelLookup.RequireTable(
+            _fixture.ModelSet,
+            "edfi",
+            "SchoolAddress"
+        );
+        _schoolExtensionTable = PostgresqlGeneratedDdlModelLookup.RequireTable(
+            _fixture.ModelSet,
             "sample",
-            "SchoolExtensionIntervention"
+            "SchoolExtension"
+        );
+        _schoolExtensionAddressTable = PostgresqlGeneratedDdlModelLookup.RequireTable(
+            _fixture.ModelSet,
+            "sample",
+            "SchoolExtensionAddress"
+        );
+        _addressPeriodTable = PostgresqlGeneratedDdlModelLookup.RequireTableByScope(
+            _fixture.ModelSet,
+            "edfi",
+            "$.addresses[*].periods[*]"
+        );
+        _interventionTable = PostgresqlGeneratedDdlModelLookup.RequireTableByScope(
+            _fixture.ModelSet,
+            "sample",
+            "$._ext.sample.interventions[*]"
+        );
+        _interventionVisitTable = PostgresqlGeneratedDdlModelLookup.RequireTableByScope(
+            _fixture.ModelSet,
+            "sample",
+            "$._ext.sample.interventions[*].visits[*]"
+        );
+        _sponsorReferenceTable = PostgresqlGeneratedDdlModelLookup.RequireTableByScope(
+            _fixture.ModelSet,
+            "sample",
+            "$._ext.sample.addresses[*]._ext.sample.sponsorReferences[*]"
+        );
+        _addressPeriodForeignKeyDefinition = PostgresqlGeneratedDdlModelLookup.RequireForeignKey(
+            _addressPeriodTable,
+            _schoolAddressTable.Table,
+            "ParentCollectionItemId",
+            "School_DocumentId"
+        );
+        _interventionForeignKeyDefinition = PostgresqlGeneratedDdlModelLookup.RequireForeignKey(
+            _interventionTable,
+            _schoolExtensionTable.Table,
+            "School_DocumentId"
+        );
+        _interventionVisitForeignKeyDefinition = PostgresqlGeneratedDdlModelLookup.RequireForeignKey(
+            _interventionVisitTable,
+            _interventionTable.Table,
+            "ParentCollectionItemId",
+            "School_DocumentId"
+        );
+        _sponsorReferenceParentForeignKeyDefinition = PostgresqlGeneratedDdlModelLookup.RequireForeignKey(
+            _sponsorReferenceTable,
+            _schoolExtensionAddressTable.Table,
+            "BaseCollectionItemId",
+            "School_DocumentId"
+        );
+
+        _seedData = await SeedSmokeRowsAsync();
+        _addressPeriodForeignKeys = await _database.GetForeignKeyMetadataAsync(
+            _addressPeriodTable.Table.Schema.Value,
+            _addressPeriodTable.Table.Name
+        );
+        _interventionForeignKeys = await _database.GetForeignKeyMetadataAsync(
+            _interventionTable.Table.Schema.Value,
+            _interventionTable.Table.Name
         );
         _interventionVisitForeignKeys = await _database.GetForeignKeyMetadataAsync(
-            "sample",
-            "SchoolExtensionInterventionVisit"
+            _interventionVisitTable.Table.Schema.Value,
+            _interventionVisitTable.Table.Name
         );
         _sponsorReferenceForeignKeys = await _database.GetForeignKeyMetadataAsync(
-            "sample",
-            "SchoolExtensionAddressSponsorReference"
+            _sponsorReferenceTable.Table.Schema.Value,
+            _sponsorReferenceTable.Table.Name
         );
     }
 
@@ -91,52 +167,56 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_A_Focused_Stabl
     [Test]
     public async Task It_should_enforce_immediate_parent_fk_shapes_without_redundant_root_cascade_paths()
     {
+        var interventionForeignKey = _interventionForeignKeys.Single(foreignKey =>
+            foreignKey.ConstraintName == _interventionForeignKeyDefinition.Name
+        );
+
         _interventionForeignKeys.Should().ContainSingle();
-        _interventionForeignKeys
-            .Single()
-            .ConstraintName.Should()
-            .Be("FK_SchoolExtensionIntervention_SchoolExtension");
-        _interventionForeignKeys.Single().Columns.Should().Equal("School_DocumentId");
-        _interventionForeignKeys.Single().ReferencedSchema.Should().Be("sample");
-        _interventionForeignKeys.Single().ReferencedTable.Should().Be("SchoolExtension");
-        _interventionForeignKeys.Single().ReferencedColumns.Should().Equal("DocumentId");
-        _interventionForeignKeys.Single().DeleteAction.Should().Be("CASCADE");
-        _interventionForeignKeys.Single().UpdateAction.Should().Be("NO ACTION");
+        interventionForeignKey.ConstraintName.Should().Be(_interventionForeignKeyDefinition.Name);
+        interventionForeignKey.Columns.Should().Equal("School_DocumentId");
+        interventionForeignKey.ReferencedSchema.Should().Be(_schoolExtensionTable.Table.Schema.Value);
+        interventionForeignKey.ReferencedTable.Should().Be(_schoolExtensionTable.Table.Name);
+        interventionForeignKey.ReferencedColumns.Should().Equal("DocumentId");
+        interventionForeignKey.DeleteAction.Should().Be("CASCADE");
+        interventionForeignKey.UpdateAction.Should().Be("NO ACTION");
         _interventionForeignKeys
             .Should()
             .NotContain(foreignKey =>
-                foreignKey.ReferencedSchema == "edfi" && foreignKey.ReferencedTable == "School"
+                foreignKey.ReferencedSchema == _schoolTable.Table.Schema.Value
+                && foreignKey.ReferencedTable == _schoolTable.Table.Name
             );
 
         var interventionVisitForeignKey = _interventionVisitForeignKeys.Single(foreignKey =>
-            foreignKey.ConstraintName == "FK_SchoolExtensionInterventionVisit_SchoolExtensionIntervention"
+            foreignKey.ConstraintName == _interventionVisitForeignKeyDefinition.Name
         );
 
         interventionVisitForeignKey.Columns.Should().Equal("ParentCollectionItemId", "School_DocumentId");
-        interventionVisitForeignKey.ReferencedSchema.Should().Be("sample");
-        interventionVisitForeignKey.ReferencedTable.Should().Be("SchoolExtensionIntervention");
+        interventionVisitForeignKey.ReferencedSchema.Should().Be(_interventionTable.Table.Schema.Value);
+        interventionVisitForeignKey.ReferencedTable.Should().Be(_interventionTable.Table.Name);
         interventionVisitForeignKey.ReferencedColumns.Should().Equal("CollectionItemId", "School_DocumentId");
         interventionVisitForeignKey.DeleteAction.Should().Be("CASCADE");
         interventionVisitForeignKey.UpdateAction.Should().Be("NO ACTION");
 
         var addressPeriodForeignKey = _addressPeriodForeignKeys.Single(foreignKey =>
-            foreignKey.ConstraintName == "FK_SchoolAddressPeriod_SchoolAddress"
+            foreignKey.ConstraintName == _addressPeriodForeignKeyDefinition.Name
         );
 
         addressPeriodForeignKey.Columns.Should().Equal("ParentCollectionItemId", "School_DocumentId");
-        addressPeriodForeignKey.ReferencedSchema.Should().Be("edfi");
-        addressPeriodForeignKey.ReferencedTable.Should().Be("SchoolAddress");
+        addressPeriodForeignKey.ReferencedSchema.Should().Be(_schoolAddressTable.Table.Schema.Value);
+        addressPeriodForeignKey.ReferencedTable.Should().Be(_schoolAddressTable.Table.Name);
         addressPeriodForeignKey.ReferencedColumns.Should().Equal("CollectionItemId", "School_DocumentId");
         addressPeriodForeignKey.DeleteAction.Should().Be("CASCADE");
         addressPeriodForeignKey.UpdateAction.Should().Be("NO ACTION");
 
         var sponsorReferenceParentForeignKey = _sponsorReferenceForeignKeys.Single(foreignKey =>
-            foreignKey.ConstraintName == "FK_SchoolExtensionAddressSponsorReference_SchoolExte_6ed3e7d5fe"
+            foreignKey.ConstraintName == _sponsorReferenceParentForeignKeyDefinition.Name
         );
 
         sponsorReferenceParentForeignKey.Columns.Should().Equal("BaseCollectionItemId", "School_DocumentId");
-        sponsorReferenceParentForeignKey.ReferencedSchema.Should().Be("sample");
-        sponsorReferenceParentForeignKey.ReferencedTable.Should().Be("SchoolExtensionAddress");
+        sponsorReferenceParentForeignKey
+            .ReferencedSchema.Should()
+            .Be(_schoolExtensionAddressTable.Table.Schema.Value);
+        sponsorReferenceParentForeignKey.ReferencedTable.Should().Be(_schoolExtensionAddressTable.Table.Name);
         sponsorReferenceParentForeignKey
             .ReferencedColumns.Should()
             .Equal("BaseCollectionItemId", "School_DocumentId");
@@ -145,7 +225,8 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_A_Focused_Stabl
         _sponsorReferenceForeignKeys
             .Should()
             .NotContain(foreignKey =>
-                foreignKey.ReferencedSchema == "edfi" && foreignKey.ReferencedTable == "SchoolAddress"
+                foreignKey.ReferencedSchema == _schoolAddressTable.Table.Schema.Value
+                && foreignKey.ReferencedTable == _schoolAddressTable.Table.Name
             );
 
         await AssertForeignKeyViolationAsync(async () =>

@@ -144,7 +144,7 @@
       "Run: dotnet build --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj",
       "If the PostgreSQL integration database is configured, run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Integration Test Cleanup",

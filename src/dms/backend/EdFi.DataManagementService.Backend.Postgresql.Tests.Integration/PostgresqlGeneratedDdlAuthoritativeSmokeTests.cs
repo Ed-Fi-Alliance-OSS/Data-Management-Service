@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
 using Npgsql;
 using NpgsqlTypes;
@@ -27,20 +28,25 @@ internal sealed record AuthoritativeSampleSmokeSeedData(
 public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS_Sample_Fixture_For_Smoke_Coverage
 {
     private const string FixtureRelativePath = "src/dms/backend/Fixtures/authoritative/sample";
-    private const string SchoolExtensionDirectlyOwnedBusConstraintName =
-        "FK_SchoolExtensionDirectlyOwnedBus_SchoolExtension";
-    private const string StudentEducationOrganizationAssociationExtensionAddressConstraintName =
-        "FK_StudentEducationOrganizationAssociationExtensionA_9a76f5ea92";
-    private const string StudentEducationOrganizationAssociationExtensionAddressSchoolDistrictTableName =
-        "StudentEducationOrganizationAssociationExtensionAddr_5c87dfa8dc";
-    private const string StudentEducationOrganizationAssociationExtensionAddressSchoolDistrictConstraintName =
-        "FK_StudentEducationOrganizationAssociationExtensionA_de796ca8e1";
-    private const string StudentEducationOrganizationAssociationExtensionAddressTermConstraintName =
-        "FK_StudentEducationOrganizationAssociationExtensionA_7d01488b71";
 
     private PostgresqlGeneratedDdlFixture _fixture = null!;
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
     private AuthoritativeSampleSmokeSeedData _seedData = null!;
+    private DbTableModel _schoolTable = null!;
+    private DbTableModel _schoolExtensionTable = null!;
+    private DbTableModel _schoolExtensionDirectlyOwnedBusTable = null!;
+    private DbTableModel _studentEducationOrganizationAssociationTable = null!;
+    private DbTableModel _studentEducationOrganizationAssociationAddressTable = null!;
+    private DbTableModel _studentEducationOrganizationAssociationExtensionAddressTable = null!;
+    private DbTableModel _studentEducationOrganizationAssociationExtensionAddressSchoolDistrictTable = null!;
+    private DbTableModel _studentEducationOrganizationAssociationExtensionAddressTermTable = null!;
+    private TableConstraint.ForeignKey _schoolExtensionDirectlyOwnedBusForeignKeyDefinition = null!;
+    private TableConstraint.ForeignKey _studentEducationOrganizationAssociationExtensionAddressForeignKeyDefinition =
+        null!;
+    private TableConstraint.ForeignKey _studentEducationOrganizationAssociationExtensionAddressSchoolDistrictForeignKeyDefinition =
+        null!;
+    private TableConstraint.ForeignKey _studentEducationOrganizationAssociationExtensionAddressTermForeignKeyDefinition =
+        null!;
     private IReadOnlyList<PostgresqlForeignKeyMetadata> _schoolExtensionDirectlyOwnedBusForeignKeys = null!;
     private IReadOnlyList<PostgresqlForeignKeyMetadata> _studentEducationOrganizationAssociationExtensionAddressForeignKeys =
         null!;
@@ -62,48 +68,123 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         // Reapply the emitted DDL so each smoke test also covers idempotent apply.
         await _database.ApplyGeneratedDdlAsync(_fixture.GeneratedDdl);
 
-        _seedData = await SeedSmokeRowsAsync();
-        _schoolExtensionDirectlyOwnedBusForeignKeys = await _database.GetForeignKeyMetadataAsync(
+        _schoolTable = PostgresqlGeneratedDdlModelLookup.RequireTable(_fixture.ModelSet, "edfi", "School");
+        _schoolExtensionTable = PostgresqlGeneratedDdlModelLookup.RequireTable(
+            _fixture.ModelSet,
             "sample",
-            "SchoolExtensionDirectlyOwnedBus"
+            "SchoolExtension"
         );
-        _studentEducationOrganizationAssociationExtensionAddressForeignKeys =
-            await _database.GetForeignKeyMetadataAsync(
+        _schoolExtensionDirectlyOwnedBusTable = PostgresqlGeneratedDdlModelLookup.RequireTableByScope(
+            _fixture.ModelSet,
+            "sample",
+            "$._ext.sample.directlyOwnedBuses[*]"
+        );
+        _studentEducationOrganizationAssociationTable = PostgresqlGeneratedDdlModelLookup.RequireTable(
+            _fixture.ModelSet,
+            "edfi",
+            "StudentEducationOrganizationAssociation"
+        );
+        _studentEducationOrganizationAssociationAddressTable = PostgresqlGeneratedDdlModelLookup.RequireTable(
+            _fixture.ModelSet,
+            "edfi",
+            "StudentEducationOrganizationAssociationAddress"
+        );
+        _studentEducationOrganizationAssociationExtensionAddressTable =
+            PostgresqlGeneratedDdlModelLookup.RequireTable(
+                _fixture.ModelSet,
                 "sample",
                 "StudentEducationOrganizationAssociationExtensionAddress"
             );
-        _studentEducationOrganizationAssociationExtensionAddressSchoolDistrictForeignKeys =
-            await _database.GetForeignKeyMetadataAsync(
+        _studentEducationOrganizationAssociationExtensionAddressSchoolDistrictTable =
+            PostgresqlGeneratedDdlModelLookup.RequireTableByScopeAndColumns(
+                _fixture.ModelSet,
                 "sample",
-                StudentEducationOrganizationAssociationExtensionAddressSchoolDistrictTableName
+                "$._ext.sample.addresses[*]._ext.sample.schoolDistricts[*]",
+                "StudentEducationOrganizationAssociation_DocumentId",
+                "SchoolDistrict"
             );
-        _studentEducationOrganizationAssociationExtensionAddressTermForeignKeys =
-            await _database.GetForeignKeyMetadataAsync(
+        _studentEducationOrganizationAssociationExtensionAddressTermTable =
+            PostgresqlGeneratedDdlModelLookup.RequireTable(
+                _fixture.ModelSet,
                 "sample",
                 "StudentEducationOrganizationAssociationExtensionAddressTerm"
             );
+        _schoolExtensionDirectlyOwnedBusForeignKeyDefinition =
+            PostgresqlGeneratedDdlModelLookup.RequireForeignKey(
+                _schoolExtensionDirectlyOwnedBusTable,
+                _schoolExtensionTable.Table,
+                "School_DocumentId"
+            );
+        _studentEducationOrganizationAssociationExtensionAddressForeignKeyDefinition =
+            PostgresqlGeneratedDdlModelLookup.RequireForeignKey(
+                _studentEducationOrganizationAssociationExtensionAddressTable,
+                _studentEducationOrganizationAssociationAddressTable.Table,
+                "BaseCollectionItemId",
+                "StudentEducationOrganizationAssociation_DocumentId"
+            );
+        _studentEducationOrganizationAssociationExtensionAddressSchoolDistrictForeignKeyDefinition =
+            PostgresqlGeneratedDdlModelLookup.RequireForeignKey(
+                _studentEducationOrganizationAssociationExtensionAddressSchoolDistrictTable,
+                _studentEducationOrganizationAssociationExtensionAddressTable.Table,
+                "BaseCollectionItemId",
+                "StudentEducationOrganizationAssociation_DocumentId"
+            );
+        _studentEducationOrganizationAssociationExtensionAddressTermForeignKeyDefinition =
+            PostgresqlGeneratedDdlModelLookup.RequireForeignKey(
+                _studentEducationOrganizationAssociationExtensionAddressTermTable,
+                _studentEducationOrganizationAssociationExtensionAddressTable.Table,
+                "BaseCollectionItemId",
+                "StudentEducationOrganizationAssociation_DocumentId"
+            );
+
+        _seedData = await SeedSmokeRowsAsync();
+        _schoolExtensionDirectlyOwnedBusForeignKeys = await _database.GetForeignKeyMetadataAsync(
+            _schoolExtensionDirectlyOwnedBusTable.Table.Schema.Value,
+            _schoolExtensionDirectlyOwnedBusTable.Table.Name
+        );
+        _studentEducationOrganizationAssociationExtensionAddressForeignKeys =
+            await _database.GetForeignKeyMetadataAsync(
+                _studentEducationOrganizationAssociationExtensionAddressTable.Table.Schema.Value,
+                _studentEducationOrganizationAssociationExtensionAddressTable.Table.Name
+            );
+        _studentEducationOrganizationAssociationExtensionAddressSchoolDistrictForeignKeys =
+            await _database.GetForeignKeyMetadataAsync(
+                _studentEducationOrganizationAssociationExtensionAddressSchoolDistrictTable
+                    .Table
+                    .Schema
+                    .Value,
+                _studentEducationOrganizationAssociationExtensionAddressSchoolDistrictTable.Table.Name
+            );
+        _studentEducationOrganizationAssociationExtensionAddressTermForeignKeys =
+            await _database.GetForeignKeyMetadataAsync(
+                _studentEducationOrganizationAssociationExtensionAddressTermTable.Table.Schema.Value,
+                _studentEducationOrganizationAssociationExtensionAddressTermTable.Table.Name
+            );
 
         _schoolExtensionDirectlyOwnedBusCollectionItemDefault = await _database.GetColumnDefaultAsync(
-            "sample",
-            "SchoolExtensionDirectlyOwnedBus",
+            _schoolExtensionDirectlyOwnedBusTable.Table.Schema.Value,
+            _schoolExtensionDirectlyOwnedBusTable.Table.Name,
             "CollectionItemId"
         );
         _studentEducationOrganizationAssociationAddressCollectionItemDefault =
             await _database.GetColumnDefaultAsync(
-                "edfi",
-                "StudentEducationOrganizationAssociationAddress",
+                _studentEducationOrganizationAssociationAddressTable.Table.Schema.Value,
+                _studentEducationOrganizationAssociationAddressTable.Table.Name,
                 "CollectionItemId"
             );
         _studentEducationOrganizationAssociationExtensionAddressSchoolDistrictCollectionItemDefault =
             await _database.GetColumnDefaultAsync(
-                "sample",
-                StudentEducationOrganizationAssociationExtensionAddressSchoolDistrictTableName,
+                _studentEducationOrganizationAssociationExtensionAddressSchoolDistrictTable
+                    .Table
+                    .Schema
+                    .Value,
+                _studentEducationOrganizationAssociationExtensionAddressSchoolDistrictTable.Table.Name,
                 "CollectionItemId"
             );
         _studentEducationOrganizationAssociationExtensionAddressTermCollectionItemDefault =
             await _database.GetColumnDefaultAsync(
-                "sample",
-                "StudentEducationOrganizationAssociationExtensionAddressTerm",
+                _studentEducationOrganizationAssociationExtensionAddressTermTable.Table.Schema.Value,
+                _studentEducationOrganizationAssociationExtensionAddressTermTable.Table.Name,
                 "CollectionItemId"
             );
     }
@@ -168,34 +249,42 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     public async Task It_should_enforce_immediate_parent_fk_shapes_for_root_and_collection_aligned_extension_relationships()
     {
         var schoolExtensionDirectlyOwnedBusForeignKey = _schoolExtensionDirectlyOwnedBusForeignKeys.Single(
-            foreignKey => foreignKey.ConstraintName == SchoolExtensionDirectlyOwnedBusConstraintName
+            foreignKey =>
+                foreignKey.ConstraintName == _schoolExtensionDirectlyOwnedBusForeignKeyDefinition.Name
         );
 
         schoolExtensionDirectlyOwnedBusForeignKey.Columns.Should().Equal("School_DocumentId");
-        schoolExtensionDirectlyOwnedBusForeignKey.ReferencedSchema.Should().Be("sample");
-        schoolExtensionDirectlyOwnedBusForeignKey.ReferencedTable.Should().Be("SchoolExtension");
+        schoolExtensionDirectlyOwnedBusForeignKey
+            .ReferencedSchema.Should()
+            .Be(_schoolExtensionTable.Table.Schema.Value);
+        schoolExtensionDirectlyOwnedBusForeignKey
+            .ReferencedTable.Should()
+            .Be(_schoolExtensionTable.Table.Name);
         schoolExtensionDirectlyOwnedBusForeignKey.ReferencedColumns.Should().Equal("DocumentId");
         schoolExtensionDirectlyOwnedBusForeignKey.DeleteAction.Should().Be("CASCADE");
         schoolExtensionDirectlyOwnedBusForeignKey.UpdateAction.Should().Be("NO ACTION");
         _schoolExtensionDirectlyOwnedBusForeignKeys
             .Should()
             .NotContain(foreignKey =>
-                foreignKey.ReferencedSchema == "edfi" && foreignKey.ReferencedTable == "School"
+                foreignKey.ReferencedSchema == _schoolTable.Table.Schema.Value
+                && foreignKey.ReferencedTable == _schoolTable.Table.Name
             );
 
         var alignedExtensionAddressForeignKey =
             _studentEducationOrganizationAssociationExtensionAddressForeignKeys.Single(foreignKey =>
                 foreignKey.ConstraintName
-                == StudentEducationOrganizationAssociationExtensionAddressConstraintName
+                == _studentEducationOrganizationAssociationExtensionAddressForeignKeyDefinition.Name
             );
 
         alignedExtensionAddressForeignKey
             .Columns.Should()
             .Equal("BaseCollectionItemId", "StudentEducationOrganizationAssociation_DocumentId");
-        alignedExtensionAddressForeignKey.ReferencedSchema.Should().Be("edfi");
+        alignedExtensionAddressForeignKey
+            .ReferencedSchema.Should()
+            .Be(_studentEducationOrganizationAssociationAddressTable.Table.Schema.Value);
         alignedExtensionAddressForeignKey
             .ReferencedTable.Should()
-            .Be("StudentEducationOrganizationAssociationAddress");
+            .Be(_studentEducationOrganizationAssociationAddressTable.Table.Name);
         alignedExtensionAddressForeignKey
             .ReferencedColumns.Should()
             .Equal("CollectionItemId", "StudentEducationOrganizationAssociation_DocumentId");
@@ -204,24 +293,27 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         _studentEducationOrganizationAssociationExtensionAddressForeignKeys
             .Should()
             .NotContain(foreignKey =>
-                foreignKey.ReferencedSchema == "edfi"
-                && foreignKey.ReferencedTable == "StudentEducationOrganizationAssociation"
+                foreignKey.ReferencedSchema
+                    == _studentEducationOrganizationAssociationTable.Table.Schema.Value
+                && foreignKey.ReferencedTable == _studentEducationOrganizationAssociationTable.Table.Name
             );
 
         var extensionAddressSchoolDistrictForeignKey =
             _studentEducationOrganizationAssociationExtensionAddressSchoolDistrictForeignKeys.Single(
                 foreignKey =>
                     foreignKey.ConstraintName
-                    == StudentEducationOrganizationAssociationExtensionAddressSchoolDistrictConstraintName
+                    == _studentEducationOrganizationAssociationExtensionAddressSchoolDistrictForeignKeyDefinition.Name
             );
 
         extensionAddressSchoolDistrictForeignKey
             .Columns.Should()
             .Equal("BaseCollectionItemId", "StudentEducationOrganizationAssociation_DocumentId");
-        extensionAddressSchoolDistrictForeignKey.ReferencedSchema.Should().Be("sample");
+        extensionAddressSchoolDistrictForeignKey
+            .ReferencedSchema.Should()
+            .Be(_studentEducationOrganizationAssociationExtensionAddressTable.Table.Schema.Value);
         extensionAddressSchoolDistrictForeignKey
             .ReferencedTable.Should()
-            .Be("StudentEducationOrganizationAssociationExtensionAddress");
+            .Be(_studentEducationOrganizationAssociationExtensionAddressTable.Table.Name);
         extensionAddressSchoolDistrictForeignKey
             .ReferencedColumns.Should()
             .Equal("BaseCollectionItemId", "StudentEducationOrganizationAssociation_DocumentId");
@@ -230,23 +322,27 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         _studentEducationOrganizationAssociationExtensionAddressSchoolDistrictForeignKeys
             .Should()
             .NotContain(foreignKey =>
-                foreignKey.ReferencedSchema == "edfi"
-                && foreignKey.ReferencedTable == "StudentEducationOrganizationAssociationAddress"
+                foreignKey.ReferencedSchema
+                    == _studentEducationOrganizationAssociationAddressTable.Table.Schema.Value
+                && foreignKey.ReferencedTable
+                    == _studentEducationOrganizationAssociationAddressTable.Table.Name
             );
 
         var extensionAddressTermForeignKey =
             _studentEducationOrganizationAssociationExtensionAddressTermForeignKeys.Single(foreignKey =>
                 foreignKey.ConstraintName
-                == StudentEducationOrganizationAssociationExtensionAddressTermConstraintName
+                == _studentEducationOrganizationAssociationExtensionAddressTermForeignKeyDefinition.Name
             );
 
         extensionAddressTermForeignKey
             .Columns.Should()
             .Equal("BaseCollectionItemId", "StudentEducationOrganizationAssociation_DocumentId");
-        extensionAddressTermForeignKey.ReferencedSchema.Should().Be("sample");
+        extensionAddressTermForeignKey
+            .ReferencedSchema.Should()
+            .Be(_studentEducationOrganizationAssociationExtensionAddressTable.Table.Schema.Value);
         extensionAddressTermForeignKey
             .ReferencedTable.Should()
-            .Be("StudentEducationOrganizationAssociationExtensionAddress");
+            .Be(_studentEducationOrganizationAssociationExtensionAddressTable.Table.Name);
         extensionAddressTermForeignKey
             .ReferencedColumns.Should()
             .Equal("BaseCollectionItemId", "StudentEducationOrganizationAssociation_DocumentId");
@@ -255,8 +351,10 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         _studentEducationOrganizationAssociationExtensionAddressTermForeignKeys
             .Should()
             .NotContain(foreignKey =>
-                foreignKey.ReferencedSchema == "edfi"
-                && foreignKey.ReferencedTable == "StudentEducationOrganizationAssociationAddress"
+                foreignKey.ReferencedSchema
+                    == _studentEducationOrganizationAssociationAddressTable.Table.Schema.Value
+                && foreignKey.ReferencedTable
+                    == _studentEducationOrganizationAssociationAddressTable.Table.Name
             );
 
         await AssertForeignKeyViolationAsync(async () =>
@@ -326,7 +424,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
         (
             await CountRowsAsync(
-                $"""SELECT COUNT(*) FROM "sample"."{StudentEducationOrganizationAssociationExtensionAddressSchoolDistrictTableName}" WHERE "BaseCollectionItemId" = @baseCollectionItemId;""",
+                $"""SELECT COUNT(*) FROM "sample"."{_studentEducationOrganizationAssociationExtensionAddressSchoolDistrictTable.Table.Name}" WHERE "BaseCollectionItemId" = @baseCollectionItemId;""",
                 new NpgsqlParameter(
                     "baseCollectionItemId",
                     _seedData.StudentEducationOrganizationAssociationAddressCollectionItemId
@@ -766,7 +864,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     {
         return await _database.ExecuteScalarAsync<long>(
             $"""
-            INSERT INTO "sample"."{StudentEducationOrganizationAssociationExtensionAddressSchoolDistrictTableName}" (
+            INSERT INTO "sample"."{_studentEducationOrganizationAssociationExtensionAddressSchoolDistrictTable.Table.Name}" (
                 "BaseCollectionItemId",
                 "Ordinal",
                 "StudentEducationOrganizationAssociation_DocumentId",
