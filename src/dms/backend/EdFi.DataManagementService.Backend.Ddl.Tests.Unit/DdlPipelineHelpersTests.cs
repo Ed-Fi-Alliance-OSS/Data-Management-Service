@@ -75,6 +75,16 @@ internal static class DdlPipelineHelperTestModelLookup
     }
 }
 
+internal static class DdlPipelineHelperConstraintLookup
+{
+    public static TableConstraint.Unique FindUniqueConstraint(DbTableModel table, params string[] columns)
+    {
+        return table
+            .Constraints.OfType<TableConstraint.Unique>()
+            .Single(constraint => constraint.Columns.Select(column => column.Value).SequenceEqual(columns));
+    }
+}
+
 [TestFixture]
 public class Given_DdlPipelineHelpers_With_Small_Ext_Fixture_Without_Semantic_Identity
 {
@@ -194,5 +204,97 @@ public class Given_DdlPipelineHelpers_With_Small_Nested_Fixture_Without_Semantic
             .Should()
             .Equal("CollectionItemId", "School_DocumentId");
         _combinedSql.Should().Contain("\"ParentCollectionItemId\" bigint NOT NULL");
+    }
+}
+
+[TestFixture(SqlDialect.Pgsql)]
+[TestFixture(SqlDialect.Mssql)]
+public class Given_DdlPipelineHelpers_With_Focused_Stable_Key_Negative_Fixture_Without_Semantic_Identity(
+    SqlDialect dialect
+)
+{
+    private const string FixturePath =
+        "Fixtures/focused-stable-key/negative/missing-semantic-identity/fixture.manifest.json";
+
+    private DerivedRelationalModelSet _modelSet = null!;
+    private string _combinedSql = null!;
+
+    [OneTimeSetUp]
+    public void Setup()
+    {
+        var effectiveSchemaSet = FocusedStableKeyFixtureEffectiveSchemaSetLoader.Load(FixturePath);
+        (_modelSet, _combinedSql) = DdlPipelineHelpers.BuildDdlForDialect(effectiveSchemaSet, dialect);
+    }
+
+    [Test]
+    public void It_should_build_ddl_without_reintroducing_global_semantic_identity_fail_fast()
+    {
+        var schoolAddress = DdlPipelineHelperTestModelLookup.FindTable(_modelSet, "SchoolAddress");
+
+        schoolAddress.IdentityMetadata.TableKind.Should().Be(DbTableKind.Collection);
+        schoolAddress.IdentityMetadata.SemanticIdentityBindings.Should().BeEmpty();
+        schoolAddress.Constraints.OfType<TableConstraint.Unique>().Should().HaveCount(1);
+        DdlPipelineHelperConstraintLookup.FindUniqueConstraint(schoolAddress, "School_DocumentId", "Ordinal");
+        _combinedSql.Should().Contain("SchoolAddress");
+    }
+}
+
+[TestFixture(SqlDialect.Pgsql)]
+[TestFixture(SqlDialect.Mssql)]
+public class Given_DdlPipelineHelpers_With_Focused_Stable_Key_Positive_Fixture(SqlDialect dialect)
+{
+    private const string FixturePath =
+        "Fixtures/focused-stable-key/positive/extension-child-collections/fixture.manifest.json";
+
+    private DerivedRelationalModelSet _modelSet = null!;
+    private string _combinedSql = null!;
+
+    [OneTimeSetUp]
+    public void Setup()
+    {
+        var effectiveSchemaSet = FocusedStableKeyFixtureEffectiveSchemaSetLoader.Load(FixturePath);
+        (_modelSet, _combinedSql) = DdlPipelineHelpers.BuildDdlForDialect(effectiveSchemaSet, dialect);
+    }
+
+    [Test]
+    public void It_should_emit_unique_constraints_from_compiled_semantic_identity_metadata()
+    {
+        AssertSemanticIdentityUnique(
+            "SchoolAddressPeriod",
+            ["PeriodName"],
+            "ParentCollectionItemId",
+            "PeriodName"
+        );
+        AssertSemanticIdentityUnique(
+            "SchoolExtensionIntervention",
+            ["InterventionCode"],
+            "School_DocumentId",
+            "InterventionCode"
+        );
+        AssertSemanticIdentityUnique(
+            "SchoolExtensionAddressSponsorReference",
+            ["Program_DocumentId"],
+            "BaseCollectionItemId",
+            "Program_DocumentId"
+        );
+    }
+
+    private void AssertSemanticIdentityUnique(
+        string tableName,
+        IReadOnlyList<string> expectedBindingColumns,
+        params string[] expectedUniqueColumns
+    )
+    {
+        var table = DdlPipelineHelperTestModelLookup.FindTable(_modelSet, tableName);
+        var uniqueConstraint = DdlPipelineHelperConstraintLookup.FindUniqueConstraint(
+            table,
+            expectedUniqueColumns
+        );
+
+        table
+            .IdentityMetadata.SemanticIdentityBindings.Select(static binding => binding.ColumnName.Value)
+            .Should()
+            .Equal(expectedBindingColumns);
+        _combinedSql.Should().Contain(uniqueConstraint.Name);
     }
 }
