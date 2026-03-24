@@ -4,12 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text;
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.RelationalModel.Manifest;
-using EdFi.DataManagementService.Core.ApiSchema;
-using EdFi.DataManagementService.Core.Startup;
-using Microsoft.Extensions.Logging.Abstractions;
+using EdFi.DataManagementService.Backend.Tests.Common;
 
 namespace EdFi.DataManagementService.Backend.Ddl.Tests.Unit;
 
@@ -39,13 +36,11 @@ public static class FixtureRunner
         }
         Directory.CreateDirectory(actualDir);
 
-        // Load ApiSchema.json files from inputs/
-        var inputsDir = Path.Combine(fixtureDirectory, "inputs");
-        var nodes = LoadSchemaNodes(config, inputsDir);
-
         // Build the dialect-independent EffectiveSchemaSet
-        var builder = CreateEffectiveSchemaSetBuilder();
-        var effectiveSchemaSet = builder.Build(nodes);
+        var effectiveSchemaSet = EffectiveSchemaFixtureLoader.LoadEffectiveSchemaSet(
+            fixtureDirectory,
+            config.ApiSchemaFiles
+        );
         var effectiveSchemaInfo = effectiveSchemaSet.EffectiveSchema;
 
         // Build DDL and write per-dialect outputs
@@ -89,45 +84,6 @@ public static class FixtureRunner
 
         return actualDir;
     }
-
-    private static ApiSchemaDocumentNodes LoadSchemaNodes(FixtureConfig config, string inputsDir)
-    {
-        var corePath = Path.Combine(inputsDir, config.ApiSchemaFiles[0]);
-        var coreNode =
-            JsonNode.Parse(File.ReadAllText(corePath))
-            ?? throw new InvalidOperationException($"Core schema parsed to null: {corePath}");
-
-        var extensionNodes = config
-            .ApiSchemaFiles.Skip(1)
-            .Select(relativePath =>
-            {
-                var fullPath = Path.Combine(inputsDir, relativePath);
-                return JsonNode.Parse(File.ReadAllText(fullPath))
-                    ?? throw new InvalidOperationException($"Extension schema parsed to null: {fullPath}");
-            })
-            .ToArray();
-
-        var rawNodes = new ApiSchemaDocumentNodes(coreNode, extensionNodes);
-
-        // Normalize inputs to match CLI pipeline (ApiSchemaFileLoader.Load → Normalize)
-        var normalizer = new ApiSchemaInputNormalizer(NullLogger<ApiSchemaInputNormalizer>.Instance);
-        var normalizationResult = normalizer.Normalize(rawNodes);
-
-        if (normalizationResult is not ApiSchemaNormalizationResult.SuccessResult success)
-        {
-            throw new InvalidOperationException(
-                $"ApiSchema normalization failed for fixture inputs: {normalizationResult}"
-            );
-        }
-
-        return success.NormalizedNodes;
-    }
-
-    private static EffectiveSchemaSetBuilder CreateEffectiveSchemaSetBuilder() =>
-        new(
-            new EffectiveSchemaHashProvider(NullLogger<EffectiveSchemaHashProvider>.Instance),
-            new ResourceKeySeedProvider(NullLogger<ResourceKeySeedProvider>.Instance)
-        );
 
     private static List<SqlDialect> ParseDialects(string[] dialectNames) =>
         dialectNames
