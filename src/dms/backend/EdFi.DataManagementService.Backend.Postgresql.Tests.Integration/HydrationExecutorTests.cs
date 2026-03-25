@@ -361,3 +361,125 @@ public class Given_A_Single_DocumentId_Keyset
         await cmd.ExecuteNonQueryAsync();
     }
 }
+
+[TestFixture]
+public class Given_A_Query_With_TotalCount_Requested
+{
+    private NpgsqlDataSource _dataSource = null!;
+    private HydratedPage _result = null!;
+
+    private const string TestSchema = "hydcount";
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        _dataSource = NpgsqlDataSource.Create(Configuration.DatabaseConnectionString);
+
+        await using var connection = await _dataSource.OpenConnectionAsync();
+
+        await ExecuteSql(
+            connection,
+            """
+            DROP SCHEMA IF EXISTS hydcount CASCADE;
+            CREATE SCHEMA hydcount;
+            CREATE SCHEMA IF NOT EXISTS dms;
+
+            CREATE TABLE IF NOT EXISTS dms."Document" (
+                "DocumentId" bigint PRIMARY KEY,
+                "DocumentUuid" uuid NOT NULL,
+                "ResourceKeyId" smallint NOT NULL DEFAULT 0,
+                "ContentVersion" bigint NOT NULL DEFAULT 1,
+                "IdentityVersion" bigint NOT NULL DEFAULT 1,
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
+                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
+                "CreatedAt" timestamptz NOT NULL DEFAULT now()
+            );
+
+            CREATE TABLE hydcount."School" (
+                "DocumentId" bigint PRIMARY KEY,
+                "SchoolId" integer NOT NULL
+            );
+            """
+        );
+
+        await ExecuteSql(
+            connection,
+            """
+            DELETE FROM dms."Document" WHERE "DocumentId" IN (301, 302, 303);
+
+            INSERT INTO dms."Document" ("DocumentId", "DocumentUuid")
+            VALUES
+                (301, 'eeeeeeee-5555-5555-5555-eeeeeeeeeeee'),
+                (302, 'ffffffff-6666-6666-6666-ffffffffffff'),
+                (303, '11111111-7777-7777-7777-111111111111');
+
+            INSERT INTO hydcount."School" ("DocumentId", "SchoolId")
+            VALUES (301, 900001), (302, 900002), (303, 900003);
+            """
+        );
+
+        var plan = HydrationTestHelper.BuildSchoolReadPlan(TestSchema, SqlDialect.Pgsql);
+
+        var keyset = new PageKeysetSpec.Query(
+            new PageDocumentIdSqlPlan(
+                PageDocumentIdSql: """
+                SELECT "DocumentId" FROM hydcount."School"
+                ORDER BY "DocumentId"
+                LIMIT @limit OFFSET @offset
+                """,
+                TotalCountSql: "SELECT COUNT(1) FROM hydcount.\"School\"",
+                PageParametersInOrder:
+                [
+                    new QuerySqlParameter(QuerySqlParameterRole.Offset, "offset"),
+                    new QuerySqlParameter(QuerySqlParameterRole.Limit, "limit"),
+                ],
+                TotalCountParametersInOrder: []
+            ),
+            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 2L }
+        );
+
+        await using var hydrationConnection = await _dataSource.OpenConnectionAsync();
+        _result = await HydrationExecutor.ExecuteAsync(
+            hydrationConnection,
+            plan,
+            keyset,
+            SqlDialect.Pgsql,
+            CancellationToken.None
+        );
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_dataSource is not null)
+        {
+            await using var connection = await _dataSource.OpenConnectionAsync();
+            await ExecuteSql(
+                connection,
+                """
+                DROP SCHEMA IF EXISTS hydcount CASCADE;
+                DELETE FROM dms."Document" WHERE "DocumentId" IN (301, 302, 303);
+                """
+            );
+            await _dataSource.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public void It_returns_total_count()
+    {
+        _result.TotalCount.Should().Be(3);
+    }
+
+    [Test]
+    public void It_returns_only_the_paged_documents()
+    {
+        _result.DocumentMetadata.Should().HaveCount(2);
+    }
+
+    private static async Task ExecuteSql(NpgsqlConnection connection, string sql)
+    {
+        await using var cmd = new NpgsqlCommand(sql, connection);
+        await cmd.ExecuteNonQueryAsync();
+    }
+}

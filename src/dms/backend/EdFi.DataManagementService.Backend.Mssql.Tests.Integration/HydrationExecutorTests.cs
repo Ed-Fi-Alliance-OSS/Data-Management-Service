@@ -350,3 +350,123 @@ public class Given_A_Single_DocumentId_Keyset_Mssql
         await cmd.ExecuteNonQueryAsync();
     }
 }
+
+[TestFixture]
+public class Given_A_Query_With_TotalCount_Requested_Mssql
+{
+    private string _databaseName = null!;
+    private string _connectionString = null!;
+    private HydratedPage _result = null!;
+
+    private const string TestSchema = "hydcount";
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore("MSSQL connection string not configured.");
+        }
+
+        _databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
+        MssqlTestDatabaseHelper.CreateDatabase(_databaseName);
+        _connectionString = MssqlTestDatabaseHelper.BuildConnectionString(_databaseName);
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        await ExecuteSql(
+            connection,
+            """
+            IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'dms') EXEC('CREATE SCHEMA [dms]');
+            IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'hydcount') EXEC('CREATE SCHEMA [hydcount]');
+
+            CREATE TABLE dms.Document (
+                DocumentId bigint PRIMARY KEY,
+                DocumentUuid uniqueidentifier NOT NULL,
+                ContentVersion bigint NOT NULL DEFAULT 1,
+                IdentityVersion bigint NOT NULL DEFAULT 1,
+                ContentLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
+                IdentityLastModifiedAt datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
+            );
+
+            CREATE TABLE hydcount.School (
+                DocumentId bigint PRIMARY KEY,
+                SchoolId int NOT NULL
+            );
+            """
+        );
+
+        await ExecuteSql(
+            connection,
+            """
+            INSERT INTO dms.Document (DocumentId, DocumentUuid)
+            VALUES
+                (301, 'eeeeeeee-5555-5555-5555-eeeeeeeeeeee'),
+                (302, 'ffffffff-6666-6666-6666-ffffffffffff'),
+                (303, '11111111-7777-7777-7777-111111111111');
+
+            INSERT INTO hydcount.School (DocumentId, SchoolId)
+            VALUES (301, 900001), (302, 900002), (303, 900003);
+            """
+        );
+
+        var plan = HydrationTestHelper.BuildSchoolReadPlan(TestSchema, SqlDialect.Mssql);
+
+        var keyset = new PageKeysetSpec.Query(
+            new PageDocumentIdSqlPlan(
+                PageDocumentIdSql: """
+                SELECT DocumentId FROM hydcount.School
+                ORDER BY DocumentId
+                OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
+                """,
+                TotalCountSql: "SELECT COUNT(1) FROM hydcount.School",
+                PageParametersInOrder:
+                [
+                    new QuerySqlParameter(QuerySqlParameterRole.Offset, "offset"),
+                    new QuerySqlParameter(QuerySqlParameterRole.Limit, "limit"),
+                ],
+                TotalCountParametersInOrder: []
+            ),
+            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 2L }
+        );
+
+        await using var hydrationConnection = new SqlConnection(_connectionString);
+        await hydrationConnection.OpenAsync();
+
+        _result = await HydrationExecutor.ExecuteAsync(
+            hydrationConnection,
+            plan,
+            keyset,
+            SqlDialect.Mssql,
+            CancellationToken.None
+        );
+    }
+
+    [OneTimeTearDown]
+    public void OneTimeTearDown()
+    {
+        if (_databaseName is not null && MssqlTestDatabaseHelper.IsConfigured())
+        {
+            MssqlTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+        }
+    }
+
+    [Test]
+    public void It_returns_total_count()
+    {
+        _result.TotalCount.Should().Be(3);
+    }
+
+    [Test]
+    public void It_returns_only_the_paged_documents()
+    {
+        _result.DocumentMetadata.Should().HaveCount(2);
+    }
+
+    private static async Task ExecuteSql(SqlConnection connection, string sql)
+    {
+        await using var cmd = new SqlCommand(sql, connection);
+        await cmd.ExecuteNonQueryAsync();
+    }
+}

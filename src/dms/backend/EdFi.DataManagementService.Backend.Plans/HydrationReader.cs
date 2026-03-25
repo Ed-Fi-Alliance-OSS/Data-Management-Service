@@ -32,7 +32,9 @@ public static class HydrationReader
             );
         }
 
-        return reader.GetInt64(0);
+        // SQL Server COUNT() returns int; PostgreSQL COUNT() returns bigint.
+        // Convert.ToInt64 handles both without an InvalidCastException.
+        return Convert.ToInt64(reader.GetValue(0));
     }
 
     /// <summary>
