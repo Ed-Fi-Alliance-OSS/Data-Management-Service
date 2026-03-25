@@ -6,4 +6,8 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\EdFi.DataManagementService.Backend.External\EdFi.DataManagementService.Backend.External.csproj" />
+        <ProjectReference Include="..\..\core\EdFi.DataManagementService.Core\EdFi.DataManagementService.Core.csproj" />
+    </ItemGroup>
 </Project>

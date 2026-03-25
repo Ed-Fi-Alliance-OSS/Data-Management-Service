@@ -127,6 +127,28 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         _ddl.Should().Contain("CREATE SEQUENCE IF NOT EXISTS \"dms\".\"ChangeVersionSequence\"");
     }
 
+    [Test]
+    public void It_should_create_collection_item_id_sequence()
+    {
+        _ddl.Should().Contain("CREATE SEQUENCE IF NOT EXISTS \"dms\".\"CollectionItemIdSequence\"");
+    }
+
+    [Test]
+    public void It_should_emit_collection_item_id_sequence_before_tables()
+    {
+        var sequence = _ddl.IndexOf(
+            "CREATE SEQUENCE IF NOT EXISTS \"dms\".\"CollectionItemIdSequence\"",
+            StringComparison.Ordinal
+        );
+        var firstTable = _ddl.IndexOf(
+            "CREATE TABLE IF NOT EXISTS \"dms\".\"Descriptor\"",
+            StringComparison.Ordinal
+        );
+
+        sequence.Should().BeGreaterThan(0);
+        sequence.Should().BeLessThan(firstTable);
+    }
+
     // ── Functions ───────────────────────────────────────────────────
 
     [Test]
@@ -634,6 +656,26 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     {
         _ddl.Should().Contain("sys.sequences");
         _ddl.Should().Contain("[dms].[ChangeVersionSequence]");
+    }
+
+    [Test]
+    public void It_should_create_collection_item_id_sequence_with_catalog_check()
+    {
+        _ddl.Should().Contain("sys.sequences");
+        _ddl.Should().Contain("[dms].[CollectionItemIdSequence]");
+    }
+
+    [Test]
+    public void It_should_emit_collection_item_id_sequence_before_tables()
+    {
+        var sequence = _ddl.IndexOf(
+            "CREATE SEQUENCE [dms].[CollectionItemIdSequence]",
+            StringComparison.Ordinal
+        );
+        var firstTable = _ddl.IndexOf("CREATE TABLE [dms].[Descriptor]", StringComparison.Ordinal);
+
+        sequence.Should().BeGreaterThan(0);
+        sequence.Should().BeLessThan(firstTable);
     }
 
     // ── Functions ───────────────────────────────────────────────────
