@@ -94,19 +94,16 @@ public abstract class SchemaIntrospectorBase : ISchemaIntrospector
         Func<DbDataReader, T> projector
     )
     {
-        var command = connection.CreateCommand();
+        using var command = connection.CreateCommand();
         command.CommandText = sqlTemplate.Replace("{SCHEMA_FILTER}", filterFragment);
         addFilterParams(command);
-        using (command)
-        using (var reader = command.ExecuteReader())
+        using var reader = command.ExecuteReader();
+        var results = new List<T>();
+        while (reader.Read())
         {
-            var results = new List<T>();
-            while (reader.Read())
-            {
-                results.Add(projector(reader));
-            }
-            return results;
+            results.Add(projector(reader));
         }
+        return results;
     }
 
     private static List<T> ExecuteQuery<T>(
@@ -268,7 +265,7 @@ public abstract class SchemaIntrospectorBase : ISchemaIntrospector
                 r.GetString(r.GetOrdinal("table_name")),
                 r.GetString(r.GetOrdinal("index_name")),
                 r.GetString(r.GetOrdinal("column_name")),
-                r.GetByte(r.GetOrdinal("ordinal_position"))));
+                r.GetInt32(r.GetOrdinal("ordinal_position"))));
 
     private static List<IndexEntry> AssembleIndexes(List<RawIndex> indexes, List<RawIndexColumn> columns)
     {

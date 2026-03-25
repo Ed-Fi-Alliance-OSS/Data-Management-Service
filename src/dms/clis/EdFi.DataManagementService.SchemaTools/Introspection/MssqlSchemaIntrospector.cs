@@ -188,7 +188,7 @@ public class MssqlSchemaIntrospector : SchemaIntrospectorBase
                     t.name AS table_name,
                     i.name AS index_name,
                     c.name AS column_name,
-                    ic.key_ordinal AS ordinal_position
+                    CAST(ic.key_ordinal AS INT) AS ordinal_position
                 FROM sys.index_columns ic
                 JOIN sys.indexes i ON i.object_id = ic.object_id AND i.index_id = ic.index_id
                 JOIN sys.tables t ON t.object_id = i.object_id
