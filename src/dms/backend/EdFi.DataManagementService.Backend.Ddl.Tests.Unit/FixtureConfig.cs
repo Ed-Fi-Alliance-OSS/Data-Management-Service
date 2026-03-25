@@ -6,6 +6,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using EdFi.DataManagementService.Backend.Tests.Common;
 
 namespace EdFi.DataManagementService.Backend.Ddl.Tests.Unit;
 
@@ -40,7 +41,7 @@ public static class FixtureConfigReader
     /// Absolute path to the fixture directory (must contain fixture.json and inputs/).
     /// </param>
     /// <returns>A validated <see cref="FixtureConfig"/>.</returns>
-    public static FixtureConfig Read(string fixtureDirectory)
+    public static FixtureConfig Read(string fixtureDirectory, string? repositoryRoot = null)
     {
         var fixturePath = Path.Combine(fixtureDirectory, "fixture.json");
 
@@ -72,7 +73,7 @@ public static class FixtureConfigReader
             JsonSerializer.Deserialize<FixtureConfig>(json, _jsonOptions)
             ?? throw new InvalidOperationException($"Failed to deserialize fixture.json: {fixturePath}");
 
-        Validate(config, fixtureDirectory);
+        Validate(config, fixtureDirectory, repositoryRoot);
 
         // Normalize dialect names to lowercase so consumers don't have to worry about case.
         // FixtureRunner writes files using DialectLabel() which always returns lowercase,
@@ -85,7 +86,7 @@ public static class FixtureConfigReader
         return config;
     }
 
-    private static void Validate(FixtureConfig config, string fixtureDirectory)
+    private static void Validate(FixtureConfig config, string fixtureDirectory, string? repositoryRoot)
     {
         if (config.ApiSchemaFiles is null)
         {
@@ -137,34 +138,9 @@ public static class FixtureConfigReader
             );
         }
 
-        var inputsDir = Path.Combine(fixtureDirectory, "inputs");
-        var resolvedInputsDir = Path.GetFullPath(inputsDir);
-
         foreach (var schemaFile in config.ApiSchemaFiles)
         {
-            if (Path.IsPathRooted(schemaFile))
-            {
-                throw new InvalidOperationException(
-                    $"apiSchemaFiles must be relative paths, but got rooted path: '{schemaFile}'"
-                );
-            }
-
-            var resolvedPath = Path.GetFullPath(Path.Combine(inputsDir, schemaFile));
-            var relativePath = Path.GetRelativePath(resolvedInputsDir, resolvedPath);
-
-            if (relativePath.StartsWith("..", StringComparison.Ordinal))
-            {
-                throw new InvalidOperationException(
-                    $"apiSchemaFiles path escapes the inputs/ directory: '{schemaFile}'"
-                );
-            }
-
-            if (!File.Exists(resolvedPath))
-            {
-                throw new FileNotFoundException(
-                    $"ApiSchema file declared in fixture.json not found: {resolvedPath}"
-                );
-            }
+            _ = FixturePathResolver.ResolveFixtureInputPath(fixtureDirectory, schemaFile, repositoryRoot);
         }
     }
 }

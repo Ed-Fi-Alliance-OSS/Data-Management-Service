@@ -685,3 +685,92 @@ public class Given_A_Fixture_Json_Only_In_Inputs_Directory
         act.Should().Throw<FileNotFoundException>().WithMessage("*fixture.json*");
     }
 }
+
+[TestFixture]
+public class Given_A_Fixture_Json_With_A_Repository_Relative_Input_Path
+{
+    private FixtureConfig _config = default!;
+    private string _tempDir = default!;
+    private string _tempRepositoryRoot = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _tempRepositoryRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        _tempDir = Path.Combine(_tempRepositoryRoot, "fixture");
+
+        Directory.CreateDirectory(_tempDir);
+        Directory.CreateDirectory(Path.Combine(_tempRepositoryRoot, "shared"));
+
+        File.WriteAllText(Path.Combine(_tempRepositoryRoot, "shared", "ApiSchema.json"), "{}");
+
+        File.WriteAllText(
+            Path.Combine(_tempDir, "fixture.json"),
+            """
+            {
+              "apiSchemaFiles": ["repo:shared/ApiSchema.json"],
+              "dialects": ["pgsql"]
+            }
+            """
+        );
+
+        _config = FixtureConfigReader.Read(_tempDir, _tempRepositoryRoot);
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        if (Directory.Exists(_tempRepositoryRoot))
+        {
+            Directory.Delete(_tempRepositoryRoot, recursive: true);
+        }
+    }
+
+    [Test]
+    public void It_should_allow_shared_repo_relative_inputs()
+    {
+        _config.ApiSchemaFiles.Should().BeEquivalentTo("repo:shared/ApiSchema.json");
+    }
+}
+
+[TestFixture]
+public class Given_A_Fixture_Json_With_A_Repository_Relative_Path_Traversal
+{
+    private string _tempDir = default!;
+    private string _tempRepositoryRoot = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _tempRepositoryRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+        _tempDir = Path.Combine(_tempRepositoryRoot, "fixture");
+
+        Directory.CreateDirectory(_tempDir);
+
+        File.WriteAllText(
+            Path.Combine(_tempDir, "fixture.json"),
+            """
+            {
+              "apiSchemaFiles": ["repo:../outside/ApiSchema.json"],
+              "dialects": ["pgsql"]
+            }
+            """
+        );
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        if (Directory.Exists(_tempRepositoryRoot))
+        {
+            Directory.Delete(_tempRepositoryRoot, recursive: true);
+        }
+    }
+
+    [Test]
+    public void It_should_throw_InvalidOperationException()
+    {
+        var act = () => FixtureConfigReader.Read(_tempDir, _tempRepositoryRoot);
+        act.Should().Throw<InvalidOperationException>().WithMessage("*repository root*");
+    }
+}

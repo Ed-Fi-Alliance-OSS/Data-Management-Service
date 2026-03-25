@@ -5,6 +5,7 @@
 
 using System.Globalization;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.RelationalModel.Naming;
 
 namespace EdFi.DataManagementService.Backend.Ddl;
 
@@ -215,7 +216,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
         foreach (var column in table.Columns)
         {
-            definitions.Add(RenderColumnDefinition(column));
+            definitions.Add(RenderColumnDefinition(table, column));
         }
 
         if (table.Key.Columns.Count > 0)
@@ -259,7 +260,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// Renders a column definition based on its storage type.
     /// Stored columns emit a normal column definition; UnifiedAlias columns emit a computed column.
     /// </summary>
-    private string RenderColumnDefinition(DbColumnModel column)
+    private string RenderColumnDefinition(DbTableModel table, DbColumnModel column)
     {
         var type = ResolveColumnType(column);
 
@@ -273,7 +274,25 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             );
         }
 
-        return _dialect.RenderColumnDefinition(column.ColumnName, type, column.IsNullable);
+        var defaultExpression = ResolveDefaultExpression(table, column);
+
+        return _dialect.RenderColumnDefinition(column.ColumnName, type, column.IsNullable, defaultExpression);
+    }
+
+    private string? ResolveDefaultExpression(DbTableModel table, DbColumnModel column)
+    {
+        return UsesCollectionItemSequenceDefault(table, column)
+            ? _dialect.RenderSequenceDefaultExpression(
+                DmsTableNames.DmsSchema,
+                DmsTableNames.CollectionItemIdSequence
+            )
+            : null;
+    }
+
+    private static bool UsesCollectionItemSequenceDefault(DbTableModel table, DbColumnModel column)
+    {
+        return column.ColumnName.Equals(RelationalNameConventions.CollectionItemIdColumnName)
+            && table.IdentityMetadata.TableKind is DbTableKind.Collection or DbTableKind.ExtensionCollection;
     }
 
     /// <summary>

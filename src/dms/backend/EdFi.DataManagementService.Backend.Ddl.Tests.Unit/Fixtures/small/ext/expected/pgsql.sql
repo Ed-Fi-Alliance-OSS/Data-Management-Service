@@ -34,6 +34,8 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 CREATE SEQUENCE IF NOT EXISTS "dms"."ChangeVersionSequence" START WITH 1;
 
+CREATE SEQUENCE IF NOT EXISTS "dms"."CollectionItemIdSequence" START WITH 1;
+
 -- ==========================================================
 -- Phase 4: Functions and Types
 -- ==========================================================
@@ -478,7 +480,7 @@ CREATE TABLE IF NOT EXISTS "sample"."SchoolExtensionAddress"
 
 CREATE TABLE IF NOT EXISTS "edfi"."SchoolAddress"
 (
-    "CollectionItemId" bigint NOT NULL,
+    "CollectionItemId" bigint NOT NULL DEFAULT nextval('"dms"."CollectionItemIdSequence"'),
     "Ordinal" integer NOT NULL,
     "School_DocumentId" bigint NOT NULL,
     "Street" varchar(100) NOT NULL,

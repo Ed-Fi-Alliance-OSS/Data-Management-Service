@@ -83,7 +83,10 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     /// Gets the default expression for generating change/version values from the core change-version sequence.
     /// </summary>
     private string SequenceDefault =>
-        _dialect.RenderSequenceDefaultExpression(DmsTableNames.DmsSchema, "ChangeVersionSequence");
+        _dialect.RenderSequenceDefaultExpression(
+            DmsTableNames.DmsSchema,
+            DmsTableNames.ChangeVersionSequence
+        );
 
     /// <summary>
     /// Generates the complete core <c>dms.*</c> DDL script for the configured dialect.
@@ -154,6 +157,21 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         writer.WritePhaseHeader(3, "Sequences");
 
         EmitChangeVersionSequence(writer);
+        EmitCollectionItemIdSequence(writer);
+    }
+
+    /// <summary>
+    /// Emits the collection-item sequence used for stable collection row identity defaults.
+    /// </summary>
+    private void EmitCollectionItemIdSequence(SqlWriter writer)
+    {
+        writer.AppendLine(
+            _dialect.CreateSequenceIfNotExists(
+                DmsTableNames.DmsSchema,
+                DmsTableNames.CollectionItemIdSequence
+            )
+        );
+        writer.AppendLine();
     }
 
     /// <summary>
@@ -162,7 +180,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     private void EmitChangeVersionSequence(SqlWriter writer)
     {
         writer.AppendLine(
-            _dialect.CreateSequenceIfNotExists(DmsTableNames.DmsSchema, "ChangeVersionSequence")
+            _dialect.CreateSequenceIfNotExists(DmsTableNames.DmsSchema, DmsTableNames.ChangeVersionSequence)
         );
         writer.AppendLine();
     }

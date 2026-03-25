@@ -1,0 +1,8 @@
+{
+  "apiSchemaFiles": [
+    "repo:src/dms/backend/Fixtures/authoritative/ds-5.2/inputs/ds-5.2-api-schema-authoritative.json",
+    "sample-api-schema-authoritative.json"
+  ],
+  "dialects": ["pgsql", "mssql"],
+  "emitDdlManifest": true
+}

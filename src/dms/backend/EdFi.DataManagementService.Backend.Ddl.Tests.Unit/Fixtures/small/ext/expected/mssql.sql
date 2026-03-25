@@ -34,6 +34,13 @@ IF NOT EXISTS (
 )
 CREATE SEQUENCE [dms].[ChangeVersionSequence] START WITH 1;
 
+IF NOT EXISTS (
+    SELECT 1 FROM sys.sequences s
+    JOIN sys.schemas sch ON s.schema_id = sch.schema_id
+    WHERE sch.name = N'dms' AND s.name = N'CollectionItemIdSequence'
+)
+CREATE SEQUENCE [dms].[CollectionItemIdSequence] START WITH 1;
+
 -- ==========================================================
 -- Phase 4: Functions and Types
 -- ==========================================================
@@ -462,7 +469,7 @@ CREATE TABLE [sample].[SchoolExtensionAddress]
 IF OBJECT_ID(N'edfi.SchoolAddress', N'U') IS NULL
 CREATE TABLE [edfi].[SchoolAddress]
 (
-    [CollectionItemId] bigint NOT NULL,
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [School_DocumentId] bigint NOT NULL,
     [Street] nvarchar(100) NOT NULL,

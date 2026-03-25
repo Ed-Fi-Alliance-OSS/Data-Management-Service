@@ -15,8 +15,16 @@ public class Given_A_Focused_Stable_Key_Positive_Fixture_For_Extension_Child_Col
     private const string FixturePath =
         "Fixtures/focused-stable-key/positive/extension-child-collections/fixture.manifest.json";
     private static readonly QualifiedResourceName _schoolResource = new("Ed-Fi", "School");
+    private static readonly string[] _expectedStableKeyFkSupportIndexSignatures =
+    [
+        "edfi.SchoolAddressPeriod|ParentCollectionItemId|School_DocumentId",
+        "sample.SchoolExtensionAddressSponsorReference|BaseCollectionItemId|School_DocumentId",
+        "sample.SchoolExtensionAddressSponsorReference|Program_DocumentId|Program_ProgramName",
+        "sample.SchoolExtensionInterventionVisit|ParentCollectionItemId|School_DocumentId",
+    ];
 
     private IReadOnlyDictionary<string, DbTableModel> _tablesByScope = null!;
+    private IReadOnlyList<DbIndexInfo> _indexesInCreateOrder = null!;
 
     [SetUp]
     public void Setup()
@@ -30,6 +38,7 @@ public class Given_A_Focused_Stable_Key_Positive_Fixture_For_Extension_Child_Col
         _tablesByScope = schoolModel.RelationalModel.TablesInDependencyOrder.ToDictionary(table =>
             table.JsonScope.Canonical
         );
+        _indexesInCreateOrder = modelSet.IndexesInCreateOrder;
     }
 
     [Test]
@@ -172,6 +181,28 @@ public class Given_A_Focused_Stable_Key_Positive_Fixture_For_Extension_Child_Col
             .IdentityMetadata.SemanticIdentityBindings.Select(static binding => binding.ColumnName.Value)
             .Should()
             .Equal("Program_DocumentId");
+    }
+
+    [Test]
+    public void It_should_derive_canonical_FK_support_indexes_for_stable_key_parent_chains()
+    {
+        var stableKeyFkSupportIndexes = _indexesInCreateOrder
+            .Where(index =>
+                index.Kind == DbIndexKind.ForeignKeySupport
+                && index.Table.Name
+                    is "SchoolAddressPeriod"
+                        or "SchoolExtensionAddress"
+                        or "SchoolExtensionAddressSponsorReference"
+                        or "SchoolExtensionIntervention"
+                        or "SchoolExtensionInterventionVisit"
+            )
+            .Select(index =>
+                $"{index.Table.Schema.Value}.{index.Table.Name}|"
+                + $"{string.Join("|", index.KeyColumns.Select(static column => column.Value))}"
+            )
+            .ToArray();
+
+        stableKeyFkSupportIndexes.Should().Equal(_expectedStableKeyFkSupportIndexSignatures);
     }
 
     private DbTableModel RequireTable(string scope)
