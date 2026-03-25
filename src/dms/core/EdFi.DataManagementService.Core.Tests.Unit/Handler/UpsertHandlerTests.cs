@@ -14,7 +14,6 @@ using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Security;
 using FakeItEasy;
 using FluentAssertions;
-using Json.More;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using Polly;
@@ -81,35 +80,30 @@ public class UpsertHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public static readonly string BadResourceName1 = "BadResourceName1";
-            public static readonly string BadResourceName2 = "BadResourceName2";
-            private static readonly BaseResourceInfo _badResource1 = new(
+            private static readonly BaseResourceInfo _targetResource = new(
                 new ProjectName("ed-fi"),
-                new ResourceName(BadResourceName1),
-                false
-            );
-            private static readonly BaseResourceInfo _badResource2 = new(
-                new ProjectName("ed-fi"),
-                new ResourceName(BadResourceName2),
+                new ResourceName("School"),
                 false
             );
 
             public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
             {
+                var sharedReferentialId = new ReferentialId(Guid.NewGuid());
+
                 return Task.FromResult<UpsertResult>(
                     new UpsertFailureReference([
                         new(
-                            Path: new JsonPath("$.badResource1Reference"),
-                            TargetResource: _badResource1,
+                            Path: new JsonPath("$.schoolReference"),
+                            TargetResource: _targetResource,
                             DocumentIdentity: new([]),
-                            ReferentialId: new(Guid.NewGuid()),
+                            ReferentialId: sharedReferentialId,
                             Reason: DocumentReferenceFailureReason.Missing
                         ),
                         new(
-                            Path: new JsonPath("$.badResource2Reference"),
-                            TargetResource: _badResource2,
+                            Path: new JsonPath("$.sessionReference.schoolReference"),
+                            TargetResource: _targetResource,
                             DocumentIdentity: new([]),
-                            ReferentialId: new(Guid.NewGuid()),
+                            ReferentialId: sharedReferentialId,
                             Reason: DocumentReferenceFailureReason.Missing
                         ),
                     ])
@@ -131,14 +125,26 @@ public class UpsertHandlerTests
         public void It_has_the_correct_response()
         {
             requestInfo.FrontendResponse.StatusCode.Should().Be(409);
-            requestInfo
-                .FrontendResponse.Body?.AsJsonString()
+
+            var body = requestInfo.FrontendResponse.Body!.AsObject();
+            body["detail"]!
+                .GetValue<string>()
                 .Should()
-                .Be(
-                    """
-                    {"detail":"The referenced BadResourceName1, BadResourceName2 item(s) do not exist.","type":"urn:ed-fi:api:data-conflict:unresolved-reference","title":"Unresolved Reference","status":409,"correlationId":"","validationErrors":{},"errors":[]}
-                    """
-                );
+                .Be("One or more references could not be resolved. See 'validationErrors' for details.");
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:data-conflict:unresolved-reference");
+            body["title"]!.GetValue<string>().Should().Be("Unresolved Reference");
+
+            var validationErrors = body["validationErrors"]!.AsObject();
+            validationErrors.Count.Should().Be(2);
+            validationErrors["$.schoolReference"]![0]!
+                .GetValue<string>()
+                .Should()
+                .Be("The referenced School item does not exist.");
+            validationErrors["$.sessionReference.schoolReference"]![0]!
+                .GetValue<string>()
+                .Should()
+                .Be("The referenced School item does not exist.");
+            body["errors"]!.AsArray().Count.Should().Be(0);
             requestInfo.FrontendResponse.Headers.Should().BeEmpty();
             requestInfo.FrontendResponse.LocationHeaderPath.Should().BeNull();
         }

@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
@@ -121,7 +122,9 @@ internal class UpsertHandler(
             UpsertFailureReference failure => new(
                 StatusCode: 409,
                 Body: ForInvalidReferences(
-                    failure.GetResourceNames(),
+                    ValidationErrorFactory.BuildInvalidReferenceValidationErrors(
+                        failure.InvalidDocumentReferences
+                    ),
                     traceId: requestInfo.FrontendRequest.TraceId
                 ),
                 Headers: []

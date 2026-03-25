@@ -15,7 +15,6 @@ using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Security;
 using FakeItEasy;
 using FluentAssertions;
-using Json.More;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using Polly;
@@ -122,7 +121,7 @@ public class UpdateByIdHandlerTests
         {
             requestInfo.FrontendResponse.StatusCode.Should().Be(404);
             requestInfo
-                .FrontendResponse.Body?.AsJsonString()
+                .FrontendResponse.Body?.ToJsonString()
                 .Should()
                 .Be(
                     """"
@@ -138,22 +137,30 @@ public class UpdateByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public static readonly string ResponseBody = "ReferencingDocumentInfo";
             private static readonly BaseResourceInfo _targetResource = new(
                 new ProjectName("ed-fi"),
-                new ResourceName(ResponseBody),
+                new ResourceName("School"),
                 false
             );
 
             public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
             {
+                var sharedReferentialId = new ReferentialId(Guid.NewGuid());
+
                 return Task.FromResult<UpdateResult>(
                     new UpdateFailureReference([
                         new(
-                            Path: new JsonPath("$.referencingDocument"),
+                            Path: new JsonPath("$.schoolReference"),
                             TargetResource: _targetResource,
                             DocumentIdentity: new([]),
-                            ReferentialId: new(Guid.NewGuid()),
+                            ReferentialId: sharedReferentialId,
+                            Reason: DocumentReferenceFailureReason.Missing
+                        ),
+                        new(
+                            Path: new JsonPath("$.sessionReference.schoolReference"),
+                            TargetResource: _targetResource,
+                            DocumentIdentity: new([]),
+                            ReferentialId: sharedReferentialId,
                             Reason: DocumentReferenceFailureReason.Missing
                         ),
                     ])
@@ -175,7 +182,26 @@ public class UpdateByIdHandlerTests
         public void It_has_the_correct_response()
         {
             requestInfo.FrontendResponse.StatusCode.Should().Be(409);
-            requestInfo.FrontendResponse.Body?.ToJsonString().Should().Contain(Repository.ResponseBody);
+
+            var body = requestInfo.FrontendResponse.Body!.AsObject();
+            body["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be("One or more references could not be resolved. See 'validationErrors' for details.");
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:data-conflict:unresolved-reference");
+            body["title"]!.GetValue<string>().Should().Be("Unresolved Reference");
+
+            var validationErrors = body["validationErrors"]!.AsObject();
+            validationErrors.Count.Should().Be(2);
+            validationErrors["$.schoolReference"]![0]!
+                .GetValue<string>()
+                .Should()
+                .Be("The referenced School item does not exist.");
+            validationErrors["$.sessionReference.schoolReference"]![0]!
+                .GetValue<string>()
+                .Should()
+                .Be("The referenced School item does not exist.");
+            body["errors"]!.AsArray().Count.Should().Be(0);
         }
     }
 

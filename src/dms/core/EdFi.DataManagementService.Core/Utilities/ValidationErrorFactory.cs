@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using static EdFi.DataManagementService.Core.Response.FailureResponse;
@@ -60,6 +61,16 @@ internal static class ValidationErrorFactory
         );
     }
 
+    public static Dictionary<string, string[]> BuildInvalidReferenceValidationErrors(
+        IEnumerable<DocumentReferenceFailure> invalidDocumentReferences
+    ) =>
+        invalidDocumentReferences
+            .GroupBy(failure => failure.Path.Value)
+            .ToDictionary(
+                grouping => grouping.Key,
+                grouping => grouping.Select(BuildInvalidReferenceMessage).Distinct().ToArray()
+            );
+
     /// <summary>
     /// Converts an ordinal number to its string representation (1st, 2nd, 3rd, etc.)
     /// </summary>
@@ -79,4 +90,16 @@ internal static class ValidationErrorFactory
             _ => $"{number}th",
         };
     }
+
+    private static string BuildInvalidReferenceMessage(DocumentReferenceFailure failure) =>
+        failure.Reason switch
+        {
+            DocumentReferenceFailureReason.Missing =>
+                $"The referenced {failure.TargetResource.ResourceName.Value} item does not exist.",
+            DocumentReferenceFailureReason.IncompatibleTargetType =>
+                $"The referenced {failure.TargetResource.ResourceName.Value} item is not compatible with this reference.",
+            _ => throw new InvalidOperationException(
+                $"Unsupported document reference failure reason '{failure.Reason}'."
+            ),
+        };
 }

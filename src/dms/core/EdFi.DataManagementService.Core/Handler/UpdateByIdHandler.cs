@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
@@ -128,7 +129,9 @@ internal class UpdateByIdHandler(
             UpdateFailureReference failure => new FrontendResponse(
                 StatusCode: 409,
                 Body: FailureResponse.ForInvalidReferences(
-                    failure.GetResourceNames(),
+                    ValidationErrorFactory.BuildInvalidReferenceValidationErrors(
+                        failure.InvalidDocumentReferences
+                    ),
                     traceId: requestInfo.FrontendRequest.TraceId
                 ),
                 Headers: []
