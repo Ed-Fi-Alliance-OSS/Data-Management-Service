@@ -13,9 +13,9 @@ namespace EdFi.DataManagementService.Backend.Ddl;
 /// </summary>
 internal static class AuthTriggerBodyEmitter
 {
-    private static readonly DbTableName _authTable = AuthTableNames.EdOrgIdToEdOrgId;
-    private static readonly DbColumnName _sourceCol = AuthTableNames.SourceEdOrgId;
-    private static readonly DbColumnName _targetCol = AuthTableNames.TargetEdOrgId;
+    private static readonly DbTableName _authTable = AuthNames.EdOrgIdToEdOrgId;
+    private static readonly DbColumnName _sourceCol = AuthNames.SourceEdOrgId;
+    private static readonly DbColumnName _targetCol = AuthNames.TargetEdOrgId;
 
     /// <summary>
     /// Groups dialect-specific pseudo-table parameters for trigger body emission.

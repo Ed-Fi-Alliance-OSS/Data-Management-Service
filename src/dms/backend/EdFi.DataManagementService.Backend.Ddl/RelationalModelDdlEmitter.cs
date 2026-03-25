@@ -101,7 +101,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
         // Phase 1: Schemas (includes auth schema when hierarchy is present)
         var additionalSchemas = authHierarchy is { EntitiesInNameOrder.Count: > 0 }
-            ? [AuthTableNames.AuthSchema]
+            ? [AuthNames.AuthSchema]
             : Array.Empty<DbSchemaName>();
         EmitSchemas(writer, schemas, additionalSchemas);
 
@@ -118,8 +118,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         // Phase 5: Indexes
         EmitIndexes(writer, indexes);
 
-        // Phase 6: Abstract Union Views (must precede Triggers per design)
+        // Phase 6: Views (must precede Triggers per design)
         EmitAbstractUnionViews(writer, abstractUnionViews);
+        EmitPeopleAuthViews(writer, authHierarchy);
 
         // Phase 7: Triggers (includes auth hierarchy triggers)
         EmitTriggers(writer, triggers);
@@ -183,9 +184,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             return;
         }
 
-        var authTable = AuthTableNames.EdOrgIdToEdOrgId;
-        var sourceCol = AuthTableNames.SourceEdOrgId;
-        var targetCol = AuthTableNames.TargetEdOrgId;
+        var authTable = AuthNames.EdOrgIdToEdOrgId;
+        var sourceCol = AuthNames.SourceEdOrgId;
+        var targetCol = AuthNames.TargetEdOrgId;
 
         writer.AppendLine(_dialect.CreateTableHeader(authTable));
         writer.AppendLine("(");
@@ -1818,29 +1819,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private void EmitCreateView(SqlWriter writer, AbstractUnionViewInfo viewInfo)
     {
-        // CREATE OR ALTER must be the first statement in a T-SQL batch; emit GO separator
-        // when the dialect uses the CreateOrAlter pattern (e.g., MSSQL).
-        if (_dialect.ViewCreationPattern == DdlPattern.CreateOrAlter)
-        {
-            writer.AppendLine("GO");
-        }
-
-        // Determine view creation pattern based on dialect
-        var createKeyword = _dialect.ViewCreationPattern switch
-        {
-            DdlPattern.CreateOrReplace => "CREATE OR REPLACE VIEW",
-            DdlPattern.CreateOrAlter => "CREATE OR ALTER VIEW",
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(_dialect.ViewCreationPattern),
-                _dialect.ViewCreationPattern,
-                "Unsupported view creation pattern."
-            ),
-        };
-
-        writer.Append(createKeyword);
-        writer.Append(" ");
-        writer.Append(Quote(viewInfo.ViewName));
-        writer.AppendLine(" AS");
+        EmitViewHeader(writer, viewInfo.ViewName);
 
         // Emit UNION ALL arms
         if (viewInfo.UnionArmsInOrder.Count == 0)
@@ -1929,6 +1908,169 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                     "Unsupported projection expression"
                 );
         }
+    }
+
+    /// <summary>
+    /// Emits hard-coded <c>CREATE VIEW</c> statements for the four people authorization views
+    /// in the <c>auth</c> schema. These views map <c>SourceEducationOrganizationId</c> to person
+    /// <c>DocumentId</c> values through their respective association tables and the EdOrg hierarchy.
+    /// </summary>
+    /// <remarks>
+    /// Views are emitted in alphabetical order by name:
+    /// <list type="number">
+    ///   <item><c>auth.EducationOrganizationIdToContactDocumentId</c></item>
+    ///   <item><c>auth.EducationOrganizationIdToStaffDocumentId</c></item>
+    ///   <item><c>auth.EducationOrganizationIdToStudentDocumentId</c></item>
+    ///   <item><c>auth.EducationOrganizationIdToStudentDocumentIdThroughResponsibility</c></item>
+    /// </list>
+    /// The definitions are hard-coded because people types are rarely added/modified and their
+    /// join structures are not easily generalizable (e.g., Staff joins against two association
+    /// tables; Contact goes through Student). See <c>auth.md</c> ("People auth views") for design.
+    /// </remarks>
+    private void EmitPeopleAuthViews(SqlWriter writer, AuthEdOrgHierarchy? authHierarchy)
+    {
+        // These views assume all five association tables (StudentSchoolAssociation,
+        // StudentContactAssociation, StaffEducationOrganizationAssignmentAssociation,
+        // StaffEducationOrganizationEmploymentAssociation, and
+        // StudentEducationOrganizationResponsibilityAssociation) exist in the target database.
+        // This is guaranteed for any full DS 5.2 deployment that has an auth hierarchy.
+        if (authHierarchy is not { EntitiesInNameOrder.Count: > 0 })
+        {
+            return;
+        }
+
+        var authSchema = AuthNames.AuthSchema;
+        string edOrgTable = Quote(AuthNames.EdOrgIdToEdOrgId);
+        string srcEdOrgId = Quote(AuthNames.SourceEdOrgId);
+        string tgtEdOrgId = Quote(AuthNames.TargetEdOrgId);
+        string schoolId = Quote(AuthNames.SchoolIdUnified);
+        string studentDocId = Quote(AuthNames.StudentDocumentId);
+        string contactDocId = Quote(AuthNames.ContactDocumentId);
+        string staffDocId = Quote(AuthNames.StaffDocumentId);
+        string edOrgEdOrgId = Quote(AuthNames.EdOrgEdOrgId);
+
+        var edfi = new DbSchemaName("edfi");
+
+        // Alphabetical order: Contact, Staff, Student, StudentThroughResponsibility
+
+        // 1. auth.EducationOrganizationIdToContactDocumentId
+        //    EdOrg hierarchy -> StudentSchoolAssociation -> StudentContactAssociation
+        EmitViewHeader(writer, new DbTableName(authSchema, "EducationOrganizationIdToContactDocumentId"));
+        writer.AppendLine($"SELECT DISTINCT");
+        using (writer.Indent())
+        {
+            writer.AppendLine($"edOrg.{srcEdOrgId},");
+            writer.AppendLine($"sca.{contactDocId}");
+        }
+        writer.AppendLine($"FROM {edOrgTable} edOrg");
+        writer.AppendLine(
+            $"INNER JOIN {Quote(new DbTableName(edfi, "StudentSchoolAssociation"))} ssa"
+                + $" ON edOrg.{tgtEdOrgId} = ssa.{schoolId}"
+        );
+        writer.AppendLine(
+            $"INNER JOIN {Quote(new DbTableName(edfi, "StudentContactAssociation"))} sca"
+                + $" ON ssa.{studentDocId} = sca.{studentDocId}"
+        );
+        writer.AppendLine(";");
+        writer.AppendLine();
+
+        // 2. auth.EducationOrganizationIdToStaffDocumentId
+        //    UNION of two arms: StaffEducationOrganizationAssignmentAssociation
+        //    and StaffEducationOrganizationEmploymentAssociation
+        //    UNION already deduplicates, so per-arm DISTINCT is not needed.
+        EmitViewHeader(writer, new DbTableName(authSchema, "EducationOrganizationIdToStaffDocumentId"));
+        writer.AppendLine($"SELECT");
+        using (writer.Indent())
+        {
+            writer.AppendLine($"edOrg.{srcEdOrgId},");
+            writer.AppendLine($"seoaa.{staffDocId}");
+        }
+        writer.AppendLine($"FROM {edOrgTable} edOrg");
+        writer.AppendLine(
+            $"INNER JOIN {Quote(new DbTableName(edfi, "StaffEducationOrganizationAssignmentAssociation"))} seoaa"
+                + $" ON edOrg.{tgtEdOrgId} = seoaa.{edOrgEdOrgId}"
+        );
+        writer.AppendLine("UNION");
+        writer.AppendLine($"SELECT");
+        using (writer.Indent())
+        {
+            writer.AppendLine($"edOrg.{srcEdOrgId},");
+            writer.AppendLine($"seoea.{staffDocId}");
+        }
+        writer.AppendLine($"FROM {edOrgTable} edOrg");
+        writer.AppendLine(
+            $"INNER JOIN {Quote(new DbTableName(edfi, "StaffEducationOrganizationEmploymentAssociation"))} seoea"
+                + $" ON edOrg.{tgtEdOrgId} = seoea.{edOrgEdOrgId}"
+        );
+        writer.AppendLine(";");
+        writer.AppendLine();
+
+        // 3. auth.EducationOrganizationIdToStudentDocumentId
+        //    EdOrg hierarchy -> StudentSchoolAssociation
+        EmitViewHeader(writer, new DbTableName(authSchema, "EducationOrganizationIdToStudentDocumentId"));
+        writer.AppendLine($"SELECT DISTINCT");
+        using (writer.Indent())
+        {
+            writer.AppendLine($"edOrg.{srcEdOrgId},");
+            writer.AppendLine($"ssa.{studentDocId}");
+        }
+        writer.AppendLine($"FROM {edOrgTable} edOrg");
+        writer.AppendLine(
+            $"INNER JOIN {Quote(new DbTableName(edfi, "StudentSchoolAssociation"))} ssa"
+                + $" ON edOrg.{tgtEdOrgId} = ssa.{schoolId}"
+        );
+        writer.AppendLine(";");
+        writer.AppendLine();
+
+        // 4. auth.EducationOrganizationIdToStudentDocumentIdThroughResponsibility
+        //    EdOrg hierarchy -> StudentEducationOrganizationResponsibilityAssociation
+        EmitViewHeader(
+            writer,
+            new DbTableName(authSchema, "EducationOrganizationIdToStudentDocumentIdThroughResponsibility")
+        );
+        writer.AppendLine($"SELECT DISTINCT");
+        using (writer.Indent())
+        {
+            writer.AppendLine($"edOrg.{srcEdOrgId},");
+            writer.AppendLine($"seora.{studentDocId}");
+        }
+        writer.AppendLine($"FROM {edOrgTable} edOrg");
+        writer.AppendLine(
+            $"INNER JOIN {Quote(new DbTableName(edfi, "StudentEducationOrganizationResponsibilityAssociation"))} seora"
+                + $" ON edOrg.{tgtEdOrgId} = seora.{edOrgEdOrgId}"
+        );
+        writer.AppendLine(";");
+        writer.AppendLine();
+    }
+
+    /// <summary>
+    /// Emits the dialect-specific <c>CREATE VIEW</c> header: an optional <c>GO</c> batch separator
+    /// (MSSQL) followed by <c>CREATE OR REPLACE VIEW</c> / <c>CREATE OR ALTER VIEW</c> and <c> AS</c>.
+    /// </summary>
+    /// <param name="writer">The SQL writer.</param>
+    /// <param name="viewName">The schema-qualified view name (quoted internally).</param>
+    private void EmitViewHeader(SqlWriter writer, DbTableName viewName)
+    {
+        if (_dialect.ViewCreationPattern == DdlPattern.CreateOrAlter)
+        {
+            writer.AppendLine("GO");
+        }
+
+        var createKeyword = _dialect.ViewCreationPattern switch
+        {
+            DdlPattern.CreateOrReplace => "CREATE OR REPLACE VIEW",
+            DdlPattern.CreateOrAlter => "CREATE OR ALTER VIEW",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(_dialect.ViewCreationPattern),
+                _dialect.ViewCreationPattern,
+                "Unsupported view creation pattern."
+            ),
+        };
+
+        writer.Append(createKeyword);
+        writer.Append(" ");
+        writer.Append(Quote(viewName));
+        writer.AppendLine(" AS");
     }
 
     /// <summary>
