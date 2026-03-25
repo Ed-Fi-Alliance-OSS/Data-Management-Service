@@ -6,7 +6,7 @@ Implement Ed-Fi Change Queries for the current Data Management Service storage a
 
 - preserves Ed-Fi changed-record-query semantics for route shape, window behavior, and tracked-change authorization criteria where DMS-843 adopts ODS parity
 - preserves existing DMS API behavior when Change Queries are not used
-- explicitly does not implement client-selectable `Use-Snapshot` parity in v1
+- integrates `Use-Snapshot` into synchronization reads so absent or `false` uses the live flow and `true` uses the snapshot-backed flow
 - uses the canonical `dms.Document` row as the source of truth
 - keeps the design aligned to the backend-redesign update-tracking and authorization directions where DMS-843 introduces bridge artifacts
 
@@ -175,13 +175,40 @@ For the dedicated `/deletes` and `/keyChanges` routes:
 
 This aligns DMS-843 to ODS query-window behavior while keeping the existing collection GET route backward-compatible when no change-query parameters are supplied.
 
-## 12. DMS-843 v1 intentionally excludes ODS snapshot parity
+## 12. DMS-843 integrates `Use-Snapshot` into the core synchronization design without snapshot history tables
 
-The feature continues to avoid server-side snapshot history tables.
+The feature continues to avoid server-side snapshot history tables and does not require historical payload reconstruction.
 
 The Ed-Fi ODS/API platform exposes `Use-Snapshot` behavior when a client needs one correctness-safe view across a synchronization pass.
 
-DMS-843 v1 does not expose a client-selectable snapshot or equivalent consistent-read mode. All Change Query requests therefore operate against current committed state, and the package treats synchronization under concurrent writes as best-effort rather than a guaranteed gap-free export.
+DMS-843 uses a client-selectable `Use-Snapshot` header to choose the synchronization flow. When the header is absent or `false`, requests operate against current committed state exactly as described elsewhere in this package.
+
+When `Use-Snapshot = true`, the request executes against a configured read-only snapshot source for the resolved DMS instance. The same changed-resource, delete, key-change, and `availableChangeVersions` artifacts remain authoritative; only the selected flow and read source change.
+
+Required interpretation:
+
+- the design always defines both flows; if the deployment cannot provide a usable snapshot source, `Use-Snapshot = true` requests must fail explicitly rather than silently reverting to the live flow
+- snapshot mode does not add snapshot payload tables, alternate change tokens, or different route shapes
+- snapshot-backed reads return the current representation visible inside the snapshot, not historical payload versions
+- the snapshot source must expose the same DMS schema and tracking artifacts as the live instance and must stay frozen long enough for one synchronization pass or equivalent bounded workflow
+
+## Explicit DMS product choices that remain after adding `Use-Snapshot`
+
+The package does not claim blanket parity with every legacy ODS internal semantic or every backend-redesign storage decision.
+
+Explicit DMS-specific choices include:
+
+- `/keyChanges` uses the committed live `ChangeVersion` of the identity-changing update as the public token; DMS-843 does not allocate a second public key-change token for that same write
+- `availableChangeVersions` reports the committed participating-surface ceiling rather than raw sequence advancement
+- current-backend `_etag` and `_lastModifiedDate` remain stored inside `EdfiDoc`; DMS-843 therefore aligns to redesign change-tracking responsibilities without yet adopting redesign-style dedicated metadata-stamp columns for those fields
+
+## Why these ODS divergences are intentional in DMS
+
+These choices are not arbitrary departures from ODS. They follow the current DMS storage model and the backend-redesign direction that DMS-843 is trying to preserve.
+
+- tracked-change authorization stores basis-resource `DocumentId` values as `basisDocumentIds` because backend-redesign custom-view and relationship authorization in DMS is DocumentId-based rather than natural-key-based, and `/deletes` plus `/keyChanges` must still authorize correctly after the live row or relationship rows are gone
+- `/keyChanges` reuses the committed live `ChangeVersion`, and `availableChangeVersions` uses committed participating surfaces, because DMS and backend-redesign both center public synchronization on the canonical live document stamp plus committed tracking artifacts rather than on a second public key-change token or on raw sequence advancement
+- if a future product requirement demands strict legacy ODS internal semantics instead of DMS-aligned semantics, that should be treated as a deliberate design change rather than as an implied bug in this package
 
 ## 13. Change Queries is a configurable feature that follows the Ed-Fi default-on posture
 
@@ -215,13 +242,14 @@ The full Change Queries feature defined by this package includes:
 - deterministic ordering and window collapse for key-change queries
 - tracked-change authorization inputs sufficient for ODS-style delete and key-change authorization criteria, including redesign ownership and DocumentId-based authorization concepts
 - bootstrap `oldestChangeVersion = newestChangeVersion = 0` semantics for empty surfaces in phase 1, with replay-floor-aware bounds left available for a later retention phase
+- `Use-Snapshot` handling for synchronization reads so clients select either the live best-effort flow or the snapshot-backed flow without changing route shapes
 
 ## Non-Goals
 
 This feature design does not include:
 
 - server-side snapshot tables
-- client-selectable `Use-Snapshot` parity with ODS in v1
+- DMS-managed snapshot creation, refresh, or retention orchestration
 - CDC-based or streaming-based change-query behavior
 - event sourcing
 - a historical payload store for updates
@@ -268,7 +296,7 @@ If a later phase adds purge, this artifact makes replay-floor-safe `availableCha
 | Key payload naming | Shortest unique identity-path suffix aliases in `IdentityJsonPaths` order |
 | Delete table schema | `dms` |
 | Window semantics | Inclusive `minChangeVersion`; inclusive `maxChangeVersion` when supplied |
-| Snapshot policy | Avoid snapshot history tables; no client-visible snapshot or consistent-read mode in DMS-843 v1 |
+| Snapshot policy | Avoid snapshot history tables; `Use-Snapshot` absent or `false` selects the live flow and `true` selects the snapshot-backed flow against a configured read-only snapshot source |
 | Ordering model | Global monotonic `dms.ChangeVersionSequence` |
 | Replay floor model | Phase 1 uses retained tracking data with bootstrap `0/0`; a later retention phase may add per-surface replay-floor metadata if purge is introduced |
 | Update history | Not required for public changed-resource queries |

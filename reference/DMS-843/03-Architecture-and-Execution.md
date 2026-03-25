@@ -12,6 +12,7 @@ Responsibilities:
 
 - route Change Query requests
 - preserve current route behavior for non-Change-Query requests
+- parse the optional `Use-Snapshot` header on synchronization reads
 - perform authentication and instance resolution
 - dispatch requests into the existing DMS processing pipeline
 
@@ -25,8 +26,10 @@ Informative current touchpoints:
 Responsibilities:
 
 - parse and validate `minChangeVersion` and `maxChangeVersion`
+- parse and validate `Use-Snapshot`
 - preserve current GET semantics when change-query parameters are absent
 - branch into changed-resource, delete, key-change, or available-change-version handling
+- resolve whether the request must execute against the live primary source or the configured snapshot source
 - preserve current live-read authorization and resource-schema resolution rules for changed resources
 - enforce ODS-compatible tracked-change authorization rules for `/deletes` and `/keyChanges`
 
@@ -47,6 +50,7 @@ Responsibilities:
 - issue delete queries
 - issue key-change queries
 - compute `availableChangeVersions`
+- resolve the selected read source for change-query reads and execute authorization plus data selection against that same source
 - insert tombstones on delete
 - insert key-change tracking rows when natural keys change
 - preserve tracked-change authorization inputs needed for ownership and DocumentId-based authorization after deletes or later key changes
@@ -127,19 +131,20 @@ Feature-off routing rule:
 
 ## Execution Model
 
-Changed-resource execution uses the backend-redesign `journal + verify` model.
+Changed-resource execution uses the backend-redesign `journal + verify` model against the selected read source.
 
 Behavior:
 
-1. resolve the routed resource to `dms.ResourceKey.ResourceKeyId`
-2. read candidate rows from `dms.DocumentChangeEvent`
-3. filter candidates by `ResourceKeyId` and the requested `ChangeVersion` window
-4. join candidates back to `dms.Document`
-5. keep only rows where `dms.Document.ChangeVersion = dms.DocumentChangeEvent.ChangeVersion`
-6. apply the existing authorization filters
-7. continue candidate processing as needed so public `totalCount`, `offset`, and `limit` are evaluated over the surviving verified authorized rows rather than over raw journal candidates
-8. order the final surviving verified authorized rows by `ChangeVersion`, `DocumentPartitionKey`, and `DocumentId`
-9. return the current `EdfiDoc` payloads for surviving documents
+1. resolve whether the request targets the live primary source or the configured snapshot source
+2. resolve the routed resource to `dms.ResourceKey.ResourceKeyId`
+3. read candidate rows from `dms.DocumentChangeEvent`
+4. filter candidates by `ResourceKeyId` and the requested `ChangeVersion` window
+5. join candidates back to `dms.Document`
+6. keep only rows where `dms.Document.ChangeVersion = dms.DocumentChangeEvent.ChangeVersion`
+7. apply the existing authorization filters from that same selected source
+8. continue candidate processing as needed so public `totalCount`, `offset`, and `limit` are evaluated over the surviving verified authorized rows rather than over raw journal candidates
+9. order the final surviving verified authorized rows by `ChangeVersion`, `DocumentPartitionKey`, and `DocumentId`
+10. return the current `EdfiDoc` payloads for surviving documents in that selected source
 
 Required paging rule:
 
@@ -154,13 +159,13 @@ Required architectural rule:
 
 ## Delete Query Execution
 
-Delete query execution is always tombstone-based.
+Delete query execution is always tombstone-based and always runs against the selected read source.
 
 Behavior:
 
 - read from `dms.DocumentDeleteTracking`
 - filter by `ProjectName`, `ResourceName`, and the requested window
-- apply ODS-compatible tracked-change authorization predicates against the tombstone's preserved authorization data, including ownership and row-local basis values needed for delete-aware relationship and custom-view authorization
+- apply ODS-compatible tracked-change authorization predicates against the tombstone's preserved authorization data, including ownership and row-local basis values needed for delete-aware relationship and custom-view authorization, using the same selected source for any companion authorization reads
 - materialize `keyValues` in the canonical alias order derived from the routed resource's `IdentityJsonPaths`
 - order by `ChangeVersion`, `DocumentPartitionKey`, and `DocumentId`
 
@@ -168,13 +173,13 @@ Delete query execution never reads `dms.DocumentChangeEvent`.
 
 ## Key Change Query Execution
 
-Key change query execution is always tracking-row-based.
+Key change query execution is always tracking-row-based and always runs against the selected read source.
 
 Behavior:
 
 - read from `dms.DocumentKeyChangeTracking`
 - filter by `ProjectName`, `ResourceName`, and the requested window
-- apply ODS-compatible tracked-change authorization predicates against the copied pre-update tracking-row authorization data, including ownership and row-local basis values needed for DocumentId-based relationship and custom-view authorization
+- apply ODS-compatible tracked-change authorization predicates against the copied pre-update tracking-row authorization data, including ownership and row-local basis values needed for DocumentId-based relationship and custom-view authorization, using the same selected source for any companion authorization reads
 - materialize `oldKeyValues` and `newKeyValues` in the canonical alias order derived from the routed resource's `IdentityJsonPaths`
 - collapse multiple authorized rows for the same resource within the window to the earliest `oldKeyValues`, latest `newKeyValues`, and latest `ChangeVersion`
 - apply `totalCount`, `offset`, and `limit` to that collapsed authorized result set rather than to raw tracking rows
@@ -190,7 +195,7 @@ Required semantics:
 
 ## Available Change Versions Execution
 
-The endpoint returns one synchronization surface regardless of the internal execution pattern.
+The endpoint returns one synchronization surface regardless of the internal execution pattern, but the surface comes from the same selected read source as the later data queries.
 
 This follows the Ed-Fi ODS/API client workflow, which captures one synchronization version from `availableChangeVersions` and reuses it across `keyChanges`, changed-resource queries, and `deletes`; see the [client guide](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/using-the-changed-record-queries/).
 
@@ -209,6 +214,7 @@ Required meaning:
 
 - `newestChangeVersion` is the ceiling across the active synchronization surface
 - if retained participating rows exist, `newestChangeVersion` is the greatest retained `ChangeVersion` across them
+- when `Use-Snapshot = true`, the active synchronization surface is the snapshot-visible surface rather than the live-primary surface
 - for the initial DMS-843 scope, `oldestChangeVersion` is `0`
 - when all participating sources are empty and no replay-floor metadata exists, both bounds are `0`; that bootstrap value is a starting watermark sentinel rather than a retained change row
 - if a later retention phase introduces purge, `oldestChangeVersion` becomes the replay floor for that same surface and the endpoint derives non-zero floors from persisted replay-floor metadata rather than from the current `dms.ChangeVersionSequence` value
@@ -227,13 +233,18 @@ Where available, use Ed-Fi resource dependency metadata or an equivalent depende
 
 The change-tracking artifacts defined by DMS-843 do not require snapshot history tables.
 
-DMS-843 v1 does not define a client-selectable snapshot header, query parameter, or other request mechanism for obtaining one consistent read view across a synchronization pass.
+DMS-843 uses a client-selectable `Use-Snapshot` header to choose between the two synchronization flows.
 
 Required interpretation:
 
-- each request executes against the ordinary current committed state visible to the API at that moment
-- synchronization under concurrent writes is therefore best-effort rather than gap-free
-- a future additive feature could introduce a client-visible consistent-read mode without changing the tracking artifacts defined by DMS-843
+- when `Use-Snapshot` is absent or `false`, each request executes against the ordinary current committed state visible to the API at that moment
+- when `Use-Snapshot = true`, each request executes against the configured read-only snapshot source for the resolved DMS instance
+- the snapshot source must expose the same DMS schema, change-tracking artifacts, and required authorization companion artifacts as the live primary
+- authorization filters, resource-key resolution, and data selection for one request must all run against the same chosen source
+- non-snapshot synchronization under concurrent writes remains best-effort rather than gap-free
+- snapshot-backed synchronization uses the same tracking artifacts but changes the completeness guarantee by pinning reads to the snapshot source
+- DMS never silently falls back to a live read when `Use-Snapshot = true`
+- a future additive feature could extend snapshot lifecycle management without changing the tracking artifacts defined by DMS-843
 
 ## Write-Path Locking Contract
 
@@ -252,7 +263,7 @@ An identity-changing update can force representation rewrites on dependent docum
 
 Required execution model:
 
-1. discover directly referencing documents through a reverse-edge lookup equivalent to the current backend's `dms.Reference`
+1. identify directly referencing documents through backend-native reverse-reference metadata or equivalent stored reference-identity structures; the current backend's `dms.Reference` is one conforming example, but not the normative mechanism
 2. rewrite each dependent document's stored representation or equivalent reference-identity storage columns in the same transaction so the dependent row reflects the new upstream identity values
 3. when the dependent row's served representation changes, allocate a new dependent `ChangeVersion` and let the normal `dms.DocumentChangeEvent` journaling rules emit a dependent live-change row
 4. when the dependent rewrite also changes the dependent document's own identity tuple, allocate a new dependent `IdentityVersion` and insert a dependent key-change tracking row using that dependent row's own pre-change tracked-change authorization data
@@ -262,7 +273,7 @@ Required execution model:
 Conforming implementation note:
 
 - the current backend already demonstrates one concrete approach through reverse-edge discovery and recursive cascade handling in `dms.Reference` and `UpdateCascadeHandler`
-- a replacement relational backend may use a different implementation structure, but it must preserve the same committed-state propagation semantics
+- a replacement relational backend may realize the same outcome through stored reference-identity columns, FK/trigger cascades, or other propagation metadata, but it must preserve the same committed-state rewrite, stamping, journaling, and key-change outcomes
 
 ## Identity-Change Update Execution Order
 
@@ -303,7 +314,7 @@ This ordering is mandatory because the tombstone must preserve natural-key and t
 
 The architecture must preserve these invariants:
 
-- no non-change-query request changes behavior
+- no existing non-change-query request changes behavior unless the caller explicitly opts into `Use-Snapshot`
 - representation-changing writes get a unique `ChangeVersion`
 - authorization-only maintenance updates do not emit false change records
 - delete visibility survives deletion of the live row
@@ -313,6 +324,7 @@ The architecture must preserve these invariants:
 - key-change-query authorization targets ODS-compatible tracked-change semantics using the stored pre-update tracked-change authorization state
 - write paths serialize concurrent update and delete capture on the same live row
 - the live journal is never used as a delete store
+- snapshot-backed reads reuse the same journal, tombstone, and key-change artifacts; only the read source and resulting completeness guarantees differ from the live mode
 
 ## Implementation Surfaces for Planning
 
@@ -320,6 +332,7 @@ The main implementation workstreams implied by this architecture are:
 
 - API routing and request validation
 - core service branching and middleware updates
+- live-vs-snapshot read-source resolution for synchronization requests
 - schema and trigger deployment
 - resource-key lookup provisioning and live-row backfill
 - tombstone insert logic in delete execution

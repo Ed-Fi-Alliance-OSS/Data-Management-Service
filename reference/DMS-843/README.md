@@ -2,7 +2,7 @@
 
 ## Status
 
-Review-ready spike package for implementing Ed-Fi Change Queries in the current DMS architecture while staying aligned to backend-redesign artifact responsibilities and the selected Ed-Fi ODS/API behaviors for windows and tracked-change authorization, while explicitly excluding client-selectable snapshot parity in v1.
+Review-ready spike package for implementing Ed-Fi Change Queries in the current DMS architecture while staying aligned to backend-redesign artifact responsibilities and the selected Ed-Fi ODS/API behaviors for windows, tracked-change authorization, and `Use-Snapshot`-selected live or snapshot-backed synchronization reads without snapshot history tables.
 
 ## Purpose
 
@@ -22,9 +22,15 @@ Use this package for design review first, then for implementation planning, Jira
 
 This package is the DMS-843 design for the current backend shape. It is not the full backend-redesign package.
 
-The alignment target is semantic and behavioral parity with the redesign where responsibilities are the same, while still using current-backend bridge artifacts where names or storage differ.
+The alignment target is redesign artifact-responsibility alignment plus the selected Ed-Fi ODS/API behaviors explicitly adopted in this package, while still using current-backend bridge artifacts where names or storage differ.
 
-This package also makes one explicit non-parity choice: DMS-843 v1 does not implement ODS `Use-Snapshot` behavior or any other client-selectable consistent-read mode.
+This package keeps snapshot history tables and DMS-managed snapshot lifecycle orchestration out of scope. Synchronization reads instead run in one of two built-in flows selected by `Use-Snapshot`: absent or `false` uses the live non-snapshot flow, and `true` uses the snapshot-backed flow against the configured snapshot source.
+
+Important explicit DMS-specific choices that remain in this package:
+
+- `/keyChanges` reuses the committed live `ChangeVersion` of the identity-changing write instead of exposing a second public key-change token
+- `availableChangeVersions` reports the committed participating-surface ceiling rather than raw sequence advancement
+- current-backend `_etag` and `_lastModifiedDate` remain physically stored inside `EdfiDoc`, so DMS-843 aligns to redesign change-tracking responsibilities but not yet to redesign metadata-stamp storage ownership
 
 The most important current-backend to redesign mappings used throughout this package are:
 
@@ -137,4 +143,4 @@ This package is designed to align to the Ed-Fi ODS/API Change Query behavior whe
 - Ed-Fi ODS/API platform guide, Changed Record Queries: <https://docs.ed-fi.org/reference/ods-api/platform-dev-guide/features/changed-record-queries/>
 - Ed-Fi ODS/API client guide, Using the Changed Record Queries: <https://docs.ed-fi.org/reference/ods-api/client-developers-guide/using-the-changed-record-queries/>
 
-The alignment target is behavioral and contract parity where appropriate, with explicit package-level decisions wherever DMS makes a product-specific choice. The main explicit non-parity choice in this package is the absence of ODS `Use-Snapshot` support in DMS-843 v1.
+The alignment target is behavioral and contract parity where appropriate, with explicit package-level decisions wherever DMS makes a product-specific choice. Those explicit choices include `Use-Snapshot` as the selector between the live and snapshot-backed synchronization flows over the same tracking artifacts, reuse of the committed live `ChangeVersion` on `/keyChanges`, committed-surface `availableChangeVersions` ceilings, and retention of current-backend `_etag/_lastModifiedDate` storage ownership.

@@ -228,7 +228,7 @@ An identity-changing update can force representation rewrites on dependent docum
 
 Required semantics:
 
-- the implementation must discover directly referencing documents through a reverse-edge lookup equivalent to the current backend's `dms.Reference`
+- the implementation must identify directly referencing documents through backend-native reverse-reference metadata or equivalent stored reference-identity structures; the current backend's `dms.Reference` is one conforming example rather than the normative mechanism
 - each dependent document whose stored representation changes because of the upstream identity change must receive a new `ChangeVersion`
 - each such dependent representation change must emit a `dms.DocumentChangeEvent` row through the normal journal-maintenance rules
 - a dependent document receives a new `IdentityVersion` only if the dependent document's own identity tuple changes
@@ -393,7 +393,11 @@ Required semantics:
 - it preserves the basis-resource `DocumentId` values needed for redesign relationship and custom-view authorization checks
 - it preserves any additional delete-aware relationship inputs needed to reproduce ODS tracked-change visibility when the authorizing relationship row has already been deleted
 - it is captured from the same pre-delete or pre-update authorization-resolution pass that determines the row's live authorization state
-- implementations may choose any physical JSON shape that is deterministic for the routed resource and sufficient to reproduce the documented tracked-change authorization outcomes
+- the payload root is a JSON object
+- when tracked-change relationship or custom-view authorization applies, the payload must contain `basisDocumentIds`
+- `basisDocumentIds` is a deterministic JSON object whose keys are stable basis-resource identifiers for the routed resource and whose values are sorted unique arrays of positive `DocumentId` values resolved during the same pre-change authorization pass
+- when delete-aware relationship authorization needs facts beyond basis-resource `DocumentId` values, the payload must also contain `relationshipInputs`, a deterministic resource-scoped object containing only the named pre-change facts required by that resource's tracked-change authorization contract
+- each change-query-enabled resource that relies on relationship or custom-view tracked-change authorization must define the expected `basisDocumentIds` keys and any `relationshipInputs` members as part of its resource-scoped contract
 
 ## Resource-scoped key payload contract for shared tracking tables
 
@@ -669,6 +673,10 @@ For the participating sources:
 - if a later retention phase introduces purge metadata, `oldestChangeVersion` becomes the effective replay floor across the participating sources, and `newestChangeVersion = oldestChangeVersion =` the greatest participating replay floor when all participating sources are empty after purge
 - for identity-changing updates, the key-change participation value is the same public live `ChangeVersion` exposed by the changed-resource surface for that write, not the internal `IdentityVersion`
 
+Legacy ODS allocates a distinct sequence value for key-change rows and can expose raw-sequence ceiling behavior.
+
+DMS-843 intentionally does not. Its public watermark model is the committed live `ChangeVersion` surface described above.
+
 Client-compatibility note:
 
 - the public API returns the canonical live-resource `id` on `/deletes` and `/keyChanges` from `DocumentUuid`
@@ -743,6 +751,11 @@ Required rule:
 The current backend stores `_etag` and `_lastModifiedDate` inside `EdfiDoc`.
 
 This feature does not redesign that behavior. `ChangeVersion` remains additive and serves Change Query ordering, while `IdentityVersion` remains an internal alignment artifact for identity-update tracking.
+
+Current-backend divergence note:
+
+- DMS-843 aligns to redesign change-tracking responsibilities, but it does not yet move `_etag` or `_lastModifiedDate` into redesign-style dedicated `dms.Document` stamp columns on the current backend
+- a future backend replacement may externalize those fields to redesign-style `dms.Document` columns without changing the public DMS-843 route or synchronization contract
 
 The design remains aligned to backend-redesign concepts by treating `ChangeVersion` as the current-backend equivalent of redesign `ContentVersion`, `IdentityVersion` as the current-backend equivalent of redesign `IdentityVersion`, and `ResourceKeyId` as the current-backend journal filter key.
 

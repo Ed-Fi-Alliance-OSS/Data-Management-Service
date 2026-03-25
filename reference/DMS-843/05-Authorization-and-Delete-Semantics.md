@@ -114,7 +114,15 @@ Required meaning:
 - it is captured from the same pre-delete or pre-update authorization-resolution pass used to determine the row's live authorization state
 - it is interpreted only in the context of the tracked row's routed resource
 
-This design is intentionally outcome-oriented. A conforming implementation may choose any deterministic internal shape for `AuthorizationBasis` as long as it can reproduce the documented tracked-change authorization results.
+Required structural contract:
+
+- the payload root is a JSON object
+- when relationship or custom-view tracked-change authorization applies, the payload must contain `basisDocumentIds`
+- `basisDocumentIds` maps stable basis-resource identifiers to sorted unique arrays of positive `DocumentId` values resolved during the same authorization pass
+- when a resource needs additional delete-aware relationship facts beyond those ids, the payload must also contain `relationshipInputs`, a deterministic resource-scoped object of named captured values
+- each change-query-enabled resource that relies on this payload must define the expected `basisDocumentIds` keys and any `relationshipInputs` members as part of its tracked-change authorization contract
+
+DMS-843 does not support open-ended tracked-change custom-view authorization that depends on arbitrary mutable non-identifying live-row values at read time. A resource is eligible for tracked-change relationship or custom-view authorization only when its required inputs can be reduced at write time to captured basis-resource `DocumentId` values plus any named `relationshipInputs` in this contract. If that reduction is not possible, the resource's tracked-change design is incomplete and must fail validation rather than silently degrading.
 
 ## Tracked-Change Authorization Model
 

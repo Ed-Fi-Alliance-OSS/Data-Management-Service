@@ -276,6 +276,7 @@ The story owns:
 - `AppSettings.EnableChangeQueries`
 - route registration for `availableChangeVersions`, `/deletes`, and `/keyChanges`
 - change-query parameter parsing and validation
+- `Use-Snapshot` parsing and validation
 - feature-off behavior
 - profile behavior for change-query routes
 - exact error-contract behavior for supported validation failures
@@ -286,12 +287,14 @@ This story must preserve the existing collection GET and GET-by-id behavior when
 
 - Change Queries can be enabled or disabled through `AppSettings.EnableChangeQueries`.
 - If the flag is absent, Change Queries are enabled by default.
-- When the flag is off, collection GET requests that supply change-query parameters return the documented feature-disabled `400 Bad Request` behavior.
+- When the flag is off, collection GET requests that supply change-query parameters or `Use-Snapshot = true` return the documented feature-disabled `400 Bad Request` behavior.
 - When the flag is off, `/deletes`, `/keyChanges`, and `availableChangeVersions` resolve to `404 Not Found` and do not fall through to generic item-by-id parsing.
 - The dedicated `/deletes` and `/keyChanges` paths resolve before the generic catch-all data route.
 - Changed-resource mode activates when either `minChangeVersion` or `maxChangeVersion` is supplied.
 - Max-only windows are accepted on changed-resource, `/deletes`, and `/keyChanges`.
 - `/deletes` and `/keyChanges` accept omitted bounds and return the retained tracked rows for the routed resource.
+- `Use-Snapshot = false` or an omitted header preserves the current live behavior.
+- `Use-Snapshot = true` is accepted on synchronization reads, invalid values fail with the documented `400 Bad Request` contract, and unavailable snapshot sources fail with the documented `409 Conflict` contract.
 - Invalid or inconsistent change-query windows return the documented `400 Bad Request` ProblemDetails contract.
 - Replay-floor `409 Conflict` behavior remains deferred until the later retention phase is approved.
 - Changed-resource collection GET continues normal profile behavior.
@@ -305,7 +308,8 @@ This story must preserve the existing collection GET and GET-by-id behavior when
 - Register `availableChangeVersions`, `/deletes`, and `/keyChanges` as dedicated routes ahead of the generic data route.
 - Reserve dedicated route shapes even when the feature flag is off so those paths return the documented `404 Not Found` behavior.
 - Parse and validate `minChangeVersion` and `maxChangeVersion` consistently across changed-resource, delete, and key-change requests.
-- Implement the documented `400 Bad Request` ProblemDetails contract for feature-disabled collection GET parameters, invalid values, and invalid window relationships.
+- Parse and validate `Use-Snapshot` consistently across synchronization reads.
+- Implement the documented `400 Bad Request` and `409 Conflict` ProblemDetails contracts for feature-disabled collection GET requests, invalid values, invalid window relationships, and unavailable snapshot sources.
 - Keep replay-floor `409 Conflict` behavior explicitly deferred to the later retention phase.
 - Route changed-resource collection GET through the normal profile pipeline.
 - Route `/deletes`, `/keyChanges`, and `availableChangeVersions` through a pipeline that bypasses profile resolution and filtering.
@@ -346,19 +350,21 @@ The story owns:
 - resource resolution to `ResourceKeyId`
 - verification against the current `dms.Document.ChangeVersion`
 - authorization filtering on surviving live rows
+- execution against either the live primary source or the resolved snapshot source
 - final paging, ordering, and `totalCount` semantics
 
 This story must not redefine changed-resource execution as a direct `dms.Document` range scan.
 
 ### Acceptance Criteria
 
-- Changed-resource mode returns the latest current live resource payload only once per qualifying resource.
+- Changed-resource mode returns the latest current resource payload from the selected read source only once per qualifying resource.
 - Authorization behavior matches the current collection GET semantics for live reads.
 - Candidate selection is journal-driven and keyed by `ResourceKeyId`.
-- Stale journal candidates are filtered by verification against the current live `ChangeVersion`.
+- Stale journal candidates are filtered by verification against the current `ChangeVersion` in the selected read source.
+- `Use-Snapshot = true` executes the same `journal + verify` logic against the resolved snapshot source rather than against the live primary.
 - Paging and `totalCount` are evaluated over the final verified authorized result set rather than raw journal candidates.
 - Final changed-resource results are ordered by `ChangeVersion`, `DocumentPartitionKey`, and `DocumentId`.
-- Ordinary collection GET behavior remains unchanged when both `minChangeVersion` and `maxChangeVersion` are absent.
+- Ordinary collection GET behavior remains unchanged when both `minChangeVersion` and `maxChangeVersion` are absent unless the caller explicitly opts into `Use-Snapshot`.
 - The implementation does not depend on snapshot history tables or historical payload reconstruction.
 
 ### Tasks
@@ -366,6 +372,7 @@ This story must not redefine changed-resource execution as a direct `dms.Documen
 - Add query execution that reads live candidates from `dms.DocumentChangeEvent` by `ResourceKeyId` and requested window.
 - Join candidates back to `dms.Document` and keep only rows whose current `ChangeVersion` still matches the journal row.
 - Apply the existing authorization predicates after verification.
+- Resolve the live-vs-snapshot read source before query execution and ensure verification plus authorization use that same source.
 - Over-fetch or batch candidates as needed so public paging semantics apply to surviving verified authorized rows.
 - Materialize the final result set in deterministic `ChangeVersion`, `DocumentPartitionKey`, `DocumentId` order.
 - Preserve the normal collection GET path for requests that do not activate changed-resource mode.
@@ -403,6 +410,7 @@ The story owns:
 - `/deletes` execution against tombstones
 - `/keyChanges` execution against key-change tracking rows
 - `availableChangeVersions` computation across the participating artifacts
+- live-vs-snapshot source selection for those synchronization reads
 - key-change collapse rules
 - delete and key-change authorization semantics
 - row-level locking or engine-equivalent serialization on identity-changing updates and deletes
@@ -419,6 +427,7 @@ This story does not introduce retention purge or replay-floor metadata. Later-ph
 - Delete-query authorization matches the documented ODS-style tracked-change semantics.
 - Key-change-query authorization uses the documented stored pre-update tracked-change authorization data for transition visibility.
 - `availableChangeVersions` returns one synchronization surface with correct bootstrap and retained-data bounds for the participating artifacts.
+- `Use-Snapshot = true` causes `availableChangeVersions`, `/deletes`, and `/keyChanges` to read the snapshot-visible synchronization surface rather than the live primary surface.
 - Multi-resource synchronization guidance remains explicit: `keyChanges` and changed resources in dependency order, deletes in reverse-dependency order.
 - Concurrent updates and deletes on the same document do not capture stale old keys or tombstones.
 
@@ -428,6 +437,7 @@ This story does not introduce retention purge or replay-floor metadata. Later-ph
 - Implement `/keyChanges` query execution over `dms.DocumentKeyChangeTracking`.
 - Apply delete-query authorization against the stored tracked-change authorization data on tombstones.
 - Apply key-change authorization against the stored pre-update tracked-change authorization data before collapse.
+- Resolve the live-vs-snapshot read source before computing `availableChangeVersions`, `/deletes`, and `/keyChanges`, and keep each request on that chosen source throughout execution.
 - Implement key-change collapse semantics to preserve earliest `oldKeyValues`, latest `newKeyValues`, and latest surviving `changeVersion`.
 - Compute `availableChangeVersions` from the live journal, delete tombstones, and key-change tracking rows rather than from the raw sequence value.
 - Implement row-level locking or engine-equivalent serialization for identity-changing updates and deletes so pre-change capture is consistent.
@@ -468,10 +478,10 @@ The story owns:
 
 - unit coverage for routing, parameter validation, alias derivation, and response mapping
 - integration coverage for stamping, journaling, tombstones, key-change tracking, authorization, and locking
-- E2E coverage for public API behavior and no-regression behavior
+- E2E coverage for public API behavior, both live and snapshot-backed synchronization modes, and no-regression behavior
 - rollout and backfill validation
 
-This story is not a generic testing bucket. Its purpose is to prove the documented change-query contract, especially the tricky concurrency, routing, and no-snapshot behaviors.
+This story is not a generic testing bucket. Its purpose is to prove the documented change-query contract, especially the tricky concurrency, routing, live-mode, and snapshot-backed behaviors.
 
 ### Acceptance Criteria
 
@@ -479,14 +489,15 @@ This story is not a generic testing bucket. Its purpose is to prove the document
 - Existing non-change-query behavior remains unchanged.
 - Route behavior, feature-off behavior, and invalid-window behavior are exercised.
 - Backfill validation proves seeded resource keys, non-null live-row stamps, and journal backfill correctness.
-- Crash-replay, duplicate-delivery, and edge-case scenarios are exercised where the package documents them as expected behavior.
+- Crash-replay, duplicate-delivery, snapshot-backed bounded-window, and edge-case scenarios are exercised where the package documents them as expected behavior.
 - The test suite proves the required `journal + verify` paging semantics rather than only happy-path retrieval.
 
 ### Tasks
 
 - Add unit tests for parameter parsing, feature-off behavior, route dispatch, profile behavior, key alias derivation, and response mapping.
-- Add integration tests for live-row stamping, journal emission, delete capture, key-change capture, authorization behavior, `availableChangeVersions`, and row-level locking semantics.
-- Add E2E tests for changed-resource queries, `/deletes`, `/keyChanges`, profile interactions, deterministic ordering, invalid windows, and unsupported-resource behavior.
+- Add unit tests for parameter parsing, feature-off behavior, `Use-Snapshot`, route dispatch, profile behavior, key alias derivation, and response mapping.
+- Add integration tests for live-row stamping, journal emission, delete capture, key-change capture, authorization behavior, `availableChangeVersions`, snapshot-backed reads, and row-level locking semantics.
+- Add E2E tests for changed-resource queries, `/deletes`, `/keyChanges`, profile interactions, deterministic ordering, invalid windows, snapshot-backed bounded windows, and unsupported-resource behavior.
 - Add rollout validation checks for seeded `dms.ResourceKey` rows, deterministic backfill, and journal backfill completeness.
 - Add explicit tests for repeated identity leaf names and for preserving `IdentityJsonPaths` order in key payloads.
 
@@ -546,7 +557,7 @@ Each story should include:
 - concrete `Tasks` that describe the implementation work expected in the story
 - listed dependencies, data-migration prerequisites, and rollout prerequisites when applicable
 - explicit test expectations
-- confirmation that the story does not reintroduce snapshot requirements or historical payload storage
+- confirmation that the story does not reintroduce snapshot history tables or historical payload storage
 
 ## Story Definition of Done Themes
 
@@ -556,7 +567,7 @@ A story should be considered done only if:
 - unit and integration coverage exists where appropriate
 - E2E impact is covered for route or behavior changes
 - no existing API behavior regresses
-- the resulting artifact still matches the documented change-query synchronization model, including the no-snapshot tradeoffs and saved-watermark rules
+- the resulting artifact still matches the documented change-query synchronization model, including the live-mode tradeoffs, snapshot-backed rules, and saved-watermark rules
 - the story can be understood without requiring unstated assumptions outside the numbered package
 
 ## Deferred Later-Phase Work
