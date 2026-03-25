@@ -378,7 +378,8 @@ public abstract class DatabaseTest : DatabaseTestBase
         bool isStudentAuthorizationSecurable = false,
         bool isContactAuthorizationSecurable = false,
         bool isStaffAuthorizationSecurable = false,
-        string? studentUniqueId = default
+        string? studentUniqueId = default,
+        bool isDescriptor = false
     )
     {
         return new(
@@ -386,7 +387,7 @@ public abstract class DatabaseTest : DatabaseTestBase
             AllowIdentityUpdates: allowIdentityUpdates,
             ProjectName: new(projectName),
             ResourceName: new(resourceName),
-            IsDescriptor: false,
+            IsDescriptor: isDescriptor,
             EducationOrganizationHierarchyInfo: new(
                 isInEducationOrganizationHierarchy,
                 educationOrganizationId,
@@ -463,10 +464,15 @@ public abstract class DatabaseTest : DatabaseTestBase
     protected static DescriptorReference CreateDescriptorReference(Reference reference)
     {
         return new(
-            ResourceInfo: CreateResourceInfo(reference.ResourceName),
-            DocumentIdentity: new([]),
+            ResourceInfo: CreateResourceInfo(reference.ResourceName, isDescriptor: true),
+            DocumentIdentity: new([
+                new(
+                    DocumentIdentity.DescriptorIdentityJsonPath,
+                    $"uri://ed-fi.org/{reference.ResourceName}#test"
+                ),
+            ]),
             ReferentialId: new ReferentialId(reference.ReferentialIdGuid),
-            Path: new JsonPath()
+            Path: new JsonPath("$")
         );
     }
 

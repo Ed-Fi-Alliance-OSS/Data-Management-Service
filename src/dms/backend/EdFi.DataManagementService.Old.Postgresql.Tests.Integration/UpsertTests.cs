@@ -903,7 +903,7 @@ public class UpsertTests : DatabaseTest
             await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
 
             // Insert 2nd document that references 1st
-            Reference[] references = [new(_defaultResourceName, _referentialIdDescriptorGuid)];
+            Reference[] references = [new(_defaultDescriptorName, _referentialIdDescriptorGuid)];
             IUpsertRequest upsertRequest2 = CreateUpsertRequest(
                 _defaultResourceName,
                 _documentUuidGuid,
@@ -1006,7 +1006,7 @@ public class UpsertTests : DatabaseTest
             await CreateUpsert().Upsert(upsertRequest2, Connection!, Transaction!);
 
             // Update document to reference descriptor
-            Reference[] references = [new(_defaultResourceName, _referentialIdDescriptorGuid)];
+            Reference[] references = [new(_defaultDescriptorName, _referentialIdDescriptorGuid)];
             IUpsertRequest upsertRequest3 = CreateUpsertRequest(
                 _defaultResourceName,
                 _documentUuid1Guid,
@@ -1059,7 +1059,7 @@ public class UpsertTests : DatabaseTest
             await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
 
             // Update document with nonexistent reference
-            Reference[] references = [new(_defaultResourceName, _nonExistentDescriptorReferentialIdGuid)];
+            Reference[] references = [new(_defaultDescriptorName, _nonExistentDescriptorReferentialIdGuid)];
             IUpsertRequest upsertRequest2 = CreateUpsertRequest(
                 _defaultResourceName,
                 _documentUuidGuid,
