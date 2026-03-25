@@ -8,6 +8,10 @@ namespace EdFi.DataManagementService.Backend.Tests.Common;
 public static class FixturePathResolver
 {
     private const string RepositoryRelativePrefix = "repo:";
+    private static readonly string[] _repositoryLayoutMarkers =
+    [
+        Path.Combine("src", "dms", "EdFi.DataManagementService.sln"),
+    ];
 
     public static string FindRepositoryRoot(string startDirectory)
     {
@@ -19,10 +23,7 @@ public static class FixturePathResolver
         {
             var candidate = directory.FullName;
 
-            if (
-                File.Exists(Path.Combine(candidate, "tasks.json"))
-                && File.Exists(Path.Combine(candidate, "progress.txt"))
-            )
+            if (ContainsAllMarkers(candidate, _repositoryLayoutMarkers))
             {
                 return candidate;
             }
@@ -127,5 +128,10 @@ public static class FixturePathResolver
         }
 
         return resolvedPath;
+    }
+
+    private static bool ContainsAllMarkers(string candidate, IReadOnlyList<string> markers)
+    {
+        return markers.All(marker => File.Exists(Path.Combine(candidate, marker)));
     }
 }
