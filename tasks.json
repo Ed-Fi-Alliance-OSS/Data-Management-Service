@@ -123,7 +123,7 @@
       "Add focused unit tests for SQL Server strategy selection and raw-result parity with PostgreSQL.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Failure Classification",
