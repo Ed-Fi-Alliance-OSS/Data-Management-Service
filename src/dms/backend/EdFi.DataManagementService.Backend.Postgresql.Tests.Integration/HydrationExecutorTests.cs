@@ -65,6 +65,14 @@ public class Given_A_Page_With_Multiple_Documents
                 "Ordinal" integer NOT NULL,
                 "City" varchar(100) NOT NULL
             );
+
+            CREATE TABLE hydtest."SchoolAddressPeriod" (
+                "CollectionItemId" bigint PRIMARY KEY,
+                "School_DocumentId" bigint NOT NULL,
+                "ParentCollectionItemId" bigint NOT NULL REFERENCES hydtest."SchoolAddress"("CollectionItemId"),
+                "Ordinal" integer NOT NULL,
+                "BeginDate" varchar(10) NOT NULL
+            );
             """
         );
 
@@ -89,6 +97,13 @@ public class Given_A_Page_With_Multiple_Documents
                 (1001, 101, 0, 'Springfield'),
                 (1002, 101, 1, 'Shelbyville'),
                 (1003, 102, 0, 'Centerville');
+
+            INSERT INTO hydtest."SchoolAddressPeriod" ("CollectionItemId", "School_DocumentId", "ParentCollectionItemId", "Ordinal", "BeginDate")
+            VALUES
+                (5001, 101, 1001, 0, '2020-01-01'),
+                (5002, 101, 1001, 1, '2021-06-15'),
+                (5003, 101, 1002, 0, '2022-09-01'),
+                (5004, 102, 1003, 0, '2023-03-01');
             """
         );
 
@@ -172,7 +187,7 @@ public class Given_A_Page_With_Multiple_Documents
     [Test]
     public void It_returns_root_rows_ordered_by_DocumentId()
     {
-        _result.TableRowsInDependencyOrder.Should().HaveCount(2);
+        _result.TableRowsInDependencyOrder.Should().HaveCount(3);
 
         var rootRows = _result.TableRowsInDependencyOrder[0];
         rootRows.Rows.Should().HaveCount(2);
@@ -216,6 +231,44 @@ public class Given_A_Page_With_Multiple_Documents
             .Should()
             .Be(1003);
         ((long)childRows.Rows[2][1]!).Should().Be(102);
+    }
+
+    [Test]
+    public void It_returns_nested_child_rows_ordered_by_root_scope_parent_scope_and_ordinal()
+    {
+        var nestedRows = _result.TableRowsInDependencyOrder[2];
+        nestedRows.Rows.Should().HaveCount(4);
+
+        // Columns: CollectionItemId, School_DocumentId, ParentCollectionItemId, Ordinal, BeginDate
+        // Ordered by School_DocumentId ASC, ParentCollectionItemId ASC, Ordinal ASC
+
+        // Row 0: doc 101, parent 1001, ordinal 0
+        ((long)nestedRows.Rows[0][1]!)
+            .Should()
+            .Be(101);
+        ((long)nestedRows.Rows[0][2]!).Should().Be(1001);
+        ((int)nestedRows.Rows[0][3]!).Should().Be(0);
+        ((string)nestedRows.Rows[0][4]!).Should().Be("2020-01-01");
+
+        // Row 1: doc 101, parent 1001, ordinal 1
+        ((long)nestedRows.Rows[1][2]!)
+            .Should()
+            .Be(1001);
+        ((int)nestedRows.Rows[1][3]!).Should().Be(1);
+        ((string)nestedRows.Rows[1][4]!).Should().Be("2021-06-15");
+
+        // Row 2: doc 101, parent 1002, ordinal 0
+        ((long)nestedRows.Rows[2][2]!)
+            .Should()
+            .Be(1002);
+        ((string)nestedRows.Rows[2][4]!).Should().Be("2022-09-01");
+
+        // Row 3: doc 102, parent 1003, ordinal 0
+        ((long)nestedRows.Rows[3][1]!)
+            .Should()
+            .Be(102);
+        ((long)nestedRows.Rows[3][2]!).Should().Be(1003);
+        ((string)nestedRows.Rows[3][4]!).Should().Be("2023-03-01");
     }
 
     [Test]
@@ -275,6 +328,14 @@ public class Given_A_Single_DocumentId_Keyset
                 "Ordinal" integer NOT NULL,
                 "City" varchar(100) NOT NULL
             );
+
+            CREATE TABLE hydsingle."SchoolAddressPeriod" (
+                "CollectionItemId" bigint PRIMARY KEY,
+                "School_DocumentId" bigint NOT NULL,
+                "ParentCollectionItemId" bigint NOT NULL REFERENCES hydsingle."SchoolAddress"("CollectionItemId"),
+                "Ordinal" integer NOT NULL,
+                "BeginDate" varchar(10) NOT NULL
+            );
             """
         );
 
@@ -293,6 +354,9 @@ public class Given_A_Single_DocumentId_Keyset
 
             INSERT INTO hydsingle."SchoolAddress" ("CollectionItemId", "School_DocumentId", "Ordinal", "City")
             VALUES (2001, 201, 0, 'Alpha'), (2002, 202, 0, 'Beta');
+
+            INSERT INTO hydsingle."SchoolAddressPeriod" ("CollectionItemId", "School_DocumentId", "ParentCollectionItemId", "Ordinal", "BeginDate")
+            VALUES (6001, 201, 2001, 0, '2020-01-01'), (6002, 202, 2002, 0, '2023-03-01');
             """
         );
 
@@ -353,6 +417,16 @@ public class Given_A_Single_DocumentId_Keyset
         childRows.Rows.Should().HaveCount(1);
         ((long)childRows.Rows[0][1]!).Should().Be(201);
         ((string)childRows.Rows[0][3]!).Should().Be("Alpha");
+    }
+
+    [Test]
+    public void It_returns_nested_child_rows_only_for_that_document()
+    {
+        var nestedRows = _result.TableRowsInDependencyOrder[2];
+        nestedRows.Rows.Should().HaveCount(1);
+        ((long)nestedRows.Rows[0][1]!).Should().Be(201);
+        ((long)nestedRows.Rows[0][2]!).Should().Be(2001);
+        ((string)nestedRows.Rows[0][4]!).Should().Be("2020-01-01");
     }
 
     private static async Task ExecuteSql(NpgsqlConnection connection, string sql)
