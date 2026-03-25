@@ -160,6 +160,10 @@ internal sealed class RecordingDbConnection(RecordingDbCommand command) : DbConn
 
     public int DisposeCallCount { get; private set; }
 
+    public int OpenAsyncCallCount { get; private set; }
+
+    public CancellationToken? LastOpenAsyncCancellationToken { get; private set; }
+
     [AllowNull]
     public override string ConnectionString { get; set; } = "Host=localhost;Database=test";
 
@@ -176,6 +180,15 @@ internal sealed class RecordingDbConnection(RecordingDbCommand command) : DbConn
     public override void Close() => _state = ConnectionState.Closed;
 
     public override void Open() => _state = ConnectionState.Open;
+
+    public override Task OpenAsync(CancellationToken cancellationToken)
+    {
+        OpenAsyncCallCount++;
+        LastOpenAsyncCancellationToken = cancellationToken;
+        _state = ConnectionState.Open;
+
+        return Task.CompletedTask;
+    }
 
     protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) =>
         throw new NotSupportedException();

@@ -4,9 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
-using EdFi.DataManagementService.Backend;
 
-namespace EdFi.DataManagementService.Backend.Postgresql;
+namespace EdFi.DataManagementService.Backend;
 
 internal sealed class DbRelationalCommandReader(DbDataReader reader) : IRelationalCommandReader
 {

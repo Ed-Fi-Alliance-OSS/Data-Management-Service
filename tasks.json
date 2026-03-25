@@ -60,7 +60,7 @@
       "Add focused unit tests for SQL Server relational access behavior through the shared contract.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Resolved Reference Surface",
