@@ -3175,7 +3175,7 @@ internal static class AuthPeopleViewsFixture
         var organizationIdColumn = new DbColumnName("EducationOrganizationId");
 
         // Column names used by the people auth views
-        var schoolIdColumn = new DbColumnName("SchoolId");
+        var schoolIdColumn = new DbColumnName("SchoolId_Unified");
         var studentDocIdColumn = new DbColumnName("Student_DocumentId");
         var contactDocIdColumn = new DbColumnName("Contact_DocumentId");
         var staffDocIdColumn = new DbColumnName("Staff_DocumentId");
@@ -3208,7 +3208,7 @@ internal static class AuthPeopleViewsFixture
 
         // ── Association tables ──────────────────────────────────────────
 
-        // StudentSchoolAssociation (DocumentId, Student_DocumentId, SchoolId)
+        // StudentSchoolAssociation (DocumentId, Student_DocumentId, SchoolId_Unified)
         var ssaTableName = new DbTableName(schema, "StudentSchoolAssociation");
         var ssaTable = new DbTableModel(
             ssaTableName,

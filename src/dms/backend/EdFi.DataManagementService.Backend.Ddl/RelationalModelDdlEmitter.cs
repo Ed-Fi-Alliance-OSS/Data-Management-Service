@@ -1975,7 +1975,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.AppendLine($"FROM {edOrgTable} edOrg");
         writer.AppendLine(
             $"INNER JOIN {Quote(new DbTableName(new DbSchemaName("edfi"), "StudentSchoolAssociation"))} ssa"
-                + $" ON edOrg.{tgtEdOrgId} = ssa.{Quote("SchoolId")}"
+                + $" ON edOrg.{tgtEdOrgId} = ssa.{Quote("SchoolId_Unified")}"
         );
         writer.AppendLine(
             $"INNER JOIN {Quote(new DbTableName(new DbSchemaName("edfi"), "StudentContactAssociation"))} sca"
@@ -2026,7 +2026,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.AppendLine($"FROM {edOrgTable} edOrg");
         writer.AppendLine(
             $"INNER JOIN {Quote(new DbTableName(new DbSchemaName("edfi"), "StudentSchoolAssociation"))} ssa"
-                + $" ON edOrg.{tgtEdOrgId} = ssa.{Quote("SchoolId")}"
+                + $" ON edOrg.{tgtEdOrgId} = ssa.{Quote("SchoolId_Unified")}"
         );
         writer.AppendLine(";");
         writer.AppendLine();

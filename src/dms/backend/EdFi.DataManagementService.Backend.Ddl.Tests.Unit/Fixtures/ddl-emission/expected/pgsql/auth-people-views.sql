@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAssociation"
 (
     "DocumentId" bigint NOT NULL,
     "Student_DocumentId" bigint NOT NULL,
-    "SchoolId" integer NOT NULL,
+    "SchoolId_Unified" integer NOT NULL,
     CONSTRAINT "PK_StudentSchoolAssociation" PRIMARY KEY ("DocumentId")
 );
 
@@ -55,7 +55,7 @@ SELECT DISTINCT
     edOrg."SourceEducationOrganizationId",
     sca."Contact_DocumentId"
 FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
-INNER JOIN "edfi"."StudentSchoolAssociation" ssa ON edOrg."TargetEducationOrganizationId" = ssa."SchoolId"
+INNER JOIN "edfi"."StudentSchoolAssociation" ssa ON edOrg."TargetEducationOrganizationId" = ssa."SchoolId_Unified"
 INNER JOIN "edfi"."StudentContactAssociation" sca ON ssa."Student_DocumentId" = sca."Student_DocumentId"
 ;
 
@@ -78,7 +78,7 @@ SELECT DISTINCT
     edOrg."SourceEducationOrganizationId",
     ssa."Student_DocumentId"
 FROM "auth"."EducationOrganizationIdToEducationOrganizationId" edOrg
-INNER JOIN "edfi"."StudentSchoolAssociation" ssa ON edOrg."TargetEducationOrganizationId" = ssa."SchoolId"
+INNER JOIN "edfi"."StudentSchoolAssociation" ssa ON edOrg."TargetEducationOrganizationId" = ssa."SchoolId_Unified"
 ;
 
 CREATE OR REPLACE VIEW "auth"."EducationOrganizationIdToStudentDocumentIdThroughResponsibility" AS
