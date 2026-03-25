@@ -178,7 +178,7 @@
       "Add PostgreSQL integration fixture setup that provisions the minimal resolver test database shape used by the shared fixtures.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "SQL Server Harness Provisioning",
