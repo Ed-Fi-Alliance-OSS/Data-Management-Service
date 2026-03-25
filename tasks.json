@@ -105,7 +105,7 @@
       "Add focused unit tests for the SQL Server small-list strategy and raw row projection contract.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "SQL Server Bulk Strategy",
