@@ -27,28 +27,37 @@
     "completed": false
   },
   {
-    "category": "Relational Access Seam",
-    "description": "Introduce a request-scoped relational command/connection seam usable by the DMS-982 resolver without wiring a new relational `IDocumentStoreRepository` path. Acceptance: PostgreSQL can execute resolver commands against the current per-request data source, SQL Server can execute resolver commands from the active request-scoped connection string path, shared resolver/adapter code depends on this seam instead of old repository operations, and the seam is narrow enough to support future batched write-prerequisite execution.",
+    "category": "Relational Access Contract",
+    "description": "Define the shared request-scoped relational access contract used by the DMS-982 resolver and dialect adapters. Acceptance: shared resolver/adapter code depends on a narrow abstraction for command execution and result reading rather than repository operations, the contract is small enough to support future batched write-prerequisite composition without redesign, and contract-focused unit tests validate fake/in-memory implementations used by resolver tests.",
     "steps-to-verify": [
-      "Add unit tests covering the shared relational access abstraction and dialect-specific factory behavior used by the resolver.",
+      "Add unit tests covering the shared relational access abstraction and fake/test implementations used by the resolver.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
     "completed": false
   },
   {
-    "category": "Reference Path Indexing",
-    "description": "Implement concrete reference-path indexing helpers that map Core-emitted `DocumentReference.Path` values to compiled `DocumentReferenceBinding` entries and request-local `ordinalPath` tuples. Acceptance: helpers resolve root, collection, and nested-collection reference-object paths against a compiled write plan; reject unknown, mismatched, or wildcard paths deterministically; and emit one indexed occurrence per extracted reference instance without introducing profile scope-address derivation responsibilities.",
+    "category": "PostgreSQL Relational Access",
+    "description": "Implement the PostgreSQL request-scoped relational access path behind the shared DMS-982 contract. Acceptance: PostgreSQL resolver commands execute against the current request's data source/connection path, the implementation reuses existing request-scoped PostgreSQL infrastructure instead of introducing repository wiring, and focused unit tests cover connection selection and command execution behavior needed by the resolver.",
     "steps-to-verify": [
-      "Add unit tests for root, single-collection, and nested-collection reference paths, including invalid-path failures.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+      "Add focused unit tests for PostgreSQL relational access behavior through the shared contract.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
     "completed": false
   },
   {
-    "category": "Resolved Reference Lookup",
-    "description": "Build the request-scoped resolved document-reference lookup that DMS-983 will consume. Acceptance: given indexed document-reference occurrences plus deduped resolver results, runtime can materialize a deterministic `(binding, ordinalPath) -> DocumentId` lookup for every successfully resolved document reference occurrence; duplicate referential ids at different paths remain separate entries in the lookup; and unresolved or incompatible occurrences are excluded while still remaining available in failure diagnostics.",
+    "category": "SQL Server Relational Access",
+    "description": "Implement the SQL Server request-scoped relational access path behind the shared DMS-982 contract. Acceptance: SQL Server resolver commands execute from the active request-scoped connection-string path without introducing full repository wiring, the implementation exposes the same shared contract used by PostgreSQL, and focused unit tests cover connection creation and command execution behavior needed by the resolver.",
     "steps-to-verify": [
-      "Add unit tests covering repeated referential ids across multiple ordinal paths and ensuring only successful resolutions populate the lookup.",
+      "Add focused unit tests for SQL Server relational access behavior through the shared contract.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Resolved Reference Surface",
+    "description": "Build the request-scoped resolved reference surface that downstream write execution will consume. Acceptance: given extracted reference occurrences plus deduped resolver results, runtime can materialize a deterministic successful-resolution view keyed by extracted reference occurrence/path; duplicate referential ids at different JSON locations remain separate occurrences in the surface; and unresolved or incompatible occurrences are excluded from successful resolutions while still remaining available in failure diagnostics.",
+    "steps-to-verify": [
+      "Add unit tests covering repeated referential ids across multiple concrete JSON paths and ensuring only successful resolutions populate the successful-resolution surface.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
     "completed": false
