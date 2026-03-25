@@ -52,6 +52,17 @@ public interface IReferenceResolverAdapter
 }
 
 /// <summary>
+/// Creates the request-scoped dialect adapter used by <see cref="IReferenceResolver" />.
+/// </summary>
+public interface IReferenceResolverAdapterFactory
+{
+    /// <summary>
+    /// Creates the adapter for the current request scope.
+    /// </summary>
+    IReferenceResolverAdapter CreateAdapter();
+}
+
+/// <summary>
 /// Deduped relational lookup request emitted by <see cref="IReferenceResolver" />.
 /// </summary>
 /// <param name="MappingSet">The resolved runtime mapping set for the active request.</param>
