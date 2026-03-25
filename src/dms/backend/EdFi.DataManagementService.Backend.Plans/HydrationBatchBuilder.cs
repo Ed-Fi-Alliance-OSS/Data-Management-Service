@@ -54,7 +54,7 @@ public static class HydrationBatchBuilder
         // 3. Optional total count
         if (keyset is PageKeysetSpec.Query { Plan.TotalCountSql: not null } queryWithCount)
         {
-            writer.AppendLine(queryWithCount.Plan.TotalCountSql);
+            writer.AppendLine(EnsureTrailingSemicolon(queryWithCount.Plan.TotalCountSql));
             writer.AppendLine();
         }
 
@@ -180,6 +180,16 @@ public static class HydrationBatchBuilder
         parameter.ParameterName = $"@{bareName}";
         parameter.Value = value ?? DBNull.Value;
         command.Parameters.Add(parameter);
+    }
+
+    /// <summary>
+    /// Ensures a SQL statement ends with a semicolon so it is properly terminated
+    /// when embedded in a multi-statement batch.
+    /// </summary>
+    private static string EnsureTrailingSemicolon(string sql)
+    {
+        var trimmed = sql.AsSpan().TrimEnd();
+        return trimmed.Length > 0 && trimmed[^1] == ';' ? sql : $"{trimmed};";
     }
 
     /// <summary>
