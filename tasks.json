@@ -37,10 +37,19 @@
   },
   {
     "category": "Reference Path Indexing",
-    "description": "Implement concrete reference-path indexing helpers that map Core-emitted `DocumentReference.Path` values to compiled `DocumentReferenceBinding` entries and request-local `ordinalPath` tuples for later flattening work. Acceptance: helpers resolve root, collection, and nested-collection reference-object paths against a compiled write plan; reject unknown, mismatched, or wildcard paths deterministically; and produce a per-request `(binding, ordinalPath)` entry for each extracted reference occurrence without introducing profile scope-address derivation responsibilities.",
+    "description": "Implement concrete reference-path indexing helpers that map Core-emitted `DocumentReference.Path` values to compiled `DocumentReferenceBinding` entries and request-local `ordinalPath` tuples. Acceptance: helpers resolve root, collection, and nested-collection reference-object paths against a compiled write plan; reject unknown, mismatched, or wildcard paths deterministically; and emit one indexed occurrence per extracted reference instance without introducing profile scope-address derivation responsibilities.",
     "steps-to-verify": [
       "Add unit tests for root, single-collection, and nested-collection reference paths, including invalid-path failures.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Resolved Reference Lookup",
+    "description": "Build the request-scoped resolved document-reference lookup that DMS-983 will consume. Acceptance: given indexed document-reference occurrences plus deduped resolver results, runtime can materialize a deterministic `(binding, ordinalPath) -> DocumentId` lookup for every successfully resolved document reference occurrence; duplicate referential ids at different paths remain separate entries in the lookup; and unresolved or incompatible occurrences are excluded while still remaining available in failure diagnostics.",
+    "steps-to-verify": [
+      "Add unit tests covering repeated referential ids across multiple ordinal paths and ensuring only successful resolutions populate the lookup.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
     "completed": false
   },
@@ -108,19 +117,37 @@
     "completed": false
   },
   {
-    "category": "Composition",
-    "description": "Register the DMS-982 resolver, relational access seam, and dialect-specific adapter seams in composition without wiring a new relational repository path. Acceptance: PostgreSQL service registration can resolve the prerequisite resolver and relational access seam when `UseRelationalBackend` is enabled, SQL Server tests can instantiate the SQL Server adapter through the same contract/factory seam, and no `IDocumentStoreRepository` request-path integration is added in this story.",
+    "category": "Composition Surface",
+    "description": "Define the shared resolver composition surface without yet wiring repository request paths. Acceptance: the resolver, relational access seam, and dialect adapter factory/contracts are registered behind a narrow interface that both production PostgreSQL wiring and SQL Server test wiring can consume; the surface does not require `IDocumentStoreRepository` integration; and unit tests can build a service collection around the new shared contract without pulling in full frontend startup.",
     "steps-to-verify": [
-      "Add or update DI/composition tests that resolve the prerequisite resolver, relational access seam, and adapter factory from the configured service collection.",
+      "Add unit tests that build a minimal service collection around the shared resolver composition surface and adapter factory.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "PostgreSQL Composition Wiring",
+    "description": "Wire the shared DMS-982 composition surface into the PostgreSQL production registration path. Acceptance: when PostgreSQL datastore services are registered with `UseRelationalBackend` enabled, the prerequisite resolver, relational access seam, and PostgreSQL adapter factory can all be resolved from the application service collection without introducing a new relational repository execution path.",
+    "steps-to-verify": [
+      "Add or update DI tests covering PostgreSQL service registration through the current frontend/bootstrap path.",
       "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj`"
     ],
     "completed": false
   },
   {
-    "category": "Shared Integration Fixtures",
-    "description": "Add shared resolver integration fixtures and seed helpers for DMS-982 that are independent of the legacy JSON repository path and full E2E environment. Acceptance: shared helpers can seed `dms.ResourceKey`, `dms.Document`, `dms.ReferentialIdentity`, `dms.Descriptor`, and any required abstract identity tables/member tables from compact fixtures, and the helpers are reusable by both PostgreSQL and SQL Server resolver integration tests.",
+    "category": "SQL Server Composition Wiring",
+    "description": "Provide SQL Server registration/test wiring for the shared DMS-982 composition surface. Acceptance: SQL Server-focused tests can construct the resolver, relational access seam, and SQL Server adapter factory through the same shared contract/factory seam used by PostgreSQL, without requiring new frontend datastore bootstrap or `IDocumentStoreRepository` request-path integration in this story.",
     "steps-to-verify": [
-      "Add shared test helpers that provision and seed compact resolver fixtures without depending on the old repository path.",
+      "Add unit tests that resolve the SQL Server adapter factory and resolver from a service collection using the shared composition surface.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Shared Integration Fixtures",
+    "description": "Add shared resolver fixture models and seed helpers for DMS-982 that both dialect-specific integration harnesses can consume. Acceptance: shared helpers describe compact resolver datasets for `dms.ResourceKey`, `dms.Document`, `dms.ReferentialIdentity`, `dms.Descriptor`, and any required abstract alias/member rows; the helpers do not own dialect-specific schema provisioning or reset; and they can express both successful and fail-closed compatibility scenarios needed by later integration tasks.",
+    "steps-to-verify": [
+      "Add shared fixture/seeding helpers reused by both PostgreSQL and SQL Server resolver integration tests.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj`"
     ],
@@ -145,8 +172,8 @@
     "completed": false
   },
   {
-    "category": "PostgreSQL Integration",
-    "description": "Add focused PostgreSQL integration coverage for the resolver service. Acceptance: tests cover request-local dedupe versus per-path diagnostics, missing document references at multiple concrete JSON locations, concrete-target mismatch, abstract/superclass alias resolution, descriptor membership failure, descriptor discriminator mismatch, and at least one large lookup batch that still resolves in bulk.",
+    "category": "PostgreSQL Document Reference Integration",
+    "description": "Add focused PostgreSQL integration coverage for document-reference resolution behavior. Acceptance: tests cover request-local dedupe versus per-path diagnostics, missing document references at multiple concrete JSON locations, concrete-target mismatch, and abstract/superclass alias resolution with fail-closed compatibility validation.",
     "steps-to-verify": [
       "Ensure the PostgreSQL integration test connection string is configured for `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
@@ -154,8 +181,44 @@
     "completed": false
   },
   {
-    "category": "SQL Server Integration",
-    "description": "Add focused SQL Server integration coverage for the resolver service with parity to PostgreSQL where the query strategy differs. Acceptance: tests cover the same success/failure matrix as PostgreSQL, include at least one threshold-crossing large-list case that exercises the SQL Server bulk strategy, and assert that missing and type-mismatch outcomes match PostgreSQL at the public-result level.",
+    "category": "PostgreSQL Descriptor Integration",
+    "description": "Add focused PostgreSQL integration coverage for descriptor validation behavior. Acceptance: tests cover descriptor membership failure, descriptor discriminator/type mismatch, and parity of public failure mapping versus the shared classifier contract.",
+    "steps-to-verify": [
+      "Ensure the PostgreSQL integration test connection string is configured for `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration`.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "PostgreSQL Batching Integration",
+    "description": "Add focused PostgreSQL integration coverage for bulk lookup behavior. Acceptance: tests cover at least one large deduped lookup set that still resolves through the bulk PostgreSQL lookup path and confirm repeated per-path diagnostics remain intact after dedupe.",
+    "steps-to-verify": [
+      "Ensure the PostgreSQL integration test connection string is configured for `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration`.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "SQL Server Document Reference Integration",
+    "description": "Add focused SQL Server integration coverage for document-reference resolution behavior. Acceptance: tests cover request-local dedupe versus per-path diagnostics, missing document references at multiple concrete JSON locations, concrete-target mismatch, and abstract/superclass alias resolution with fail-closed compatibility validation at the same public-result level as PostgreSQL.",
+    "steps-to-verify": [
+      "Ensure the SQL Server admin connection string is configured for `src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration`.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "SQL Server Descriptor Integration",
+    "description": "Add focused SQL Server integration coverage for descriptor validation behavior. Acceptance: tests cover descriptor membership failure, descriptor discriminator/type mismatch, and parity of public failure mapping versus PostgreSQL where the adapter strategy differs under the hood.",
+    "steps-to-verify": [
+      "Ensure the SQL Server admin connection string is configured for `src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration`.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "SQL Server Batching Integration",
+    "description": "Add focused SQL Server integration coverage for threshold-sensitive bulk lookup behavior. Acceptance: tests cover at least one threshold-crossing large deduped lookup set that exercises the SQL Server bulk-safe strategy and confirm repeated per-path diagnostics remain intact after dedupe.",
     "steps-to-verify": [
       "Ensure the SQL Server admin connection string is configured for `src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj`"
