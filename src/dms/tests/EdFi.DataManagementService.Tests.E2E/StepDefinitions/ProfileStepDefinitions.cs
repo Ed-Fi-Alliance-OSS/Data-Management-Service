@@ -1399,6 +1399,9 @@ public class ProfileStepDefinitions(
         _logger.log.Information($"POST url: {url}");
         _logger.log.Information($"POST body: {body}");
 
+        _id = string.Empty;
+        _location = string.Empty;
+
         // Build headers, including Content-Type for multi-profile applications
         var headers = GetHeadersForPost(url);
 
@@ -1438,6 +1441,14 @@ public class ProfileStepDefinitions(
         }
 
         ExtractIdFromResponse();
+
+        if (_apiResponse.Status is 200 or 201 && string.IsNullOrWhiteSpace(_id))
+        {
+            _logger.log.Warning(
+                "Successful setup POST to {Url} did not return a Location header; later '{id}' substitutions will be unavailable for this scenario.",
+                url
+            );
+        }
     }
 
     private static bool ShouldRetryWithSeedToken(int statusCode, string responseBody)
@@ -1514,8 +1525,9 @@ public class ProfileStepDefinitions(
             // Extract resource name from URL (e.g., "data/ed-fi/schools" -> "school")
             string resourceName = ExtractResourceNameFromUrl(url);
 
-            string? matchingProfile = Array.Find(profiles, profile =>
-                ProfileCoversResource(profile, resourceName)
+            string? matchingProfile = Array.Find(
+                profiles,
+                profile => ProfileCoversResource(profile, resourceName)
             );
 
             if (!string.IsNullOrWhiteSpace(matchingProfile))
@@ -1550,9 +1562,8 @@ public class ProfileStepDefinitions(
         foreach ((string Name, string Xml) profile in ProfileDefinitions.AllProfiles)
         {
             XDocument doc = XDocument.Parse(profile.Xml);
-            IEnumerable<XElement> profileElements = doc.Root?.Name.LocalName == "Profile"
-                ? [doc.Root]
-                : doc.Root?.Elements("Profile") ?? [];
+            IEnumerable<XElement> profileElements =
+                doc.Root?.Name.LocalName == "Profile" ? [doc.Root] : doc.Root?.Elements("Profile") ?? [];
 
             foreach (XElement profileElement in profileElements)
             {
