@@ -468,6 +468,21 @@ public class Given_A_Query_With_TotalCount_Requested_Mssql
                 DocumentId bigint PRIMARY KEY,
                 SchoolId int NOT NULL
             );
+
+            CREATE TABLE hydcount.SchoolAddress (
+                CollectionItemId bigint PRIMARY KEY,
+                School_DocumentId bigint NOT NULL REFERENCES hydcount.School(DocumentId),
+                Ordinal int NOT NULL,
+                City varchar(100) NOT NULL
+            );
+
+            CREATE TABLE hydcount.SchoolAddressPeriod (
+                CollectionItemId bigint PRIMARY KEY,
+                School_DocumentId bigint NOT NULL,
+                ParentCollectionItemId bigint NOT NULL REFERENCES hydcount.SchoolAddress(CollectionItemId),
+                Ordinal int NOT NULL,
+                BeginDate varchar(10) NOT NULL
+            );
             """
         );
 
