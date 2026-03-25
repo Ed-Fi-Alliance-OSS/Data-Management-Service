@@ -3160,11 +3160,11 @@ internal static class AuthEdOrgHierarchyFixture
         // Auth covering index
         var authIndex = new DbIndexInfo(
             new DbIndexName("IX_EducationOrganizationIdToEducationOrganizationId_Target"),
-            AuthTableNames.EdOrgIdToEdOrgId,
-            KeyColumns: [AuthTableNames.TargetEdOrgId],
+            AuthNames.EdOrgIdToEdOrgId,
+            KeyColumns: [AuthNames.TargetEdOrgId],
             IsUnique: false,
             Kind: DbIndexKind.Explicit,
-            IncludeColumns: [AuthTableNames.SourceEdOrgId]
+            IncludeColumns: [AuthNames.SourceEdOrgId]
         );
 
         return new DerivedRelationalModelSet(
@@ -3217,11 +3217,11 @@ internal static class AuthPeopleViewsFixture
         var organizationIdColumn = new DbColumnName("EducationOrganizationId");
 
         // Column names used by the people auth views (shared constants with the emitter)
-        var schoolIdColumn = AuthTableNames.SchoolIdUnified;
-        var studentDocIdColumn = AuthTableNames.StudentDocumentId;
-        var contactDocIdColumn = AuthTableNames.ContactDocumentId;
-        var staffDocIdColumn = AuthTableNames.StaffDocumentId;
-        var edOrgIdColumn = AuthTableNames.EdOrgEdOrgId;
+        var schoolIdColumn = AuthNames.SchoolIdUnified;
+        var studentDocIdColumn = AuthNames.StudentDocumentId;
+        var contactDocIdColumn = AuthNames.ContactDocumentId;
+        var staffDocIdColumn = AuthNames.StaffDocumentId;
+        var edOrgIdColumn = AuthNames.EdOrgEdOrgId;
 
         // Resource keys (alphabetical by resource name for deterministic ordering)
         var ssaResource = new QualifiedResourceName("Ed-Fi", "StudentSchoolAssociation");
@@ -3501,11 +3501,11 @@ internal static class AuthPeopleViewsFixture
         // Auth covering index
         var authIndex = new DbIndexInfo(
             new DbIndexName("IX_EducationOrganizationIdToEducationOrganizationId_Target"),
-            AuthTableNames.EdOrgIdToEdOrgId,
-            KeyColumns: [AuthTableNames.TargetEdOrgId],
+            AuthNames.EdOrgIdToEdOrgId,
+            KeyColumns: [AuthNames.TargetEdOrgId],
             IsUnique: false,
             Kind: DbIndexKind.Explicit,
-            IncludeColumns: [AuthTableNames.SourceEdOrgId]
+            IncludeColumns: [AuthNames.SourceEdOrgId]
         );
 
         return new DerivedRelationalModelSet(

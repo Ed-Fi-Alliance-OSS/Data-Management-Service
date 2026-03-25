@@ -101,7 +101,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
         // Phase 1: Schemas (includes auth schema when hierarchy is present)
         var additionalSchemas = authHierarchy is { EntitiesInNameOrder.Count: > 0 }
-            ? [AuthTableNames.AuthSchema]
+            ? [AuthNames.AuthSchema]
             : Array.Empty<DbSchemaName>();
         EmitSchemas(writer, schemas, additionalSchemas);
 
@@ -184,9 +184,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             return;
         }
 
-        var authTable = AuthTableNames.EdOrgIdToEdOrgId;
-        var sourceCol = AuthTableNames.SourceEdOrgId;
-        var targetCol = AuthTableNames.TargetEdOrgId;
+        var authTable = AuthNames.EdOrgIdToEdOrgId;
+        var sourceCol = AuthNames.SourceEdOrgId;
+        var targetCol = AuthNames.TargetEdOrgId;
 
         writer.AppendLine(_dialect.CreateTableHeader(authTable));
         writer.AppendLine("(");
@@ -1819,7 +1819,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private void EmitCreateView(SqlWriter writer, AbstractUnionViewInfo viewInfo)
     {
-        EmitViewHeader(writer, Quote(viewInfo.ViewName));
+        EmitViewHeader(writer, viewInfo.ViewName);
 
         // Emit UNION ALL arms
         if (viewInfo.UnionArmsInOrder.Count == 0)
@@ -1939,15 +1939,15 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             return;
         }
 
-        var authSchema = AuthTableNames.AuthSchema;
-        string edOrgTable = Quote(AuthTableNames.EdOrgIdToEdOrgId);
-        string srcEdOrgId = Quote(AuthTableNames.SourceEdOrgId);
-        string tgtEdOrgId = Quote(AuthTableNames.TargetEdOrgId);
-        string schoolId = Quote(AuthTableNames.SchoolIdUnified);
-        string studentDocId = Quote(AuthTableNames.StudentDocumentId);
-        string contactDocId = Quote(AuthTableNames.ContactDocumentId);
-        string staffDocId = Quote(AuthTableNames.StaffDocumentId);
-        string edOrgEdOrgId = Quote(AuthTableNames.EdOrgEdOrgId);
+        var authSchema = AuthNames.AuthSchema;
+        string edOrgTable = Quote(AuthNames.EdOrgIdToEdOrgId);
+        string srcEdOrgId = Quote(AuthNames.SourceEdOrgId);
+        string tgtEdOrgId = Quote(AuthNames.TargetEdOrgId);
+        string schoolId = Quote(AuthNames.SchoolIdUnified);
+        string studentDocId = Quote(AuthNames.StudentDocumentId);
+        string contactDocId = Quote(AuthNames.ContactDocumentId);
+        string staffDocId = Quote(AuthNames.StaffDocumentId);
+        string edOrgEdOrgId = Quote(AuthNames.EdOrgEdOrgId);
 
         var edfi = new DbSchemaName("edfi");
 
@@ -1955,7 +1955,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
         // 1. auth.EducationOrganizationIdToContactDocumentId
         //    EdOrg hierarchy -> StudentSchoolAssociation -> StudentContactAssociation
-        EmitViewHeader(writer, $"{Quote(authSchema)}.{Quote("EducationOrganizationIdToContactDocumentId")}");
+        EmitViewHeader(writer, new DbTableName(authSchema, "EducationOrganizationIdToContactDocumentId"));
         writer.AppendLine($"SELECT DISTINCT");
         using (writer.Indent())
         {
@@ -1978,7 +1978,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         //    UNION of two arms: StaffEducationOrganizationAssignmentAssociation
         //    and StaffEducationOrganizationEmploymentAssociation
         //    UNION already deduplicates, so per-arm DISTINCT is not needed.
-        EmitViewHeader(writer, $"{Quote(authSchema)}.{Quote("EducationOrganizationIdToStaffDocumentId")}");
+        EmitViewHeader(writer, new DbTableName(authSchema, "EducationOrganizationIdToStaffDocumentId"));
         writer.AppendLine($"SELECT");
         using (writer.Indent())
         {
@@ -2007,7 +2007,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
         // 3. auth.EducationOrganizationIdToStudentDocumentId
         //    EdOrg hierarchy -> StudentSchoolAssociation
-        EmitViewHeader(writer, $"{Quote(authSchema)}.{Quote("EducationOrganizationIdToStudentDocumentId")}");
+        EmitViewHeader(writer, new DbTableName(authSchema, "EducationOrganizationIdToStudentDocumentId"));
         writer.AppendLine($"SELECT DISTINCT");
         using (writer.Indent())
         {
@@ -2026,7 +2026,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         //    EdOrg hierarchy -> StudentEducationOrganizationResponsibilityAssociation
         EmitViewHeader(
             writer,
-            $"{Quote(authSchema)}.{Quote("EducationOrganizationIdToStudentDocumentIdThroughResponsibility")}"
+            new DbTableName(authSchema, "EducationOrganizationIdToStudentDocumentIdThroughResponsibility")
         );
         writer.AppendLine($"SELECT DISTINCT");
         using (writer.Indent())
@@ -2048,8 +2048,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// (MSSQL) followed by <c>CREATE OR REPLACE VIEW</c> / <c>CREATE OR ALTER VIEW</c> and <c> AS</c>.
     /// </summary>
     /// <param name="writer">The SQL writer.</param>
-    /// <param name="qualifiedViewName">Already-quoted, schema-qualified view name.</param>
-    private void EmitViewHeader(SqlWriter writer, string qualifiedViewName)
+    /// <param name="viewName">The schema-qualified view name (quoted internally).</param>
+    private void EmitViewHeader(SqlWriter writer, DbTableName viewName)
     {
         if (_dialect.ViewCreationPattern == DdlPattern.CreateOrAlter)
         {
@@ -2069,7 +2069,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
         writer.Append(createKeyword);
         writer.Append(" ");
-        writer.Append(qualifiedViewName);
+        writer.Append(Quote(viewName));
         writer.AppendLine(" AS");
     }
 

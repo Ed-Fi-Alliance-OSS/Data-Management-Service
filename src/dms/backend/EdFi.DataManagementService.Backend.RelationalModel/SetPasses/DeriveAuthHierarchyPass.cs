@@ -37,12 +37,12 @@ public sealed class DeriveAuthHierarchyPass : IRelationalModelSetPass
         // Note: The PK on (Source, Target) already covers Source-leading queries.
         context.IndexInventory.Add(
             new DbIndexInfo(
-                new DbIndexName($"IX_{AuthTableNames.EdOrgIdToEdOrgId.Name}_Target"),
-                AuthTableNames.EdOrgIdToEdOrgId,
-                KeyColumns: [AuthTableNames.TargetEdOrgId],
+                new DbIndexName($"IX_{AuthNames.EdOrgIdToEdOrgId.Name}_Target"),
+                AuthNames.EdOrgIdToEdOrgId,
+                KeyColumns: [AuthNames.TargetEdOrgId],
                 IsUnique: false,
                 Kind: DbIndexKind.Explicit,
-                IncludeColumns: [AuthTableNames.SourceEdOrgId]
+                IncludeColumns: [AuthNames.SourceEdOrgId]
             )
         );
 

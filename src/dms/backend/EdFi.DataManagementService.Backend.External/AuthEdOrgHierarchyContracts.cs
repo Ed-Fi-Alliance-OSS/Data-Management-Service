@@ -23,7 +23,7 @@ public enum AuthHierarchyTriggerEvent
 /// <summary>
 /// Shared table and column name constants for the <c>auth.*</c> schema.
 /// </summary>
-public static class AuthTableNames
+public static class AuthNames
 {
     public static readonly DbSchemaName AuthSchema = new("auth");
 
