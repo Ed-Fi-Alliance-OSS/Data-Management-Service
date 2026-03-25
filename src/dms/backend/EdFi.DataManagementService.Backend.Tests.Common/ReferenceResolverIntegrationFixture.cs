@@ -267,7 +267,14 @@ public sealed class ReferenceResolverIntegrationFixture
                 new AbstractUnionViewInfo(
                     educationOrganizationKey,
                     new DbTableName(_edFiSchema, "EducationOrganization_View"),
-                    [],
+                    [
+                        new AbstractUnionViewOutputColumn(
+                            new DbColumnName("DocumentId"),
+                            new RelationalScalarType(ScalarKind.Int64),
+                            null,
+                            null
+                        ),
+                    ],
                     [
                         CreateAbstractUnionArm(schoolKey, "School"),
                         CreateAbstractUnionArm(localEducationAgencyKey, "LocalEducationAgency"),
@@ -416,7 +423,11 @@ public sealed class ReferenceResolverIntegrationFixture
         string tableName
     )
     {
-        return new(concreteMemberResourceKey, new DbTableName(_edFiSchema, tableName), []);
+        return new(
+            concreteMemberResourceKey,
+            new DbTableName(_edFiSchema, tableName),
+            [new AbstractUnionViewProjectionExpression.SourceColumn(new DbColumnName("DocumentId"))]
+        );
     }
 
     private static DocumentReference CreateDocumentReference(
