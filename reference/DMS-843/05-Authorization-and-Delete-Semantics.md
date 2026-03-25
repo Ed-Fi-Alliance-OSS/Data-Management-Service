@@ -122,12 +122,13 @@ Required structural contract:
 - when a resource needs additional delete-aware relationship facts beyond those ids, the payload must also contain `relationshipInputs`, a deterministic resource-scoped object of named captured values
 - each change-query-enabled resource that relies on this payload must define the expected `basisDocumentIds` keys and any `relationshipInputs` members as part of its tracked-change authorization contract
 
-DMS-843 does not support open-ended tracked-change custom-view authorization that depends on arbitrary mutable non-identifying live-row values at read time. A resource is eligible for tracked-change relationship or custom-view authorization only when its required inputs can be reduced at write time to captured basis-resource `DocumentId` values plus any named `relationshipInputs` in this contract. If that reduction is not possible, the resource's tracked-change design is incomplete and must fail validation rather than silently degrading.
+DMS-843 does not support open-ended tracked-change custom-view authorization that depends on arbitrary mutable non-identifying live-row values at read time. A resource is eligible for tracked-change relationship or custom-view authorization only when its required inputs can be reduced at write time to captured basis-resource `DocumentId` values plus any named `relationshipInputs` in this contract. If that reduction is not possible, the resource's tracked-change design is incomplete and the affected security metadata must be rejected when claim-set metadata is loaded or refreshed rather than silently degrading.
 
 Enforcement ownership and gates:
 
-- enforcement of the resource-scoped `AuthorizationBasis` contract is owned by the DMS core authorization/endpoint bootstrap path in this feature scope; it is not delegated to optional external components
-- startup validation must fail fast for any change-query-enabled resource that declares tracked-change relationship/custom-view authorization but lacks a valid `basisDocumentIds` and `relationshipInputs` contract mapping
+- enforcement of the resource-scoped `AuthorizationBasis` contract is owned by the DMS core authorization and claim-set metadata pipeline in this feature scope; it is not delegated to optional external components
+- claim-set and authorization metadata validation must run both at initial bootstrap and whenever the claim-set cache is refreshed
+- if a refreshed claim set introduces an invalid tracked-change relationship/custom-view contract, DMS must mark the affected authorization metadata invalid and fail requests with a security configuration error rather than requiring a process restart or silently weakening authorization
 - write-path capture must fail the request if required tracked-change authorization inputs for that routed resource cannot be resolved to the declared contract shape before tombstone or key-change-row insert
 - deployments must treat these failures as contract-safety failures; silent fallback to weaker tracked-change authorization is not allowed
 
@@ -152,6 +153,11 @@ Required tracked-change categories:
 - staff relationship authorization
 - ownership-based authorization
 - custom-view authorization using basis-resource `DocumentId` values
+
+Ownership note:
+
+- ownership-based tracked-change authorization is included because backend-redesign stores `CreatedByOwnershipTokenId` on `dms.Document` as a first-class authorization input
+- this is a deliberate redesign-aligned DMS product choice, not a claim that legacy ODS `ReadChanges` currently applies ownership filtering on `/deletes` or `/keyChanges`
 
 Implementation guidance:
 

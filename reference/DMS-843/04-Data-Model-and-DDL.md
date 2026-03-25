@@ -234,12 +234,12 @@ An identity-changing update can force representation rewrites on dependent docum
 
 Required semantics:
 
-- the implementation must identify directly referencing documents through backend-native reverse-reference metadata or equivalent stored reference-identity structures; the current backend's `dms.Reference` is one conforming example rather than the normative mechanism
+- the implementation must realize dependent rewrites through storage-layer propagation metadata, generated update plans, or equivalent database-driven machinery; the current backend's `dms.Reference` may be one input to that storage-layer work rather than the normative mechanism
 - each dependent document whose stored representation changes because of the upstream identity change must receive a new `ChangeVersion`
 - each such dependent representation change must emit a `dms.DocumentChangeEvent` row through the normal journal-maintenance rules
 - a dependent document receives a new `IdentityVersion` only if the dependent document's own identity tuple changes
 - a dependent document writes a key-change tracking row only if the dependent document's own identity tuple changes
-- propagation continues recursively until no more downstream documents require identity-driven rewrites
+- propagation must cover all affected downstream documents in the same committed write path without relying on ad hoc API/core-service recursion coverage
 
 This is the current-backend bridge equivalent of the redesign's indirect-update semantics. A conforming implementation may realize the propagation with different internal mechanics, but it must preserve the same committed-state outcomes.
 
@@ -269,16 +269,18 @@ Why the trigger is scoped to `EdfiDoc`:
 Trigger responsibility note:
 
 - use database triggers to keep the live-row `ChangeVersion` stamp consistent on inserts and representation-changing updates
-- set `IdentityVersion` in the application update path when the extracted identity tuple changes, because the current backend's generic database layer does not have resource-specific `IdentityJsonPaths` metadata available inside one universal trigger
+- keep direct-row `IdentityVersion` changes in the same storage update plan as the identity-changing write; one conforming current-backend bridge is for the write path to bind a newly allocated `IdentityVersion` for the directly changed row when one universal JSON trigger cannot derive resource-specific identity tuples
 - use database triggers to emit `dms.DocumentChangeEvent` rows whenever the live `ChangeVersion` stamp changes
+- keep downstream dependent restamping and journaling in the storage layer so indirect-change correctness does not depend on API/core-layer traversal coverage
 - use the selected source's sequence ceiling as the source of `newestChangeVersion` for ODS parity rather than deriving `newestChangeVersion` from committed-row maxima
 
 Bridge-mechanics note:
 
-- application-managed `IdentityVersion` stamping is a current-backend bridge implementation detail
+- direct-row `IdentityVersion` binding is a current-backend bridge implementation detail when one universal JSON trigger cannot infer identity tuples
+- this does not change the redesign-aligned ownership boundary: downstream propagation, restamping, and journaling remain storage-layer responsibilities driven by the committed update plan
 - redesign-aligned backends may use metadata-driven write-path logic, database-native mechanisms, or a combination, provided the normative identity-stamping outcomes in this design are preserved
 
-Validation requirement for application-managed `IdentityVersion`:
+Validation requirement for direct-write `IdentityVersion` binding:
 
 - migration and integration validation must prove that every committed identity-changing write path advances `IdentityVersion` exactly once for the changed document
 - downstream propagation paths must also prove that dependent documents advance `IdentityVersion` only when their own identity tuple changes
@@ -352,6 +354,8 @@ The tombstone therefore stores:
 - `CreatedByOwnershipTokenId` for redesign ownership-based authorization
 - row-local `AuthorizationBasis` data containing the resolved basis-resource DocumentIds and other delete-aware relationship inputs needed to evaluate tracked-change authorization after the live row or relationship rows disappear
 
+A committed tombstone does not guarantee public `/deletes` emission. Read-time delete execution still applies same-window re-add suppression against the selected live surface.
+
 ## Key Change Tracking
 
 Create `dms.DocumentKeyChangeTracking`:
@@ -387,9 +391,9 @@ Current-backend key note:
 
 Required semantics:
 
-- `dms.DocumentKeyChangeTracking.ChangeVersion` stores the same public live representation-change stamp allocated to `dms.Document.ChangeVersion` by the committed identity-changing update
+- `dms.DocumentKeyChangeTracking.ChangeVersion` stores a distinct public key-change token allocated for the tracked key-change row
 - `dms.DocumentKeyChangeTracking.ChangeVersion` does not store `dms.Document.IdentityVersion`
-- this keeps `/keyChanges`, changed-resource queries, and `availableChangeVersions` on one public synchronization-token model while leaving `IdentityVersion` as an internal bridge artifact
+- this preserves legacy ODS key-change token sequencing while still leaving `IdentityVersion` as an internal bridge artifact
 
 ## Why old and new key values are stored
 
@@ -697,23 +701,22 @@ The participating sources are:
 
 For the participating sources:
 
-- `newestChangeVersion` is the synchronization ceiling across them
+- `newestChangeVersion` is the selected source sequence ceiling (`next value - 1` on that source), not the max retained committed tracking-row value across the participating sources
 - for the initial DMS-843 scope, each participating surface contributes replay floor `0`, so `oldestChangeVersion` remains `0`
-- if retained participating rows exist, `newestChangeVersion` is the maximum retained `ChangeVersion` across them
-- if all participating sources are empty and no replay-floor metadata exists, return `0` for both values; in that bootstrap case `0` is a starting watermark sentinel rather than a retained change row
+- if the selected source has never allocated a change-version value and no replay-floor metadata exists, return `0` for both values; in that bootstrap case `0` is a DMS-843 starting watermark sentinel rather than a retained change row or raw engine-specific initial sequence state
 - if a later retention phase introduces purge metadata, `oldestChangeVersion` becomes the effective replay floor across the participating sources, and `newestChangeVersion = oldestChangeVersion =` the greatest participating replay floor when all participating sources are empty after purge
-- for identity-changing updates, the key-change participation value is the same public live `ChangeVersion` exposed by the changed-resource surface for that write, not the internal `IdentityVersion`
+- for identity-changing updates, the key-change participation value is the distinct public key-change token allocated for the tracked row, not the live resource `ChangeVersion` and not the internal `IdentityVersion`
 
-Legacy ODS allocates a distinct sequence value for key-change rows and can expose raw-sequence ceiling behavior.
+Legacy ODS allocates a distinct sequence value for key-change rows.
 
-DMS-843 intentionally does not. Its public watermark model is the committed live `ChangeVersion` surface described above.
+DMS-843 adopts that same public key-change token model for `/keyChanges`.
 
 Client-compatibility note:
 
 - the public API returns the canonical live-resource `id` on `/deletes` and `/keyChanges` from `DocumentUuid`
 - `DocumentUuid` is persisted on both tracking tables specifically so those routes can return the same canonical resource identifier after the live row has changed or been deleted
 
-This computation must read committed tracking artifacts and, if a later retention phase is added, any committed replay-floor metadata. It must not use the current `dms.ChangeVersionSequence` value as a substitute for either bound, because sequence advancement can lead committed state and can contain rollback gaps.
+This computation must read committed replay-floor metadata and normalize engine-specific sequence state to the logical allocation ceiling for the selected source. It must not derive `newestChangeVersion` from max retained tracking rows, and it must not surface an engine's raw initial sequence state as a non-zero bootstrap watermark.
 
 ## Backend-redesign artifact mapping
 

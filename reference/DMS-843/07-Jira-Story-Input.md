@@ -294,12 +294,12 @@ This story must preserve the existing collection GET and GET-by-id behavior when
 - Max-only windows are accepted on changed-resource, `/deletes`, and `/keyChanges`.
 - `/deletes` and `/keyChanges` accept omitted bounds and return the retained tracked rows for the routed resource.
 - `Use-Snapshot = false` or an omitted header preserves the current live behavior.
-- `Use-Snapshot = true` is accepted on synchronization reads, invalid values fail with the documented `400 Bad Request` contract, and unavailable snapshot sources fail with the documented `409 Conflict` contract.
+- `Use-Snapshot = true` is accepted on synchronization reads, invalid values fail with the documented `400 Bad Request` contract, and unavailable snapshot sources fail with the documented `404 Not Found` contract.
 - Invalid or inconsistent change-query windows return the documented `400 Bad Request` ProblemDetails contract.
 - Replay-floor `409 Conflict` behavior remains deferred until the later retention phase is approved.
 - Changed-resource collection GET continues normal profile behavior.
 - `/deletes`, `/keyChanges`, and `availableChangeVersions` bypass profile resolution and profile filtering.
-- Service startup fails fast when a change-query-enabled resource has an invalid or incomplete tracked-change authorization contract mapping for required `basisDocumentIds` and declared `relationshipInputs`.
+- Initial claim-set metadata load and later claim-set cache refresh both reject change-query-enabled resources with invalid or incomplete tracked-change authorization contract mappings for required `basisDocumentIds` and declared `relationshipInputs`.
 - Existing non-change-query GET behavior remains unchanged.
 
 ### Tasks
@@ -310,9 +310,9 @@ This story must preserve the existing collection GET and GET-by-id behavior when
 - Reserve dedicated route shapes even when the feature flag is off so those paths return the documented `404 Not Found` behavior.
 - Parse and validate `minChangeVersion` and `maxChangeVersion` consistently across changed-resource, delete, and key-change requests.
 - Parse and validate `Use-Snapshot` consistently across synchronization reads.
-- Implement the documented `400 Bad Request` and `409 Conflict` ProblemDetails contracts for feature-disabled collection GET requests, invalid values, invalid window relationships, and unavailable snapshot sources.
+- Implement the documented `400 Bad Request` and `404 Not Found` ProblemDetails contracts for feature-disabled collection GET requests, invalid values, invalid window relationships, and unavailable snapshot sources.
 - Keep replay-floor `409 Conflict` behavior explicitly deferred to the later retention phase.
-- Add DMS-core-owned startup contract validation for tracked-change authorization metadata so required `AuthorizationBasis` inputs are structurally valid before serving requests.
+- Add DMS-core-owned claim-set metadata validation so required `AuthorizationBasis` inputs are structurally valid both before serving requests and after claim-set cache refreshes.
 - Route changed-resource collection GET through the normal profile pipeline.
 - Route `/deletes`, `/keyChanges`, and `availableChangeVersions` through a pipeline that bypasses profile resolution and filtering.
 
@@ -423,12 +423,14 @@ This story does not introduce retention purge or replay-floor metadata. Later-ph
 ### Acceptance Criteria
 
 - `/deletes` returns tombstones ordered deterministically.
+- `/deletes` suppresses same-window re-add churn when the same routed resource identity is live again within the requested window on the selected source.
 - `/keyChanges` returns collapsed rows ordered deterministically.
 - `/keyChanges` remains valid for resources that do not support identity updates and returns `200 OK` with an empty array for them.
 - `/deletes` and `/keyChanges` return the canonical public resource `id` sourced from `DocumentUuid`.
 - `/keyChanges` applies `totalCount`, `offset`, and `limit` after authorization filtering and collapse.
 - Delete-query authorization matches the documented ODS-style tracked-change semantics.
 - Key-change-query authorization uses the documented stored pre-update tracked-change authorization data for transition visibility.
+- `/keyChanges` uses a distinct public key-change token allocated for the tracked row, matching legacy ODS sequencing expectations.
 - `availableChangeVersions` returns one synchronization surface with correct bootstrap and retained-data bounds for the participating artifacts.
 - `Use-Snapshot = true` causes `availableChangeVersions`, `/deletes`, and `/keyChanges` to read the snapshot-visible synchronization surface rather than the live primary surface.
 - Snapshot-backed synchronization preserves one consistent snapshot derivative across the pass; if that cannot be preserved, the pass fails explicitly with the documented snapshot-unavailable behavior.
@@ -441,10 +443,12 @@ This story does not introduce retention purge or replay-floor metadata. Later-ph
 - Implement `/deletes` query execution over `dms.DocumentDeleteTracking`.
 - Implement `/keyChanges` query execution over `dms.DocumentKeyChangeTracking`.
 - Apply delete-query authorization against the stored tracked-change authorization data on tombstones.
+- Apply same-window re-add suppression on `/deletes` before public paging and `totalCount` semantics are finalized.
 - Apply key-change authorization against the stored pre-update tracked-change authorization data before collapse.
 - Resolve the live-vs-snapshot read source before computing `availableChangeVersions`, `/deletes`, and `/keyChanges`, and keep each request on that chosen source throughout execution.
 - Implement snapshot lifecycle checks that enforce consistent derivative selection and explicit failure when lifecycle validity cannot be maintained, without introducing new public routes or headers.
 - Implement key-change collapse semantics to preserve earliest `oldKeyValues`, latest `newKeyValues`, and latest surviving `changeVersion`.
+- Allocate a distinct public key-change token when persisting each committed key-change tracking row.
 - Compute `availableChangeVersions.oldestChangeVersion` from replay-floor semantics (or bootstrap `0`) and `availableChangeVersions.newestChangeVersion` from the selected source sequence ceiling (`next value - 1`) for ODS-compatible watermark behavior.
 - Implement row-level locking or engine-equivalent serialization for identity-changing updates and deletes so pre-change capture is consistent.
 - Enforce write-path failure when required `AuthorizationBasis` inputs cannot be resolved for tombstone or key-change capture, with no downgrade to weaker authorization semantics.

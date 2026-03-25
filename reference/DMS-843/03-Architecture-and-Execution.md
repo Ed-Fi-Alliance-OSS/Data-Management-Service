@@ -51,6 +51,7 @@ Responsibilities:
 - issue key-change queries
 - compute `availableChangeVersions`
 - resolve the selected read source for change-query reads and execute authorization plus data selection against that same source
+- apply same-window delete re-add suppression on the public `/deletes` surface
 - insert tombstones on delete
 - insert key-change tracking rows when natural keys change
 - preserve tracked-change authorization inputs needed for ownership and DocumentId-based authorization after deletes or later key changes
@@ -168,10 +169,11 @@ Behavior:
 - read from `dms.DocumentDeleteTracking`
 - filter by `ProjectName`, `ResourceName`, and the requested window
 - apply ODS-compatible tracked-change authorization predicates against the tombstone's preserved authorization data, including ownership and row-local basis values needed for delete-aware relationship and custom-view authorization, using the same selected source for any companion authorization reads
+- suppress tombstones whose canonical resource identity is represented again by a current live row for the same routed resource within the same requested window on that same selected source
 - materialize `keyValues` in the canonical alias order derived from the routed resource's `IdentityJsonPaths`
 - order by `ChangeVersion` plus a stable backend-local document tie-breaker (`DocumentPartitionKey`, `DocumentId` on the current backend)
 
-Delete query execution never reads `dms.DocumentChangeEvent`.
+Delete query execution never reads `dms.DocumentChangeEvent` as a delete source, but it may consult the current live surface to apply the required same-window re-add suppression.
 
 ## Key Change Query Execution
 
@@ -275,16 +277,16 @@ An identity-changing update can force representation rewrites on dependent docum
 
 Required execution model:
 
-1. identify directly referencing documents through backend-native reverse-reference metadata or equivalent stored reference-identity structures; the current backend's `dms.Reference` is one conforming example, but not the normative mechanism
-2. rewrite each dependent document's stored representation or equivalent reference-identity storage columns in the same transaction so the dependent row reflects the new upstream identity values
-3. when the dependent row's served representation changes, allocate a new dependent `ChangeVersion` and let the normal `dms.DocumentChangeEvent` journaling rules emit a dependent live-change row
-4. when the dependent rewrite also changes the dependent document's own identity tuple, allocate a new dependent `IdentityVersion` and insert a dependent key-change tracking row using that dependent row's own pre-change tracked-change authorization data
+1. apply the direct identity-changing write to the target document in one transaction
+2. use storage-layer propagation metadata, generated update plans, or equivalent database-driven machinery to identify and rewrite dependent stored identity values in that same transaction; persisted reverse-reference metadata such as the current backend's `dms.Reference` may inform that storage-layer work, but correctness must not depend on ad hoc core-service recursion coverage
+3. when a dependent row's served representation changes, allocate a new dependent `ChangeVersion` and let the normal `dms.DocumentChangeEvent` journaling rules emit a dependent live-change row
+4. when the propagated rewrite also changes the dependent document's own identity tuple, allocate a new dependent `IdentityVersion` and insert a dependent key-change tracking row using that dependent row's own pre-change tracked-change authorization data
 5. when the dependent rewrite does not change the dependent document's own identity tuple, do not insert a dependent key-change row
-6. continue recursively until no more downstream documents require identity-driven rewrites
+6. commit only after all propagated dependent rewrites, stamps, and tracking rows are durable
 
 Conforming implementation note:
 
-- the current backend already demonstrates one concrete approach through reverse-edge discovery and recursive cascade handling in `dms.Reference` and `UpdateCascadeHandler`
+- the current backend may still use persisted reverse-reference metadata such as `dms.Reference` to determine affected rows, but that remains a storage-layer implementation detail rather than the normative API/core-service contract boundary
 - a replacement relational backend may realize the same outcome through stored reference-identity columns, FK/trigger cascades, or other propagation metadata, but it must preserve the same committed-state rewrite, stamping, journaling, and key-change outcomes
 
 ## Identity-Change Update Execution Order
@@ -298,7 +300,7 @@ Within an update transaction that changes natural-key values for a resource that
 5. allocate a new live `IdentityVersion`
 6. derive the new key values and canonical key aliases from `ResourceSchema.IdentityJsonPaths`
 7. insert a row into `dms.DocumentKeyChangeTracking` with `ChangeVersion =` the new live `dms.Document.ChangeVersion`, plus the old key values, new key values, and copied pre-update tracked-change authorization data
-8. discover and recursively process downstream dependent rewrites in the same transaction
+8. allow the storage-layer propagation path to apply any required downstream dependent rewrites, restamps, and key-change inserts in the same transaction
 9. commit the transaction
 
 This ordering is mandatory because key changes must preserve both sides of the natural-key transition, and downstream referrers must be restamped and journaled before the transaction commits.
@@ -330,8 +332,9 @@ The architecture must preserve these invariants:
 - representation-changing writes get a unique `ChangeVersion`
 - authorization-only maintenance updates do not emit false change records
 - delete visibility survives deletion of the live row
+- same-window delete plus re-add churn is suppressed from the public `/deletes` surface
 - key-change visibility survives later changes to the live key state
-- identity-driven downstream rewrites are restamped and journaled in the same committed write path
+- identity-driven downstream rewrites are restamped and journaled in the same committed write path through storage-layer propagation responsibilities rather than through API/core-layer recursion guarantees
 - delete-query authorization targets ODS-compatible tracked-change semantics, including delete-aware relationship visibility and redesign ownership/custom-view concepts
 - key-change-query authorization targets ODS-compatible tracked-change semantics using the stored pre-update tracked-change authorization state
 - write paths serialize concurrent update and delete capture on the same live row

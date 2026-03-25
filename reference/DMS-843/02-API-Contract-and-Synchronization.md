@@ -47,7 +47,7 @@ Semantics:
 - `newestChangeVersion` is not computed as max committed retained row value across participating tracking tables
 - when `Use-Snapshot = true`, both bounds are computed from the snapshot-visible synchronization surface rather than from the live primary database, so `newestChangeVersion` is the ceiling for that snapshot-backed pass
 - callers must pair `availableChangeVersions` with later data reads that use the same `Use-Snapshot` choice; mixing snapshot and non-snapshot reads in one pass invalidates the advertised ceiling
-- when the synchronization surface has no allocated change versions and no replay-floor metadata exists, the endpoint returns `0` for both values; in that bootstrap case, `0` is a starting watermark sentinel rather than a retained change row
+- when the synchronization surface has no allocated change versions and no replay-floor metadata exists, the endpoint returns `0` for both values; in that bootstrap case, `0` is a DMS-843 starting watermark sentinel rather than a retained change row or raw engine-specific initial sequence state
 - if a later retention phase introduces replay-floor metadata, `oldestChangeVersion` becomes the lowest valid inclusive `minChangeVersion` that can still return complete results, and `newestChangeVersion = oldestChangeVersion =` the greatest participating replay floor when all participating sources are empty after purge
 
 ODS-compatible snapshot derivative context:
@@ -118,6 +118,7 @@ Delete query semantics:
 - `id` is the canonical public resource identifier for the deleted item and is sourced from the stored `DocumentUuid`
 - delete rows are ordered deterministically
 - delete rows preserve the natural-key values needed by downstream synchronization clients
+- the public `/deletes` surface suppresses a tombstone when the same routed resource identity is re-added and visible as a current live row within the same requested window on the same selected source
 - delete rows are authorization-filtered
 - readable profile headers do not apply; the endpoint must ignore profile media types and must not alter the payload shape or media type based on profile rules
 
@@ -155,7 +156,9 @@ Key change semantics:
 - resources that support identity updates return key-change rows when qualifying transitions exist
 - resources that do not support identity updates return `200 OK` with an empty array and `totalCount = 0` when `totalCount` is requested
 - `id` is the canonical public resource identifier for the affected item and is sourced from the stored `DocumentUuid`
-- the row `changeVersion` is the public live representation-change stamp from the same committed identity-changing update that produced the key transition; it is not the internal `IdentityVersion`, and DMS-843 does not allocate a second public key-change token for that same write
+- the row `changeVersion` is the public key-change token allocated for the tracked key-change row
+- this token is distinct from both the live resource `ChangeVersion` and the internal `IdentityVersion`
+- DMS-843 adopts the legacy ODS model here so key-change rows sort on their own tracked-change token rather than on the live representation-change stamp of the identity-changing write
 - key-change rows are ordered deterministically
 - key-change-query authorization is evaluated before collapse against each tracking row's stored pre-update tracked-change authorization data
 - if multiple key changes occur for the same resource inside one window, the API returns one collapsed row with the earliest `oldKeyValues`, the latest `newKeyValues`, and the latest `changeVersion` from the rows that remain after authorization filtering
@@ -205,7 +208,7 @@ The field-name contract is evaluated per routed resource, so different resources
 - clients must use the same `Use-Snapshot` choice across one synchronization pass because `availableChangeVersions` and the subsequent data reads must all target the same source
 - collection GET requests used for initial full-load synchronization may send `Use-Snapshot = true` even when both change-version bounds are absent; the route still behaves as an ordinary collection GET, but it reads from the snapshot source
 - snapshot lifecycle handling is in scope: DMS must enforce snapshot-derivative validity for the requested pass while preserving the existing routes, payloads, and header contract
-- when a snapshot-backed pass cannot keep one consistent snapshot derivative for the required reads, DMS must fail explicitly with the documented snapshot-unavailable `409 Conflict` behavior
+- when a snapshot-backed pass cannot keep one consistent snapshot derivative for the required reads, DMS must fail explicitly with the documented snapshot-unavailable `404 Not Found` behavior
 
 ## Query Parameter Rules
 
@@ -337,13 +340,21 @@ Expected behavior:
 - the resource does not appear in the changed-resource query
 - the delete appears in `/deletes`
 
-## Delete followed by reinsert
+## Delete followed by reinsert in the same window
 
 Expected behavior:
 
-- `/deletes` returns the delete event for the old row
-- the changed-resource query may return the later live row in a newer window
-- clients must treat this as delete plus later create
+- `/deletes` suppresses the earlier delete tombstone for that window
+- the changed-resource query may return the later live row if its current `ChangeVersion` falls in the requested window
+- clients observe the net current-state result for that window rather than delete/recreate churn
+
+## Delete followed by reinsert in a later window
+
+Expected behavior:
+
+- `/deletes` returns the delete event for the earlier window
+- the changed-resource query may return the later live row in a later window
+- clients must treat this as delete plus later create across windows
 
 ## Multiple key changes before synchronization
 
@@ -371,7 +382,7 @@ Required status behavior:
 - when Change Queries is disabled and a collection GET request supplies `minChangeVersion`, `maxChangeVersion`, or `Use-Snapshot = true`, return `400 Bad Request`
 - when Change Queries is disabled and `/deletes`, `/keyChanges`, or `availableChangeVersions` is requested, return `404 Not Found` through the reserved dedicated route rather than by falling through to generic route parsing
 - invalid `Use-Snapshot` header returns `400 Bad Request`
-- if `Use-Snapshot = true` and the resolved snapshot source is not configured, not reachable, or no longer available, return `409 Conflict`
+- if `Use-Snapshot = true` and the resolved snapshot source is not configured, not reachable, or no longer available, return `404 Not Found`
 - invalid or negative `minChangeVersion` returns `400 Bad Request`
 - invalid or negative `maxChangeVersion` returns `400 Bad Request`
 - `maxChangeVersion < minChangeVersion` returns `400 Bad Request`
@@ -404,18 +415,18 @@ Required body behavior:
 - `validationErrors`: `{}`
 - `errors`: exactly one entry, `The 'Use-Snapshot' header must be a boolean value.`
 
-`409 Conflict` for requested snapshot mode when no usable snapshot source is available:
+`404 Not Found` for requested snapshot mode when no usable snapshot source is available:
 
-- `type`: `urn:ed-fi:api:change-queries:snapshot:unavailable`
-- `title`: `Snapshot Unavailable`
-- `status`: `409`
+- `type`: `urn:ed-fi:api:change-queries:snapshot:not-found`
+- `title`: `Snapshot Not Found`
+- `status`: `404`
 - `detail`: `The requested snapshot-backed change-query view is not available for this DMS instance. Retry without 'Use-Snapshot' or after the snapshot is restored.`
 - `validationErrors`: `{}`
 - `errors`: exactly one entry, `The requested snapshot-backed read source is not available.`
 
 Compatibility note:
 
-- this `409 Conflict` contract is intentionally retained for ODS parity in DMS-843 even though generic HTTP dependency-failure semantics are often modeled as `503 Service Unavailable`
+- legacy ODS snapshot-missing flows surface `404 Not Found`; DMS-843 keeps that status while still defining an explicit DMS problem-details body for this case
 
 `400 Bad Request` for invalid `minChangeVersion`:
 

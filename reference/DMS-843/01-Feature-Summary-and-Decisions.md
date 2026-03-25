@@ -23,13 +23,14 @@ The approval bar is correctness and alignment, not mechanical reproduction of OD
 
 Known explicit DMS-specific choices in this package:
 
-- `/keyChanges` reuses the committed live `ChangeVersion` instead of allocating a second public key-change token as legacy ODS does; this is an intentional redesign-aligned choice owned by this package, and changing it requires a deliberate contract revision.
+- tracked-change authorization includes redesign-aligned ownership filtering for `/deletes` and `/keyChanges` even though legacy ODS `ReadChanges` does not currently apply ownership filtering on those surfaces; this is an intentional DMS product choice owned by this package.
+- when the selected synchronization surface has not yet allocated any change-version values, `availableChangeVersions` returns bootstrap `0/0` as a DMS-843 normalization instead of exposing engine-specific raw initial sequence metadata.
 - `_etag` and `_lastModifiedDate` remain inside `EdfiDoc` on the current backend; redesign metadata-stamp storage ownership is deferred to a later backend replacement phase.
 - Snapshot history tables remain out of scope, but snapshot lifecycle behavior for `Use-Snapshot` requests is in scope and must preserve ODS-compatible synchronization guarantees without changing existing route shapes.
 
 **Custom-view tracked-change eligibility:**
 
-Tracked-change authorization supports only resources whose authorization inputs are reducible at write time to captured basis-resource `DocumentId` values plus any named `relationshipInputs`. Open-ended custom-view authorization that depends on arbitrary mutable non-identifying live-row values at query time is explicitly not supported for tracked changes in this package. Resources whose tracked-change authorization cannot be reduced to this contract must fail startup validation rather than silently degrading. See `05-Authorization-and-Delete-Semantics.md §AuthorizationBasis Semantics` for the normative structural contract, eligibility restriction, enforcement ownership, and failure gates.
+Tracked-change authorization supports only resources whose authorization inputs are reducible at write time to captured basis-resource `DocumentId` values plus any named `relationshipInputs`. Open-ended custom-view authorization that depends on arbitrary mutable non-identifying live-row values at query time is explicitly not supported for tracked changes in this package. Resources whose tracked-change authorization cannot be reduced to this contract must be rejected by security-metadata validation when claim-set metadata is loaded or refreshed rather than silently degrading. See `05-Authorization-and-Delete-Semantics.md §AuthorizationBasis Semantics` for the normative structural contract, eligibility restriction, enforcement ownership, and failure gates.
 
 ## Current DMS Facts That Shape the Design
 
@@ -79,6 +80,8 @@ Bridge migration rule:
 
 Deletes cannot be inferred from the live row because the live row disappears. The feature therefore requires `dms.DocumentDeleteTracking` in the `dms` schema.
 
+Public `/deletes` reads must still apply ODS-style same-window re-add suppression, so tombstone capture is required even though a captured tombstone is not always emitted back to clients.
+
 ## 4. Updates do not require historical payload storage
 
 Ed-Fi changed-resource queries return the latest current representation of resources that changed within the requested window. They do not return every intermediate mutation and they do not require snapshot payload history.
@@ -92,6 +95,8 @@ It does not replace tombstones because delete queries need data that survives de
 ## 6. `keyChanges` is a peer endpoint to `/deletes`
 
 The design includes the Ed-Fi `keyChanges` route as part of the core Change Queries feature, alongside `/deletes`. Because current-state rows do not preserve prior natural-key values, the design adds explicit old-and-new natural-key tracking rather than trying to infer key changes later from the current row, deletes, or snapshots.
+
+For ODS parity, `/keyChanges` uses its own tracked-row public token rather than reusing the live document `ChangeVersion` from the identity-changing write.
 
 ## 7. Delete and key-change tracking stay in separate tables
 
@@ -219,7 +224,7 @@ Required interpretation:
 - snapshot-backed reads return the current representation visible inside the snapshot, not historical payload versions
 - the snapshot source must expose the same DMS schema and tracking artifacts as the live instance and must stay frozen long enough for one synchronization pass or equivalent bounded workflow
 - DMS owns snapshot lifecycle enforcement for `Use-Snapshot` requests (selection, binding, and validity checks for the chosen snapshot derivative) while keeping the public API contract unchanged
-- if lifecycle validity cannot be preserved for the requested snapshot-backed pass, DMS must fail the request or pass explicitly with the documented snapshot-unavailable `409 Conflict` contract rather than degrading silently
+- if lifecycle validity cannot be preserved for the requested snapshot-backed pass, DMS must fail the request or pass explicitly with the documented snapshot-unavailable `404 Not Found` contract rather than degrading silently
 
 ## Existing DMS-specific choices that `Use-Snapshot` does not change
 
@@ -233,15 +238,16 @@ Those unchanged DMS-specific choices include:
 Ownership boundary for key-change token semantics:
 
 - the `/keyChanges` public token model is part of the DMS-843 public API contract and is therefore in scope for this package
-- any move to a second public key-change token model is explicitly owned by a later redesign or product-scope change and must be introduced as a deliberate contract revision, not as an implementation-side substitution
+- DMS-843 adopts legacy ODS parity for this contract by allocating a distinct public key-change token for the tracked key-change row rather than reusing the live document `ChangeVersion`
 
 ## Why these ODS divergences are intentional in DMS
 
 These choices are not arbitrary departures from ODS. They follow the current DMS storage model and the backend-redesign direction that DMS-843 is trying to preserve.
 
 - tracked-change authorization stores basis-resource `DocumentId` values as `basisDocumentIds` because backend-redesign custom-view and relationship authorization in DMS is DocumentId-based rather than natural-key-based, and `/deletes` plus `/keyChanges` must still authorize correctly after the live row or relationship rows are gone
-- `/keyChanges` reuses the committed live `ChangeVersion`, because DMS and backend-redesign both center public synchronization on the canonical live document stamp plus committed tracking artifacts rather than on a second public key-change token
-- if a future product requirement demands strict legacy ODS internal semantics instead of DMS-aligned semantics, that should be treated as a deliberate design change rather than as an implied bug in this package
+- `/keyChanges` adopts the legacy ODS public token model because strict key-change sequencing parity matters more here than collapsing every public tracked-change surface onto one shared live-row token
+- tracked-change authorization includes ownership filtering because backend-redesign treats `CreatedByOwnershipTokenId` on `dms.Document` as a first-class authorization input, even though that extends legacy ODS `ReadChanges` behavior
+- if a future product requirement later demands one shared public token across changed resources and key changes, that should be treated as a deliberate design change rather than as an implementation-side substitution
 
 ## 14. Ordering must be deterministic and backend-shape-aware
 
@@ -284,6 +290,7 @@ The full Change Queries feature defined by this package includes:
 - key-change tracking rows with old-key and new-key values plus tracked-change authorization data
 - deterministic ordering for changed-resource and delete queries
 - deterministic ordering and window collapse for key-change queries
+- same-window delete re-add suppression on the public `/deletes` surface
 - tracked-change authorization inputs sufficient for ODS-style delete and key-change authorization criteria, including redesign ownership and DocumentId-based authorization concepts
 - bootstrap `oldestChangeVersion = newestChangeVersion = 0` semantics for empty surfaces in phase 1, with replay-floor-aware bounds left available for a later retention phase
 - `Use-Snapshot` handling for synchronization reads so clients select either the live best-effort flow or the snapshot-backed flow without changing route shapes

@@ -66,7 +66,7 @@ Required checks after live-row backfill:
 - every live row has a non-null `IdentityVersion`
 - backfill allocated one `ChangeVersion` value and one `IdentityVersion` value per row rather than one shared value per statement
 - live rows resolve to the expected `dms.ResourceKey` entry for their `(ProjectName, ResourceName)`
-- application-managed identity-update paths are validated to prove `IdentityVersion` advances for every committed identity-changing write and does not advance for non-identity updates
+- direct-write identity-update paths and downstream propagated updates are validated to prove `IdentityVersion` advances for every committed identity-changing write and does not advance for non-identity updates
 
 Required checks after journal backfill:
 
@@ -90,7 +90,7 @@ Required unit coverage:
 - `maxChangeVersion = minChangeVersion` is accepted as a single-version bounded window
 - `Use-Snapshot = false` or an omitted header preserves the current live-read behavior
 - invalid `Use-Snapshot` returns `400 Bad Request` `application/problem+json`
-- `Use-Snapshot = true` with no usable snapshot source returns `409 Conflict` `application/problem+json`
+- `Use-Snapshot = true` with no usable snapshot source returns `404 Not Found` `application/problem+json`
 - `400 Bad Request` `application/problem+json` behavior for malformed, negative, or otherwise invalid change-query parameters
 - if a later retention phase is added, `409 Conflict` `application/problem+json` behavior when `minChangeVersion < oldestChangeVersion`
 - route dispatch for `availableChangeVersions`
@@ -104,7 +104,7 @@ Required unit coverage:
 - old-key and new-key extraction from `ResourceSchema.IdentityJsonPaths`
 - shortest-unique-suffix alias derivation for simple, composite, and repeated-leaf identities
 - fail-fast validation for duplicate or otherwise unresolvable identity-path alias sets
-- fail-fast startup validation for change-query-enabled resources whose tracked-change authorization contract requires `AuthorizationBasis` but lacks a valid `basisDocumentIds` and optional `relationshipInputs` mapping
+- fail-fast authorization-metadata validation at initial claim-set load and on claim-set cache refresh for change-query-enabled resources whose tracked-change authorization contract requires `AuthorizationBasis` but lacks a valid `basisDocumentIds` and optional `relationshipInputs` mapping
 - tombstone DTO or response mapping
 - key-change DTO or response mapping
 - `/deletes` and `/keyChanges` map `id` from stored `DocumentUuid`
@@ -124,23 +124,24 @@ Required backend integration coverage:
 9. delete inserts one tombstone row with copied natural-key and authorization data
 10. delete rollback leaves no tombstone row committed
 11. delete query authorization matches the documented ODS-style tracked-change authorization criteria, including delete-aware relationship cases
-12. identity-changing update inserts one key-change tracking row with copied old-key, new-key, and tracked-change authorization data
-13. identity-changing update records the new live `ChangeVersion`, not `IdentityVersion`, on `dms.DocumentKeyChangeTracking`
-14. non-identity update does not insert a key-change tracking row
-15. representation rewrite caused by an upstream identity change does not insert a key-change row when the dependent resource's own identity tuple is unchanged
-16. key-change query collapses multiple key changes for one resource within a window correctly
-17. key-change query authorization uses the stored pre-update tracked-change authorization data as documented
-18. `/keyChanges` applies `totalCount`, `offset`, and `limit` after authorization filtering and collapse
-19. `availableChangeVersions` returns correct bounds, including bootstrap `0/0` when the synchronization surface is empty
-20. `availableChangeVersions` with `Use-Snapshot = true` returns the snapshot-visible ceiling rather than the live-primary ceiling
-21. if a later retention phase is added, replay-floor enforcement uses `minChangeVersion < oldestChangeVersion`
-22. journal trigger inserts exactly one row per committed representation change
-23. required `journal + verify` execution filters stale journal candidates correctly
-24. required `journal + verify` execution applies `totalCount`, `offset`, and `limit` to the final verified authorized changed-resource result set rather than to raw journal candidates
-25. required `journal + verify` execution may use bounded internal candidate-read batches per page build, while continuing batch reads until page fill or window exhaustion with deterministic continuation
-26. concurrent identity-changing update and delete attempts against the same document serialize under the write-path locking contract and do not capture stale pre-change data
-27. tombstones and key-change rows preserve `CreatedByOwnershipTokenId` and the tracked-change authorization basis data needed for redesign authorization concepts
-28. write-path capture fails explicitly when required tracked-change authorization inputs cannot be reduced to the declared `AuthorizationBasis` contract for the routed resource, and no tombstone or key-change row is committed in that failure path
+12. delete query suppresses same-window re-add churn when the same resource identity is live again within the requested window on the selected source
+13. identity-changing update inserts one key-change tracking row with copied old-key, new-key, and tracked-change authorization data
+14. identity-changing update records a distinct public key-change token, not the live resource `ChangeVersion` and not `IdentityVersion`, on `dms.DocumentKeyChangeTracking`
+15. non-identity update does not insert a key-change tracking row
+16. representation rewrite caused by an upstream identity change does not insert a key-change row when the dependent resource's own identity tuple is unchanged
+17. key-change query collapses multiple key changes for one resource within a window correctly
+18. key-change query authorization uses the stored pre-update tracked-change authorization data as documented
+19. `/keyChanges` applies `totalCount`, `offset`, and `limit` after authorization filtering and collapse
+20. `availableChangeVersions` returns correct bounds, including bootstrap `0/0` when the synchronization surface is empty
+21. `availableChangeVersions` with `Use-Snapshot = true` returns the snapshot-visible ceiling rather than the live-primary ceiling
+22. if a later retention phase is added, replay-floor enforcement uses `minChangeVersion < oldestChangeVersion`
+23. journal trigger inserts exactly one row per committed representation change
+24. required `journal + verify` execution filters stale journal candidates correctly
+25. required `journal + verify` execution applies `totalCount`, `offset`, and `limit` to the final verified authorized changed-resource result set rather than to raw journal candidates
+26. required `journal + verify` execution may use bounded internal candidate-read batches per page build, while continuing batch reads until page fill or window exhaustion with deterministic continuation
+27. concurrent identity-changing update and delete attempts against the same document serialize under the write-path locking contract and do not capture stale pre-change data
+28. tombstones and key-change rows preserve `CreatedByOwnershipTokenId` and the tracked-change authorization basis data needed for redesign authorization concepts
+29. write-path capture fails explicitly when required tracked-change authorization inputs cannot be reduced to the declared `AuthorizationBasis` contract for the routed resource, and no tombstone or key-change row is committed in that failure path
 
 ## End-to-end tests
 
@@ -158,7 +159,7 @@ Required E2E coverage:
 10. snapshot-backed changed-resource queries return the snapshot-visible resources in the requested bounded window and do not drift when later live writes occur
 11. snapshot-backed `/deletes` and `/keyChanges` return the snapshot-visible tracked rows from the same synchronization surface used by `availableChangeVersions`
 12. malformed `Use-Snapshot` values return `400 Bad Request` problem details with the documented `type`, `title`, `detail`, `validationErrors`, `errors`, and `correlationId`
-13. `Use-Snapshot = true` with no usable snapshot source returns `409 Conflict` problem details with the documented snapshot-unavailable contract
+13. `Use-Snapshot = true` with no usable snapshot source returns `404 Not Found` problem details with the documented snapshot-unavailable contract
 14. malformed, negative, or otherwise invalid change-query windows return `400 Bad Request` problem details with the documented `type`, `title`, `detail`, `validationErrors`, `errors`, and `correlationId`
 15. if a later retention phase is added, requests where `minChangeVersion < oldestChangeVersion` return `409 Conflict` problem details with the documented replay-floor fields
 16. `availableChangeVersions` returns bootstrap `0/0` before any retained tracking rows exist
@@ -168,14 +169,15 @@ Required E2E coverage:
 20. unauthorized callers do not see unauthorized deletes under the documented tracked-change authorization rules
 21. unauthorized callers do not see unauthorized key changes under the documented tracked-change authorization rules
 22. insert then delete before sync returns only the delete row
-23. delete then reinsert yields a delete row and a later live resource in later windows
-24. multiple key changes before sync yield one collapsed key-change row
-25. `/keyChanges` for a resource that does not support identity updates returns `200 OK` with an empty array
-26. `/keyChanges` paging and `totalCount` semantics apply after authorization filtering and collapse
-27. required `journal + verify` changed-resource execution preserves the documented public paging semantics
-28. required `journal + verify` changed-resource execution preserves deterministic continuation and page-build correctness when bounded internal candidate-read batching is used
-29. readable profile headers do not alter or block `/deletes`, `/keyChanges`, or `availableChangeVersions`
-30. changed-resource mode remains resource-level under readable profiles even when the filtered payload appears unchanged
+23. delete then reinsert in the same window suppresses the delete row and returns only the later live resource for that window
+24. delete then reinsert in a later window yields a delete row in the earlier window and a later live resource in the later window
+25. multiple key changes before sync yield one collapsed key-change row
+26. `/keyChanges` for a resource that does not support identity updates returns `200 OK` with an empty array
+27. `/keyChanges` paging and `totalCount` semantics apply after authorization filtering and collapse
+28. required `journal + verify` changed-resource execution preserves the documented public paging semantics
+29. required `journal + verify` changed-resource execution preserves deterministic continuation and page-build correctness when bounded internal candidate-read batching is used
+30. readable profile headers do not alter or block `/deletes`, `/keyChanges`, or `availableChangeVersions`
+31. changed-resource mode remains resource-level under readable profiles even when the filtered payload appears unchanged
 
 ## Scenario Expectations
 
@@ -189,6 +191,8 @@ Required E2E coverage:
 | All participating sources empty after purge | Later retention phase only: return `oldestChangeVersion = newestChangeVersion =` current replay floor |
 | Auth-only maintenance updates | No new changed-resource signal |
 | Delete transaction rollback | No committed tombstone |
+| Delete then reinsert in the same window | Suppress the delete row and expose only the later live state for that window |
+| Delete then reinsert in a later window | Return the earlier delete in its window and the later live row in the later window |
 | Multiple key changes in one window | Return one collapsed key-change row |
 | Snapshot-backed bounded synchronization | Return the snapshot-visible surface for the bounded window without paging drift from later live writes |
 | Snapshot source unavailable | Return explicit snapshot-unavailable problem details; do not silently fall back to live reads |
@@ -237,7 +241,7 @@ Required external-contract behavior:
 
 - collection GET requests that supply `minChangeVersion`, `maxChangeVersion`, or `Use-Snapshot = true` while Change Queries is disabled return `400 Bad Request` problem details
 - invalid `Use-Snapshot` returns `400 Bad Request` problem details
-- `Use-Snapshot = true` when no usable snapshot source is available returns `409 Conflict` problem details
+- `Use-Snapshot = true` when no usable snapshot source is available returns `404 Not Found` problem details
 - invalid or negative `minChangeVersion` returns `400 Bad Request` problem details
 - invalid or negative `maxChangeVersion` returns `400 Bad Request` problem details
 - `maxChangeVersion < minChangeVersion` returns `400 Bad Request` problem details
@@ -245,7 +249,7 @@ Required external-contract behavior:
 
 ODS compatibility note:
 
-- DMS-843 intentionally keeps `409 Conflict` for snapshot-unavailable requests to preserve ODS-compatible change-query client behavior
+- legacy ODS snapshot-missing flows surface `404 Not Found`; DMS-843 keeps that status while still documenting an explicit DMS problem-details body for the case
 
 Problem-detail expectations:
 
@@ -253,7 +257,7 @@ Problem-detail expectations:
 - for the documented change-query parameter-validation and replay-floor failures, `validationErrors` is present as an empty object, `{}`, rather than being omitted
 - feature-disabled collection GET requests use type `urn:ed-fi:api:change-queries:feature-disabled`
 - invalid `Use-Snapshot` uses type `urn:ed-fi:api:change-queries:validation:use-snapshot`
-- unavailable snapshot source uses type `urn:ed-fi:api:change-queries:snapshot:unavailable`
+- unavailable snapshot source uses type `urn:ed-fi:api:change-queries:snapshot:not-found`
 - invalid `minChangeVersion` uses type `urn:ed-fi:api:change-queries:validation:min-change-version`
 - invalid `maxChangeVersion` uses type `urn:ed-fi:api:change-queries:validation:max-change-version`
 - invalid window relationship uses type `urn:ed-fi:api:change-queries:validation:window`
@@ -361,6 +365,7 @@ The feature design is ready for review if reviewers can answer yes to the follow
 - feature-off behavior is explicit, with no silent downgrade of Change Query requests
 - the feature satisfies the Ed-Fi changed-resource semantics of current-state results rather than mutation history
 - deletes remain visible after the live row is gone
+- same-window delete plus re-add churn is suppressed from the public `/deletes` surface
 - key changes remain visible after later key mutations or deletion of the live row
 - live changed-resource authorization remains aligned to current live-read semantics
 - delete and key-change authorization target the documented ODS-style tracked-change criteria
