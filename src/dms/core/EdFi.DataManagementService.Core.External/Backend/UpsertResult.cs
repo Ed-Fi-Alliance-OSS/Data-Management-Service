@@ -39,10 +39,10 @@ public record UpsertResult
     }
 
     /// <summary>
-    /// A failure because referenced descriptors in the upserted document do not exist
+    /// A failure because referenced descriptors in the upserted document are invalid
     /// </summary>
-    /// <param name="InvalidDescriptorReferences">The invalid descriptor references</param>
-    public record UpsertFailureDescriptorReference(List<DescriptorReference> InvalidDescriptorReferences)
+    /// <param name="InvalidDescriptorReferences">The invalid descriptor references keyed by concrete path instance</param>
+    public record UpsertFailureDescriptorReference(DescriptorReferenceFailure[] InvalidDescriptorReferences)
         : UpsertResult();
 
     /// <summary>

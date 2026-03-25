@@ -114,13 +114,8 @@ internal class UpdateByIdHandler(
                 Body: FailureResponse.ForBadRequest(
                     "Data validation failed. See 'validationErrors' for details.",
                     traceId: requestInfo.FrontendRequest.TraceId,
-                    failure.InvalidDescriptorReferences.ToDictionary(
-                        d => d.Path.Value,
-                        d =>
-                            d.DocumentIdentity.DocumentIdentityElements.Select(e =>
-                                    $"{d.ResourceInfo.ResourceName.Value} value '{e.IdentityValue}' does not exist."
-                                )
-                                .ToArray()
+                    ValidationErrorFactory.BuildInvalidDescriptorValidationErrors(
+                        failure.InvalidDescriptorReferences
                     ),
                     []
                 ),

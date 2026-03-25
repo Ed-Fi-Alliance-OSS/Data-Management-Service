@@ -35,12 +35,12 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
         Guid[] invalidReferentialIds
     )
     {
-        List<DescriptorReference> invalidDescriptorReferences = DescriptorReferencesWithReferentialIds(
+        DescriptorReferenceFailure[] invalidDescriptorReferences = DescriptorReferenceFailuresFrom(
             documentInfo.DescriptorReferences,
             invalidReferentialIds
         );
 
-        if (invalidDescriptorReferences.Count != 0)
+        if (invalidDescriptorReferences.Length != 0)
         {
             return new UpsertResult.UpsertFailureDescriptorReference(invalidDescriptorReferences);
         }

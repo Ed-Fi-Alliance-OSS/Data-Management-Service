@@ -207,6 +207,134 @@ public class UpdateByIdHandlerTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Repository_That_Returns_A_Missing_Descriptor_Failure : UpdateByIdHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
+            {
+                return Task.FromResult<UpdateResult>(
+                    new UpdateFailureDescriptorReference([
+                        new(
+                            Path: new JsonPath("$.calendarReference.calendarTypeDescriptor"),
+                            TargetResource: new BaseResourceInfo(
+                                new ProjectName("ed-fi"),
+                                new ResourceName("CalendarTypeDescriptor"),
+                                true
+                            ),
+                            DocumentIdentity: new([
+                                new(
+                                    DocumentIdentity.DescriptorIdentityJsonPath,
+                                    "uri://ed-fi.org/calendartypedescriptor#spring"
+                                ),
+                            ]),
+                            ReferentialId: new ReferentialId(Guid.NewGuid()),
+                            Reason: DescriptorReferenceFailureReason.Missing
+                        ),
+                    ])
+                );
+            }
+        }
+
+        private readonly RequestInfo requestInfo = No.RequestInfo();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (updateByIdHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            await updateByIdHandler.Execute(requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_has_the_correct_response()
+        {
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+
+            var body = requestInfo.FrontendResponse.Body!.AsObject();
+            body["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be("Data validation failed. See 'validationErrors' for details.");
+
+            var validationErrors = body["validationErrors"]!.AsObject();
+            validationErrors.Count.Should().Be(1);
+            validationErrors["$.calendarReference.calendarTypeDescriptor"]![0]!
+                .GetValue<string>()
+                .Should()
+                .Be(
+                    "CalendarTypeDescriptor value 'uri://ed-fi.org/calendartypedescriptor#spring' does not exist."
+                );
+            body["errors"]!.AsArray().Count.Should().Be(0);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Repository_That_Returns_A_Descriptor_Type_Mismatch_Failure : UpdateByIdHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
+            {
+                return Task.FromResult<UpdateResult>(
+                    new UpdateFailureDescriptorReference([
+                        new(
+                            Path: new JsonPath("$.calendarReference.calendarTypeDescriptor"),
+                            TargetResource: new BaseResourceInfo(
+                                new ProjectName("ed-fi"),
+                                new ResourceName("CalendarTypeDescriptor"),
+                                true
+                            ),
+                            DocumentIdentity: new([
+                                new(
+                                    DocumentIdentity.DescriptorIdentityJsonPath,
+                                    "uri://ed-fi.org/schooltypedescriptor#elementary"
+                                ),
+                            ]),
+                            ReferentialId: new ReferentialId(Guid.NewGuid()),
+                            Reason: DescriptorReferenceFailureReason.DescriptorTypeMismatch
+                        ),
+                    ])
+                );
+            }
+        }
+
+        private readonly RequestInfo requestInfo = No.RequestInfo();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (updateByIdHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            await updateByIdHandler.Execute(requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_has_the_correct_response()
+        {
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+
+            var body = requestInfo.FrontendResponse.Body!.AsObject();
+            body["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be("Data validation failed. See 'validationErrors' for details.");
+
+            var validationErrors = body["validationErrors"]!.AsObject();
+            validationErrors.Count.Should().Be(1);
+            validationErrors["$.calendarReference.calendarTypeDescriptor"]![0]!
+                .GetValue<string>()
+                .Should()
+                .Be(
+                    "CalendarTypeDescriptor value 'uri://ed-fi.org/schooltypedescriptor#elementary' is not a valid CalendarTypeDescriptor."
+                );
+            body["errors"]!.AsArray().Count.Should().Be(0);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Failure_Identity_Conflict : UpdateByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository

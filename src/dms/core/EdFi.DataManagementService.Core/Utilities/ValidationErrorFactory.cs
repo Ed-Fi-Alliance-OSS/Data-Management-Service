@@ -71,6 +71,16 @@ internal static class ValidationErrorFactory
                 grouping => grouping.Select(BuildInvalidReferenceMessage).Distinct().ToArray()
             );
 
+    public static Dictionary<string, string[]> BuildInvalidDescriptorValidationErrors(
+        IEnumerable<DescriptorReferenceFailure> invalidDescriptorReferences
+    ) =>
+        invalidDescriptorReferences
+            .GroupBy(failure => failure.Path.Value)
+            .ToDictionary(
+                grouping => grouping.Key,
+                grouping => grouping.Select(BuildInvalidDescriptorMessage).Distinct().ToArray()
+            );
+
     /// <summary>
     /// Converts an ordinal number to its string representation (1st, 2nd, 3rd, etc.)
     /// </summary>
@@ -102,4 +112,24 @@ internal static class ValidationErrorFactory
                 $"Unsupported document reference failure reason '{failure.Reason}'."
             ),
         };
+
+    private static string BuildInvalidDescriptorMessage(DescriptorReferenceFailure failure)
+    {
+        var descriptorIdentity =
+            failure.DocumentIdentity.DocumentIdentityElements.SingleOrDefault()
+            ?? throw new InvalidOperationException(
+                $"Descriptor failure at path '{failure.Path.Value}' is missing its descriptor identity value."
+            );
+
+        return failure.Reason switch
+        {
+            DescriptorReferenceFailureReason.Missing =>
+                $"{failure.TargetResource.ResourceName.Value} value '{descriptorIdentity.IdentityValue}' does not exist.",
+            DescriptorReferenceFailureReason.DescriptorTypeMismatch =>
+                $"{failure.TargetResource.ResourceName.Value} value '{descriptorIdentity.IdentityValue}' is not a valid {failure.TargetResource.ResourceName.Value}.",
+            _ => throw new InvalidOperationException(
+                $"Unsupported descriptor reference failure reason '{failure.Reason}'."
+            ),
+        };
+    }
 }

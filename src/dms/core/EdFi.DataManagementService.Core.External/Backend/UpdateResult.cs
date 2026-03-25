@@ -42,10 +42,10 @@ public record UpdateResult
     }
 
     /// <summary>
-    /// A failure because referenced descriptors in the updated document do not exist
+    /// A failure because referenced descriptors in the updated document are invalid
     /// </summary>
-    /// <param name="InvalidDescriptorReferences">The invalid descriptor references</param>
-    public record UpdateFailureDescriptorReference(List<DescriptorReference> InvalidDescriptorReferences)
+    /// <param name="InvalidDescriptorReferences">The invalid descriptor references keyed by concrete path instance</param>
+    public record UpdateFailureDescriptorReference(DescriptorReferenceFailure[] InvalidDescriptorReferences)
         : UpdateResult();
 
     /// <summary>

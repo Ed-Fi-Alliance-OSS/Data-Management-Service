@@ -152,6 +152,134 @@ public class UpsertHandlerTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Repository_That_Returns_A_Missing_Descriptor_Failure : UpsertHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
+            {
+                return Task.FromResult<UpsertResult>(
+                    new UpsertFailureDescriptorReference([
+                        new(
+                            Path: new JsonPath("$.schoolTypeDescriptor"),
+                            TargetResource: new BaseResourceInfo(
+                                new ProjectName("ed-fi"),
+                                new ResourceName("SchoolTypeDescriptor"),
+                                true
+                            ),
+                            DocumentIdentity: new([
+                                new(
+                                    DocumentIdentity.DescriptorIdentityJsonPath,
+                                    "uri://ed-fi.org/schooltypedescriptor#elementary"
+                                ),
+                            ]),
+                            ReferentialId: new ReferentialId(Guid.NewGuid()),
+                            Reason: DescriptorReferenceFailureReason.Missing
+                        ),
+                    ])
+                );
+            }
+        }
+
+        private readonly RequestInfo requestInfo = No.RequestInfo();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (upsertHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            await upsertHandler.Execute(requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_has_the_correct_response()
+        {
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+
+            var body = requestInfo.FrontendResponse.Body!.AsObject();
+            body["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be("Data validation failed. See 'validationErrors' for details.");
+
+            var validationErrors = body["validationErrors"]!.AsObject();
+            validationErrors.Count.Should().Be(1);
+            validationErrors["$.schoolTypeDescriptor"]![0]!
+                .GetValue<string>()
+                .Should()
+                .Be(
+                    "SchoolTypeDescriptor value 'uri://ed-fi.org/schooltypedescriptor#elementary' does not exist."
+                );
+            body["errors"]!.AsArray().Count.Should().Be(0);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Repository_That_Returns_A_Descriptor_Type_Mismatch_Failure : UpsertHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
+            {
+                return Task.FromResult<UpsertResult>(
+                    new UpsertFailureDescriptorReference([
+                        new(
+                            Path: new JsonPath("$.schoolTypeDescriptor"),
+                            TargetResource: new BaseResourceInfo(
+                                new ProjectName("ed-fi"),
+                                new ResourceName("SchoolTypeDescriptor"),
+                                true
+                            ),
+                            DocumentIdentity: new([
+                                new(
+                                    DocumentIdentity.DescriptorIdentityJsonPath,
+                                    "uri://ed-fi.org/gradeleveldescriptor#first-grade"
+                                ),
+                            ]),
+                            ReferentialId: new ReferentialId(Guid.NewGuid()),
+                            Reason: DescriptorReferenceFailureReason.DescriptorTypeMismatch
+                        ),
+                    ])
+                );
+            }
+        }
+
+        private readonly RequestInfo requestInfo = No.RequestInfo();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (upsertHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            await upsertHandler.Execute(requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_has_the_correct_response()
+        {
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+
+            var body = requestInfo.FrontendResponse.Body!.AsObject();
+            body["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be("Data validation failed. See 'validationErrors' for details.");
+
+            var validationErrors = body["validationErrors"]!.AsObject();
+            validationErrors.Count.Should().Be(1);
+            validationErrors["$.schoolTypeDescriptor"]![0]!
+                .GetValue<string>()
+                .Should()
+                .Be(
+                    "SchoolTypeDescriptor value 'uri://ed-fi.org/gradeleveldescriptor#first-grade' is not a valid SchoolTypeDescriptor."
+                );
+            body["errors"]!.AsArray().Count.Should().Be(0);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Failure_Identity_Conflict : UpsertHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository

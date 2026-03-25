@@ -57,13 +57,60 @@ internal static class ReferenceHelper
     }
 
     /// <summary>
-    /// Returns a list of descriptor references filtered by referentialId
+    /// Returns invalid descriptor references for all matching referential ids without collapsing
+    /// duplicate occurrences at different JSON paths.
     /// </summary>
-    public static List<DescriptorReference> DescriptorReferencesWithReferentialIds(
+    public static DescriptorReferenceFailure[] DescriptorReferenceFailuresFrom(
         DescriptorReference[] descriptorReferences,
         Guid[] referentialIds
     )
     {
-        return descriptorReferences.Where(d => referentialIds.Contains(d.ReferentialId.Value)).ToList();
+        HashSet<Guid> referentialIdSet = [.. referentialIds];
+
+        return descriptorReferences
+            .Where(descriptorReference => referentialIdSet.Contains(descriptorReference.ReferentialId.Value))
+            .Select(descriptorReference =>
+                DescriptorReferenceFailure.From(
+                    descriptorReference,
+                    DetermineDescriptorReferenceFailureReason(descriptorReference)
+                )
+            )
+            .ToArray();
+    }
+
+    private static DescriptorReferenceFailureReason DetermineDescriptorReferenceFailureReason(
+        DescriptorReference descriptorReference
+    )
+    {
+        var descriptorIdentity =
+            descriptorReference.DocumentIdentity.DocumentIdentityElements.SingleOrDefault()
+            ?? throw new InvalidOperationException(
+                $"Descriptor reference at path '{descriptorReference.Path.Value}' is missing its descriptor identity value."
+            );
+
+        return
+            TryGetDescriptorTypeName(descriptorIdentity.IdentityValue, out var descriptorTypeName)
+            && !string.Equals(
+                descriptorTypeName,
+                descriptorReference.ResourceInfo.ResourceName.Value,
+                StringComparison.OrdinalIgnoreCase
+            )
+            ? DescriptorReferenceFailureReason.DescriptorTypeMismatch
+            : DescriptorReferenceFailureReason.Missing;
+    }
+
+    private static bool TryGetDescriptorTypeName(string descriptorUri, out string descriptorTypeName)
+    {
+        var fragmentIndex = descriptorUri.IndexOf('#', StringComparison.Ordinal);
+        var lastSlashIndex = descriptorUri.LastIndexOf('/');
+
+        if (lastSlashIndex < 0 || fragmentIndex <= lastSlashIndex + 1)
+        {
+            descriptorTypeName = string.Empty;
+            return false;
+        }
+
+        descriptorTypeName = descriptorUri[(lastSlashIndex + 1)..fragmentIndex];
+        return !string.IsNullOrWhiteSpace(descriptorTypeName);
     }
 }

@@ -24,7 +24,7 @@
       "Add handler/result tests covering both missing-descriptor and descriptor-type-mismatch paths for POST and PUT, asserting the same 400/error shape with different messages.",
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Resolver Service",

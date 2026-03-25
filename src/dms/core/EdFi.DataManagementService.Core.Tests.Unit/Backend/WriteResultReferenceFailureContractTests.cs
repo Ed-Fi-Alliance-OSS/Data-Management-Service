@@ -126,4 +126,99 @@ public class WriteResultReferenceFailureContractTests
             _result.GetResourceNames().Should().Equal(new ResourceName("EducationOrganization"));
         }
     }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_UpsertFailureDescriptorReference_With_A_Descriptor_Type_Mismatch
+        : WriteResultReferenceFailureContractTests
+    {
+        private UpsertResult.UpsertFailureDescriptorReference _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var targetResource = new BaseResourceInfo(
+                ProjectName: new ProjectName("ed-fi"),
+                ResourceName: new ResourceName("SchoolTypeDescriptor"),
+                IsDescriptor: true
+            );
+
+            _result = new UpsertResult.UpsertFailureDescriptorReference([
+                new(
+                    Path: new JsonPath("$.schoolTypeDescriptor"),
+                    TargetResource: targetResource,
+                    DocumentIdentity: new([
+                        new(
+                            DocumentIdentity.DescriptorIdentityJsonPath,
+                            "uri://ed-fi.org/gradeleveldescriptor#first-grade"
+                        ),
+                    ]),
+                    ReferentialId: new ReferentialId(Guid.NewGuid()),
+                    Reason: DescriptorReferenceFailureReason.DescriptorTypeMismatch
+                ),
+            ]);
+        }
+
+        [Test]
+        public void It_carries_the_reason_and_target_resource_for_the_failing_path()
+        {
+            _result.InvalidDescriptorReferences.Should().ContainSingle();
+            _result.InvalidDescriptorReferences[0].Path.Value.Should().Be("$.schoolTypeDescriptor");
+            _result
+                .InvalidDescriptorReferences[0]
+                .TargetResource.ResourceName.Value.Should()
+                .Be("SchoolTypeDescriptor");
+            _result
+                .InvalidDescriptorReferences[0]
+                .Reason.Should()
+                .Be(DescriptorReferenceFailureReason.DescriptorTypeMismatch);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_UpdateFailureDescriptorReference_With_A_Missing_Descriptor
+        : WriteResultReferenceFailureContractTests
+    {
+        private UpdateResult.UpdateFailureDescriptorReference _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var targetResource = new BaseResourceInfo(
+                ProjectName: new ProjectName("ed-fi"),
+                ResourceName: new ResourceName("CalendarTypeDescriptor"),
+                IsDescriptor: true
+            );
+
+            _result = new UpdateResult.UpdateFailureDescriptorReference([
+                new(
+                    Path: new JsonPath("$.calendarReference.calendarTypeDescriptor"),
+                    TargetResource: targetResource,
+                    DocumentIdentity: new([
+                        new(
+                            DocumentIdentity.DescriptorIdentityJsonPath,
+                            "uri://ed-fi.org/calendartypedescriptor#spring"
+                        ),
+                    ]),
+                    ReferentialId: new ReferentialId(Guid.NewGuid()),
+                    Reason: DescriptorReferenceFailureReason.Missing
+                ),
+            ]);
+        }
+
+        [Test]
+        public void It_preserves_the_missing_reason_for_the_concrete_path()
+        {
+            _result.InvalidDescriptorReferences.Should().ContainSingle();
+            _result
+                .InvalidDescriptorReferences[0]
+                .Path.Value.Should()
+                .Be("$.calendarReference.calendarTypeDescriptor");
+            _result
+                .InvalidDescriptorReferences[0]
+                .Reason.Should()
+                .Be(DescriptorReferenceFailureReason.Missing);
+        }
+    }
 }
