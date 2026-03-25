@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend;
@@ -141,35 +142,46 @@ public sealed class ReferenceResolver(IReferenceResolverAdapter adapter) : IRefe
             .ToArray();
 
         Dictionary<JsonPath, ResolvedDocumentReference> successfulDocumentReferencesByPath = [];
+        List<DocumentReferenceFailure> invalidDocumentReferences = [];
 
         foreach (var documentReferenceOccurrence in documentReferenceOccurrences)
         {
-            var lookupResult = documentReferenceOccurrence.Lookup.Result;
+            var documentReferenceFailure = ClassifyDocumentReferenceFailure(
+                request.MappingSet,
+                documentReferenceOccurrence
+            );
 
-            if (lookupResult is null)
+            if (documentReferenceFailure is not null)
             {
+                invalidDocumentReferences.Add(documentReferenceFailure);
                 continue;
             }
 
             AddSuccessfulDocumentReference(
                 successfulDocumentReferencesByPath,
                 documentReferenceOccurrence.Reference,
-                lookupResult
+                documentReferenceOccurrence.Lookup.Result!
             );
         }
 
         Dictionary<JsonPath, ResolvedDescriptorReference> successfulDescriptorReferencesByPath = [];
         Dictionary<DescriptorReferenceKey, long> descriptorDocumentIdByKey = [];
+        List<DescriptorReferenceFailure> invalidDescriptorReferences = [];
 
         foreach (var descriptorReferenceOccurrence in descriptorReferenceOccurrences)
         {
-            var lookupResult = descriptorReferenceOccurrence.Lookup.Result;
+            var descriptorReferenceFailure = ClassifyDescriptorReferenceFailure(
+                request.MappingSet,
+                descriptorReferenceOccurrence
+            );
 
-            if (lookupResult is null || !lookupResult.IsDescriptor)
+            if (descriptorReferenceFailure is not null)
             {
+                invalidDescriptorReferences.Add(descriptorReferenceFailure);
                 continue;
             }
 
+            var lookupResult = descriptorReferenceOccurrence.Lookup.Result!;
             var descriptorKey = CreateDescriptorReferenceKey(descriptorReferenceOccurrence.Reference);
 
             if (
@@ -211,9 +223,61 @@ public sealed class ReferenceResolver(IReferenceResolverAdapter adapter) : IRefe
             SuccessfulDocumentReferencesByPath: successfulDocumentReferencesByPath,
             SuccessfulDescriptorReferencesByPath: successfulDescriptorReferencesByPath,
             LookupsByReferentialId: lookupsByReferentialId,
+            InvalidDocumentReferences: invalidDocumentReferences,
+            InvalidDescriptorReferences: invalidDescriptorReferences,
             DocumentReferenceOccurrences: documentReferenceOccurrences,
             DescriptorReferenceOccurrences: descriptorReferenceOccurrences
         );
+    }
+
+    private static DocumentReferenceFailure? ClassifyDocumentReferenceFailure(
+        MappingSet mappingSet,
+        ResolvedDocumentReferenceOccurrence documentReferenceOccurrence
+    )
+    {
+        var lookupResult = documentReferenceOccurrence.Lookup.Result;
+
+        if (lookupResult is null)
+        {
+            return DocumentReferenceFailure.From(
+                documentReferenceOccurrence.Reference,
+                DocumentReferenceFailureReason.Missing
+            );
+        }
+
+        var targetMetadata = mappingSet.GetDocumentReferenceTargetMetadataOrThrow(
+            documentReferenceOccurrence.Reference.ResourceInfo
+        );
+
+        return targetMetadata.AllowsResourceKeyId(lookupResult.ResourceKeyId)
+            ? null
+            : DocumentReferenceFailure.From(
+                documentReferenceOccurrence.Reference,
+                DocumentReferenceFailureReason.IncompatibleTargetType
+            );
+    }
+
+    private static DescriptorReferenceFailure? ClassifyDescriptorReferenceFailure(
+        MappingSet mappingSet,
+        ResolvedDescriptorReferenceOccurrence descriptorReferenceOccurrence
+    )
+    {
+        var lookupResult = descriptorReferenceOccurrence.Lookup.Result;
+
+        if (lookupResult is null)
+        {
+            return DescriptorReferenceFailure.From(
+                descriptorReferenceOccurrence.Reference,
+                DetermineMissingDescriptorReferenceFailureReason(descriptorReferenceOccurrence.Reference)
+            );
+        }
+
+        return IsCompatibleDescriptorTarget(mappingSet, descriptorReferenceOccurrence.Reference, lookupResult)
+            ? null
+            : DescriptorReferenceFailure.From(
+                descriptorReferenceOccurrence.Reference,
+                DescriptorReferenceFailureReason.DescriptorTypeMismatch
+            );
     }
 
     private static void AddSuccessfulDocumentReference(
@@ -272,6 +336,66 @@ public sealed class ReferenceResolver(IReferenceResolverAdapter adapter) : IRefe
         throw new InvalidOperationException(
             $"Reference resolver did not cache referential id '{referentialId.Value}' before materializing the result set."
         );
+    }
+
+    private static bool IsCompatibleDescriptorTarget(
+        MappingSet mappingSet,
+        DescriptorReference descriptorReference,
+        ReferenceLookupResult lookupResult
+    )
+    {
+        if (!lookupResult.IsDescriptor)
+        {
+            return false;
+        }
+
+        var targetResource = ToQualifiedResourceName(descriptorReference.ResourceInfo);
+
+        if (!mappingSet.ResourceKeyIdByResource.TryGetValue(targetResource, out var expectedResourceKeyId))
+        {
+            throw new InvalidOperationException(
+                $"Descriptor reference target '{targetResource.ProjectName}/{targetResource.ResourceName}' is missing from ResourceKeyIdByResource in mapping set "
+                    + $"'{mappingSet.Key.EffectiveSchemaHash}/{mappingSet.Key.Dialect}/{mappingSet.Key.RelationalMappingVersion}'."
+            );
+        }
+
+        return lookupResult.ResourceKeyId == expectedResourceKeyId;
+    }
+
+    private static DescriptorReferenceFailureReason DetermineMissingDescriptorReferenceFailureReason(
+        DescriptorReference descriptorReference
+    )
+    {
+        var descriptorIdentity =
+            descriptorReference.DocumentIdentity.DocumentIdentityElements.SingleOrDefault()
+            ?? throw new InvalidOperationException(
+                $"Descriptor reference at path '{descriptorReference.Path.Value}' is missing its descriptor identity value."
+            );
+
+        return
+            TryGetDescriptorTypeName(descriptorIdentity.IdentityValue, out var descriptorTypeName)
+            && !string.Equals(
+                descriptorTypeName,
+                descriptorReference.ResourceInfo.ResourceName.Value,
+                StringComparison.OrdinalIgnoreCase
+            )
+            ? DescriptorReferenceFailureReason.DescriptorTypeMismatch
+            : DescriptorReferenceFailureReason.Missing;
+    }
+
+    private static bool TryGetDescriptorTypeName(string descriptorUri, out string descriptorTypeName)
+    {
+        var fragmentIndex = descriptorUri.IndexOf('#', StringComparison.Ordinal);
+        var lastSlashIndex = descriptorUri.LastIndexOf('/');
+
+        if (lastSlashIndex < 0 || fragmentIndex <= lastSlashIndex + 1)
+        {
+            descriptorTypeName = string.Empty;
+            return false;
+        }
+
+        descriptorTypeName = descriptorUri[(lastSlashIndex + 1)..fragmentIndex];
+        return !string.IsNullOrWhiteSpace(descriptorTypeName);
     }
 
     private static DescriptorReferenceKey CreateDescriptorReferenceKey(

@@ -374,30 +374,48 @@ internal static class RelationalAccessTestData
     public static MappingSet CreateMappingSet(QualifiedResourceName requestResource)
     {
         const string EffectiveSchemaHash = "test-hash";
+        var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
+        var schoolTypeDescriptorResource = new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor");
+        var studentKey = new ResourceKeyEntry(1, requestResource, "1.0", false);
+        var schoolKey = new ResourceKeyEntry(11, schoolResource, "1.0", false);
+        var schoolTypeDescriptorKey = new ResourceKeyEntry(12, schoolTypeDescriptorResource, "1.0", false);
 
         var effectiveSchema = new EffectiveSchemaInfo(
             ApiSchemaFormatVersion: "1.0",
             RelationalMappingVersion: "v1",
             EffectiveSchemaHash: EffectiveSchemaHash,
-            ResourceKeyCount: 1,
+            ResourceKeyCount: 3,
             ResourceKeySeedHash: new byte[32],
             SchemaComponentsInEndpointOrder: [],
-            ResourceKeysInIdOrder:
-            [
-                new ResourceKeyEntry(
-                    ResourceKeyId: 1,
-                    Resource: requestResource,
-                    ResourceVersion: "1.0",
-                    IsAbstractResource: false
-                ),
-            ]
+            ResourceKeysInIdOrder: [studentKey, schoolKey, schoolTypeDescriptorKey]
         );
 
         var modelSet = new DerivedRelationalModelSet(
             EffectiveSchema: effectiveSchema,
             Dialect: SqlDialect.Pgsql,
             ProjectSchemasInEndpointOrder: [],
-            ConcreteResourcesInNameOrder: [],
+            ConcreteResourcesInNameOrder:
+            [
+                new ConcreteResourceModel(
+                    studentKey,
+                    ResourceStorageKind.RelationalTables,
+                    CreateRelationalResourceModel(requestResource, "Student")
+                ),
+                new ConcreteResourceModel(
+                    schoolKey,
+                    ResourceStorageKind.RelationalTables,
+                    CreateRelationalResourceModel(schoolResource, "School")
+                ),
+                new ConcreteResourceModel(
+                    schoolTypeDescriptorKey,
+                    ResourceStorageKind.SharedDescriptorTable,
+                    CreateRelationalResourceModel(
+                        schoolTypeDescriptorResource,
+                        "Descriptor",
+                        ResourceStorageKind.SharedDescriptorTable
+                    )
+                ),
+            ],
             AbstractIdentityTablesInNameOrder: [],
             AbstractUnionViewsInNameOrder: [],
             IndexesInCreateOrder: [],
@@ -409,11 +427,52 @@ internal static class RelationalAccessTestData
             Model: modelSet,
             WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
             ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
-            ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short> { [requestResource] = 1 },
-            ResourceKeyById: new Dictionary<short, ResourceKeyEntry>
-            {
-                [1] = new ResourceKeyEntry(1, requestResource, "1.0", false),
-            }
+            ResourceKeyIdByResource: effectiveSchema.ResourceKeysInIdOrder.ToDictionary(
+                entry => entry.Resource,
+                entry => entry.ResourceKeyId
+            ),
+            ResourceKeyById: effectiveSchema.ResourceKeysInIdOrder.ToDictionary(
+                entry => entry.ResourceKeyId,
+                entry => entry
+            )
+        );
+    }
+
+    private static RelationalResourceModel CreateRelationalResourceModel(
+        QualifiedResourceName resource,
+        string tableName,
+        ResourceStorageKind storageKind = ResourceStorageKind.RelationalTables
+    )
+    {
+        var rootTable = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), tableName),
+            JsonScope: new JsonPathExpression("$", []),
+            Key: new TableKey(
+                $"PK_{tableName}",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns:
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            Constraints: []
+        );
+
+        return new RelationalResourceModel(
+            Resource: resource,
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: storageKind,
+            Root: rootTable,
+            TablesInDependencyOrder: [rootTable],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
         );
     }
 

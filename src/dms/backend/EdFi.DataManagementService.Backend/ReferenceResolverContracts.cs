@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend;
@@ -104,6 +105,12 @@ public sealed record ReferenceLookupSnapshot(ReferentialId ReferentialId, Refere
 /// <param name="LookupsByReferentialId">
 /// Raw lookup snapshots keyed by referential id, including memoized misses for later diagnostics/classification.
 /// </param>
+/// <param name="InvalidDocumentReferences">
+/// Classified document-reference failures keyed by concrete extracted JSON path occurrence.
+/// </param>
+/// <param name="InvalidDescriptorReferences">
+/// Classified descriptor-reference failures keyed by concrete extracted JSON path occurrence.
+/// </param>
 /// <param name="DocumentReferenceOccurrences">
 /// Per-occurrence document-reference lookups in original extraction order.
 /// </param>
@@ -114,9 +121,14 @@ public sealed record ResolvedReferenceSet(
     IReadOnlyDictionary<JsonPath, ResolvedDocumentReference> SuccessfulDocumentReferencesByPath,
     IReadOnlyDictionary<JsonPath, ResolvedDescriptorReference> SuccessfulDescriptorReferencesByPath,
     IReadOnlyDictionary<ReferentialId, ReferenceLookupSnapshot> LookupsByReferentialId,
+    IReadOnlyList<DocumentReferenceFailure> InvalidDocumentReferences,
+    IReadOnlyList<DescriptorReferenceFailure> InvalidDescriptorReferences,
     IReadOnlyList<ResolvedDocumentReferenceOccurrence> DocumentReferenceOccurrences,
     IReadOnlyList<ResolvedDescriptorReferenceOccurrence> DescriptorReferenceOccurrences
-);
+)
+{
+    public bool HasFailures => InvalidDocumentReferences.Count > 0 || InvalidDescriptorReferences.Count > 0;
+}
 
 /// <summary>
 /// Normalized descriptor identity key used to sanity-check path-keyed successful resolutions.
