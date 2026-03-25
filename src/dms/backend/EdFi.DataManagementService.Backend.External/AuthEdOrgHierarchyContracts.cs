@@ -34,6 +34,13 @@ public static class AuthTableNames
 
     public static readonly DbColumnName SourceEdOrgId = new("SourceEducationOrganizationId");
     public static readonly DbColumnName TargetEdOrgId = new("TargetEducationOrganizationId");
+
+    // Column names referenced by the people auth views
+    public static readonly DbColumnName SchoolIdUnified = new("SchoolId_Unified");
+    public static readonly DbColumnName StudentDocumentId = new("Student_DocumentId");
+    public static readonly DbColumnName ContactDocumentId = new("Contact_DocumentId");
+    public static readonly DbColumnName StaffDocumentId = new("Staff_DocumentId");
+    public static readonly DbColumnName EdOrgEdOrgId = new("EducationOrganization_EducationOrganizationId");
 }
 
 /// <summary>

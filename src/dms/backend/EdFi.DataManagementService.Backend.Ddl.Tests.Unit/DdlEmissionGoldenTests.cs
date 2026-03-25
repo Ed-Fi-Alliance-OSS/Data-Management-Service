@@ -1060,6 +1060,48 @@ public class Given_DdlManifest_For_AuthPeopleViews : DdlEmissionGoldenTestBase
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// People Auth Views - Negative Test (no auth hierarchy)
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_DdlEmitter_Without_AuthHierarchy_Should_Not_Emit_PeopleViews : DdlEmissionGoldenTestBase
+{
+    private string _ddlContent = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // NestedCollectionsFixture has no auth hierarchy (defaults to null)
+        var modelSet = NestedCollectionsFixture.Build(SqlDialect.Pgsql);
+        var dialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        _ddlContent = emitter.Emit(modelSet);
+    }
+
+    [Test]
+    public void It_should_not_contain_people_auth_views()
+    {
+        _ddlContent
+            .Should()
+            .NotContain(
+                "EducationOrganizationIdToStudentDocumentId",
+                "People auth views should not be emitted when no auth hierarchy exists"
+            );
+    }
+
+    [Test]
+    public void It_should_not_contain_auth_schema_views()
+    {
+        _ddlContent
+            .Should()
+            .NotContain(
+                "EducationOrganizationIdToContactDocumentId",
+                "Contact auth view should not be emitted without auth hierarchy"
+            );
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Fixture Builders
 // ═══════════════════════════════════════════════════════════════════
 
@@ -3174,12 +3216,12 @@ internal static class AuthPeopleViewsFixture
         var documentIdColumn = new DbColumnName("DocumentId");
         var organizationIdColumn = new DbColumnName("EducationOrganizationId");
 
-        // Column names used by the people auth views
-        var schoolIdColumn = new DbColumnName("SchoolId_Unified");
-        var studentDocIdColumn = new DbColumnName("Student_DocumentId");
-        var contactDocIdColumn = new DbColumnName("Contact_DocumentId");
-        var staffDocIdColumn = new DbColumnName("Staff_DocumentId");
-        var edOrgIdColumn = new DbColumnName("EducationOrganization_EducationOrganizationId");
+        // Column names used by the people auth views (shared constants with the emitter)
+        var schoolIdColumn = AuthTableNames.SchoolIdUnified;
+        var studentDocIdColumn = AuthTableNames.StudentDocumentId;
+        var contactDocIdColumn = AuthTableNames.ContactDocumentId;
+        var staffDocIdColumn = AuthTableNames.StaffDocumentId;
+        var edOrgIdColumn = AuthTableNames.EdOrgEdOrgId;
 
         // Resource keys (alphabetical by resource name for deterministic ordering)
         var ssaResource = new QualifiedResourceName("Ed-Fi", "StudentSchoolAssociation");

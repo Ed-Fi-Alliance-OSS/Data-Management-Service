@@ -99,13 +99,13 @@ INNER JOIN [edfi].[StudentContactAssociation] sca ON ssa.[Student_DocumentId] = 
 
 GO
 CREATE OR ALTER VIEW [auth].[EducationOrganizationIdToStaffDocumentId] AS
-SELECT DISTINCT
+SELECT
     edOrg.[SourceEducationOrganizationId],
     seoaa.[Staff_DocumentId]
 FROM [auth].[EducationOrganizationIdToEducationOrganizationId] edOrg
 INNER JOIN [edfi].[StaffEducationOrganizationAssignmentAssociation] seoaa ON edOrg.[TargetEducationOrganizationId] = seoaa.[EducationOrganization_EducationOrganizationId]
 UNION
-SELECT DISTINCT
+SELECT
     edOrg.[SourceEducationOrganizationId],
     seoea.[Staff_DocumentId]
 FROM [auth].[EducationOrganizationIdToEducationOrganizationId] edOrg
