@@ -87,7 +87,7 @@
       "Add focused unit tests for PostgreSQL SQL shape generation and parameter binding across representative lookup sizes.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "PostgreSQL Adapter Wiring",
