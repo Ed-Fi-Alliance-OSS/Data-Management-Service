@@ -18,6 +18,15 @@
     "completed": false
   },
   {
+    "category": "Descriptor Error Messaging",
+    "description": "Extend the backend-to-Core descriptor failure contract and Core handler mapping so DMS-982 can distinguish `Missing` versus `DescriptorTypeMismatch` per failing descriptor path while preserving the current client-visible 400 status and overall validation-error shape. Acceptance: `src/dms/core/EdFi.DataManagementService.Core.External/Backend/UpsertResult.cs` and `src/dms/core/EdFi.DataManagementService.Core.External/Backend/UpdateResult.cs` carry enough per-path reason data for Core to render different messages; `src/dms/core/EdFi.DataManagementService.Core/Handler/UpsertHandler.cs` and `src/dms/core/EdFi.DataManagementService.Core/Handler/UpdateByIdHandler.cs` emit a different validation message for type mismatch than for missing descriptors; and no other client-exposed contract differences are introduced.",
+    "steps-to-verify": [
+      "Add handler/result tests covering both missing-descriptor and descriptor-type-mismatch paths for POST and PUT, asserting the same 400/error shape with different messages.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
     "category": "Resolver Service",
     "description": "Add the reusable relational write-prerequisite resolver service and contracts for DMS-982 without wiring a new relational `IDocumentStoreRepository` path. Acceptance: the service accepts request-scoped extracted references plus `MappingSet`/resource context, performs per-request memoization and dedupe, preserves per-occurrence diagnostics in a `ResolvedReferenceSet`, and exposes a narrow adapter seam so future auth/write prerequisite batching can append SQL without redesigning the service contract.",
     "steps-to-verify": [
