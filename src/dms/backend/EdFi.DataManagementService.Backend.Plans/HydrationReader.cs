@@ -62,17 +62,17 @@ public static class HydrationReader
     {
         ArgumentNullException.ThrowIfNull(reader);
 
+        if (reader.FieldCount != ExpectedDocumentMetadataColumnCount)
+        {
+            throw new InvalidOperationException(
+                $"Document metadata result set has {reader.FieldCount} columns but expected {ExpectedDocumentMetadataColumnCount}."
+            );
+        }
+
         var rows = new List<DocumentMetadataRow>();
 
         while (await reader.ReadAsync(ct))
         {
-            if (rows.Count == 0 && reader.FieldCount != ExpectedDocumentMetadataColumnCount)
-            {
-                throw new InvalidOperationException(
-                    $"Document metadata result set has {reader.FieldCount} columns but expected {ExpectedDocumentMetadataColumnCount}."
-                );
-            }
-
             rows.Add(
                 new DocumentMetadataRow(
                     DocumentId: reader.GetInt64(0),
@@ -106,17 +106,18 @@ public static class HydrationReader
         ArgumentNullException.ThrowIfNull(tablePlan);
 
         var columnCount = tablePlan.TableModel.Columns.Count;
+
+        if (reader.FieldCount != columnCount)
+        {
+            throw new InvalidOperationException(
+                $"Table '{tablePlan.TableModel.Table}' result set has {reader.FieldCount} columns but expected {columnCount}."
+            );
+        }
+
         var rows = new List<object?[]>();
 
         while (await reader.ReadAsync(ct))
         {
-            if (rows.Count == 0 && reader.FieldCount != columnCount)
-            {
-                throw new InvalidOperationException(
-                    $"Table '{tablePlan.TableModel.Table}' result set has {reader.FieldCount} columns but expected {columnCount}."
-                );
-            }
-
             var row = new object?[columnCount];
 
             for (var i = 0; i < columnCount; i++)

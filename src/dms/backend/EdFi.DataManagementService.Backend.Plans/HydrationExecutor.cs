@@ -66,7 +66,12 @@ public static class HydrationExecutor
         if (hasTotalCount)
         {
             totalCount = await HydrationReader.ReadTotalCountAsync(reader, ct);
-            await reader.NextResultAsync(ct);
+            if (!await reader.NextResultAsync(ct))
+            {
+                throw new InvalidOperationException(
+                    "Expected document metadata result set after total count but no more result sets available."
+                );
+            }
         }
 
         // 2. Document metadata
@@ -77,7 +82,13 @@ public static class HydrationExecutor
 
         for (var i = 0; i < plan.TablePlansInDependencyOrder.Length; i++)
         {
-            await reader.NextResultAsync(ct);
+            if (!await reader.NextResultAsync(ct))
+            {
+                throw new InvalidOperationException(
+                    $"Expected result set for table '{plan.TablePlansInDependencyOrder[i].TableModel.Table}' "
+                        + $"(index {i}) but no more result sets available."
+                );
+            }
             tableRows[i] = await HydrationReader.ReadTableRowsAsync(
                 reader,
                 plan.TablePlansInDependencyOrder[i],
