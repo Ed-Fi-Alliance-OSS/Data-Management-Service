@@ -49,12 +49,13 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
             return new UpdateResult.UpdateFailureDescriptorReference(invalidDescriptorReferences);
         }
 
-        ResourceName[] invalidResourceNames = ResourceNamesFrom(
+        DocumentReferenceFailure[] invalidDocumentReferences = DocumentReferenceFailuresFrom(
             documentInfo.DocumentReferences,
-            invalidReferentialIds
+            invalidReferentialIds,
+            DocumentReferenceFailureReason.Missing
         );
 
-        return new UpdateResult.UpdateFailureReference(invalidResourceNames);
+        return new UpdateResult.UpdateFailureReference(invalidDocumentReferences);
     }
 
     /// <summary>

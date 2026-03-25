@@ -377,7 +377,7 @@ public class UpdateTests : DatabaseTest
         public void Needs_to_assert_expected_ReferencingDocumentInfo()
         {
             var failureResult = _updateResult as UpdateResult.UpdateFailureReference;
-            failureResult!.ReferencingDocumentInfo[0].Value.Should().Be(_referencingResourceName);
+            failureResult!.GetResourceNames()[0].Value.Should().Be(_referencingResourceName);
         }
     }
 
@@ -507,7 +507,7 @@ public class UpdateTests : DatabaseTest
         public void Needs_to_assert_expected_ReferencingDocumentInfo()
         {
             var failureResult = _updateResult as UpdateResult.UpdateFailureReference;
-            failureResult!.ReferencingDocumentInfo[0].Value.Should().Be("Nonexistent");
+            failureResult!.GetResourceNames()[0].Value.Should().Be("Nonexistent");
         }
     }
 

@@ -25,10 +25,18 @@ public record UpsertResult
     public record UpdateSuccess(DocumentUuid ExistingDocumentUuid) : UpsertResult();
 
     /// <summary>
-    /// A failure because referenced documents in the upserted document do not exist
+    /// A failure because referenced documents in the upserted document could not be resolved
     /// </summary>
-    /// <param name="ResourceNames">The unique ResourceNames of the invalid references</param>
-    public record UpsertFailureReference(ResourceName[] ResourceNames) : UpsertResult();
+    /// <param name="InvalidDocumentReferences">The invalid references keyed by concrete path instance</param>
+    public record UpsertFailureReference(DocumentReferenceFailure[] InvalidDocumentReferences)
+        : UpsertResult()
+    {
+        public ResourceName[] GetResourceNames() =>
+            InvalidDocumentReferences
+                .Select(failure => failure.TargetResource.ResourceName)
+                .Distinct()
+                .ToArray();
+    }
 
     /// <summary>
     /// A failure because referenced descriptors in the upserted document do not exist

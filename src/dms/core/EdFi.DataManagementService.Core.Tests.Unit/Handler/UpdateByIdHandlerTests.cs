@@ -139,10 +139,25 @@ public class UpdateByIdHandlerTests
         internal class Repository : NotImplementedDocumentStoreRepository
         {
             public static readonly string ResponseBody = "ReferencingDocumentInfo";
+            private static readonly BaseResourceInfo _targetResource = new(
+                new ProjectName("ed-fi"),
+                new ResourceName(ResponseBody),
+                false
+            );
 
             public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
             {
-                return Task.FromResult<UpdateResult>(new UpdateFailureReference([new(ResponseBody)]));
+                return Task.FromResult<UpdateResult>(
+                    new UpdateFailureReference([
+                        new(
+                            Path: new JsonPath("$.referencingDocument"),
+                            TargetResource: _targetResource,
+                            DocumentIdentity: new([]),
+                            ReferentialId: new(Guid.NewGuid()),
+                            Reason: DocumentReferenceFailureReason.Missing
+                        ),
+                    ])
+                );
             }
         }
 

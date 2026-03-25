@@ -45,12 +45,13 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             return new UpsertResult.UpsertFailureDescriptorReference(invalidDescriptorReferences);
         }
 
-        ResourceName[] invalidResourceNames = ResourceNamesFrom(
+        DocumentReferenceFailure[] invalidDocumentReferences = DocumentReferenceFailuresFrom(
             documentInfo.DocumentReferences,
-            invalidReferentialIds
+            invalidReferentialIds,
+            DocumentReferenceFailureReason.Missing
         );
 
-        return new UpsertResult.UpsertFailureReference(invalidResourceNames);
+        return new UpsertResult.UpsertFailureReference(invalidDocumentReferences);
     }
 
     public async Task<UpsertResult> AsInsert(

@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -82,11 +83,36 @@ public class UpsertHandlerTests
         {
             public static readonly string BadResourceName1 = "BadResourceName1";
             public static readonly string BadResourceName2 = "BadResourceName2";
+            private static readonly BaseResourceInfo _badResource1 = new(
+                new ProjectName("ed-fi"),
+                new ResourceName(BadResourceName1),
+                false
+            );
+            private static readonly BaseResourceInfo _badResource2 = new(
+                new ProjectName("ed-fi"),
+                new ResourceName(BadResourceName2),
+                false
+            );
 
             public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
             {
                 return Task.FromResult<UpsertResult>(
-                    new UpsertFailureReference([new(BadResourceName1), new(BadResourceName2)])
+                    new UpsertFailureReference([
+                        new(
+                            Path: new JsonPath("$.badResource1Reference"),
+                            TargetResource: _badResource1,
+                            DocumentIdentity: new([]),
+                            ReferentialId: new(Guid.NewGuid()),
+                            Reason: DocumentReferenceFailureReason.Missing
+                        ),
+                        new(
+                            Path: new JsonPath("$.badResource2Reference"),
+                            TargetResource: _badResource2,
+                            DocumentIdentity: new([]),
+                            ReferentialId: new(Guid.NewGuid()),
+                            Reason: DocumentReferenceFailureReason.Missing
+                        ),
+                    ])
                 );
             }
         }

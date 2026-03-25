@@ -121,7 +121,7 @@ internal class UpsertHandler(
             UpsertFailureReference failure => new(
                 StatusCode: 409,
                 Body: ForInvalidReferences(
-                    failure.ResourceNames,
+                    failure.GetResourceNames(),
                     traceId: requestInfo.FrontendRequest.TraceId
                 ),
                 Headers: []

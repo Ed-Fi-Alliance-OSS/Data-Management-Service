@@ -128,7 +128,7 @@ internal class UpdateByIdHandler(
             UpdateFailureReference failure => new FrontendResponse(
                 StatusCode: 409,
                 Body: FailureResponse.ForInvalidReferences(
-                    failure.ReferencingDocumentInfo,
+                    failure.GetResourceNames(),
                     traceId: requestInfo.FrontendRequest.TraceId
                 ),
                 Headers: []

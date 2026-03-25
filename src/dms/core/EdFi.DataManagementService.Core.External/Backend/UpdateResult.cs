@@ -28,10 +28,18 @@ public record UpdateResult
     public record UpdateFailureETagMisMatch() : UpdateResult();
 
     /// <summary>
-    /// A failure because referenced documents in the updated document do not exist
+    /// A failure because referenced documents in the updated document could not be resolved
     /// </summary>
-    /// <param name="ReferencingDocumentInfo">Information about the referencing documents</param>
-    public record UpdateFailureReference(ResourceName[] ReferencingDocumentInfo) : UpdateResult();
+    /// <param name="InvalidDocumentReferences">The invalid references keyed by concrete path instance</param>
+    public record UpdateFailureReference(DocumentReferenceFailure[] InvalidDocumentReferences)
+        : UpdateResult()
+    {
+        public ResourceName[] GetResourceNames() =>
+            InvalidDocumentReferences
+                .Select(failure => failure.TargetResource.ResourceName)
+                .Distinct()
+                .ToArray();
+    }
 
     /// <summary>
     /// A failure because referenced descriptors in the updated document do not exist
