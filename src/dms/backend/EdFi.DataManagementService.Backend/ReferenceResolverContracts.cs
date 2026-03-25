@@ -88,11 +88,11 @@ public sealed record ReferenceLookupSnapshot(ReferentialId ReferentialId, Refere
 /// <summary>
 /// Request-local resolution product consumed by later write-path stages.
 /// </summary>
-/// <param name="DocumentIdByReferentialId">
-/// Successful document-reference resolutions keyed by referential id.
+/// <param name="SuccessfulDocumentReferencesByPath">
+/// Successful document-reference resolutions keyed by concrete extracted JSON path.
 /// </param>
-/// <param name="DescriptorIdByKey">
-/// Successful descriptor resolutions keyed by normalized descriptor uri and descriptor resource.
+/// <param name="SuccessfulDescriptorReferencesByPath">
+/// Successful descriptor resolutions keyed by concrete extracted JSON path.
 /// </param>
 /// <param name="LookupsByReferentialId">
 /// Raw lookup snapshots keyed by referential id, including memoized misses for later diagnostics/classification.
@@ -104,19 +104,17 @@ public sealed record ReferenceLookupSnapshot(ReferentialId ReferentialId, Refere
 /// Per-occurrence descriptor-reference lookups in original extraction order.
 /// </param>
 public sealed record ResolvedReferenceSet(
-    IReadOnlyDictionary<ReferentialId, long> DocumentIdByReferentialId,
-    IReadOnlyDictionary<DescriptorReferenceKey, long> DescriptorIdByKey,
+    IReadOnlyDictionary<JsonPath, ResolvedDocumentReference> SuccessfulDocumentReferencesByPath,
+    IReadOnlyDictionary<JsonPath, ResolvedDescriptorReference> SuccessfulDescriptorReferencesByPath,
     IReadOnlyDictionary<ReferentialId, ReferenceLookupSnapshot> LookupsByReferentialId,
     IReadOnlyList<ResolvedDocumentReferenceOccurrence> DocumentReferenceOccurrences,
     IReadOnlyList<ResolvedDescriptorReferenceOccurrence> DescriptorReferenceOccurrences
 );
 
 /// <summary>
-/// Successful descriptor resolution key used by write execution.
+/// Normalized descriptor identity key used to sanity-check path-keyed successful resolutions.
 /// </summary>
-/// <param name="NormalizedUri">The normalized descriptor uri.</param>
-/// <param name="DescriptorResource">The expected descriptor resource type.</param>
-public readonly record struct DescriptorReferenceKey(
+internal readonly record struct DescriptorReferenceKey(
     string NormalizedUri,
     QualifiedResourceName DescriptorResource
 );
@@ -139,4 +137,28 @@ public sealed record ResolvedDocumentReferenceOccurrence(
 public sealed record ResolvedDescriptorReferenceOccurrence(
     DescriptorReference Reference,
     ReferenceLookupSnapshot Lookup
+);
+
+/// <summary>
+/// Successful document-reference resolution keyed by its concrete extracted JSON path.
+/// </summary>
+/// <param name="Reference">The extracted document-reference occurrence.</param>
+/// <param name="DocumentId">The resolved document id for this concrete occurrence.</param>
+/// <param name="ResourceKeyId">The resolved resource key id for this concrete occurrence.</param>
+public sealed record ResolvedDocumentReference(
+    DocumentReference Reference,
+    long DocumentId,
+    short ResourceKeyId
+);
+
+/// <summary>
+/// Successful descriptor resolution keyed by its concrete extracted JSON path.
+/// </summary>
+/// <param name="Reference">The extracted descriptor-reference occurrence.</param>
+/// <param name="DocumentId">The resolved descriptor document id for this concrete occurrence.</param>
+/// <param name="ResourceKeyId">The resolved resource key id for this concrete occurrence.</param>
+public sealed record ResolvedDescriptorReference(
+    DescriptorReference Reference,
+    long DocumentId,
+    short ResourceKeyId
 );

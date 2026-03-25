@@ -71,12 +71,29 @@ public class Given_ReferenceResolver
         adapter.Requests[0].RequestResource.Should().Be(_requestResource);
         adapter.Requests[0].ReferentialIds.Should().Equal(documentReferentialId, descriptorReferentialId);
 
+        result
+            .SuccessfulDocumentReferencesByPath.Keys.Should()
+            .Equal(new JsonPath("$.schoolReference"), new JsonPath("$.educationOrganizationReference"));
+        result
+            .SuccessfulDocumentReferencesByPath.Values.Select(reference => reference.DocumentId)
+            .Should()
+            .Equal(101L, 101L);
         result.DocumentReferenceOccurrences.Should().HaveCount(2);
         result
             .DocumentReferenceOccurrences.Select(occurrence => occurrence.Lookup.Result?.DocumentId)
             .Should()
             .Equal(101L, 101L);
 
+        result
+            .SuccessfulDescriptorReferencesByPath.Keys.Should()
+            .Equal(
+                new JsonPath("$.schoolTypeDescriptor"),
+                new JsonPath("$.programs[0].schoolTypeDescriptor")
+            );
+        result
+            .SuccessfulDescriptorReferencesByPath.Values.Select(reference => reference.DocumentId)
+            .Should()
+            .Equal(202L, 202L);
         result.DescriptorReferenceOccurrences.Should().HaveCount(2);
         result
             .DescriptorReferenceOccurrences.Select(occurrence => occurrence.Lookup.Result?.DocumentId)
@@ -148,9 +165,20 @@ public class Given_ReferenceResolver
         adapter.Requests[0].ReferentialIds.Should().Equal(firstReferentialId, secondReferentialId);
         adapter.Requests[1].ReferentialIds.Should().Equal(thirdReferentialId);
 
-        secondResult.DocumentIdByReferentialId.Should().NotContainKey(firstReferentialId);
-        secondResult.DocumentIdByReferentialId.Should().Contain(secondReferentialId, 202L);
-        secondResult.DocumentIdByReferentialId.Should().Contain(thirdReferentialId, 303L);
+        secondResult
+            .SuccessfulDocumentReferencesByPath.Keys.Should()
+            .Equal(
+                new JsonPath("$.educationServiceCenterReference"),
+                new JsonPath("$.localEducationAgencyReference")
+            );
+        secondResult
+            .SuccessfulDocumentReferencesByPath[new JsonPath("$.educationServiceCenterReference")]
+            .DocumentId.Should()
+            .Be(202L);
+        secondResult
+            .SuccessfulDocumentReferencesByPath[new JsonPath("$.localEducationAgencyReference")]
+            .DocumentId.Should()
+            .Be(303L);
     }
 
     [Test]
@@ -199,8 +227,12 @@ public class Given_ReferenceResolver
             )
         );
 
-        result.DocumentIdByReferentialId.Should().ContainSingle();
-        result.DocumentIdByReferentialId.Should().Contain(resolvedDocumentReferentialId, 101L);
+        result.SuccessfulDocumentReferencesByPath.Should().ContainSingle();
+        result
+            .SuccessfulDocumentReferencesByPath[new JsonPath("$.schoolReference")]
+            .DocumentId.Should()
+            .Be(101L);
+        result.SuccessfulDocumentReferencesByPath.Keys.Should().Equal(new JsonPath("$.schoolReference"));
         result.LookupsByReferentialId[missingDocumentReferentialId].Result.Should().BeNull();
 
         result
@@ -218,7 +250,7 @@ public class Given_ReferenceResolver
             .Should()
             .AllSatisfy(result => result.Should().BeNull());
 
-        result.DescriptorIdByKey.Should().BeEmpty();
+        result.SuccessfulDescriptorReferencesByPath.Should().BeEmpty();
         result.LookupsByReferentialId[nonDescriptorReferentialId].Result.Should().NotBeNull();
         result.LookupsByReferentialId[nonDescriptorReferentialId].Result!.IsDescriptor.Should().BeFalse();
         result.DescriptorReferenceOccurrences.Should().ContainSingle();

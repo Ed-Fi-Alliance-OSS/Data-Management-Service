@@ -133,17 +133,18 @@ public class Given_RelationalReferenceResolverAdapter
             .Should()
             .Equal(documentReferentialId.Value, descriptorReferentialId.Value);
 
-        result.DocumentIdByReferentialId.Should().Contain(documentReferentialId, 101L);
+        result
+            .SuccessfulDocumentReferencesByPath.Keys.Should()
+            .Equal(new JsonPath("$.schoolReference"), new JsonPath("$.educationOrganizationReference"));
+        result
+            .SuccessfulDocumentReferencesByPath[new JsonPath("$.schoolReference")]
+            .DocumentId.Should()
+            .Be(101L);
         result.DocumentReferenceOccurrences.Should().HaveCount(2);
         result
-            .DescriptorIdByKey.Should()
-            .Contain(
-                new DescriptorReferenceKey(
-                    "uri://ed-fi.org/schooltypedescriptor#alternative",
-                    new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor")
-                ),
-                202L
-            );
+            .SuccessfulDescriptorReferencesByPath[new JsonPath("$.schoolTypeDescriptor")]
+            .DocumentId.Should()
+            .Be(202L);
     }
 }
 

@@ -69,7 +69,7 @@
       "Add unit tests covering repeated referential ids across multiple concrete JSON paths and ensuring only successful resolutions populate the successful-resolution surface.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Compatibility Metadata",

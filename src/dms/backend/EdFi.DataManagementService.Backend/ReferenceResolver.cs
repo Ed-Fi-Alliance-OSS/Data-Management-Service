@@ -140,20 +140,26 @@ public sealed class ReferenceResolver(IReferenceResolverAdapter adapter) : IRefe
             ))
             .ToArray();
 
-        Dictionary<ReferentialId, long> documentIdByReferentialId = [];
+        Dictionary<JsonPath, ResolvedDocumentReference> successfulDocumentReferencesByPath = [];
 
         foreach (var documentReferenceOccurrence in documentReferenceOccurrences)
         {
-            if (documentReferenceOccurrence.Lookup.Result is null)
+            var lookupResult = documentReferenceOccurrence.Lookup.Result;
+
+            if (lookupResult is null)
             {
                 continue;
             }
 
-            documentIdByReferentialId[documentReferenceOccurrence.Reference.ReferentialId] =
-                documentReferenceOccurrence.Lookup.Result.DocumentId;
+            AddSuccessfulDocumentReference(
+                successfulDocumentReferencesByPath,
+                documentReferenceOccurrence.Reference,
+                lookupResult
+            );
         }
 
-        Dictionary<DescriptorReferenceKey, long> descriptorIdByKey = [];
+        Dictionary<JsonPath, ResolvedDescriptorReference> successfulDescriptorReferencesByPath = [];
+        Dictionary<DescriptorReferenceKey, long> descriptorDocumentIdByKey = [];
 
         foreach (var descriptorReferenceOccurrence in descriptorReferenceOccurrences)
         {
@@ -167,7 +173,7 @@ public sealed class ReferenceResolver(IReferenceResolverAdapter adapter) : IRefe
             var descriptorKey = CreateDescriptorReferenceKey(descriptorReferenceOccurrence.Reference);
 
             if (
-                descriptorIdByKey.TryGetValue(descriptorKey, out var existingDocumentId)
+                descriptorDocumentIdByKey.TryGetValue(descriptorKey, out var existingDocumentId)
                 && existingDocumentId != lookupResult.DocumentId
             )
             {
@@ -178,7 +184,13 @@ public sealed class ReferenceResolver(IReferenceResolverAdapter adapter) : IRefe
                 );
             }
 
-            descriptorIdByKey[descriptorKey] = lookupResult.DocumentId;
+            descriptorDocumentIdByKey[descriptorKey] = lookupResult.DocumentId;
+
+            AddSuccessfulDescriptorReference(
+                successfulDescriptorReferencesByPath,
+                descriptorReferenceOccurrence.Reference,
+                lookupResult
+            );
         }
 
         Dictionary<ReferentialId, ReferenceLookupSnapshot> lookupsByReferentialId = [];
@@ -196,12 +208,58 @@ public sealed class ReferenceResolver(IReferenceResolverAdapter adapter) : IRefe
         }
 
         return new ResolvedReferenceSet(
-            DocumentIdByReferentialId: documentIdByReferentialId,
-            DescriptorIdByKey: descriptorIdByKey,
+            SuccessfulDocumentReferencesByPath: successfulDocumentReferencesByPath,
+            SuccessfulDescriptorReferencesByPath: successfulDescriptorReferencesByPath,
             LookupsByReferentialId: lookupsByReferentialId,
             DocumentReferenceOccurrences: documentReferenceOccurrences,
             DescriptorReferenceOccurrences: descriptorReferenceOccurrences
         );
+    }
+
+    private static void AddSuccessfulDocumentReference(
+        IDictionary<JsonPath, ResolvedDocumentReference> successfulReferencesByPath,
+        DocumentReference documentReference,
+        ReferenceLookupResult lookupResult
+    )
+    {
+        if (
+            !successfulReferencesByPath.TryAdd(
+                documentReference.Path,
+                new ResolvedDocumentReference(
+                    Reference: documentReference,
+                    DocumentId: lookupResult.DocumentId,
+                    ResourceKeyId: lookupResult.ResourceKeyId
+                )
+            )
+        )
+        {
+            throw new InvalidOperationException(
+                $"Document reference path '{documentReference.Path.Value}' was extracted more than once within the same request."
+            );
+        }
+    }
+
+    private static void AddSuccessfulDescriptorReference(
+        IDictionary<JsonPath, ResolvedDescriptorReference> successfulReferencesByPath,
+        DescriptorReference descriptorReference,
+        ReferenceLookupResult lookupResult
+    )
+    {
+        if (
+            !successfulReferencesByPath.TryAdd(
+                descriptorReference.Path,
+                new ResolvedDescriptorReference(
+                    Reference: descriptorReference,
+                    DocumentId: lookupResult.DocumentId,
+                    ResourceKeyId: lookupResult.ResourceKeyId
+                )
+            )
+        )
+        {
+            throw new InvalidOperationException(
+                $"Descriptor reference path '{descriptorReference.Path.Value}' was extracted more than once within the same request."
+            );
+        }
     }
 
     private ReferenceLookupSnapshot GetRequiredLookupSnapshot(ReferentialId referentialId)
