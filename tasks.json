@@ -150,7 +150,7 @@
       "Add or update DI tests covering PostgreSQL service registration through the current frontend/bootstrap path.",
       "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "SQL Server Composition Wiring",

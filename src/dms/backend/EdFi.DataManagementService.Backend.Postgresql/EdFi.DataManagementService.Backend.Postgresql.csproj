@@ -25,5 +25,6 @@
     </ItemGroup>
     <ItemGroup>
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Tests.Unit" />
+        <InternalsVisibleTo Include="EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit" />
     </ItemGroup>
 </Project>

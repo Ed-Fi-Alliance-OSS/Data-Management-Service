@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Deploy;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -187,6 +188,13 @@ public static class WebApplicationBuilderExtensions
                 "Injecting PostgreSQL as the primary backend datastore with per-request connection strings"
             );
             webAppBuilder.Services.AddPostgresqlDatastore(webAppBuilder.Configuration);
+
+            if (webAppBuilder.Configuration.GetSection("AppSettings").GetValue<bool>("UseRelationalBackend"))
+            {
+                logger.Information("Injecting PostgreSQL relational write-prerequisite resolver services");
+                webAppBuilder.Services.AddPostgresqlReferenceResolver();
+            }
+
             webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Old.Postgresql.Deploy.DatabaseDeploy>();
             webAppBuilder.Services.AddSingleton<
                 IDatabaseFingerprintReader,
