@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
 using FluentAssertions;
@@ -17,10 +16,6 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 [NonParallelizable]
 public class Given_A_Provisioned_EffectiveSchema_Table
 {
-    private static readonly string _coreDdl = new CoreDdlEmitter(
-        new PgsqlDialect(new PgsqlDialectRules())
-    ).Emit();
-
     private static readonly string _qualifiedEffectiveSchemaTable = SqlIdentifierQuoter.QuoteTableName(
         SqlDialect.Pgsql,
         EffectiveSchemaTableDefinition.Table
@@ -65,7 +60,22 @@ public class Given_A_Provisioned_EffectiveSchema_Table
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
     {
-        await ExecuteNonQueryAsync(_coreDdl);
+        // Create only the EffectiveSchema table — running full CoreDdlEmitter DDL
+        // would add FK constraints to dms.Document that break other tests in this assembly.
+        await ExecuteNonQueryAsync(
+            """
+            CREATE TABLE IF NOT EXISTS "dms"."EffectiveSchema"
+            (
+                "EffectiveSchemaSingletonId" smallint NOT NULL,
+                "ApiSchemaFormatVersion" varchar(64) NOT NULL,
+                "EffectiveSchemaHash" varchar(64) NOT NULL,
+                "ResourceKeyCount" smallint NOT NULL,
+                "ResourceKeySeedHash" bytea NOT NULL,
+                "AppliedAt" timestamp with time zone NOT NULL DEFAULT now(),
+                CONSTRAINT "PK_EffectiveSchema" PRIMARY KEY ("EffectiveSchemaSingletonId")
+            );
+            """
+        );
     }
 
     [SetUp]
