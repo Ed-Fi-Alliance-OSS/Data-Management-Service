@@ -86,6 +86,8 @@ CREATE TABLE IF NOT EXISTS dms.DocumentDeleteTracking (
     StudentEdOrgResponsibilityAuthorizationIds jsonb NULL,
     ContactStudentSchoolAuthorizationEdOrgIds jsonb NULL,
     StaffEducationOrganizationAuthorizationEdOrgIds jsonb NULL,
+    CreatedByOwnershipTokenId smallint NULL,
+    AuthorizationBasis jsonb NULL,
     DeletedAt timestamp NOT NULL DEFAULT now(),
     CONSTRAINT PK_DocumentDeleteTracking
         PRIMARY KEY (ChangeVersion, DocumentPartitionKey, DocumentId)
@@ -107,6 +109,8 @@ CREATE TABLE IF NOT EXISTS dms.DocumentKeyChangeTracking (
     StudentEdOrgResponsibilityAuthorizationIds jsonb NULL,
     ContactStudentSchoolAuthorizationEdOrgIds jsonb NULL,
     StaffEducationOrganizationAuthorizationEdOrgIds jsonb NULL,
+    CreatedByOwnershipTokenId smallint NULL,
+    AuthorizationBasis jsonb NULL,
     ChangedAt timestamp NOT NULL DEFAULT now(),
     CONSTRAINT PK_DocumentKeyChangeTracking
         PRIMARY KEY (ChangeVersion, DocumentPartitionKey, DocumentId)
@@ -120,14 +124,29 @@ CREATE TABLE IF NOT EXISTS dms.DocumentChangeEvent (
     CreatedAt timestamp NOT NULL DEFAULT now(),
     CONSTRAINT PK_DocumentChangeEvent
         PRIMARY KEY (ChangeVersion, DocumentPartitionKey, DocumentId),
-    CONSTRAINT FK_DocumentChangeEvent_Document
-        FOREIGN KEY (DocumentPartitionKey, DocumentId)
-        REFERENCES dms.Document (DocumentPartitionKey, Id)
-        ON DELETE CASCADE,
     CONSTRAINT FK_DocumentChangeEvent_ResourceKey
         FOREIGN KEY (ResourceKeyId)
         REFERENCES dms.ResourceKey (ResourceKeyId)
 );
+
+-- Partitioned-FK compatibility note:
+-- Not every supported engine/version combination can enforce a declarative
+-- FK with ON DELETE CASCADE from this journal to the partitioned dms.Document
+-- layout used by current DMS deployments.
+--
+-- Migration rule:
+--   * use declarative FK+CASCADE only where the engine/version supports it
+--     for the deployed partitioning layout;
+--   * otherwise preserve equivalent delete-time cleanup behavior with
+--     engine-specific SQL (trigger/procedure/statement) and validate it in
+--     migration tests.
+--
+-- Example optional FK shape for environments that support it:
+-- ALTER TABLE dms.DocumentChangeEvent
+--     ADD CONSTRAINT FK_DocumentChangeEvent_Document
+--     FOREIGN KEY (DocumentPartitionKey, DocumentId)
+--     REFERENCES dms.Document (DocumentPartitionKey, Id)
+--     ON DELETE CASCADE;
 
 CREATE INDEX IF NOT EXISTS IX_Document_ResourceKeyId_DocumentId
     ON dms.Document (ResourceKeyId, DocumentPartitionKey, Id);

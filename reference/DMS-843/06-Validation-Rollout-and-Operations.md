@@ -66,12 +66,14 @@ Required checks after live-row backfill:
 - every live row has a non-null `IdentityVersion`
 - backfill allocated one `ChangeVersion` value and one `IdentityVersion` value per row rather than one shared value per statement
 - live rows resolve to the expected `dms.ResourceKey` entry for their `(ProjectName, ResourceName)`
+- application-managed identity-update paths are validated to prove `IdentityVersion` advances for every committed identity-changing write and does not advance for non-identity updates
 
 Required checks after journal backfill:
 
 - journal row count equals current live document row count
 - every live row has a matching journal row using the current `ChangeVersion` and `ResourceKeyId`
 - candidate queries use the resource-and-window journal index
+- `availableChangeVersions.newestChangeVersion` resolves to the selected source sequence ceiling (`next value - 1`) rather than to max retained committed tracking-row value
 
 ## Validation Matrix
 
@@ -102,6 +104,7 @@ Required unit coverage:
 - old-key and new-key extraction from `ResourceSchema.IdentityJsonPaths`
 - shortest-unique-suffix alias derivation for simple, composite, and repeated-leaf identities
 - fail-fast validation for duplicate or otherwise unresolvable identity-path alias sets
+- fail-fast startup validation for change-query-enabled resources whose tracked-change authorization contract requires `AuthorizationBasis` but lacks a valid `basisDocumentIds` and optional `relationshipInputs` mapping
 - tombstone DTO or response mapping
 - key-change DTO or response mapping
 - `/deletes` and `/keyChanges` map `id` from stored `DocumentUuid`
@@ -134,8 +137,10 @@ Required backend integration coverage:
 22. journal trigger inserts exactly one row per committed representation change
 23. required `journal + verify` execution filters stale journal candidates correctly
 24. required `journal + verify` execution applies `totalCount`, `offset`, and `limit` to the final verified authorized changed-resource result set rather than to raw journal candidates
-25. concurrent identity-changing update and delete attempts against the same document serialize under the write-path locking contract and do not capture stale pre-change data
-26. tombstones and key-change rows preserve `CreatedByOwnershipTokenId` and the tracked-change authorization basis data needed for redesign authorization concepts
+25. required `journal + verify` execution may use bounded internal candidate-read batches per page build, while continuing batch reads until page fill or window exhaustion with deterministic continuation
+26. concurrent identity-changing update and delete attempts against the same document serialize under the write-path locking contract and do not capture stale pre-change data
+27. tombstones and key-change rows preserve `CreatedByOwnershipTokenId` and the tracked-change authorization basis data needed for redesign authorization concepts
+28. write-path capture fails explicitly when required tracked-change authorization inputs cannot be reduced to the declared `AuthorizationBasis` contract for the routed resource, and no tombstone or key-change row is committed in that failure path
 
 ## End-to-end tests
 
@@ -168,8 +173,9 @@ Required E2E coverage:
 25. `/keyChanges` for a resource that does not support identity updates returns `200 OK` with an empty array
 26. `/keyChanges` paging and `totalCount` semantics apply after authorization filtering and collapse
 27. required `journal + verify` changed-resource execution preserves the documented public paging semantics
-28. readable profile headers do not alter or block `/deletes`, `/keyChanges`, or `availableChangeVersions`
-29. changed-resource mode remains resource-level under readable profiles even when the filtered payload appears unchanged
+28. required `journal + verify` changed-resource execution preserves deterministic continuation and page-build correctness when bounded internal candidate-read batching is used
+29. readable profile headers do not alter or block `/deletes`, `/keyChanges`, or `availableChangeVersions`
+30. changed-resource mode remains resource-level under readable profiles even when the filtered payload appears unchanged
 
 ## Scenario Expectations
 
@@ -236,6 +242,10 @@ Required external-contract behavior:
 - invalid or negative `maxChangeVersion` returns `400 Bad Request` problem details
 - `maxChangeVersion < minChangeVersion` returns `400 Bad Request` problem details
 - if a later retention phase introduces replay-floor advancement, `minChangeVersion < oldestChangeVersion` returns `409 Conflict` problem details
+
+ODS compatibility note:
+
+- DMS-843 intentionally keeps `409 Conflict` for snapshot-unavailable requests to preserve ODS-compatible change-query client behavior
 
 Problem-detail expectations:
 

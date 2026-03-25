@@ -43,12 +43,20 @@ Semantics:
 - provides the watermarks used to define a bounded synchronization window
 - for the initial DMS-843 scope, no purge-driven replay-floor advancement is assumed, so `oldestChangeVersion` is `0`
 - `newestChangeVersion` is the current synchronization ceiling for that same surface
-- if retained participating rows exist, `newestChangeVersion` is the greatest retained `ChangeVersion` across them
-- unlike legacy ODS raw-sequence watermark behavior, DMS-843 intentionally reports the greatest committed retained `ChangeVersion` across the participating live, delete, and key-change surfaces
+- to preserve ODS watermark semantics and avoid commit-order visibility gaps, `newestChangeVersion` is derived from the selected source's change-version allocation ceiling (`dms.ChangeVersionSequence` high-watermark, equivalent to `next value - 1`)
+- `newestChangeVersion` is not computed as max committed retained row value across participating tracking tables
 - when `Use-Snapshot = true`, both bounds are computed from the snapshot-visible synchronization surface rather than from the live primary database, so `newestChangeVersion` is the ceiling for that snapshot-backed pass
 - callers must pair `availableChangeVersions` with later data reads that use the same `Use-Snapshot` choice; mixing snapshot and non-snapshot reads in one pass invalidates the advertised ceiling
-- when the synchronization surface is empty and no replay-floor metadata exists, the endpoint returns `0` for both values; in that bootstrap case, `0` is a starting watermark sentinel rather than a retained change row
+- when the synchronization surface has no allocated change versions and no replay-floor metadata exists, the endpoint returns `0` for both values; in that bootstrap case, `0` is a starting watermark sentinel rather than a retained change row
 - if a later retention phase introduces replay-floor metadata, `oldestChangeVersion` becomes the lowest valid inclusive `minChangeVersion` that can still return complete results, and `newestChangeVersion = oldestChangeVersion =` the greatest participating replay floor when all participating sources are empty after purge
+
+ODS-compatible snapshot derivative context:
+
+- synchronization requests operate on one resolved instance derivative at a time: live-primary derivative when `Use-Snapshot` is absent or `false`, snapshot-visible derivative when `Use-Snapshot = true`
+- route-prefix instance resolution still determines the base DMS instance; `Use-Snapshot` only selects which derivative of that same instance supplies the synchronization surface
+- the selected derivative must expose a complete synchronization surface, including `dms.ChangeVersionSequence`, `dms.DocumentChangeEvent`, `dms.DocumentDeleteTracking`, `dms.DocumentKeyChangeTracking`, `dms.ResourceKey`, and required authorization companion artifacts used by tracked-change authorization
+- ODS-style client flow applies unchanged: obtain one window from `availableChangeVersions`, then execute changed-resource, `/keyChanges`, and `/deletes` against that same derivative
+- DMS-843 does not require ODS-specific infrastructure naming, but any snapshot implementation must preserve the same derivative-selection behavior and equivalent synchronization artifacts
 
 ## 2. Changed-resource collection query
 
@@ -76,7 +84,7 @@ Semantics:
 - when `Use-Snapshot = true`, "current representation" means the representation current inside the snapshot rather than the representation current on the live primary at request time
 - the API does not return every intermediate mutation
 - `limit`, `offset`, and `totalCount` in changed-resource mode apply to the final authorized one-row-per-resource result set; internal journal candidates eliminated by verification or authorization do not consume page space or count toward `totalCount`
-- the final changed-resource result set is ordered by `ChangeVersion`, `DocumentPartitionKey`, and `DocumentId`
+- the final changed-resource result set is ordered by `ChangeVersion` plus a stable backend-local document tie-breaker (`DocumentPartitionKey`, `DocumentId` on the current backend)
 - when a readable profile is applied, change eligibility is still resource-level based on the underlying resource `ChangeVersion`
 - readable profiles filter only the returned representation; they do not create profile-specific change tracking or suppress an otherwise qualifying changed resource
 
@@ -403,6 +411,10 @@ Required body behavior:
 - `validationErrors`: `{}`
 - `errors`: exactly one entry, `The requested snapshot-backed read source is not available.`
 
+Compatibility note:
+
+- this `409 Conflict` contract is intentionally retained for ODS parity in DMS-843 even though generic HTTP dependency-failure semantics are often modeled as `503 Service Unavailable`
+
 `400 Bad Request` for invalid `minChangeVersion`:
 
 - `type`: `urn:ed-fi:api:change-queries:validation:min-change-version`
@@ -472,9 +484,9 @@ The public API contract must preserve these invariants:
 - `Use-Snapshot` is optional; when absent or `false`, the API preserves the current live best-effort behavior
 - when `Use-Snapshot = true`, `availableChangeVersions` and the subsequent synchronization reads are all resolved against the configured snapshot source rather than against the live primary
 - DMS never silently downgrades a `Use-Snapshot = true` request to a live read
-- changed-resource results are deterministically ordered by `ChangeVersion`, `DocumentPartitionKey`, and `DocumentId`
-- delete results are deterministically ordered by `ChangeVersion`, `DocumentPartitionKey`, and `DocumentId`
-- key-change results are deterministically ordered by `ChangeVersion`, `DocumentPartitionKey`, and `DocumentId`
+- changed-resource results are deterministically ordered by `ChangeVersion` plus a stable backend-local document tie-breaker (`DocumentPartitionKey`, `DocumentId` on the current backend)
+- delete results are deterministically ordered by `ChangeVersion` plus a stable backend-local document tie-breaker (`DocumentPartitionKey`, `DocumentId` on the current backend)
+- key-change results are deterministically ordered by `ChangeVersion` plus a stable backend-local document tie-breaker (`DocumentPartitionKey`, `DocumentId` on the current backend)
 - changed-resource paging semantics are based on the final authorized result set rather than on raw internal candidates
 - delete visibility is supported independently from the live row
 - key-change visibility is supported independently from the current live key state

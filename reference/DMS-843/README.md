@@ -29,7 +29,7 @@ This package keeps snapshot history tables and DMS-managed snapshot lifecycle or
 Important explicit DMS-specific choices that remain in this package:
 
 - `/keyChanges` reuses the committed live `ChangeVersion` of the identity-changing write instead of exposing a second public key-change token
-- `availableChangeVersions` reports the committed participating-surface ceiling rather than raw sequence advancement
+- `availableChangeVersions` uses ODS-compatible sequence-ceiling `newestChangeVersion` semantics (`next value - 1` on the selected source)
 - current-backend `_etag` and `_lastModifiedDate` remain physically stored inside `EdfiDoc`, so DMS-843 aligns to redesign change-tracking responsibilities but not yet to redesign metadata-stamp storage ownership
 
 The most important current-backend to redesign mappings used throughout this package are:
@@ -39,7 +39,7 @@ The most important current-backend to redesign mappings used throughout this pac
 - `dms.DocumentChangeEvent` is the required live-change journal used for changed-resource `journal + verify`
 - tracked-change artifacts must preserve redesign-relevant authorization inputs such as `CreatedByOwnershipTokenId` and row-local authorization basis data for DocumentId-based authorization strategies
 - `dms.DocumentDeleteTracking` and `dms.DocumentKeyChangeTracking` remain separate required artifacts
-- `availableChangeVersions` is computed from committed tracking surfaces, not from the raw sequence value
+- `availableChangeVersions.newestChangeVersion` is computed from the selected source sequence ceiling; replay-floor semantics continue to govern `oldestChangeVersion`
 
 ## Canonical Review Set
 
@@ -143,4 +143,4 @@ This package is designed to align to the Ed-Fi ODS/API Change Query behavior whe
 - Ed-Fi ODS/API platform guide, Changed Record Queries: <https://docs.ed-fi.org/reference/ods-api/platform-dev-guide/features/changed-record-queries/>
 - Ed-Fi ODS/API client guide, Using the Changed Record Queries: <https://docs.ed-fi.org/reference/ods-api/client-developers-guide/using-the-changed-record-queries/>
 
-The alignment target is behavioral and contract parity where appropriate, with explicit package-level decisions wherever DMS makes a product-specific choice. Those explicit choices include `Use-Snapshot` as the selector between the live and snapshot-backed synchronization flows over the same tracking artifacts, reuse of the committed live `ChangeVersion` on `/keyChanges`, committed-surface `availableChangeVersions` ceilings, and retention of current-backend `_etag/_lastModifiedDate` storage ownership.
+The alignment target is behavioral and contract parity where appropriate, with explicit package-level decisions wherever DMS makes a product-specific choice. Those explicit choices include `Use-Snapshot` as the selector between the live and snapshot-backed synchronization flows over the same tracking artifacts, reuse of the committed live `ChangeVersion` on `/keyChanges`, ODS-compatible sequence-ceiling `availableChangeVersions.newestChangeVersion` semantics, and retention of current-backend `_etag/_lastModifiedDate` storage ownership.

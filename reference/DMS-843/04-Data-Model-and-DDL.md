@@ -109,7 +109,8 @@ Required semantics:
 - rollbacks may consume values
 - clients treat values as ordering tokens rather than row counts
 - value `0` is reserved for the bootstrap watermark sentinel exposed by `availableChangeVersions` when no retained change rows exist
-- the sequence is an allocation mechanism for future stamps, not the public source of `oldestChangeVersion` or `newestChangeVersion`
+- the sequence is both the stamp-allocation mechanism and the public source for the ODS-compatible `newestChangeVersion` ceiling (`next value - 1` on the selected source)
+- `oldestChangeVersion` remains replay-floor metadata (or bootstrap `0` when no replay-floor metadata exists)
 
 ## `dms.Document.ResourceKeyId`
 
@@ -166,6 +167,11 @@ For redesign alignment, `dms.Document.ChangeVersion` is the current-backend equi
 This bridge design adds one physical live-row representation-change stamp column: `dms.Document.ChangeVersion`.
 
 It does not also add `dms.Document.ContentVersion` to the current-backend schema. In this package, references to `ContentVersion` are redesign cross-reference terminology for the same stamp responsibility.
+
+Bridge migration requirement:
+
+- redesign-aligned migrations must map this existing live-row stamp to redesign `ContentVersion` semantics without introducing a second simultaneously active representation-stamp column
+- migrations must fail fast when both `ChangeVersion` and `ContentVersion` appear as active live-row representation stamps for the same deployed schema stage
 
 ## `dms.Document.IdentityVersion`
 
@@ -265,7 +271,17 @@ Trigger responsibility note:
 - use database triggers to keep the live-row `ChangeVersion` stamp consistent on inserts and representation-changing updates
 - set `IdentityVersion` in the application update path when the extracted identity tuple changes, because the current backend's generic database layer does not have resource-specific `IdentityJsonPaths` metadata available inside one universal trigger
 - use database triggers to emit `dms.DocumentChangeEvent` rows whenever the live `ChangeVersion` stamp changes
-- do not use trigger-maintained aggregate state or the raw sequence value as the source of `availableChangeVersions`
+- use the selected source's sequence ceiling as the source of `newestChangeVersion` for ODS parity rather than deriving `newestChangeVersion` from committed-row maxima
+
+Bridge-mechanics note:
+
+- application-managed `IdentityVersion` stamping is a current-backend bridge implementation detail
+- redesign-aligned backends may use metadata-driven write-path logic, database-native mechanisms, or a combination, provided the normative identity-stamping outcomes in this design are preserved
+
+Validation requirement for application-managed `IdentityVersion`:
+
+- migration and integration validation must prove that every committed identity-changing write path advances `IdentityVersion` exactly once for the changed document
+- downstream propagation paths must also prove that dependent documents advance `IdentityVersion` only when their own identity tuple changes
 
 ## Journal trigger
 
@@ -282,6 +298,11 @@ Recommended behavior:
 The migration must validate, for each supported engine, that change-version stamping triggers apply to every physical table or partition that can store `dms.Document` rows in the deployed layout. For PostgreSQL this includes validating parent-table trigger propagation to partitions; MSSQL implementations must validate the engine-equivalent trigger coverage for the deployed layout.
 
 This is a migration validation requirement, not an assumption.
+
+Partitioned-FK compatibility requirement:
+
+- for `dms.DocumentChangeEvent -> dms.Document` cascade behavior, each supported engine/version pair must validate whether declarative FK plus `ON DELETE CASCADE` is available for the deployed partitioning layout
+- where declarative support is unavailable, migrations must provide and validate an equivalent delete-time cleanup mechanism
 
 ## Delete Tombstones
 
@@ -309,6 +330,11 @@ CREATE TABLE dms.DocumentDeleteTracking (
     PRIMARY KEY (ChangeVersion, DocumentPartitionKey, DocumentId)
 );
 ```
+
+Current-backend key note:
+
+- this primary-key tie-breaker shape is current-backend-specific
+- redesign-aligned backends that do not persist `DocumentPartitionKey` must use a semantically equivalent stable document tie-breaker while preserving deterministic ordering semantics
 
 ## Why `KeyValues` is stored
 
@@ -353,6 +379,11 @@ CREATE TABLE dms.DocumentKeyChangeTracking (
     PRIMARY KEY (ChangeVersion, DocumentPartitionKey, DocumentId)
 );
 ```
+
+Current-backend key note:
+
+- this primary-key tie-breaker shape is current-backend-specific
+- redesign-aligned backends that do not persist `DocumentPartitionKey` must use a semantically equivalent stable document tie-breaker while preserving deterministic ordering semantics
 
 Required semantics:
 

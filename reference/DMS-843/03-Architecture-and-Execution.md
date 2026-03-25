@@ -143,14 +143,16 @@ Behavior:
 6. keep only rows where `dms.Document.ChangeVersion = dms.DocumentChangeEvent.ChangeVersion`
 7. apply the existing authorization filters from that same selected source
 8. continue candidate processing as needed so public `totalCount`, `offset`, and `limit` are evaluated over the surviving verified authorized rows rather than over raw journal candidates
-9. order the final surviving verified authorized rows by `ChangeVersion`, `DocumentPartitionKey`, and `DocumentId`
+9. order the final surviving verified authorized rows by `ChangeVersion` plus a stable backend-local document tie-breaker (`DocumentPartitionKey`, `DocumentId` on the current backend)
 10. return the current `EdfiDoc` payloads for surviving documents in that selected source
 
 Required paging rule:
 
 - the `journal + verify` path may over-fetch candidates or use an equivalent query shape, but it must preserve the public paging and `totalCount` semantics of the changed-resource contract
 - internal candidate rows eliminated by verification or authorization must not consume public page slots
-- the public changed-resource order must remain `ChangeVersion`, `DocumentPartitionKey`, and `DocumentId` even when the implementation over-fetches or verifies candidates in batches
+- the public changed-resource order must remain `ChangeVersion` plus the stable backend-local document tie-breaker even when the implementation over-fetches or verifies candidates in batches
+- to avoid unbounded single-query scans under high-churn resources, implementations may use bounded internal candidate-read batches per page build (for example, capped batch size with deterministic continuation tokens)
+- bounded internal batches must remain transparent to the public contract: continue reading batches until the page is full or the requested window is exhausted, and preserve deterministic ordering and `totalCount` semantics throughout
 
 Required architectural rule:
 
@@ -167,7 +169,7 @@ Behavior:
 - filter by `ProjectName`, `ResourceName`, and the requested window
 - apply ODS-compatible tracked-change authorization predicates against the tombstone's preserved authorization data, including ownership and row-local basis values needed for delete-aware relationship and custom-view authorization, using the same selected source for any companion authorization reads
 - materialize `keyValues` in the canonical alias order derived from the routed resource's `IdentityJsonPaths`
-- order by `ChangeVersion`, `DocumentPartitionKey`, and `DocumentId`
+- order by `ChangeVersion` plus a stable backend-local document tie-breaker (`DocumentPartitionKey`, `DocumentId` on the current backend)
 
 Delete query execution never reads `dms.DocumentChangeEvent`.
 
@@ -183,7 +185,7 @@ Behavior:
 - materialize `oldKeyValues` and `newKeyValues` in the canonical alias order derived from the routed resource's `IdentityJsonPaths`
 - collapse multiple authorized rows for the same resource within the window to the earliest `oldKeyValues`, latest `newKeyValues`, and latest `ChangeVersion`
 - apply `totalCount`, `offset`, and `limit` to that collapsed authorized result set rather than to raw tracking rows
-- order final results by `ChangeVersion`, `DocumentPartitionKey`, and `DocumentId`
+- order final results by `ChangeVersion` plus a stable backend-local document tie-breaker (`DocumentPartitionKey`, `DocumentId` on the current backend)
 
 Required semantics:
 
@@ -205,6 +207,12 @@ The participating sources are:
 - delete side from `dms.DocumentDeleteTracking.ChangeVersion`
 - key-change side from `dms.DocumentKeyChangeTracking.ChangeVersion`
 
+Supporting structures that participate in the same selected source:
+
+- `dms.ChangeVersionSequence` as the source-local allocation ceiling for `newestChangeVersion`
+- `dms.ResourceKey` for resource resolution used by changed-resource execution
+- source-local authorization companion artifacts required to evaluate tracked-change authorization for `/deletes` and `/keyChanges`
+
 The response remains:
 
 - `oldestChangeVersion`
@@ -213,11 +221,12 @@ The response remains:
 Required meaning:
 
 - `newestChangeVersion` is the ceiling across the active synchronization surface
-- if retained participating rows exist, `newestChangeVersion` is the greatest retained `ChangeVersion` across them
+- `newestChangeVersion` is derived from the selected source's `dms.ChangeVersionSequence` high-watermark (equivalent to `next value - 1`)
+- the endpoint does not derive `newestChangeVersion` from max committed retained row value across participating tracking tables
 - when `Use-Snapshot = true`, the active synchronization surface is the snapshot-visible surface rather than the live-primary surface
 - for the initial DMS-843 scope, `oldestChangeVersion` is `0`
 - when all participating sources are empty and no replay-floor metadata exists, both bounds are `0`; that bootstrap value is a starting watermark sentinel rather than a retained change row
-- if a later retention phase introduces purge, `oldestChangeVersion` becomes the replay floor for that same surface and the endpoint derives non-zero floors from persisted replay-floor metadata rather than from the current `dms.ChangeVersionSequence` value
+- if a later retention phase introduces purge, `oldestChangeVersion` becomes the replay floor for that same surface and the endpoint derives non-zero floors from persisted replay-floor metadata
 
 ## Multi-Resource Synchronization Ordering
 
@@ -239,8 +248,11 @@ Required interpretation:
 
 - when `Use-Snapshot` is absent or `false`, each request executes against the ordinary current committed state visible to the API at that moment
 - when `Use-Snapshot = true`, each request executes against the configured read-only snapshot source for the resolved DMS instance
+- this mirrors ODS instance-derivative flow: one resolved instance plus one selected derivative per synchronization request
 - the snapshot source must expose the same DMS schema, change-tracking artifacts, and required authorization companion artifacts as the live primary
+- the selected derivative must include equivalent synchronization structures: `dms.ChangeVersionSequence`, `dms.ResourceKey`, `dms.DocumentChangeEvent`, `dms.DocumentDeleteTracking`, and `dms.DocumentKeyChangeTracking`
 - authorization filters, resource-key resolution, and data selection for one request must all run against the same chosen source
+- `availableChangeVersions`, changed-resource reads, `/keyChanges`, and `/deletes` for one synchronization pass must reuse the same derivative selection to keep watermarks and data reads coherent
 - non-snapshot synchronization under concurrent writes remains best-effort rather than gap-free
 - snapshot-backed synchronization uses the same tracking artifacts but changes the completeness guarantee by pinning reads to the snapshot source
 - DMS never silently falls back to a live read when `Use-Snapshot = true`

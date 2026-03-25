@@ -48,6 +48,12 @@ Within the DMS-843 package:
 - redesign references to `ContentVersion` map to that same stamp responsibility
 - `IdentityVersion` is a distinct live-row stamp used for identity-change tracking alignment and must not be collapsed into `ChangeVersion`
 
+Bridge migration rule:
+
+- redesign-aligned migrations must map the existing current-backend `dms.Document.ChangeVersion` column to redesign `ContentVersion` semantics instead of adding a second physical stamp column
+- a conforming migration path may either keep `ChangeVersion` as the physical column name and map redesign logic to it, or rename `ChangeVersion` to `ContentVersion` in one migration step
+- a conforming migration path must fail fast if both `ChangeVersion` and `ContentVersion` appear simultaneously as active live-row representation stamps
+
 ## 3. Deletes require tombstones
 
 Deletes cannot be inferred from the live row because the live row disappears. The feature therefore requires `dms.DocumentDeleteTracking` in the `dms` schema.
@@ -192,23 +198,38 @@ Required interpretation:
 - snapshot-backed reads return the current representation visible inside the snapshot, not historical payload versions
 - the snapshot source must expose the same DMS schema and tracking artifacts as the live instance and must stay frozen long enough for one synchronization pass or equivalent bounded workflow
 
-## Explicit DMS product choices that remain after adding `Use-Snapshot`
+## Existing DMS-specific choices that `Use-Snapshot` does not change
 
-The package does not claim blanket parity with every legacy ODS internal semantic or every backend-redesign storage decision.
+Adding `Use-Snapshot` does not change several existing DMS-specific product choices. The package does not claim blanket parity with every legacy ODS internal semantic or every backend-redesign storage decision.
 
-Explicit DMS-specific choices include:
+Those unchanged DMS-specific choices include:
 
 - `/keyChanges` uses the committed live `ChangeVersion` of the identity-changing update as the public token; DMS-843 does not allocate a second public key-change token for that same write
-- `availableChangeVersions` reports the committed participating-surface ceiling rather than raw sequence advancement
 - current-backend `_etag` and `_lastModifiedDate` remain stored inside `EdfiDoc`; DMS-843 therefore aligns to redesign change-tracking responsibilities without yet adopting redesign-style dedicated metadata-stamp columns for those fields
+
+Ownership boundary for key-change token semantics:
+
+- the `/keyChanges` public token model is part of the DMS-843 public API contract and is therefore in scope for this package
+- any move to a second public key-change token model is explicitly owned by a later redesign or product-scope change and must be introduced as a deliberate contract revision, not as an implementation-side substitution
 
 ## Why these ODS divergences are intentional in DMS
 
 These choices are not arbitrary departures from ODS. They follow the current DMS storage model and the backend-redesign direction that DMS-843 is trying to preserve.
 
 - tracked-change authorization stores basis-resource `DocumentId` values as `basisDocumentIds` because backend-redesign custom-view and relationship authorization in DMS is DocumentId-based rather than natural-key-based, and `/deletes` plus `/keyChanges` must still authorize correctly after the live row or relationship rows are gone
-- `/keyChanges` reuses the committed live `ChangeVersion`, and `availableChangeVersions` uses committed participating surfaces, because DMS and backend-redesign both center public synchronization on the canonical live document stamp plus committed tracking artifacts rather than on a second public key-change token or on raw sequence advancement
+- `/keyChanges` reuses the committed live `ChangeVersion`, because DMS and backend-redesign both center public synchronization on the canonical live document stamp plus committed tracking artifacts rather than on a second public key-change token
 - if a future product requirement demands strict legacy ODS internal semantics instead of DMS-aligned semantics, that should be treated as a deliberate design change rather than as an implied bug in this package
+
+## 14. Ordering must be deterministic and backend-shape-aware
+
+The feature requires deterministic ordering, but it does not require one immutable physical tie-breaker shape across all backend generations.
+
+Required rule:
+
+- changed-resource, `/deletes`, and `/keyChanges` are ordered by `ChangeVersion` plus a stable backend-local document tie-breaker
+- for the current backend, the tie-breaker is `DocumentPartitionKey`, `DocumentId`
+- for redesign-aligned backends where `DocumentPartitionKey` is absent, the tie-breaker is the redesign-equivalent stable document key (for example, `DocumentId`)
+- query contracts, paging behavior, and deterministic replay guarantees must remain equivalent across those backend shapes
 
 ## 13. Change Queries is a configurable feature that follows the Ed-Fi default-on posture
 

@@ -124,6 +124,13 @@ Required structural contract:
 
 DMS-843 does not support open-ended tracked-change custom-view authorization that depends on arbitrary mutable non-identifying live-row values at read time. A resource is eligible for tracked-change relationship or custom-view authorization only when its required inputs can be reduced at write time to captured basis-resource `DocumentId` values plus any named `relationshipInputs` in this contract. If that reduction is not possible, the resource's tracked-change design is incomplete and must fail validation rather than silently degrading.
 
+Enforcement ownership and gates:
+
+- enforcement of the resource-scoped `AuthorizationBasis` contract is owned by the DMS core authorization/endpoint bootstrap path in this feature scope; it is not delegated to optional external components
+- startup validation must fail fast for any change-query-enabled resource that declares tracked-change relationship/custom-view authorization but lacks a valid `basisDocumentIds` and `relationshipInputs` contract mapping
+- write-path capture must fail the request if required tracked-change authorization inputs for that routed resource cannot be resolved to the declared contract shape before tombstone or key-change-row insert
+- deployments must treat these failures as contract-safety failures; silent fallback to weaker tracked-change authorization is not allowed
+
 ## Tracked-Change Authorization Model
 
 The tracked-change endpoints should follow the same authorization criteria that ODS applies for `ReadChanges`, even though DMS may satisfy that requirement with different physical SQL than ODS.

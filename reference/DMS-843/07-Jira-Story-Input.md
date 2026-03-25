@@ -299,6 +299,7 @@ This story must preserve the existing collection GET and GET-by-id behavior when
 - Replay-floor `409 Conflict` behavior remains deferred until the later retention phase is approved.
 - Changed-resource collection GET continues normal profile behavior.
 - `/deletes`, `/keyChanges`, and `availableChangeVersions` bypass profile resolution and profile filtering.
+- Service startup fails fast when a change-query-enabled resource has an invalid or incomplete tracked-change authorization contract mapping for required `basisDocumentIds` and declared `relationshipInputs`.
 - Existing non-change-query GET behavior remains unchanged.
 
 ### Tasks
@@ -311,6 +312,7 @@ This story must preserve the existing collection GET and GET-by-id behavior when
 - Parse and validate `Use-Snapshot` consistently across synchronization reads.
 - Implement the documented `400 Bad Request` and `409 Conflict` ProblemDetails contracts for feature-disabled collection GET requests, invalid values, invalid window relationships, and unavailable snapshot sources.
 - Keep replay-floor `409 Conflict` behavior explicitly deferred to the later retention phase.
+- Add DMS-core-owned startup contract validation for tracked-change authorization metadata so required `AuthorizationBasis` inputs are structurally valid before serving requests.
 - Route changed-resource collection GET through the normal profile pipeline.
 - Route `/deletes`, `/keyChanges`, and `availableChangeVersions` through a pipeline that bypasses profile resolution and filtering.
 
@@ -363,7 +365,7 @@ This story must not redefine changed-resource execution as a direct `dms.Documen
 - Stale journal candidates are filtered by verification against the current `ChangeVersion` in the selected read source.
 - `Use-Snapshot = true` executes the same `journal + verify` logic against the resolved snapshot source rather than against the live primary.
 - Paging and `totalCount` are evaluated over the final verified authorized result set rather than raw journal candidates.
-- Final changed-resource results are ordered by `ChangeVersion`, `DocumentPartitionKey`, and `DocumentId`.
+- Final changed-resource results are ordered by `ChangeVersion` plus a stable backend-local document tie-breaker (`DocumentPartitionKey`, `DocumentId` on the current backend).
 - Ordinary collection GET behavior remains unchanged when both `minChangeVersion` and `maxChangeVersion` are absent unless the caller explicitly opts into `Use-Snapshot`.
 - The implementation does not depend on snapshot history tables or historical payload reconstruction.
 
@@ -373,7 +375,7 @@ This story must not redefine changed-resource execution as a direct `dms.Documen
 - Join candidates back to `dms.Document` and keep only rows whose current `ChangeVersion` still matches the journal row.
 - Apply the existing authorization predicates after verification.
 - Resolve the live-vs-snapshot read source before query execution and ensure verification plus authorization use that same source.
-- Over-fetch or batch candidates as needed so public paging semantics apply to surviving verified authorized rows.
+- Over-fetch or batch candidates as needed so public paging semantics apply to surviving verified authorized rows; if bounded internal candidate-read batches are used, continue batch reads until page fill or window exhaustion with deterministic continuation.
 - Materialize the final result set in deterministic `ChangeVersion`, `DocumentPartitionKey`, `DocumentId` order.
 - Preserve the normal collection GET path for requests that do not activate changed-resource mode.
 
@@ -430,6 +432,7 @@ This story does not introduce retention purge or replay-floor metadata. Later-ph
 - `Use-Snapshot = true` causes `availableChangeVersions`, `/deletes`, and `/keyChanges` to read the snapshot-visible synchronization surface rather than the live primary surface.
 - Multi-resource synchronization guidance remains explicit: `keyChanges` and changed resources in dependency order, deletes in reverse-dependency order.
 - Concurrent updates and deletes on the same document do not capture stale old keys or tombstones.
+- Writes that cannot resolve required tracked-change authorization inputs fail before tombstone or key-change persistence, and do not commit partial tracking rows.
 
 ### Tasks
 
@@ -439,8 +442,9 @@ This story does not introduce retention purge or replay-floor metadata. Later-ph
 - Apply key-change authorization against the stored pre-update tracked-change authorization data before collapse.
 - Resolve the live-vs-snapshot read source before computing `availableChangeVersions`, `/deletes`, and `/keyChanges`, and keep each request on that chosen source throughout execution.
 - Implement key-change collapse semantics to preserve earliest `oldKeyValues`, latest `newKeyValues`, and latest surviving `changeVersion`.
-- Compute `availableChangeVersions` from the live journal, delete tombstones, and key-change tracking rows rather than from the raw sequence value.
+- Compute `availableChangeVersions.oldestChangeVersion` from replay-floor semantics (or bootstrap `0`) and `availableChangeVersions.newestChangeVersion` from the selected source sequence ceiling (`next value - 1`) for ODS-compatible watermark behavior.
 - Implement row-level locking or engine-equivalent serialization for identity-changing updates and deletes so pre-change capture is consistent.
+- Enforce write-path failure when required `AuthorizationBasis` inputs cannot be resolved for tombstone or key-change capture, with no downgrade to weaker authorization semantics.
 - Preserve the documented empty-array behavior for resources that do not support identity updates.
 
 ### Dependencies
