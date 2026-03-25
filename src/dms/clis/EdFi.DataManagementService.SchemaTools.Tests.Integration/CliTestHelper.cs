@@ -11,6 +11,59 @@ public static class CliTestHelper
 {
     private static readonly TimeSpan _processTimeout = TimeSpan.FromMinutes(2);
 
+    public static (int ExitCode, string Output, string Error) RunProcess(
+        string fileName,
+        IEnumerable<string> arguments,
+        IDictionary<string, string>? environmentVariables = null
+    )
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = fileName,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+
+        foreach (var arg in arguments)
+        {
+            startInfo.ArgumentList.Add(arg);
+        }
+
+        if (environmentVariables is not null)
+        {
+            foreach (var (key, value) in environmentVariables)
+            {
+                startInfo.Environment[key] = value;
+            }
+        }
+
+        using var process = Process.Start(startInfo)!;
+        var outputTask = process.StandardOutput.ReadToEndAsync();
+        var errorTask = process.StandardError.ReadToEndAsync();
+
+        if (!process.WaitForExit((int)_processTimeout.TotalMilliseconds))
+        {
+            process.Kill(entireProcessTree: true);
+            process.WaitForExit(5000);
+
+            var partialOut = outputTask.IsCompleted ? outputTask.Result : "(not captured)";
+            var partialErr = errorTask.IsCompleted ? errorTask.Result : "(not captured)";
+
+            Assert.Fail(
+                $"Process '{fileName}' timed out after {_processTimeout.TotalSeconds}s."
+                    + $"\nArgs: {string.Join(" ", arguments)}"
+                    + $"\nstdout: {partialOut}\nstderr: {partialErr}"
+            );
+        }
+
+        var output = outputTask.GetAwaiter().GetResult();
+        var error = errorTask.GetAwaiter().GetResult();
+
+        return (process.ExitCode, output, error);
+    }
+
     public static string GetExecutablePath()
     {
         var assemblyLocation = typeof(CliTestHelper).Assembly.Location;
@@ -50,83 +103,57 @@ public static class CliTestHelper
     {
         var exePath = GetExecutablePath();
 
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = exePath.EndsWith(".dll") ? "dotnet" : exePath,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
-
         if (exePath.EndsWith(".dll"))
         {
-            startInfo.ArgumentList.Add(exePath);
+            return RunProcess("dotnet", [exePath, .. args]);
         }
 
-        foreach (var arg in args)
-        {
-            startInfo.ArgumentList.Add(arg);
-        }
-
-        using var process = Process.Start(startInfo)!;
-        var outputTask = process.StandardOutput.ReadToEndAsync();
-        var errorTask = process.StandardError.ReadToEndAsync();
-
-        if (!process.WaitForExit((int)_processTimeout.TotalMilliseconds))
-        {
-            process.Kill(entireProcessTree: true);
-            process.WaitForExit(5000);
-
-            var partialOut = outputTask.IsCompleted ? outputTask.Result : "(not captured)";
-            var partialErr = errorTask.IsCompleted ? errorTask.Result : "(not captured)";
-
-            Assert.Fail(
-                $"CLI process timed out after {_processTimeout.TotalSeconds} seconds. "
-                    + $"Args: {string.Join(" ", args)}\nstdout: {partialOut}\nstderr: {partialErr}"
-            );
-        }
-
-        var output = outputTask.GetAwaiter().GetResult();
-        var error = errorTask.GetAwaiter().GetResult();
-
-        return (process.ExitCode, output, error);
+        return RunProcess(exePath, args);
     }
 
-    public static string GetAuthoritativeFixturePath()
+    public static string[] GetAuthoritativeSchemaPaths()
     {
-        var assemblyLocation = typeof(CliTestHelper).Assembly.Location;
-        var testBinDir = Path.GetDirectoryName(assemblyLocation)!;
+        var assemblyDir = Path.GetDirectoryName(typeof(CliTestHelper).Assembly.Location)!;
 
         // Navigate from test bin to backend Fixtures
         // Path: .../clis/SchemaTools.Tests.Integration/bin/Debug/net10.0/
         // Go up 5 levels to reach .../dms/, then down to backend/Fixtures
-        var fixturePath = Path.Combine(
-            testBinDir,
+        var fixturesDir = Path.Combine(
+            assemblyDir,
             "..",
             "..",
             "..",
             "..",
             "..",
             "backend",
-            "Fixtures",
-            "authoritative",
-            "ds-5.2",
-            "inputs",
-            "ds-5.2-api-schema-authoritative.json"
+            "Fixtures"
         );
 
-        return Path.GetFullPath(fixturePath);
+        return
+        [
+            Path.GetFullPath(Path.Combine(fixturesDir,
+                "authoritative",
+                "ds-5.2",
+                "inputs",
+                "ds-5.2-api-schema-authoritative.json"
+            )),
+            Path.GetFullPath(Path.Combine(fixturesDir,
+                "authoritative",
+                "sample",
+                "inputs",
+                "sample-api-schema-authoritative.json"
+            )),
+        ];
     }
 
-    public static string GetMinimalFixturePath()
+    public static string GetMinimalSchemaPath()
     {
         var assemblyLocation = typeof(CliTestHelper).Assembly.Location;
         var testBinDir = Path.GetDirectoryName(assemblyLocation)!;
         return Path.Combine(testBinDir, "Fixtures", "minimal-api-schema.json");
     }
 
-    public static string GetAlternateMinimalFixturePath()
+    public static string GetAlternateMinimalSchemaPath()
     {
         var assemblyLocation = typeof(CliTestHelper).Assembly.Location;
         var testBinDir = Path.GetDirectoryName(assemblyLocation)!;

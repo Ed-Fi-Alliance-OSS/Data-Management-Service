@@ -9,17 +9,17 @@ jira_url: https://edfi.atlassian.net/browse/DMS-961
 
 Implement DB-apply smoke tests that:
 
-1. start a fresh PostgreSQL/SQL Server using docker compose,
+1. start a fresh PostgreSQL/SQL Server,
 2. apply generated DDL to an empty database,
 3. apply the same DDL a second time (idempotency),
 4. introspect the provisioned schema into a stable manifest,
 5. run a minimal journaling trigger smoke check (insert/update `dms.Document` emits journal rows).
 
-Testcontainers is explicitly not allowed; use docker compose.
+Testcontainers is explicitly not allowed.
 
 ## Acceptance Criteria
 
-- A script-first workflow exists (PowerShell and/or bash) to run DB-apply for both engines.
+- A workflow exists to run DB-apply for both engines.
 - Applying the same DDL twice succeeds for both engines.
 - Introspection manifest includes (at minimum):
   - schemas, tables, columns/types/nullability,
@@ -27,6 +27,9 @@ Testcontainers is explicitly not allowed; use docker compose.
   - indexes,
   - views,
   - triggers,
+  - sequences 
+  - functions
+  - SQL Server User-Defined Table Types
   - `dms.EffectiveSchema` / `dms.SchemaComponent` / `dms.ResourceKey` rows.
 - Journaling trigger smoke check passes:
   - inserting into `dms.Document` emits rows in `dms.DocumentChangeEvent`.
@@ -35,10 +38,9 @@ Testcontainers is explicitly not allowed; use docker compose.
 ## Tasks
 
 1. Add docker compose configurations (or profiles) for pgsql and mssql suitable for tests.
-2. Implement scripts to:
-   1. start DB,
-   2. apply DDL (pgsql: `psql`; mssql: `sqlcmd`),
-   3. apply again,
-   4. run trigger smoke SQL.
+2. Implement a workflow that:
+   1. starts DBs,
+   2. applies DDL (pgsql: `psql`; mssql: `sqlcmd`),
+   3. applies it again,
+   4. runs trigger smoke SQL.
 3. Implement engine-specific introspection queries and emit `provisioned-schema.{dialect}.manifest.json`.
-4. Add optional NUnit wrappers (category `DbApply`) that invoke the scripts and fail with captured logs on error.
