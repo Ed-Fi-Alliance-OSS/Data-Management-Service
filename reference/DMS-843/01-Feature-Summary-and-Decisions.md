@@ -10,6 +10,27 @@ Implement Ed-Fi Change Queries for the current Data Management Service storage a
 - uses the canonical `dms.Document` row as the source of truth
 - keeps the design aligned to the backend-redesign update-tracking and authorization directions where DMS-843 introduces bridge artifacts
 
+## Approval Target and Design Posture
+
+**This package targets ODS-compatible Change Query behavior in DMS context through a redesign-aligned implementation.**
+
+The approval bar is correctness and alignment, not mechanical reproduction of ODS internals:
+
+- ODS route shapes, windowing, and synchronization semantics are adopted where they apply directly to DMS.
+- `Use-Snapshot` is a first-class feature in this package; both live and snapshot-backed synchronization flows are in scope.
+- `availableChangeVersions` uses ODS-compatible sequence-ceiling watermark semantics.
+- Each deliberate departure from legacy ODS behavior is documented as an explicit owned decision in the relevant section, not as an undeclared omission.
+
+Known explicit DMS-specific choices in this package:
+
+- `/keyChanges` reuses the committed live `ChangeVersion` instead of allocating a second public key-change token as legacy ODS does; this is an intentional redesign-aligned choice owned by this package, and changing it requires a deliberate contract revision.
+- `_etag` and `_lastModifiedDate` remain inside `EdfiDoc` on the current backend; redesign metadata-stamp storage ownership is deferred to a later backend replacement phase.
+- Snapshot history tables remain out of scope, but snapshot lifecycle behavior for `Use-Snapshot` requests is in scope and must preserve ODS-compatible synchronization guarantees without changing existing route shapes.
+
+**Custom-view tracked-change eligibility:**
+
+Tracked-change authorization supports only resources whose authorization inputs are reducible at write time to captured basis-resource `DocumentId` values plus any named `relationshipInputs`. Open-ended custom-view authorization that depends on arbitrary mutable non-identifying live-row values at query time is explicitly not supported for tracked changes in this package. Resources whose tracked-change authorization cannot be reduced to this contract must fail startup validation rather than silently degrading. See `05-Authorization-and-Delete-Semantics.md §AuthorizationBasis Semantics` for the normative structural contract, eligibility restriction, enforcement ownership, and failure gates.
+
 ## Current DMS Facts That Shape the Design
 
 The current DMS persisted document model stores all resources and descriptors in a single canonical table:
@@ -181,7 +202,7 @@ For the dedicated `/deletes` and `/keyChanges` routes:
 
 This aligns DMS-843 to ODS query-window behavior while keeping the existing collection GET route backward-compatible when no change-query parameters are supplied.
 
-## 12. DMS-843 integrates `Use-Snapshot` into the core synchronization design without snapshot history tables
+## 12. DMS-843 integrates `Use-Snapshot` into the core synchronization design with in-scope lifecycle handling
 
 The feature continues to avoid server-side snapshot history tables and does not require historical payload reconstruction.
 
@@ -197,6 +218,8 @@ Required interpretation:
 - snapshot mode does not add snapshot payload tables, alternate change tokens, or different route shapes
 - snapshot-backed reads return the current representation visible inside the snapshot, not historical payload versions
 - the snapshot source must expose the same DMS schema and tracking artifacts as the live instance and must stay frozen long enough for one synchronization pass or equivalent bounded workflow
+- DMS owns snapshot lifecycle enforcement for `Use-Snapshot` requests (selection, binding, and validity checks for the chosen snapshot derivative) while keeping the public API contract unchanged
+- if lifecycle validity cannot be preserved for the requested snapshot-backed pass, DMS must fail the request or pass explicitly with the documented snapshot-unavailable `409 Conflict` contract rather than degrading silently
 
 ## Existing DMS-specific choices that `Use-Snapshot` does not change
 

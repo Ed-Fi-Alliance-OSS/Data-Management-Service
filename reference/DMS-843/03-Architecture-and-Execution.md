@@ -256,7 +256,7 @@ Required interpretation:
 - non-snapshot synchronization under concurrent writes remains best-effort rather than gap-free
 - snapshot-backed synchronization uses the same tracking artifacts but changes the completeness guarantee by pinning reads to the snapshot source
 - DMS never silently falls back to a live read when `Use-Snapshot = true`
-- a future additive feature could extend snapshot lifecycle management without changing the tracking artifacts defined by DMS-843
+- snapshot lifecycle management is in scope for DMS-843: DMS must validate and preserve a consistent snapshot derivative for the requested snapshot-backed pass while keeping the public API contract unchanged
 
 ## Write-Path Locking Contract
 

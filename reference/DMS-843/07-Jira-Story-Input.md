@@ -413,6 +413,7 @@ The story owns:
 - `/keyChanges` execution against key-change tracking rows
 - `availableChangeVersions` computation across the participating artifacts
 - live-vs-snapshot source selection for those synchronization reads
+- snapshot lifecycle handling for snapshot-backed synchronization passes without changing public route or header contracts
 - key-change collapse rules
 - delete and key-change authorization semantics
 - row-level locking or engine-equivalent serialization on identity-changing updates and deletes
@@ -430,6 +431,7 @@ This story does not introduce retention purge or replay-floor metadata. Later-ph
 - Key-change-query authorization uses the documented stored pre-update tracked-change authorization data for transition visibility.
 - `availableChangeVersions` returns one synchronization surface with correct bootstrap and retained-data bounds for the participating artifacts.
 - `Use-Snapshot = true` causes `availableChangeVersions`, `/deletes`, and `/keyChanges` to read the snapshot-visible synchronization surface rather than the live primary surface.
+- Snapshot-backed synchronization preserves one consistent snapshot derivative across the pass; if that cannot be preserved, the pass fails explicitly with the documented snapshot-unavailable behavior.
 - Multi-resource synchronization guidance remains explicit: `keyChanges` and changed resources in dependency order, deletes in reverse-dependency order.
 - Concurrent updates and deletes on the same document do not capture stale old keys or tombstones.
 - Writes that cannot resolve required tracked-change authorization inputs fail before tombstone or key-change persistence, and do not commit partial tracking rows.
@@ -441,6 +443,7 @@ This story does not introduce retention purge or replay-floor metadata. Later-ph
 - Apply delete-query authorization against the stored tracked-change authorization data on tombstones.
 - Apply key-change authorization against the stored pre-update tracked-change authorization data before collapse.
 - Resolve the live-vs-snapshot read source before computing `availableChangeVersions`, `/deletes`, and `/keyChanges`, and keep each request on that chosen source throughout execution.
+- Implement snapshot lifecycle checks that enforce consistent derivative selection and explicit failure when lifecycle validity cannot be maintained, without introducing new public routes or headers.
 - Implement key-change collapse semantics to preserve earliest `oldKeyValues`, latest `newKeyValues`, and latest surviving `changeVersion`.
 - Compute `availableChangeVersions.oldestChangeVersion` from replay-floor semantics (or bootstrap `0`) and `availableChangeVersions.newestChangeVersion` from the selected source sequence ceiling (`next value - 1`) for ODS-compatible watermark behavior.
 - Implement row-level locking or engine-equivalent serialization for identity-changing updates and deletes so pre-change capture is consistent.

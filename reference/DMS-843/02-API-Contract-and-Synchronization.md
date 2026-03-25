@@ -204,6 +204,8 @@ The field-name contract is evaluated per routed resource, so different resources
 - DMS never silently downgrades `Use-Snapshot = true` requests to live reads; if the snapshot source is unavailable, the request fails explicitly
 - clients must use the same `Use-Snapshot` choice across one synchronization pass because `availableChangeVersions` and the subsequent data reads must all target the same source
 - collection GET requests used for initial full-load synchronization may send `Use-Snapshot = true` even when both change-version bounds are absent; the route still behaves as an ordinary collection GET, but it reads from the snapshot source
+- snapshot lifecycle handling is in scope: DMS must enforce snapshot-derivative validity for the requested pass while preserving the existing routes, payloads, and header contract
+- when a snapshot-backed pass cannot keep one consistent snapshot derivative for the required reads, DMS must fail explicitly with the documented snapshot-unavailable `409 Conflict` behavior
 
 ## Query Parameter Rules
 

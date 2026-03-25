@@ -22,9 +22,15 @@ Use this package for design review first, then for implementation planning, Jira
 
 This package is the DMS-843 design for the current backend shape. It is not the full backend-redesign package.
 
+**Approval target:** The approval bar is ODS-compatible Change Query behavior in DMS context, delivered through a redesign-aligned implementation. DMS-843 must preserve additive API compatibility while matching ODS-facing semantics for route shapes, windowing, `Use-Snapshot` synchronization behavior (including lifecycle handling), ODS-compatible watermark semantics, and ODS-style tracked-change authorization goals.
+
+The package does not claim, and is not required to claim, byte-for-byte replication of legacy ODS internal mechanics. Where it departs from ODS behavior, each departure is named, reasoned, and owned in the numbered design documents.
+
+**Custom-view tracked-change eligibility:** Tracked-change authorization supports only cases reducible at write time to captured basis-resource `DocumentId` values plus named `relationshipInputs`. Open-ended custom-view authorization that depends on arbitrary mutable non-identifying live-row values at query time is not supported for tracked changes. See `05-Authorization-and-Delete-Semantics.md` for the normative contract and enforcement gates.
+
 The alignment target is redesign artifact-responsibility alignment plus the selected Ed-Fi ODS/API behaviors explicitly adopted in this package, while still using current-backend bridge artifacts where names or storage differ.
 
-This package keeps snapshot history tables and DMS-managed snapshot lifecycle orchestration out of scope. Synchronization reads instead run in one of two built-in flows selected by `Use-Snapshot`: absent or `false` uses the live non-snapshot flow, and `true` uses the snapshot-backed flow against the configured snapshot source.
+This package keeps snapshot history tables out of scope, but snapshot lifecycle handling is in scope. Synchronization reads run in one of two built-in flows selected by `Use-Snapshot`: absent or `false` uses the live non-snapshot flow, and `true` uses the snapshot-backed flow against the configured snapshot source with DMS-managed lifecycle checks that preserve one-pass consistency guarantees.
 
 Important explicit DMS-specific choices that remain in this package:
 
