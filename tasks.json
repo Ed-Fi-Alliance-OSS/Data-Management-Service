@@ -114,7 +114,7 @@
       "Add focused unit tests that exercise the SQL Server threshold-crossing path and bulk-safe lookup mechanics.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "SQL Server Adapter Parity",
