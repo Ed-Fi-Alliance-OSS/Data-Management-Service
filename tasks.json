@@ -75,10 +75,10 @@
     "category": "Compatibility Metadata",
     "description": "Implement metadata helpers that derive allowed target `ResourceKeyId` sets for document-reference validation from the runtime mapping set and derived relational model. Acceptance: concrete targets resolve to exactly one allowed `ResourceKeyId`, abstract/superclass targets resolve to the allowed concrete member keys for the hierarchy, descriptor resources are excluded from document-reference compatibility checks, and missing mapping-set metadata fails fast with deterministic errors.",
     "steps-to-verify": [
-      "Add unit tests covering concrete targets, abstract targets, and missing-resource failures using compiled mapping fixtures.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+      "Add unit tests covering concrete target, abstract/superclass target, descriptor exclusion, and fail-fast missing-metadata cases.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "PostgreSQL Lookup SQL",
