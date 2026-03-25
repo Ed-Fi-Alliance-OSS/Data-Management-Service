@@ -103,12 +103,16 @@ Feature: Update Reference Validation
               And the response body is
                   """
                   {
-                      "detail": "The referenced Person item(s) do not exist.",
+                      "detail": "One or more references could not be resolved. See 'validationErrors' for details.",
                       "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                       "title": "Unresolved Reference",
                       "status": 409,
                       "correlationId": null,
-                      "validationErrors": {},
+                      "validationErrors": {
+                          "$.personReference": [
+                              "The referenced Person item does not exist."
+                          ]
+                      },
                       "errors": []
                   }
                   """

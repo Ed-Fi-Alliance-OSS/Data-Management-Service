@@ -61,12 +61,16 @@ Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resou
               And the response body is
                   """
                   {
-                      "detail": "The referenced EducationOrganization item(s) do not exist.",
+                      "detail": "One or more references could not be resolved. See 'validationErrors' for details.",
                       "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                       "title": "Unresolved Reference",
                       "status": 409,
                       "correlationId": null,
-                      "validationErrors": {},
+                      "validationErrors": {
+                          "$.educationOrganizationReference": [
+                              "The referenced EducationOrganization item does not exist."
+                          ]
+                      },
                       "errors": []
                   }
                   """
@@ -133,12 +137,16 @@ Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resou
               And the response body is
                   """
                   {
-                      "detail": "The referenced LocalEducationAgency item(s) do not exist.",
+                      "detail": "One or more references could not be resolved. See 'validationErrors' for details.",
                       "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                       "title": "Unresolved Reference",
                       "status": 409,
                       "correlationId": null,
-                      "validationErrors": {},
+                      "validationErrors": {
+                          "$.localEducationAgencyReference": [
+                              "The referenced LocalEducationAgency item does not exist."
+                          ]
+                      },
                       "errors": []
                   }
                   """
@@ -165,4 +173,3 @@ Feature: SuperclassReferenceValidation of Creation, Update and Deletion of resou
                       "errors": []
                   }
                   """
-
