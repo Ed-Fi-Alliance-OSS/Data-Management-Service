@@ -86,12 +86,14 @@ public class Given_RelationalReferenceResolverAdapter
                         ("ReferentialId", documentReferentialId.Value),
                         ("DocumentId", 101L),
                         ("ResourceKeyId", (short)11),
+                        ("ReferentialIdentityResourceKeyId", (short)11),
                         ("IsDescriptor", false)
                     ),
                     RelationalAccessTestData.CreateRow(
                         ("ReferentialId", descriptorReferentialId.Value),
                         ("DocumentId", 202L),
                         ("ResourceKeyId", (short)12),
+                        ("ReferentialIdentityResourceKeyId", (short)12),
                         ("IsDescriptor", true)
                     )
                 ),

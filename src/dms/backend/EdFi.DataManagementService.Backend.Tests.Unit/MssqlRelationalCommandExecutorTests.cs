@@ -38,8 +38,8 @@ public class Given_MssqlRelationalCommandExecutor
             new RecordingDbCommand(
                 CreateReader(
                     CreateLookupTable(
-                        (documentReferentialId.Value, 101L, (short)11, false),
-                        (descriptorReferentialId.Value, 202L, (short)12, true)
+                        (documentReferentialId.Value, 101L, (short)11, (short)11, false),
+                        (descriptorReferentialId.Value, 202L, (short)12, (short)12, true)
                     )
                 )
             )
@@ -86,8 +86,8 @@ public class Given_MssqlRelationalCommandExecutor
         result
             .Should()
             .BeEquivalentTo([
-                new ReferenceLookupResult(documentReferentialId, 101L, 11, false),
-                new ReferenceLookupResult(descriptorReferentialId, 202L, 12, true),
+                new ReferenceLookupResult(documentReferentialId, 101L, 11, 11, false),
+                new ReferenceLookupResult(descriptorReferentialId, 202L, 12, 12, true),
             ]);
     }
 
@@ -147,18 +147,31 @@ public class Given_MssqlRelationalCommandExecutor
     }
 
     private static DataTable CreateLookupTable(
-        params (Guid ReferentialId, long DocumentId, short ResourceKeyId, bool IsDescriptor)[] rows
+        params (
+            Guid ReferentialId,
+            long DocumentId,
+            short ResourceKeyId,
+            short ReferentialIdentityResourceKeyId,
+            bool IsDescriptor
+        )[] rows
     )
     {
         var table = new DataTable();
         table.Columns.Add("ReferentialId", typeof(Guid));
         table.Columns.Add("DocumentId", typeof(long));
         table.Columns.Add("ResourceKeyId", typeof(short));
+        table.Columns.Add("ReferentialIdentityResourceKeyId", typeof(short));
         table.Columns.Add("IsDescriptor", typeof(bool));
 
         foreach (var row in rows)
         {
-            table.Rows.Add(row.ReferentialId, row.DocumentId, row.ResourceKeyId, row.IsDescriptor);
+            table.Rows.Add(
+                row.ReferentialId,
+                row.DocumentId,
+                row.ResourceKeyId,
+                row.ReferentialIdentityResourceKeyId,
+                row.IsDescriptor
+            );
         }
 
         return table;

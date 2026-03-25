@@ -28,12 +28,14 @@ public class Given_ReferenceResolver
                     ReferentialId: documentReferentialId,
                     DocumentId: 101,
                     ResourceKeyId: 11,
+                    ReferentialIdentityResourceKeyId: 11,
                     IsDescriptor: false
                 ),
                 new ReferenceLookupResult(
                     ReferentialId: descriptorReferentialId,
                     DocumentId: 202,
                     ResourceKeyId: 12,
+                    ReferentialIdentityResourceKeyId: 12,
                     IsDescriptor: true
                 ),
             ],
@@ -113,12 +115,14 @@ public class Given_ReferenceResolver
                     ReferentialId: firstReferentialId,
                     DocumentId: 101,
                     ResourceKeyId: 11,
+                    ReferentialIdentityResourceKeyId: 11,
                     IsDescriptor: false
                 ),
                 new ReferenceLookupResult(
                     ReferentialId: secondReferentialId,
                     DocumentId: 202,
                     ResourceKeyId: 12,
+                    ReferentialIdentityResourceKeyId: 12,
                     IsDescriptor: false
                 ),
             ],
@@ -127,6 +131,7 @@ public class Given_ReferenceResolver
                     ReferentialId: thirdReferentialId,
                     DocumentId: 303,
                     ResourceKeyId: 13,
+                    ReferentialIdentityResourceKeyId: 13,
                     IsDescriptor: false
                 ),
             ],
@@ -193,12 +198,14 @@ public class Given_ReferenceResolver
                     ReferentialId: resolvedDocumentReferentialId,
                     DocumentId: 101,
                     ResourceKeyId: 11,
+                    ReferentialIdentityResourceKeyId: 11,
                     IsDescriptor: false
                 ),
                 new ReferenceLookupResult(
                     ReferentialId: nonDescriptorReferentialId,
                     DocumentId: 404,
                     ResourceKeyId: 14,
+                    ReferentialIdentityResourceKeyId: 14,
                     IsDescriptor: false
                 ),
             ],
@@ -254,6 +261,46 @@ public class Given_ReferenceResolver
         result.LookupsByReferentialId[nonDescriptorReferentialId].Result.Should().NotBeNull();
         result.LookupsByReferentialId[nonDescriptorReferentialId].Result!.IsDescriptor.Should().BeFalse();
         result.DescriptorReferenceOccurrences.Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task It_uses_the_matched_document_resource_key_for_alias_rows_while_preserving_lookup_metadata()
+    {
+        var aliasReferentialId = new ReferentialId(Guid.NewGuid());
+        var adapter = new RecordingReferenceResolverAdapter([
+            [
+                new ReferenceLookupResult(
+                    ReferentialId: aliasReferentialId,
+                    DocumentId: 202,
+                    ResourceKeyId: 21,
+                    ReferentialIdentityResourceKeyId: 30,
+                    IsDescriptor: false
+                ),
+            ],
+        ]);
+
+        var sut = new ReferenceResolver(adapter);
+
+        var result = await sut.ResolveAsync(
+            new ReferenceResolverRequest(
+                MappingSet: CreateMappingSet(),
+                RequestResource: _requestResource,
+                DocumentReferences:
+                [
+                    CreateDocumentReference(aliasReferentialId, "$.educationOrganizationReference"),
+                ],
+                DescriptorReferences: []
+            )
+        );
+
+        result
+            .SuccessfulDocumentReferencesByPath[new JsonPath("$.educationOrganizationReference")]
+            .ResourceKeyId.Should()
+            .Be(21);
+        result
+            .LookupsByReferentialId[aliasReferentialId]
+            .Result!.ReferentialIdentityResourceKeyId.Should()
+            .Be(30);
     }
 
     private static MappingSet CreateMappingSet()

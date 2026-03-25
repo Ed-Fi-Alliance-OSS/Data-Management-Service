@@ -96,7 +96,7 @@
       "Add focused unit tests for PostgreSQL raw result projection covering found, missing, alias-row, and descriptor-membership row shapes.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "SQL Server Small-List Strategy",

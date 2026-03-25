@@ -67,7 +67,13 @@ public sealed record ReferenceLookupRequest(
 /// </summary>
 /// <param name="ReferentialId">The resolved referential id.</param>
 /// <param name="DocumentId">The matched document id.</param>
-/// <param name="ResourceKeyId">The matched resource key id.</param>
+/// <param name="ResourceKeyId">
+/// The matched document resource key id from <c>dms.Document</c>.
+/// </param>
+/// <param name="ReferentialIdentityResourceKeyId">
+/// The resource key id from the matched <c>dms.ReferentialIdentity</c> row.
+/// This may differ from <paramref name="ResourceKeyId" /> for alias rows.
+/// </param>
 /// <param name="IsDescriptor">
 /// Whether the matched document is present in <c>dms.Descriptor</c>.
 /// </param>
@@ -75,6 +81,7 @@ public sealed record ReferenceLookupResult(
     ReferentialId ReferentialId,
     long DocumentId,
     short ResourceKeyId,
+    short ReferentialIdentityResourceKeyId,
     bool IsDescriptor
 );
 

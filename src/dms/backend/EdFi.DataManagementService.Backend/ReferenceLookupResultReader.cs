@@ -15,6 +15,7 @@ internal static class ReferenceLookupResultReader
     private const string ReferentialIdColumnName = "ReferentialId";
     private const string DocumentIdColumnName = "DocumentId";
     private const string ResourceKeyIdColumnName = "ResourceKeyId";
+    private const string ReferentialIdentityResourceKeyIdColumnName = "ReferentialIdentityResourceKeyId";
     private const string IsDescriptorColumnName = "IsDescriptor";
 
     public static async Task<IReadOnlyList<ReferenceLookupResult>> ReadAsync(
@@ -35,6 +36,9 @@ internal static class ReferenceLookupResultReader
                     ),
                     DocumentId: reader.GetRequiredFieldValue<long>(DocumentIdColumnName),
                     ResourceKeyId: reader.GetRequiredFieldValue<short>(ResourceKeyIdColumnName),
+                    ReferentialIdentityResourceKeyId: reader.GetRequiredFieldValue<short>(
+                        ReferentialIdentityResourceKeyIdColumnName
+                    ),
                     IsDescriptor: reader.GetRequiredFieldValue<bool>(IsDescriptorColumnName)
                 )
             );

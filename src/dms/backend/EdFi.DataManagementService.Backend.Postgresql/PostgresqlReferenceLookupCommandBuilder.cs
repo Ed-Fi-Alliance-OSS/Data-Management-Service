@@ -28,8 +28,8 @@ internal static class PostgresqlReferenceLookupCommandBuilder
         SELECT
             lookupInput."ReferentialId" AS "ReferentialId",
             referentialIdentity."DocumentId" AS "DocumentId",
-            referentialIdentity."ResourceKeyId" AS "ResourceKeyId",
-            document."ResourceKeyId" AS "DocumentResourceKeyId",
+            document."ResourceKeyId" AS "ResourceKeyId",
+            referentialIdentity."ResourceKeyId" AS "ReferentialIdentityResourceKeyId",
             descriptor."DocumentId" IS NOT NULL AS "IsDescriptor"
         FROM "LookupInput" lookupInput
         INNER JOIN dms."ReferentialIdentity" referentialIdentity
