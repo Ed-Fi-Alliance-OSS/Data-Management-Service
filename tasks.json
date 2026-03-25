@@ -27,8 +27,17 @@
     "completed": false
   },
   {
-    "category": "Path Addressing",
-    "description": "Implement concrete reference-path addressing helpers that map Core-emitted `DocumentReference.Path` values to compiled document-reference bindings and stable ordinal addresses needed by later flattening work. Acceptance: helpers resolve root, collection, and nested-collection reference paths against a compiled write plan; reject unknown, mismatched, or wildcard paths deterministically; and produce a per-request `(binding, ordinalPath)` index entry for each resolved reference occurrence.",
+    "category": "Relational Access Seam",
+    "description": "Introduce a request-scoped relational command/connection seam usable by the DMS-982 resolver without wiring a new relational `IDocumentStoreRepository` path. Acceptance: PostgreSQL can execute resolver commands against the current per-request data source, SQL Server can execute resolver commands from the active request-scoped connection string path, shared resolver/adapter code depends on this seam instead of old repository operations, and the seam is narrow enough to support future batched write-prerequisite execution.",
+    "steps-to-verify": [
+      "Add unit tests covering the shared relational access abstraction and dialect-specific factory behavior used by the resolver.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Reference Path Indexing",
+    "description": "Implement concrete reference-path indexing helpers that map Core-emitted `DocumentReference.Path` values to compiled `DocumentReferenceBinding` entries and request-local `ordinalPath` tuples for later flattening work. Acceptance: helpers resolve root, collection, and nested-collection reference-object paths against a compiled write plan; reject unknown, mismatched, or wildcard paths deterministically; and produce a per-request `(binding, ordinalPath)` entry for each extracted reference occurrence without introducing profile scope-address derivation responsibilities.",
     "steps-to-verify": [
       "Add unit tests for root, single-collection, and nested-collection reference paths, including invalid-path failures.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
@@ -45,19 +54,46 @@
     "completed": false
   },
   {
-    "category": "PostgreSQL Adapter",
-    "description": "Implement the PostgreSQL bulk referential-id lookup adapter for the resolver using set-based SQL against `dms.ReferentialIdentity`, `dms.Document`, and `dms.Descriptor`. Acceptance: document references are deduped for lookup but returned per occurrence, no per-reference query loop is introduced, descriptor membership rows are joined in the same prerequisite pass, concrete-target compatibility is validated before a resolved `DocumentId` is returned, and abstract/superclass references honor alias rows while still validating membership against allowed concrete resource keys.",
+    "category": "PostgreSQL Lookup SQL",
+    "description": "Implement the PostgreSQL bulk lookup SQL shape and parameterization for DMS-982. Acceptance: document and descriptor referential ids can be emitted into a set-based PostgreSQL lookup against `dms.ReferentialIdentity`, no per-reference query loop is introduced, the SQL shape can later participate in a larger batched write-prerequisite command, and focused unit tests cover empty, small, and large deduped lookup sets plus deterministic parameter ordering.",
     "steps-to-verify": [
-      "Add focused unit tests for SQL shape selection and result classification for missing, found, and incompatible-target rows.",
+      "Add focused unit tests for PostgreSQL SQL shape generation and parameter binding across representative lookup sizes.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
     "completed": false
   },
   {
-    "category": "SQL Server Adapter",
-    "description": "Implement the SQL Server bulk referential-id lookup adapter with parameter-limit handling suitable for DMS-982. Acceptance: shared resolver semantics match PostgreSQL, small lookup sets use a simple parameterized strategy, large lookup sets switch to a threshold-safe bulk strategy instead of risking the 2,100-parameter limit, descriptor membership/type checks are supported, and no per-reference query loop is introduced.",
+    "category": "PostgreSQL Adapter Wiring",
+    "description": "Implement PostgreSQL adapter execution and raw row projection over the shared resolver contract. Acceptance: the adapter executes the PostgreSQL lookup through the shared relational access seam, projects rows from `dms.ReferentialIdentity`, `dms.Document`, and `dms.Descriptor` into shared raw result records, returns enough membership/type data for later shared failure classification, and preserves deduped lookup semantics while retaining per-occurrence inputs for diagnostics.",
     "steps-to-verify": [
-      "Add focused unit tests for small-list and large-list strategy selection and result classification parity with the PostgreSQL adapter.",
+      "Add focused unit tests for PostgreSQL raw result projection covering found, missing, alias-row, and descriptor-membership row shapes.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "SQL Server Small-List Strategy",
+    "description": "Implement the SQL Server small-list lookup strategy for DMS-982 using a simple parameterized approach beneath safe thresholds. Acceptance: small deduped lookup sets execute without risking the 2,100-parameter limit, document and descriptor lookups share one resolver-oriented raw row contract, no per-reference query loop is introduced, and focused unit tests cover deterministic parameterization and row projection for representative small inputs.",
+    "steps-to-verify": [
+      "Add focused unit tests for the SQL Server small-list strategy and raw row projection contract.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "SQL Server Bulk Strategy",
+    "description": "Implement the SQL Server threshold-safe bulk lookup strategy for large DMS-982 reference sets. Acceptance: large deduped lookup sets switch to a bulk-safe strategy before risking the 2,100-parameter limit, the strategy returns the same raw adapter row contract as the small-list path, and focused unit tests cover threshold crossing and deterministic batching behavior.",
+    "steps-to-verify": [
+      "Add focused unit tests that exercise the SQL Server threshold-crossing path and bulk-safe lookup mechanics.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "SQL Server Adapter Parity",
+    "description": "Implement SQL Server adapter orchestration that selects between the small-list and bulk strategies and exposes the shared raw resolver result contract. Acceptance: strategy selection is deterministic, the adapter returns the membership/type data required for later shared failure classification, and focused unit tests assert raw-result parity with PostgreSQL across found, missing, incompatible-target, and descriptor-membership row shapes.",
+    "steps-to-verify": [
+      "Add focused unit tests for SQL Server strategy selection and raw-result parity with PostgreSQL.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
     "completed": false
@@ -73,19 +109,37 @@
   },
   {
     "category": "Composition",
-    "description": "Register the DMS-982 resolver and its dialect-specific adapter seams in backend composition without wiring a new relational repository path. Acceptance: PostgreSQL service registration can resolve the prerequisite resolver when `UseRelationalBackend` is enabled, SQL Server tests can instantiate the SQL Server adapter through the same contract/factory seam, and no `IDocumentStoreRepository` request-path integration is added in this story.",
+    "description": "Register the DMS-982 resolver, relational access seam, and dialect-specific adapter seams in composition without wiring a new relational repository path. Acceptance: PostgreSQL service registration can resolve the prerequisite resolver and relational access seam when `UseRelationalBackend` is enabled, SQL Server tests can instantiate the SQL Server adapter through the same contract/factory seam, and no `IDocumentStoreRepository` request-path integration is added in this story.",
     "steps-to-verify": [
-      "Add or update DI/composition tests that resolve the prerequisite resolver and adapter factory from the configured service collection.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+      "Add or update DI/composition tests that resolve the prerequisite resolver, relational access seam, and adapter factory from the configured service collection.",
+      "Run: `dotnet test --no-restore ./src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj`"
     ],
     "completed": false
   },
   {
-    "category": "Integration Harness",
-    "description": "Add a focused relational write-prerequisite integration harness that provisions only the core DMS schema plus the minimal emitted relational objects needed to exercise DMS-982 on both engines. Acceptance: the harness can seed `dms.ResourceKey`, `dms.Document`, `dms.ReferentialIdentity`, `dms.Descriptor`, and any required abstract identity tables/member tables from a compact fixture; it does not depend on the legacy JSON repository path or full E2E environment; and it can be reused by both PostgreSQL and SQL Server resolver tests.",
+    "category": "Shared Integration Fixtures",
+    "description": "Add shared resolver integration fixtures and seed helpers for DMS-982 that are independent of the legacy JSON repository path and full E2E environment. Acceptance: shared helpers can seed `dms.ResourceKey`, `dms.Document`, `dms.ReferentialIdentity`, `dms.Descriptor`, and any required abstract identity tables/member tables from compact fixtures, and the helpers are reusable by both PostgreSQL and SQL Server resolver integration tests.",
     "steps-to-verify": [
-      "Add shared test helpers that provision a compact fixture database for resolver tests on both dialects.",
+      "Add shared test helpers that provision and seed compact resolver fixtures without depending on the old repository path.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "PostgreSQL Harness Provisioning",
+    "description": "Add PostgreSQL-specific provisioning and reset support for the focused DMS-982 integration harness. Acceptance: the PostgreSQL integration project can create the minimal resolver schema objects required by the shared fixtures, seed repeatable test datasets, and reset state between tests without relying on the full DMS E2E stack.",
+    "steps-to-verify": [
+      "Add PostgreSQL integration fixture setup that provisions the minimal resolver test database shape used by the shared fixtures.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "SQL Server Harness Provisioning",
+    "description": "Add SQL Server-specific provisioning and reset support for the focused DMS-982 integration harness. Acceptance: the SQL Server integration project can create the minimal resolver schema objects required by the shared fixtures, seed repeatable test datasets, and reset state between tests without relying on the full DMS E2E stack.",
+    "steps-to-verify": [
+      "Add SQL Server integration fixture setup that provisions the minimal resolver test database shape used by the shared fixtures.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj`"
     ],
     "completed": false
