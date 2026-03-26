@@ -13,6 +13,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
 public sealed partial class MssqlReferenceResolverTestDatabase : IAsyncDisposable
 {
+    private const int MaximumSeedInsertParameters = 2000;
     private static readonly MssqlDialect _dialect = new(new MssqlDialectRules());
     private static readonly string _coreDdl = new CoreDdlEmitter(_dialect).Emit();
     private static readonly DbTableName _changeVersionSequence = new(
@@ -148,14 +149,12 @@ public sealed partial class MssqlReferenceResolverTestDatabase : IAsyncDisposabl
         {
             foreach (var batch in seedData.CreateTableBatches())
             {
-                if (batch.Rows.Count == 0)
+                foreach (var insertBatch in SplitInsertBatch(batch))
                 {
-                    continue;
+                    await using var command = BuildInsertCommand(connection, insertBatch);
+                    command.Transaction = transaction;
+                    await command.ExecuteNonQueryAsync();
                 }
-
-                await using var command = BuildInsertCommand(connection, batch);
-                command.Transaction = transaction;
-                await command.ExecuteNonQueryAsync();
             }
 
             await transaction.CommitAsync();
@@ -290,6 +289,29 @@ public sealed partial class MssqlReferenceResolverTestDatabase : IAsyncDisposabl
                 : insertSql;
 
         return command;
+    }
+
+    private static IEnumerable<ReferenceResolverSeedTableBatch> SplitInsertBatch(
+        ReferenceResolverSeedTableBatch batch
+    )
+    {
+        if (batch.Rows.Count == 0)
+        {
+            yield break;
+        }
+
+        var rowsPerBatch = Math.Max(1, MaximumSeedInsertParameters / batch.Columns.Count);
+
+        for (var startIndex = 0; startIndex < batch.Rows.Count; startIndex += rowsPerBatch)
+        {
+            var rowCount = Math.Min(rowsPerBatch, batch.Rows.Count - startIndex);
+
+            yield return new ReferenceResolverSeedTableBatch(
+                batch.Table,
+                batch.Columns,
+                batch.Rows.Skip(startIndex).Take(rowCount).ToArray()
+            );
+        }
     }
 
     private static async Task<string[]> ReadObjectNamesAsync(SqlConnection connection, string objectType)

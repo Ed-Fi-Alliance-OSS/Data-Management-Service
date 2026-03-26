@@ -257,6 +257,78 @@ public class Given_MssqlReferenceResolver
             .AllSatisfy(lookupResult => lookupResult.Should().BeNull());
     }
 
+    [Test]
+    public async Task It_resolves_a_threshold_crossing_deduped_lookup_set_without_losing_repeated_missing_path_diagnostics()
+    {
+        const int LargeLookupCount = 1999;
+
+        await _database.SeedAsync(
+            CreateAdditionalSchoolSeedData(
+                LargeLookupCount,
+                _database.MappingSet.ResourceKeyIdByResource[_database.Fixture.SchoolResource]
+            )
+        );
+
+        DocumentReference[] documentReferences =
+        [
+            .. Enumerable
+                .Range(0, LargeLookupCount)
+                .Select(index =>
+                    _database.Fixture.CreateSchoolReference(
+                        $"$.bulkSchools[{index}].schoolReference",
+                        CreateBulkSchoolReferentialId(index + 1)
+                    )
+                ),
+            _database.Fixture.CreateSchoolReference(
+                "$.missingSchools[0].schoolReference",
+                _database.Fixture.MissingSchoolReferentialId
+            ),
+            _database.Fixture.CreateSchoolReference(
+                "$.missingSchools[1].schoolReference",
+                _database.Fixture.MissingSchoolReferentialId
+            ),
+            _database.Fixture.CreateSchoolReference(
+                "$.missingSchools[2].schoolReference",
+                _database.Fixture.MissingSchoolReferentialId
+            ),
+        ];
+
+        var result = await ResolveDocumentReferencesAsync(documentReferences);
+
+        result.LookupsByReferentialId.Should().HaveCount(LargeLookupCount + 1);
+        result.DocumentReferenceOccurrences.Should().HaveCount(LargeLookupCount + 3);
+        result.SuccessfulDocumentReferencesByPath.Should().HaveCount(LargeLookupCount);
+        result
+            .SuccessfulDocumentReferencesByPath[new JsonPath("$.bulkSchools[0].schoolReference")]
+            .DocumentId.Should()
+            .Be(1000L);
+        result
+            .SuccessfulDocumentReferencesByPath[
+                new JsonPath($"$.bulkSchools[{LargeLookupCount - 1}].schoolReference")
+            ]
+            .DocumentId.Should()
+            .Be(1000L + LargeLookupCount - 1);
+        result
+            .InvalidDocumentReferences.Select(failure => (failure.Path.Value, failure.Reason))
+            .Should()
+            .Equal(
+                ("$.missingSchools[0].schoolReference", DocumentReferenceFailureReason.Missing),
+                ("$.missingSchools[1].schoolReference", DocumentReferenceFailureReason.Missing),
+                ("$.missingSchools[2].schoolReference", DocumentReferenceFailureReason.Missing)
+            );
+
+        var missingOccurrences = result
+            .DocumentReferenceOccurrences.Where(occurrence =>
+                occurrence.Reference.ReferentialId == _database.Fixture.MissingSchoolReferentialId
+            )
+            .ToArray();
+
+        missingOccurrences.Should().HaveCount(3);
+        missingOccurrences[1].Lookup.Should().BeSameAs(missingOccurrences[0].Lookup);
+        missingOccurrences[2].Lookup.Should().BeSameAs(missingOccurrences[0].Lookup);
+        result.LookupsByReferentialId[_database.Fixture.MissingSchoolReferentialId].Result.Should().BeNull();
+    }
+
     private async Task<ResolvedReferenceSet> ResolveDocumentReferencesAsync(
         params DocumentReference[] documentReferences
     )
@@ -311,5 +383,50 @@ public class Given_MssqlReferenceResolver
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
         );
+    }
+
+    private static ReferenceResolverSeedData CreateAdditionalSchoolSeedData(
+        int count,
+        short schoolResourceKeyId
+    )
+    {
+        ReferenceResolverDocumentSeed[] documents =
+        [
+            .. Enumerable
+                .Range(0, count)
+                .Select(index => new ReferenceResolverDocumentSeed(
+                    1000L + index,
+                    CreateBulkSchoolDocumentUuid(index + 1),
+                    schoolResourceKeyId
+                )),
+        ];
+
+        ReferenceResolverReferentialIdentitySeed[] referentialIdentities =
+        [
+            .. Enumerable
+                .Range(0, count)
+                .Select(index => new ReferenceResolverReferentialIdentitySeed(
+                    CreateBulkSchoolReferentialId(index + 1),
+                    documents[index].DocumentId,
+                    schoolResourceKeyId
+                )),
+        ];
+
+        return new(
+            ResourceKeys: [],
+            Documents: documents,
+            ReferentialIdentities: referentialIdentities,
+            Descriptors: []
+        );
+    }
+
+    private static Guid CreateBulkSchoolDocumentUuid(int ordinal)
+    {
+        return Guid.Parse($"80000000-0000-0000-0000-{ordinal:000000000000}");
+    }
+
+    private static ReferentialId CreateBulkSchoolReferentialId(int ordinal)
+    {
+        return new ReferentialId(Guid.Parse($"90000000-0000-0000-0000-{ordinal:000000000000}"));
     }
 }
