@@ -108,17 +108,12 @@ public abstract class CompatibilityGateTestsBase
     {
         GuardAgainstMissingInfrastructure();
 
-        var solutionRoot = GoldenFixtureTestHelpers.FindSolutionRoot(
-            AppContext.BaseDirectory
+        var fixtureDirectory = FixturePathResolver.ResolveRepositoryRelativePath(
+            AppContext.BaseDirectory,
+            FixtureRelativePath
         );
 
-        var repositoryRoot = Path.GetFullPath(Path.Combine(solutionRoot, "..", ".."));
-        var fixtureDirectory = Path.GetFullPath(Path.Combine(repositoryRoot, FixtureRelativePath));
-
-        _effectiveSchemaSet = EffectiveSchemaFixtureLoader.LoadFromFixtureDirectory(
-            fixtureDirectory,
-            repositoryRoot
-        );
+        _effectiveSchemaSet = EffectiveSchemaFixtureLoader.LoadFromFixtureDirectory(fixtureDirectory);
 
         var dialect = GetSqlDialect();
         var (_, combinedSql) = DdlPipelineHelpers.BuildDdlForDialect(_effectiveSchemaSet, dialect);
@@ -290,6 +285,39 @@ public abstract class CompatibilityGateTestsBase
 
         var failure = result.Should().BeOfType<ResourceKeyValidationResult.ValidationFailure>().Subject;
         failure.DiffReport.Should().Contain("TAMPERED");
+    }
+
+    [Test]
+    public async Task It_returns_metadata_only_failure_when_fingerprint_mismatches_but_rows_match()
+    {
+        // Construct a fingerprint with a zeroed hash but the correct count.
+        // This triggers the slow-path row diff, which finds no differences, so
+        // ResourceKeyValidator should report the metadata-only inconsistency.
+        var mismatchedFingerprint = new DatabaseFingerprint(
+            _databaseFingerprint.ApiSchemaFormatVersion,
+            _databaseFingerprint.EffectiveSchemaHash,
+            _databaseFingerprint.ResourceKeyCount,
+            ImmutableArray<byte>.Empty
+        );
+
+        var validator = new ResourceKeyValidator(
+            CreateResourceKeyRowReader(),
+            NullLogger<ResourceKeyValidator>.Instance
+        );
+
+        var effectiveSchema = _effectiveSchemaSet.EffectiveSchema;
+        var expectedRows = effectiveSchema.ResourceKeysInIdOrder.ToResourceKeyRows();
+
+        var result = await validator.ValidateAsync(
+            mismatchedFingerprint,
+            effectiveSchema.ResourceKeyCount,
+            [.. effectiveSchema.ResourceKeySeedHash],
+            expectedRows,
+            GetConnectionString()
+        );
+
+        var failure = result.Should().BeOfType<ResourceKeyValidationResult.ValidationFailure>().Subject;
+        failure.DiffReport.Should().Contain("Only the dms.EffectiveSchema metadata is inconsistent.");
     }
 
     // -------------------------------------------------------------------------

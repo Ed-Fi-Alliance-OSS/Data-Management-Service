@@ -32,6 +32,7 @@ public class Given_A_Mssql_Database_Provisioned_With_Generated_DDL_For_Effective
 
     private MssqlGeneratedDdlTestDatabase? _database;
     private DatabaseFingerprint? _fingerprint;
+    private EffectiveSchemaSet? _effectiveSchemaSet;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -48,8 +49,8 @@ public class Given_A_Mssql_Database_Provisioned_With_Generated_DDL_For_Effective
             FixtureRelativePath
         );
 
-        var effectiveSchemaSet = EffectiveSchemaFixtureLoader.LoadFromFixtureDirectory(fixtureDirectory);
-        var (_, combinedSql) = DdlPipelineHelpers.BuildDdlForDialect(effectiveSchemaSet, SqlDialect.Mssql);
+        _effectiveSchemaSet = EffectiveSchemaFixtureLoader.LoadFromFixtureDirectory(fixtureDirectory);
+        var (_, combinedSql) = DdlPipelineHelpers.BuildDdlForDialect(_effectiveSchemaSet, SqlDialect.Mssql);
 
         _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(combinedSql);
 
@@ -76,5 +77,6 @@ public class Given_A_Mssql_Database_Provisioned_With_Generated_DDL_For_Effective
         _fingerprint.Should().NotBeNull();
         _fingerprint!.EffectiveSchemaHash.Should().NotBeNullOrEmpty();
         _fingerprint.EffectiveSchemaHash.Should().NotBe("NOT_A_REAL_HASH");
+        _fingerprint.EffectiveSchemaHash.Should().Be(_effectiveSchemaSet!.EffectiveSchema.EffectiveSchemaHash);
     }
 }

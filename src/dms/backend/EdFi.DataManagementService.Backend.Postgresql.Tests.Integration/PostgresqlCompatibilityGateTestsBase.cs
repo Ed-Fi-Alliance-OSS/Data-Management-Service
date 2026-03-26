@@ -59,7 +59,10 @@ public abstract class PostgresqlCompatibilityGateTestsBase : CompatibilityGateTe
 
     protected override async Task DisposeDatabaseAsync()
     {
-        await _database.DisposeAsync();
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+        }
     }
 
     protected override async Task RestoreResourceKeyRowsAsync(IReadOnlyList<ResourceKeyRow> rows)

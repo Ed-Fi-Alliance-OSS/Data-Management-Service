@@ -32,6 +32,7 @@ public class Given_A_Postgresql_Database_Provisioned_With_Generated_DDL_For_Effe
 
     private PostgresqlGeneratedDdlTestDatabase? _database;
     private DatabaseFingerprint? _fingerprint;
+    private EffectiveSchemaSet? _effectiveSchemaSet;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -41,8 +42,8 @@ public class Given_A_Postgresql_Database_Provisioned_With_Generated_DDL_For_Effe
             FixtureRelativePath
         );
 
-        var effectiveSchemaSet = EffectiveSchemaFixtureLoader.LoadFromFixtureDirectory(fixtureDirectory);
-        var (_, combinedSql) = DdlPipelineHelpers.BuildDdlForDialect(effectiveSchemaSet, SqlDialect.Pgsql);
+        _effectiveSchemaSet = EffectiveSchemaFixtureLoader.LoadFromFixtureDirectory(fixtureDirectory);
+        var (_, combinedSql) = DdlPipelineHelpers.BuildDdlForDialect(_effectiveSchemaSet, SqlDialect.Pgsql);
 
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(combinedSql);
 
@@ -69,5 +70,6 @@ public class Given_A_Postgresql_Database_Provisioned_With_Generated_DDL_For_Effe
         _fingerprint.Should().NotBeNull();
         _fingerprint!.EffectiveSchemaHash.Should().NotBeNullOrEmpty();
         _fingerprint.EffectiveSchemaHash.Should().NotBe("NOT_A_REAL_HASH");
+        _fingerprint.EffectiveSchemaHash.Should().Be(_effectiveSchemaSet!.EffectiveSchema.EffectiveSchemaHash);
     }
 }
