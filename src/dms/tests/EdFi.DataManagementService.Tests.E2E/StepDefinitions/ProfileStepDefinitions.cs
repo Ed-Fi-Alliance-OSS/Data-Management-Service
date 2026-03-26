@@ -72,6 +72,8 @@ public class ProfileStepDefinitions(
     private string _location = string.Empty;
     private string _dmsToken = string.Empty;
     private readonly ScenarioVariables _scenarioVariables = new();
+    private const string ApiResponseContextKey = "apiResponse";
+    private const string IdContextKey = "id";
     private static readonly Lazy<Dictionary<string, HashSet<string>>> _profileCoverageByName = new(
         BuildProfileCoverageByName
     );
@@ -491,10 +493,9 @@ public class ProfileStepDefinitions(
             new("Accept", acceptHeader),
         };
 
-        _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(
-            url,
-            new() { Headers = headers }
-        )!;
+        SetCurrentApiResponse(
+            await _playwrightContext.ApiRequestContext?.GetAsync(url, new() { Headers = headers })!
+        );
 
         _logger.log.Information($"Response status: {_apiResponse.Status}");
         _logger.log.Information($"Response body: {await _apiResponse.TextAsync()}");
@@ -514,10 +515,9 @@ public class ProfileStepDefinitions(
 
         var headers = new List<KeyValuePair<string, string>> { new("Authorization", _dmsToken) };
 
-        _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(
-            url,
-            new() { Headers = headers }
-        )!;
+        SetCurrentApiResponse(
+            await _playwrightContext.ApiRequestContext?.GetAsync(url, new() { Headers = headers })!
+        );
 
         _logger.log.Information($"Response status: {_apiResponse.Status}");
         _logger.log.Information($"Response body: {await _apiResponse.TextAsync()}");
@@ -542,10 +542,9 @@ public class ProfileStepDefinitions(
             new("Accept", acceptHeader),
         };
 
-        _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(
-            url,
-            new() { Headers = headers }
-        )!;
+        SetCurrentApiResponse(
+            await _playwrightContext.ApiRequestContext?.GetAsync(url, new() { Headers = headers })!
+        );
 
         _logger.log.Information($"Response status: {_apiResponse.Status}");
         _logger.log.Information($"Response body: {await _apiResponse.TextAsync()}");
@@ -581,10 +580,12 @@ public class ProfileStepDefinitions(
             new("Content-Type", contentType),
         };
 
-        _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
-            url,
-            new() { Data = body, Headers = headers }
-        )!;
+        SetCurrentApiResponse(
+            await _playwrightContext.ApiRequestContext?.PostAsync(
+                url,
+                new() { Data = body, Headers = headers }
+            )!
+        );
 
         _logger.log.Information($"Response status: {_apiResponse.Status}");
         _logger.log.Information($"Response body: {await _apiResponse.TextAsync()}");
@@ -608,10 +609,12 @@ public class ProfileStepDefinitions(
             new("Content-Type", "application/json"),
         };
 
-        _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
-            url,
-            new() { Data = body, Headers = headers }
-        )!;
+        SetCurrentApiResponse(
+            await _playwrightContext.ApiRequestContext?.PostAsync(
+                url,
+                new() { Data = body, Headers = headers }
+            )!
+        );
 
         _logger.log.Information($"Response status: {_apiResponse.Status}");
         _logger.log.Information($"Response body: {await _apiResponse.TextAsync()}");
@@ -640,10 +643,12 @@ public class ProfileStepDefinitions(
             new("Content-Type", contentType),
         };
 
-        _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
-            url,
-            new() { Data = body, Headers = headers }
-        )!;
+        SetCurrentApiResponse(
+            await _playwrightContext.ApiRequestContext?.PostAsync(
+                url,
+                new() { Data = body, Headers = headers }
+            )!
+        );
 
         _logger.log.Information($"Response status: {_apiResponse.Status}");
         _logger.log.Information($"Response body: {await _apiResponse.TextAsync()}");
@@ -686,10 +691,12 @@ public class ProfileStepDefinitions(
             new("Content-Type", contentType),
         };
 
-        _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
-            url,
-            new() { Data = body, Headers = headers }
-        )!;
+        SetCurrentApiResponse(
+            await _playwrightContext.ApiRequestContext?.PutAsync(
+                url,
+                new() { Data = body, Headers = headers }
+            )!
+        );
 
         _logger.log.Information($"Response status: {_apiResponse.Status}");
         _logger.log.Information($"Response body: {await _apiResponse.TextAsync()}");
@@ -713,10 +720,12 @@ public class ProfileStepDefinitions(
             new("Content-Type", "application/json"),
         };
 
-        _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
-            url,
-            new() { Data = body, Headers = headers }
-        )!;
+        SetCurrentApiResponse(
+            await _playwrightContext.ApiRequestContext?.PutAsync(
+                url,
+                new() { Data = body, Headers = headers }
+            )!
+        );
 
         _logger.log.Information($"Response status: {_apiResponse.Status}");
         _logger.log.Information($"Response body: {await _apiResponse.TextAsync()}");
@@ -745,10 +754,12 @@ public class ProfileStepDefinitions(
             new("Content-Type", contentType),
         };
 
-        _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
-            url,
-            new() { Data = body, Headers = headers }
-        )!;
+        SetCurrentApiResponse(
+            await _playwrightContext.ApiRequestContext?.PutAsync(
+                url,
+                new() { Data = body, Headers = headers }
+            )!
+        );
 
         _logger.log.Information($"Response status: {_apiResponse.Status}");
         _logger.log.Information($"Response body: {await _apiResponse.TextAsync()}");
@@ -764,19 +775,21 @@ public class ProfileStepDefinitions(
     [Then(@"the profile response status is (\d+)")]
     public void ThenTheProfileResponseStatusIs(int expectedStatus)
     {
-        string body = _apiResponse.TextAsync().Result;
-        _logger.log.Information($"Validating status {expectedStatus}, actual: {_apiResponse.Status}");
-        _apiResponse.Status.Should().Be(expectedStatus, body);
+        IAPIResponse apiResponse = GetCurrentApiResponse();
+        string body = apiResponse.TextAsync().Result;
+        _logger.log.Information($"Validating status {expectedStatus}, actual: {apiResponse.Status}");
+        apiResponse.Status.Should().Be(expectedStatus, body);
     }
 
     [Then(@"the profile response status is (\d+) or (\d+)")]
     public void ThenTheProfileResponseStatusIsOneOf(int firstStatus, int secondStatus)
     {
-        string body = _apiResponse.TextAsync().Result;
+        IAPIResponse apiResponse = GetCurrentApiResponse();
+        string body = apiResponse.TextAsync().Result;
         _logger.log.Information(
-            $"Validating status {firstStatus} or {secondStatus}, actual: {_apiResponse.Status}"
+            $"Validating status {firstStatus} or {secondStatus}, actual: {apiResponse.Status}"
         );
-        _apiResponse
+        apiResponse
             .Status.Should()
             .BeOneOf(
                 new[] { firstStatus, secondStatus },
@@ -791,7 +804,7 @@ public class ProfileStepDefinitions(
     [Then(@"the response body should only contain fields ""([^""]*)""")]
     public async Task ThenTheResponseBodyShouldOnlyContainFields(string expectedFieldsCsv)
     {
-        string responseBody = await _apiResponse.TextAsync();
+        string responseBody = await GetCurrentApiResponse().TextAsync();
         JsonNode responseJson = JsonNode.Parse(responseBody)!;
 
         // Handle both single object and array responses
@@ -832,7 +845,7 @@ public class ProfileStepDefinitions(
     [Then(@"the response body should not contain fields ""([^""]*)""")]
     public async Task ThenTheResponseBodyShouldNotContainFields(string excludedFieldsCsv)
     {
-        string responseBody = await _apiResponse.TextAsync();
+        string responseBody = await GetCurrentApiResponse().TextAsync();
         JsonNode responseJson = JsonNode.Parse(responseBody)!;
 
         // Handle both single object and array responses
@@ -863,7 +876,7 @@ public class ProfileStepDefinitions(
     [Then(@"the response body should contain fields ""([^""]*)""")]
     public async Task ThenTheResponseBodyShouldContainFields(string requiredFieldsCsv)
     {
-        string responseBody = await _apiResponse.TextAsync();
+        string responseBody = await GetCurrentApiResponse().TextAsync();
         JsonNode responseJson = JsonNode.Parse(responseBody)!;
 
         // Handle both single object and array responses
@@ -897,7 +910,7 @@ public class ProfileStepDefinitions(
         string expectedValue
     )
     {
-        string responseBody = await _apiResponse.TextAsync();
+        string responseBody = await GetCurrentApiResponse().TextAsync();
         JsonNode responseJson = JsonNode.Parse(responseBody)!;
 
         // Handle both single object and array responses
@@ -941,7 +954,7 @@ public class ProfileStepDefinitions(
         string excludedValue
     )
     {
-        string responseBody = await _apiResponse.TextAsync();
+        string responseBody = await GetCurrentApiResponse().TextAsync();
         JsonNode responseJson = JsonNode.Parse(responseBody)!;
 
         // Handle both single object and array responses
@@ -982,7 +995,7 @@ public class ProfileStepDefinitions(
     [Then(@"the response body should contain path ""([^""]*)""")]
     public async Task ThenTheResponseBodyShouldContainPath(string jsonPath)
     {
-        string responseBody = await _apiResponse.TextAsync();
+        string responseBody = await GetCurrentApiResponse().TextAsync();
         JsonNode responseJson = JsonNode.Parse(responseBody)!;
 
         // Handle both single object and array responses
@@ -1010,7 +1023,7 @@ public class ProfileStepDefinitions(
     [Then(@"the response body should not contain path ""([^""]*)""")]
     public async Task ThenTheResponseBodyShouldNotContainPath(string jsonPath)
     {
-        string responseBody = await _apiResponse.TextAsync();
+        string responseBody = await GetCurrentApiResponse().TextAsync();
         JsonNode responseJson = JsonNode.Parse(responseBody)!;
 
         // Handle both single object and array responses
@@ -1037,7 +1050,7 @@ public class ProfileStepDefinitions(
     [Then(@"the response body path ""([^""]*)"" should have value ""([^""]*)""")]
     public async Task ThenTheResponseBodyPathShouldHaveValue(string jsonPath, string expectedValue)
     {
-        string responseBody = await _apiResponse.TextAsync();
+        string responseBody = await GetCurrentApiResponse().TextAsync();
         JsonNode responseJson = JsonNode.Parse(responseBody)!;
 
         // Handle both single object and array responses
@@ -1119,7 +1132,7 @@ public class ProfileStepDefinitions(
     [Then(@"the response body should have error type ""([^""]*)""")]
     public async Task ThenTheResponseBodyShouldHaveErrorType(string expectedType)
     {
-        string responseBody = await _apiResponse.TextAsync();
+        string responseBody = await GetCurrentApiResponse().TextAsync();
         JsonNode responseJson = JsonNode.Parse(responseBody)!;
 
         if (responseJson is JsonObject jsonObject)
@@ -1142,7 +1155,7 @@ public class ProfileStepDefinitions(
     [Then(@"the response body should have error message ""([^""]*)""")]
     public async Task ThenTheResponseBodyShouldHaveErrorMessage(string expectedMessage)
     {
-        string responseBody = await _apiResponse.TextAsync();
+        string responseBody = await GetCurrentApiResponse().TextAsync();
         JsonNode responseJson = JsonNode.Parse(responseBody)!;
 
         if (responseJson is JsonObject jsonObject)
@@ -1173,7 +1186,7 @@ public class ProfileStepDefinitions(
     [Then(@"the response body should have detail ""([^""]*)""")]
     public async Task ThenTheResponseBodyShouldHaveDetail(string expectedDetail)
     {
-        string responseBody = await _apiResponse.TextAsync();
+        string responseBody = await GetCurrentApiResponse().TextAsync();
         JsonNode? responseJson = JsonNode.Parse(responseBody);
         responseJson.Should().NotBeNull("Response should be valid JSON");
 
@@ -1203,7 +1216,7 @@ public class ProfileStepDefinitions(
     [Then(@"the response body errors should match regex ""([^""]*)""")]
     public async Task ThenTheResponseBodyErrorsShouldMatchRegex(string regexPattern)
     {
-        string responseBody = await _apiResponse.TextAsync();
+        string responseBody = await GetCurrentApiResponse().TextAsync();
         JsonNode? responseJson = JsonNode.Parse(responseBody);
         responseJson.Should().NotBeNull("Response should be valid JSON");
 
@@ -1255,7 +1268,7 @@ public class ProfileStepDefinitions(
             if (jsonObject.TryGetPropertyValue("status", out JsonNode? statusNode))
             {
                 int? bodyStatus = statusNode?.GetValue<int>();
-                bodyStatus.Should().Be(_apiResponse.Status, $"Response: {responseBody}");
+                bodyStatus.Should().Be(GetCurrentApiResponse().Status, $"Response: {responseBody}");
             }
             else
             {
@@ -1278,17 +1291,19 @@ public class ProfileStepDefinitions(
     public void ThenTheProfileResponseHeadersInclude(string headers)
     {
         JsonNode expectedHeaders = JsonNode.Parse(headers)!;
+        IAPIResponse apiResponse = GetCurrentApiResponse();
+
         foreach ((string? key, JsonNode? value) in expectedHeaders.AsObject())
         {
             string expectedValue = value?.ToString() ?? string.Empty;
 
-            string? actualHeaderKey = _apiResponse.Headers.Keys.FirstOrDefault(k =>
+            string? actualHeaderKey = apiResponse.Headers.Keys.FirstOrDefault(k =>
                 k.Equals(key, StringComparison.OrdinalIgnoreCase)
             );
 
             actualHeaderKey.Should().NotBeNull($"Response should include header '{key}'");
 
-            _apiResponse
+            apiResponse
                 .Headers[actualHeaderKey!]
                 .Should()
                 .Contain(expectedValue, $"Header '{key}' should contain '{expectedValue}'");
@@ -1306,7 +1321,7 @@ public class ProfileStepDefinitions(
         string expectedValue
     )
     {
-        string responseBody = await _apiResponse.TextAsync();
+        string responseBody = await GetCurrentApiResponse().TextAsync();
         JsonNode responseJson = JsonNode.Parse(responseBody)!;
 
         JsonObject rootObject = responseJson is JsonArray jsonArray
@@ -1354,7 +1369,7 @@ public class ProfileStepDefinitions(
     [Then(@"the ""([^""]*)"" collection should have (\d+) items?")]
     public async Task ThenTheCollectionShouldHaveItems(string collectionName, int expectedCount)
     {
-        string responseBody = await _apiResponse.TextAsync();
+        string responseBody = await GetCurrentApiResponse().TextAsync();
         JsonNode responseJson = JsonNode.Parse(responseBody)!;
 
         JsonObject rootObject = responseJson is JsonArray jsonArray
@@ -1405,10 +1420,12 @@ public class ProfileStepDefinitions(
         // Build headers, including Content-Type for multi-profile applications
         var headers = GetHeadersForPost(url);
 
-        _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
-            url,
-            new() { Data = body, Headers = headers }
-        )!;
+        SetCurrentApiResponse(
+            await _playwrightContext.ApiRequestContext?.PostAsync(
+                url,
+                new() { Data = body, Headers = headers }
+            )!
+        );
 
         string responseBody = await _apiResponse.TextAsync();
         _logger.log.Information($"Response status: {_apiResponse.Status}");
@@ -1430,10 +1447,12 @@ public class ProfileStepDefinitions(
                 new("Content-Type", "application/json"),
             };
 
-            _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
-                url,
-                new() { Data = body, Headers = seedHeaders }
-            )!;
+            SetCurrentApiResponse(
+                await _playwrightContext.ApiRequestContext?.PostAsync(
+                    url,
+                    new() { Data = body, Headers = seedHeaders }
+                )!
+            );
 
             responseBody = await _apiResponse.TextAsync();
             _logger.log.Information($"Retry response status: {_apiResponse.Status}");
@@ -1483,6 +1502,7 @@ public class ProfileStepDefinitions(
             _location = value;
             string[] segments = _location.Split('/');
             _id = segments[^1];
+            _scenarioContext[IdContextKey] = _id;
 
             // Only add to scenario variables if not already defined (first POST).
             // Subsequent POSTs update the instance field but don't overwrite the scenario variable.
@@ -1504,6 +1524,25 @@ public class ProfileStepDefinitions(
         input = input.StartsWith("metadata") ? input : $"data/{input}";
 
         return input;
+    }
+
+    private IAPIResponse GetCurrentApiResponse()
+    {
+        if (
+            _scenarioContext.TryGetValue(ApiResponseContextKey, out object? apiResponseObject)
+            && apiResponseObject is IAPIResponse apiResponse
+        )
+        {
+            return apiResponse;
+        }
+
+        return _apiResponse;
+    }
+
+    private void SetCurrentApiResponse(IAPIResponse apiResponse)
+    {
+        _apiResponse = apiResponse;
+        _scenarioContext[ApiResponseContextKey] = apiResponse;
     }
 
     /// <summary>

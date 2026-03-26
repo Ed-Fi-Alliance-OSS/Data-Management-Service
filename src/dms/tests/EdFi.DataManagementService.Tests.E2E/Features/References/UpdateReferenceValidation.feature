@@ -189,10 +189,16 @@ Feature: Update Reference Validation
               And the response body is
                   """
                   {
-                      "detail": "The referenced Section item(s) do not exist.",
+                      "detail": "One or more references could not be resolved. See 'validationErrors' for details.",
                       "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                       "title": "Unresolved Reference",
                       "status": 409,
-                      "correlationId": null
+                      "correlationId": null,
+                      "validationErrors": {
+                          "$.sectionReference": [
+                              "The referenced Section item does not exist."
+                          ]
+                      },
+                      "errors": []
                   }
                   """

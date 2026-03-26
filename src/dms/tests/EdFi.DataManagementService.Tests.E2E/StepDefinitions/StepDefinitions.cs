@@ -54,6 +54,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         private Dictionary<string, string> _relationships = [];
         private int _lastUploadStatusCode = 0;
         private int? _directResponseStatusCode;
+        private const string ApiResponseContextKey = "apiResponse";
+        private const string IdContextKey = "id";
 
         #region Given
 
@@ -413,12 +415,13 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         {
             _logger.log.Information($"POST url: {url}");
             _logger.log.Information($"POST body: {body}");
-            _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
-                url,
-                new() { Data = body, Headers = GetHeaders() }
-            )!;
+            SetCurrentApiResponse(
+                await _playwrightContext.ApiRequestContext?.PostAsync(
+                    url,
+                    new() { Data = body, Headers = GetHeaders() }
+                )!
+            );
             _featureContext["_waitOnNextQuery"] = true;
-            _featureContext["_apiResponse"] = _apiResponse;
             _logger.log.Information(_apiResponse.TextAsync().Result);
 
             _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
@@ -434,7 +437,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             {
                 _location = value;
                 var segments = _location.Split('/');
-                return segments[^1];
+                string id = segments[^1];
+                _scenarioContext[IdContextKey] = id;
+
+                return id;
             }
 
             return string.Empty;
@@ -569,24 +575,49 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a PUT request is made to {string} with")]
         public async Task WhenAPUTRequestIsMadeToWith(string url, string body)
         {
+            string id = GetCurrentId();
             url = AddDataPrefixIfNecessary(url)
-                .Replace("{id}", _id)
+                .Replace("{id}", id)
                 .Replace("{dependentId}", _dependentId)
                 .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
-            body = body.Replace("{id}", _id)
+            body = body.Replace("{id}", id)
                 .Replace("{dependentId}", _dependentId)
                 .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
             _logger.log.Information($"PUT url: {url}");
             _logger.log.Information($"PUT body: {body}");
-            _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
-                url,
-                new() { Data = body, Headers = GetHeaders() }
-            )!;
+            SetCurrentApiResponse(
+                await _playwrightContext.ApiRequestContext?.PutAsync(
+                    url,
+                    new() { Data = body, Headers = GetHeaders() }
+                )!
+            );
             _featureContext["_waitOnNextQuery"] = true;
 
             extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
+        }
+
+        private string GetCurrentId()
+        {
+            if (
+                string.IsNullOrWhiteSpace(_id)
+                && _scenarioContext.TryGetValue(IdContextKey, out object? idObject)
+                && idObject is string currentId
+                && !string.IsNullOrWhiteSpace(currentId)
+            )
+            {
+                _id = currentId;
+            }
+
+            return _id;
+        }
+
+        private void SetCurrentApiResponse(IAPIResponse apiResponse)
+        {
+            _apiResponse = apiResponse;
+            _scenarioContext[ApiResponseContextKey] = apiResponse;
+            _featureContext["_apiResponse"] = apiResponse;
         }
 
         [When("a PUT request is made to referenced resource {string} with")]

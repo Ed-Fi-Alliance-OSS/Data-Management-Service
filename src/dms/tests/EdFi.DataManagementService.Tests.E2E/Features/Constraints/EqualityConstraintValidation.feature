@@ -209,13 +209,19 @@ Feature: Equality Constraint Validation
               And the response body is
                   """
                   {
-                      "detail": "The referenced CourseOffering, Location item(s) do not exist.",
+                      "detail": "One or more references could not be resolved. See 'validationErrors' for details.",
                       "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                       "title": "Unresolved Reference",
                       "status": 409,
                       "correlationId": null,
-                      "validationErrors":{},
-                      "errors":[]
+                      "validationErrors": {
+                          "$.courseOfferingReference": [
+                              "The referenced CourseOffering item does not exist."
+                          ],
+                          "$.locationReference": [
+                              "The referenced Location item does not exist."
+                          ]
+                      },
+                      "errors": []
                   }
                   """
-
