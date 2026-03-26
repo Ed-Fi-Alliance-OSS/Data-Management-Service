@@ -67,7 +67,7 @@ public abstract class MssqlCompatibilityGateTestsBase : CompatibilityGateTestsBa
         if (!MssqlTestDatabaseHelper.IsConfigured())
         {
             Assert.Ignore(
-                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.Test.json"
+                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.json (or appsettings.Test.json)"
             );
         }
     }

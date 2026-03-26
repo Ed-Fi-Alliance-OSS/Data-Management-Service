@@ -39,7 +39,7 @@ public class Given_A_Mssql_Database_Provisioned_With_Generated_DDL_For_Effective
         if (!MssqlTestDatabaseHelper.IsConfigured())
         {
             Assert.Ignore(
-                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.Test.json"
+                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.json (or appsettings.Test.json)"
             );
         }
 
