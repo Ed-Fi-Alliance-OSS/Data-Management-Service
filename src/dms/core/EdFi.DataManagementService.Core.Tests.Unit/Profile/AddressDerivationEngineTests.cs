@@ -355,4 +355,113 @@ public class AddressDerivationEngineTests
             _result.SemanticIdentityInOrder[0].IsPresent.Should().BeTrue();
         }
     }
+
+    [TestFixture]
+    public class Given_same_json_data_from_request_and_stored_sides : AddressDerivationEngineTests
+    {
+        private CollectionRowAddress _requestResult = null!;
+        private CollectionRowAddress _storedResult = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var catalog = BuildTestScopeCatalog();
+            var requestEngine = new AddressDerivationEngine(catalog);
+            var storedEngine = new AddressDerivationEngine(catalog);
+
+            var collectionItem = new JsonObject { ["classPeriodName"] = "First Period" };
+            var identicalItem = new JsonObject { ["classPeriodName"] = "First Period" };
+
+            _requestResult = requestEngine.DeriveCollectionRowAddress(
+                "$.classPeriods[*]",
+                collectionItem,
+                []
+            );
+
+            _storedResult = storedEngine.DeriveCollectionRowAddress("$.classPeriods[*]", identicalItem, []);
+        }
+
+        [Test]
+        public void It_should_produce_identical_JsonScope()
+        {
+            _requestResult.JsonScope.Should().Be(_storedResult.JsonScope);
+        }
+
+        [Test]
+        public void It_should_produce_identical_parent_address()
+        {
+            _requestResult.ParentAddress.JsonScope.Should().Be(_storedResult.ParentAddress.JsonScope);
+            _requestResult
+                .ParentAddress.AncestorCollectionInstances.Length.Should()
+                .Be(_storedResult.ParentAddress.AncestorCollectionInstances.Length);
+        }
+
+        [Test]
+        public void It_should_produce_identical_semantic_identity()
+        {
+            _requestResult
+                .SemanticIdentityInOrder.Length.Should()
+                .Be(_storedResult.SemanticIdentityInOrder.Length);
+            _requestResult
+                .SemanticIdentityInOrder[0]
+                .RelativePath.Should()
+                .Be(_storedResult.SemanticIdentityInOrder[0].RelativePath);
+            _requestResult
+                .SemanticIdentityInOrder[0]
+                .Value!.ToString()
+                .Should()
+                .Be(_storedResult.SemanticIdentityInOrder[0].Value!.ToString());
+            _requestResult
+                .SemanticIdentityInOrder[0]
+                .IsPresent.Should()
+                .Be(_storedResult.SemanticIdentityInOrder[0].IsPresent);
+        }
+    }
+
+    [TestFixture]
+    public class Given_missing_vs_null_semantic_identity_member : AddressDerivationEngineTests
+    {
+        private CollectionRowAddress _resultWithNull = null!;
+        private CollectionRowAddress _resultWithMissing = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var engine = new AddressDerivationEngine(BuildTestScopeCatalog());
+
+            // Explicit null: property exists but value is null
+            var itemWithNull = new JsonObject { ["classPeriodName"] = null };
+
+            // Missing: property does not exist at all
+            var itemWithMissing = new JsonObject { ["somethingElse"] = "irrelevant" };
+
+            _resultWithNull = engine.DeriveCollectionRowAddress("$.classPeriods[*]", itemWithNull, []);
+
+            _resultWithMissing = engine.DeriveCollectionRowAddress("$.classPeriods[*]", itemWithMissing, []);
+        }
+
+        [Test]
+        public void It_should_mark_explicit_null_as_present()
+        {
+            _resultWithNull.SemanticIdentityInOrder[0].IsPresent.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_should_have_null_value_for_explicit_null()
+        {
+            _resultWithNull.SemanticIdentityInOrder[0].Value.Should().BeNull();
+        }
+
+        [Test]
+        public void It_should_mark_missing_property_as_not_present()
+        {
+            _resultWithMissing.SemanticIdentityInOrder[0].IsPresent.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_should_have_null_value_for_missing_property()
+        {
+            _resultWithMissing.SemanticIdentityInOrder[0].Value.Should().BeNull();
+        }
+    }
 }
