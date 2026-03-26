@@ -43,7 +43,7 @@ public class AppSettings
     public string? AuthenticationService { get; set; }
 
     /// <summary>
-    /// If true, enables management endpoints like schema reload.
+    /// If true, enables management endpoints like claimset reload.
     /// </summary>
     public bool EnableManagementEndpoints { get; set; }
 

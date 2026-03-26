@@ -255,7 +255,6 @@ internal class ProfileWriteValidationMiddleware(
                 requestInfo.ProjectSchema.ProjectName,
                 requestInfo.ResourceSchema.ResourceName,
                 requestInfo.Method,
-                requestInfo.ApiSchemaLoadId,
                 () => CompileSchema(requestInfo.ResourceSchema, requestInfo.Method)
             );
         }

@@ -79,7 +79,7 @@ public class ApiSchemaValidationMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
-    public class HotReloadScenarios : ApiSchemaValidationMiddlewareTests
+    public class SchemaValidationScenarios : ApiSchemaValidationMiddlewareTests
     {
         private IApiSchemaProvider _mockProvider = null!;
         private ApiSchemaValidationMiddleware _middleware = null!;

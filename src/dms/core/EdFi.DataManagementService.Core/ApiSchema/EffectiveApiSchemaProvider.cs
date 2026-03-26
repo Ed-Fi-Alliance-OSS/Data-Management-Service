@@ -133,7 +133,7 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
             _schemaId = Guid.NewGuid();
 
             _logger.LogInformation("Priming compiled schema cache");
-            _compiledSchemaCache.Prime(_documents, _schemaId);
+            _compiledSchemaCache.Prime(_documents);
 
             _isInitialized = true;
 

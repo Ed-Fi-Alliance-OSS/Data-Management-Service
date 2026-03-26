@@ -21,7 +21,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Validation;
 public class DocumentValidatorTests
 {
     [Test]
-    public void Validate_UsesCompiledSchemaCachePerReload()
+    public void Validate_UsesCompiledSchemaCachePerSchemaLoad()
     {
         var cache = new CountingCompiledSchemaCache();
         var validator = new DocumentValidator(cache);
@@ -91,7 +91,6 @@ public class DocumentValidatorTests
             ProjectName projectName,
             ResourceName resourceName,
             RequestMethod method,
-            Guid schemaLoadId,
             Func<JsonSchema> schemaFactory
         )
         {
@@ -99,7 +98,6 @@ public class DocumentValidatorTests
                 projectName,
                 resourceName,
                 method,
-                schemaLoadId,
                 () =>
                 {
                     Interlocked.Increment(ref _factoryInvocationCount);
@@ -108,7 +106,6 @@ public class DocumentValidatorTests
             );
         }
 
-        public void Prime(ApiSchemaDocuments documents, Guid schemaLoadId) =>
-            _inner.Prime(documents, schemaLoadId);
+        public void Prime(ApiSchemaDocuments documents) => _inner.Prime(documents);
     }
 }
