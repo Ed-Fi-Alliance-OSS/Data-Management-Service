@@ -25,25 +25,30 @@ public record UpsertResult
     public record UpdateSuccess(DocumentUuid ExistingDocumentUuid) : UpsertResult();
 
     /// <summary>
-    /// A failure because referenced documents in the upserted document could not be resolved
+    /// A failure because referenced documents and/or descriptors in the upserted document are invalid
     /// </summary>
-    /// <param name="InvalidDocumentReferences">The invalid references keyed by concrete path instance</param>
-    public record UpsertFailureReference(DocumentReferenceFailure[] InvalidDocumentReferences)
-        : UpsertResult()
+    /// <param name="InvalidDocumentReferences">
+    /// The invalid document references keyed by concrete path instance
+    /// </param>
+    /// <param name="InvalidDescriptorReferences">
+    /// The invalid descriptor references keyed by concrete path instance
+    /// </param>
+    public record UpsertFailureReference(
+        DocumentReferenceFailure[] InvalidDocumentReferences,
+        DescriptorReferenceFailure[] InvalidDescriptorReferences
+    ) : UpsertResult()
     {
+        public bool HasDocumentReferenceFailures => InvalidDocumentReferences.Length != 0;
+
+        public bool HasDescriptorReferenceFailures => InvalidDescriptorReferences.Length != 0;
+
         public ResourceName[] GetResourceNames() =>
             InvalidDocumentReferences
                 .Select(failure => failure.TargetResource.ResourceName)
+                .Concat(InvalidDescriptorReferences.Select(failure => failure.TargetResource.ResourceName))
                 .Distinct()
                 .ToArray();
     }
-
-    /// <summary>
-    /// A failure because referenced descriptors in the upserted document are invalid
-    /// </summary>
-    /// <param name="InvalidDescriptorReferences">The invalid descriptor references keyed by concrete path instance</param>
-    public record UpsertFailureDescriptorReference(DescriptorReferenceFailure[] InvalidDescriptorReferences)
-        : UpsertResult();
 
     /// <summary>
     /// A failure because there is a different document with the same identity

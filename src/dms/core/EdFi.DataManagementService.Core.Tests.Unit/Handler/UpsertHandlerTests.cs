@@ -91,22 +91,25 @@ public class UpsertHandlerTests
                 var sharedReferentialId = new ReferentialId(Guid.NewGuid());
 
                 return Task.FromResult<UpsertResult>(
-                    new UpsertFailureReference([
-                        new(
-                            Path: new JsonPath("$.schoolReference"),
-                            TargetResource: _targetResource,
-                            DocumentIdentity: new([]),
-                            ReferentialId: sharedReferentialId,
-                            Reason: DocumentReferenceFailureReason.Missing
-                        ),
-                        new(
-                            Path: new JsonPath("$.sessionReference.schoolReference"),
-                            TargetResource: _targetResource,
-                            DocumentIdentity: new([]),
-                            ReferentialId: sharedReferentialId,
-                            Reason: DocumentReferenceFailureReason.Missing
-                        ),
-                    ])
+                    new UpsertFailureReference(
+                        [
+                            new(
+                                Path: new JsonPath("$.schoolReference"),
+                                TargetResource: _targetResource,
+                                DocumentIdentity: new([]),
+                                ReferentialId: sharedReferentialId,
+                                Reason: DocumentReferenceFailureReason.Missing
+                            ),
+                            new(
+                                Path: new JsonPath("$.sessionReference.schoolReference"),
+                                TargetResource: _targetResource,
+                                DocumentIdentity: new([]),
+                                ReferentialId: sharedReferentialId,
+                                Reason: DocumentReferenceFailureReason.Missing
+                            ),
+                        ],
+                        []
+                    )
                 );
             }
         }
@@ -159,24 +162,27 @@ public class UpsertHandlerTests
             public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
             {
                 return Task.FromResult<UpsertResult>(
-                    new UpsertFailureDescriptorReference([
-                        new(
-                            Path: new JsonPath("$.schoolTypeDescriptor"),
-                            TargetResource: new BaseResourceInfo(
-                                new ProjectName("ed-fi"),
-                                new ResourceName("SchoolTypeDescriptor"),
-                                true
-                            ),
-                            DocumentIdentity: new([
-                                new(
-                                    DocumentIdentity.DescriptorIdentityJsonPath,
-                                    "uri://ed-fi.org/schooltypedescriptor#elementary"
+                    new UpsertFailureReference(
+                        [],
+                        [
+                            new(
+                                Path: new JsonPath("$.schoolTypeDescriptor"),
+                                TargetResource: new BaseResourceInfo(
+                                    new ProjectName("ed-fi"),
+                                    new ResourceName("SchoolTypeDescriptor"),
+                                    true
                                 ),
-                            ]),
-                            ReferentialId: new ReferentialId(Guid.NewGuid()),
-                            Reason: DescriptorReferenceFailureReason.Missing
-                        ),
-                    ])
+                                DocumentIdentity: new([
+                                    new(
+                                        DocumentIdentity.DescriptorIdentityJsonPath,
+                                        "uri://ed-fi.org/schooltypedescriptor#elementary"
+                                    ),
+                                ]),
+                                ReferentialId: new ReferentialId(Guid.NewGuid()),
+                                Reason: DescriptorReferenceFailureReason.Missing
+                            ),
+                        ]
+                    )
                 );
             }
         }
@@ -223,24 +229,27 @@ public class UpsertHandlerTests
             public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
             {
                 return Task.FromResult<UpsertResult>(
-                    new UpsertFailureDescriptorReference([
-                        new(
-                            Path: new JsonPath("$.schoolTypeDescriptor"),
-                            TargetResource: new BaseResourceInfo(
-                                new ProjectName("ed-fi"),
-                                new ResourceName("SchoolTypeDescriptor"),
-                                true
-                            ),
-                            DocumentIdentity: new([
-                                new(
-                                    DocumentIdentity.DescriptorIdentityJsonPath,
-                                    "uri://ed-fi.org/gradeleveldescriptor#first-grade"
+                    new UpsertFailureReference(
+                        [],
+                        [
+                            new(
+                                Path: new JsonPath("$.schoolTypeDescriptor"),
+                                TargetResource: new BaseResourceInfo(
+                                    new ProjectName("ed-fi"),
+                                    new ResourceName("SchoolTypeDescriptor"),
+                                    true
                                 ),
-                            ]),
-                            ReferentialId: new ReferentialId(Guid.NewGuid()),
-                            Reason: DescriptorReferenceFailureReason.DescriptorTypeMismatch
-                        ),
-                    ])
+                                DocumentIdentity: new([
+                                    new(
+                                        DocumentIdentity.DescriptorIdentityJsonPath,
+                                        "uri://ed-fi.org/gradeleveldescriptor#first-grade"
+                                    ),
+                                ]),
+                                ReferentialId: new ReferentialId(Guid.NewGuid()),
+                                Reason: DescriptorReferenceFailureReason.DescriptorTypeMismatch
+                            ),
+                        ]
+                    )
                 );
             }
         }

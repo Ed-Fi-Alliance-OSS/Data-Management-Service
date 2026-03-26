@@ -148,22 +148,25 @@ public class UpdateByIdHandlerTests
                 var sharedReferentialId = new ReferentialId(Guid.NewGuid());
 
                 return Task.FromResult<UpdateResult>(
-                    new UpdateFailureReference([
-                        new(
-                            Path: new JsonPath("$.schoolReference"),
-                            TargetResource: _targetResource,
-                            DocumentIdentity: new([]),
-                            ReferentialId: sharedReferentialId,
-                            Reason: DocumentReferenceFailureReason.Missing
-                        ),
-                        new(
-                            Path: new JsonPath("$.sessionReference.schoolReference"),
-                            TargetResource: _targetResource,
-                            DocumentIdentity: new([]),
-                            ReferentialId: sharedReferentialId,
-                            Reason: DocumentReferenceFailureReason.Missing
-                        ),
-                    ])
+                    new UpdateFailureReference(
+                        [
+                            new(
+                                Path: new JsonPath("$.schoolReference"),
+                                TargetResource: _targetResource,
+                                DocumentIdentity: new([]),
+                                ReferentialId: sharedReferentialId,
+                                Reason: DocumentReferenceFailureReason.Missing
+                            ),
+                            new(
+                                Path: new JsonPath("$.sessionReference.schoolReference"),
+                                TargetResource: _targetResource,
+                                DocumentIdentity: new([]),
+                                ReferentialId: sharedReferentialId,
+                                Reason: DocumentReferenceFailureReason.Missing
+                            ),
+                        ],
+                        []
+                    )
                 );
             }
         }
@@ -214,24 +217,27 @@ public class UpdateByIdHandlerTests
             public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
             {
                 return Task.FromResult<UpdateResult>(
-                    new UpdateFailureDescriptorReference([
-                        new(
-                            Path: new JsonPath("$.calendarReference.calendarTypeDescriptor"),
-                            TargetResource: new BaseResourceInfo(
-                                new ProjectName("ed-fi"),
-                                new ResourceName("CalendarTypeDescriptor"),
-                                true
-                            ),
-                            DocumentIdentity: new([
-                                new(
-                                    DocumentIdentity.DescriptorIdentityJsonPath,
-                                    "uri://ed-fi.org/calendartypedescriptor#spring"
+                    new UpdateFailureReference(
+                        [],
+                        [
+                            new(
+                                Path: new JsonPath("$.calendarReference.calendarTypeDescriptor"),
+                                TargetResource: new BaseResourceInfo(
+                                    new ProjectName("ed-fi"),
+                                    new ResourceName("CalendarTypeDescriptor"),
+                                    true
                                 ),
-                            ]),
-                            ReferentialId: new ReferentialId(Guid.NewGuid()),
-                            Reason: DescriptorReferenceFailureReason.Missing
-                        ),
-                    ])
+                                DocumentIdentity: new([
+                                    new(
+                                        DocumentIdentity.DescriptorIdentityJsonPath,
+                                        "uri://ed-fi.org/calendartypedescriptor#spring"
+                                    ),
+                                ]),
+                                ReferentialId: new ReferentialId(Guid.NewGuid()),
+                                Reason: DescriptorReferenceFailureReason.Missing
+                            ),
+                        ]
+                    )
                 );
             }
         }
@@ -278,24 +284,27 @@ public class UpdateByIdHandlerTests
             public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
             {
                 return Task.FromResult<UpdateResult>(
-                    new UpdateFailureDescriptorReference([
-                        new(
-                            Path: new JsonPath("$.calendarReference.calendarTypeDescriptor"),
-                            TargetResource: new BaseResourceInfo(
-                                new ProjectName("ed-fi"),
-                                new ResourceName("CalendarTypeDescriptor"),
-                                true
-                            ),
-                            DocumentIdentity: new([
-                                new(
-                                    DocumentIdentity.DescriptorIdentityJsonPath,
-                                    "uri://ed-fi.org/schooltypedescriptor#elementary"
+                    new UpdateFailureReference(
+                        [],
+                        [
+                            new(
+                                Path: new JsonPath("$.calendarReference.calendarTypeDescriptor"),
+                                TargetResource: new BaseResourceInfo(
+                                    new ProjectName("ed-fi"),
+                                    new ResourceName("CalendarTypeDescriptor"),
+                                    true
                                 ),
-                            ]),
-                            ReferentialId: new ReferentialId(Guid.NewGuid()),
-                            Reason: DescriptorReferenceFailureReason.DescriptorTypeMismatch
-                        ),
-                    ])
+                                DocumentIdentity: new([
+                                    new(
+                                        DocumentIdentity.DescriptorIdentityJsonPath,
+                                        "uri://ed-fi.org/schooltypedescriptor#elementary"
+                                    ),
+                                ]),
+                                ReferentialId: new ReferentialId(Guid.NewGuid()),
+                                Reason: DescriptorReferenceFailureReason.DescriptorTypeMismatch
+                            ),
+                        ]
+                    )
                 );
             }
         }

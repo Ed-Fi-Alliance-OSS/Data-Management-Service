@@ -966,7 +966,10 @@ public class UpsertTests : DatabaseTest
         [Test]
         public void It_should_be_a_reference_failure()
         {
-            _upsertResult!.Should().BeOfType<UpsertResult.UpsertFailureDescriptorReference>();
+            _upsertResult!.Should().BeOfType<UpsertResult.UpsertFailureReference>();
+            var failure = (UpsertResult.UpsertFailureReference)_upsertResult!;
+            failure.InvalidDocumentReferences.Should().BeEmpty();
+            failure.InvalidDescriptorReferences.Should().ContainSingle();
         }
     }
 
@@ -1074,7 +1077,10 @@ public class UpsertTests : DatabaseTest
         [Test]
         public void It_should_be_a_reference_failure()
         {
-            _upsertResult!.Should().BeOfType<UpsertResult.UpsertFailureDescriptorReference>();
+            _upsertResult!.Should().BeOfType<UpsertResult.UpsertFailureReference>();
+            var failure = (UpsertResult.UpsertFailureReference)_upsertResult!;
+            failure.InvalidDocumentReferences.Should().BeEmpty();
+            failure.InvalidDescriptorReferences.Should().ContainSingle();
         }
     }
 

@@ -102,7 +102,7 @@ internal class UpsertHandler(
                     updateSuccess.ExistingDocumentUuid
                 )
             ),
-            UpsertFailureDescriptorReference failure => new(
+            UpsertFailureReference failure when failure.HasDescriptorReferenceFailures => new(
                 StatusCode: 400,
                 Body: ForBadRequest(
                     "Data validation failed. See 'validationErrors' for details.",

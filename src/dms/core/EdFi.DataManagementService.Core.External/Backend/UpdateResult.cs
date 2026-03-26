@@ -28,25 +28,30 @@ public record UpdateResult
     public record UpdateFailureETagMisMatch() : UpdateResult();
 
     /// <summary>
-    /// A failure because referenced documents in the updated document could not be resolved
+    /// A failure because referenced documents and/or descriptors in the updated document are invalid
     /// </summary>
-    /// <param name="InvalidDocumentReferences">The invalid references keyed by concrete path instance</param>
-    public record UpdateFailureReference(DocumentReferenceFailure[] InvalidDocumentReferences)
-        : UpdateResult()
+    /// <param name="InvalidDocumentReferences">
+    /// The invalid document references keyed by concrete path instance
+    /// </param>
+    /// <param name="InvalidDescriptorReferences">
+    /// The invalid descriptor references keyed by concrete path instance
+    /// </param>
+    public record UpdateFailureReference(
+        DocumentReferenceFailure[] InvalidDocumentReferences,
+        DescriptorReferenceFailure[] InvalidDescriptorReferences
+    ) : UpdateResult()
     {
+        public bool HasDocumentReferenceFailures => InvalidDocumentReferences.Length != 0;
+
+        public bool HasDescriptorReferenceFailures => InvalidDescriptorReferences.Length != 0;
+
         public ResourceName[] GetResourceNames() =>
             InvalidDocumentReferences
                 .Select(failure => failure.TargetResource.ResourceName)
+                .Concat(InvalidDescriptorReferences.Select(failure => failure.TargetResource.ResourceName))
                 .Distinct()
                 .ToArray();
     }
-
-    /// <summary>
-    /// A failure because referenced descriptors in the updated document are invalid
-    /// </summary>
-    /// <param name="InvalidDescriptorReferences">The invalid descriptor references keyed by concrete path instance</param>
-    public record UpdateFailureDescriptorReference(DescriptorReferenceFailure[] InvalidDescriptorReferences)
-        : UpdateResult();
 
     /// <summary>
     /// A failure because there is a different document with the same identity

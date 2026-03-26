@@ -109,7 +109,7 @@ internal class UpdateByIdHandler(
                 ),
                 Headers: []
             ),
-            UpdateFailureDescriptorReference failure => new(
+            UpdateFailureReference failure when failure.HasDescriptorReferenceFailures => new(
                 StatusCode: 400,
                 Body: FailureResponse.ForBadRequest(
                     "Data validation failed. See 'validationErrors' for details.",

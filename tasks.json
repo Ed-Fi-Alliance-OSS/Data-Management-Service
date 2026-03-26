@@ -284,7 +284,7 @@
       "Confirm no new repository integration point is forced to choose one failure family when both `ResolvedReferenceSet.InvalidDocumentReferences` and `ResolvedReferenceSet.InvalidDescriptorReferences` are populated.",
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Mixed Reference Failure API Mapping",
