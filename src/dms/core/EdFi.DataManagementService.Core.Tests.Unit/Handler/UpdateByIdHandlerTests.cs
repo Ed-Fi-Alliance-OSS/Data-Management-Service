@@ -344,6 +344,95 @@ public class UpdateByIdHandlerTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Repository_That_Returns_Mixed_Reference_Failures : UpdateByIdHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            private static readonly BaseResourceInfo _documentTargetResource = new(
+                new ProjectName("ed-fi"),
+                new ResourceName("School"),
+                false
+            );
+
+            private static readonly BaseResourceInfo _descriptorTargetResource = new(
+                new ProjectName("ed-fi"),
+                new ResourceName("CalendarTypeDescriptor"),
+                true
+            );
+
+            public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
+            {
+                return Task.FromResult<UpdateResult>(
+                    new UpdateFailureReference(
+                        [
+                            new(
+                                Path: new JsonPath("$.schoolReference"),
+                                TargetResource: _documentTargetResource,
+                                DocumentIdentity: new([]),
+                                ReferentialId: new ReferentialId(Guid.NewGuid()),
+                                Reason: DocumentReferenceFailureReason.Missing
+                            ),
+                        ],
+                        [
+                            new(
+                                Path: new JsonPath("$.calendarReference.calendarTypeDescriptor"),
+                                TargetResource: _descriptorTargetResource,
+                                DocumentIdentity: new([
+                                    new(
+                                        DocumentIdentity.DescriptorIdentityJsonPath,
+                                        "uri://ed-fi.org/calendartypedescriptor#spring"
+                                    ),
+                                ]),
+                                ReferentialId: new ReferentialId(Guid.NewGuid()),
+                                Reason: DescriptorReferenceFailureReason.Missing
+                            ),
+                        ]
+                    )
+                );
+            }
+        }
+
+        private readonly RequestInfo requestInfo = No.RequestInfo();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (updateByIdHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            await updateByIdHandler.Execute(requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_has_the_correct_response()
+        {
+            requestInfo.FrontendResponse.StatusCode.Should().Be(409);
+
+            var body = requestInfo.FrontendResponse.Body!.AsObject();
+            body["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be("One or more references could not be resolved. See 'validationErrors' for details.");
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:data-conflict:unresolved-reference");
+            body["title"]!.GetValue<string>().Should().Be("Unresolved Reference");
+
+            var validationErrors = body["validationErrors"]!.AsObject();
+            validationErrors.Count.Should().Be(2);
+            validationErrors["$.schoolReference"]![0]!
+                .GetValue<string>()
+                .Should()
+                .Be("The referenced School item does not exist.");
+            validationErrors["$.calendarReference.calendarTypeDescriptor"]![0]!
+                .GetValue<string>()
+                .Should()
+                .Be(
+                    "CalendarTypeDescriptor value 'uri://ed-fi.org/calendartypedescriptor#spring' does not exist."
+                );
+            body["errors"]!.AsArray().Count.Should().Be(0);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Failure_Identity_Conflict : UpdateByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository

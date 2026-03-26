@@ -109,25 +109,27 @@ internal class UpdateByIdHandler(
                 ),
                 Headers: []
             ),
-            UpdateFailureReference failure when failure.HasDescriptorReferenceFailures => new(
+            UpdateFailureReference failure when failure.HasDocumentReferenceFailures => new FrontendResponse(
+                StatusCode: 409,
+                Body: FailureResponse.ForInvalidReferences(
+                    ValidationErrorFactory.BuildInvalidWriteReferenceValidationErrors(
+                        failure.InvalidDocumentReferences,
+                        failure.InvalidDescriptorReferences
+                    ),
+                    traceId: requestInfo.FrontendRequest.TraceId
+                ),
+                Headers: []
+            ),
+            UpdateFailureReference failure => new(
                 StatusCode: 400,
                 Body: FailureResponse.ForBadRequest(
                     "Data validation failed. See 'validationErrors' for details.",
                     traceId: requestInfo.FrontendRequest.TraceId,
-                    ValidationErrorFactory.BuildInvalidDescriptorValidationErrors(
+                    ValidationErrorFactory.BuildInvalidWriteReferenceValidationErrors(
+                        failure.InvalidDocumentReferences,
                         failure.InvalidDescriptorReferences
                     ),
                     []
-                ),
-                Headers: []
-            ),
-            UpdateFailureReference failure => new FrontendResponse(
-                StatusCode: 409,
-                Body: FailureResponse.ForInvalidReferences(
-                    ValidationErrorFactory.BuildInvalidReferenceValidationErrors(
-                        failure.InvalidDocumentReferences
-                    ),
-                    traceId: requestInfo.FrontendRequest.TraceId
                 ),
                 Headers: []
             ),

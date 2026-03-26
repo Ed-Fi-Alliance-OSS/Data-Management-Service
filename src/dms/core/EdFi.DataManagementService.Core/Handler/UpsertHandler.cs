@@ -102,25 +102,27 @@ internal class UpsertHandler(
                     updateSuccess.ExistingDocumentUuid
                 )
             ),
-            UpsertFailureReference failure when failure.HasDescriptorReferenceFailures => new(
-                StatusCode: 400,
-                Body: ForBadRequest(
-                    "Data validation failed. See 'validationErrors' for details.",
-                    traceId: requestInfo.FrontendRequest.TraceId,
-                    ValidationErrorFactory.BuildInvalidDescriptorValidationErrors(
+            UpsertFailureReference failure when failure.HasDocumentReferenceFailures => new(
+                StatusCode: 409,
+                Body: ForInvalidReferences(
+                    ValidationErrorFactory.BuildInvalidWriteReferenceValidationErrors(
+                        failure.InvalidDocumentReferences,
                         failure.InvalidDescriptorReferences
                     ),
-                    []
+                    traceId: requestInfo.FrontendRequest.TraceId
                 ),
                 Headers: []
             ),
             UpsertFailureReference failure => new(
-                StatusCode: 409,
-                Body: ForInvalidReferences(
-                    ValidationErrorFactory.BuildInvalidReferenceValidationErrors(
-                        failure.InvalidDocumentReferences
+                StatusCode: 400,
+                Body: ForBadRequest(
+                    "Data validation failed. See 'validationErrors' for details.",
+                    traceId: requestInfo.FrontendRequest.TraceId,
+                    ValidationErrorFactory.BuildInvalidWriteReferenceValidationErrors(
+                        failure.InvalidDocumentReferences,
+                        failure.InvalidDescriptorReferences
                     ),
-                    traceId: requestInfo.FrontendRequest.TraceId
+                    []
                 ),
                 Headers: []
             ),

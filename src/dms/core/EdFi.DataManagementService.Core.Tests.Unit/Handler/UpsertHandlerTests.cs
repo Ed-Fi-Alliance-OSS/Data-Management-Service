@@ -289,6 +289,95 @@ public class UpsertHandlerTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Repository_That_Returns_Mixed_Reference_Failures : UpsertHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            private static readonly BaseResourceInfo _documentTargetResource = new(
+                new ProjectName("ed-fi"),
+                new ResourceName("School"),
+                false
+            );
+
+            private static readonly BaseResourceInfo _descriptorTargetResource = new(
+                new ProjectName("ed-fi"),
+                new ResourceName("SchoolTypeDescriptor"),
+                true
+            );
+
+            public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
+            {
+                return Task.FromResult<UpsertResult>(
+                    new UpsertFailureReference(
+                        [
+                            new(
+                                Path: new JsonPath("$.schoolReference"),
+                                TargetResource: _documentTargetResource,
+                                DocumentIdentity: new([]),
+                                ReferentialId: new ReferentialId(Guid.NewGuid()),
+                                Reason: DocumentReferenceFailureReason.Missing
+                            ),
+                        ],
+                        [
+                            new(
+                                Path: new JsonPath("$.schoolTypeDescriptor"),
+                                TargetResource: _descriptorTargetResource,
+                                DocumentIdentity: new([
+                                    new(
+                                        DocumentIdentity.DescriptorIdentityJsonPath,
+                                        "uri://ed-fi.org/schooltypedescriptor#elementary"
+                                    ),
+                                ]),
+                                ReferentialId: new ReferentialId(Guid.NewGuid()),
+                                Reason: DescriptorReferenceFailureReason.Missing
+                            ),
+                        ]
+                    )
+                );
+            }
+        }
+
+        private readonly RequestInfo requestInfo = No.RequestInfo();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (upsertHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            await upsertHandler.Execute(requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_has_the_correct_response()
+        {
+            requestInfo.FrontendResponse.StatusCode.Should().Be(409);
+
+            var body = requestInfo.FrontendResponse.Body!.AsObject();
+            body["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be("One or more references could not be resolved. See 'validationErrors' for details.");
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:data-conflict:unresolved-reference");
+            body["title"]!.GetValue<string>().Should().Be("Unresolved Reference");
+
+            var validationErrors = body["validationErrors"]!.AsObject();
+            validationErrors.Count.Should().Be(2);
+            validationErrors["$.schoolReference"]![0]!
+                .GetValue<string>()
+                .Should()
+                .Be("The referenced School item does not exist.");
+            validationErrors["$.schoolTypeDescriptor"]![0]!
+                .GetValue<string>()
+                .Should()
+                .Be(
+                    "SchoolTypeDescriptor value 'uri://ed-fi.org/schooltypedescriptor#elementary' does not exist."
+                );
+            body["errors"]!.AsArray().Count.Should().Be(0);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Failure_Identity_Conflict : UpsertHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository

@@ -64,22 +64,40 @@ internal static class ValidationErrorFactory
     public static Dictionary<string, string[]> BuildInvalidReferenceValidationErrors(
         IEnumerable<DocumentReferenceFailure> invalidDocumentReferences
     ) =>
-        invalidDocumentReferences
-            .GroupBy(failure => failure.Path.Value)
-            .ToDictionary(
-                grouping => grouping.Key,
-                grouping => grouping.Select(BuildInvalidReferenceMessage).Distinct().ToArray()
-            );
+        BuildValidationErrors(
+            invalidDocumentReferences.Select(failure => new KeyValuePair<string, string>(
+                failure.Path.Value,
+                BuildInvalidReferenceMessage(failure)
+            ))
+        );
 
     public static Dictionary<string, string[]> BuildInvalidDescriptorValidationErrors(
         IEnumerable<DescriptorReferenceFailure> invalidDescriptorReferences
     ) =>
-        invalidDescriptorReferences
-            .GroupBy(failure => failure.Path.Value)
-            .ToDictionary(
-                grouping => grouping.Key,
-                grouping => grouping.Select(BuildInvalidDescriptorMessage).Distinct().ToArray()
-            );
+        BuildValidationErrors(
+            invalidDescriptorReferences.Select(failure => new KeyValuePair<string, string>(
+                failure.Path.Value,
+                BuildInvalidDescriptorMessage(failure)
+            ))
+        );
+
+    public static Dictionary<string, string[]> BuildInvalidWriteReferenceValidationErrors(
+        IEnumerable<DocumentReferenceFailure> invalidDocumentReferences,
+        IEnumerable<DescriptorReferenceFailure> invalidDescriptorReferences
+    ) =>
+        BuildValidationErrors(
+            invalidDocumentReferences
+                .Select(failure => new KeyValuePair<string, string>(
+                    failure.Path.Value,
+                    BuildInvalidReferenceMessage(failure)
+                ))
+                .Concat(
+                    invalidDescriptorReferences.Select(failure => new KeyValuePair<string, string>(
+                        failure.Path.Value,
+                        BuildInvalidDescriptorMessage(failure)
+                    ))
+                )
+        );
 
     /// <summary>
     /// Converts an ordinal number to its string representation (1st, 2nd, 3rd, etc.)
@@ -100,6 +118,16 @@ internal static class ValidationErrorFactory
             _ => $"{number}th",
         };
     }
+
+    private static Dictionary<string, string[]> BuildValidationErrors(
+        IEnumerable<KeyValuePair<string, string>> validationErrors
+    ) =>
+        validationErrors
+            .GroupBy(entry => entry.Key)
+            .ToDictionary(
+                grouping => grouping.Key,
+                grouping => grouping.Select(entry => entry.Value).Distinct().ToArray()
+            );
 
     private static string BuildInvalidReferenceMessage(DocumentReferenceFailure failure) =>
         failure.Reason switch
