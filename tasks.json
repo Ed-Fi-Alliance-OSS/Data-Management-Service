@@ -242,5 +242,16 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj`"
     ],
     "completed": true
+  },
+  {
+    "category": "Descriptor Failure Classification Cleanup",
+    "description": "Replace the duplicated descriptor-type mismatch heuristic in `src/dms/backend/EdFi.DataManagementService.Backend/ReferenceResolver.cs` and `src/dms/backend/EdFi.DataManagementService.Old.Postgresql/ReferenceHelper.cs` with a single authoritative classification path. Acceptance: runtime no longer parses descriptor URI text to infer `DescriptorTypeMismatch` on a lookup miss; `DescriptorTypeMismatch` is emitted only when backed by authoritative resolved metadata or one documented shared helper with identical semantics across both code paths; genuinely missing or unknown descriptors remain `Missing`; and malformed or non-standard descriptor URIs do not produce divergent behavior between the relational resolver and the legacy PostgreSQL path.",
+    "steps-to-verify": [
+      "Add or update unit tests covering: a missing descriptor whose URI text matches the expected descriptor type, a missing descriptor whose URI text implies a different descriptor type, a resolved descriptor row whose resource type does not match the expected descriptor resource, and a malformed or non-standard descriptor URI.",
+      "Confirm both the relational resolver and the legacy PostgreSQL reference helper use the same classification implementation or helper rather than duplicating URI parsing logic.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`"
+    ],
+    "completed": true
   }
 ]

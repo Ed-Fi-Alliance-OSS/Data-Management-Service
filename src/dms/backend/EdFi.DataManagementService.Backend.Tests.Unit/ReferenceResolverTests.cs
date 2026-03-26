@@ -299,6 +299,47 @@ public class Given_ReferenceResolver
     }
 
     [Test]
+    public async Task It_treats_missing_descriptors_as_missing_even_when_the_uri_text_is_nonstandard_or_implies_another_type()
+    {
+        var impliedOtherTypeReferentialId = new ReferentialId(Guid.NewGuid());
+        var malformedUriReferentialId = new ReferentialId(Guid.NewGuid());
+        var adapter = new RecordingReferenceResolverAdapter([
+            [],
+        ]);
+        var sut = new ReferenceResolver(adapter);
+
+        var result = await sut.ResolveAsync(
+            new ReferenceResolverRequest(
+                MappingSet: CreateMappingSet(),
+                RequestResource: _requestResource,
+                DocumentReferences: [],
+                DescriptorReferences:
+                [
+                    CreateDescriptorReference(
+                        impliedOtherTypeReferentialId,
+                        "uri://ed-fi.org/AcademicSubjectDescriptor#English",
+                        "$.schoolTypeDescriptor"
+                    ),
+                    CreateDescriptorReference(
+                        malformedUriReferentialId,
+                        "not-a-standard-descriptor-uri",
+                        "$.programs[0].schoolTypeDescriptor"
+                    ),
+                ]
+            )
+        );
+
+        result.SuccessfulDescriptorReferencesByPath.Should().BeEmpty();
+        result
+            .InvalidDescriptorReferences.Select(failure => (failure.Path.Value, failure.Reason))
+            .Should()
+            .Equal(
+                ("$.schoolTypeDescriptor", DescriptorReferenceFailureReason.Missing),
+                ("$.programs[0].schoolTypeDescriptor", DescriptorReferenceFailureReason.Missing)
+            );
+    }
+
+    [Test]
     public async Task It_uses_the_matched_document_resource_key_for_alias_rows_while_preserving_lookup_metadata()
     {
         var aliasReferentialId = new ReferentialId(Guid.NewGuid());

@@ -260,25 +260,12 @@ public sealed class ReferenceResolver(IReferenceResolverAdapter adapter) : IRefe
     private static DescriptorReferenceFailure? ClassifyDescriptorReferenceFailure(
         MappingSet mappingSet,
         ResolvedDescriptorReferenceOccurrence descriptorReferenceOccurrence
-    )
-    {
-        var lookupResult = descriptorReferenceOccurrence.Lookup.Result;
-
-        if (lookupResult is null)
-        {
-            return DescriptorReferenceFailure.From(
-                descriptorReferenceOccurrence.Reference,
-                DetermineMissingDescriptorReferenceFailureReason(descriptorReferenceOccurrence.Reference)
-            );
-        }
-
-        return IsCompatibleDescriptorTarget(mappingSet, descriptorReferenceOccurrence.Reference, lookupResult)
-            ? null
-            : DescriptorReferenceFailure.From(
-                descriptorReferenceOccurrence.Reference,
-                DescriptorReferenceFailureReason.DescriptorTypeMismatch
-            );
-    }
+    ) =>
+        DescriptorReferenceFailureClassifier.Classify(
+            mappingSet,
+            descriptorReferenceOccurrence.Reference,
+            descriptorReferenceOccurrence.Lookup.Result
+        );
 
     private static void AddSuccessfulDocumentReference(
         IDictionary<JsonPath, ResolvedDocumentReference> successfulReferencesByPath,
@@ -336,66 +323,6 @@ public sealed class ReferenceResolver(IReferenceResolverAdapter adapter) : IRefe
         throw new InvalidOperationException(
             $"Reference resolver did not cache referential id '{referentialId.Value}' before materializing the result set."
         );
-    }
-
-    private static bool IsCompatibleDescriptorTarget(
-        MappingSet mappingSet,
-        DescriptorReference descriptorReference,
-        ReferenceLookupResult lookupResult
-    )
-    {
-        if (!lookupResult.IsDescriptor)
-        {
-            return false;
-        }
-
-        var targetResource = ToQualifiedResourceName(descriptorReference.ResourceInfo);
-
-        if (!mappingSet.ResourceKeyIdByResource.TryGetValue(targetResource, out var expectedResourceKeyId))
-        {
-            throw new InvalidOperationException(
-                $"Descriptor reference target '{targetResource.ProjectName}/{targetResource.ResourceName}' is missing from ResourceKeyIdByResource in mapping set "
-                    + $"'{mappingSet.Key.EffectiveSchemaHash}/{mappingSet.Key.Dialect}/{mappingSet.Key.RelationalMappingVersion}'."
-            );
-        }
-
-        return lookupResult.ResourceKeyId == expectedResourceKeyId;
-    }
-
-    private static DescriptorReferenceFailureReason DetermineMissingDescriptorReferenceFailureReason(
-        DescriptorReference descriptorReference
-    )
-    {
-        var descriptorIdentity =
-            descriptorReference.DocumentIdentity.DocumentIdentityElements.SingleOrDefault()
-            ?? throw new InvalidOperationException(
-                $"Descriptor reference at path '{descriptorReference.Path.Value}' is missing its descriptor identity value."
-            );
-
-        return
-            TryGetDescriptorTypeName(descriptorIdentity.IdentityValue, out var descriptorTypeName)
-            && !string.Equals(
-                descriptorTypeName,
-                descriptorReference.ResourceInfo.ResourceName.Value,
-                StringComparison.OrdinalIgnoreCase
-            )
-            ? DescriptorReferenceFailureReason.DescriptorTypeMismatch
-            : DescriptorReferenceFailureReason.Missing;
-    }
-
-    private static bool TryGetDescriptorTypeName(string descriptorUri, out string descriptorTypeName)
-    {
-        var fragmentIndex = descriptorUri.IndexOf('#', StringComparison.Ordinal);
-        var lastSlashIndex = descriptorUri.LastIndexOf('/');
-
-        if (lastSlashIndex < 0 || fragmentIndex <= lastSlashIndex + 1)
-        {
-            descriptorTypeName = string.Empty;
-            return false;
-        }
-
-        descriptorTypeName = descriptorUri[(lastSlashIndex + 1)..fragmentIndex];
-        return !string.IsNullOrWhiteSpace(descriptorTypeName);
     }
 
     private static DescriptorReferenceKey CreateDescriptorReferenceKey(
