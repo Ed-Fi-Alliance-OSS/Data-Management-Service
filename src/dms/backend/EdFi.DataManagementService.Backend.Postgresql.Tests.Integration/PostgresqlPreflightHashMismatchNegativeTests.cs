@@ -23,7 +23,7 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 /// The preflight is emitted by <see cref="SeedDmlEmitter.EmitPreflightOnly"/> and wired
 /// into the full DDL script by <see cref="FullDdlEmitter.Emit"/>. The equivalent runtime
 /// check is performed by <c>ValidateDatabaseFingerprintMiddleware</c> (see
-/// <c>docs/new-startup-flow.md</c>).
+/// <c>reference/design/backend-redesign/design-docs/new-startup-flow.md</c>).
 /// </summary>
 [TestFixture]
 [Category("CompatibilityGate")]
@@ -37,7 +37,6 @@ public class Given_A_Postgresql_Database_Provisioned_With_Hash_A_When_Applying_D
         "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/ext";
 
     private PostgresqlGeneratedDdlTestDatabase? _database;
-    private string _fixtureBDdl = null!;
     private Exception? _caughtException;
 
     [OneTimeSetUp]
@@ -58,13 +57,12 @@ public class Given_A_Postgresql_Database_Provisioned_With_Hash_A_When_Applying_D
 
         var effectiveSchemaSetB = EffectiveSchemaFixtureLoader.LoadFromFixtureDirectory(fixtureBDirectory);
         var (_, fixtureBDdl) = DdlPipelineHelpers.BuildDdlForDialect(effectiveSchemaSetB, SqlDialect.Pgsql);
-        _fixtureBDdl = fixtureBDdl;
 
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(fixtureADdl);
 
         try
         {
-            await _database.ApplyGeneratedDdlAsync(_fixtureBDdl);
+            await _database.ApplyGeneratedDdlAsync(fixtureBDdl);
         }
         catch (Exception ex)
         {

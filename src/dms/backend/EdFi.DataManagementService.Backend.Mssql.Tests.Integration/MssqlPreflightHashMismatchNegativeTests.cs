@@ -23,7 +23,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 /// The preflight is emitted by <see cref="SeedDmlEmitter.EmitPreflightOnly"/> and wired
 /// into the full DDL script by <see cref="FullDdlEmitter.Emit"/>. The equivalent runtime
 /// check is performed by <c>ValidateDatabaseFingerprintMiddleware</c> (see
-/// <c>docs/new-startup-flow.md</c>).
+/// <c>reference/design/backend-redesign/design-docs/new-startup-flow.md</c>).
 /// </summary>
 [TestFixture]
 [Category("CompatibilityGate")]

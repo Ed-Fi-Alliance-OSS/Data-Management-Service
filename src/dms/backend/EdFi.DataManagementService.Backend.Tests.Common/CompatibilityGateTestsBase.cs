@@ -21,7 +21,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Common;
 /// identifiers, a fixture path, and database lifecycle operations.
 ///
 /// This base class is exercised by both the PostgreSQL and MSSQL integration test
-/// suites and mirrors the production startup flow described in new-startup-flow.md §6
+/// suites and mirrors the production startup flow described in reference/design/backend-redesign/design-docs/new-startup-flow.md "End-to-End Startup Sequence (Detailed)"
 /// (ValidateResourceKeySeedMiddleware, ResourceKeyValidationCacheProvider,
 /// DatabaseFingerprintProvider).
 /// </summary>

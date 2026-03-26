@@ -19,7 +19,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 /// row restore logic.
 ///
 /// These tests mirror the production startup validation flow described in
-/// <c>docs/new-startup-flow.md</c> §6, exercising the same <c>ResourceKeyValidator</c>
+/// <c>reference/design/backend-redesign/design-docs/new-startup-flow.md</c> "End-to-End Startup Sequence (Detailed)", exercising the same <c>ResourceKeyValidator</c>
 /// invoked by <c>ValidateResourceKeySeedMiddleware</c>. Results are cached by
 /// <c>ResourceKeyValidationCacheProvider</c> and <c>DatabaseFingerprintProvider</c>
 /// in production.

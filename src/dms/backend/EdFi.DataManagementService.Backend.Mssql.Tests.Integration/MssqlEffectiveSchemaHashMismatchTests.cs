@@ -19,7 +19,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 /// <see cref="MssqlDatabaseFingerprintReader"/>.
 ///
 /// This hash is consumed at startup by <c>ValidateDatabaseFingerprintMiddleware</c>
-/// (described in <c>docs/new-startup-flow.md</c>) to detect schema / code mismatches
+/// (described in <c>reference/design/backend-redesign/design-docs/new-startup-flow.md</c>) to detect schema / code mismatches
 /// before the service begins serving traffic.
 /// </summary>
 [TestFixture]
@@ -76,7 +76,6 @@ public class Given_A_Mssql_Database_Provisioned_With_Generated_DDL_For_Effective
     {
         _fingerprint.Should().NotBeNull();
         _fingerprint!.EffectiveSchemaHash.Should().NotBeNullOrEmpty();
-        _fingerprint.EffectiveSchemaHash.Should().NotBe("NOT_A_REAL_HASH");
         _fingerprint.EffectiveSchemaHash.Should().Be(_effectiveSchemaSet!.EffectiveSchema.EffectiveSchemaHash);
     }
 }
