@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using NUnit.Framework;
@@ -127,6 +128,63 @@ public class AddressDerivationEngineTests
         public void It_should_have_empty_ancestor_list()
         {
             _result.AncestorCollectionInstances.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    public class Given_single_level_collection_address_derivation : AddressDerivationEngineTests
+    {
+        private CollectionRowAddress _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var engine = new AddressDerivationEngine(BuildTestScopeCatalog());
+            var collectionItem = new JsonObject { ["classPeriodName"] = "First Period" };
+
+            _result = engine.DeriveCollectionRowAddress("$.classPeriods[*]", collectionItem, []);
+        }
+
+        [Test]
+        public void It_should_produce_correct_JsonScope()
+        {
+            _result.JsonScope.Should().Be("$.classPeriods[*]");
+        }
+
+        [Test]
+        public void It_should_have_root_as_parent_address()
+        {
+            _result.ParentAddress.JsonScope.Should().Be("$");
+        }
+
+        [Test]
+        public void It_should_have_empty_parent_ancestor_list()
+        {
+            _result.ParentAddress.AncestorCollectionInstances.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_should_have_one_semantic_identity_part()
+        {
+            _result.SemanticIdentityInOrder.Should().HaveCount(1);
+        }
+
+        [Test]
+        public void It_should_have_correct_identity_relative_path()
+        {
+            _result.SemanticIdentityInOrder[0].RelativePath.Should().Be("classPeriodName");
+        }
+
+        [Test]
+        public void It_should_have_correct_identity_value()
+        {
+            _result.SemanticIdentityInOrder[0].Value!.ToString().Should().Be("First Period");
+        }
+
+        [Test]
+        public void It_should_mark_identity_as_present()
+        {
+            _result.SemanticIdentityInOrder[0].IsPresent.Should().BeTrue();
         }
     }
 }
