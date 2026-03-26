@@ -1,0 +1,16 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using NUnit.Framework;
+
+namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
+
+[TestFixture]
+[NonParallelizable]
+[Category("CompatibilityGate")]
+public class MssqlCompatibilityGateAuthoritativeDs52Tests : MssqlCompatibilityGateTestsBase
+{
+    protected override string FixtureRelativePath => "src/dms/backend/Fixtures/authoritative/ds-5.2";
+}
