@@ -114,12 +114,12 @@ internal class CachedProfileService(
             ? ProfileCatalogCacheKeyPrefix
             : $"{ProfileCatalogCacheKeyPrefix}:{tenantId}";
 
-    private static string GetOpenApiCacheKey(string? tenantId, string profileName, Guid apiSchemaReloadId)
+    private static string GetOpenApiCacheKey(string? tenantId, string profileName, Guid apiSchemaLoadId)
     {
         string normalizedProfileName = profileName.ToLowerInvariant();
         return string.IsNullOrEmpty(tenantId)
-            ? $"{ProfileOpenApiCacheKeyPrefix}:{normalizedProfileName}:{apiSchemaReloadId}"
-            : $"{ProfileOpenApiCacheKeyPrefix}:{tenantId}:{normalizedProfileName}:{apiSchemaReloadId}";
+            ? $"{ProfileOpenApiCacheKeyPrefix}:{normalizedProfileName}:{apiSchemaLoadId}"
+            : $"{ProfileOpenApiCacheKeyPrefix}:{tenantId}:{normalizedProfileName}:{apiSchemaLoadId}";
     }
 
     /// <inheritdoc />
@@ -366,22 +366,29 @@ internal class CachedProfileService(
             method
         );
         bool isReadOperation = method == RequestMethod.GET;
-        List<(ProfileDefinition Definition, ResourceProfile ResourceProfile)> applicableProfiles = cachedProfiles
-            .AssignedProfileNames.Select(profileName =>
-                profileStore.TryGetByName(profileName, out ProfileDefinition? definition) ? definition : null
-            )
-            .Where(definition => definition is not null)
-            .Select(definition => new
-            {
-                Definition = definition!,
-                ResourceProfile = definition!.Resources.FirstOrDefault(r =>
-                    r.ResourceName.Equals(resourceName, StringComparison.OrdinalIgnoreCase)
-                ),
-            })
-            .Where(x => x.ResourceProfile is not null)
-            .Where(x => isReadOperation ? x.ResourceProfile!.ReadContentType is not null : x.ResourceProfile!.WriteContentType is not null)
-            .Select(x => (x.Definition, x.ResourceProfile!))
-            .ToList();
+        List<(ProfileDefinition Definition, ResourceProfile ResourceProfile)> applicableProfiles =
+            cachedProfiles
+                .AssignedProfileNames.Select(profileName =>
+                    profileStore.TryGetByName(profileName, out ProfileDefinition? definition)
+                        ? definition
+                        : null
+                )
+                .Where(definition => definition is not null)
+                .Select(definition => new
+                {
+                    Definition = definition!,
+                    ResourceProfile = definition!.Resources.FirstOrDefault(r =>
+                        r.ResourceName.Equals(resourceName, StringComparison.OrdinalIgnoreCase)
+                    ),
+                })
+                .Where(x => x.ResourceProfile is not null)
+                .Where(x =>
+                    isReadOperation
+                        ? x.ResourceProfile!.ReadContentType is not null
+                        : x.ResourceProfile!.WriteContentType is not null
+                )
+                .Select(x => (x.Definition, x.ResourceProfile!))
+                .ToList();
 
         if (availableProfiles.Count == 0)
         {
@@ -454,7 +461,11 @@ internal class CachedProfileService(
                 ),
             })
             .Where(x => x.ResourceProfile is not null)
-            .Where(x => isReadOperation ? x.ResourceProfile!.ReadContentType is not null : x.ResourceProfile!.WriteContentType is not null)
+            .Where(x =>
+                isReadOperation
+                    ? x.ResourceProfile!.ReadContentType is not null
+                    : x.ResourceProfile!.WriteContentType is not null
+            )
             .Select(x =>
                 $"'{ProfileHeaderParser.BuildProfileContentType(resourceName.ToLowerInvariant(), x.ProfileName, usageType)}'"
             )
@@ -465,9 +476,10 @@ internal class CachedProfileService(
         IReadOnlyList<string> availableProfiles
     )
     {
-        string errorMessage = availableProfiles.Count > 0
-            ? $"Based on profile assignments, one of the following profile-specific content types is required when requesting this resource: {string.Join(", ", availableProfiles)}"
-            : "None of the profiles assigned to the caller provide a profile-specific content type for this resource and method.";
+        string errorMessage =
+            availableProfiles.Count > 0
+                ? $"Based on profile assignments, one of the following profile-specific content types is required when requesting this resource: {string.Join(", ", availableProfiles)}"
+                : "None of the profiles assigned to the caller provide a profile-specific content type for this resource and method.";
 
         return ProfileResolutionResult.Failure(
             new ProfileResolutionError(
@@ -758,7 +770,7 @@ internal class CachedProfileService(
         string profileName,
         string? tenantId,
         Func<JsonNode> baseSpecificationProvider,
-        Guid apiSchemaReloadId
+        Guid apiSchemaLoadId
     )
     {
         // First verify the profile exists in the catalog
@@ -775,8 +787,8 @@ internal class CachedProfileService(
         }
 
         // Get or create the cached OpenAPI spec
-        // The cache key includes apiSchemaReloadId so specs are regenerated when the schema changes
-        string cacheKey = GetOpenApiCacheKey(tenantId, profileName, apiSchemaReloadId);
+        // The cache key includes apiSchemaLoadId so specs are regenerated when the schema changes
+        string cacheKey = GetOpenApiCacheKey(tenantId, profileName, apiSchemaLoadId);
 
         // Since we cache JsonNode as string (HybridCache serialization), we need to parse it back
         string? cachedSpec = await hybridCache.GetOrCreateAsync(
@@ -784,10 +796,10 @@ internal class CachedProfileService(
             async cancel =>
             {
                 logger.LogDebug(
-                    "Cache miss for profile OpenAPI spec, generating. ProfileName: {ProfileName}, TenantId: {TenantId}, SchemaReloadId: {ReloadId}",
+                    "Cache miss for profile OpenAPI spec, generating. ProfileName: {ProfileName}, TenantId: {TenantId}, SchemaLoadId: {SchemaLoadId}",
                     LoggingSanitizer.SanitizeForLogging(profileName),
                     LoggingSanitizer.SanitizeForLogging(tenantId),
-                    apiSchemaReloadId
+                    apiSchemaLoadId
                 );
 
                 // Get the base OpenAPI spec with servers from the provider

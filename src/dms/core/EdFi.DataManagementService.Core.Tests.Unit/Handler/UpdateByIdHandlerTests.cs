@@ -40,7 +40,7 @@ public class UpdateByIdHandlerTests
             return new(_apiSchemaRootNode, []);
         }
 
-        public Guid ReloadId => Guid.Empty;
+        public Guid SchemaLoadId => Guid.Empty;
 
         public bool IsSchemaValid => true;
 

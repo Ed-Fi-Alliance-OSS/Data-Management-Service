@@ -33,7 +33,7 @@ internal class ApiSchemaProvider(
     private ApiSchemaDocumentNodes? _apiSchemaNodes;
 
     // Unique identifier for the loaded schema (stable for process lifetime)
-    private Guid _reloadId = Guid.NewGuid();
+    private Guid _schemaLoadId = Guid.NewGuid();
 
     // Lock object to ensure thread-safe access during schema loading
     private readonly object _loadLock = new();
@@ -517,13 +517,13 @@ internal class ApiSchemaProvider(
     /// <summary>
     /// Gets the unique identifier for the loaded schema
     /// </summary>
-    public Guid ReloadId
+    public Guid SchemaLoadId
     {
         get
         {
             lock (_loadLock)
             {
-                return _reloadId;
+                return _schemaLoadId;
             }
         }
     }

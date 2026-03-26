@@ -36,7 +36,7 @@ internal class ProvideApiSchemaMiddleware(
         );
 
         requestInfo.ApiSchemaDocuments = _effectiveApiSchemaProvider.Documents;
-        requestInfo.ApiSchemaReloadId = _effectiveApiSchemaProvider.SchemaId;
+        requestInfo.ApiSchemaLoadId = _effectiveApiSchemaProvider.SchemaId;
 
         await next();
     }

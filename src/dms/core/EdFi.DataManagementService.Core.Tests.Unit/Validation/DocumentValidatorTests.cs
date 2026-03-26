@@ -63,7 +63,7 @@ public class DocumentValidatorTests
         var requestInfo = new RequestInfo(frontendRequest, RequestMethod.POST, No.ServiceProvider)
         {
             ApiSchemaDocuments = apiSchema,
-            ApiSchemaReloadId = Guid.NewGuid(),
+            ApiSchemaLoadId = Guid.NewGuid(),
             ParsedBody = JsonNode.Parse("""{"schoolId":1}""")!,
             PathComponents = new(
                 ProjectEndpointName: new("ed-fi"),
@@ -91,7 +91,7 @@ public class DocumentValidatorTests
             ProjectName projectName,
             ResourceName resourceName,
             RequestMethod method,
-            Guid reloadId,
+            Guid schemaLoadId,
             Func<JsonSchema> schemaFactory
         )
         {
@@ -99,7 +99,7 @@ public class DocumentValidatorTests
                 projectName,
                 resourceName,
                 method,
-                reloadId,
+                schemaLoadId,
                 () =>
                 {
                     Interlocked.Increment(ref _factoryInvocationCount);
@@ -108,6 +108,7 @@ public class DocumentValidatorTests
             );
         }
 
-        public void Prime(ApiSchemaDocuments documents, Guid reloadId) => _inner.Prime(documents, reloadId);
+        public void Prime(ApiSchemaDocuments documents, Guid schemaLoadId) =>
+            _inner.Prime(documents, schemaLoadId);
     }
 }

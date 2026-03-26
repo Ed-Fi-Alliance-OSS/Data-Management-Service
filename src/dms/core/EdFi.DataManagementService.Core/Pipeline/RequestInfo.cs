@@ -53,9 +53,9 @@ internal class RequestInfo(
     public ApiSchemaDocuments ApiSchemaDocuments { get; set; } = No.ApiSchemaDocument;
 
     /// <summary>
-    /// The reload identifier associated with the ApiSchemaDocuments attached to this request.
+    /// The load identifier associated with the ApiSchemaDocuments attached to this request.
     /// </summary>
-    public Guid ApiSchemaReloadId { get; set; } = Guid.Empty;
+    public Guid ApiSchemaLoadId { get; set; } = Guid.Empty;
 
     /// <summary>
     /// Provides information from the ProjectSchema portion of an ApiSchema.json document

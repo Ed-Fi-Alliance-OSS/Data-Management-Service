@@ -122,15 +122,11 @@ public class ProfileWriteValidationMiddlewareTests
             NullLogger<ProjectSchema>.Instance
         );
 
-        return new RequestInfo(
-            frontendRequest,
-            method,
-            scopedServiceProvider ?? BuildScopedServiceProvider()
-        )
+        return new RequestInfo(frontendRequest, method, scopedServiceProvider ?? BuildScopedServiceProvider())
         {
             ProjectSchema = projectSchema,
             ResourceSchema = resourceSchema,
-            ApiSchemaReloadId = Guid.Empty,
+            ApiSchemaLoadId = Guid.Empty,
         };
     }
 
@@ -921,13 +917,7 @@ public class ProfileWriteValidationMiddlewareTests
                 Extensions: null
             );
 
-            var contentType = new ContentTypeDefinition(
-                MemberSelection.IncludeAll,
-                [],
-                [objectRule],
-                [],
-                []
-            );
+            var contentType = new ContentTypeDefinition(MemberSelection.IncludeAll, [], [objectRule], [], []);
 
             var resourceProfile = new ResourceProfile(
                 ResourceName: "Assessment",
@@ -1032,13 +1022,7 @@ public class ProfileWriteValidationMiddlewareTests
                 Extensions: null
             );
 
-            var contentType = new ContentTypeDefinition(
-                MemberSelection.IncludeAll,
-                [],
-                [objectRule],
-                [],
-                []
-            );
+            var contentType = new ContentTypeDefinition(MemberSelection.IncludeAll, [], [objectRule], [], []);
 
             var resourceProfile = new ResourceProfile(
                 ResourceName: "Assessment",
@@ -1148,13 +1132,7 @@ public class ProfileWriteValidationMiddlewareTests
                 Extensions: null
             );
 
-            var contentType = new ContentTypeDefinition(
-                MemberSelection.IncludeAll,
-                [],
-                [objectRule],
-                [],
-                []
-            );
+            var contentType = new ContentTypeDefinition(MemberSelection.IncludeAll, [], [objectRule], [], []);
 
             var resourceProfile = new ResourceProfile(
                 ResourceName: "Assessment",
@@ -1571,13 +1549,7 @@ public class ProfileWriteValidationMiddlewareTests
                 Extensions: null
             );
 
-            var contentType = new ContentTypeDefinition(
-                MemberSelection.IncludeAll,
-                [],
-                [objectRule],
-                [],
-                []
-            );
+            var contentType = new ContentTypeDefinition(MemberSelection.IncludeAll, [], [objectRule], [], []);
 
             var resourceProfile = new ResourceProfile(
                 ResourceName: "Assessment",

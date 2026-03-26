@@ -243,7 +243,7 @@ public abstract class DatabaseTest : DatabaseTestBase
 
         public static Guid SchemaVersion => Guid.Empty;
 
-        public Guid ReloadId => Guid.Empty;
+        public Guid SchemaLoadId => Guid.Empty;
 
         public bool IsSchemaValid => true;
 

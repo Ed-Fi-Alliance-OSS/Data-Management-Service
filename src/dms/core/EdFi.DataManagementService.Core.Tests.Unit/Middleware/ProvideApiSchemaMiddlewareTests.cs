@@ -89,7 +89,7 @@ public class ProvideApiSchemaMiddlewareTests
             await _middleware.Execute(requestInfo, NullNext);
 
             // Assert
-            requestInfo.ApiSchemaReloadId.Should().Be(_schemaId);
+            requestInfo.ApiSchemaLoadId.Should().Be(_schemaId);
         }
 
         [Test]
@@ -125,7 +125,7 @@ public class ProvideApiSchemaMiddlewareTests
 
             // Assert
             requestInfos.Should().OnlyContain(ri => ri.ApiSchemaDocuments == _mockDocuments);
-            requestInfos.Should().OnlyContain(ri => ri.ApiSchemaReloadId == _schemaId);
+            requestInfos.Should().OnlyContain(ri => ri.ApiSchemaLoadId == _schemaId);
         }
     }
 }

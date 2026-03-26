@@ -43,7 +43,7 @@ internal class DocumentValidator(ICompiledSchemaCache schemaCache) : IDocumentVa
             requestInfo.ProjectSchema.ProjectName,
             requestInfo.ResourceSchema.ResourceName,
             requestInfo.Method,
-            requestInfo.ApiSchemaReloadId,
+            requestInfo.ApiSchemaLoadId,
             () => CompileSchema(requestInfo.ResourceSchema, requestInfo.Method)
         );
 

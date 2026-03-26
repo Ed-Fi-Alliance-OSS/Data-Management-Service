@@ -23,7 +23,7 @@ public interface IApiSchemaProvider
     /// Gets the unique identifier for the loaded schema.
     /// This value is stable for the lifetime of the process.
     /// </summary>
-    Guid ReloadId { get; }
+    Guid SchemaLoadId { get; }
 
     /// <summary>
     /// Gets whether the currently loaded API schema is valid.

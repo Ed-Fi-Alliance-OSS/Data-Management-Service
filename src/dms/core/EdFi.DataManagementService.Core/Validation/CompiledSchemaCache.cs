@@ -15,33 +15,33 @@ namespace EdFi.DataManagementService.Core.Validation;
 internal sealed class CompiledSchemaCache : ICompiledSchemaCache
 {
     private readonly ConcurrentDictionary<SchemaCacheKey, JsonSchema> _cache = new();
-    private Guid _currentReloadId;
+    private Guid _currentSchemaLoadId;
 
     public JsonSchema GetOrAdd(
         ProjectName projectName,
         ResourceName resourceName,
         RequestMethod method,
-        Guid reloadId,
+        Guid schemaLoadId,
         Func<JsonSchema> schemaFactory
     )
     {
-        ResetIfReloadChanged(reloadId);
+        ResetIfSchemaChanged(schemaLoadId);
 
-        SchemaCacheKey key = new(projectName.Value, resourceName.Value, method, reloadId);
+        SchemaCacheKey key = new(projectName.Value, resourceName.Value, method, schemaLoadId);
         return _cache.GetOrAdd(key, _ => schemaFactory());
     }
 
-    public void Prime(ApiSchemaDocuments documents, Guid reloadId)
+    public void Prime(ApiSchemaDocuments documents, Guid schemaLoadId)
     {
-        ResetIfReloadChanged(reloadId);
+        ResetIfSchemaChanged(schemaLoadId);
 
         foreach (ProjectSchema projectSchema in documents.GetAllProjectSchemas())
         {
             foreach (var resourceNode in projectSchema.GetAllResourceSchemaNodes())
             {
                 ResourceSchema resourceSchema = new(resourceNode);
-                TryAddOrUpdate(projectSchema.ProjectName, resourceSchema, RequestMethod.POST, reloadId);
-                TryAddOrUpdate(projectSchema.ProjectName, resourceSchema, RequestMethod.PUT, reloadId);
+                TryAddOrUpdate(projectSchema.ProjectName, resourceSchema, RequestMethod.POST, schemaLoadId);
+                TryAddOrUpdate(projectSchema.ProjectName, resourceSchema, RequestMethod.PUT, schemaLoadId);
             }
         }
     }
@@ -50,12 +50,12 @@ internal sealed class CompiledSchemaCache : ICompiledSchemaCache
         ProjectName projectName,
         ResourceSchema resourceSchema,
         RequestMethod method,
-        Guid reloadId
+        Guid schemaLoadId
     )
     {
         try
         {
-            AddOrUpdate(projectName, resourceSchema, method, reloadId);
+            AddOrUpdate(projectName, resourceSchema, method, schemaLoadId);
         }
         catch (Exception ex) when (ex is InvalidOperationException || ex is NullReferenceException)
         {
@@ -68,10 +68,10 @@ internal sealed class CompiledSchemaCache : ICompiledSchemaCache
         ProjectName projectName,
         ResourceSchema resourceSchema,
         RequestMethod method,
-        Guid reloadId
+        Guid schemaLoadId
     )
     {
-        SchemaCacheKey key = new(projectName.Value, resourceSchema.ResourceName.Value, method, reloadId);
+        SchemaCacheKey key = new(projectName.Value, resourceSchema.ResourceName.Value, method, schemaLoadId);
         _cache.GetOrAdd(key, _ => CompileSchema(resourceSchema, method));
     }
 
@@ -82,21 +82,21 @@ internal sealed class CompiledSchemaCache : ICompiledSchemaCache
         return JsonSchema.FromText(stringifiedJsonSchema);
     }
 
-    private void ResetIfReloadChanged(Guid reloadId)
+    private void ResetIfSchemaChanged(Guid schemaLoadId)
     {
-        if (_currentReloadId == reloadId)
+        if (_currentSchemaLoadId == schemaLoadId)
         {
             return;
         }
 
         _cache.Clear();
-        _currentReloadId = reloadId;
+        _currentSchemaLoadId = schemaLoadId;
     }
 
     private readonly record struct SchemaCacheKey(
         string ProjectName,
         string ResourceName,
         RequestMethod Method,
-        Guid ReloadId
+        Guid SchemaLoadId
     );
 }
