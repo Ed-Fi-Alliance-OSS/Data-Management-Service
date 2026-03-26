@@ -200,7 +200,7 @@
   },
   {
     "category": "PostgreSQL Descriptor Integration",
-    "description": "Add focused PostgreSQL integration coverage for descriptor validation behavior. Acceptance: tests cover descriptor membership failure, descriptor discriminator/type mismatch, and parity of public failure mapping versus the shared classifier contract.",
+    "description": "Add focused PostgreSQL integration coverage for descriptor validation behavior. Acceptance: tests cover descriptor membership failure when a resolved document is not present in `dms.Descriptor`, resolved wrong-descriptor-type failure when a descriptor row exists but the resolved resource type does not match the expected descriptor resource, missing-lookup wrong-type failure when the normalized URI implies a different descriptor type than the expected resource, and parity of `ResolvedReferenceSet.InvalidDescriptorReferences` outcomes versus the shared classifier contract.",
     "steps-to-verify": [
       "Ensure the PostgreSQL integration test connection string is configured for `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
@@ -227,7 +227,7 @@
   },
   {
     "category": "SQL Server Descriptor Integration",
-    "description": "Add focused SQL Server integration coverage for descriptor validation behavior. Acceptance: tests cover descriptor membership failure, descriptor discriminator/type mismatch, and parity of public failure mapping versus PostgreSQL where the adapter strategy differs under the hood.",
+    "description": "Add focused SQL Server integration coverage for descriptor validation behavior. Acceptance: tests cover descriptor membership failure when a resolved document is not present in `dms.Descriptor`, resolved wrong-descriptor-type failure when a descriptor row exists but the resolved resource type does not match the expected descriptor resource, missing-lookup wrong-type failure when the normalized URI implies a different descriptor type than the expected resource, and parity of `ResolvedReferenceSet.InvalidDescriptorReferences` outcomes with PostgreSQL and the shared classifier contract despite the different adapter strategy under the hood.",
     "steps-to-verify": [
       "Ensure the SQL Server admin connection string is configured for `src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj`"
