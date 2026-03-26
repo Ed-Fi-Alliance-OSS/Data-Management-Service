@@ -274,4 +274,85 @@ public class AddressDerivationEngineTests
             _result.SemanticIdentityInOrder[1].IsPresent.Should().BeTrue();
         }
     }
+
+    [TestFixture]
+    public class Given_root_level_ext_scope_address_derivation : AddressDerivationEngineTests
+    {
+        private ScopeInstanceAddress _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var engine = new AddressDerivationEngine(BuildTestScopeCatalog());
+            _result = engine.DeriveScopeInstanceAddress("$._ext.sample", []);
+        }
+
+        [Test]
+        public void It_should_produce_correct_JsonScope()
+        {
+            _result.JsonScope.Should().Be("$._ext.sample");
+        }
+
+        [Test]
+        public void It_should_have_empty_ancestor_list()
+        {
+            _result.AncestorCollectionInstances.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    public class Given_collection_aligned_ext_child_collection_address_derivation
+        : AddressDerivationEngineTests
+    {
+        private CollectionRowAddress _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var engine = new AddressDerivationEngine(BuildTestScopeCatalog());
+            var extActivityItem = new JsonObject
+            {
+                ["activityName"] = "Chess Club",
+                ["activityDate"] = "2026-01-15",
+            };
+
+            _result = engine.DeriveCollectionRowAddress(
+                "$._ext.sample.extActivities[*]",
+                extActivityItem,
+                []
+            );
+        }
+
+        [Test]
+        public void It_should_produce_correct_JsonScope()
+        {
+            _result.JsonScope.Should().Be("$._ext.sample.extActivities[*]");
+        }
+
+        [Test]
+        public void It_should_have_root_as_parent_not_ext_scope()
+        {
+            _result.ParentAddress.JsonScope.Should().Be("$");
+        }
+
+        [Test]
+        public void It_should_have_empty_parent_ancestor_list()
+        {
+            _result.ParentAddress.AncestorCollectionInstances.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_should_have_one_semantic_identity_part()
+        {
+            _result.SemanticIdentityInOrder.Should().HaveCount(1);
+        }
+
+        [Test]
+        public void It_should_have_correct_identity_value()
+        {
+            _result.SemanticIdentityInOrder[0].RelativePath.Should().Be("activityName");
+            _result.SemanticIdentityInOrder[0].Value!.ToString().Should().Be("Chess Club");
+            _result.SemanticIdentityInOrder[0].IsPresent.Should().BeTrue();
+        }
+    }
 }
