@@ -24,6 +24,28 @@ public enum ScopeKind
 /// Built by backend from TableWritePlan / DbTableModel metadata.
 /// Core consumes this narrowed adapter for address derivation and canonical vocabulary.
 /// </summary>
+/// <remarks>
+/// <para><strong>ProfileDefinition compatibility assessment (DMS-1111):</strong></para>
+/// <para>
+/// The existing <see cref="ProfileDefinition"/> tree and this compiled-scope catalog operate
+/// at different levels of abstraction. <see cref="ProfileDefinition"/> uses a recursive tree
+/// of rules keyed by member name at each level (e.g. <c>CollectionRule.Name = "classPeriods"</c>),
+/// while the adapter uses flat compiled <see cref="JsonScope"/> paths
+/// (e.g. <c>$.classPeriods[*]</c>).
+/// </para>
+/// <para>
+/// The bridge is straightforward: given a <see cref="JsonScope"/> like <c>$.classPeriods[*]</c>,
+/// strip the <c>[*]</c> suffix and take the last dot-separated segment to get <c>"classPeriods"</c>,
+/// which maps directly to <c>CollectionRule.Name</c>. Extension scopes follow the same pattern:
+/// <c>$._ext.sample</c> navigates to <c>ExtensionRule</c> named <c>"sample"</c>.
+/// </para>
+/// <para>
+/// No structural changes to <see cref="ProfileDefinition"/> are needed. C3 (request-side
+/// visibility classification) should own a small utility to correlate adapter
+/// <see cref="JsonScope"/> paths with <see cref="ProfileDefinition"/> tree positions by
+/// member name extraction. C6 (stored-state projection) reuses the same bridge.
+/// </para>
+/// </remarks>
 /// <param name="JsonScope">
 /// Exact compiled scope identifier (e.g. "$", "$.classPeriods[*]").
 /// Matches DbTableModel.JsonScope.Canonical.
