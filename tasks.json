@@ -205,7 +205,7 @@
       "Ensure the PostgreSQL integration test connection string is configured for `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "PostgreSQL Batching Integration",

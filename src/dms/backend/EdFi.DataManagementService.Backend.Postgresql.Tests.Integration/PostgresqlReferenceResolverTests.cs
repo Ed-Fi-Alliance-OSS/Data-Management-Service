@@ -159,8 +159,124 @@ public class Given_PostgresqlReferenceResolver
             );
     }
 
+    [Test]
+    public async Task It_surfaces_descriptor_membership_failures_when_the_lookup_is_not_a_descriptor()
+    {
+        var result = await ResolveDescriptorReferencesAsync(
+            _database.Fixture.CreateSchoolTypeDescriptorReference(
+                "$.schoolTypeDescriptor",
+                _database.Fixture.LocalEducationAgencyReferentialId,
+                _database.Fixture.SchoolTypeDescriptorUri
+            )
+        );
+
+        result.SuccessfulDescriptorReferencesByPath.Should().BeEmpty();
+        result
+            .InvalidDescriptorReferences.Select(failure => (failure.Path.Value, failure.Reason))
+            .Should()
+            .Equal(("$.schoolTypeDescriptor", DescriptorReferenceFailureReason.DescriptorTypeMismatch));
+        result
+            .LookupsByReferentialId[_database.Fixture.LocalEducationAgencyReferentialId]
+            .Result.Should()
+            .NotBeNull();
+        result
+            .LookupsByReferentialId[_database.Fixture.LocalEducationAgencyReferentialId]
+            .Result!.IsDescriptor.Should()
+            .BeFalse();
+        result
+            .LookupsByReferentialId[_database.Fixture.LocalEducationAgencyReferentialId]
+            .Result!.ResourceKeyId.Should()
+            .Be(_database.MappingSet.ResourceKeyIdByResource[_database.Fixture.LocalEducationAgencyResource]);
+    }
+
+    [Test]
+    public async Task It_surfaces_resolved_wrong_descriptor_type_failures_as_descriptor_type_mismatch()
+    {
+        var result = await ResolveDescriptorReferencesAsync(
+            _database.Fixture.CreateSchoolTypeDescriptorReference(
+                "$.schoolTypeDescriptor",
+                _database.Fixture.AcademicSubjectDescriptorReferentialId,
+                _database.Fixture.AcademicSubjectDescriptorUri
+            )
+        );
+
+        result.SuccessfulDescriptorReferencesByPath.Should().BeEmpty();
+        result
+            .InvalidDescriptorReferences.Select(failure => (failure.Path.Value, failure.Reason))
+            .Should()
+            .Equal(("$.schoolTypeDescriptor", DescriptorReferenceFailureReason.DescriptorTypeMismatch));
+        result
+            .LookupsByReferentialId[_database.Fixture.AcademicSubjectDescriptorReferentialId]
+            .Result.Should()
+            .NotBeNull();
+        result
+            .LookupsByReferentialId[_database.Fixture.AcademicSubjectDescriptorReferentialId]
+            .Result!.IsDescriptor.Should()
+            .BeTrue();
+        result
+            .LookupsByReferentialId[_database.Fixture.AcademicSubjectDescriptorReferentialId]
+            .Result!.ResourceKeyId.Should()
+            .Be(
+                _database.MappingSet.ResourceKeyIdByResource[
+                    _database.Fixture.AcademicSubjectDescriptorResource
+                ]
+            );
+    }
+
+    [Test]
+    public async Task It_classifies_missing_descriptor_lookups_with_the_same_reasons_as_the_shared_classifier()
+    {
+        var result = await ResolveDescriptorReferencesAsync(
+            _database.Fixture.CreateSchoolTypeDescriptorReference("$.schoolTypeDescriptor"),
+            _database.Fixture.CreateSchoolTypeDescriptorReference(
+                "$.alternateSchoolTypeDescriptor",
+                _database.Fixture.MissingSchoolTypeDescriptorReferentialId,
+                _database.Fixture.AcademicSubjectDescriptorUri
+            ),
+            _database.Fixture.CreateSchoolTypeDescriptorReference(
+                "$.programs[0].schoolTypeDescriptor",
+                _database.Fixture.MissingSchoolTypeDescriptorReferentialId,
+                _database.Fixture.MissingSchoolTypeDescriptorUri
+            )
+        );
+
+        result
+            .SuccessfulDescriptorReferencesByPath.Keys.Should()
+            .Equal(new JsonPath("$.schoolTypeDescriptor"));
+        result
+            .InvalidDescriptorReferences.Select(failure => (failure.Path.Value, failure.Reason))
+            .Should()
+            .Equal(
+                ("$.alternateSchoolTypeDescriptor", DescriptorReferenceFailureReason.DescriptorTypeMismatch),
+                ("$.programs[0].schoolTypeDescriptor", DescriptorReferenceFailureReason.Missing)
+            );
+        result
+            .DescriptorReferenceOccurrences.Where(occurrence =>
+                occurrence.Reference.ReferentialId
+                == _database.Fixture.MissingSchoolTypeDescriptorReferentialId
+            )
+            .Select(occurrence => occurrence.Lookup.Result)
+            .Should()
+            .AllSatisfy(lookupResult => lookupResult.Should().BeNull());
+    }
+
     private async Task<ResolvedReferenceSet> ResolveDocumentReferencesAsync(
         params DocumentReference[] documentReferences
+    )
+    {
+        return await ResolveReferencesAsync(documentReferences, []);
+    }
+
+    private async Task<ResolvedReferenceSet> ResolveDescriptorReferencesAsync(
+        params DescriptorReference[] descriptorReferences
+    )
+    {
+        return await ResolveReferencesAsync([], descriptorReferences);
+    }
+
+    private async Task<ResolvedReferenceSet> ResolveReferencesAsync(
+        IReadOnlyList<DocumentReference> documentReferences,
+        IReadOnlyList<DescriptorReference> descriptorReferences
     )
     {
         using var scope = _serviceProvider.CreateScope();
@@ -182,7 +298,7 @@ public class Given_PostgresqlReferenceResolver
                 MappingSet: _database.MappingSet,
                 RequestResource: _database.Fixture.RequestResource,
                 DocumentReferences: documentReferences,
-                DescriptorReferences: []
+                DescriptorReferences: descriptorReferences
             )
         );
     }
