@@ -253,5 +253,47 @@
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`"
     ],
     "completed": true
+  },
+  {
+    "category": "Reference Resolver Contract Hardening",
+    "description": "Extend the DMS-982 relational resolver lookup contract in `src/dms/backend/EdFi.DataManagementService.Backend/ReferenceResolverContracts.cs` and the dialect-specific SQL projections so a resolved hit can be verified against the requested natural key instead of trusting `dms.ReferentialIdentity` alone. Acceptance: the request-side contract carries enough target identity context to re-check a hit, the result-side contract carries an authoritative verification witness for the matched document or descriptor identity, PostgreSQL and SQL Server adapters project that witness in bulk without per-reference queries, and same-type cross-wired rows can be distinguished from ordinary `Missing` and `IncompatibleTargetType` outcomes.",
+    "steps-to-verify": [
+      "Add unit tests covering the expanded request/result contracts and adapter row readers so the verification witness is preserved for both document and descriptor lookups.",
+      "Add SQL-shape tests for PostgreSQL and SQL Server confirming the new identity or URI projection is included in the bulk lookup command text and result mapping.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Fail-Closed ReferentialIdentity Verification",
+    "description": "Update `src/dms/backend/EdFi.DataManagementService.Backend/ReferenceResolver.cs` and any shared helpers so the resolver re-validates every successful lookup against the requested natural key and fails closed on a corrupted `dms.ReferentialIdentity` row, including same-type cross-wiring. Acceptance: a lookup that resolves to the wrong existing document of the same resource type is never classified as a successful reference; the resolver raises a deterministic corruption or incident-grade failure instead of downgrading the case to `Missing`, `IncompatibleTargetType`, or `DescriptorTypeMismatch`; descriptor validation also verifies the resolved descriptor identity or URI matches the requested descriptor natural key; and the current same-request duplicate sanity check remains a secondary defense rather than the only corruption guard.",
+    "steps-to-verify": [
+      "Add unit tests for document and descriptor references where the adapter returns a same-type but wrong-document hit, asserting the resolver fails closed with the dedicated corruption path.",
+      "Add or update integration tests on both PostgreSQL and SQL Server with deliberate `dms.ReferentialIdentity` corruption, asserting POST or PUT prerequisite resolution fails loudly and does not return a successful `ResolvedReferenceSet` entry for the cross-wired reference.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Unified Write Reference Failure Contract",
+    "description": "Replace the mutually exclusive reference-failure result types in `src/dms/core/EdFi.DataManagementService.Core.External/Backend/UpsertResult.cs` and `src/dms/core/EdFi.DataManagementService.Core.External/Backend/UpdateResult.cs` with a single write-result contract that can carry both invalid document references and invalid descriptor references at the same time. Acceptance: POST and PUT result contracts can represent document-only, descriptor-only, and mixed-failure outcomes without dropping either side; the contract preserves per-path failure detail for both families; repository callers do not need to invent a precedence rule between `*FailureReference` and `*FailureDescriptorReference`; and contract-focused unit tests cover mixed outcomes explicitly.",
+    "steps-to-verify": [
+      "Add or update unit tests constructing the new Upsert and Update failure result types for document-only, descriptor-only, and mixed-reference-validation failures.",
+      "Confirm no new repository integration point is forced to choose one failure family when both `ResolvedReferenceSet.InvalidDocumentReferences` and `ResolvedReferenceSet.InvalidDescriptorReferences` are populated.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Mixed Reference Failure API Mapping",
+    "description": "Update `src/dms/core/EdFi.DataManagementService.Core/Handler/UpsertHandler.cs`, `src/dms/core/EdFi.DataManagementService.Core/Handler/UpdateByIdHandler.cs`, `src/dms/core/EdFi.DataManagementService.Core/Utilities/ValidationErrorFactory.cs`, and any shared response helpers so a unified backend reference-validation failure is surfaced consistently to clients. Acceptance: document and descriptor validation errors are merged into one `validationErrors` payload keyed by concrete JSON path; repeated failures at different paths remain separate entries; POST and PUT handlers use one documented status-code rule for mixed failures instead of an implicit precedence rule; and pure document-only and descriptor-only behaviors remain backward compatible except where explicitly changed by the documented mixed-failure policy.",
+    "steps-to-verify": [
+      "Add handler tests for POST and PUT mixed failures asserting the final response includes both document-reference and descriptor-reference validation messages in one payload.",
+      "Add unit tests for the shared validation-error builder covering mixed path collisions, document-only inputs, descriptor-only inputs, and merged mixed inputs.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`"
+    ],
+    "completed": false
   }
 ]

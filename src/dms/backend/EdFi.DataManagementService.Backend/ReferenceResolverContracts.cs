@@ -67,11 +67,33 @@ public interface IReferenceResolverAdapterFactory
 /// </summary>
 /// <param name="MappingSet">The resolved runtime mapping set for the active request.</param>
 /// <param name="RequestResource">The resource being written.</param>
-/// <param name="ReferentialIds">Deduped referential ids in first-seen request order.</param>
+/// <param name="Lookups">Deduped lookups in first-seen request order.</param>
 public sealed record ReferenceLookupRequest(
     MappingSet MappingSet,
     QualifiedResourceName RequestResource,
-    IReadOnlyList<ReferentialId> ReferentialIds
+    IReadOnlyList<ReferenceLookupRequestEntry> Lookups
+)
+{
+    public IReadOnlyList<ReferentialId> ReferentialIds { get; } =
+        Lookups.Select(static lookup => lookup.ReferentialId).ToArray();
+}
+
+/// <summary>
+/// One deduped reference lookup request carrying the target identity needed to verify a resolved hit.
+/// </summary>
+/// <param name="ReferentialId">The deduped requested referential id.</param>
+/// <param name="RequestedResource">The target resource requested by the caller.</param>
+/// <param name="RequestedIdentity">
+/// The ordered requested natural-key identity for the target resource.
+/// </param>
+/// <param name="ExpectedVerificationIdentityKey">
+/// The normalized expected identity key derived from <paramref name="RequestedIdentity" />.
+/// </param>
+public sealed record ReferenceLookupRequestEntry(
+    ReferentialId ReferentialId,
+    QualifiedResourceName RequestedResource,
+    DocumentIdentity RequestedIdentity,
+    string ExpectedVerificationIdentityKey
 );
 
 /// <summary>
@@ -89,12 +111,16 @@ public sealed record ReferenceLookupRequest(
 /// <param name="IsDescriptor">
 /// Whether the matched document is present in <c>dms.Descriptor</c>.
 /// </param>
+/// <param name="VerificationIdentityKey">
+/// The authoritative natural-key witness projected from the matched document or descriptor.
+/// </param>
 public sealed record ReferenceLookupResult(
     ReferentialId ReferentialId,
     long DocumentId,
     short ResourceKeyId,
     short ReferentialIdentityResourceKeyId,
-    bool IsDescriptor
+    bool IsDescriptor,
+    string? VerificationIdentityKey = null
 );
 
 /// <summary>

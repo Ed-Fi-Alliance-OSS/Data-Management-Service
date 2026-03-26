@@ -18,6 +18,7 @@ public sealed class ReferenceResolver(IReferenceResolverAdapter adapter) : IRefe
         adapter ?? throw new ArgumentNullException(nameof(adapter));
 
     private readonly Dictionary<ReferentialId, ReferenceLookupSnapshot> _memoizedLookups = [];
+    private readonly Dictionary<ReferentialId, ReferenceLookupRequestEntry> _memoizedLookupRequests = [];
 
     public async Task<ResolvedReferenceSet> ResolveAsync(
         ReferenceResolverRequest request,
@@ -29,65 +30,80 @@ public sealed class ReferenceResolver(IReferenceResolverAdapter adapter) : IRefe
         ArgumentNullException.ThrowIfNull(request.DocumentReferences);
         ArgumentNullException.ThrowIfNull(request.DescriptorReferences);
 
-        var uncachedReferentialIds = GetUncachedReferentialIds(request);
+        var uncachedLookups = GetUncachedLookups(request);
 
-        if (uncachedReferentialIds.Count > 0)
+        if (uncachedLookups.Count > 0)
         {
             var lookupResults = await _adapter
                 .ResolveAsync(
                     new ReferenceLookupRequest(
                         MappingSet: request.MappingSet,
                         RequestResource: request.RequestResource,
-                        ReferentialIds: uncachedReferentialIds
+                        Lookups: uncachedLookups
                     ),
                     cancellationToken
                 )
                 .ConfigureAwait(false);
 
-            CacheLookupResults(uncachedReferentialIds, lookupResults);
+            CacheLookupResults(
+                uncachedLookups.Select(static lookup => lookup.ReferentialId).ToArray(),
+                lookupResults
+            );
         }
 
         return BuildResolvedReferenceSet(request);
     }
 
-    private List<ReferentialId> GetUncachedReferentialIds(ReferenceResolverRequest request)
+    private List<ReferenceLookupRequestEntry> GetUncachedLookups(ReferenceResolverRequest request)
     {
-        HashSet<ReferentialId> seenReferentialIds = [];
-        List<ReferentialId> uncachedReferentialIds = [];
+        Dictionary<ReferentialId, ReferenceLookupRequestEntry> seenLookupByReferentialId = [];
+        List<ReferenceLookupRequestEntry> uncachedLookups = [];
 
         foreach (var documentReference in request.DocumentReferences)
         {
-            AddUncachedReferentialId(
-                documentReference.ReferentialId,
-                seenReferentialIds,
-                uncachedReferentialIds
+            AddUncachedLookup(
+                CreateLookupRequestEntry(documentReference),
+                seenLookupByReferentialId,
+                uncachedLookups
             );
         }
 
         foreach (var descriptorReference in request.DescriptorReferences)
         {
-            AddUncachedReferentialId(
-                descriptorReference.ReferentialId,
-                seenReferentialIds,
-                uncachedReferentialIds
+            AddUncachedLookup(
+                CreateLookupRequestEntry(descriptorReference),
+                seenLookupByReferentialId,
+                uncachedLookups
             );
         }
 
-        return uncachedReferentialIds;
+        return uncachedLookups;
     }
 
-    private void AddUncachedReferentialId(
-        ReferentialId referentialId,
-        ISet<ReferentialId> seenReferentialIds,
-        ICollection<ReferentialId> uncachedReferentialIds
+    private void AddUncachedLookup(
+        ReferenceLookupRequestEntry lookup,
+        IDictionary<ReferentialId, ReferenceLookupRequestEntry> seenLookupByReferentialId,
+        ICollection<ReferenceLookupRequestEntry> uncachedLookups
     )
     {
-        if (!seenReferentialIds.Add(referentialId) || _memoizedLookups.ContainsKey(referentialId))
+        if (
+            seenLookupByReferentialId.TryGetValue(lookup.ReferentialId, out var seenLookup)
+            || _memoizedLookupRequests.TryGetValue(lookup.ReferentialId, out seenLookup)
+        )
+        {
+            EnsureCompatibleLookupRequest(seenLookup, lookup);
+            return;
+        }
+
+        seenLookupByReferentialId[lookup.ReferentialId] = lookup;
+        _memoizedLookupRequests[lookup.ReferentialId] = lookup;
+
+        if (_memoizedLookups.ContainsKey(lookup.ReferentialId))
         {
             return;
         }
 
-        uncachedReferentialIds.Add(referentialId);
+        uncachedLookups.Add(lookup);
     }
 
     private void CacheLookupResults(
@@ -343,4 +359,48 @@ public sealed class ReferenceResolver(IReferenceResolverAdapter adapter) : IRefe
 
     private static QualifiedResourceName ToQualifiedResourceName(BaseResourceInfo resourceInfo) =>
         new(resourceInfo.ProjectName.Value, resourceInfo.ResourceName.Value);
+
+    private static ReferenceLookupRequestEntry CreateLookupRequestEntry(
+        DocumentReference documentReference
+    ) =>
+        new(
+            documentReference.ReferentialId,
+            ToQualifiedResourceName(documentReference.ResourceInfo),
+            documentReference.DocumentIdentity,
+            ReferenceLookupVerificationSupport.BuildExpectedVerificationIdentityKey(
+                documentReference.DocumentIdentity
+            )
+        );
+
+    private static ReferenceLookupRequestEntry CreateLookupRequestEntry(
+        DescriptorReference descriptorReference
+    ) =>
+        new(
+            descriptorReference.ReferentialId,
+            ToQualifiedResourceName(descriptorReference.ResourceInfo),
+            descriptorReference.DocumentIdentity,
+            ReferenceLookupVerificationSupport.BuildExpectedVerificationIdentityKey(
+                descriptorReference.DocumentIdentity,
+                normalizeDescriptorValues: true
+            )
+        );
+
+    private static void EnsureCompatibleLookupRequest(
+        ReferenceLookupRequestEntry existingLookup,
+        ReferenceLookupRequestEntry candidateLookup
+    )
+    {
+        if (
+            existingLookup.RequestedResource == candidateLookup.RequestedResource
+            && existingLookup.ExpectedVerificationIdentityKey
+                == candidateLookup.ExpectedVerificationIdentityKey
+        )
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Reference resolver received conflicting lookup metadata for referential id '{candidateLookup.ReferentialId.Value}'."
+        );
+    }
 }

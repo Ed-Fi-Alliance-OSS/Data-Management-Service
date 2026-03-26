@@ -412,10 +412,22 @@ public class Given_MssqlReferenceResolver
                 )),
         ];
 
+        ReferenceResolverSchoolSeed[] schools =
+        [
+            .. Enumerable
+                .Range(0, count)
+                .Select(index => new ReferenceResolverSchoolSeed(
+                    documents[index].DocumentId,
+                    300000 + index
+                )),
+        ];
+
         return new(
             ResourceKeys: [],
             Documents: documents,
             ReferentialIdentities: referentialIdentities,
+            Schools: schools,
+            LocalEducationAgencies: [],
             Descriptors: []
         );
     }

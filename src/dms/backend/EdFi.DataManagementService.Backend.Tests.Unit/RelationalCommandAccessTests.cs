@@ -87,14 +87,19 @@ public class Given_RelationalReferenceResolverAdapter
                         ("DocumentId", 101L),
                         ("ResourceKeyId", (short)11),
                         ("ReferentialIdentityResourceKeyId", (short)11),
-                        ("IsDescriptor", false)
+                        ("IsDescriptor", false),
+                        ("VerificationIdentityKey", "$$.schoolId=255901")
                     ),
                     RelationalAccessTestData.CreateRow(
                         ("ReferentialId", descriptorReferentialId.Value),
                         ("DocumentId", 202L),
-                        ("ResourceKeyId", (short)12),
-                        ("ReferentialIdentityResourceKeyId", (short)12),
-                        ("IsDescriptor", true)
+                        ("ResourceKeyId", (short)13),
+                        ("ReferentialIdentityResourceKeyId", (short)13),
+                        ("IsDescriptor", true),
+                        (
+                            "VerificationIdentityKey",
+                            "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
+                        )
                     )
                 ),
             ]),
@@ -371,23 +376,44 @@ internal sealed class TestRelationalReferenceResolverAdapter(IRelationalCommandE
 
 internal static class RelationalAccessTestData
 {
+    private static readonly QualifiedResourceName _schoolResource = new("Ed-Fi", "School");
+    private static readonly QualifiedResourceName _localEducationAgencyResource = new(
+        "Ed-Fi",
+        "LocalEducationAgency"
+    );
+    private static readonly QualifiedResourceName _educationOrganizationResource = new(
+        "Ed-Fi",
+        "EducationOrganization"
+    );
+    private static readonly QualifiedResourceName _schoolTypeDescriptorResource = new(
+        "Ed-Fi",
+        "SchoolTypeDescriptor"
+    );
+
     public static MappingSet CreateMappingSet(QualifiedResourceName requestResource)
     {
         const string EffectiveSchemaHash = "test-hash";
-        var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
-        var schoolTypeDescriptorResource = new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor");
         var studentKey = new ResourceKeyEntry(1, requestResource, "1.0", false);
-        var schoolKey = new ResourceKeyEntry(11, schoolResource, "1.0", false);
-        var schoolTypeDescriptorKey = new ResourceKeyEntry(12, schoolTypeDescriptorResource, "1.0", false);
+        var schoolKey = new ResourceKeyEntry(11, _schoolResource, "1.0", false);
+        var localEducationAgencyKey = new ResourceKeyEntry(12, _localEducationAgencyResource, "1.0", false);
+        var schoolTypeDescriptorKey = new ResourceKeyEntry(13, _schoolTypeDescriptorResource, "1.0", false);
+        var educationOrganizationKey = new ResourceKeyEntry(30, _educationOrganizationResource, "1.0", true);
 
         var effectiveSchema = new EffectiveSchemaInfo(
             ApiSchemaFormatVersion: "1.0",
             RelationalMappingVersion: "v1",
             EffectiveSchemaHash: EffectiveSchemaHash,
-            ResourceKeyCount: 3,
+            ResourceKeyCount: 5,
             ResourceKeySeedHash: new byte[32],
             SchemaComponentsInEndpointOrder: [],
-            ResourceKeysInIdOrder: [studentKey, schoolKey, schoolTypeDescriptorKey]
+            ResourceKeysInIdOrder:
+            [
+                studentKey,
+                schoolKey,
+                localEducationAgencyKey,
+                schoolTypeDescriptorKey,
+                educationOrganizationKey,
+            ]
         );
 
         var modelSet = new DerivedRelationalModelSet(
@@ -404,20 +430,53 @@ internal static class RelationalAccessTestData
                 new ConcreteResourceModel(
                     schoolKey,
                     ResourceStorageKind.RelationalTables,
-                    CreateRelationalResourceModel(schoolResource, "School")
+                    CreateRelationalResourceModel(_schoolResource, "School")
+                ),
+                new ConcreteResourceModel(
+                    localEducationAgencyKey,
+                    ResourceStorageKind.RelationalTables,
+                    CreateRelationalResourceModel(_localEducationAgencyResource, "LocalEducationAgency")
                 ),
                 new ConcreteResourceModel(
                     schoolTypeDescriptorKey,
                     ResourceStorageKind.SharedDescriptorTable,
                     CreateRelationalResourceModel(
-                        schoolTypeDescriptorResource,
+                        _schoolTypeDescriptorResource,
                         "Descriptor",
                         ResourceStorageKind.SharedDescriptorTable
                     )
                 ),
             ],
             AbstractIdentityTablesInNameOrder: [],
-            AbstractUnionViewsInNameOrder: [],
+            AbstractUnionViewsInNameOrder:
+            [
+                new AbstractUnionViewInfo(
+                    educationOrganizationKey,
+                    new DbTableName(new DbSchemaName("edfi"), "EducationOrganization_View"),
+                    [
+                        new AbstractUnionViewOutputColumn(
+                            new DbColumnName("DocumentId"),
+                            new RelationalScalarType(ScalarKind.Int64),
+                            null,
+                            null
+                        ),
+                        new AbstractUnionViewOutputColumn(
+                            new DbColumnName("EducationOrganizationId"),
+                            new RelationalScalarType(ScalarKind.Int32),
+                            new JsonPathExpression("$.educationOrganizationId", []),
+                            null
+                        ),
+                    ],
+                    [
+                        CreateAbstractUnionArm(schoolKey, "School", "SchoolId"),
+                        CreateAbstractUnionArm(
+                            localEducationAgencyKey,
+                            "LocalEducationAgency",
+                            "LocalEducationAgencyId"
+                        ),
+                    ]
+                ),
+            ],
             IndexesInCreateOrder: [],
             TriggersInCreateOrder: []
         );
@@ -438,44 +497,6 @@ internal static class RelationalAccessTestData
         );
     }
 
-    private static RelationalResourceModel CreateRelationalResourceModel(
-        QualifiedResourceName resource,
-        string tableName,
-        ResourceStorageKind storageKind = ResourceStorageKind.RelationalTables
-    )
-    {
-        var rootTable = new DbTableModel(
-            Table: new DbTableName(new DbSchemaName("edfi"), tableName),
-            JsonScope: new JsonPathExpression("$", []),
-            Key: new TableKey(
-                $"PK_{tableName}",
-                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
-            ),
-            Columns:
-            [
-                new DbColumnModel(
-                    new DbColumnName("DocumentId"),
-                    ColumnKind.ParentKeyPart,
-                    new RelationalScalarType(ScalarKind.Int64),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-            ],
-            Constraints: []
-        );
-
-        return new RelationalResourceModel(
-            Resource: resource,
-            PhysicalSchema: new DbSchemaName("edfi"),
-            StorageKind: storageKind,
-            Root: rootTable,
-            TablesInDependencyOrder: [rootTable],
-            DocumentReferenceBindings: [],
-            DescriptorEdgeSources: []
-        );
-    }
-
     public static DocumentReference CreateDocumentReference(ReferentialId referentialId, string path) =>
         new(
             ResourceInfo: new BaseResourceInfo(
@@ -488,6 +509,39 @@ internal static class RelationalAccessTestData
             ]),
             ReferentialId: referentialId,
             Path: new JsonPath(path)
+        );
+
+    public static ReferenceLookupRequestEntry CreateSchoolLookup(ReferentialId referentialId) =>
+        CreateLookup(
+            _schoolResource,
+            referentialId,
+            new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
+            isDescriptor: false
+        );
+
+    public static ReferenceLookupRequestEntry CreateEducationOrganizationLookup(
+        ReferentialId referentialId
+    ) =>
+        CreateLookup(
+            _educationOrganizationResource,
+            referentialId,
+            new DocumentIdentity([
+                new DocumentIdentityElement(new JsonPath("$.educationOrganizationId"), "255901"),
+            ]),
+            isDescriptor: false
+        );
+
+    public static ReferenceLookupRequestEntry CreateSchoolTypeDescriptorLookup(
+        ReferentialId referentialId,
+        string uri = "uri://ed-fi.org/SchoolTypeDescriptor#Alternative"
+    ) =>
+        CreateLookup(
+            _schoolTypeDescriptorResource,
+            referentialId,
+            new DocumentIdentity([
+                new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri),
+            ]),
+            isDescriptor: true
         );
 
     public static DescriptorReference CreateDescriptorReference(
@@ -521,4 +575,106 @@ internal static class RelationalAccessTestData
 
         return row;
     }
+
+    private static RelationalResourceModel CreateRelationalResourceModel(
+        QualifiedResourceName resource,
+        string tableName,
+        ResourceStorageKind storageKind = ResourceStorageKind.RelationalTables
+    )
+    {
+        List<DbColumnModel> columns =
+        [
+            new DbColumnModel(
+                new DbColumnName("DocumentId"),
+                ColumnKind.ParentKeyPart,
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+        ];
+
+        if (storageKind is ResourceStorageKind.RelationalTables)
+        {
+            columns.AddRange(CreateIdentityColumns(resource));
+        }
+
+        var rootTable = new DbTableModel(
+            Table: new DbTableName(new DbSchemaName("edfi"), tableName),
+            JsonScope: new JsonPathExpression("$", []),
+            Key: new TableKey(
+                $"PK_{tableName}",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            Columns: columns,
+            Constraints: []
+        );
+
+        return new RelationalResourceModel(
+            Resource: resource,
+            PhysicalSchema: new DbSchemaName("edfi"),
+            StorageKind: storageKind,
+            Root: rootTable,
+            TablesInDependencyOrder: [rootTable],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+    }
+
+    private static IReadOnlyList<DbColumnModel> CreateIdentityColumns(QualifiedResourceName resource)
+    {
+        return resource.ResourceName switch
+        {
+            "School" => [CreateIdentityColumn("SchoolId", "$.schoolId", ScalarKind.Int32)],
+            "LocalEducationAgency" =>
+            [
+                CreateIdentityColumn("LocalEducationAgencyId", "$.localEducationAgencyId", ScalarKind.Int32),
+            ],
+            _ => [],
+        };
+    }
+
+    private static DbColumnModel CreateIdentityColumn(
+        string columnName,
+        string jsonPath,
+        ScalarKind scalarKind
+    ) =>
+        new(
+            new DbColumnName(columnName),
+            ColumnKind.Scalar,
+            new RelationalScalarType(scalarKind),
+            IsNullable: false,
+            SourceJsonPath: new JsonPathExpression(jsonPath, []),
+            TargetResource: null
+        );
+
+    private static AbstractUnionViewArm CreateAbstractUnionArm(
+        ResourceKeyEntry concreteMemberResourceKey,
+        string tableName,
+        string identityColumnName
+    ) =>
+        new(
+            concreteMemberResourceKey,
+            new DbTableName(new DbSchemaName("edfi"), tableName),
+            [
+                new AbstractUnionViewProjectionExpression.SourceColumn(new DbColumnName("DocumentId")),
+                new AbstractUnionViewProjectionExpression.SourceColumn(new DbColumnName(identityColumnName)),
+            ]
+        );
+
+    private static ReferenceLookupRequestEntry CreateLookup(
+        QualifiedResourceName requestedResource,
+        ReferentialId referentialId,
+        DocumentIdentity requestedIdentity,
+        bool isDescriptor
+    ) =>
+        new(
+            referentialId,
+            requestedResource,
+            requestedIdentity,
+            ReferenceLookupVerificationSupport.BuildExpectedVerificationIdentityKey(
+                requestedIdentity,
+                normalizeDescriptorValues: isDescriptor
+            )
+        );
 }

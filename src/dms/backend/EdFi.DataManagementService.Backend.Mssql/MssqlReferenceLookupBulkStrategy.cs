@@ -19,23 +19,11 @@ internal sealed class MssqlReferenceLookupBulkStrategy(IRelationalCommandExecuto
     private const string ReferentialIdColumnName = "Id";
     private const string UniqueIdentifierTableTypeName = "dms.UniqueIdentifierTable";
 
-    private const string LookupCommandText = """
+    private const string LookupInputSql = """
         SELECT
             lookupInput.[Id] AS [ReferentialId],
-            referentialIdentity.[DocumentId] AS [DocumentId],
-            document.[ResourceKeyId] AS [ResourceKeyId],
-            referentialIdentity.[ResourceKeyId] AS [ReferentialIdentityResourceKeyId],
-            CASE
-                WHEN descriptor.[DocumentId] IS NULL THEN CAST(0 AS bit)
-                ELSE CAST(1 AS bit)
-            END AS [IsDescriptor]
+            ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 1 AS [Ordinal]
         FROM @referentialIds lookupInput
-        INNER JOIN [dms].[ReferentialIdentity] referentialIdentity
-            ON referentialIdentity.[ReferentialId] = lookupInput.[Id]
-        INNER JOIN [dms].[Document] document
-            ON document.[DocumentId] = referentialIdentity.[DocumentId]
-        LEFT JOIN [dms].[Descriptor] descriptor
-            ON descriptor.[DocumentId] = document.[DocumentId]
         """;
 
     private readonly IRelationalCommandExecutor _commandExecutor =
@@ -60,7 +48,7 @@ internal sealed class MssqlReferenceLookupBulkStrategy(IRelationalCommandExecuto
 
         var lookupResults = await _commandExecutor
             .ExecuteReaderAsync(
-                BuildCommand(request.ReferentialIds),
+                BuildCommand(request),
                 ReferenceLookupResultReader.ReadAsync,
                 cancellationToken
             )
@@ -69,16 +57,16 @@ internal sealed class MssqlReferenceLookupBulkStrategy(IRelationalCommandExecuto
         return ReorderResultsInRequestOrder(request.ReferentialIds, lookupResults);
     }
 
-    internal static RelationalCommand BuildCommand(IReadOnlyList<ReferentialId> referentialIds)
+    internal static RelationalCommand BuildCommand(ReferenceLookupRequest request)
     {
-        ArgumentNullException.ThrowIfNull(referentialIds);
+        ArgumentNullException.ThrowIfNull(request);
 
         return new RelationalCommand(
-            LookupCommandText,
+            MssqlReferenceLookupSmallListStrategy.BuildCommandText(request, LookupInputSql),
             [
                 new RelationalParameter(
                     ReferentialIdsParameterName,
-                    CreateReferentialIdTable(referentialIds),
+                    CreateReferentialIdTable(request.ReferentialIds),
                     ConfigureReferentialIdsParameter
                 ),
             ]

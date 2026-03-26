@@ -21,7 +21,7 @@ internal sealed class PostgresqlReferenceResolverAdapter(IRelationalCommandExecu
         ArgumentNullException.ThrowIfNull(request);
 
         return _commandExecutor.ExecuteReaderAsync(
-            PostgresqlReferenceLookupCommandBuilder.Build(request.ReferentialIds),
+            PostgresqlReferenceLookupCommandBuilder.Build(request),
             ReferenceLookupResultReader.ReadAsync,
             cancellationToken
         );

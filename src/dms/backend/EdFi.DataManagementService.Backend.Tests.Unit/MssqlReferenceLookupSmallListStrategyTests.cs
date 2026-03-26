@@ -20,7 +20,13 @@ public class Given_MssqlReferenceLookupSmallListStrategy
     [Test]
     public void It_emits_an_empty_zero_row_lookup_shape_without_parameters()
     {
-        var command = MssqlReferenceLookupSmallListStrategy.BuildCommand([]);
+        var command = MssqlReferenceLookupSmallListStrategy.BuildCommand(
+            new ReferenceLookupRequest(
+                MappingSet: RelationalAccessTestData.CreateMappingSet(_requestResource),
+                RequestResource: _requestResource,
+                Lookups: []
+            )
+        );
 
         command.Parameters.Should().BeEmpty();
         command
@@ -28,6 +34,8 @@ public class Given_MssqlReferenceLookupSmallListStrategy
             .Contain(
                 "SELECT CAST(NULL AS uniqueidentifier) AS [ReferentialId], CAST(NULL AS int) AS [Ordinal]"
             );
+        command.CommandText.Should().Contain("[VerificationIdentity]");
+        command.CommandText.Should().Contain("[VerificationIdentityKey]");
         command.CommandText.Should().Contain("INNER JOIN [dms].[ReferentialIdentity]");
         command.CommandText.Should().Contain("LEFT JOIN [dms].[Descriptor]");
         command.CommandText.Should().Contain("ORDER BY lookupInput.[Ordinal]");
@@ -48,21 +56,27 @@ public class Given_MssqlReferenceLookupSmallListStrategy
                         ("DocumentId", 101L),
                         ("ResourceKeyId", (short)11),
                         ("ReferentialIdentityResourceKeyId", (short)11),
-                        ("IsDescriptor", false)
+                        ("IsDescriptor", false),
+                        ("VerificationIdentityKey", "$$.schoolId=255901")
                     ),
                     RelationalAccessTestData.CreateRow(
                         ("ReferentialId", aliasReferentialId.Value),
                         ("DocumentId", 202L),
                         ("ResourceKeyId", (short)21),
                         ("ReferentialIdentityResourceKeyId", (short)30),
-                        ("IsDescriptor", false)
+                        ("IsDescriptor", false),
+                        ("VerificationIdentityKey", "$$.educationOrganizationId=255901")
                     ),
                     RelationalAccessTestData.CreateRow(
                         ("ReferentialId", descriptorReferentialId.Value),
                         ("DocumentId", 303L),
                         ("ResourceKeyId", (short)40),
                         ("ReferentialIdentityResourceKeyId", (short)40),
-                        ("IsDescriptor", true)
+                        ("IsDescriptor", true),
+                        (
+                            "VerificationIdentityKey",
+                            "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
+                        )
                     )
                 ),
             ]),
@@ -73,12 +87,12 @@ public class Given_MssqlReferenceLookupSmallListStrategy
             new ReferenceLookupRequest(
                 MappingSet: RelationalAccessTestData.CreateMappingSet(_requestResource),
                 RequestResource: _requestResource,
-                ReferentialIds:
+                Lookups:
                 [
-                    foundReferentialId,
-                    missingReferentialId,
-                    aliasReferentialId,
-                    descriptorReferentialId,
+                    RelationalAccessTestData.CreateSchoolLookup(foundReferentialId),
+                    RelationalAccessTestData.CreateSchoolLookup(missingReferentialId),
+                    RelationalAccessTestData.CreateEducationOrganizationLookup(aliasReferentialId),
+                    RelationalAccessTestData.CreateSchoolTypeDescriptorLookup(descriptorReferentialId),
                 ]
             )
         );
@@ -89,6 +103,8 @@ public class Given_MssqlReferenceLookupSmallListStrategy
         executor.Commands[0].CommandText.Should().Contain("(@p1, 1)");
         executor.Commands[0].CommandText.Should().Contain("(@p2, 2)");
         executor.Commands[0].CommandText.Should().Contain("(@p3, 3)");
+        executor.Commands[0].CommandText.Should().Contain("FROM [edfi].[School] source");
+        executor.Commands[0].CommandText.Should().Contain("FROM [edfi].[EducationOrganization_View] source");
         executor.Commands[0].Parameters.Should().HaveCount(4);
         executor.Commands[0].Parameters[0].Name.Should().Be("@p0");
         executor.Commands[0].Parameters[0].Value.Should().Be(foundReferentialId.Value);
@@ -103,9 +119,23 @@ public class Given_MssqlReferenceLookupSmallListStrategy
         result
             .Should()
             .Equal(
-                new ReferenceLookupResult(foundReferentialId, 101L, 11, 11, false),
-                new ReferenceLookupResult(aliasReferentialId, 202L, 21, 30, false),
-                new ReferenceLookupResult(descriptorReferentialId, 303L, 40, 40, true)
+                new ReferenceLookupResult(foundReferentialId, 101L, 11, 11, false, "$$.schoolId=255901"),
+                new ReferenceLookupResult(
+                    aliasReferentialId,
+                    202L,
+                    21,
+                    30,
+                    false,
+                    "$$.educationOrganizationId=255901"
+                ),
+                new ReferenceLookupResult(
+                    descriptorReferentialId,
+                    303L,
+                    40,
+                    40,
+                    true,
+                    "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
+                )
             );
     }
 
@@ -118,7 +148,13 @@ public class Given_MssqlReferenceLookupSmallListStrategy
             .. Enumerable.Range(1, maximumSupportedSmallLookupCount).Select(CreateReferentialId),
         ];
 
-        var command = MssqlReferenceLookupSmallListStrategy.BuildCommand(referentialIds);
+        var command = MssqlReferenceLookupSmallListStrategy.BuildCommand(
+            new ReferenceLookupRequest(
+                MappingSet: RelationalAccessTestData.CreateMappingSet(_requestResource),
+                RequestResource: _requestResource,
+                Lookups: [.. referentialIds.Select(RelationalAccessTestData.CreateSchoolLookup)]
+            )
+        );
 
         command.Parameters.Should().HaveCount(maximumSupportedSmallLookupCount);
         command.Parameters[0].Name.Should().Be("@p0");
@@ -156,7 +192,14 @@ public class Given_MssqlReferenceLookupSmallListStrategy
             .Should()
             .BeFalse();
 
-        Action act = () => MssqlReferenceLookupSmallListStrategy.BuildCommand(referentialIds);
+        Action act = () =>
+            MssqlReferenceLookupSmallListStrategy.BuildCommand(
+                new ReferenceLookupRequest(
+                    MappingSet: RelationalAccessTestData.CreateMappingSet(_requestResource),
+                    RequestResource: _requestResource,
+                    Lookups: [.. referentialIds.Select(RelationalAccessTestData.CreateSchoolLookup)]
+                )
+            );
 
         act.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*fewer than 2000 referential ids*");
     }

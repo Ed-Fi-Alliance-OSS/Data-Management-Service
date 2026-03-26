@@ -90,6 +90,16 @@ public class Given_ReferenceResolver
         adapter.Requests[0].MappingSet.Should().BeSameAs(mappingSet);
         adapter.Requests[0].RequestResource.Should().Be(_requestResource);
         adapter.Requests[0].ReferentialIds.Should().Equal(documentReferentialId, descriptorReferentialId);
+        adapter
+            .Requests[0]
+            .Lookups.Select(lookup =>
+                (lookup.RequestedResource.ResourceName, lookup.ExpectedVerificationIdentityKey)
+            )
+            .Should()
+            .Equal(
+                ("School", "$$.schoolId=255901"),
+                ("SchoolTypeDescriptor", "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative")
+            );
 
         result
             .SuccessfulDocumentReferencesByPath.Keys.Should()

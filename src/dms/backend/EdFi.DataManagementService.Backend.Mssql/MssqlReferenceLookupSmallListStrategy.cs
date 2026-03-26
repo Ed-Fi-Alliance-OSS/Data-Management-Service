@@ -5,8 +5,10 @@
 
 using System.Data;
 using System.Data.Common;
+using System.Globalization;
 using System.Text;
 using EdFi.DataManagementService.Backend;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Data.SqlClient;
 
@@ -15,9 +17,24 @@ namespace EdFi.DataManagementService.Backend.Mssql;
 internal sealed class MssqlReferenceLookupSmallListStrategy(IRelationalCommandExecutor commandExecutor)
 {
     internal const int BulkLookupThreshold = 2000;
+    private static readonly string _descriptorVerificationPrefix =
+        ReferenceLookupVerificationSupport.BuildExpectedVerificationIdentityKey(
+            new DocumentIdentity([
+                new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, string.Empty),
+            ]),
+            normalizeDescriptorValues: true
+        );
 
     private const string EmptyLookupInputSql = """
         SELECT CAST(NULL AS uniqueidentifier) AS [ReferentialId], CAST(NULL AS int) AS [Ordinal]
+        WHERE 1 = 0
+        """;
+
+    private const string EmptyVerificationIdentitySql = """
+        SELECT
+            CAST(NULL AS bigint) AS [DocumentId],
+            CAST(NULL AS smallint) AS [ResourceKeyId],
+            CAST(NULL AS nvarchar(max)) AS [VerificationIdentityKey]
         WHERE 1 = 0
         """;
 
@@ -41,19 +58,27 @@ internal sealed class MssqlReferenceLookupSmallListStrategy(IRelationalCommandEx
         ArgumentNullException.ThrowIfNull(request);
 
         return _commandExecutor.ExecuteReaderAsync(
-            BuildCommand(request.ReferentialIds),
+            BuildCommand(request),
             ReferenceLookupResultReader.ReadAsync,
             cancellationToken
         );
     }
 
-    internal static RelationalCommand BuildCommand(IReadOnlyList<ReferentialId> referentialIds)
+    internal static RelationalCommand BuildCommand(ReferenceLookupRequest request)
     {
-        ArgumentNullException.ThrowIfNull(referentialIds);
+        ArgumentNullException.ThrowIfNull(request);
 
-        EnsureSupportedLookupSize(referentialIds.Count);
+        EnsureSupportedLookupSize(request.ReferentialIds.Count);
 
-        return new RelationalCommand(BuildCommandText(referentialIds.Count), BuildParameters(referentialIds));
+        return new RelationalCommand(
+            BuildCommandText(
+                request,
+                request.ReferentialIds.Count == 0
+                    ? EmptyLookupInputSql
+                    : BuildLookupInputSql(request.ReferentialIds.Count)
+            ),
+            BuildParameters(request.ReferentialIds)
+        );
     }
 
     private static IReadOnlyList<RelationalParameter> BuildParameters(
@@ -76,14 +101,17 @@ internal sealed class MssqlReferenceLookupSmallListStrategy(IRelationalCommandEx
         return parameters;
     }
 
-    private static string BuildCommandText(int referentialIdCount)
+    internal static string BuildCommandText(ReferenceLookupRequest request, string lookupInputSql)
     {
-        var lookupInputSql =
-            referentialIdCount == 0 ? EmptyLookupInputSql : BuildLookupInputSql(referentialIdCount);
+        var verificationIdentitySql = BuildVerificationIdentitySql(request);
+        var descriptorVerificationPrefix = EscapeSqlLiteral(_descriptorVerificationPrefix);
 
         return $$"""
             WITH [LookupInput]([ReferentialId], [Ordinal]) AS (
                 {{lookupInputSql}}
+            ),
+            [VerificationIdentity]([DocumentId], [ResourceKeyId], [VerificationIdentityKey]) AS (
+                {{verificationIdentitySql}}
             )
             SELECT
                 lookupInput.[ReferentialId] AS [ReferentialId],
@@ -93,7 +121,11 @@ internal sealed class MssqlReferenceLookupSmallListStrategy(IRelationalCommandEx
                 CASE
                     WHEN descriptor.[DocumentId] IS NULL THEN CAST(0 AS bit)
                     ELSE CAST(1 AS bit)
-                END AS [IsDescriptor]
+                END AS [IsDescriptor],
+                CASE
+                    WHEN descriptor.[DocumentId] IS NOT NULL THEN N'{{descriptorVerificationPrefix}}' + LOWER(descriptor.[Uri])
+                    ELSE verificationIdentity.[VerificationIdentityKey]
+                END AS [VerificationIdentityKey]
             FROM [LookupInput] lookupInput
             INNER JOIN [dms].[ReferentialIdentity] referentialIdentity
                 ON referentialIdentity.[ReferentialId] = lookupInput.[ReferentialId]
@@ -101,9 +133,93 @@ internal sealed class MssqlReferenceLookupSmallListStrategy(IRelationalCommandEx
                 ON document.[DocumentId] = referentialIdentity.[DocumentId]
             LEFT JOIN [dms].[Descriptor] descriptor
                 ON descriptor.[DocumentId] = document.[DocumentId]
+            LEFT JOIN [VerificationIdentity] verificationIdentity
+                ON verificationIdentity.[DocumentId] = document.[DocumentId]
+                AND verificationIdentity.[ResourceKeyId] = referentialIdentity.[ResourceKeyId]
             ORDER BY lookupInput.[Ordinal]
             """;
     }
+
+    private static string BuildVerificationIdentitySql(ReferenceLookupRequest request)
+    {
+        var projections = ReferenceLookupVerificationSupport.BuildProjections(request);
+
+        return projections.Count == 0
+            ? EmptyVerificationIdentitySql
+            : string.Join(
+                Environment.NewLine + "UNION ALL" + Environment.NewLine,
+                projections.Select(BuildVerificationIdentityProjectionSql)
+            );
+    }
+
+    private static string BuildVerificationIdentityProjectionSql(
+        ReferenceLookupVerificationProjection projection
+    )
+    {
+        return $$"""
+            SELECT
+                source.[DocumentId] AS [DocumentId],
+                {{projection.ResourceKeyId.ToString(CultureInfo.InvariantCulture)}} AS [ResourceKeyId],
+                {{BuildVerificationIdentityExpression(
+                "source",
+                projection.IdentityElements
+            )}} AS [VerificationIdentityKey]
+            FROM {{QuoteTableName(projection.SourceTable)}} source
+            """;
+    }
+
+    private static string BuildVerificationIdentityExpression(
+        string sourceAlias,
+        IReadOnlyList<ReferenceLookupVerificationElement> identityElements
+    )
+    {
+        StringBuilder builder = new();
+
+        for (var index = 0; index < identityElements.Count; index++)
+        {
+            var identityElement = identityElements[index];
+
+            if (index > 0)
+            {
+                builder.Append(" + N'#' + ");
+            }
+
+            builder.Append("N'");
+            builder.Append(EscapeSqlLiteral($"${identityElement.IdentityJsonPath}="));
+            builder.Append("' + ");
+            builder.Append(BuildColumnToTextExpression(sourceAlias, identityElement));
+        }
+
+        return builder.ToString();
+    }
+
+    private static string BuildColumnToTextExpression(
+        string sourceAlias,
+        ReferenceLookupVerificationElement identityElement
+    )
+    {
+        var quotedColumnName = QuoteIdentifier(identityElement.Column.Value);
+
+        return identityElement.ScalarType.Kind switch
+        {
+            ScalarKind.String => $"{sourceAlias}.{quotedColumnName}",
+            ScalarKind.Date => $"CONVERT(nvarchar(10), {sourceAlias}.{quotedColumnName}, 23)",
+            ScalarKind.DateTime => $"CONVERT(nvarchar(19), {sourceAlias}.{quotedColumnName}, 126)",
+            ScalarKind.Time => $"CONVERT(nvarchar(8), {sourceAlias}.{quotedColumnName}, 108)",
+            ScalarKind.Boolean =>
+                $"CASE WHEN {sourceAlias}.{quotedColumnName} = 1 THEN N'true' ELSE N'false' END",
+            _ => $"CAST({sourceAlias}.{quotedColumnName} AS nvarchar(max))",
+        };
+    }
+
+    private static string QuoteTableName(DbTableName tableName) =>
+        $"{QuoteIdentifier(tableName.Schema.Value)}.{QuoteIdentifier(tableName.Name)}";
+
+    private static string QuoteIdentifier(string identifier) =>
+        $"[{identifier.Replace("]", "]]", StringComparison.Ordinal)}]";
+
+    private static string EscapeSqlLiteral(string value) =>
+        value.Replace("'", "''", StringComparison.Ordinal);
 
     private static string BuildLookupInputSql(int referentialIdCount)
     {

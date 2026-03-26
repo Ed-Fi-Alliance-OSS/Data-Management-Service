@@ -18,11 +18,13 @@ public class Given_PostgresqlReferenceLookupCommandBuilder
     private static readonly NpgsqlDbType ReferentialIdsParameterDbType = (NpgsqlDbType)(
         (int)NpgsqlDbType.Array | (int)NpgsqlDbType.Uuid
     );
+    private static readonly EdFi.DataManagementService.Backend.External.QualifiedResourceName _requestResource =
+        new("Ed-Fi", "Student");
 
     [Test]
     public void It_emits_a_single_uuid_array_parameter_for_empty_lookup_sets()
     {
-        var command = PostgresqlReferenceLookupCommandBuilder.Build([]);
+        var command = PostgresqlReferenceLookupCommandBuilder.Build(CreateRequest([]));
 
         command.Parameters.Should().ContainSingle();
         command.Parameters[0].Name.Should().Be("@referentialIds");
@@ -34,6 +36,8 @@ public class Given_PostgresqlReferenceLookupCommandBuilder
         npgsqlParameter.NpgsqlDbType.Should().Be(ReferentialIdsParameterDbType);
 
         command.CommandText.Should().Contain("unnest(@referentialIds::uuid[]) WITH ORDINALITY");
+        command.CommandText.Should().Contain("\"VerificationIdentity\"");
+        command.CommandText.Should().Contain("\"VerificationIdentityKey\"");
         command.CommandText.Should().Contain("INNER JOIN dms.\"ReferentialIdentity\"");
         command.CommandText.Should().Contain("LEFT JOIN dms.\"Descriptor\"");
         command.CommandText.Should().Contain("ORDER BY lookupInput.\"Ordinal\"");
@@ -49,7 +53,7 @@ public class Given_PostgresqlReferenceLookupCommandBuilder
             CreateReferentialId(23),
         ];
 
-        var command = PostgresqlReferenceLookupCommandBuilder.Build(referentialIds);
+        var command = PostgresqlReferenceLookupCommandBuilder.Build(CreateRequest(referentialIds));
 
         ((Guid[])command.Parameters[0].Value!)
             .Should()
@@ -60,17 +64,46 @@ public class Given_PostgresqlReferenceLookupCommandBuilder
     public void It_uses_the_same_bulk_sql_shape_for_large_lookup_sets_without_per_reference_parameters()
     {
         ReferentialId[] referentialIds = [.. Enumerable.Range(1, 5000).Select(CreateReferentialId)];
+        ReferentialId[] shapeReferentialIds =
+        [
+            CreateReferentialId(7001),
+            CreateReferentialId(7002),
+            CreateReferentialId(7003),
+        ];
 
-        var emptyCommand = PostgresqlReferenceLookupCommandBuilder.Build([]);
-        var largeCommand = PostgresqlReferenceLookupCommandBuilder.Build(referentialIds);
+        var shapeCommand = PostgresqlReferenceLookupCommandBuilder.Build(CreateRequest(shapeReferentialIds));
+        var largeCommand = PostgresqlReferenceLookupCommandBuilder.Build(CreateRequest(referentialIds));
 
-        largeCommand.CommandText.Should().Be(emptyCommand.CommandText);
+        largeCommand.CommandText.Should().Be(shapeCommand.CommandText);
         largeCommand.Parameters.Should().ContainSingle();
 
         var parameterValues = (Guid[])largeCommand.Parameters[0].Value!;
         parameterValues.Should().HaveCount(5000);
         parameterValues[0].Should().Be(referentialIds[0].Value);
         parameterValues[^1].Should().Be(referentialIds[^1].Value);
+    }
+
+    [Test]
+    public void It_projects_authoritative_identity_witnesses_from_concrete_and_abstract_sources()
+    {
+        var command = PostgresqlReferenceLookupCommandBuilder.Build(
+            new ReferenceLookupRequest(
+                MappingSet: RelationalAccessTestData.CreateMappingSet(_requestResource),
+                RequestResource: _requestResource,
+                Lookups:
+                [
+                    RelationalAccessTestData.CreateSchoolLookup(CreateReferentialId(1)),
+                    RelationalAccessTestData.CreateEducationOrganizationLookup(CreateReferentialId(2)),
+                    RelationalAccessTestData.CreateSchoolTypeDescriptorLookup(CreateReferentialId(3)),
+                ]
+            )
+        );
+
+        command.CommandText.Should().Contain("FROM \"edfi\".\"School\" source");
+        command.CommandText.Should().Contain("FROM \"edfi\".\"EducationOrganization_View\" source");
+        command.CommandText.Should().Contain("'$$.schoolId='");
+        command.CommandText.Should().Contain("'$$.educationOrganizationId='");
+        command.CommandText.Should().Contain("'$$.descriptor=' || lower(descriptor.\"Uri\")");
     }
 
     private static ReferentialId CreateReferentialId(int seed)
@@ -81,4 +114,22 @@ public class Given_PostgresqlReferenceLookupCommandBuilder
 
         return new ReferentialId(new Guid(bytes));
     }
+
+    private static ReferenceLookupRequest CreateRequest(IReadOnlyList<ReferentialId> referentialIds) =>
+        new(
+            MappingSet: RelationalAccessTestData.CreateMappingSet(_requestResource),
+            RequestResource: _requestResource,
+            Lookups:
+            [
+                .. referentialIds.Select(
+                    (referentialId, index) =>
+                        index switch
+                        {
+                            0 => RelationalAccessTestData.CreateSchoolLookup(referentialId),
+                            1 => RelationalAccessTestData.CreateEducationOrganizationLookup(referentialId),
+                            _ => RelationalAccessTestData.CreateSchoolTypeDescriptorLookup(referentialId),
+                        }
+                ),
+            ]
+        );
 }

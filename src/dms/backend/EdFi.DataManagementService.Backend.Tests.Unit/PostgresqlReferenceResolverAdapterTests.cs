@@ -31,21 +31,27 @@ public class Given_PostgresqlReferenceResolverAdapter
                         ("DocumentId", 101L),
                         ("ResourceKeyId", (short)11),
                         ("ReferentialIdentityResourceKeyId", (short)11),
-                        ("IsDescriptor", false)
+                        ("IsDescriptor", false),
+                        ("VerificationIdentityKey", "$$.schoolId=255901")
                     ),
                     RelationalAccessTestData.CreateRow(
                         ("ReferentialId", aliasReferentialId.Value),
                         ("DocumentId", 202L),
                         ("ResourceKeyId", (short)21),
                         ("ReferentialIdentityResourceKeyId", (short)30),
-                        ("IsDescriptor", false)
+                        ("IsDescriptor", false),
+                        ("VerificationIdentityKey", "$$.educationOrganizationId=255901")
                     ),
                     RelationalAccessTestData.CreateRow(
                         ("ReferentialId", descriptorReferentialId.Value),
                         ("DocumentId", 303L),
                         ("ResourceKeyId", (short)40),
                         ("ReferentialIdentityResourceKeyId", (short)40),
-                        ("IsDescriptor", true)
+                        ("IsDescriptor", true),
+                        (
+                            "VerificationIdentityKey",
+                            "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
+                        )
                     )
                 ),
             ]),
@@ -56,12 +62,12 @@ public class Given_PostgresqlReferenceResolverAdapter
             new ReferenceLookupRequest(
                 MappingSet: RelationalAccessTestData.CreateMappingSet(_requestResource),
                 RequestResource: _requestResource,
-                ReferentialIds:
+                Lookups:
                 [
-                    foundReferentialId,
-                    missingReferentialId,
-                    aliasReferentialId,
-                    descriptorReferentialId,
+                    RelationalAccessTestData.CreateSchoolLookup(foundReferentialId),
+                    RelationalAccessTestData.CreateSchoolLookup(missingReferentialId),
+                    RelationalAccessTestData.CreateEducationOrganizationLookup(aliasReferentialId),
+                    RelationalAccessTestData.CreateSchoolTypeDescriptorLookup(descriptorReferentialId),
                 ]
             )
         );
@@ -83,9 +89,23 @@ public class Given_PostgresqlReferenceResolverAdapter
         result
             .Should()
             .Equal(
-                new ReferenceLookupResult(foundReferentialId, 101L, 11, 11, false),
-                new ReferenceLookupResult(aliasReferentialId, 202L, 21, 30, false),
-                new ReferenceLookupResult(descriptorReferentialId, 303L, 40, 40, true)
+                new ReferenceLookupResult(foundReferentialId, 101L, 11, 11, false, "$$.schoolId=255901"),
+                new ReferenceLookupResult(
+                    aliasReferentialId,
+                    202L,
+                    21,
+                    30,
+                    false,
+                    "$$.educationOrganizationId=255901"
+                ),
+                new ReferenceLookupResult(
+                    descriptorReferentialId,
+                    303L,
+                    40,
+                    40,
+                    true,
+                    "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
+                )
             );
     }
 }

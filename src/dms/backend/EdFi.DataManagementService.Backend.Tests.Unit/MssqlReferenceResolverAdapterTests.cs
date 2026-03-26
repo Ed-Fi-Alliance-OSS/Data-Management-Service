@@ -25,12 +25,17 @@ public class Given_MssqlReferenceResolverAdapter
         var missingReferentialId = new ReferentialId(Guid.NewGuid());
         var incompatibleTargetReferentialId = new ReferentialId(Guid.NewGuid());
         var descriptorReferentialId = new ReferentialId(Guid.NewGuid());
-        var request = CreateRequest([
-            foundReferentialId,
-            missingReferentialId,
-            incompatibleTargetReferentialId,
-            descriptorReferentialId,
-        ]);
+        var request = new ReferenceLookupRequest(
+            MappingSet: RelationalAccessTestData.CreateMappingSet(_requestResource),
+            RequestResource: _requestResource,
+            Lookups:
+            [
+                RelationalAccessTestData.CreateSchoolLookup(foundReferentialId),
+                RelationalAccessTestData.CreateSchoolLookup(missingReferentialId),
+                RelationalAccessTestData.CreateSchoolLookup(incompatibleTargetReferentialId),
+                RelationalAccessTestData.CreateSchoolTypeDescriptorLookup(descriptorReferentialId),
+            ]
+        );
         var mssqlExecutor = new InMemoryRelationalCommandExecutor([
             CreateLookupExecution(
                 RelationalAccessTestData.CreateRow(
@@ -38,21 +43,27 @@ public class Given_MssqlReferenceResolverAdapter
                     ("DocumentId", 101L),
                     ("ResourceKeyId", (short)11),
                     ("ReferentialIdentityResourceKeyId", (short)11),
-                    ("IsDescriptor", false)
+                    ("IsDescriptor", false),
+                    ("VerificationIdentityKey", "$$.schoolId=255901")
                 ),
                 RelationalAccessTestData.CreateRow(
                     ("ReferentialId", incompatibleTargetReferentialId.Value),
                     ("DocumentId", 202L),
                     ("ResourceKeyId", (short)90),
                     ("ReferentialIdentityResourceKeyId", (short)90),
-                    ("IsDescriptor", false)
+                    ("IsDescriptor", false),
+                    ("VerificationIdentityKey", "$$.schoolId=999999")
                 ),
                 RelationalAccessTestData.CreateRow(
                     ("ReferentialId", descriptorReferentialId.Value),
                     ("DocumentId", 303L),
                     ("ResourceKeyId", (short)40),
                     ("ReferentialIdentityResourceKeyId", (short)40),
-                    ("IsDescriptor", true)
+                    ("IsDescriptor", true),
+                    (
+                        "VerificationIdentityKey",
+                        "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
+                    )
                 )
             ),
         ]);
@@ -63,21 +74,27 @@ public class Given_MssqlReferenceResolverAdapter
                     ("DocumentId", 101L),
                     ("ResourceKeyId", (short)11),
                     ("ReferentialIdentityResourceKeyId", (short)11),
-                    ("IsDescriptor", false)
+                    ("IsDescriptor", false),
+                    ("VerificationIdentityKey", "$$.schoolId=255901")
                 ),
                 RelationalAccessTestData.CreateRow(
                     ("ReferentialId", incompatibleTargetReferentialId.Value),
                     ("DocumentId", 202L),
                     ("ResourceKeyId", (short)90),
                     ("ReferentialIdentityResourceKeyId", (short)90),
-                    ("IsDescriptor", false)
+                    ("IsDescriptor", false),
+                    ("VerificationIdentityKey", "$$.schoolId=999999")
                 ),
                 RelationalAccessTestData.CreateRow(
                     ("ReferentialId", descriptorReferentialId.Value),
                     ("DocumentId", 303L),
                     ("ResourceKeyId", (short)40),
                     ("ReferentialIdentityResourceKeyId", (short)40),
-                    ("IsDescriptor", true)
+                    ("IsDescriptor", true),
+                    (
+                        "VerificationIdentityKey",
+                        "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
+                    )
                 )
             ),
         ]);
@@ -98,9 +115,23 @@ public class Given_MssqlReferenceResolverAdapter
         result
             .Should()
             .Equal(
-                new ReferenceLookupResult(foundReferentialId, 101L, 11, 11, false),
-                new ReferenceLookupResult(incompatibleTargetReferentialId, 202L, 90, 90, false),
-                new ReferenceLookupResult(descriptorReferentialId, 303L, 40, 40, true)
+                new ReferenceLookupResult(foundReferentialId, 101L, 11, 11, false, "$$.schoolId=255901"),
+                new ReferenceLookupResult(
+                    incompatibleTargetReferentialId,
+                    202L,
+                    90,
+                    90,
+                    false,
+                    "$$.schoolId=999999"
+                ),
+                new ReferenceLookupResult(
+                    descriptorReferentialId,
+                    303L,
+                    40,
+                    40,
+                    true,
+                    "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
+                )
             );
     }
 
@@ -126,20 +157,37 @@ public class Given_MssqlReferenceResolverAdapter
                     ("DocumentId", 303L),
                     ("ResourceKeyId", (short)40),
                     ("ReferentialIdentityResourceKeyId", (short)40),
-                    ("IsDescriptor", true)
+                    ("IsDescriptor", true),
+                    (
+                        "VerificationIdentityKey",
+                        "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
+                    )
                 ),
                 RelationalAccessTestData.CreateRow(
                     ("ReferentialId", firstFoundReferentialId.Value),
                     ("DocumentId", 101L),
                     ("ResourceKeyId", (short)11),
                     ("ReferentialIdentityResourceKeyId", (short)11),
-                    ("IsDescriptor", false)
+                    ("IsDescriptor", false),
+                    ("VerificationIdentityKey", "$$.schoolId=255901")
                 )
             ),
         ]);
         var sut = new MssqlReferenceResolverAdapter(executor);
 
-        var result = await sut.ResolveAsync(CreateRequest(referentialIds));
+        var result = await sut.ResolveAsync(
+            new ReferenceLookupRequest(
+                MappingSet: RelationalAccessTestData.CreateMappingSet(_requestResource),
+                RequestResource: _requestResource,
+                Lookups:
+                [
+                    RelationalAccessTestData.CreateSchoolLookup(firstFoundReferentialId),
+                    RelationalAccessTestData.CreateSchoolLookup(missingReferentialId),
+                    RelationalAccessTestData.CreateSchoolTypeDescriptorLookup(descriptorReferentialId),
+                    .. referentialIds.Skip(3).Select(RelationalAccessTestData.CreateSchoolLookup),
+                ]
+            )
+        );
 
         executor.Commands.Should().ContainSingle();
         executor.Commands[0].CommandText.Should().Contain("FROM @referentialIds lookupInput");
@@ -149,17 +197,17 @@ public class Given_MssqlReferenceResolverAdapter
         result
             .Should()
             .Equal(
-                new ReferenceLookupResult(firstFoundReferentialId, 101L, 11, 11, false),
-                new ReferenceLookupResult(descriptorReferentialId, 303L, 40, 40, true)
+                new ReferenceLookupResult(firstFoundReferentialId, 101L, 11, 11, false, "$$.schoolId=255901"),
+                new ReferenceLookupResult(
+                    descriptorReferentialId,
+                    303L,
+                    40,
+                    40,
+                    true,
+                    "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
+                )
             );
     }
-
-    private static ReferenceLookupRequest CreateRequest(IReadOnlyList<ReferentialId> referentialIds) =>
-        new(
-            MappingSet: RelationalAccessTestData.CreateMappingSet(_requestResource),
-            RequestResource: _requestResource,
-            ReferentialIds: referentialIds
-        );
 
     private static InMemoryRelationalCommandExecution CreateLookupExecution(
         params IReadOnlyDictionary<string, object?>[] rows

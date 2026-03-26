@@ -38,8 +38,22 @@ public class Given_MssqlRelationalCommandExecutor
             new RecordingDbCommand(
                 CreateReader(
                     CreateLookupTable(
-                        (documentReferentialId.Value, 101L, (short)11, (short)11, false),
-                        (descriptorReferentialId.Value, 202L, (short)12, (short)12, true)
+                        (
+                            documentReferentialId.Value,
+                            101L,
+                            (short)11,
+                            (short)11,
+                            false,
+                            "$$.schoolId=255901"
+                        ),
+                        (
+                            descriptorReferentialId.Value,
+                            202L,
+                            (short)12,
+                            (short)12,
+                            true,
+                            "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
+                        )
                     )
                 )
             )
@@ -86,8 +100,15 @@ public class Given_MssqlRelationalCommandExecutor
         result
             .Should()
             .BeEquivalentTo([
-                new ReferenceLookupResult(documentReferentialId, 101L, 11, 11, false),
-                new ReferenceLookupResult(descriptorReferentialId, 202L, 12, 12, true),
+                new ReferenceLookupResult(documentReferentialId, 101L, 11, 11, false, "$$.schoolId=255901"),
+                new ReferenceLookupResult(
+                    descriptorReferentialId,
+                    202L,
+                    12,
+                    12,
+                    true,
+                    "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
+                ),
             ]);
     }
 
@@ -152,7 +173,8 @@ public class Given_MssqlRelationalCommandExecutor
             long DocumentId,
             short ResourceKeyId,
             short ReferentialIdentityResourceKeyId,
-            bool IsDescriptor
+            bool IsDescriptor,
+            string? VerificationIdentityKey
         )[] rows
     )
     {
@@ -162,6 +184,7 @@ public class Given_MssqlRelationalCommandExecutor
         table.Columns.Add("ResourceKeyId", typeof(short));
         table.Columns.Add("ReferentialIdentityResourceKeyId", typeof(short));
         table.Columns.Add("IsDescriptor", typeof(bool));
+        table.Columns.Add("VerificationIdentityKey", typeof(string));
 
         foreach (var row in rows)
         {
@@ -170,7 +193,8 @@ public class Given_MssqlRelationalCommandExecutor
                 row.DocumentId,
                 row.ResourceKeyId,
                 row.ReferentialIdentityResourceKeyId,
-                row.IsDescriptor
+                row.IsDescriptor,
+                row.VerificationIdentityKey
             );
         }
 

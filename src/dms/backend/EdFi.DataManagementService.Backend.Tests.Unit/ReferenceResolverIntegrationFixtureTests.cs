@@ -31,11 +31,20 @@ public class Given_ReferenceResolverIntegrationFixture
         _seedBatches
             .Select(batch => $"{batch.Table.Schema.Value}.{batch.Table.Name}")
             .Should()
-            .Equal("dms.ResourceKey", "dms.Document", "dms.ReferentialIdentity", "dms.Descriptor");
+            .Equal(
+                "dms.ResourceKey",
+                "dms.Document",
+                "dms.ReferentialIdentity",
+                "edfi.School",
+                "edfi.LocalEducationAgency",
+                "dms.Descriptor"
+            );
 
         _seedBatches.Single(batch => batch.Table.Name == "ResourceKey").Rows.Should().HaveCount(6);
         _seedBatches.Single(batch => batch.Table.Name == "Document").Rows.Should().HaveCount(4);
         _seedBatches.Single(batch => batch.Table.Name == "ReferentialIdentity").Rows.Should().HaveCount(5);
+        _seedBatches.Single(batch => batch.Table.Name == "School").Rows.Should().HaveCount(1);
+        _seedBatches.Single(batch => batch.Table.Name == "LocalEducationAgency").Rows.Should().HaveCount(1);
         _seedBatches.Single(batch => batch.Table.Name == "Descriptor").Rows.Should().HaveCount(2);
 
         _fixture
@@ -59,7 +68,7 @@ public class Given_ReferenceResolverIntegrationFixture
         abstractUnionView
             .OutputColumnsInSelectOrder.Select(column => column.ColumnName.Value)
             .Should()
-            .Equal("DocumentId");
+            .Equal("DocumentId", "EducationOrganizationId");
         abstractUnionView
             .UnionArmsInOrder.SelectMany(arm => arm.ProjectionExpressionsInSelectOrder)
             .Should()

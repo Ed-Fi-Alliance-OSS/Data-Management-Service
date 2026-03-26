@@ -166,6 +166,8 @@ public sealed class ReferenceResolverIntegrationFixture
                         14
                     ),
                 ],
+                Schools: [new ReferenceResolverSchoolSeed(101, 255901)],
+                LocalEducationAgencies: [new ReferenceResolverLocalEducationAgencySeed(202, 255901)],
                 Descriptors:
                 [
                     new ReferenceResolverDescriptorSeed(
@@ -274,10 +276,20 @@ public sealed class ReferenceResolverIntegrationFixture
                             null,
                             null
                         ),
+                        new AbstractUnionViewOutputColumn(
+                            new DbColumnName("EducationOrganizationId"),
+                            new RelationalScalarType(ScalarKind.Int32),
+                            new JsonPathExpression("$.educationOrganizationId", []),
+                            null
+                        ),
                     ],
                     [
-                        CreateAbstractUnionArm(schoolKey, "School"),
-                        CreateAbstractUnionArm(localEducationAgencyKey, "LocalEducationAgency"),
+                        CreateAbstractUnionArm(schoolKey, "School", "SchoolId"),
+                        CreateAbstractUnionArm(
+                            localEducationAgencyKey,
+                            "LocalEducationAgency",
+                            "LocalEducationAgencyId"
+                        ),
                     ]
                 ),
             ],
@@ -386,6 +398,23 @@ public sealed class ReferenceResolverIntegrationFixture
         ResourceStorageKind storageKind
     )
     {
+        List<DbColumnModel> columns =
+        [
+            new DbColumnModel(
+                new DbColumnName("DocumentId"),
+                ColumnKind.ParentKeyPart,
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+        ];
+
+        if (storageKind is ResourceStorageKind.RelationalTables)
+        {
+            columns.AddRange(CreateIdentityColumns(resource));
+        }
+
         var rootTable = new DbTableModel(
             Table: new DbTableName(_edFiSchema, tableName),
             JsonScope: new JsonPathExpression("$", []),
@@ -393,17 +422,7 @@ public sealed class ReferenceResolverIntegrationFixture
                 $"PK_{tableName}",
                 [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
             ),
-            Columns:
-            [
-                new DbColumnModel(
-                    new DbColumnName("DocumentId"),
-                    ColumnKind.ParentKeyPart,
-                    new RelationalScalarType(ScalarKind.Int64),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-            ],
+            Columns: columns,
             Constraints: []
         );
 
@@ -420,15 +439,46 @@ public sealed class ReferenceResolverIntegrationFixture
 
     private static AbstractUnionViewArm CreateAbstractUnionArm(
         ResourceKeyEntry concreteMemberResourceKey,
-        string tableName
+        string tableName,
+        string identityColumnName
     )
     {
         return new(
             concreteMemberResourceKey,
             new DbTableName(_edFiSchema, tableName),
-            [new AbstractUnionViewProjectionExpression.SourceColumn(new DbColumnName("DocumentId"))]
+            [
+                new AbstractUnionViewProjectionExpression.SourceColumn(new DbColumnName("DocumentId")),
+                new AbstractUnionViewProjectionExpression.SourceColumn(new DbColumnName(identityColumnName)),
+            ]
         );
     }
+
+    private static IReadOnlyList<DbColumnModel> CreateIdentityColumns(QualifiedResourceName resource)
+    {
+        return resource.ResourceName switch
+        {
+            "School" => [CreateIdentityColumn("SchoolId", "$.schoolId", ScalarKind.Int32)],
+            "LocalEducationAgency" =>
+            [
+                CreateIdentityColumn("LocalEducationAgencyId", "$.localEducationAgencyId", ScalarKind.Int32),
+            ],
+            _ => [],
+        };
+    }
+
+    private static DbColumnModel CreateIdentityColumn(
+        string columnName,
+        string jsonPath,
+        ScalarKind scalarKind
+    ) =>
+        new(
+            new DbColumnName(columnName),
+            ColumnKind.Scalar,
+            new RelationalScalarType(scalarKind),
+            IsNullable: false,
+            SourceJsonPath: new JsonPathExpression(jsonPath, []),
+            TargetResource: null
+        );
 
     private static DocumentReference CreateDocumentReference(
         QualifiedResourceName targetResource,
@@ -478,6 +528,8 @@ public sealed record ReferenceResolverSeedData(
     IReadOnlyList<ReferenceResolverResourceKeySeed> ResourceKeys,
     IReadOnlyList<ReferenceResolverDocumentSeed> Documents,
     IReadOnlyList<ReferenceResolverReferentialIdentitySeed> ReferentialIdentities,
+    IReadOnlyList<ReferenceResolverSchoolSeed> Schools,
+    IReadOnlyList<ReferenceResolverLocalEducationAgencySeed> LocalEducationAgencies,
     IReadOnlyList<ReferenceResolverDescriptorSeed> Descriptors
 )
 {
@@ -538,6 +590,23 @@ public sealed record ReferenceResolverSeedData(
                     .ToArray()
             ),
             new(
+                new DbTableName(new DbSchemaName("edfi"), "School"),
+                [new DbColumnName("DocumentId"), new DbColumnName("SchoolId")],
+                Schools
+                    .Select(school => (IReadOnlyList<object?>)[school.DocumentId, school.SchoolId])
+                    .ToArray()
+            ),
+            new(
+                new DbTableName(new DbSchemaName("edfi"), "LocalEducationAgency"),
+                [new DbColumnName("DocumentId"), new DbColumnName("LocalEducationAgencyId")],
+                LocalEducationAgencies
+                    .Select(localEducationAgency =>
+                        (IReadOnlyList<object?>)
+                            [localEducationAgency.DocumentId, localEducationAgency.LocalEducationAgencyId]
+                    )
+                    .ToArray()
+            ),
+            new(
                 new DbTableName(new DbSchemaName("dms"), "Descriptor"),
                 [
                     new DbColumnName("DocumentId"),
@@ -585,6 +654,10 @@ public sealed record ReferenceResolverReferentialIdentitySeed(
     long DocumentId,
     short ResourceKeyId
 );
+
+public sealed record ReferenceResolverSchoolSeed(long DocumentId, int SchoolId);
+
+public sealed record ReferenceResolverLocalEducationAgencySeed(long DocumentId, int LocalEducationAgencyId);
 
 public sealed record ReferenceResolverDescriptorSeed(
     long DocumentId,

@@ -37,9 +37,17 @@ public class Given_MssqlReferenceLookupBulkStrategy
             .Should()
             .BeTrue();
 
-        var command = MssqlReferenceLookupBulkStrategy.BuildCommand(referentialIds);
+        var command = MssqlReferenceLookupBulkStrategy.BuildCommand(
+            new ReferenceLookupRequest(
+                MappingSet: RelationalAccessTestData.CreateMappingSet(_requestResource),
+                RequestResource: _requestResource,
+                Lookups: [.. referentialIds.Select(RelationalAccessTestData.CreateSchoolLookup)]
+            )
+        );
 
         command.CommandText.Should().Contain("FROM @referentialIds lookupInput");
+        command.CommandText.Should().Contain("[VerificationIdentity]");
+        command.CommandText.Should().Contain("[VerificationIdentityKey]");
         command.CommandText.Should().Contain("INNER JOIN [dms].[ReferentialIdentity]");
         command.CommandText.Should().Contain("LEFT JOIN [dms].[Descriptor]");
         command.Parameters.Should().ContainSingle();
@@ -87,21 +95,27 @@ public class Given_MssqlReferenceLookupBulkStrategy
                         ("DocumentId", 303L),
                         ("ResourceKeyId", (short)40),
                         ("ReferentialIdentityResourceKeyId", (short)40),
-                        ("IsDescriptor", true)
+                        ("IsDescriptor", true),
+                        (
+                            "VerificationIdentityKey",
+                            "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
+                        )
                     ),
                     RelationalAccessTestData.CreateRow(
                         ("ReferentialId", aliasReferentialId.Value),
                         ("DocumentId", 202L),
                         ("ResourceKeyId", (short)21),
                         ("ReferentialIdentityResourceKeyId", (short)30),
-                        ("IsDescriptor", false)
+                        ("IsDescriptor", false),
+                        ("VerificationIdentityKey", "$$.educationOrganizationId=255901")
                     ),
                     RelationalAccessTestData.CreateRow(
                         ("ReferentialId", firstFoundReferentialId.Value),
                         ("DocumentId", 101L),
                         ("ResourceKeyId", (short)11),
                         ("ReferentialIdentityResourceKeyId", (short)11),
-                        ("IsDescriptor", false)
+                        ("IsDescriptor", false),
+                        ("VerificationIdentityKey", "$$.schoolId=255901")
                     )
                 ),
             ]),
@@ -112,7 +126,14 @@ public class Given_MssqlReferenceLookupBulkStrategy
             new ReferenceLookupRequest(
                 MappingSet: RelationalAccessTestData.CreateMappingSet(_requestResource),
                 RequestResource: _requestResource,
-                ReferentialIds: referentialIds
+                Lookups:
+                [
+                    RelationalAccessTestData.CreateSchoolLookup(firstFoundReferentialId),
+                    RelationalAccessTestData.CreateSchoolLookup(missingReferentialId),
+                    RelationalAccessTestData.CreateEducationOrganizationLookup(aliasReferentialId),
+                    RelationalAccessTestData.CreateSchoolTypeDescriptorLookup(descriptorReferentialId),
+                    .. referentialIds.Skip(4).Select(RelationalAccessTestData.CreateSchoolLookup),
+                ]
             )
         );
 
@@ -125,9 +146,23 @@ public class Given_MssqlReferenceLookupBulkStrategy
         result
             .Should()
             .Equal(
-                new ReferenceLookupResult(firstFoundReferentialId, 101L, 11, 11, false),
-                new ReferenceLookupResult(aliasReferentialId, 202L, 21, 30, false),
-                new ReferenceLookupResult(descriptorReferentialId, 303L, 40, 40, true)
+                new ReferenceLookupResult(firstFoundReferentialId, 101L, 11, 11, false, "$$.schoolId=255901"),
+                new ReferenceLookupResult(
+                    aliasReferentialId,
+                    202L,
+                    21,
+                    30,
+                    false,
+                    "$$.educationOrganizationId=255901"
+                ),
+                new ReferenceLookupResult(
+                    descriptorReferentialId,
+                    303L,
+                    40,
+                    40,
+                    true,
+                    "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
+                )
             );
     }
 
