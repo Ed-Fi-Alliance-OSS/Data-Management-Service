@@ -11,6 +11,13 @@ namespace EdFi.DataManagementService.Core.Profile;
 /// <summary>
 /// Address for a non-collection scope instance (root or 1:1).
 /// </summary>
+/// <remarks>
+/// Record-synthesized equality does not provide structural comparison.
+/// <see cref="ImmutableArray{T}"/> compares by array reference, and nested
+/// <see cref="SemanticIdentityPart"/> contains <see cref="JsonNode"/> which uses
+/// reference equality. Consumers requiring structural comparison must use
+/// field-by-field or custom comparer logic.
+/// </remarks>
 /// <param name="JsonScope">Compiled JsonScope identifier.</param>
 /// <param name="AncestorCollectionInstances">
 /// Ancestor collection instances from root-most to immediate parent, each keyed
@@ -25,6 +32,9 @@ public sealed record ScopeInstanceAddress(
 /// One ancestor collection instance on the traversal path, identified by compiled
 /// semantic identity.
 /// </summary>
+/// <remarks>
+/// <inheritdoc cref="ScopeInstanceAddress" path="/remarks"/>
+/// </remarks>
 /// <param name="JsonScope">Compiled JsonScope of the ancestor collection.</param>
 /// <param name="SemanticIdentityInOrder">
 /// Semantic identity parts in compiled order for the ancestor collection item.
@@ -37,6 +47,9 @@ public sealed record AncestorCollectionInstance(
 /// <summary>
 /// Address for a visible collection row/item.
 /// </summary>
+/// <remarks>
+/// <inheritdoc cref="ScopeInstanceAddress" path="/remarks"/>
+/// </remarks>
 /// <param name="JsonScope">Compiled JsonScope of the collection.</param>
 /// <param name="ParentAddress">
 /// ScopeInstanceAddress of the immediate containing scope instance.
@@ -53,6 +66,13 @@ public sealed record CollectionRowAddress(
 /// <summary>
 /// One part of a compiled semantic identity.
 /// </summary>
+/// <remarks>
+/// <para><strong>Equality caveat:</strong> <see cref="JsonNode"/> uses reference equality, not
+/// value equality. Record-synthesized <c>Equals</c>/<c>GetHashCode</c> will return false for
+/// two instances with identical JSON content derived from different source nodes (including
+/// <c>DeepClone()</c> results). Consumers that need structural comparison must compare
+/// <see cref="Value"/> via serialized form (e.g. <c>ToString()</c>) or a custom comparer.</para>
+/// </remarks>
 /// <param name="RelativePath">
 /// Adapter-published canonical scope-relative path for the identity member.
 /// </param>
