@@ -187,4 +187,91 @@ public class AddressDerivationEngineTests
             _result.SemanticIdentityInOrder[0].IsPresent.Should().BeTrue();
         }
     }
+
+    [TestFixture]
+    public class Given_nested_collection_address_derivation : AddressDerivationEngineTests
+    {
+        private CollectionRowAddress _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var engine = new AddressDerivationEngine(BuildTestScopeCatalog());
+
+            var classPeriodItem = new JsonObject { ["classPeriodName"] = "First Period" };
+            var meetingTimeItem = new JsonObject { ["startTime"] = "09:00:00", ["endTime"] = "10:00:00" };
+
+            _result = engine.DeriveCollectionRowAddress(
+                "$.classPeriods[*].meetingTimes[*]",
+                meetingTimeItem,
+                [new AncestorItemContext("$.classPeriods[*]", classPeriodItem)]
+            );
+        }
+
+        [Test]
+        public void It_should_produce_correct_JsonScope()
+        {
+            _result.JsonScope.Should().Be("$.classPeriods[*].meetingTimes[*]");
+        }
+
+        [Test]
+        public void It_should_have_parent_as_classPeriods_scope()
+        {
+            _result.ParentAddress.JsonScope.Should().Be("$.classPeriods[*]");
+        }
+
+        [Test]
+        public void It_should_have_one_ancestor_in_parent()
+        {
+            _result.ParentAddress.AncestorCollectionInstances.Should().HaveCount(1);
+        }
+
+        [Test]
+        public void It_should_have_classPeriods_as_ancestor()
+        {
+            _result.ParentAddress.AncestorCollectionInstances[0].JsonScope.Should().Be("$.classPeriods[*]");
+        }
+
+        [Test]
+        public void It_should_have_ancestor_identity_from_classPeriod_item()
+        {
+            _result
+                .ParentAddress.AncestorCollectionInstances[0]
+                .SemanticIdentityInOrder.Should()
+                .HaveCount(1);
+            _result
+                .ParentAddress.AncestorCollectionInstances[0]
+                .SemanticIdentityInOrder[0]
+                .RelativePath.Should()
+                .Be("classPeriodName");
+            _result
+                .ParentAddress.AncestorCollectionInstances[0]
+                .SemanticIdentityInOrder[0]
+                .Value!.ToString()
+                .Should()
+                .Be("First Period");
+        }
+
+        [Test]
+        public void It_should_have_two_semantic_identity_parts()
+        {
+            _result.SemanticIdentityInOrder.Should().HaveCount(2);
+        }
+
+        [Test]
+        public void It_should_have_startTime_as_first_identity()
+        {
+            _result.SemanticIdentityInOrder[0].RelativePath.Should().Be("startTime");
+            _result.SemanticIdentityInOrder[0].Value!.ToString().Should().Be("09:00:00");
+            _result.SemanticIdentityInOrder[0].IsPresent.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_should_have_endTime_as_second_identity()
+        {
+            _result.SemanticIdentityInOrder[1].RelativePath.Should().Be("endTime");
+            _result.SemanticIdentityInOrder[1].Value!.ToString().Should().Be("10:00:00");
+            _result.SemanticIdentityInOrder[1].IsPresent.Should().BeTrue();
+        }
+    }
 }

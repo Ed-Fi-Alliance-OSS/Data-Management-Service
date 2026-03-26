@@ -79,7 +79,7 @@ public class AddressDerivationEngine(IReadOnlyList<CompiledScopeDescriptor> scop
             );
         }
 
-        var parentAddress = DeriveScopeInstanceAddress(descriptor.ImmediateParentJsonScope!, ancestorItems);
+        var parentAddress = DeriveParentAddress(descriptor.ImmediateParentJsonScope!, ancestorItems);
 
         var semanticIdentity = ReadSemanticIdentity(
             descriptor.SemanticIdentityRelativePathsInOrder,
@@ -87,6 +87,42 @@ public class AddressDerivationEngine(IReadOnlyList<CompiledScopeDescriptor> scop
         );
 
         return new CollectionRowAddress(jsonScope, parentAddress, semanticIdentity);
+    }
+
+    /// <summary>
+    /// Derives the parent ScopeInstanceAddress for a collection row.
+    /// When the immediate parent is itself a collection scope, the parent address
+    /// carries the collection's JsonScope and includes the collection instance itself
+    /// as the last entry in AncestorCollectionInstances.
+    /// </summary>
+    private ScopeInstanceAddress DeriveParentAddress(
+        string parentJsonScope,
+        IReadOnlyList<AncestorItemContext> ancestorItems
+    )
+    {
+        var parentDescriptor = ResolveDescriptor(parentJsonScope);
+
+        if (parentDescriptor.ScopeKind != ScopeKind.Collection)
+        {
+            // Non-collection parent: standard path
+            return DeriveScopeInstanceAddress(parentJsonScope, ancestorItems);
+        }
+
+        // Collection parent: build ancestors = parent's own ancestors + the parent instance itself
+        var parentAncestors = DeriveAncestorCollectionInstances(
+            parentDescriptor.CollectionAncestorsInOrder,
+            ancestorItems
+        );
+
+        var parentItem = FindAncestorItem(parentJsonScope, ancestorItems);
+        var parentIdentity = ReadSemanticIdentity(
+            parentDescriptor.SemanticIdentityRelativePathsInOrder,
+            parentItem
+        );
+        var parentInstance = new AncestorCollectionInstance(parentJsonScope, parentIdentity);
+
+        var combined = parentAncestors.Add(parentInstance);
+        return new ScopeInstanceAddress(parentJsonScope, combined);
     }
 
     private CompiledScopeDescriptor ResolveDescriptor(string jsonScope)
