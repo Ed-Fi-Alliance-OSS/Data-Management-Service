@@ -80,22 +80,45 @@ public class Given_ReferenceResolverIntegrationFixture
     {
         var adapter = new RecordingReferenceResolverAdapter([
             [
-                new ReferenceLookupResult(_fixture.SchoolReferentialId, 101L, 11, 11, false),
+                new ReferenceLookupResult(
+                    _fixture.SchoolReferentialId,
+                    101L,
+                    11,
+                    11,
+                    false,
+                    "$$.schoolId=255901"
+                ),
                 new ReferenceLookupResult(
                     _fixture.EducationOrganizationAliasReferentialId,
                     101L,
                     11,
                     30,
-                    false
+                    false,
+                    "$$.educationOrganizationId=255901"
                 ),
-                new ReferenceLookupResult(_fixture.LocalEducationAgencyReferentialId, 202L, 12, 12, false),
-                new ReferenceLookupResult(_fixture.SchoolTypeDescriptorReferentialId, 303L, 13, 13, true),
+                new ReferenceLookupResult(
+                    _fixture.LocalEducationAgencyReferentialId,
+                    202L,
+                    12,
+                    12,
+                    false,
+                    "$$.localEducationAgencyId=255901"
+                ),
+                new ReferenceLookupResult(
+                    _fixture.SchoolTypeDescriptorReferentialId,
+                    303L,
+                    13,
+                    13,
+                    true,
+                    "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
+                ),
                 new ReferenceLookupResult(
                     _fixture.AcademicSubjectDescriptorReferentialId,
                     404L,
                     14,
                     14,
-                    true
+                    true,
+                    "$$.descriptor=uri://ed-fi.org/academicsubjectdescriptor#english"
                 ),
             ],
         ]);

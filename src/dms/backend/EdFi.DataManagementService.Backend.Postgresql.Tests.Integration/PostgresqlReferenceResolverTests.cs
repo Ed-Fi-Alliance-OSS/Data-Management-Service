@@ -130,15 +130,17 @@ public class Given_PostgresqlReferenceResolver
     [Test]
     public async Task It_resolves_abstract_alias_references_and_fails_closed_for_incompatible_alias_targets()
     {
-        var result = await ResolveDocumentReferencesAsync(
-            _database.Fixture.CreateEducationOrganizationReference("$.educationOrganizationReference"),
+        var resolvedAliasResult = await ResolveDocumentReferencesAsync(
+            _database.Fixture.CreateEducationOrganizationReference("$.educationOrganizationReference")
+        );
+        var incompatibleAliasResult = await ResolveDocumentReferencesAsync(
             _database.Fixture.CreateLocalEducationAgencyReference(
                 "$.localEducationAgencyReference",
                 _database.Fixture.EducationOrganizationAliasReferentialId
             )
         );
 
-        var resolvedEducationOrganization = result.SuccessfulDocumentReferencesByPath[
+        var resolvedEducationOrganization = resolvedAliasResult.SuccessfulDocumentReferencesByPath[
             new JsonPath("$.educationOrganizationReference")
         ];
 
@@ -146,13 +148,13 @@ public class Given_PostgresqlReferenceResolver
         resolvedEducationOrganization
             .ResourceKeyId.Should()
             .Be(_database.MappingSet.ResourceKeyIdByResource[_database.Fixture.SchoolResource]);
-        result
+        resolvedAliasResult
             .LookupsByReferentialId[_database.Fixture.EducationOrganizationAliasReferentialId]
             .Result!.ReferentialIdentityResourceKeyId.Should()
             .Be(
                 _database.MappingSet.ResourceKeyIdByResource[_database.Fixture.EducationOrganizationResource]
             );
-        result
+        incompatibleAliasResult
             .InvalidDocumentReferences.Select(failure => (failure.Path.Value, failure.Reason))
             .Should()
             .Equal(
@@ -227,11 +229,12 @@ public class Given_PostgresqlReferenceResolver
     [Test]
     public async Task It_classifies_missing_descriptor_lookups_with_the_same_reasons_as_the_shared_classifier()
     {
+        var wrongTypeMissingDescriptorReferentialId = new ReferentialId(Guid.NewGuid());
         var result = await ResolveDescriptorReferencesAsync(
             _database.Fixture.CreateSchoolTypeDescriptorReference("$.schoolTypeDescriptor"),
             _database.Fixture.CreateSchoolTypeDescriptorReference(
                 "$.alternateSchoolTypeDescriptor",
-                _database.Fixture.MissingSchoolTypeDescriptorReferentialId,
+                wrongTypeMissingDescriptorReferentialId,
                 _database.Fixture.AcademicSubjectDescriptorUri
             ),
             _database.Fixture.CreateSchoolTypeDescriptorReference(
@@ -248,7 +251,7 @@ public class Given_PostgresqlReferenceResolver
             .InvalidDescriptorReferences.Select(failure => (failure.Path.Value, failure.Reason))
             .Should()
             .Equal(
-                ("$.alternateSchoolTypeDescriptor", DescriptorReferenceFailureReason.DescriptorTypeMismatch),
+                ("$.alternateSchoolTypeDescriptor", DescriptorReferenceFailureReason.Missing),
                 ("$.programs[0].schoolTypeDescriptor", DescriptorReferenceFailureReason.Missing)
             );
         result
@@ -259,6 +262,48 @@ public class Given_PostgresqlReferenceResolver
             .Select(occurrence => occurrence.Lookup.Result)
             .Should()
             .AllSatisfy(lookupResult => lookupResult.Should().BeNull());
+    }
+
+    [Test]
+    public async Task It_fails_closed_when_a_same_type_document_referential_identity_row_is_cross_wired()
+    {
+        await _database.ResetAsync();
+        await _database.SeedAsync(CreateCrossWiredSchoolSeedData());
+
+        var act = async () =>
+            await ResolveDocumentReferencesAsync(
+                _database.Fixture.CreateSchoolReference("$.schoolReference")
+            );
+
+        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+        exception.Which.Message.Should().Contain("Reference lookup corruption detected");
+        exception.Which.Message.Should().Contain(_database.Fixture.SchoolReferentialId.Value.ToString());
+        exception.Which.Message.Should().Contain("$.schoolReference");
+        exception.Which.Message.Should().Contain("$$.schoolId=255901");
+        exception.Which.Message.Should().Contain("$$.schoolId=255902");
+    }
+
+    [Test]
+    public async Task It_fails_closed_when_a_same_type_descriptor_referential_identity_row_is_cross_wired()
+    {
+        await _database.ResetAsync();
+        await _database.SeedAsync(CreateCrossWiredSchoolTypeDescriptorSeedData());
+
+        var act = async () =>
+            await ResolveDescriptorReferencesAsync(
+                _database.Fixture.CreateSchoolTypeDescriptorReference("$.schoolTypeDescriptor")
+            );
+
+        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+        exception.Which.Message.Should().Contain("Reference lookup corruption detected");
+        exception
+            .Which.Message.Should()
+            .Contain(_database.Fixture.SchoolTypeDescriptorReferentialId.Value.ToString());
+        exception.Which.Message.Should().Contain("$.schoolTypeDescriptor");
+        exception
+            .Which.Message.Should()
+            .Contain("$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative");
+        exception.Which.Message.Should().Contain("$$.descriptor=uri://ed-fi.org/schooltypedescriptor#wrong");
     }
 
     [Test]
@@ -278,9 +323,10 @@ public class Given_PostgresqlReferenceResolver
             .. Enumerable
                 .Range(0, LargeLookupCount)
                 .Select(index =>
-                    _database.Fixture.CreateSchoolReference(
+                    CreateSchoolReference(
                         $"$.bulkSchools[{index}].schoolReference",
-                        CreateBulkSchoolReferentialId(index + 1)
+                        CreateBulkSchoolReferentialId(index + 1),
+                        300000 + index
                     )
                 ),
             _database.Fixture.CreateSchoolReference(
@@ -390,6 +436,99 @@ public class Given_PostgresqlReferenceResolver
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
         );
+    }
+
+    private DocumentReference CreateSchoolReference(string path, ReferentialId referentialId, int schoolId)
+    {
+        return new(
+            ResourceInfo: new BaseResourceInfo(
+                new ProjectName(_database.Fixture.SchoolResource.ProjectName),
+                new ResourceName(_database.Fixture.SchoolResource.ResourceName),
+                false
+            ),
+            DocumentIdentity: new DocumentIdentity([
+                new DocumentIdentityElement(new JsonPath("$.schoolId"), schoolId.ToString()),
+            ]),
+            ReferentialId: referentialId,
+            Path: new JsonPath(path)
+        );
+    }
+
+    private ReferenceResolverSeedData CreateCrossWiredSchoolSeedData()
+    {
+        var seedData = _database.Fixture.SeedData;
+        var schoolResourceKeyId = _database.MappingSet.ResourceKeyIdByResource[
+            _database.Fixture.SchoolResource
+        ];
+
+        return seedData with
+        {
+            Documents =
+            [
+                .. seedData.Documents,
+                new ReferenceResolverDocumentSeed(
+                    505,
+                    Guid.Parse("50000000-0000-0000-0000-000000000505"),
+                    schoolResourceKeyId
+                ),
+            ],
+            ReferentialIdentities =
+            [
+                .. seedData.ReferentialIdentities.Select(referentialIdentity =>
+                    referentialIdentity.ReferentialId == _database.Fixture.SchoolReferentialId
+                        ? referentialIdentity with
+                        {
+                            DocumentId = 505,
+                        }
+                        : referentialIdentity
+                ),
+            ],
+            Schools = [.. seedData.Schools, new ReferenceResolverSchoolSeed(505, 255902)],
+        };
+    }
+
+    private ReferenceResolverSeedData CreateCrossWiredSchoolTypeDescriptorSeedData()
+    {
+        var seedData = _database.Fixture.SeedData;
+        var schoolTypeDescriptorResourceKeyId = _database.MappingSet.ResourceKeyIdByResource[
+            _database.Fixture.SchoolTypeDescriptorResource
+        ];
+
+        return seedData with
+        {
+            Documents =
+            [
+                .. seedData.Documents,
+                new ReferenceResolverDocumentSeed(
+                    606,
+                    Guid.Parse("60000000-0000-0000-0000-000000000606"),
+                    schoolTypeDescriptorResourceKeyId
+                ),
+            ],
+            ReferentialIdentities =
+            [
+                .. seedData.ReferentialIdentities.Select(referentialIdentity =>
+                    referentialIdentity.ReferentialId == _database.Fixture.SchoolTypeDescriptorReferentialId
+                        ? referentialIdentity with
+                        {
+                            DocumentId = 606,
+                        }
+                        : referentialIdentity
+                ),
+            ],
+            Descriptors =
+            [
+                .. seedData.Descriptors,
+                new ReferenceResolverDescriptorSeed(
+                    606,
+                    "uri://ed-fi.org",
+                    "Wrong",
+                    "Wrong",
+                    "SchoolTypeDescriptor",
+                    "uri://ed-fi.org/SchoolTypeDescriptor#Wrong"
+                ),
+            ],
+        };
     }
 
     private static ReferenceResolverSeedData CreateAdditionalSchoolSeedData(

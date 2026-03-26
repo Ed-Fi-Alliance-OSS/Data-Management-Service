@@ -173,6 +173,13 @@ public sealed class ReferenceResolver(IReferenceResolverAdapter adapter) : IRefe
                 continue;
             }
 
+            EnsureLookupIntegrity(
+                request.MappingSet,
+                documentReferenceOccurrence.Reference.Path,
+                GetRequiredLookupRequestEntry(documentReferenceOccurrence.Reference.ReferentialId),
+                documentReferenceOccurrence.Lookup.Result!
+            );
+
             AddSuccessfulDocumentReference(
                 successfulDocumentReferencesByPath,
                 documentReferenceOccurrence.Reference,
@@ -198,6 +205,12 @@ public sealed class ReferenceResolver(IReferenceResolverAdapter adapter) : IRefe
             }
 
             var lookupResult = descriptorReferenceOccurrence.Lookup.Result!;
+            EnsureLookupIntegrity(
+                request.MappingSet,
+                descriptorReferenceOccurrence.Reference.Path,
+                GetRequiredLookupRequestEntry(descriptorReferenceOccurrence.Reference.ReferentialId),
+                lookupResult
+            );
             var descriptorKey = CreateDescriptorReferenceKey(descriptorReferenceOccurrence.Reference);
 
             if (
@@ -338,6 +351,52 @@ public sealed class ReferenceResolver(IReferenceResolverAdapter adapter) : IRefe
 
         throw new InvalidOperationException(
             $"Reference resolver did not cache referential id '{referentialId.Value}' before materializing the result set."
+        );
+    }
+
+    private ReferenceLookupRequestEntry GetRequiredLookupRequestEntry(ReferentialId referentialId)
+    {
+        if (_memoizedLookupRequests.TryGetValue(referentialId, out var lookupRequestEntry))
+        {
+            return lookupRequestEntry;
+        }
+
+        throw new InvalidOperationException(
+            $"Reference resolver did not cache lookup metadata for referential id '{referentialId.Value}' before materializing the result set."
+        );
+    }
+
+    private static void EnsureLookupIntegrity(
+        MappingSet mappingSet,
+        JsonPath path,
+        ReferenceLookupRequestEntry lookupRequest,
+        ReferenceLookupResult lookupResult
+    )
+    {
+        if (
+            string.Equals(
+                lookupRequest.ExpectedVerificationIdentityKey,
+                lookupResult.VerificationIdentityKey,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            return;
+        }
+
+        var resolvedResource = mappingSet.ResourceKeyById.TryGetValue(
+            lookupResult.ResourceKeyId,
+            out var resolvedResourceKey
+        )
+            ? $"{resolvedResourceKey.Resource.ProjectName}/{resolvedResourceKey.Resource.ResourceName}"
+            : $"ResourceKeyId={lookupResult.ResourceKeyId}";
+
+        throw new ReferenceLookupCorruptionException(
+            $"Reference lookup corruption detected for referential id '{lookupRequest.ReferentialId.Value}' at path '{path.Value}': "
+                + $"requested target '{lookupRequest.RequestedResource.ProjectName}/{lookupRequest.RequestedResource.ResourceName}' "
+                + $"expected verification key '{lookupRequest.ExpectedVerificationIdentityKey}', but the resolved dms.ReferentialIdentity row "
+                + $"returned document id '{lookupResult.DocumentId}', resource '{resolvedResource}', and verification key "
+                + $"'{lookupResult.VerificationIdentityKey ?? "<null>"}'."
         );
     }
 

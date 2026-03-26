@@ -47,14 +47,16 @@ public class Given_ReferenceResolver
                     DocumentId: 101,
                     ResourceKeyId: 11,
                     ReferentialIdentityResourceKeyId: 11,
-                    IsDescriptor: false
+                    IsDescriptor: false,
+                    VerificationIdentityKey: "$$.schoolId=255901"
                 ),
                 new ReferenceLookupResult(
                     ReferentialId: descriptorReferentialId,
                     DocumentId: 202,
                     ResourceKeyId: 13,
                     ReferentialIdentityResourceKeyId: 13,
-                    IsDescriptor: true
+                    IsDescriptor: true,
+                    VerificationIdentityKey: "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
                 ),
             ],
         ]);
@@ -147,14 +149,16 @@ public class Given_ReferenceResolver
                     DocumentId: 101,
                     ResourceKeyId: 11,
                     ReferentialIdentityResourceKeyId: 11,
-                    IsDescriptor: false
+                    IsDescriptor: false,
+                    VerificationIdentityKey: "$$.schoolId=255901"
                 ),
                 new ReferenceLookupResult(
                     ReferentialId: secondReferentialId,
                     DocumentId: 202,
                     ResourceKeyId: 11,
                     ReferentialIdentityResourceKeyId: 11,
-                    IsDescriptor: false
+                    IsDescriptor: false,
+                    VerificationIdentityKey: "$$.schoolId=255901"
                 ),
             ],
             [
@@ -163,7 +167,8 @@ public class Given_ReferenceResolver
                     DocumentId: 303,
                     ResourceKeyId: 11,
                     ReferentialIdentityResourceKeyId: 11,
-                    IsDescriptor: false
+                    IsDescriptor: false,
+                    VerificationIdentityKey: "$$.schoolId=255901"
                 ),
             ],
         ]);
@@ -231,14 +236,16 @@ public class Given_ReferenceResolver
                     DocumentId: 101,
                     ResourceKeyId: 11,
                     ReferentialIdentityResourceKeyId: 11,
-                    IsDescriptor: false
+                    IsDescriptor: false,
+                    VerificationIdentityKey: "$$.schoolId=255901"
                 ),
                 new ReferenceLookupResult(
                     ReferentialId: nonDescriptorReferentialId,
                     DocumentId: 404,
                     ResourceKeyId: 14,
                     ReferentialIdentityResourceKeyId: 14,
-                    IsDescriptor: false
+                    IsDescriptor: false,
+                    VerificationIdentityKey: "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
                 ),
             ],
         ]);
@@ -360,7 +367,8 @@ public class Given_ReferenceResolver
                     DocumentId: 202,
                     ResourceKeyId: 11,
                     ReferentialIdentityResourceKeyId: 30,
-                    IsDescriptor: false
+                    IsDescriptor: false,
+                    VerificationIdentityKey: "$$.schoolId=255901"
                 ),
             ],
         ]);
@@ -390,6 +398,87 @@ public class Given_ReferenceResolver
     }
 
     [Test]
+    public async Task It_fails_closed_when_a_same_type_document_lookup_resolves_to_the_wrong_natural_key()
+    {
+        var referentialId = new ReferentialId(Guid.NewGuid());
+        var adapter = new RecordingReferenceResolverAdapter([
+            [
+                new ReferenceLookupResult(
+                    ReferentialId: referentialId,
+                    DocumentId: 505,
+                    ResourceKeyId: 11,
+                    ReferentialIdentityResourceKeyId: 11,
+                    IsDescriptor: false,
+                    VerificationIdentityKey: "$$.schoolId=255902"
+                ),
+            ],
+        ]);
+        var sut = new ReferenceResolver(adapter);
+
+        var act = async () =>
+            await sut.ResolveAsync(
+                new ReferenceResolverRequest(
+                    MappingSet: CreateMappingSet(),
+                    RequestResource: _requestResource,
+                    DocumentReferences: [CreateDocumentReference(referentialId, "$.schoolReference")],
+                    DescriptorReferences: []
+                )
+            );
+
+        var exception = await act.Should().ThrowAsync<ReferenceLookupCorruptionException>();
+        exception.Which.Message.Should().Contain("Reference lookup corruption detected");
+        exception.Which.Message.Should().Contain(referentialId.Value.ToString());
+        exception.Which.Message.Should().Contain("$.schoolReference");
+        exception.Which.Message.Should().Contain("$$.schoolId=255901");
+        exception.Which.Message.Should().Contain("$$.schoolId=255902");
+    }
+
+    [Test]
+    public async Task It_fails_closed_when_a_same_type_descriptor_lookup_resolves_to_the_wrong_uri()
+    {
+        var referentialId = new ReferentialId(Guid.NewGuid());
+        var adapter = new RecordingReferenceResolverAdapter([
+            [
+                new ReferenceLookupResult(
+                    ReferentialId: referentialId,
+                    DocumentId: 606,
+                    ResourceKeyId: 13,
+                    ReferentialIdentityResourceKeyId: 13,
+                    IsDescriptor: true,
+                    VerificationIdentityKey: "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#wrong"
+                ),
+            ],
+        ]);
+        var sut = new ReferenceResolver(adapter);
+
+        var act = async () =>
+            await sut.ResolveAsync(
+                new ReferenceResolverRequest(
+                    MappingSet: CreateMappingSet(),
+                    RequestResource: _requestResource,
+                    DocumentReferences: [],
+                    DescriptorReferences:
+                    [
+                        CreateDescriptorReference(
+                            referentialId,
+                            "uri://ed-fi.org/SchoolTypeDescriptor#Alternative",
+                            "$.schoolTypeDescriptor"
+                        ),
+                    ]
+                )
+            );
+
+        var exception = await act.Should().ThrowAsync<ReferenceLookupCorruptionException>();
+        exception.Which.Message.Should().Contain("Reference lookup corruption detected");
+        exception.Which.Message.Should().Contain(referentialId.Value.ToString());
+        exception.Which.Message.Should().Contain("$.schoolTypeDescriptor");
+        exception
+            .Which.Message.Should()
+            .Contain("$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative");
+        exception.Which.Message.Should().Contain("$$.descriptor=uri://ed-fi.org/schooltypedescriptor#wrong");
+    }
+
+    [Test]
     public async Task It_classifies_mixed_failures_without_collapsing_repeated_paths_sharing_a_deduped_key()
     {
         var successfulDocumentReferentialId = new ReferentialId(Guid.NewGuid());
@@ -405,28 +494,32 @@ public class Given_ReferenceResolver
                     DocumentId: 101,
                     ResourceKeyId: 11,
                     ReferentialIdentityResourceKeyId: 11,
-                    IsDescriptor: false
+                    IsDescriptor: false,
+                    VerificationIdentityKey: "$$.schoolId=255901"
                 ),
                 new ReferenceLookupResult(
                     ReferentialId: incompatibleDocumentReferentialId,
                     DocumentId: 202,
                     ResourceKeyId: 12,
                     ReferentialIdentityResourceKeyId: 12,
-                    IsDescriptor: false
+                    IsDescriptor: false,
+                    VerificationIdentityKey: "$$.localEducationAgencyId=255901"
                 ),
                 new ReferenceLookupResult(
                     ReferentialId: successfulDescriptorReferentialId,
                     DocumentId: 303,
                     ResourceKeyId: 13,
                     ReferentialIdentityResourceKeyId: 13,
-                    IsDescriptor: true
+                    IsDescriptor: true,
+                    VerificationIdentityKey: "$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
                 ),
                 new ReferenceLookupResult(
                     ReferentialId: wrongDescriptorTypeReferentialId,
                     DocumentId: 404,
                     ResourceKeyId: 14,
                     ReferentialIdentityResourceKeyId: 14,
-                    IsDescriptor: true
+                    IsDescriptor: true,
+                    VerificationIdentityKey: "$$.descriptor=uri://ed-fi.org/academicsubjectdescriptor#english"
                 ),
             ],
         ]);
