@@ -27,13 +27,11 @@ public class ProvideApiSchemaMiddlewareTests
         private IEffectiveApiSchemaProvider _mockEffectiveProvider = null!;
         private ProvideApiSchemaMiddleware _middleware = null!;
         private ApiSchemaDocuments _mockDocuments = null!;
-        private Guid _schemaId;
 
         [SetUp]
         public void Setup()
         {
             _mockEffectiveProvider = A.Fake<IEffectiveApiSchemaProvider>();
-            _schemaId = Guid.NewGuid();
 
             // Create mock documents
             var schemaNode = JsonNode.Parse(
@@ -57,7 +55,6 @@ public class ProvideApiSchemaMiddlewareTests
             );
 
             A.CallTo(() => _mockEffectiveProvider.Documents).Returns(_mockDocuments);
-            A.CallTo(() => _mockEffectiveProvider.SchemaId).Returns(_schemaId);
             A.CallTo(() => _mockEffectiveProvider.IsInitialized).Returns(true);
 
             _middleware = new ProvideApiSchemaMiddleware(
@@ -77,19 +74,6 @@ public class ProvideApiSchemaMiddlewareTests
 
             // Assert
             requestInfo.ApiSchemaDocuments.Should().BeSameAs(_mockDocuments);
-        }
-
-        [Test]
-        public async Task It_attaches_schema_id_to_request_info()
-        {
-            // Arrange
-            var requestInfo = No.RequestInfo();
-
-            // Act
-            await _middleware.Execute(requestInfo, NullNext);
-
-            // Assert
-            requestInfo.ApiSchemaLoadId.Should().Be(_schemaId);
         }
 
         [Test]
@@ -125,7 +109,6 @@ public class ProvideApiSchemaMiddlewareTests
 
             // Assert
             requestInfos.Should().OnlyContain(ri => ri.ApiSchemaDocuments == _mockDocuments);
-            requestInfos.Should().OnlyContain(ri => ri.ApiSchemaLoadId == _schemaId);
         }
     }
 }

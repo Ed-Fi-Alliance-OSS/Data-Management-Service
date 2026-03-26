@@ -63,7 +63,6 @@ public class DocumentValidatorTests
         var requestInfo = new RequestInfo(frontendRequest, RequestMethod.POST, No.ServiceProvider)
         {
             ApiSchemaDocuments = apiSchema,
-            ApiSchemaLoadId = Guid.NewGuid(),
             ParsedBody = JsonNode.Parse("""{"schoolId":1}""")!,
             PathComponents = new(
                 ProjectEndpointName: new("ed-fi"),

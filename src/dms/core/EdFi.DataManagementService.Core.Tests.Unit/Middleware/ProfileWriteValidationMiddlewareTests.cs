@@ -126,7 +126,6 @@ public class ProfileWriteValidationMiddlewareTests
         {
             ProjectSchema = projectSchema,
             ResourceSchema = resourceSchema,
-            ApiSchemaLoadId = Guid.Empty,
         };
     }
 
