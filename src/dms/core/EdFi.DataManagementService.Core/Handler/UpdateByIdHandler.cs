@@ -109,17 +109,19 @@ internal class UpdateByIdHandler(
                 ),
                 Headers: []
             ),
-            UpdateFailureReference failure when failure.HasDocumentReferenceFailures => new FrontendResponse(
-                StatusCode: 409,
-                Body: FailureResponse.ForInvalidReferences(
-                    ValidationErrorFactory.BuildInvalidWriteReferenceValidationErrors(
-                        failure.InvalidDocumentReferences,
-                        failure.InvalidDescriptorReferences
+            UpdateFailureReference failure
+                when failure.HasDocumentReferenceFailures && !failure.HasDescriptorReferenceFailures =>
+                new FrontendResponse(
+                    StatusCode: 409,
+                    Body: FailureResponse.ForInvalidReferences(
+                        ValidationErrorFactory.BuildInvalidWriteReferenceValidationErrors(
+                            failure.InvalidDocumentReferences,
+                            failure.InvalidDescriptorReferences
+                        ),
+                        traceId: requestInfo.FrontendRequest.TraceId
                     ),
-                    traceId: requestInfo.FrontendRequest.TraceId
+                    Headers: []
                 ),
-                Headers: []
-            ),
             UpdateFailureReference failure => new(
                 StatusCode: 400,
                 Body: FailureResponse.ForBadRequest(

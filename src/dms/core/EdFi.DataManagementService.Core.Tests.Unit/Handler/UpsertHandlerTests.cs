@@ -350,15 +350,16 @@ public class UpsertHandlerTests
         [Test]
         public void It_has_the_correct_response()
         {
-            requestInfo.FrontendResponse.StatusCode.Should().Be(409);
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
 
             var body = requestInfo.FrontendResponse.Body!.AsObject();
             body["detail"]!
                 .GetValue<string>()
                 .Should()
-                .Be("One or more references could not be resolved. See 'validationErrors' for details.");
-            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:data-conflict:unresolved-reference");
-            body["title"]!.GetValue<string>().Should().Be("Unresolved Reference");
+                .Be("Data validation failed. See 'validationErrors' for details.");
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request");
+            body["title"]!.GetValue<string>().Should().Be("Bad Request");
+            body["status"]!.GetValue<int>().Should().Be(400);
 
             var validationErrors = body["validationErrors"]!.AsObject();
             validationErrors.Count.Should().Be(2);

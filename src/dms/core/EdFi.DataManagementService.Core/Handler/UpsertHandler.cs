@@ -102,7 +102,8 @@ internal class UpsertHandler(
                     updateSuccess.ExistingDocumentUuid
                 )
             ),
-            UpsertFailureReference failure when failure.HasDocumentReferenceFailures => new(
+            UpsertFailureReference failure
+                when failure.HasDocumentReferenceFailures && !failure.HasDescriptorReferenceFailures => new(
                 StatusCode: 409,
                 Body: ForInvalidReferences(
                     ValidationErrorFactory.BuildInvalidWriteReferenceValidationErrors(
