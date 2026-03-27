@@ -338,7 +338,7 @@ public class Given_MssqlReferenceResolver
             .Contain("$$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative");
         exception
             .Which.Message.Should()
-            .Contain("$$.descriptor=uri://ed-fi.org/academicsubjectdescriptor#english");
+            .Contain("$$.descriptor=uri://ed-fi.org/academicsubjectdescriptor#mathematics");
     }
 
     [Test]
@@ -572,13 +572,27 @@ public class Given_MssqlReferenceResolver
 
         return seedData with
         {
+            Documents =
+            [
+                .. seedData.Documents,
+                new ReferenceResolverDocumentSeed(
+                    707,
+                    Guid.Parse("70000000-0000-0000-0000-000000000707"),
+                    localEducationAgencyResourceKeyId
+                ),
+            ],
+            LocalEducationAgencies =
+            [
+                .. seedData.LocalEducationAgencies,
+                new ReferenceResolverLocalEducationAgencySeed(707, 255902),
+            ],
             ReferentialIdentities =
             [
                 .. seedData.ReferentialIdentities.Select(referentialIdentity =>
                     referentialIdentity.ReferentialId == _database.Fixture.SchoolReferentialId
                         ? referentialIdentity with
                         {
-                            DocumentId = 202,
+                            DocumentId = 707,
                             ResourceKeyId = localEducationAgencyResourceKeyId,
                         }
                         : referentialIdentity
@@ -596,13 +610,34 @@ public class Given_MssqlReferenceResolver
 
         return seedData with
         {
+            Documents =
+            [
+                .. seedData.Documents,
+                new ReferenceResolverDocumentSeed(
+                    808,
+                    Guid.Parse("80000000-0000-0000-0000-000000000808"),
+                    academicSubjectDescriptorResourceKeyId
+                ),
+            ],
+            Descriptors =
+            [
+                .. seedData.Descriptors,
+                new ReferenceResolverDescriptorSeed(
+                    808,
+                    "uri://ed-fi.org",
+                    "Mathematics",
+                    "Mathematics",
+                    "AcademicSubjectDescriptor",
+                    "uri://ed-fi.org/AcademicSubjectDescriptor#Mathematics"
+                ),
+            ],
             ReferentialIdentities =
             [
                 .. seedData.ReferentialIdentities.Select(referentialIdentity =>
                     referentialIdentity.ReferentialId == _database.Fixture.SchoolTypeDescriptorReferentialId
                         ? referentialIdentity with
                         {
-                            DocumentId = 404,
+                            DocumentId = 808,
                             ResourceKeyId = academicSubjectDescriptorResourceKeyId,
                         }
                         : referentialIdentity
