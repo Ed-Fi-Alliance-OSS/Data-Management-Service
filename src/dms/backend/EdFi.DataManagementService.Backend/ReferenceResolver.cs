@@ -49,6 +49,7 @@ public sealed class ReferenceResolver(IReferenceResolverAdapter adapter) : IRefe
                 uncachedLookups.Select(static lookup => lookup.ReferentialId).ToArray(),
                 lookupResults
             );
+            CacheLookupRequests(uncachedLookups);
         }
 
         return BuildResolvedReferenceSet(request);
@@ -96,7 +97,6 @@ public sealed class ReferenceResolver(IReferenceResolverAdapter adapter) : IRefe
         }
 
         seenLookupByReferentialId[lookup.ReferentialId] = lookup;
-        _memoizedLookupRequests[lookup.ReferentialId] = lookup;
 
         if (_memoizedLookups.ContainsKey(lookup.ReferentialId))
         {
@@ -138,6 +138,16 @@ public sealed class ReferenceResolver(IReferenceResolverAdapter adapter) : IRefe
         {
             lookupResultByReferentialId.TryGetValue(referentialId, out var lookupResult);
             _memoizedLookups[referentialId] = new ReferenceLookupSnapshot(referentialId, lookupResult);
+        }
+    }
+
+    private void CacheLookupRequests(IReadOnlyCollection<ReferenceLookupRequestEntry> lookupRequests)
+    {
+        ArgumentNullException.ThrowIfNull(lookupRequests);
+
+        foreach (var lookupRequest in lookupRequests)
+        {
+            _memoizedLookupRequests[lookupRequest.ReferentialId] = lookupRequest;
         }
     }
 

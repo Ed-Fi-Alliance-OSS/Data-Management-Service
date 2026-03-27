@@ -295,5 +295,44 @@
       "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`"
     ],
     "completed": true
+  },
+  {
+    "category": "Resolver Retry Safety",
+    "description": "Harden `src/dms/backend/EdFi.DataManagementService.Backend/ReferenceResolver.cs` so request-scoped memoization does not poison the resolver after an adapter failure or cancellation. Acceptance: if `IReferenceResolverAdapter.ResolveAsync(...)` throws or is cancelled before results are cached, a later `ResolveAsync(...)` call on the same `ReferenceResolver` instance can retry the same referential ids successfully; lookup metadata is only retained when a corresponding snapshot is safe to reuse or the failure path explicitly rolls it back; same-request compatibility checks still work across repeated calls after a successful lookup; and no retry path can fall through to `GetRequiredLookupSnapshot(...)` for an id that was previously requested but never successfully cached.",
+    "steps-to-verify": [
+      "Add unit tests that use a fake adapter which throws on the first call and succeeds on the second call against the same `ReferenceResolver` instance, asserting the second call performs a real retry and succeeds.",
+      "Add unit tests covering adapter cancellation or failure cleanup plus normal successful miss memoization so misses are only reused after a completed lookup round.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Mixed Failure Status Contract",
+    "description": "Restore the documented mixed descriptor-plus-document reference failure behavior in `src/dms/core/EdFi.DataManagementService.Core/Handler/UpsertHandler.cs` and `src/dms/core/EdFi.DataManagementService.Core/Handler/UpdateByIdHandler.cs`. Acceptance: when one backend write failure contains both invalid document references and invalid descriptor references, POST and PUT return the established 400 bad-request response shape instead of `409 unresolved-reference`; the merged `validationErrors` payload still includes both document and descriptor paths; document-only failures remain `409`; descriptor-only failures remain `400`; and the handler/unit-test expectations align with the existing `DescriptorReferenceValidation` mixed-failure contract.",
+    "steps-to-verify": [
+      "Update or add handler tests for POST and PUT mixed-failure results asserting status `400`, the bad-request response body shape, and merged validation messages from both failure families.",
+      "If the local E2E stack is available, run the mixed descriptor-plus-document reference scenario from `src/dms/tests/EdFi.DataManagementService.Tests.E2E/Features/References/DescriptorReferenceValidation.feature` and confirm it still returns `400`.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "DateTime Verification Canonicalization",
+    "description": "Align SQL-side reference verification identity serialization with Core's canonical datetime identity format across `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/PostgresqlReferenceLookupCommandBuilder.cs`, `src/dms/backend/EdFi.DataManagementService.Backend.Mssql/MssqlReferenceLookupSmallListStrategy.cs`, and any shared helpers they depend on. Acceptance: verification keys for `ScalarKind.DateTime` use the same UTC `yyyy-MM-ddTHH:mm:ssZ` shape that Core emits after request normalization; successful lookups whose identity includes a datetime component do not false-fail as corruption; existing date-only, time-only, and non-datetime identity behavior remains unchanged; and new tests cover datetime identity serialization for both dialects.",
+    "steps-to-verify": [
+      "Add backend unit tests covering PostgreSQL and SQL Server verification-key SQL generation or row projection for a reference identity that includes a `ScalarKind.DateTime` element.",
+      "Add at least one resolver-level test that exercises a datetime identity component and confirms a correctly matched lookup does not raise a corruption exception.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Validation Error Factory Cleanup",
+    "description": "Remove or consolidate dead duplicate builders in `src/dms/core/EdFi.DataManagementService.Core/Utilities/ValidationErrorFactory.cs`. Acceptance: either `BuildInvalidReferenceValidationErrors(...)` and `BuildInvalidDescriptorValidationErrors(...)` are removed because the merged write-path builder is the sole supported implementation, or they are retained only if real callers and tests justify them; there is one authoritative path for building write reference `validationErrors`; and handler-visible response content remains unchanged after the cleanup.",
+    "steps-to-verify": [
+      "Delete or consolidate the duplicate helper methods and update any affected tests so there is no unreferenced duplicate error-builder path left behind.",
+      "Run: `dotnet test --no-restore ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj`"
+    ],
+    "completed": false
   }
 ]

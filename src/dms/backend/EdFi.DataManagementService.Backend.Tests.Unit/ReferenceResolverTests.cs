@@ -224,6 +224,145 @@ public class Given_ReferenceResolver
     }
 
     [Test]
+    public async Task It_retries_the_same_lookup_after_an_adapter_exception_without_poisoning_request_scope()
+    {
+        var referentialId = new ReferentialId(Guid.NewGuid());
+        var adapter = new SequencedReferenceResolverAdapter([
+            (_, _) =>
+                Task.FromException<IReadOnlyList<ReferenceLookupResult>>(
+                    new InvalidOperationException("Simulated lookup failure.")
+                ),
+            (_, _) =>
+                Task.FromResult<IReadOnlyList<ReferenceLookupResult>>([
+                    new ReferenceLookupResult(
+                        ReferentialId: referentialId,
+                        DocumentId: 101,
+                        ResourceKeyId: 11,
+                        ReferentialIdentityResourceKeyId: 11,
+                        IsDescriptor: false,
+                        VerificationIdentityKey: "$$.schoolId=255901"
+                    ),
+                ]),
+        ]);
+
+        var sut = new ReferenceResolver(adapter);
+        var request = new ReferenceResolverRequest(
+            MappingSet: CreateMappingSet(),
+            RequestResource: _requestResource,
+            DocumentReferences: [CreateDocumentReference(referentialId, "$.schoolReference")],
+            DescriptorReferences: []
+        );
+
+        var firstAct = async () => await sut.ResolveAsync(request);
+
+        await firstAct.Should().ThrowAsync<InvalidOperationException>();
+
+        var secondResult = await sut.ResolveAsync(request);
+
+        adapter.Requests.Should().HaveCount(2);
+        adapter.Requests[0].ReferentialIds.Should().Equal(referentialId);
+        adapter.Requests[1].ReferentialIds.Should().Equal(referentialId);
+        secondResult
+            .SuccessfulDocumentReferencesByPath.Keys.Should()
+            .Equal(new JsonPath("$.schoolReference"));
+        secondResult
+            .SuccessfulDocumentReferencesByPath[new JsonPath("$.schoolReference")]
+            .DocumentId.Should()
+            .Be(101L);
+        secondResult.InvalidDocumentReferences.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_retries_the_same_lookup_after_adapter_cancellation_without_poisoning_request_scope()
+    {
+        var referentialId = new ReferentialId(Guid.NewGuid());
+        using var cancellationTokenSource = new CancellationTokenSource();
+        await cancellationTokenSource.CancelAsync();
+
+        var adapter = new SequencedReferenceResolverAdapter([
+            (_, cancellationToken) =>
+                Task.FromCanceled<IReadOnlyList<ReferenceLookupResult>>(cancellationToken),
+            (_, _) =>
+                Task.FromResult<IReadOnlyList<ReferenceLookupResult>>([
+                    new ReferenceLookupResult(
+                        ReferentialId: referentialId,
+                        DocumentId: 101,
+                        ResourceKeyId: 11,
+                        ReferentialIdentityResourceKeyId: 11,
+                        IsDescriptor: false,
+                        VerificationIdentityKey: "$$.schoolId=255901"
+                    ),
+                ]),
+        ]);
+
+        var sut = new ReferenceResolver(adapter);
+        var request = new ReferenceResolverRequest(
+            MappingSet: CreateMappingSet(),
+            RequestResource: _requestResource,
+            DocumentReferences: [CreateDocumentReference(referentialId, "$.schoolReference")],
+            DescriptorReferences: []
+        );
+
+        var firstAct = async () => await sut.ResolveAsync(request, cancellationTokenSource.Token);
+
+        await firstAct.Should().ThrowAsync<OperationCanceledException>();
+
+        var secondResult = await sut.ResolveAsync(request);
+
+        adapter.Requests.Should().HaveCount(2);
+        adapter.Requests[0].ReferentialIds.Should().Equal(referentialId);
+        adapter.Requests[1].ReferentialIds.Should().Equal(referentialId);
+        secondResult
+            .SuccessfulDocumentReferencesByPath.Keys.Should()
+            .Equal(new JsonPath("$.schoolReference"));
+        secondResult
+            .SuccessfulDocumentReferencesByPath[new JsonPath("$.schoolReference")]
+            .DocumentId.Should()
+            .Be(101L);
+        secondResult.InvalidDocumentReferences.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_reuses_a_memoized_miss_only_after_the_lookup_round_completes()
+    {
+        var referentialId = new ReferentialId(Guid.NewGuid());
+        var adapter = new RecordingReferenceResolverAdapter([
+            [],
+        ]);
+        var sut = new ReferenceResolver(adapter);
+        var mappingSet = CreateMappingSet();
+
+        var firstResult = await sut.ResolveAsync(
+            new ReferenceResolverRequest(
+                MappingSet: mappingSet,
+                RequestResource: _requestResource,
+                DocumentReferences: [CreateDocumentReference(referentialId, "$.schoolReference")],
+                DescriptorReferences: []
+            )
+        );
+
+        var secondResult = await sut.ResolveAsync(
+            new ReferenceResolverRequest(
+                MappingSet: mappingSet,
+                RequestResource: _requestResource,
+                DocumentReferences: [CreateDocumentReference(referentialId, "$.sections[0].schoolReference")],
+                DescriptorReferences: []
+            )
+        );
+
+        adapter.Requests.Should().ContainSingle();
+        adapter.Requests[0].ReferentialIds.Should().Equal(referentialId);
+        firstResult
+            .InvalidDocumentReferences.Select(failure => (failure.Path.Value, failure.Reason))
+            .Should()
+            .Equal(("$.schoolReference", DocumentReferenceFailureReason.Missing));
+        secondResult
+            .InvalidDocumentReferences.Select(failure => (failure.Path.Value, failure.Reason))
+            .Should()
+            .Equal(("$.sections[0].schoolReference", DocumentReferenceFailureReason.Missing));
+    }
+
+    [Test]
     public async Task It_preserves_per_occurrence_diagnostics_while_materializing_success_maps()
     {
         var resolvedDocumentReferentialId = new ReferentialId(Guid.NewGuid());
@@ -793,6 +932,36 @@ public class Given_ReferenceResolver
             }
 
             return Task.FromResult(response);
+        }
+    }
+
+    private sealed class SequencedReferenceResolverAdapter(
+        IReadOnlyList<
+            Func<ReferenceLookupRequest, CancellationToken, Task<IReadOnlyList<ReferenceLookupResult>>>
+        > behaviors
+    ) : IReferenceResolverAdapter
+    {
+        private readonly Queue<
+            Func<ReferenceLookupRequest, CancellationToken, Task<IReadOnlyList<ReferenceLookupResult>>>
+        > _behaviors = new(behaviors);
+
+        public List<ReferenceLookupRequest> Requests { get; } = [];
+
+        public Task<IReadOnlyList<ReferenceLookupResult>> ResolveAsync(
+            ReferenceLookupRequest request,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Requests.Add(request);
+
+            if (!_behaviors.TryDequeue(out var behavior))
+            {
+                throw new AssertionException(
+                    "No fake adapter behavior was configured for this resolver call."
+                );
+            }
+
+            return behavior(request, cancellationToken);
         }
     }
 }
