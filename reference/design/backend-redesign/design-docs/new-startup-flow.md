@@ -42,7 +42,7 @@ In the current DMS Core request pipeline:
 
 - `ApiSchemaProvider.GetApiSchemaNodes()` performs an **initial lazy load** the first time it is accessed.
 - `ProvideApiSchemaMiddleware` performs the core+extension merge and primes `ICompiledSchemaCache` using a
-  `VersionedLazy` keyed by `ApiSchemaProvider.ReloadId`.
+  `VersionedLazy` keyed by `ApiSchemaProvider.SchemaLoadId`.
 - Backend repositories are invoked by Core handlers (e.g., `UpsertHandler`) and currently do not
   participate in any mapping pack or runtime compilation lifecycle.
 
@@ -103,8 +103,7 @@ Key behavior:
 
 - ApiSchema source remains configurable (filesystem path vs embedded assemblies).
 - Validation failures become “startup failures” rather than “first-request failures”.
-- `ApiSchemaProvider.ReloadId` becomes stable for the lifetime of the process (unless reload is still enabled
-  for non-relational modes).
+- `ApiSchemaProvider.SchemaLoadId` is stable for the lifetime of the process (schema reload has been removed).
 
 ### 2) Build and cache the merged “effective schema” view once
 
@@ -124,7 +123,6 @@ Suggested shape (conceptual):
 public interface IEffectiveApiSchemaProvider
 {
   ApiSchemaDocuments Documents { get; }
-  Guid ReloadId { get; }
 }
 ```
 

@@ -441,7 +441,7 @@ internal class ApiService : IApiService
 
         _bulkSteps = new VersionedLazy<PipelineProvider>(
             CreateBulkPipeline,
-            () => _apiSchemaProvider.ReloadId
+            () => _apiSchemaProvider.SchemaLoadId
         );
     }
 
