@@ -522,40 +522,46 @@ public class DeadlockRetryPolicyTests
     public class Given_OnRetry_Callback_Logs_Structured_Fields : DeadlockRetryPolicyTests
     {
         private CapturingLogger _retryLogger = null!;
-        private int _callCount;
 
         [SetUp]
         public async Task Setup()
         {
             _retryLogger = new CapturingLogger();
-            _callCount = 0;
             int maxRetryAttempts = 3;
 
-            // Uses the production OnRetry handler to catch regressions
+            // Uses the production OnRetry handler to catch regressions without depending on
+            // Polly option validation behavior in the strategy builder.
             var onRetryHandler = Utility.CreateOnRetryHandler(_retryLogger, maxRetryAttempts);
+            var context = ResilienceContextPool.Shared.Get();
 
-            var pipeline = new ResiliencePipelineBuilder<object>()
-                .AddRetry(
-                    new RetryStrategyOptions<object>
-                    {
-                        BackoffType = DelayBackoffType.Exponential,
-                        MaxRetryAttempts = maxRetryAttempts,
-                        Delay = TimeSpan.FromMilliseconds(1),
-                        UseJitter = false,
-                        ShouldHandle = new PredicateBuilder<object>().HandleResult(Utility.IsRetryableResult),
-                        OnRetry = args => onRetryHandler(args),
-                    }
-                )
-                .Build();
-
-            await pipeline.ExecuteAsync(async _ =>
+            try
             {
-                _callCount++;
-                await Task.CompletedTask;
-                return _callCount < 3
-                    ? (object)new UpsertResult.UpsertFailureWriteConflict()
-                    : new UpsertResult.InsertSuccess(new DocumentUuid(Guid.NewGuid()));
-            });
+                var retryOutcome = Outcome.FromResult<object>(new UpsertResult.UpsertFailureWriteConflict());
+
+                await onRetryHandler(
+                    new OnRetryArguments<object>(
+                        context,
+                        retryOutcome,
+                        attemptNumber: 1,
+                        retryDelay: TimeSpan.FromMilliseconds(1),
+                        duration: TimeSpan.Zero
+                    )
+                );
+
+                await onRetryHandler(
+                    new OnRetryArguments<object>(
+                        context,
+                        retryOutcome,
+                        attemptNumber: 2,
+                        retryDelay: TimeSpan.FromMilliseconds(1),
+                        duration: TimeSpan.Zero
+                    )
+                );
+            }
+            finally
+            {
+                ResilienceContextPool.Shared.Return(context);
+            }
         }
 
         [Test]

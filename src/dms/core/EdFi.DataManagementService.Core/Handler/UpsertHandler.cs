@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
@@ -101,28 +102,28 @@ internal class UpsertHandler(
                     updateSuccess.ExistingDocumentUuid
                 )
             ),
-            UpsertFailureDescriptorReference failure => new(
-                StatusCode: 400,
-                Body: ForBadRequest(
-                    "Data validation failed. See 'validationErrors' for details.",
-                    traceId: requestInfo.FrontendRequest.TraceId,
-                    failure.InvalidDescriptorReferences.ToDictionary(
-                        d => d.Path.Value,
-                        d =>
-                            d.DocumentIdentity.DocumentIdentityElements.Select(e =>
-                                    $"{d.ResourceInfo.ResourceName.Value} value '{e.IdentityValue}' does not exist."
-                                )
-                                .ToArray()
+            UpsertFailureReference failure
+                when failure.HasDocumentReferenceFailures && !failure.HasDescriptorReferenceFailures => new(
+                StatusCode: 409,
+                Body: ForInvalidReferences(
+                    ValidationErrorFactory.BuildInvalidWriteReferenceValidationErrors(
+                        failure.InvalidDocumentReferences,
+                        failure.InvalidDescriptorReferences
                     ),
-                    []
+                    traceId: requestInfo.FrontendRequest.TraceId
                 ),
                 Headers: []
             ),
             UpsertFailureReference failure => new(
-                StatusCode: 409,
-                Body: ForInvalidReferences(
-                    failure.ResourceNames,
-                    traceId: requestInfo.FrontendRequest.TraceId
+                StatusCode: 400,
+                Body: ForBadRequest(
+                    "Data validation failed. See 'validationErrors' for details.",
+                    traceId: requestInfo.FrontendRequest.TraceId,
+                    ValidationErrorFactory.BuildInvalidWriteReferenceValidationErrors(
+                        failure.InvalidDocumentReferences,
+                        failure.InvalidDescriptorReferences
+                    ),
+                    []
                 ),
                 Headers: []
             ),

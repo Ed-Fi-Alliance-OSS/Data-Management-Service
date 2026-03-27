@@ -13,6 +13,7 @@
         <PackageReference Include="FakeItEasy" />
         <PackageReference Include="FluentAssertions" />
         <PackageReference Include="ImpromptuInterface" />
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
         <PackageReference Include="Microsoft.NET.Test.Sdk" />
         <PackageReference Include="coverlet.collector">
             <PrivateAssets>all</PrivateAssets>
@@ -32,6 +33,8 @@
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DataManagementService.Backend\EdFi.DataManagementService.Backend.csproj" />
+        <ProjectReference Include="..\EdFi.DataManagementService.Backend.Mssql\EdFi.DataManagementService.Backend.Mssql.csproj" />
+        <ProjectReference Include="..\EdFi.DataManagementService.Backend.Postgresql\EdFi.DataManagementService.Backend.Postgresql.csproj" />
         <ProjectReference Include="..\EdFi.DataManagementService.Old.Postgresql\EdFi.DataManagementService.Old.Postgresql.csproj" />
         <ProjectReference Include="..\EdFi.DataManagementService.Backend.Tests.Common\EdFi.DataManagementService.Backend.Tests.Common.csproj" />
     </ItemGroup>

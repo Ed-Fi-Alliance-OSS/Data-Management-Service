@@ -28,17 +28,23 @@ public record UpdateResult
     public record UpdateFailureETagMisMatch() : UpdateResult();
 
     /// <summary>
-    /// A failure because referenced documents in the updated document do not exist
+    /// A failure because referenced documents and/or descriptors in the updated document are invalid
     /// </summary>
-    /// <param name="ReferencingDocumentInfo">Information about the referencing documents</param>
-    public record UpdateFailureReference(ResourceName[] ReferencingDocumentInfo) : UpdateResult();
+    /// <param name="InvalidDocumentReferences">
+    /// The invalid document references keyed by concrete path instance
+    /// </param>
+    /// <param name="InvalidDescriptorReferences">
+    /// The invalid descriptor references keyed by concrete path instance
+    /// </param>
+    public record UpdateFailureReference(
+        DocumentReferenceFailure[] InvalidDocumentReferences,
+        DescriptorReferenceFailure[] InvalidDescriptorReferences
+    ) : UpdateResult()
+    {
+        public bool HasDocumentReferenceFailures => InvalidDocumentReferences.Length != 0;
 
-    /// <summary>
-    /// A failure because referenced descriptors in the updated document do not exist
-    /// </summary>
-    /// <param name="InvalidDescriptorReferences">The invalid descriptor references</param>
-    public record UpdateFailureDescriptorReference(List<DescriptorReference> InvalidDescriptorReferences)
-        : UpdateResult();
+        public bool HasDescriptorReferenceFailures => InvalidDescriptorReferences.Length != 0;
+    }
 
     /// <summary>
     /// A failure because there is a different document with the same identity

@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Old.Postgresql.Model;
 
@@ -38,40 +39,37 @@ internal static class ReferenceHelper
     }
 
     /// <summary>
-    /// Returns the unique ResourceNames of all DocumentReferences that have the given ReferentialId Guids
+    /// Returns invalid document references for all matching referential ids without collapsing
+    /// duplicate occurrences at different JSON paths.
     /// </summary>
-    public static ResourceName[] ResourceNamesFrom(
+    public static DocumentReferenceFailure[] DocumentReferenceFailuresFrom(
         DocumentReference[] documentReferences,
-        Guid[] referentialIds
+        Guid[] referentialIds,
+        DocumentReferenceFailureReason reason
     )
     {
-        Dictionary<Guid, string> guidToResourceNameMap = new(
-            documentReferences.Select(x => new KeyValuePair<Guid, string>(
-                x.ReferentialId.Value,
-                x.ResourceInfo.ResourceName.Value
-            ))
-        );
+        HashSet<Guid> referentialIdSet = [.. referentialIds];
 
-        HashSet<string> uniqueResourceNames = [];
-
-        foreach (Guid referentialId in referentialIds)
-        {
-            if (guidToResourceNameMap.TryGetValue(referentialId, out string? value))
-            {
-                uniqueResourceNames.Add(value);
-            }
-        }
-        return uniqueResourceNames.Select(x => new ResourceName(x)).ToArray();
+        return documentReferences
+            .Where(documentReference => referentialIdSet.Contains(documentReference.ReferentialId.Value))
+            .Select(documentReference => DocumentReferenceFailure.From(documentReference, reason))
+            .ToArray();
     }
 
     /// <summary>
-    /// Returns a list of descriptor references filtered by referentialId
+    /// Returns invalid descriptor references for all matching referential ids without collapsing
+    /// duplicate occurrences at different JSON paths.
     /// </summary>
-    public static List<DescriptorReference> DescriptorReferencesWithReferentialIds(
+    public static DescriptorReferenceFailure[] DescriptorReferenceFailuresFrom(
         DescriptorReference[] descriptorReferences,
         Guid[] referentialIds
     )
     {
-        return descriptorReferences.Where(d => referentialIds.Contains(d.ReferentialId.Value)).ToList();
+        HashSet<Guid> referentialIdSet = [.. referentialIds];
+
+        return descriptorReferences
+            .Where(descriptorReference => referentialIdSet.Contains(descriptorReference.ReferentialId.Value))
+            .Select(DescriptorReferenceFailureClassifier.Missing)
+            .ToArray();
     }
 }

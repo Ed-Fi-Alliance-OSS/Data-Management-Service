@@ -23,12 +23,16 @@ Feature: CorrleationId
              Then the response body should contain header value "test-correlationId"
                   """
                   {
-                      "detail": "The referenced School item(s) do not exist.",
+                      "detail": "One or more references could not be resolved. See 'validationErrors' for details.",
                       "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                       "title": "Unresolved Reference",
                       "status": 409,
                       "correlationId": "test-correlationId",
-                      "validationErrors": {},
+                      "validationErrors": {
+                          "$.schoolReference": [
+                              "The referenced School item does not exist."
+                          ]
+                      },
                       "errors": []
                   }
                   """

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -67,6 +68,51 @@ public class WebApplicationBuilderExtensionsTests
             var fingerprintReader = serviceProvider.GetRequiredService<IDatabaseFingerprintReader>();
 
             fingerprintReader.Should().BeOfType<PostgresqlDatabaseFingerprintReader>();
+        }
+
+        [Test]
+        public void It_does_not_register_relational_reference_resolution_services_by_default()
+        {
+            using var serviceProvider = CreateServices("postgresql");
+            using var scope = serviceProvider.CreateScope();
+
+            scope.ServiceProvider.GetService<IReferenceResolver>().Should().BeNull();
+            scope.ServiceProvider.GetService<IReferenceResolverAdapterFactory>().Should().BeNull();
+            scope.ServiceProvider.GetService<IReferenceResolverAdapter>().Should().BeNull();
+            scope.ServiceProvider.GetService<IRelationalCommandExecutor>().Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Postgresql_Datastore_With_Relational_Backend_Enabled
+        : WebApplicationBuilderExtensionsTests
+    {
+        [Test]
+        public void It_registers_the_postgresql_reference_resolution_composition_surface()
+        {
+            using var serviceProvider = CreateServices(
+                "postgresql",
+                new Dictionary<string, string?> { ["AppSettings:UseRelationalBackend"] = "true" }
+            );
+            using var scope = serviceProvider.CreateScope();
+
+            scope
+                .ServiceProvider.GetRequiredService<IReferenceResolver>()
+                .Should()
+                .BeOfType<ReferenceResolver>();
+            scope
+                .ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>()
+                .Should()
+                .BeOfType<PostgresqlReferenceResolverAdapterFactory>();
+            scope
+                .ServiceProvider.GetRequiredService<IReferenceResolverAdapter>()
+                .Should()
+                .BeOfType<PostgresqlReferenceResolverAdapter>();
+            scope
+                .ServiceProvider.GetRequiredService<IRelationalCommandExecutor>()
+                .Should()
+                .BeOfType<PostgresqlRelationalCommandExecutor>();
         }
     }
 

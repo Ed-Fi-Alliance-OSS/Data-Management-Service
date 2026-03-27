@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using static EdFi.DataManagementService.Core.Response.FailureResponse;
@@ -60,6 +61,24 @@ internal static class ValidationErrorFactory
         );
     }
 
+    public static Dictionary<string, string[]> BuildInvalidWriteReferenceValidationErrors(
+        IEnumerable<DocumentReferenceFailure> invalidDocumentReferences,
+        IEnumerable<DescriptorReferenceFailure> invalidDescriptorReferences
+    ) =>
+        BuildValidationErrors(
+            invalidDocumentReferences
+                .Select(failure => new KeyValuePair<string, string>(
+                    failure.Path.Value,
+                    BuildInvalidReferenceMessage(failure)
+                ))
+                .Concat(
+                    invalidDescriptorReferences.Select(failure => new KeyValuePair<string, string>(
+                        failure.Path.Value,
+                        BuildInvalidDescriptorMessage(failure)
+                    ))
+                )
+        );
+
     /// <summary>
     /// Converts an ordinal number to its string representation (1st, 2nd, 3rd, etc.)
     /// </summary>
@@ -74,9 +93,52 @@ internal static class ValidationErrorFactory
 
         return (number % 10) switch
         {
+            1 => $"{number}st",
             2 => $"{number}nd",
             3 => $"{number}rd",
             _ => $"{number}th",
+        };
+    }
+
+    private static Dictionary<string, string[]> BuildValidationErrors(
+        IEnumerable<KeyValuePair<string, string>> validationErrors
+    ) =>
+        validationErrors
+            .GroupBy(entry => entry.Key)
+            .ToDictionary(
+                grouping => grouping.Key,
+                grouping => grouping.Select(entry => entry.Value).Distinct().ToArray()
+            );
+
+    private static string BuildInvalidReferenceMessage(DocumentReferenceFailure failure) =>
+        failure.Reason switch
+        {
+            DocumentReferenceFailureReason.Missing =>
+                $"The referenced {failure.TargetResource.ResourceName.Value} item does not exist.",
+            DocumentReferenceFailureReason.IncompatibleTargetType =>
+                $"The referenced {failure.TargetResource.ResourceName.Value} item is not compatible with this reference.",
+            _ => throw new InvalidOperationException(
+                $"Unsupported document reference failure reason '{failure.Reason}'."
+            ),
+        };
+
+    private static string BuildInvalidDescriptorMessage(DescriptorReferenceFailure failure)
+    {
+        var descriptorIdentity =
+            failure.DocumentIdentity.DocumentIdentityElements.SingleOrDefault()
+            ?? throw new InvalidOperationException(
+                $"Descriptor failure at path '{failure.Path.Value}' is missing its descriptor identity value."
+            );
+
+        return failure.Reason switch
+        {
+            DescriptorReferenceFailureReason.Missing =>
+                $"{failure.TargetResource.ResourceName.Value} value '{descriptorIdentity.IdentityValue}' does not exist.",
+            DescriptorReferenceFailureReason.DescriptorTypeMismatch =>
+                $"{failure.TargetResource.ResourceName.Value} value '{descriptorIdentity.IdentityValue}' is not a valid {failure.TargetResource.ResourceName.Value}.",
+            _ => throw new InvalidOperationException(
+                $"Unsupported descriptor reference failure reason '{failure.Reason}'."
+            ),
         };
     }
 }

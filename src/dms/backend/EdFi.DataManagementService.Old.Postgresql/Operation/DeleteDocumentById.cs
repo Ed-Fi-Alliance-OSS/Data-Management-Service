@@ -133,7 +133,11 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
             );
             return new DeleteResult.DeleteFailureWriteConflict();
         }
-        catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.ForeignKeyViolation)
+        catch (PostgresException pe)
+            when (pe.SqlState
+                    is PostgresErrorCodes.ForeignKeyViolation
+                        or PostgresErrorCodes.RestrictViolation
+            )
         {
             // Restore transaction save point to continue using transaction
             await transaction.RollbackAsync("beforeDelete");
@@ -145,7 +149,11 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
                 transaction,
                 deleteRequest.TraceId
             );
-            _logger.LogDebug(pe, "Foreign key violation on Delete - {TraceId}", deleteRequest.TraceId.Value);
+            _logger.LogDebug(
+                pe,
+                "Reference constraint violation on Delete - {TraceId}",
+                deleteRequest.TraceId.Value
+            );
             return new DeleteResult.DeleteFailureReference(referencingDocumentNames.ToArray());
         }
         catch (Exception ex)

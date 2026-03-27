@@ -27,30 +27,24 @@ public interface IUpsertDocument
 public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logger) : IUpsertDocument
 {
     /// <summary>
-    /// Determine whether invalid referentialIds were descriptors or references, and returns the
-    /// appropriate failure.
+    /// Materializes document and descriptor failures for every invalid referential id in the request.
     /// </summary>
     private static UpsertResult ReportReferenceFailure(
         DocumentInfo documentInfo,
         Guid[] invalidReferentialIds
     )
     {
-        List<DescriptorReference> invalidDescriptorReferences = DescriptorReferencesWithReferentialIds(
-            documentInfo.DescriptorReferences,
-            invalidReferentialIds
+        return new UpsertResult.UpsertFailureReference(
+            InvalidDocumentReferences: DocumentReferenceFailuresFrom(
+                documentInfo.DocumentReferences,
+                invalidReferentialIds,
+                DocumentReferenceFailureReason.Missing
+            ),
+            InvalidDescriptorReferences: DescriptorReferenceFailuresFrom(
+                documentInfo.DescriptorReferences,
+                invalidReferentialIds
+            )
         );
-
-        if (invalidDescriptorReferences.Count != 0)
-        {
-            return new UpsertResult.UpsertFailureDescriptorReference(invalidDescriptorReferences);
-        }
-
-        ResourceName[] invalidResourceNames = ResourceNamesFrom(
-            documentInfo.DocumentReferences,
-            invalidReferentialIds
-        );
-
-        return new UpsertResult.UpsertFailureReference(invalidResourceNames);
     }
 
     public async Task<UpsertResult> AsInsert(

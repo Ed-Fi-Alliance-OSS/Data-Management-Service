@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using Microsoft.Extensions.Configuration;
+using Npgsql;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
@@ -36,4 +37,21 @@ public static class Configuration
         ?? throw new InvalidOperationException(
             "DatabaseConnection connection string is not configured in appsettings.json"
         );
+
+    public static string PostgresqlAdminConnectionString
+    {
+        get
+        {
+            var configuredAdminConnectionString = Config().GetConnectionString("PostgresqlAdmin");
+
+            if (configuredAdminConnectionString is not null)
+            {
+                return configuredAdminConnectionString;
+            }
+
+            NpgsqlConnectionStringBuilder builder = new(DatabaseConnectionString) { Database = "postgres" };
+
+            return builder.ConnectionString;
+        }
+    }
 }

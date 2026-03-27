@@ -377,7 +377,16 @@ public class UpdateTests : DatabaseTest
         public void Needs_to_assert_expected_ReferencingDocumentInfo()
         {
             var failureResult = _updateResult as UpdateResult.UpdateFailureReference;
-            failureResult!.ReferencingDocumentInfo[0].Value.Should().Be(_referencingResourceName);
+            failureResult!.InvalidDocumentReferences.Should().ContainSingle();
+            failureResult
+                .InvalidDocumentReferences[0]
+                .TargetResource.ResourceName.Value.Should()
+                .Be(_referencingResourceName);
+            failureResult.InvalidDocumentReferences[0].Path.Value.Should().Be("$");
+            failureResult
+                .InvalidDocumentReferences[0]
+                .Reason.Should()
+                .Be(DocumentReferenceFailureReason.Missing);
         }
     }
 
@@ -507,7 +516,16 @@ public class UpdateTests : DatabaseTest
         public void Needs_to_assert_expected_ReferencingDocumentInfo()
         {
             var failureResult = _updateResult as UpdateResult.UpdateFailureReference;
-            failureResult!.ReferencingDocumentInfo[0].Value.Should().Be("Nonexistent");
+            failureResult!.InvalidDocumentReferences.Should().ContainSingle();
+            failureResult
+                .InvalidDocumentReferences[0]
+                .TargetResource.ResourceName.Value.Should()
+                .Be("Nonexistent");
+            failureResult.InvalidDocumentReferences[0].Path.Value.Should().Be("$");
+            failureResult
+                .InvalidDocumentReferences[0]
+                .Reason.Should()
+                .Be(DocumentReferenceFailureReason.Missing);
         }
     }
 

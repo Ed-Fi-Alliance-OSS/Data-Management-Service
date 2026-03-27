@@ -7,13 +7,13 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Security;
 using FakeItEasy;
 using FluentAssertions;
-using Json.More;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using Polly;
@@ -80,13 +80,36 @@ public class UpsertHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
         {
-            public static readonly string BadResourceName1 = "BadResourceName1";
-            public static readonly string BadResourceName2 = "BadResourceName2";
+            private static readonly BaseResourceInfo _targetResource = new(
+                new ProjectName("ed-fi"),
+                new ResourceName("School"),
+                false
+            );
 
             public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
             {
+                var sharedReferentialId = new ReferentialId(Guid.NewGuid());
+
                 return Task.FromResult<UpsertResult>(
-                    new UpsertFailureReference([new(BadResourceName1), new(BadResourceName2)])
+                    new UpsertFailureReference(
+                        [
+                            new(
+                                Path: new JsonPath("$.schoolReference"),
+                                TargetResource: _targetResource,
+                                DocumentIdentity: new([]),
+                                ReferentialId: sharedReferentialId,
+                                Reason: DocumentReferenceFailureReason.Missing
+                            ),
+                            new(
+                                Path: new JsonPath("$.sessionReference.schoolReference"),
+                                TargetResource: _targetResource,
+                                DocumentIdentity: new([]),
+                                ReferentialId: sharedReferentialId,
+                                Reason: DocumentReferenceFailureReason.Missing
+                            ),
+                        ],
+                        []
+                    )
                 );
             }
         }
@@ -105,16 +128,252 @@ public class UpsertHandlerTests
         public void It_has_the_correct_response()
         {
             requestInfo.FrontendResponse.StatusCode.Should().Be(409);
-            requestInfo
-                .FrontendResponse.Body?.AsJsonString()
+
+            var body = requestInfo.FrontendResponse.Body!.AsObject();
+            body["detail"]!
+                .GetValue<string>()
                 .Should()
-                .Be(
-                    """
-                    {"detail":"The referenced BadResourceName1, BadResourceName2 item(s) do not exist.","type":"urn:ed-fi:api:data-conflict:unresolved-reference","title":"Unresolved Reference","status":409,"correlationId":"","validationErrors":{},"errors":[]}
-                    """
-                );
+                .Be("One or more references could not be resolved. See 'validationErrors' for details.");
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:data-conflict:unresolved-reference");
+            body["title"]!.GetValue<string>().Should().Be("Unresolved Reference");
+
+            var validationErrors = body["validationErrors"]!.AsObject();
+            validationErrors.Count.Should().Be(2);
+            validationErrors["$.schoolReference"]![0]!
+                .GetValue<string>()
+                .Should()
+                .Be("The referenced School item does not exist.");
+            validationErrors["$.sessionReference.schoolReference"]![0]!
+                .GetValue<string>()
+                .Should()
+                .Be("The referenced School item does not exist.");
+            body["errors"]!.AsArray().Count.Should().Be(0);
             requestInfo.FrontendResponse.Headers.Should().BeEmpty();
             requestInfo.FrontendResponse.LocationHeaderPath.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Repository_That_Returns_A_Missing_Descriptor_Failure : UpsertHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
+            {
+                return Task.FromResult<UpsertResult>(
+                    new UpsertFailureReference(
+                        [],
+                        [
+                            new(
+                                Path: new JsonPath("$.schoolTypeDescriptor"),
+                                TargetResource: new BaseResourceInfo(
+                                    new ProjectName("ed-fi"),
+                                    new ResourceName("SchoolTypeDescriptor"),
+                                    true
+                                ),
+                                DocumentIdentity: new([
+                                    new(
+                                        DocumentIdentity.DescriptorIdentityJsonPath,
+                                        "uri://ed-fi.org/schooltypedescriptor#elementary"
+                                    ),
+                                ]),
+                                ReferentialId: new ReferentialId(Guid.NewGuid()),
+                                Reason: DescriptorReferenceFailureReason.Missing
+                            ),
+                        ]
+                    )
+                );
+            }
+        }
+
+        private readonly RequestInfo requestInfo = No.RequestInfo();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (upsertHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            await upsertHandler.Execute(requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_has_the_correct_response()
+        {
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+
+            var body = requestInfo.FrontendResponse.Body!.AsObject();
+            body["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be("Data validation failed. See 'validationErrors' for details.");
+
+            var validationErrors = body["validationErrors"]!.AsObject();
+            validationErrors.Count.Should().Be(1);
+            validationErrors["$.schoolTypeDescriptor"]![0]!
+                .GetValue<string>()
+                .Should()
+                .Be(
+                    "SchoolTypeDescriptor value 'uri://ed-fi.org/schooltypedescriptor#elementary' does not exist."
+                );
+            body["errors"]!.AsArray().Count.Should().Be(0);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Repository_That_Returns_A_Descriptor_Type_Mismatch_Failure : UpsertHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
+            {
+                return Task.FromResult<UpsertResult>(
+                    new UpsertFailureReference(
+                        [],
+                        [
+                            new(
+                                Path: new JsonPath("$.schoolTypeDescriptor"),
+                                TargetResource: new BaseResourceInfo(
+                                    new ProjectName("ed-fi"),
+                                    new ResourceName("SchoolTypeDescriptor"),
+                                    true
+                                ),
+                                DocumentIdentity: new([
+                                    new(
+                                        DocumentIdentity.DescriptorIdentityJsonPath,
+                                        "uri://ed-fi.org/gradeleveldescriptor#first-grade"
+                                    ),
+                                ]),
+                                ReferentialId: new ReferentialId(Guid.NewGuid()),
+                                Reason: DescriptorReferenceFailureReason.DescriptorTypeMismatch
+                            ),
+                        ]
+                    )
+                );
+            }
+        }
+
+        private readonly RequestInfo requestInfo = No.RequestInfo();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (upsertHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            await upsertHandler.Execute(requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_has_the_correct_response()
+        {
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+
+            var body = requestInfo.FrontendResponse.Body!.AsObject();
+            body["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be("Data validation failed. See 'validationErrors' for details.");
+
+            var validationErrors = body["validationErrors"]!.AsObject();
+            validationErrors.Count.Should().Be(1);
+            validationErrors["$.schoolTypeDescriptor"]![0]!
+                .GetValue<string>()
+                .Should()
+                .Be(
+                    "SchoolTypeDescriptor value 'uri://ed-fi.org/gradeleveldescriptor#first-grade' is not a valid SchoolTypeDescriptor."
+                );
+            body["errors"]!.AsArray().Count.Should().Be(0);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Repository_That_Returns_Mixed_Reference_Failures : UpsertHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            private static readonly BaseResourceInfo _documentTargetResource = new(
+                new ProjectName("ed-fi"),
+                new ResourceName("School"),
+                false
+            );
+
+            private static readonly BaseResourceInfo _descriptorTargetResource = new(
+                new ProjectName("ed-fi"),
+                new ResourceName("SchoolTypeDescriptor"),
+                true
+            );
+
+            public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
+            {
+                return Task.FromResult<UpsertResult>(
+                    new UpsertFailureReference(
+                        [
+                            new(
+                                Path: new JsonPath("$.schoolReference"),
+                                TargetResource: _documentTargetResource,
+                                DocumentIdentity: new([]),
+                                ReferentialId: new ReferentialId(Guid.NewGuid()),
+                                Reason: DocumentReferenceFailureReason.Missing
+                            ),
+                        ],
+                        [
+                            new(
+                                Path: new JsonPath("$.schoolTypeDescriptor"),
+                                TargetResource: _descriptorTargetResource,
+                                DocumentIdentity: new([
+                                    new(
+                                        DocumentIdentity.DescriptorIdentityJsonPath,
+                                        "uri://ed-fi.org/schooltypedescriptor#elementary"
+                                    ),
+                                ]),
+                                ReferentialId: new ReferentialId(Guid.NewGuid()),
+                                Reason: DescriptorReferenceFailureReason.Missing
+                            ),
+                        ]
+                    )
+                );
+            }
+        }
+
+        private readonly RequestInfo requestInfo = No.RequestInfo();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (upsertHandler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            await upsertHandler.Execute(requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_has_the_correct_response()
+        {
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+
+            var body = requestInfo.FrontendResponse.Body!.AsObject();
+            body["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be("Data validation failed. See 'validationErrors' for details.");
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request");
+            body["title"]!.GetValue<string>().Should().Be("Bad Request");
+            body["status"]!.GetValue<int>().Should().Be(400);
+
+            var validationErrors = body["validationErrors"]!.AsObject();
+            validationErrors.Count.Should().Be(2);
+            validationErrors["$.schoolReference"]![0]!
+                .GetValue<string>()
+                .Should()
+                .Be("The referenced School item does not exist.");
+            validationErrors["$.schoolTypeDescriptor"]![0]!
+                .GetValue<string>()
+                .Should()
+                .Be(
+                    "SchoolTypeDescriptor value 'uri://ed-fi.org/schooltypedescriptor#elementary' does not exist."
+                );
+            body["errors"]!.AsArray().Count.Should().Be(0);
         }
     }
 

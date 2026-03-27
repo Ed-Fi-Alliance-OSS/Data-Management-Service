@@ -18,6 +18,22 @@ namespace EdFi.DataManagementService.Tests.E2E.Hooks;
 [Binding]
 public static class ProfileSetupHooks
 {
+    [BeforeScenario(Order = 90)]
+    public static async Task ResetDataBeforeProfileScenario(FeatureContext featureContext, TestLogger logger)
+    {
+        if (!featureContext.FeatureInfo.Title.Contains("Profile", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        logger.log.Information(
+            "===== ProfileSetupHooks: Resetting data before profile scenario in feature '{FeatureTitle}' =====",
+            featureContext.FeatureInfo.Title
+        );
+
+        await new SearchContainerSetup().ResetData();
+    }
+
     /// <summary>
     /// Executes once before the entire test run begins, after the main SetupHooks.
     /// Creates all test profiles defined in ProfileDefinitions and stores their IDs.

@@ -60,12 +60,16 @@ Feature: School Year Reference Validation
               And the response body is
                   """
                      {
-                      "detail": "The referenced SchoolYearType item(s) do not exist.",
+                      "detail": "One or more references could not be resolved. See 'validationErrors' for details.",
                       "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                       "title": "Unresolved Reference",
                       "status": 409,
                       "correlationId": null,
-                      "validationErrors":{},
+                      "validationErrors":{
+                        "$.schoolYearTypeReference": [
+                          "The referenced SchoolYearType item does not exist."
+                        ]
+                      },
                       "errors":[]
                      }
                   """
@@ -112,12 +116,16 @@ Feature: School Year Reference Validation
               And the response body is
                   """
                       {
-                          "detail": "The referenced Calendar item(s) do not exist.",
+                          "detail": "One or more references could not be resolved. See 'validationErrors' for details.",
                           "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                           "title": "Unresolved Reference",
                           "status": 409,
                           "correlationId": null,
-                          "validationErrors": {},
+                          "validationErrors": {
+                              "$.calendarReference": [
+                                  "The referenced Calendar item does not exist."
+                              ]
+                          },
                           "errors": []
                       }
                   """

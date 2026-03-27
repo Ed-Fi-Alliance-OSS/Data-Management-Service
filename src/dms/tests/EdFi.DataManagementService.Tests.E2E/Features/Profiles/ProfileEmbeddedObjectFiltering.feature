@@ -248,7 +248,7 @@ Feature: Profile Embedded Object Filtering
              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
              And the response body should have error message "is not supported by this host"
 
-        Scenario: 09 Data validation with invalid embedded object is currently accepted without profile
+        Scenario: 09 Data validation with invalid embedded object is rejected without profile
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized without profiles and namespacePrefixes "uri://ed-fi.org"
             When a PUT request is made to "/ed-fi/assessments/{id}" with
                   """
@@ -268,7 +268,7 @@ Feature: Profile Embedded Object Filtering
                       ]
                   }
                   """
-            Then the profile response status is 200
+            Then the profile response status is 400
 
         Scenario: 10 Data validation with invalid embedded object profile is currently unsupported by host
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Assessment-Writable-Includes-Embedded-Object" and namespacePrefixes "uri://ed-fi.org"

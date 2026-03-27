@@ -211,6 +211,9 @@ Feature: Validate the reference of descriptors when creating resources
                   """
                   {
                       "validationErrors": {
+                          "$.programReference": [
+                              "The referenced Program item does not exist."
+                          ],
                           "$.programParticipationStatuses[0].participationStatusDescriptor": [
                               "ParticipationStatusDescriptor value 'uri://ed-fi.org/participationstatusdescriptor#fake' does not exist."
                           ]
@@ -223,4 +226,3 @@ Feature: Validate the reference of descriptors when creating resources
                       "correlationId": null
                   }
                   """
-

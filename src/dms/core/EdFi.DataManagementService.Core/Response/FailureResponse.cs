@@ -142,17 +142,19 @@ public static class FailureResponse
         );
     }
 
-    public static JsonNode ForInvalidReferences(ResourceName[] resourceNames, TraceId traceId)
-    {
-        string resources = string.Join(", ", resourceNames.Select(x => x.Value));
-        return CreateBaseJsonObject(
-            detail: $"The referenced {resources} item(s) do not exist.",
+    public static JsonNode ForInvalidReferences(
+        Dictionary<string, string[]> validationErrors,
+        TraceId traceId
+    ) =>
+        CreateBaseJsonObject(
+            detail: "One or more references could not be resolved. See 'validationErrors' for details.",
             type: $"{_dataConflictTypePrefix}:unresolved-reference",
             title: "Unresolved Reference",
             status: 409,
-            correlationId: traceId.Value
+            correlationId: traceId.Value,
+            validationErrors: validationErrors,
+            errors: []
         );
-    }
 
     public static JsonNode ForImmutableIdentity(string detail, TraceId traceId) =>
         CreateBaseJsonObject(

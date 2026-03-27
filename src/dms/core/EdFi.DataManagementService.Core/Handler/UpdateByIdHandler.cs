@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
@@ -108,28 +109,29 @@ internal class UpdateByIdHandler(
                 ),
                 Headers: []
             ),
-            UpdateFailureDescriptorReference failure => new(
+            UpdateFailureReference failure
+                when failure.HasDocumentReferenceFailures && !failure.HasDescriptorReferenceFailures =>
+                new FrontendResponse(
+                    StatusCode: 409,
+                    Body: FailureResponse.ForInvalidReferences(
+                        ValidationErrorFactory.BuildInvalidWriteReferenceValidationErrors(
+                            failure.InvalidDocumentReferences,
+                            failure.InvalidDescriptorReferences
+                        ),
+                        traceId: requestInfo.FrontendRequest.TraceId
+                    ),
+                    Headers: []
+                ),
+            UpdateFailureReference failure => new(
                 StatusCode: 400,
                 Body: FailureResponse.ForBadRequest(
                     "Data validation failed. See 'validationErrors' for details.",
                     traceId: requestInfo.FrontendRequest.TraceId,
-                    failure.InvalidDescriptorReferences.ToDictionary(
-                        d => d.Path.Value,
-                        d =>
-                            d.DocumentIdentity.DocumentIdentityElements.Select(e =>
-                                    $"{d.ResourceInfo.ResourceName.Value} value '{e.IdentityValue}' does not exist."
-                                )
-                                .ToArray()
+                    ValidationErrorFactory.BuildInvalidWriteReferenceValidationErrors(
+                        failure.InvalidDocumentReferences,
+                        failure.InvalidDescriptorReferences
                     ),
                     []
-                ),
-                Headers: []
-            ),
-            UpdateFailureReference failure => new FrontendResponse(
-                StatusCode: 409,
-                Body: FailureResponse.ForInvalidReferences(
-                    failure.ReferencingDocumentInfo,
-                    traceId: requestInfo.FrontendRequest.TraceId
                 ),
                 Headers: []
             ),

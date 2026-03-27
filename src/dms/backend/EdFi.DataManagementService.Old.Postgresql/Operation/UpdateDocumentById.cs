@@ -31,30 +31,24 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
     : IUpdateDocumentById
 {
     /// <summary>
-    /// Determine whether invalid referentialIds were descriptors or references, and returns the
-    /// appropriate failure.
+    /// Materializes document and descriptor failures for every invalid referential id in the request.
     /// </summary>
     private static UpdateResult ReportReferenceFailure(
         DocumentInfo documentInfo,
         Guid[] invalidReferentialIds
     )
     {
-        List<DescriptorReference> invalidDescriptorReferences = DescriptorReferencesWithReferentialIds(
-            documentInfo.DescriptorReferences,
-            invalidReferentialIds
+        return new UpdateResult.UpdateFailureReference(
+            InvalidDocumentReferences: DocumentReferenceFailuresFrom(
+                documentInfo.DocumentReferences,
+                invalidReferentialIds,
+                DocumentReferenceFailureReason.Missing
+            ),
+            InvalidDescriptorReferences: DescriptorReferenceFailuresFrom(
+                documentInfo.DescriptorReferences,
+                invalidReferentialIds
+            )
         );
-
-        if (invalidDescriptorReferences.Count != 0)
-        {
-            return new UpdateResult.UpdateFailureDescriptorReference(invalidDescriptorReferences);
-        }
-
-        ResourceName[] invalidResourceNames = ResourceNamesFrom(
-            documentInfo.DocumentReferences,
-            invalidReferentialIds
-        );
-
-        return new UpdateResult.UpdateFailureReference(invalidResourceNames);
     }
 
     /// <summary>

@@ -35,12 +35,16 @@ Feature: Create Reference Validation
              Then the response body is
                   """
                   {
-                      "detail": "The referenced School item(s) do not exist.",
+                      "detail": "One or more references could not be resolved. See 'validationErrors' for details.",
                       "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                       "title": "Unresolved Reference",
                       "status": 409,
                       "correlationId": null,
-                      "validationErrors": {},
+                      "validationErrors": {
+                          "$.schoolReference": [
+                              "The referenced School item does not exist."
+                          ]
+                      },
                       "errors": []
                   }
                   """
@@ -69,12 +73,19 @@ Feature: Create Reference Validation
              Then the response body is
                   """
                   {
-                      "detail": "The referenced Program, Student item(s) do not exist.",
+                      "detail": "One or more references could not be resolved. See 'validationErrors' for details.",
                       "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                       "title": "Unresolved Reference",
                       "status": 409,
                       "correlationId": null,
-                      "validationErrors": {},
+                      "validationErrors": {
+                          "$.programReference": [
+                              "The referenced Program item does not exist."
+                          ],
+                          "$.studentReference": [
+                              "The referenced Student item does not exist."
+                          ]
+                      },
                       "errors": []
                   }
                   """
@@ -99,12 +110,16 @@ Feature: Create Reference Validation
               And the response body is
                   """
                   {
-                    "detail": "The referenced SchoolYearType item(s) do not exist.",
+                    "detail": "One or more references could not be resolved. See 'validationErrors' for details.",
                     "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                     "title": "Unresolved Reference",
                     "status": 409,
                     "correlationId": null,
-                    "validationErrors": {},
+                    "validationErrors": {
+                        "$.graduationSchoolYearTypeReference": [
+                            "The referenced SchoolYearType item does not exist."
+                        ]
+                    },
                     "errors": []
                   }
                   """
@@ -134,12 +149,16 @@ Feature: Create Reference Validation
               And the response body is
                   """
                   {
-                      "detail": "The referenced Section item(s) do not exist.",
+                      "detail": "One or more references could not be resolved. See 'validationErrors' for details.",
                       "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                       "title": "Unresolved Reference",
                       "status": 409,
                       "correlationId": null,
-                      "validationErrors": {},
+                      "validationErrors": {
+                          "$.sectionReference": [
+                              "The referenced Section item does not exist."
+                          ]
+                      },
                       "errors": []
                   }
                   """
@@ -203,12 +222,16 @@ Feature: Create Reference Validation
              Then the response body is
                   """
                   {
-                      "detail": "The referenced AcademicWeek item(s) do not exist.",
+                      "detail": "One or more references could not be resolved. See 'validationErrors' for details.",
                       "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                       "title": "Unresolved Reference",
                       "status": 409,
                       "correlationId": null,
-                      "validationErrors": {},
+                      "validationErrors": {
+                          "$.academicWeeks[0].academicWeekReference": [
+                              "The referenced AcademicWeek item does not exist."
+                          ]
+                      },
                       "errors": []
                   }
                   """
