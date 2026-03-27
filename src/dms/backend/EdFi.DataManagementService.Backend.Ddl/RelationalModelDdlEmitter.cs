@@ -124,6 +124,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
         var tableModelsByTableName = BuildTableModelLookup(concreteResources, abstractIdentityTables);
 
+        var tableModelsByTableName = BuildTableModelLookup(concreteResources, abstractIdentityTables);
+
         // Phase 7: Triggers (includes auth hierarchy triggers)
         EmitTriggers(writer, triggers, tableModelsByTableName);
 
@@ -764,7 +766,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     )
     {
         var storedColumns = GetStoredColumnsForDocumentStamping(tableModel, trigger.Name.Value);
-        var isRootDocumentStampingTrigger = tableModel.IdentityMetadata.TableKind == DbTableKind.Root;
+        var isRootDocumentStampingTrigger = keyColumn.Equals(DocumentIdColumn);
 
         // Skip successful no-op UPDATEs that do not change any stored row values.
         writer.Append("IF TG_OP = 'UPDATE' AND NOT (");

@@ -779,43 +779,6 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
     }
 
     [Test]
-    public void It_should_stamp_root_extension_inserts_without_reusing_root_insert_defaults()
-    {
-        var functionStart = _ddl.IndexOf(
-            "CREATE OR REPLACE FUNCTION \"edfi\".\"TF_TR_SchoolExtension_Stamp\"()",
-            StringComparison.Ordinal
-        );
-        var triggerStart =
-            functionStart >= 0
-                ? _ddl.IndexOf(
-                    "CREATE TRIGGER \"TR_SchoolExtension_Stamp\"",
-                    functionStart,
-                    StringComparison.Ordinal
-                )
-                : -1;
-
-        functionStart.Should().BeGreaterOrEqualTo(0);
-        triggerStart.Should().BeGreaterThan(functionStart);
-
-        var functionBody = _ddl.Substring(functionStart, triggerStart - functionStart);
-
-        functionBody
-            .Should()
-            .Contain(
-                "IF TG_OP = 'UPDATE' AND NOT (OLD.\"DocumentId\" IS DISTINCT FROM NEW.\"DocumentId\" OR OLD.\"ExtensionData\" IS DISTINCT FROM NEW.\"ExtensionData\") THEN"
-            );
-        functionBody.Should().Contain("RETURN NEW;");
-        functionBody.Should().Contain("UPDATE \"dms\".\"Document\"");
-        functionBody
-            .Should()
-            .Contain(
-                "\"ContentVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"'), \"ContentLastModifiedAt\" = now()"
-            );
-        functionBody.Should().Contain("WHERE \"DocumentId\" = NEW.\"DocumentId\";");
-        functionBody.Should().NotContain("IF TG_OP = 'UPDATE' THEN");
-    }
-
-    [Test]
     public void It_should_short_circuit_no_op_updates_by_comparing_child_stored_columns()
     {
         _ddl.Should()
@@ -2062,10 +2025,8 @@ internal static class PgsqlDocumentStampingFixture
         var collectionItemIdColumn = new DbColumnName("CollectionItemId");
         var documentIdColumn = new DbColumnName("DocumentId");
         var schoolIdColumn = new DbColumnName("SchoolId");
-        var extensionDataColumn = new DbColumnName("ExtensionData");
         var childDocumentIdColumn = new DbColumnName("School_DocumentId");
         var streetNumberNameColumn = new DbColumnName("StreetNumberName");
-        var extensionTableName = new DbTableName(schema, "SchoolExtension");
         var resource = new QualifiedResourceName("Ed-Fi", "School");
         var resourceKey = new ResourceKeyEntry(1, resource, "1.0.0", false);
 
@@ -2092,16 +2053,7 @@ internal static class PgsqlDocumentStampingFixture
                 ),
             ],
             []
-        )
-        {
-            IdentityMetadata = new DbTableIdentityMetadata(
-                DbTableKind.Root,
-                [documentIdColumn],
-                [documentIdColumn],
-                [],
-                []
-            ),
-        };
+        );
 
         var childTable = new DbTableModel(
             childTableName,
@@ -2137,57 +2089,14 @@ internal static class PgsqlDocumentStampingFixture
                 ),
             ],
             []
-        )
-        {
-            IdentityMetadata = new DbTableIdentityMetadata(
-                DbTableKind.Collection,
-                [collectionItemIdColumn],
-                [childDocumentIdColumn],
-                [childDocumentIdColumn],
-                []
-            ),
-        };
-
-        var rootExtensionTable = new DbTableModel(
-            extensionTableName,
-            new JsonPathExpression("$._ext.sample", []),
-            new TableKey("PK_SchoolExtension", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
-            [
-                new DbColumnModel(
-                    documentIdColumn,
-                    ColumnKind.ParentKeyPart,
-                    new RelationalScalarType(ScalarKind.Int64),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    extensionDataColumn,
-                    ColumnKind.Scalar,
-                    new RelationalScalarType(ScalarKind.String, MaxLength: 150),
-                    IsNullable: true,
-                    SourceJsonPath: new JsonPathExpression("$._ext.sample.extensionData", []),
-                    TargetResource: null
-                ),
-            ],
-            []
-        )
-        {
-            IdentityMetadata = new DbTableIdentityMetadata(
-                DbTableKind.RootExtension,
-                [documentIdColumn],
-                [documentIdColumn],
-                [documentIdColumn],
-                []
-            ),
-        };
+        );
 
         var relationalModel = new RelationalResourceModel(
             resource,
             schema,
             ResourceStorageKind.RelationalTables,
             rootTable,
-            [rootTable, childTable, rootExtensionTable],
+            [rootTable, childTable],
             [],
             []
         );
@@ -2205,13 +2114,6 @@ internal static class PgsqlDocumentStampingFixture
                 new DbTriggerName("TR_SchoolAddress_Stamp"),
                 childTableName,
                 [childDocumentIdColumn],
-                [],
-                new TriggerKindParameters.DocumentStamping()
-            ),
-            new(
-                new DbTriggerName("TR_SchoolExtension_Stamp"),
-                extensionTableName,
-                [documentIdColumn],
                 [],
                 new TriggerKindParameters.DocumentStamping()
             ),
