@@ -1,23 +1,23 @@
 {
   "api_schema_format_version": "1.0.0",
   "relational_mapping_version": "v1",
-  "effective_schema_hash": "7b477c2ba49991085f3c33ff7b89e2ea465d15a8fb21f18a0b103c464ff6de44",
+  "effective_schema_hash": "029283e1893259b3be7e306b3977b0777f365e621b6d651dbfa6347e72326e5b",
   "resource_key_count": 358,
-  "resource_key_seed_hash": "0e73350eb601a6157d0168ca5c627355a7a737ddcdcf8b3a545f413e2c4dd662",
+  "resource_key_seed_hash": "b2bc1f88c9075a93585e3abfdc25c5c6018c09f18fae7221816b1826eb4190c4",
   "schema_components": [
     {
       "project_endpoint_name": "ed-fi",
       "project_name": "Ed-Fi",
       "project_version": "5.2.0",
       "is_extension_project": false,
-      "project_hash": "3c7f27e53b784596c6260bce1c36102f616714d05b872a68866e9f527f0cae7f"
+      "project_hash": "54f6bb2fa20002a1a1940b6f76b30047bad4099fd1ca032ce5351fd43b5e314a"
     },
     {
       "project_endpoint_name": "sample",
       "project_name": "Sample",
-      "project_version": "1.1.0",
+      "project_version": "1.0.0",
       "is_extension_project": true,
-      "project_hash": "63522f80e883ef633ef17d213f0ae6bc94d20cb4059d8861cf6a090b10be9991"
+      "project_hash": "119540ff9dc18c366e6ec178d0900b7a782b5d1aeb59849276934128fa5fdd3d"
     }
   ],
   "resource_keys": [
@@ -2131,43 +2131,43 @@
       "resource_key_id": 352,
       "project_name": "Sample",
       "resource_name": "ArtMediumDescriptor",
-      "resource_version": "1.1.0"
+      "resource_version": "1.0.0"
     },
     {
       "resource_key_id": 353,
       "project_name": "Sample",
       "resource_name": "Bus",
-      "resource_version": "1.1.0"
+      "resource_version": "1.0.0"
     },
     {
       "resource_key_id": 354,
       "project_name": "Sample",
       "resource_name": "BusRoute",
-      "resource_version": "1.1.0"
+      "resource_version": "1.0.0"
     },
     {
       "resource_key_id": 355,
       "project_name": "Sample",
       "resource_name": "FavoriteBookCategoryDescriptor",
-      "resource_version": "1.1.0"
+      "resource_version": "1.0.0"
     },
     {
       "resource_key_id": 356,
       "project_name": "Sample",
       "resource_name": "MembershipTypeDescriptor",
-      "resource_version": "1.1.0"
+      "resource_version": "1.0.0"
     },
     {
       "resource_key_id": 357,
       "project_name": "Sample",
       "resource_name": "StudentArtProgramAssociation",
-      "resource_version": "1.1.0"
+      "resource_version": "1.0.0"
     },
     {
       "resource_key_id": 358,
       "project_name": "Sample",
       "resource_name": "StudentGraduationPlanAssociation",
-      "resource_version": "1.1.0"
+      "resource_version": "1.0.0"
     }
   ]
 }

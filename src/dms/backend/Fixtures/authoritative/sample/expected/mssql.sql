@@ -9,9 +9,9 @@ IF OBJECT_ID(N'dms.EffectiveSchema', N'U') IS NOT NULL
 BEGIN
     SELECT @preflight_stored_hash = [EffectiveSchemaHash] FROM [dms].[EffectiveSchema]
     WHERE [EffectiveSchemaSingletonId] = 1;
-    IF @preflight_stored_hash IS NOT NULL AND @preflight_stored_hash <> N'7b477c2ba49991085f3c33ff7b89e2ea465d15a8fb21f18a0b103c464ff6de44'
+    IF @preflight_stored_hash IS NOT NULL AND @preflight_stored_hash <> N'029283e1893259b3be7e306b3977b0777f365e621b6d651dbfa6347e72326e5b'
     BEGIN
-        DECLARE @preflight_msg nvarchar(500) = CONCAT(N'EffectiveSchemaHash mismatch: database has ''', @preflight_stored_hash, N''' but expected ''', N'7b477c2ba49991085f3c33ff7b89e2ea465d15a8fb21f18a0b103c464ff6de44', N'''');
+        DECLARE @preflight_msg nvarchar(500) = CONCAT(N'EffectiveSchemaHash mismatch: database has ''', @preflight_stored_hash, N''' but expected ''', N'029283e1893259b3be7e306b3977b0777f365e621b6d651dbfa6347e72326e5b', N'''');
         THROW 50000, @preflight_msg, 1;
     END
 END
@@ -447,7 +447,7 @@ CREATE TABLE [edfi].[AcademicWeek]
 (
     [DocumentId] bigint NOT NULL,
     [School_DocumentId] bigint NOT NULL,
-    [School_SchoolId] int NOT NULL,
+    [School_SchoolId] bigint NOT NULL,
     [BeginDate] date NOT NULL,
     [EndDate] date NOT NULL,
     [TotalInstructionalDays] int NOT NULL,
@@ -463,7 +463,7 @@ CREATE TABLE [edfi].[AccountabilityRating]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [SchoolYear_DocumentId] bigint NOT NULL,
     [SchoolYear_SchoolYear] int NOT NULL,
     [Rating] nvarchar(35) NOT NULL,
@@ -482,9 +482,9 @@ CREATE TABLE [edfi].[Assessment]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NULL,
-    [EducationOrganization_EducationOrganizationId] int NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NULL,
     [MandatingEducationOrganization_DocumentId] bigint NULL,
-    [MandatingEducationOrganization_EducationOrganizationId] int NULL,
+    [MandatingEducationOrganization_EducationOrganizationId] bigint NULL,
     [AssessmentCategoryDescriptor_DescriptorId] bigint NULL,
     [ContentStandardPublicationStatusDescriptor_DescriptorId] bigint NULL,
     [AdaptiveAssessment] bit NULL,
@@ -623,7 +623,7 @@ CREATE TABLE [edfi].[AssessmentProgram]
     [Assessment_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [SectionOrProgramChoiceProgram_DocumentId] bigint NULL,
-    [SectionOrProgramChoiceProgram_EducationOrganizationId] int NULL,
+    [SectionOrProgramChoiceProgram_EducationOrganizationId] bigint NULL,
     [SectionOrProgramChoiceProgram_ProgramName] nvarchar(60) NULL,
     [SectionOrProgramChoiceProgram_ProgramTypeDescriptor_DescriptorId] bigint NULL,
     CONSTRAINT [PK_AssessmentProgram] PRIMARY KEY ([CollectionItemId]),
@@ -655,7 +655,7 @@ CREATE TABLE [edfi].[AssessmentSection]
     [Ordinal] int NOT NULL,
     [SectionOrProgramChoiceSection_DocumentId] bigint NULL,
     [SectionOrProgramChoiceSection_LocalCourseCode] nvarchar(60) NULL,
-    [SectionOrProgramChoiceSection_SchoolId] int NULL,
+    [SectionOrProgramChoiceSection_SchoolId] bigint NULL,
     [SectionOrProgramChoiceSection_SchoolYear] int NULL,
     [SectionOrProgramChoiceSection_SessionName] nvarchar(60) NULL,
     [SectionOrProgramChoiceSection_SectionIdentifier] nvarchar(255) NULL,
@@ -673,7 +673,7 @@ CREATE TABLE [edfi].[AssessmentAdministration]
     [Assessment_AssessmentIdentifier] nvarchar(60) NOT NULL,
     [Assessment_Namespace] nvarchar(255) NOT NULL,
     [AssigningEducationOrganization_DocumentId] bigint NOT NULL,
-    [AssigningEducationOrganization_EducationOrganizationId] int NOT NULL,
+    [AssigningEducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [AdministrationIdentifier] nvarchar(255) NOT NULL,
     CONSTRAINT [PK_AssessmentAdministration] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_AssessmentAdministration_NK] UNIQUE ([AdministrationIdentifier], [Assessment_DocumentId], [AssigningEducationOrganization_DocumentId]),
@@ -719,9 +719,9 @@ CREATE TABLE [edfi].[AssessmentAdministrationParticipation]
     [AssessmentAdministration_AdministrationIdentifier] nvarchar(255) NOT NULL,
     [AssessmentAdministration_AssessmentIdentifier] nvarchar(60) NOT NULL,
     [AssessmentAdministration_Namespace] nvarchar(255) NOT NULL,
-    [AssessmentAdministration_AssigningEducationOrganizationId] int NOT NULL,
+    [AssessmentAdministration_AssigningEducationOrganizationId] bigint NOT NULL,
     [ParticipatingEducationOrganization_DocumentId] bigint NOT NULL,
-    [ParticipatingEducationOrganization_EducationOrganizationId] int NOT NULL,
+    [ParticipatingEducationOrganization_EducationOrganizationId] bigint NOT NULL,
     CONSTRAINT [PK_AssessmentAdministrationParticipation] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_AssessmentAdministrationParticipation_NK] UNIQUE ([AssessmentAdministration_DocumentId], [ParticipatingEducationOrganization_DocumentId]),
     CONSTRAINT [CK_AssessmentAdministrationParticipation_AssessmentAdministration_AllNone] CHECK (([AssessmentAdministration_DocumentId] IS NULL AND [AssessmentAdministration_AdministrationIdentifier] IS NULL AND [AssessmentAdministration_AssessmentIdentifier] IS NULL AND [AssessmentAdministration_Namespace] IS NULL AND [AssessmentAdministration_AssigningEducationOrganizationId] IS NULL) OR ([AssessmentAdministration_DocumentId] IS NOT NULL AND [AssessmentAdministration_AdministrationIdentifier] IS NOT NULL AND [AssessmentAdministration_AssessmentIdentifier] IS NOT NULL AND [AssessmentAdministration_Namespace] IS NOT NULL AND [AssessmentAdministration_AssigningEducationOrganizationId] IS NOT NULL)),
@@ -735,7 +735,7 @@ CREATE TABLE [edfi].[AssessmentAdministrationParticipationAdministrationPointOfC
     [AssessmentAdministrationParticipation_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [AdministrationPointOfContactEducationOrganization_DocumentId] bigint NOT NULL,
-    [AdministrationPointOfContactEducationOrganization_EducationOrganizationId] int NOT NULL,
+    [AdministrationPointOfContactEducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [ElectronicMailAddress] nvarchar(128) NOT NULL,
     [FirstName] nvarchar(75) NOT NULL,
     [LastSurname] nvarchar(75) NOT NULL,
@@ -890,7 +890,7 @@ CREATE TABLE [edfi].[BellSchedule]
 (
     [DocumentId] bigint NOT NULL,
     [School_DocumentId] bigint NOT NULL,
-    [School_SchoolId] int NOT NULL,
+    [School_SchoolId] bigint NOT NULL,
     [AlternateDayName] nvarchar(20) NULL,
     [BellScheduleName] nvarchar(60) NOT NULL,
     [EndTime] time(7) NULL,
@@ -909,7 +909,7 @@ CREATE TABLE [edfi].[BellScheduleClassPeriod]
     [Ordinal] int NOT NULL,
     [ClassPeriod_DocumentId] bigint NULL,
     [ClassPeriod_ClassPeriodName] nvarchar(60) NULL,
-    [ClassPeriod_SchoolId] int NULL,
+    [ClassPeriod_SchoolId] bigint NULL,
     CONSTRAINT [PK_BellScheduleClassPeriod] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_BellScheduleClassPeriod_BellSchedule_DocumentId_ClassPeriod_DocumentId] UNIQUE ([BellSchedule_DocumentId], [ClassPeriod_DocumentId]),
     CONSTRAINT [UX_BellScheduleClassPeriod_Ordinal_BellSchedule_DocumentId] UNIQUE ([BellSchedule_DocumentId], [Ordinal]),
@@ -947,7 +947,7 @@ CREATE TABLE [edfi].[Calendar]
     [SchoolYear_DocumentId] bigint NOT NULL,
     [SchoolYear_SchoolYear] int NOT NULL,
     [School_DocumentId] bigint NOT NULL,
-    [School_SchoolId] int NOT NULL,
+    [School_SchoolId] bigint NOT NULL,
     [CalendarTypeDescriptor_DescriptorId] bigint NOT NULL,
     [CalendarCode] nvarchar(60) NOT NULL,
     CONSTRAINT [PK_Calendar] PRIMARY KEY ([DocumentId]),
@@ -975,7 +975,7 @@ CREATE TABLE [edfi].[CalendarDate]
     [DocumentId] bigint NOT NULL,
     [Calendar_DocumentId] bigint NOT NULL,
     [Calendar_CalendarCode] nvarchar(60) NOT NULL,
-    [Calendar_SchoolId] int NOT NULL,
+    [Calendar_SchoolId] bigint NOT NULL,
     [Calendar_SchoolYear] int NOT NULL,
     [Date] date NOT NULL,
     CONSTRAINT [PK_CalendarDate] PRIMARY KEY ([DocumentId]),
@@ -1005,7 +1005,7 @@ CREATE TABLE [edfi].[ChartOfAccount]
     [BalanceSheetBalanceSheetDimension_Code] nvarchar(16) NULL,
     [BalanceSheetBalanceSheetDimension_FiscalYear] AS (CASE WHEN [BalanceSheetBalanceSheetDimension_DocumentId] IS NULL THEN NULL ELSE [FiscalYear_Unified] END) PERSISTED,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [FunctionFunctionDimension_DocumentId] bigint NULL,
     [FunctionFunctionDimension_Code] nvarchar(16) NULL,
     [FunctionFunctionDimension_FiscalYear] AS (CASE WHEN [FunctionFunctionDimension_DocumentId] IS NULL THEN NULL ELSE [FiscalYear_Unified] END) PERSISTED,
@@ -1063,7 +1063,7 @@ CREATE TABLE [edfi].[ClassPeriod]
 (
     [DocumentId] bigint NOT NULL,
     [School_DocumentId] bigint NOT NULL,
-    [School_SchoolId] int NOT NULL,
+    [School_SchoolId] bigint NOT NULL,
     [ClassPeriodName] nvarchar(60) NOT NULL,
     [OfficialAttendancePeriod] bit NULL,
     CONSTRAINT [PK_ClassPeriod] PRIMARY KEY ([DocumentId]),
@@ -1090,7 +1090,7 @@ CREATE TABLE [edfi].[Cohort]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [AcademicSubjectDescriptor_DescriptorId] bigint NULL,
     [CohortScopeDescriptor_DescriptorId] bigint NULL,
     [CohortTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -1109,7 +1109,7 @@ CREATE TABLE [edfi].[CohortProgram]
     [Cohort_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [ProgramProgram_DocumentId] bigint NULL,
-    [ProgramProgram_EducationOrganizationId] int NULL,
+    [ProgramProgram_EducationOrganizationId] bigint NULL,
     [ProgramProgram_ProgramName] nvarchar(60) NULL,
     [ProgramProgram_ProgramTypeDescriptor_DescriptorId] bigint NULL,
     CONSTRAINT [PK_CohortProgram] PRIMARY KEY ([CollectionItemId]),
@@ -1123,7 +1123,7 @@ CREATE TABLE [edfi].[CommunityOrganization]
 (
     [DocumentId] bigint NOT NULL,
     [OperationalStatusDescriptor_DescriptorId] bigint NULL,
-    [CommunityOrganizationId] int NOT NULL,
+    [CommunityOrganizationId] bigint NOT NULL,
     [NameOfInstitution] nvarchar(75) NOT NULL,
     [ShortNameOfInstitution] nvarchar(75) NULL,
     [WebSite] nvarchar(255) NULL,
@@ -1267,12 +1267,12 @@ CREATE TABLE [edfi].[CommunityProvider]
 (
     [DocumentId] bigint NOT NULL,
     [CommunityOrganization_DocumentId] bigint NULL,
-    [CommunityOrganization_CommunityOrganizationId] int NULL,
+    [CommunityOrganization_CommunityOrganizationId] bigint NULL,
     [OperationalStatusDescriptor_DescriptorId] bigint NULL,
     [ProviderCategoryDescriptor_DescriptorId] bigint NOT NULL,
     [ProviderProfitabilityDescriptor_DescriptorId] bigint NULL,
     [ProviderStatusDescriptor_DescriptorId] bigint NOT NULL,
-    [CommunityProviderId] int NOT NULL,
+    [CommunityProviderId] bigint NOT NULL,
     [LicenseExemptIndicator] bit NULL,
     [NameOfInstitution] nvarchar(75) NOT NULL,
     [SchoolIndicator] bit NULL,
@@ -1419,7 +1419,7 @@ CREATE TABLE [edfi].[CommunityProviderLicense]
 (
     [DocumentId] bigint NOT NULL,
     [CommunityProvider_DocumentId] bigint NOT NULL,
-    [CommunityProvider_CommunityProviderId] int NOT NULL,
+    [CommunityProvider_CommunityProviderId] bigint NOT NULL,
     [LicenseStatusDescriptor_DescriptorId] bigint NULL,
     [LicenseTypeDescriptor_DescriptorId] bigint NOT NULL,
     [AuthorizedFacilityCapacity] int NULL,
@@ -1440,7 +1440,7 @@ CREATE TABLE [edfi].[CompetencyObjective]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [ObjectiveGradeLevelDescriptor_DescriptorId] bigint NOT NULL,
     [CompetencyObjectiveId] nvarchar(60) NULL,
     [Description] nvarchar(1024) NULL,
@@ -1504,17 +1504,6 @@ CREATE TABLE [sample].[ContactExtension]
     CONSTRAINT [PK_ContactExtension] PRIMARY KEY ([DocumentId])
 );
 
-IF OBJECT_ID(N'sample.ContactExtensionAddress', N'U') IS NULL
-CREATE TABLE [sample].[ContactExtensionAddress]
-(
-    [BaseCollectionItemId] bigint NOT NULL,
-    [Contact_DocumentId] bigint NOT NULL,
-    [Complex] nvarchar(255) NULL,
-    [OnBusRoute] bit NULL,
-    CONSTRAINT [PK_ContactExtensionAddress] PRIMARY KEY ([BaseCollectionItemId]),
-    CONSTRAINT [UX_ContactExtensionAddress_BaseCollectionItemId_Contact_DocumentId] UNIQUE ([BaseCollectionItemId], [Contact_DocumentId])
-);
-
 IF OBJECT_ID(N'sample.ContactExtensionAuthor', N'U') IS NULL
 CREATE TABLE [sample].[ContactExtensionAuthor]
 (
@@ -1573,8 +1562,8 @@ CREATE TABLE [sample].[ContactExtensionStudentProgramAssociation]
     [Ordinal] int NOT NULL,
     [StudentProgramAssociation_DocumentId] bigint NULL,
     [StudentProgramAssociation_BeginDate] date NULL,
-    [StudentProgramAssociation_EducationOrganizationId] int NULL,
-    [StudentProgramAssociation_ProgramEducationOrganizationId] int NULL,
+    [StudentProgramAssociation_EducationOrganizationId] bigint NULL,
+    [StudentProgramAssociation_ProgramEducationOrganizationId] bigint NULL,
     [StudentProgramAssociation_ProgramName] nvarchar(60) NULL,
     [StudentProgramAssociation_ProgramTypeDescriptor_DescriptorId] bigint NULL,
     [StudentProgramAssociation_StudentUniqueId] nvarchar(32) NULL,
@@ -1608,6 +1597,17 @@ CREATE TABLE [edfi].[ContactAddress]
     CONSTRAINT [UX_ContactAddress_City_PostalCode_StreetNumberName_AddressTypeDescriptor_DescriptorId_Contact_DocumentId_StateAbbrevi_e8e80fdb6a] UNIQUE ([Contact_DocumentId], [AddressTypeDescriptor_DescriptorId], [City], [PostalCode], [StateAbbreviationDescriptor_DescriptorId], [StreetNumberName]),
     CONSTRAINT [UX_ContactAddress_CollectionItemId_Contact_DocumentId] UNIQUE ([CollectionItemId], [Contact_DocumentId]),
     CONSTRAINT [UX_ContactAddress_Ordinal_Contact_DocumentId] UNIQUE ([Contact_DocumentId], [Ordinal])
+);
+
+IF OBJECT_ID(N'sample.ContactExtensionAddress', N'U') IS NULL
+CREATE TABLE [sample].[ContactExtensionAddress]
+(
+    [BaseCollectionItemId] bigint NOT NULL,
+    [Contact_DocumentId] bigint NOT NULL,
+    [Complex] nvarchar(255) NULL,
+    [OnBusRoute] bit NULL,
+    CONSTRAINT [PK_ContactExtensionAddress] PRIMARY KEY ([BaseCollectionItemId]),
+    CONSTRAINT [UX_ContactExtensionAddress_BaseCollectionItemId_Contact_DocumentId] UNIQUE ([BaseCollectionItemId], [Contact_DocumentId])
 );
 
 IF OBJECT_ID(N'edfi.ContactElectronicMail', N'U') IS NULL
@@ -1768,7 +1768,7 @@ CREATE TABLE [edfi].[Course]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [CareerPathwayDescriptor_DescriptorId] bigint NULL,
     [CourseDefinedByDescriptor_DescriptorId] bigint NULL,
     [CourseGPAApplicabilityDescriptor_DescriptorId] bigint NULL,
@@ -1873,10 +1873,10 @@ IF OBJECT_ID(N'edfi.CourseOffering', N'U') IS NULL
 CREATE TABLE [edfi].[CourseOffering]
 (
     [DocumentId] bigint NOT NULL,
-    [SchoolId_Unified] int NOT NULL,
+    [SchoolId_Unified] bigint NOT NULL,
     [Course_DocumentId] bigint NOT NULL,
     [Course_CourseCode] nvarchar(60) NOT NULL,
-    [Course_EducationOrganizationId] int NOT NULL,
+    [Course_EducationOrganizationId] bigint NOT NULL,
     [School_DocumentId] bigint NOT NULL,
     [School_SchoolId] AS (CASE WHEN [School_DocumentId] IS NULL THEN NULL ELSE [SchoolId_Unified] END) PERSISTED,
     [Session_DocumentId] bigint NOT NULL,
@@ -1936,13 +1936,13 @@ CREATE TABLE [edfi].[CourseTranscript]
     [DocumentId] bigint NOT NULL,
     [CourseCourse_DocumentId] bigint NOT NULL,
     [CourseCourse_CourseCode] nvarchar(60) NOT NULL,
-    [CourseCourse_EducationOrganizationId] int NOT NULL,
+    [CourseCourse_EducationOrganizationId] bigint NOT NULL,
     [ExternalEducationOrganization_DocumentId] bigint NULL,
-    [ExternalEducationOrganization_EducationOrganizationId] int NULL,
+    [ExternalEducationOrganization_EducationOrganizationId] bigint NULL,
     [ResponsibleTeacherStaff_DocumentId] bigint NULL,
     [ResponsibleTeacherStaff_StaffUniqueId] nvarchar(32) NULL,
     [StudentAcademicRecord_DocumentId] bigint NOT NULL,
-    [StudentAcademicRecord_EducationOrganizationId] int NOT NULL,
+    [StudentAcademicRecord_EducationOrganizationId] bigint NOT NULL,
     [StudentAcademicRecord_SchoolYear] int NOT NULL,
     [StudentAcademicRecord_StudentUniqueId] nvarchar(32) NOT NULL,
     [StudentAcademicRecord_TermDescriptor_DescriptorId] bigint NOT NULL,
@@ -2005,7 +2005,7 @@ CREATE TABLE [edfi].[CourseTranscriptCourseProgram]
     [CourseTranscript_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [CourseProgram_DocumentId] bigint NULL,
-    [CourseProgram_EducationOrganizationId] int NULL,
+    [CourseProgram_EducationOrganizationId] bigint NULL,
     [CourseProgram_ProgramName] nvarchar(60) NULL,
     [CourseProgram_ProgramTypeDescriptor_DescriptorId] bigint NULL,
     CONSTRAINT [PK_CourseTranscriptCourseProgram] PRIMARY KEY ([CollectionItemId]),
@@ -2063,7 +2063,7 @@ CREATE TABLE [edfi].[CourseTranscriptSection]
     [Ordinal] int NOT NULL,
     [Section_DocumentId] bigint NULL,
     [Section_LocalCourseCode] nvarchar(60) NULL,
-    [Section_SchoolId] int NULL,
+    [Section_SchoolId] bigint NULL,
     [Section_SchoolYear] int NULL,
     [Section_SessionName] nvarchar(60) NULL,
     [Section_SectionIdentifier] nvarchar(255) NULL,
@@ -2171,9 +2171,9 @@ CREATE TABLE [edfi].[DisciplineAction]
 (
     [DocumentId] bigint NOT NULL,
     [AssignmentSchool_DocumentId] bigint NULL,
-    [AssignmentSchool_SchoolId] int NULL,
+    [AssignmentSchool_SchoolId] bigint NULL,
     [ResponsibilitySchool_DocumentId] bigint NOT NULL,
-    [ResponsibilitySchool_SchoolId] int NOT NULL,
+    [ResponsibilitySchool_SchoolId] bigint NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
     [DisciplineActionLengthDifferenceReasonDescriptor_DescriptorId] bigint NULL,
@@ -2225,7 +2225,7 @@ CREATE TABLE [edfi].[DisciplineActionStudentDisciplineIncidentBehaviorAssociatio
     [StudentDisciplineIncidentBehaviorAssociation_DocumentId] bigint NULL,
     [StudentDisciplineIncidentBehaviorAssociation_BehaviorDescriptor_DescriptorId] bigint NULL,
     [StudentDisciplineIncidentBehaviorAssociation_IncidentIdentifier] nvarchar(36) NULL,
-    [StudentDisciplineIncidentBehaviorAssociation_SchoolId] int NULL,
+    [StudentDisciplineIncidentBehaviorAssociation_SchoolId] bigint NULL,
     [StudentDisciplineIncidentBehaviorAssociation_StudentUniqueId] nvarchar(32) NULL,
     CONSTRAINT [PK_DisciplineActionStudentDisciplineIncidentBehaviorAssociation] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_DisciplineActionStudentDisciplineIncidentBehaviorAssociation_DisciplineAction_DocumentId_StudentDisciplineIncident_7cf2b5d17f] UNIQUE ([DisciplineAction_DocumentId], [StudentDisciplineIncidentBehaviorAssociation_DocumentId]),
@@ -2238,7 +2238,7 @@ CREATE TABLE [edfi].[DisciplineIncident]
 (
     [DocumentId] bigint NOT NULL,
     [School_DocumentId] bigint NOT NULL,
-    [School_SchoolId] int NOT NULL,
+    [School_SchoolId] bigint NOT NULL,
     [IncidentLocationDescriptor_DescriptorId] bigint NULL,
     [ReporterDescriptionDescriptor_DescriptorId] bigint NULL,
     [CaseNumber] nvarchar(20) NULL,
@@ -2413,9 +2413,9 @@ CREATE TABLE [edfi].[EducationOrganizationInterventionPrescriptionAssociation]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [InterventionPrescriptionInterventionPrescription_DocumentId] bigint NOT NULL,
-    [InterventionPrescriptionInterventionPrescription_EducationOrganizationId] int NOT NULL,
+    [InterventionPrescriptionInterventionPrescription_EducationOrganizationId] bigint NOT NULL,
     [InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] nvarchar(60) NOT NULL,
     [BeginDate] date NULL,
     [EndDate] date NULL,
@@ -2431,7 +2431,7 @@ CREATE TABLE [edfi].[EducationOrganizationNetwork]
     [DocumentId] bigint NOT NULL,
     [NetworkPurposeDescriptor_DescriptorId] bigint NOT NULL,
     [OperationalStatusDescriptor_DescriptorId] bigint NULL,
-    [EducationOrganizationNetworkId] int NOT NULL,
+    [EducationOrganizationNetworkId] bigint NOT NULL,
     [NameOfInstitution] nvarchar(75) NOT NULL,
     [ShortNameOfInstitution] nvarchar(75) NULL,
     [WebSite] nvarchar(255) NULL,
@@ -2575,9 +2575,9 @@ CREATE TABLE [edfi].[EducationOrganizationNetworkAssociation]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganizationNetwork_DocumentId] bigint NOT NULL,
-    [EducationOrganizationNetwork_EducationOrganizationNetworkId] int NOT NULL,
+    [EducationOrganizationNetwork_EducationOrganizationNetworkId] bigint NOT NULL,
     [MemberEducationOrganization_DocumentId] bigint NOT NULL,
-    [MemberEducationOrganization_EducationOrganizationId] int NOT NULL,
+    [MemberEducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [BeginDate] date NULL,
     [EndDate] date NULL,
     CONSTRAINT [PK_EducationOrganizationNetworkAssociation] PRIMARY KEY ([DocumentId]),
@@ -2591,9 +2591,9 @@ CREATE TABLE [edfi].[EducationOrganizationPeerAssociation]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [PeerEducationOrganization_DocumentId] bigint NOT NULL,
-    [PeerEducationOrganization_EducationOrganizationId] int NOT NULL,
+    [PeerEducationOrganization_EducationOrganizationId] bigint NOT NULL,
     CONSTRAINT [PK_EducationOrganizationPeerAssociation] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_EducationOrganizationPeerAssociation_NK] UNIQUE ([EducationOrganization_DocumentId], [PeerEducationOrganization_DocumentId]),
     CONSTRAINT [CK_EducationOrganizationPeerAssociation_EducationOrganization_AllNone] CHECK (([EducationOrganization_DocumentId] IS NULL AND [EducationOrganization_EducationOrganizationId] IS NULL) OR ([EducationOrganization_DocumentId] IS NOT NULL AND [EducationOrganization_EducationOrganizationId] IS NOT NULL)),
@@ -2605,9 +2605,9 @@ CREATE TABLE [edfi].[EducationServiceCenter]
 (
     [DocumentId] bigint NOT NULL,
     [StateEducationAgency_DocumentId] bigint NULL,
-    [StateEducationAgency_StateEducationAgencyId] int NULL,
+    [StateEducationAgency_StateEducationAgencyId] bigint NULL,
     [OperationalStatusDescriptor_DescriptorId] bigint NULL,
-    [EducationServiceCenterId] int NOT NULL,
+    [EducationServiceCenterId] bigint NOT NULL,
     [NameOfInstitution] nvarchar(75) NOT NULL,
     [ShortNameOfInstitution] nvarchar(75) NULL,
     [WebSite] nvarchar(255) NULL,
@@ -2753,7 +2753,7 @@ CREATE TABLE [edfi].[EvaluationRubricDimension]
     [DocumentId] bigint NOT NULL,
     [ProgramEvaluationElement_DocumentId] bigint NOT NULL,
     [ProgramEvaluationElement_ProgramEvaluationElementTitle] nvarchar(50) NOT NULL,
-    [ProgramEvaluationElement_ProgramEducationOrganizationId] int NOT NULL,
+    [ProgramEvaluationElement_ProgramEducationOrganizationId] bigint NOT NULL,
     [ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] bigint NOT NULL,
     [ProgramEvaluationElement_ProgramEvaluationTitle] nvarchar(50) NOT NULL,
     [ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -2773,9 +2773,9 @@ CREATE TABLE [edfi].[FeederSchoolAssociation]
 (
     [DocumentId] bigint NOT NULL,
     [FeederSchool_DocumentId] bigint NOT NULL,
-    [FeederSchool_SchoolId] int NOT NULL,
+    [FeederSchool_SchoolId] bigint NOT NULL,
     [School_DocumentId] bigint NOT NULL,
-    [School_SchoolId] int NOT NULL,
+    [School_SchoolId] bigint NOT NULL,
     [BeginDate] date NOT NULL,
     [EndDate] date NULL,
     [FeederRelationshipDescription] nvarchar(1024) NULL,
@@ -2837,7 +2837,7 @@ IF OBJECT_ID(N'edfi.Grade', N'U') IS NULL
 CREATE TABLE [edfi].[Grade]
 (
     [DocumentId] bigint NOT NULL,
-    [SchoolId_Unified] int NOT NULL,
+    [SchoolId_Unified] bigint NOT NULL,
     [SchoolYear_Unified] int NOT NULL,
     [GradingPeriodGradingPeriod_DocumentId] bigint NOT NULL,
     [GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] bigint NOT NULL,
@@ -2889,7 +2889,7 @@ IF OBJECT_ID(N'edfi.GradebookEntry', N'U') IS NULL
 CREATE TABLE [edfi].[GradebookEntry]
 (
     [DocumentId] bigint NOT NULL,
-    [SchoolId_Unified] int NULL,
+    [SchoolId_Unified] bigint NULL,
     [SchoolYear_Unified] int NULL,
     [GradingPeriod_DocumentId] bigint NULL,
     [GradingPeriod_GradingPeriodDescriptor_DescriptorId] bigint NULL,
@@ -2940,7 +2940,7 @@ CREATE TABLE [edfi].[GradingPeriod]
     [SchoolYear_DocumentId] bigint NOT NULL,
     [SchoolYear_SchoolYear] int NOT NULL,
     [School_DocumentId] bigint NOT NULL,
-    [School_SchoolId] int NOT NULL,
+    [School_SchoolId] bigint NOT NULL,
     [GradingPeriodDescriptor_DescriptorId] bigint NOT NULL,
     [BeginDate] date NOT NULL,
     [EndDate] date NOT NULL,
@@ -2959,7 +2959,7 @@ CREATE TABLE [edfi].[GraduationPlan]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [GraduationSchoolYear_DocumentId] bigint NOT NULL,
     [GraduationSchoolYear_GraduationSchoolYear] int NOT NULL,
     [GraduationPlanTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -3052,7 +3052,7 @@ CREATE TABLE [edfi].[GraduationPlanCreditsByCoursCours]
     [ParentCollectionItemId] bigint NOT NULL,
     [CourseCourse_DocumentId] bigint NULL,
     [CourseCourse_CourseCode] nvarchar(60) NULL,
-    [CourseCourse_EducationOrganizationId] int NULL,
+    [CourseCourse_EducationOrganizationId] bigint NULL,
     CONSTRAINT [PK_GraduationPlanCreditsByCoursCours] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_GraduationPlanCreditsByCoursCours_Ordinal_ParentCollectionItemId] UNIQUE ([ParentCollectionItemId], [Ordinal]),
     CONSTRAINT [UX_GraduationPlanCreditsByCoursCours_ParentCollectionItemId_CourseCourse_DocumentId] UNIQUE ([ParentCollectionItemId], [CourseCourse_DocumentId]),
@@ -3080,7 +3080,7 @@ CREATE TABLE [edfi].[Intervention]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [DeliveryMethodDescriptor_DescriptorId] bigint NOT NULL,
     [InterventionClassDescriptor_DescriptorId] bigint NOT NULL,
     [BeginDate] date NOT NULL,
@@ -3152,7 +3152,7 @@ CREATE TABLE [edfi].[InterventionInterventionPrescription]
     [Intervention_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [InterventionPrescriptionInterventionPrescription_DocumentId] bigint NULL,
-    [InterventionPrescriptionInterventionPrescription_EducationOrganizationId] int NULL,
+    [InterventionPrescriptionInterventionPrescription_EducationOrganizationId] bigint NULL,
     [InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] nvarchar(60) NULL,
     CONSTRAINT [PK_InterventionInterventionPrescription] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_InterventionInterventionPrescription_Intervention_DocumentId_InterventionPrescriptionInterventionPrescription_DocumentId] UNIQUE ([Intervention_DocumentId], [InterventionPrescriptionInterventionPrescription_DocumentId]),
@@ -3228,7 +3228,7 @@ CREATE TABLE [edfi].[InterventionPrescription]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [DeliveryMethodDescriptor_DescriptorId] bigint NOT NULL,
     [InterventionClassDescriptor_DescriptorId] bigint NOT NULL,
     [InterventionPrescriptionIdentificationCode] nvarchar(60) NOT NULL,
@@ -3332,9 +3332,9 @@ CREATE TABLE [edfi].[InterventionStudy]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [InterventionPrescriptionInterventionPrescription_DocumentId] bigint NOT NULL,
-    [InterventionPrescriptionInterventionPrescription_EducationOrganizationId] int NOT NULL,
+    [InterventionPrescriptionInterventionPrescription_EducationOrganizationId] bigint NOT NULL,
     [InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] nvarchar(60) NOT NULL,
     [DeliveryMethodDescriptor_DescriptorId] bigint NOT NULL,
     [InterventionClassDescriptor_DescriptorId] bigint NOT NULL,
@@ -3454,7 +3454,7 @@ CREATE TABLE [edfi].[LearningStandard]
 (
     [DocumentId] bigint NOT NULL,
     [MandatingEducationOrganization_DocumentId] bigint NULL,
-    [MandatingEducationOrganization_EducationOrganizationId] int NULL,
+    [MandatingEducationOrganization_EducationOrganizationId] bigint NULL,
     [ParentLearningStandard_DocumentId] bigint NULL,
     [ParentLearningStandard_LearningStandardId] nvarchar(60) NULL,
     [ContentStandardPublicationStatusDescriptor_DescriptorId] bigint NULL,
@@ -3555,10 +3555,10 @@ CREATE TABLE [edfi].[LocalAccount]
     [FiscalYear_Unified] int NOT NULL,
     [ChartOfAccountChartOfAccount_DocumentId] bigint NOT NULL,
     [ChartOfAccountChartOfAccount_AccountIdentifier] nvarchar(50) NOT NULL,
-    [ChartOfAccountChartOfAccount_EducationOrganizationId] int NOT NULL,
+    [ChartOfAccountChartOfAccount_EducationOrganizationId] bigint NOT NULL,
     [ChartOfAccountChartOfAccount_FiscalYear] AS (CASE WHEN [ChartOfAccountChartOfAccount_DocumentId] IS NULL THEN NULL ELSE [FiscalYear_Unified] END) PERSISTED,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [AccountIdentifier] nvarchar(50) NOT NULL,
     [AccountName] nvarchar(100) NULL,
     [FiscalYear] AS ([FiscalYear_Unified]) PERSISTED,
@@ -3588,7 +3588,7 @@ CREATE TABLE [edfi].[LocalActual]
     [DocumentId] bigint NOT NULL,
     [LocalAccount_DocumentId] bigint NOT NULL,
     [LocalAccount_AccountIdentifier] nvarchar(50) NOT NULL,
-    [LocalAccount_EducationOrganizationId] int NOT NULL,
+    [LocalAccount_EducationOrganizationId] bigint NOT NULL,
     [LocalAccount_FiscalYear] int NOT NULL,
     [FinancialCollectionDescriptor_DescriptorId] bigint NULL,
     [Amount] decimal(19,4) NOT NULL,
@@ -3604,7 +3604,7 @@ CREATE TABLE [edfi].[LocalBudget]
     [DocumentId] bigint NOT NULL,
     [LocalAccount_DocumentId] bigint NOT NULL,
     [LocalAccount_AccountIdentifier] nvarchar(50) NOT NULL,
-    [LocalAccount_EducationOrganizationId] int NOT NULL,
+    [LocalAccount_EducationOrganizationId] bigint NOT NULL,
     [LocalAccount_FiscalYear] int NOT NULL,
     [FinancialCollectionDescriptor_DescriptorId] bigint NULL,
     [Amount] decimal(19,4) NOT NULL,
@@ -3620,7 +3620,7 @@ CREATE TABLE [edfi].[LocalContractedStaff]
     [DocumentId] bigint NOT NULL,
     [LocalAccount_DocumentId] bigint NOT NULL,
     [LocalAccount_AccountIdentifier] nvarchar(50) NOT NULL,
-    [LocalAccount_EducationOrganizationId] int NOT NULL,
+    [LocalAccount_EducationOrganizationId] bigint NOT NULL,
     [LocalAccount_FiscalYear] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
     [Staff_StaffUniqueId] nvarchar(32) NOT NULL,
@@ -3638,15 +3638,15 @@ CREATE TABLE [edfi].[LocalEducationAgency]
 (
     [DocumentId] bigint NOT NULL,
     [EducationServiceCenter_DocumentId] bigint NULL,
-    [EducationServiceCenter_EducationServiceCenterId] int NULL,
+    [EducationServiceCenter_EducationServiceCenterId] bigint NULL,
     [ParentLocalEducationAgency_DocumentId] bigint NULL,
-    [ParentLocalEducationAgency_LocalEducationAgencyId] int NULL,
+    [ParentLocalEducationAgency_LocalEducationAgencyId] bigint NULL,
     [StateEducationAgency_DocumentId] bigint NULL,
-    [StateEducationAgency_StateEducationAgencyId] int NULL,
+    [StateEducationAgency_StateEducationAgencyId] bigint NULL,
     [CharterStatusDescriptor_DescriptorId] bigint NULL,
     [LocalEducationAgencyCategoryDescriptor_DescriptorId] bigint NOT NULL,
     [OperationalStatusDescriptor_DescriptorId] bigint NULL,
-    [LocalEducationAgencyId] int NOT NULL,
+    [LocalEducationAgencyId] bigint NOT NULL,
     [NameOfInstitution] nvarchar(75) NOT NULL,
     [ShortNameOfInstitution] nvarchar(75) NULL,
     [WebSite] nvarchar(255) NULL,
@@ -3830,7 +3830,7 @@ CREATE TABLE [edfi].[LocalEncumbrance]
     [DocumentId] bigint NOT NULL,
     [LocalAccount_DocumentId] bigint NOT NULL,
     [LocalAccount_AccountIdentifier] nvarchar(50) NOT NULL,
-    [LocalAccount_EducationOrganizationId] int NOT NULL,
+    [LocalAccount_EducationOrganizationId] bigint NOT NULL,
     [LocalAccount_FiscalYear] int NOT NULL,
     [FinancialCollectionDescriptor_DescriptorId] bigint NULL,
     [Amount] decimal(19,4) NOT NULL,
@@ -3846,7 +3846,7 @@ CREATE TABLE [edfi].[LocalPayroll]
     [DocumentId] bigint NOT NULL,
     [LocalAccount_DocumentId] bigint NOT NULL,
     [LocalAccount_AccountIdentifier] nvarchar(50) NOT NULL,
-    [LocalAccount_EducationOrganizationId] int NOT NULL,
+    [LocalAccount_EducationOrganizationId] bigint NOT NULL,
     [LocalAccount_FiscalYear] int NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
     [Staff_StaffUniqueId] nvarchar(32) NOT NULL,
@@ -3864,7 +3864,7 @@ CREATE TABLE [edfi].[Location]
 (
     [DocumentId] bigint NOT NULL,
     [School_DocumentId] bigint NOT NULL,
-    [School_SchoolId] int NOT NULL,
+    [School_SchoolId] bigint NOT NULL,
     [ClassroomIdentificationCode] nvarchar(60) NOT NULL,
     [MaximumNumberOfSeats] int NULL,
     [OptimalNumberOfSeats] int NULL,
@@ -3991,7 +3991,7 @@ CREATE TABLE [edfi].[OpenStaffPosition]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [EmploymentStatusDescriptor_DescriptorId] bigint NOT NULL,
     [PostingResultDescriptor_DescriptorId] bigint NULL,
     [ProgramAssignmentDescriptor_DescriptorId] bigint NULL,
@@ -4058,11 +4058,11 @@ CREATE TABLE [edfi].[OrganizationDepartment]
 (
     [DocumentId] bigint NOT NULL,
     [ParentEducationOrganization_DocumentId] bigint NULL,
-    [ParentEducationOrganization_EducationOrganizationId] int NULL,
+    [ParentEducationOrganization_EducationOrganizationId] bigint NULL,
     [AcademicSubjectDescriptor_DescriptorId] bigint NULL,
     [OperationalStatusDescriptor_DescriptorId] bigint NULL,
     [NameOfInstitution] nvarchar(75) NOT NULL,
-    [OrganizationDepartmentId] int NOT NULL,
+    [OrganizationDepartmentId] bigint NOT NULL,
     [ShortNameOfInstitution] nvarchar(75) NULL,
     [WebSite] nvarchar(255) NULL,
     CONSTRAINT [PK_OrganizationDepartment] PRIMARY KEY ([DocumentId]),
@@ -4216,7 +4216,7 @@ CREATE TABLE [edfi].[PostSecondaryEvent]
 (
     [DocumentId] bigint NOT NULL,
     [PostSecondaryInstitution_DocumentId] bigint NULL,
-    [PostSecondaryInstitution_PostSecondaryInstitutionId] int NULL,
+    [PostSecondaryInstitution_PostSecondaryInstitutionId] bigint NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
     [PostSecondaryEventCategoryDescriptor_DescriptorId] bigint NOT NULL,
@@ -4235,7 +4235,7 @@ CREATE TABLE [edfi].[PostSecondaryInstitution]
     [OperationalStatusDescriptor_DescriptorId] bigint NULL,
     [PostSecondaryInstitutionLevelDescriptor_DescriptorId] bigint NULL,
     [NameOfInstitution] nvarchar(75) NOT NULL,
-    [PostSecondaryInstitutionId] int NOT NULL,
+    [PostSecondaryInstitutionId] bigint NOT NULL,
     [ShortNameOfInstitution] nvarchar(75) NULL,
     [WebSite] nvarchar(255) NULL,
     CONSTRAINT [PK_PostSecondaryInstitution] PRIMARY KEY ([DocumentId]),
@@ -4390,7 +4390,7 @@ CREATE TABLE [edfi].[Program]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
     [ProgramId] nvarchar(20) NULL,
     [ProgramName] nvarchar(60) NOT NULL,
@@ -4467,7 +4467,7 @@ CREATE TABLE [edfi].[ProgramEvaluation]
 (
     [DocumentId] bigint NOT NULL,
     [ProgramProgram_DocumentId] bigint NOT NULL,
-    [ProgramProgram_EducationOrganizationId] int NOT NULL,
+    [ProgramProgram_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_ProgramName] nvarchar(60) NOT NULL,
     [ProgramProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
     [ProgramEvaluationPeriodDescriptor_DescriptorId] bigint NOT NULL,
@@ -4500,7 +4500,7 @@ IF OBJECT_ID(N'edfi.ProgramEvaluationElement', N'U') IS NULL
 CREATE TABLE [edfi].[ProgramEvaluationElement]
 (
     [DocumentId] bigint NOT NULL,
-    [ProgramEducationOrganizationId_Unified] int NOT NULL,
+    [ProgramEducationOrganizationId_Unified] bigint NOT NULL,
     [ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] bigint NOT NULL,
     [ProgramEvaluationTitle_Unified] nvarchar(50) NOT NULL,
     [ProgramEvaluationTypeDescriptor_Unified_DescriptorId] bigint NOT NULL,
@@ -4555,7 +4555,7 @@ CREATE TABLE [edfi].[ProgramEvaluationObjective]
     [ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] bigint NOT NULL,
     [ProgramEvaluation_ProgramEvaluationTitle] nvarchar(50) NOT NULL,
     [ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [ProgramEvaluation_ProgramEducationOrganizationId] int NOT NULL,
+    [ProgramEvaluation_ProgramEducationOrganizationId] bigint NOT NULL,
     [ProgramEvaluation_ProgramName] nvarchar(60) NOT NULL,
     [ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
     [ObjectiveMaxNumericRating] decimal(6,3) NULL,
@@ -4612,11 +4612,11 @@ CREATE TABLE [edfi].[ReportCard]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [GradingPeriodGradingPeriod_DocumentId] bigint NOT NULL,
     [GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] bigint NOT NULL,
     [GradingPeriodGradingPeriod_GradingPeriodName] nvarchar(60) NOT NULL,
-    [GradingPeriodGradingPeriod_SchoolId] int NOT NULL,
+    [GradingPeriodGradingPeriod_SchoolId] bigint NOT NULL,
     [GradingPeriodGradingPeriod_SchoolYear] int NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
@@ -4652,7 +4652,7 @@ CREATE TABLE [edfi].[ReportCardGrade]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ReportCard_DocumentId] bigint NOT NULL,
-    [SchoolId_Unified] int NULL,
+    [SchoolId_Unified] bigint NULL,
     [Grade_DocumentId] bigint NULL,
     [Grade_GradeTypeDescriptor_DescriptorId] bigint NULL,
     [Grade_GradingPeriodDescriptor_DescriptorId] bigint NULL,
@@ -4681,9 +4681,9 @@ CREATE TABLE [edfi].[ReportCardStudentCompetencyObjective]
     [StudentCompetencyObjective_DocumentId] bigint NULL,
     [StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId] bigint NULL,
     [StudentCompetencyObjective_GradingPeriodName] nvarchar(60) NULL,
-    [StudentCompetencyObjective_GradingPeriodSchoolId] int NULL,
+    [StudentCompetencyObjective_GradingPeriodSchoolId] bigint NULL,
     [StudentCompetencyObjective_GradingPeriodSchoolYear] int NULL,
-    [StudentCompetencyObjective_ObjectiveEducationOrganizationId] int NULL,
+    [StudentCompetencyObjective_ObjectiveEducationOrganizationId] bigint NULL,
     [StudentCompetencyObjective_Objective] nvarchar(60) NULL,
     [StudentCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] bigint NULL,
     [StudentCompetencyObjective_StudentUniqueId] nvarchar(32) NULL,
@@ -4697,7 +4697,7 @@ IF OBJECT_ID(N'edfi.RestraintEvent', N'U') IS NULL
 CREATE TABLE [edfi].[RestraintEvent]
 (
     [DocumentId] bigint NOT NULL,
-    [SchoolId_Unified] int NOT NULL,
+    [SchoolId_Unified] bigint NOT NULL,
     [DisciplineIncident_DocumentId] bigint NULL,
     [DisciplineIncident_IncidentIdentifier] nvarchar(36) NULL,
     [DisciplineIncident_SchoolId] AS (CASE WHEN [DisciplineIncident_DocumentId] IS NULL THEN NULL ELSE [SchoolId_Unified] END) PERSISTED,
@@ -4722,7 +4722,7 @@ CREATE TABLE [edfi].[RestraintEventProgram]
     [Ordinal] int NOT NULL,
     [RestraintEvent_DocumentId] bigint NOT NULL,
     [Program_DocumentId] bigint NULL,
-    [Program_EducationOrganizationId] int NULL,
+    [Program_EducationOrganizationId] bigint NULL,
     [Program_ProgramName] nvarchar(60) NULL,
     [Program_ProgramTypeDescriptor_DescriptorId] bigint NULL,
     CONSTRAINT [PK_RestraintEventProgram] PRIMARY KEY ([CollectionItemId]),
@@ -4750,7 +4750,7 @@ CREATE TABLE [edfi].[School]
     [CharterApprovalSchoolYear_DocumentId] bigint NULL,
     [CharterApprovalSchoolYear_CharterApprovalSchoolYear] int NULL,
     [LocalEducationAgency_DocumentId] bigint NULL,
-    [LocalEducationAgency_LocalEducationAgencyId] int NULL,
+    [LocalEducationAgency_LocalEducationAgencyId] bigint NULL,
     [AdministrativeFundingControlDescriptor_DescriptorId] bigint NULL,
     [CharterApprovalAgencyTypeDescriptor_DescriptorId] bigint NULL,
     [CharterStatusDescriptor_DescriptorId] bigint NULL,
@@ -4760,7 +4760,7 @@ CREATE TABLE [edfi].[School]
     [SchoolTypeDescriptor_DescriptorId] bigint NULL,
     [TitleIPartASchoolDesignationDescriptor_DescriptorId] bigint NULL,
     [NameOfInstitution] nvarchar(75) NOT NULL,
-    [SchoolId] int NOT NULL,
+    [SchoolId] bigint NOT NULL,
     [ShortNameOfInstitution] nvarchar(75) NULL,
     [WebSite] nvarchar(255) NULL,
     CONSTRAINT [PK_School] PRIMARY KEY ([DocumentId]),
@@ -4967,8 +4967,8 @@ IF OBJECT_ID(N'edfi.Section', N'U') IS NULL
 CREATE TABLE [edfi].[Section]
 (
     [DocumentId] bigint NOT NULL,
-    [SchoolId_U35501e03_Unified] int NULL,
-    [SchoolId_Unified] int NOT NULL,
+    [SchoolId_U35501e03_Unified] bigint NULL,
+    [SchoolId_Unified] bigint NOT NULL,
     [CourseOffering_DocumentId] bigint NOT NULL,
     [CourseOffering_LocalCourseCode] nvarchar(60) NOT NULL,
     [CourseOffering_SchoolReferenceSchoolId] AS (CASE WHEN [CourseOffering_DocumentId] IS NULL THEN NULL ELSE [SchoolId_Unified] END) PERSISTED,
@@ -5020,7 +5020,7 @@ CREATE TABLE [edfi].[SectionClassPeriod]
     [Section_DocumentId] bigint NOT NULL,
     [ClassPeriod_DocumentId] bigint NULL,
     [ClassPeriod_ClassPeriodName] nvarchar(60) NULL,
-    [ClassPeriod_SchoolId] int NULL,
+    [ClassPeriod_SchoolId] bigint NULL,
     CONSTRAINT [PK_SectionClassPeriod] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_SectionClassPeriod_ClassPeriod_DocumentId_Section_DocumentId] UNIQUE ([Section_DocumentId], [ClassPeriod_DocumentId]),
     CONSTRAINT [UX_SectionClassPeriod_Ordinal_Section_DocumentId] UNIQUE ([Section_DocumentId], [Ordinal]),
@@ -5058,7 +5058,7 @@ CREATE TABLE [edfi].[SectionProgram]
     [Ordinal] int NOT NULL,
     [Section_DocumentId] bigint NOT NULL,
     [Program_DocumentId] bigint NULL,
-    [Program_EducationOrganizationId] int NULL,
+    [Program_EducationOrganizationId] bigint NULL,
     [Program_ProgramName] nvarchar(60) NULL,
     [Program_ProgramTypeDescriptor_DescriptorId] bigint NULL,
     CONSTRAINT [PK_SectionProgram] PRIMARY KEY ([CollectionItemId]),
@@ -5071,7 +5071,7 @@ IF OBJECT_ID(N'edfi.SectionAttendanceTakenEvent', N'U') IS NULL
 CREATE TABLE [edfi].[SectionAttendanceTakenEvent]
 (
     [DocumentId] bigint NOT NULL,
-    [SchoolId_Unified] int NOT NULL,
+    [SchoolId_Unified] bigint NOT NULL,
     [SchoolYear_Unified] int NOT NULL,
     [CalendarDate_DocumentId] bigint NOT NULL,
     [CalendarDate_CalendarCode] nvarchar(60) NOT NULL,
@@ -5101,7 +5101,7 @@ CREATE TABLE [edfi].[Session]
     [SchoolYear_DocumentId] bigint NOT NULL,
     [SchoolYear_SchoolYear] int NOT NULL,
     [School_DocumentId] bigint NOT NULL,
-    [School_SchoolId] int NOT NULL,
+    [School_SchoolId] bigint NOT NULL,
     [TermDescriptor_DescriptorId] bigint NOT NULL,
     [BeginDate] date NOT NULL,
     [EndDate] date NOT NULL,
@@ -5121,7 +5121,7 @@ CREATE TABLE [edfi].[SessionAcademicWeek]
     [Ordinal] int NOT NULL,
     [Session_DocumentId] bigint NOT NULL,
     [AcademicWeek_DocumentId] bigint NULL,
-    [AcademicWeek_SchoolId] int NULL,
+    [AcademicWeek_SchoolId] bigint NULL,
     [AcademicWeek_WeekIdentifier] nvarchar(80) NULL,
     CONSTRAINT [PK_SessionAcademicWeek] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_SessionAcademicWeek_AcademicWeek_DocumentId_Session_DocumentId] UNIQUE ([Session_DocumentId], [AcademicWeek_DocumentId]),
@@ -5138,7 +5138,7 @@ CREATE TABLE [edfi].[SessionGradingPeriod]
     [GradingPeriod_DocumentId] bigint NULL,
     [GradingPeriod_GradingPeriodDescriptor_DescriptorId] bigint NULL,
     [GradingPeriod_GradingPeriodName] nvarchar(60) NULL,
-    [GradingPeriod_SchoolId] int NULL,
+    [GradingPeriod_SchoolId] bigint NULL,
     [GradingPeriod_SchoolYear] int NULL,
     CONSTRAINT [PK_SessionGradingPeriod] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_SessionGradingPeriod_GradingPeriod_DocumentId_Session_DocumentId] UNIQUE ([Session_DocumentId], [GradingPeriod_DocumentId]),
@@ -5518,7 +5518,7 @@ CREATE TABLE [edfi].[StaffCohortAssociation]
     [DocumentId] bigint NOT NULL,
     [Cohort_DocumentId] bigint NOT NULL,
     [Cohort_CohortIdentifier] nvarchar(36) NOT NULL,
-    [Cohort_EducationOrganizationId] int NOT NULL,
+    [Cohort_EducationOrganizationId] bigint NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
     [Staff_StaffUniqueId] nvarchar(32) NOT NULL,
     [BeginDate] date NOT NULL,
@@ -5536,7 +5536,7 @@ CREATE TABLE [edfi].[StaffDisciplineIncidentAssociation]
     [DocumentId] bigint NOT NULL,
     [DisciplineIncident_DocumentId] bigint NOT NULL,
     [DisciplineIncident_IncidentIdentifier] nvarchar(36) NOT NULL,
-    [DisciplineIncident_SchoolId] int NOT NULL,
+    [DisciplineIncident_SchoolId] bigint NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
     [Staff_StaffUniqueId] nvarchar(32) NOT NULL,
     CONSTRAINT [PK_StaffDisciplineIncidentAssociation] PRIMARY KEY ([DocumentId]),
@@ -5566,9 +5566,9 @@ CREATE TABLE [edfi].[StaffEducationOrganizationAssignmentAssociation]
     [Credential_CredentialIdentifier] nvarchar(60) NULL,
     [Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId] bigint NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [EmploymentStaffEducationOrganizationEmploymentAssociation_DocumentId] bigint NULL,
-    [EmploymentStaffEducationOrganizationEmploymentAssociation_EducationOrganizationId] int NULL,
+    [EmploymentStaffEducationOrganizationEmploymentAssociation_EducationOrganizationId] bigint NULL,
     [EmploymentStaffEducationOrganizationEmploymentAssociation_EmploymentStatusDescriptor_DescriptorId] bigint NULL,
     [EmploymentStaffEducationOrganizationEmploymentAssociation_HireDate] date NULL,
     [EmploymentStaffEducationOrganizationEmploymentAssociation_StaffUniqueId] AS (CASE WHEN [EmploymentStaffEducationOrganizationEmploymentAssociation_DocumentId] IS NULL THEN NULL ELSE [StaffUniqueId_Unified] END) PERSISTED,
@@ -5594,7 +5594,7 @@ CREATE TABLE [edfi].[StaffEducationOrganizationContactAssociation]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
     [Staff_StaffUniqueId] nvarchar(32) NOT NULL,
     [AddressAddressTypeDescriptor_DescriptorId] bigint NULL,
@@ -5657,7 +5657,7 @@ CREATE TABLE [edfi].[StaffEducationOrganizationEmploymentAssociation]
     [Credential_CredentialIdentifier] nvarchar(60) NULL,
     [Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId] bigint NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
     [Staff_StaffUniqueId] nvarchar(32) NOT NULL,
     [EmploymentStatusDescriptor_DescriptorId] bigint NOT NULL,
@@ -5699,7 +5699,7 @@ CREATE TABLE [edfi].[StaffProgramAssociation]
 (
     [DocumentId] bigint NOT NULL,
     [ProgramProgram_DocumentId] bigint NOT NULL,
-    [ProgramProgram_EducationOrganizationId] int NOT NULL,
+    [ProgramProgram_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_ProgramName] nvarchar(60) NOT NULL,
     [ProgramProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
     [Staff_DocumentId] bigint NOT NULL,
@@ -5717,7 +5717,7 @@ IF OBJECT_ID(N'edfi.StaffSchoolAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StaffSchoolAssociation]
 (
     [DocumentId] bigint NOT NULL,
-    [SchoolId_Unified] int NOT NULL,
+    [SchoolId_Unified] bigint NOT NULL,
     [SchoolYear_Unified] int NULL,
     [Calendar_DocumentId] bigint NULL,
     [Calendar_CalendarCode] nvarchar(60) NULL,
@@ -5768,7 +5768,7 @@ CREATE TABLE [edfi].[StaffSectionAssociation]
     [DocumentId] bigint NOT NULL,
     [Section_DocumentId] bigint NOT NULL,
     [Section_LocalCourseCode] nvarchar(60) NOT NULL,
-    [Section_SchoolId] int NOT NULL,
+    [Section_SchoolId] bigint NOT NULL,
     [Section_SchoolYear] int NOT NULL,
     [Section_SessionName] nvarchar(60) NOT NULL,
     [Section_SectionIdentifier] nvarchar(255) NOT NULL,
@@ -5793,7 +5793,7 @@ CREATE TABLE [edfi].[StateEducationAgency]
     [OperationalStatusDescriptor_DescriptorId] bigint NULL,
     [NameOfInstitution] nvarchar(75) NOT NULL,
     [ShortNameOfInstitution] nvarchar(75) NULL,
-    [StateEducationAgencyId] int NOT NULL,
+    [StateEducationAgencyId] bigint NOT NULL,
     [WebSite] nvarchar(255) NULL,
     CONSTRAINT [PK_StateEducationAgency] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_StateEducationAgency_NK] UNIQUE ([StateEducationAgencyId]),
@@ -6123,7 +6123,7 @@ CREATE TABLE [edfi].[StudentAcademicRecord]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [SchoolYear_DocumentId] bigint NOT NULL,
     [SchoolYear_SchoolYear] int NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
@@ -6152,6 +6152,14 @@ CREATE TABLE [edfi].[StudentAcademicRecord]
     CONSTRAINT [CK_StudentAcademicRecord_EducationOrganization_AllNone] CHECK (([EducationOrganization_DocumentId] IS NULL AND [EducationOrganization_EducationOrganizationId] IS NULL) OR ([EducationOrganization_DocumentId] IS NOT NULL AND [EducationOrganization_EducationOrganizationId] IS NOT NULL)),
     CONSTRAINT [CK_StudentAcademicRecord_SchoolYear_AllNone] CHECK (([SchoolYear_DocumentId] IS NULL AND [SchoolYear_SchoolYear] IS NULL) OR ([SchoolYear_DocumentId] IS NOT NULL AND [SchoolYear_SchoolYear] IS NOT NULL)),
     CONSTRAINT [CK_StudentAcademicRecord_Student_AllNone] CHECK (([Student_DocumentId] IS NULL AND [Student_StudentUniqueId] IS NULL) OR ([Student_DocumentId] IS NOT NULL AND [Student_StudentUniqueId] IS NOT NULL))
+);
+
+IF OBJECT_ID(N'sample.StudentAcademicRecordExtension', N'U') IS NULL
+CREATE TABLE [sample].[StudentAcademicRecordExtension]
+(
+    [DocumentId] bigint NOT NULL,
+    [Notes] nvarchar(280) NULL,
+    CONSTRAINT [PK_StudentAcademicRecordExtension] PRIMARY KEY ([DocumentId])
 );
 
 IF OBJECT_ID(N'edfi.StudentAcademicRecordAcademicHonor', N'U') IS NULL
@@ -6250,10 +6258,10 @@ CREATE TABLE [edfi].[StudentAcademicRecordReportCard]
     [Ordinal] int NOT NULL,
     [StudentAcademicRecord_DocumentId] bigint NOT NULL,
     [ReportCard_DocumentId] bigint NULL,
-    [ReportCard_EducationOrganizationId] int NULL,
+    [ReportCard_EducationOrganizationId] bigint NULL,
     [ReportCard_GradingPeriodDescriptor_DescriptorId] bigint NULL,
     [ReportCard_GradingPeriodName] nvarchar(60) NULL,
-    [ReportCard_GradingPeriodSchoolId] int NULL,
+    [ReportCard_GradingPeriodSchoolId] bigint NULL,
     [ReportCard_GradingPeriodSchoolYear] int NULL,
     [ReportCard_StudentUniqueId] nvarchar(32) NULL,
     CONSTRAINT [PK_StudentAcademicRecordReportCard] PRIMARY KEY ([CollectionItemId]),
@@ -6270,7 +6278,7 @@ CREATE TABLE [edfi].[StudentAssessment]
     [Assessment_AssessmentIdentifier] nvarchar(60) NOT NULL,
     [Assessment_Namespace] nvarchar(255) NOT NULL,
     [ReportedSchool_DocumentId] bigint NULL,
-    [ReportedSchool_SchoolId] int NULL,
+    [ReportedSchool_SchoolId] bigint NULL,
     [SchoolYear_DocumentId] bigint NULL,
     [SchoolYear_SchoolYear] int NULL,
     [Student_DocumentId] bigint NOT NULL,
@@ -6419,7 +6427,7 @@ CREATE TABLE [edfi].[StudentAssessmentEducationOrganizationAssociation]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [SchoolYear_DocumentId] bigint NULL,
     [SchoolYear_SchoolYear] int NULL,
     [StudentAssessment_DocumentId] bigint NOT NULL,
@@ -6444,21 +6452,21 @@ CREATE TABLE [edfi].[StudentAssessmentRegistration]
     [AssessmentAdministration_AdministrationIdentifier] nvarchar(255) NOT NULL,
     [AssessmentAdministration_AssessmentIdentifier] nvarchar(60) NOT NULL,
     [AssessmentAdministration_Namespace] nvarchar(255) NOT NULL,
-    [AssessmentAdministration_AssigningEducationOrganizationId] int NOT NULL,
+    [AssessmentAdministration_AssigningEducationOrganizationId] bigint NOT NULL,
     [ReportingEducationOrganization_DocumentId] bigint NULL,
-    [ReportingEducationOrganization_EducationOrganizationId] int NULL,
+    [ReportingEducationOrganization_EducationOrganizationId] bigint NULL,
     [ScheduledStudentEducationOrganizationAssessmentAccommodation_DocumentId] bigint NULL,
-    [ScheduledStudentEducationOrganizationAssessmentAccommodation_EducationOrganizationId] int NULL,
+    [ScheduledStudentEducationOrganizationAssessmentAccommodation_EducationOrganizationId] bigint NULL,
     [ScheduledStudentEducationOrganizationAssessmentAccommodation_StudentUniqueId] nvarchar(32) NULL,
     [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
-    [StudentEducationOrganizationAssociation_EducationOrganizationId] int NOT NULL,
+    [StudentEducationOrganizationAssociation_EducationOrganizationId] bigint NOT NULL,
     [StudentEducationOrganizationAssociation_StudentUniqueId] AS (CASE WHEN [StudentEducationOrganizationAssociation_DocumentId] IS NULL THEN NULL ELSE [StudentUniqueId_Unified] END) PERSISTED,
     [StudentSchoolAssociation_DocumentId] bigint NOT NULL,
     [StudentSchoolAssociation_EntryDate] date NOT NULL,
-    [StudentSchoolAssociation_SchoolId] int NOT NULL,
+    [StudentSchoolAssociation_SchoolId] bigint NOT NULL,
     [StudentSchoolAssociation_StudentUniqueId] AS (CASE WHEN [StudentSchoolAssociation_DocumentId] IS NULL THEN NULL ELSE [StudentUniqueId_Unified] END) PERSISTED,
     [TestingEducationOrganization_DocumentId] bigint NULL,
-    [TestingEducationOrganization_EducationOrganizationId] int NULL,
+    [TestingEducationOrganization_EducationOrganizationId] bigint NULL,
     [AssessmentGradeLevelDescriptor_DescriptorId] bigint NULL,
     [PlatformTypeDescriptor_DescriptorId] bigint NULL,
     CONSTRAINT [PK_StudentAssessmentRegistration] PRIMARY KEY ([DocumentId]),
@@ -6510,9 +6518,9 @@ CREATE TABLE [edfi].[StudentAssessmentRegistrationBatteryPartAssociation]
     [StudentAssessmentRegistration_DocumentId] bigint NOT NULL,
     [StudentAssessmentRegistration_AdministrationIdentifier] nvarchar(255) NOT NULL,
     [StudentAssessmentRegistration_AssessmentIdentifier] AS (CASE WHEN [StudentAssessmentRegistration_DocumentId] IS NULL THEN NULL ELSE [AssessmentIdentifier_Unified] END) PERSISTED,
-    [StudentAssessmentRegistration_AssigningEducationOrganizationId] int NOT NULL,
+    [StudentAssessmentRegistration_AssigningEducationOrganizationId] bigint NOT NULL,
     [StudentAssessmentRegistration_Namespace] AS (CASE WHEN [StudentAssessmentRegistration_DocumentId] IS NULL THEN NULL ELSE [Namespace_Unified] END) PERSISTED,
-    [StudentAssessmentRegistration_EducationOrganizationId] int NOT NULL,
+    [StudentAssessmentRegistration_EducationOrganizationId] bigint NOT NULL,
     [StudentAssessmentRegistration_StudentUniqueId] nvarchar(32) NOT NULL,
     CONSTRAINT [PK_StudentAssessmentRegistrationBatteryPartAssociation] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_StudentAssessmentRegistrationBatteryPartAssociation_NK] UNIQUE ([AssessmentBatteryPart_DocumentId], [StudentAssessmentRegistration_DocumentId]),
@@ -6537,9 +6545,9 @@ CREATE TABLE [edfi].[StudentCTEProgramAssociation]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_DocumentId] bigint NOT NULL,
-    [ProgramProgram_EducationOrganizationId] int NOT NULL,
+    [ProgramProgram_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_ProgramName] nvarchar(60) NOT NULL,
     [ProgramProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
@@ -6604,7 +6612,7 @@ CREATE TABLE [edfi].[StudentCohortAssociation]
     [DocumentId] bigint NOT NULL,
     [Cohort_DocumentId] bigint NOT NULL,
     [Cohort_CohortIdentifier] nvarchar(36) NOT NULL,
-    [Cohort_EducationOrganizationId] int NOT NULL,
+    [Cohort_EducationOrganizationId] bigint NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
     [BeginDate] date NOT NULL,
@@ -6623,7 +6631,7 @@ CREATE TABLE [edfi].[StudentCohortAssociationSection]
     [StudentCohortAssociation_DocumentId] bigint NOT NULL,
     [Section_DocumentId] bigint NULL,
     [Section_LocalCourseCode] nvarchar(60) NULL,
-    [Section_SchoolId] int NULL,
+    [Section_SchoolId] bigint NULL,
     [Section_SchoolYear] int NULL,
     [Section_SessionName] nvarchar(60) NULL,
     [Section_SectionIdentifier] nvarchar(255) NULL,
@@ -6640,10 +6648,10 @@ CREATE TABLE [edfi].[StudentCompetencyObjective]
     [GradingPeriodGradingPeriod_DocumentId] bigint NOT NULL,
     [GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] bigint NOT NULL,
     [GradingPeriodGradingPeriod_GradingPeriodName] nvarchar(60) NOT NULL,
-    [GradingPeriodGradingPeriod_SchoolId] int NOT NULL,
+    [GradingPeriodGradingPeriod_SchoolId] bigint NOT NULL,
     [GradingPeriodGradingPeriod_SchoolYear] int NOT NULL,
     [ObjectiveCompetencyObjective_DocumentId] bigint NOT NULL,
-    [ObjectiveCompetencyObjective_EducationOrganizationId] int NOT NULL,
+    [ObjectiveCompetencyObjective_EducationOrganizationId] bigint NOT NULL,
     [ObjectiveCompetencyObjective_Objective] nvarchar(60) NOT NULL,
     [ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] bigint NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
@@ -6666,8 +6674,8 @@ CREATE TABLE [edfi].[StudentCompetencyObjectiveGeneralStudentProgramAssociation]
     [StudentCompetencyObjective_DocumentId] bigint NOT NULL,
     [StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_DocumentId] bigint NULL,
     [StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_BeginDate] date NULL,
-    [StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_EducationOrganizationId] int NULL,
-    [StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_ProgramEducationOrganizationId] int NULL,
+    [StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_EducationOrganizationId] bigint NULL,
+    [StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_ProgramEducationOrganizationId] bigint NULL,
     [StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_ProgramName] nvarchar(60) NULL,
     [StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_ProgramTypeDescriptor_DescriptorId] bigint NULL,
     [StudentCompetencyObjectiveSectionOrProgramChoiceGeneralStudentProgramAssociation_StudentUniqueId] nvarchar(32) NULL,
@@ -6686,7 +6694,7 @@ CREATE TABLE [edfi].[StudentCompetencyObjectiveStudentSectionAssociation]
     [StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_DocumentId] bigint NULL,
     [StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_BeginDate] date NULL,
     [StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_LocalCourseCode] nvarchar(60) NULL,
-    [StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_SchoolId] int NULL,
+    [StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_SchoolId] bigint NULL,
     [StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_SchoolYear] int NULL,
     [StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_SectionIdentifier] nvarchar(255) NULL,
     [StudentCompetencyObjectiveSectionOrProgramChoiceStudentSectionAssociation_SessionName] nvarchar(60) NULL,
@@ -6724,7 +6732,7 @@ CREATE TABLE [sample].[StudentContactAssociationExtension]
 (
     [DocumentId] bigint NOT NULL,
     [InterventionStudy_DocumentId] bigint NULL,
-    [InterventionStudy_EducationOrganizationId] int NULL,
+    [InterventionStudy_EducationOrganizationId] bigint NULL,
     [InterventionStudy_InterventionStudyIdentificationCode] nvarchar(60) NULL,
     [TelephoneTelephoneNumberTypeDescriptor_DescriptorId] bigint NULL,
     [BedtimeReader] bit NULL,
@@ -6801,7 +6809,7 @@ CREATE TABLE [sample].[StudentContactAssociationExtensionStaffEducationOrganizat
     [Ordinal] int NOT NULL,
     [StudentContactAssociation_DocumentId] bigint NOT NULL,
     [StaffEducationOrganizationEmploymentAssociation_DocumentId] bigint NULL,
-    [StaffEducationOrganizationEmploymentAssociation_EducationOrganizationId] int NULL,
+    [StaffEducationOrganizationEmploymentAssociation_EducationOrganizationId] bigint NULL,
     [StaffEducationOrganizationEmploymentAssociation_EmploymentStatusDescriptor_DescriptorId] bigint NULL,
     [StaffEducationOrganizationEmploymentAssociation_HireDate] date NULL,
     [StaffEducationOrganizationEmploymentAssociation_StaffUniqueId] nvarchar(32) NULL,
@@ -6817,7 +6825,7 @@ CREATE TABLE [edfi].[StudentDisciplineIncidentBehaviorAssociation]
     [DocumentId] bigint NOT NULL,
     [DisciplineIncident_DocumentId] bigint NOT NULL,
     [DisciplineIncident_IncidentIdentifier] nvarchar(36) NOT NULL,
-    [DisciplineIncident_SchoolId] int NOT NULL,
+    [DisciplineIncident_SchoolId] bigint NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
     [BehaviorDescriptor_DescriptorId] bigint NOT NULL,
@@ -6859,7 +6867,7 @@ CREATE TABLE [edfi].[StudentDisciplineIncidentNonOffenderAssociation]
     [DocumentId] bigint NOT NULL,
     [DisciplineIncident_DocumentId] bigint NOT NULL,
     [DisciplineIncident_IncidentIdentifier] nvarchar(36) NOT NULL,
-    [DisciplineIncident_SchoolId] int NOT NULL,
+    [DisciplineIncident_SchoolId] bigint NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
     CONSTRAINT [PK_StudentDisciplineIncidentNonOffenderAssociation] PRIMARY KEY ([DocumentId]),
@@ -6885,7 +6893,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssessmentAccommodation]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
     CONSTRAINT [PK_StudentEducationOrganizationAssessmentAccommodation] PRIMARY KEY ([DocumentId]),
@@ -6912,7 +6920,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociation]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
     [BarrierToInternetAccessInResidenceDescriptor_DescriptorId] bigint NULL,
@@ -6941,31 +6949,11 @@ CREATE TABLE [sample].[StudentEducationOrganizationAssociationExtension]
 (
     [DocumentId] bigint NOT NULL,
     [FavoriteProgram_DocumentId] bigint NULL,
-    [FavoriteProgram_EducationOrganizationId] int NULL,
+    [FavoriteProgram_EducationOrganizationId] bigint NULL,
     [FavoriteProgram_ProgramName] nvarchar(60) NULL,
     [FavoriteProgram_ProgramTypeDescriptor_DescriptorId] bigint NULL,
     CONSTRAINT [PK_StudentEducationOrganizationAssociationExtension] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [CK_StudentEducationOrganizationAssociationExtension_FavoriteProgram_AllNone] CHECK (([FavoriteProgram_DocumentId] IS NULL AND [FavoriteProgram_EducationOrganizationId] IS NULL AND [FavoriteProgram_ProgramName] IS NULL AND [FavoriteProgram_ProgramTypeDescriptor_DescriptorId] IS NULL) OR ([FavoriteProgram_DocumentId] IS NOT NULL AND [FavoriteProgram_EducationOrganizationId] IS NOT NULL AND [FavoriteProgram_ProgramName] IS NOT NULL AND [FavoriteProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL))
-);
-
-IF OBJECT_ID(N'sample.StudentEducationOrganizationAssociationExtensionAddress', N'U') IS NULL
-CREATE TABLE [sample].[StudentEducationOrganizationAssociationExtensionAddress]
-(
-    [BaseCollectionItemId] bigint NOT NULL,
-    [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
-    [Complex] nvarchar(255) NULL,
-    [OnBusRoute] bit NULL,
-    CONSTRAINT [PK_StudentEducationOrganizationAssociationExtensionAddress] PRIMARY KEY ([BaseCollectionItemId]),
-    CONSTRAINT [UX_StudentEducationOrganizationAssociationExtensionAddress_BaseCollectionItemId_StudentEducationOrganizationAssociati_27f1b8e591] UNIQUE ([BaseCollectionItemId], [StudentEducationOrganizationAssociation_DocumentId])
-);
-
-IF OBJECT_ID(N'sample.StudentEducationOrganizationAssociationExtensionStudentCharacteristic', N'U') IS NULL
-CREATE TABLE [sample].[StudentEducationOrganizationAssociationExtensionStudentCharacteristic]
-(
-    [BaseCollectionItemId] bigint NOT NULL,
-    [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
-    CONSTRAINT [PK_StudentEducationOrganizationAssociationExtensionStudentCharacteristic] PRIMARY KEY ([BaseCollectionItemId]),
-    CONSTRAINT [UX_StudentEducationOrganizationAssociationExtensionStudentCharacteristic_BaseCollectionItemId_StudentEducationOrganiz_39b1cee52c] UNIQUE ([BaseCollectionItemId], [StudentEducationOrganizationAssociation_DocumentId])
 );
 
 IF OBJECT_ID(N'edfi.StudentEducationOrganizationAssociationAddress', N'U') IS NULL
@@ -6992,6 +6980,17 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationAddress]
     CONSTRAINT [UX_StudentEducationOrganizationAssociationAddress_City_PostalCode_StreetNumberName_AddressTypeDescriptor_DescriptorId_f2b693b72d] UNIQUE ([StudentEducationOrganizationAssociation_DocumentId], [AddressTypeDescriptor_DescriptorId], [City], [PostalCode], [StateAbbreviationDescriptor_DescriptorId], [StreetNumberName]),
     CONSTRAINT [UX_StudentEducationOrganizationAssociationAddress_CollectionItemId_StudentEducationOrganizationAssociation_DocumentId] UNIQUE ([CollectionItemId], [StudentEducationOrganizationAssociation_DocumentId]),
     CONSTRAINT [UX_StudentEducationOrganizationAssociationAddress_Ordinal_StudentEducationOrganizationAssociation_DocumentId] UNIQUE ([StudentEducationOrganizationAssociation_DocumentId], [Ordinal])
+);
+
+IF OBJECT_ID(N'sample.StudentEducationOrganizationAssociationExtensionAddress', N'U') IS NULL
+CREATE TABLE [sample].[StudentEducationOrganizationAssociationExtensionAddress]
+(
+    [BaseCollectionItemId] bigint NOT NULL,
+    [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
+    [Complex] nvarchar(255) NULL,
+    [OnBusRoute] bit NULL,
+    CONSTRAINT [PK_StudentEducationOrganizationAssociationExtensionAddress] PRIMARY KEY ([BaseCollectionItemId]),
+    CONSTRAINT [UX_StudentEducationOrganizationAssociationExtensionAddress_BaseCollectionItemId_StudentEducationOrganizationAssociati_27f1b8e591] UNIQUE ([BaseCollectionItemId], [StudentEducationOrganizationAssociation_DocumentId])
 );
 
 IF OBJECT_ID(N'edfi.StudentEducationOrganizationAssociationAncestryEthnicOrigin', N'U') IS NULL
@@ -7131,6 +7130,15 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationStudentCharacteristi
     CONSTRAINT [UX_StudentEducationOrganizationAssociationStudentCharacteristic_StudentCharacteristicDescriptor_DescriptorId_StudentE_ff5ab4d58a] UNIQUE ([StudentEducationOrganizationAssociation_DocumentId], [StudentCharacteristicDescriptor_DescriptorId])
 );
 
+IF OBJECT_ID(N'sample.StudentEducationOrganizationAssociationExtensionStudentCharacteristic', N'U') IS NULL
+CREATE TABLE [sample].[StudentEducationOrganizationAssociationExtensionStudentCharacteristic]
+(
+    [BaseCollectionItemId] bigint NOT NULL,
+    [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
+    CONSTRAINT [PK_StudentEducationOrganizationAssociationExtensionStudentCharacteristic] PRIMARY KEY ([BaseCollectionItemId]),
+    CONSTRAINT [UX_StudentEducationOrganizationAssociationExtensionStudentCharacteristic_BaseCollectionItemId_StudentEducationOrganiz_39b1cee52c] UNIQUE ([BaseCollectionItemId], [StudentEducationOrganizationAssociation_DocumentId])
+);
+
 IF OBJECT_ID(N'edfi.StudentEducationOrganizationAssociationStudentIdentificationCode', N'U') IS NULL
 CREATE TABLE [edfi].[StudentEducationOrganizationAssociationStudentIdentificationCode]
 (
@@ -7215,21 +7223,6 @@ CREATE TABLE [sample].[StudentEducationOrganizationAssociationExtensionAddressTe
     CONSTRAINT [UX_StudentEducationOrganizationAssociationExtensionAddressTerm_BaseCollectionItemId_TermDescriptor_DescriptorId] UNIQUE ([BaseCollectionItemId], [TermDescriptor_DescriptorId])
 );
 
-IF OBJECT_ID(N'sample.StudentEducationOrganizationAssociationExtensionStudentCharacteristicStudentNeed', N'U') IS NULL
-CREATE TABLE [sample].[StudentEducationOrganizationAssociationExtensionStudentCharacteristicStudentNeed]
-(
-    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
-    [BaseCollectionItemId] bigint NOT NULL,
-    [Ordinal] int NOT NULL,
-    [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
-    [BeginDate] date NOT NULL,
-    [EndDate] date NULL,
-    [PrimaryStudentNeedIndicator] bit NULL,
-    CONSTRAINT [PK_StudentEducationOrganizationAssociationExtensionStudentCharacteristicStudentNeed] PRIMARY KEY ([CollectionItemId]),
-    CONSTRAINT [UX_StudentEducationOrganizationAssociationExtensionStudentCharacteristicStudentNeed_BaseCollectionItemId_BeginDate] UNIQUE ([BaseCollectionItemId], [BeginDate]),
-    CONSTRAINT [UX_StudentEducationOrganizationAssociationExtensionStudentCharacteristicStudentNeed_BaseCollectionItemId_Ordinal] UNIQUE ([BaseCollectionItemId], [Ordinal])
-);
-
 IF OBJECT_ID(N'edfi.StudentEducationOrganizationAssociationAddressPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[StudentEducationOrganizationAssociationAddressPeriod]
 (
@@ -7270,6 +7263,21 @@ CREATE TABLE [edfi].[StudentEducationOrganizationAssociationLanguageUs]
     CONSTRAINT [UX_StudentEducationOrganizationAssociationLanguageUs_ParentCollectionItemId_LanguageUseDescriptor_DescriptorId] UNIQUE ([ParentCollectionItemId], [LanguageUseDescriptor_DescriptorId])
 );
 
+IF OBJECT_ID(N'sample.StudentEducationOrganizationAssociationExtensionStudentCharacteristicStudentNeed', N'U') IS NULL
+CREATE TABLE [sample].[StudentEducationOrganizationAssociationExtensionStudentCharacteristicStudentNeed]
+(
+    [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
+    [BaseCollectionItemId] bigint NOT NULL,
+    [Ordinal] int NOT NULL,
+    [StudentEducationOrganizationAssociation_DocumentId] bigint NOT NULL,
+    [BeginDate] date NOT NULL,
+    [EndDate] date NULL,
+    [PrimaryStudentNeedIndicator] bit NULL,
+    CONSTRAINT [PK_StudentEducationOrganizationAssociationExtensionStudentCharacteristicStudentNeed] PRIMARY KEY ([CollectionItemId]),
+    CONSTRAINT [UX_StudentEducationOrganizationAssociationExtensionStudentCharacteristicStudentNeed_BaseCollectionItemId_BeginDate] UNIQUE ([BaseCollectionItemId], [BeginDate]),
+    CONSTRAINT [UX_StudentEducationOrganizationAssociationExtensionStudentCharacteristicStudentNeed_BaseCollectionItemId_Ordinal] UNIQUE ([BaseCollectionItemId], [Ordinal])
+);
+
 IF OBJECT_ID(N'edfi.StudentEducationOrganizationAssociationStudentCharacteristicPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[StudentEducationOrganizationAssociationStudentCharacteristicPeriod]
 (
@@ -7303,7 +7311,7 @@ CREATE TABLE [edfi].[StudentEducationOrganizationResponsibilityAssociation]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
     [ResponsibilityDescriptor_DescriptorId] bigint NOT NULL,
@@ -7344,7 +7352,7 @@ CREATE TABLE [edfi].[StudentHealth]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
     [NonMedicalImmunizationExemptionDescriptor_DescriptorId] bigint NULL,
@@ -7415,9 +7423,9 @@ CREATE TABLE [edfi].[StudentHomelessProgramAssociation]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_DocumentId] bigint NOT NULL,
-    [ProgramProgram_EducationOrganizationId] int NOT NULL,
+    [ProgramProgram_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_ProgramName] nvarchar(60) NOT NULL,
     [ProgramProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
@@ -7472,9 +7480,9 @@ CREATE TABLE [edfi].[StudentInterventionAssociation]
     [DocumentId] bigint NOT NULL,
     [CohortCohort_DocumentId] bigint NULL,
     [CohortCohort_CohortIdentifier] nvarchar(36) NULL,
-    [CohortCohort_EducationOrganizationId] int NULL,
+    [CohortCohort_EducationOrganizationId] bigint NULL,
     [Intervention_DocumentId] bigint NOT NULL,
-    [Intervention_EducationOrganizationId] int NOT NULL,
+    [Intervention_EducationOrganizationId] bigint NOT NULL,
     [Intervention_InterventionIdentificationCode] nvarchar(60) NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
@@ -7508,7 +7516,7 @@ CREATE TABLE [edfi].[StudentInterventionAttendanceEvent]
 (
     [DocumentId] bigint NOT NULL,
     [Intervention_DocumentId] bigint NOT NULL,
-    [Intervention_EducationOrganizationId] int NOT NULL,
+    [Intervention_EducationOrganizationId] bigint NOT NULL,
     [Intervention_InterventionIdentificationCode] nvarchar(60) NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
@@ -7529,9 +7537,9 @@ CREATE TABLE [edfi].[StudentLanguageInstructionProgramAssociation]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_DocumentId] bigint NOT NULL,
-    [ProgramProgram_EducationOrganizationId] int NOT NULL,
+    [ProgramProgram_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_ProgramName] nvarchar(60) NOT NULL,
     [ProgramProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
@@ -7602,9 +7610,9 @@ CREATE TABLE [edfi].[StudentMigrantEducationProgramAssociation]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_DocumentId] bigint NOT NULL,
-    [ProgramProgram_EducationOrganizationId] int NOT NULL,
+    [ProgramProgram_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_ProgramName] nvarchar(60) NOT NULL,
     [ProgramProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
@@ -7664,9 +7672,9 @@ CREATE TABLE [edfi].[StudentNeglectedOrDelinquentProgramAssociation]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_DocumentId] bigint NOT NULL,
-    [ProgramProgram_EducationOrganizationId] int NOT NULL,
+    [ProgramProgram_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_ProgramName] nvarchar(60) NOT NULL,
     [ProgramProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
@@ -7720,9 +7728,9 @@ CREATE TABLE [edfi].[StudentProgramAssociation]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_DocumentId] bigint NOT NULL,
-    [ProgramProgram_EducationOrganizationId] int NOT NULL,
+    [ProgramProgram_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_ProgramName] nvarchar(60) NOT NULL,
     [ProgramProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
@@ -7774,9 +7782,9 @@ CREATE TABLE [edfi].[StudentProgramAttendanceEvent]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_DocumentId] bigint NOT NULL,
-    [ProgramProgram_EducationOrganizationId] int NOT NULL,
+    [ProgramProgram_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_ProgramName] nvarchar(60) NOT NULL,
     [ProgramProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
@@ -7799,12 +7807,12 @@ CREATE TABLE [edfi].[StudentProgramEvaluation]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NULL,
-    [EducationOrganization_EducationOrganizationId] int NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NULL,
     [ProgramEvaluation_DocumentId] bigint NOT NULL,
     [ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] bigint NOT NULL,
     [ProgramEvaluation_ProgramEvaluationTitle] nvarchar(50) NOT NULL,
     [ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] bigint NOT NULL,
-    [ProgramEvaluation_ProgramEducationOrganizationId] int NOT NULL,
+    [ProgramEvaluation_ProgramEducationOrganizationId] bigint NOT NULL,
     [ProgramEvaluation_ProgramName] nvarchar(60) NOT NULL,
     [ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
     [StaffEvaluatorStaff_DocumentId] bigint NULL,
@@ -7844,7 +7852,7 @@ CREATE TABLE [edfi].[StudentProgramEvaluationStudentEvaluationElement]
     [StudentProgramEvaluation_DocumentId] bigint NOT NULL,
     [StudentEvaluationElementProgramEvaluationElement_DocumentId] bigint NOT NULL,
     [StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationElementTitle] nvarchar(50) NOT NULL,
-    [StudentEvaluationElementProgramEvaluationElement_ProgramEducationOrganizationId] int NOT NULL,
+    [StudentEvaluationElementProgramEvaluationElement_ProgramEducationOrganizationId] bigint NOT NULL,
     [StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] bigint NOT NULL,
     [StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationTitle] nvarchar(50) NOT NULL,
     [StudentEvaluationElementProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -7866,7 +7874,7 @@ CREATE TABLE [edfi].[StudentProgramEvaluationStudentEvaluationObjective]
     [StudentProgramEvaluation_DocumentId] bigint NOT NULL,
     [StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId] bigint NOT NULL,
     [StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationObjectiveTitle] nvarchar(50) NOT NULL,
-    [StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEducationOrganizationId] int NOT NULL,
+    [StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEducationOrganizationId] bigint NOT NULL,
     [StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationPeriodDescriptor_DescriptorId] bigint NOT NULL,
     [StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationTitle] nvarchar(50) NOT NULL,
     [StudentEvaluationObjectiveProgramEvaluationObjective_ProgramEvaluationTypeDescriptor_DescriptorId] bigint NOT NULL,
@@ -7884,7 +7892,7 @@ IF OBJECT_ID(N'edfi.StudentSchoolAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSchoolAssociation]
 (
     [DocumentId] bigint NOT NULL,
-    [SchoolId_Unified] int NOT NULL,
+    [SchoolId_Unified] bigint NOT NULL,
     [SchoolYear_Unified] int NULL,
     [Calendar_DocumentId] bigint NULL,
     [Calendar_CalendarCode] nvarchar(60) NULL,
@@ -7893,11 +7901,11 @@ CREATE TABLE [edfi].[StudentSchoolAssociation]
     [ClassOfSchoolYear_DocumentId] bigint NULL,
     [ClassOfSchoolYear_ClassOfSchoolYear] int NULL,
     [GraduationPlan_DocumentId] bigint NULL,
-    [GraduationPlan_EducationOrganizationId] int NULL,
+    [GraduationPlan_EducationOrganizationId] bigint NULL,
     [GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId] bigint NULL,
     [GraduationPlan_GraduationSchoolYear] int NULL,
     [NextYearSchool_DocumentId] bigint NULL,
-    [NextYearSchool_SchoolId] int NULL,
+    [NextYearSchool_SchoolId] bigint NULL,
     [SchoolYear_DocumentId] bigint NULL,
     [SchoolYear_SchoolYear] AS (CASE WHEN [SchoolYear_DocumentId] IS NULL THEN NULL ELSE [SchoolYear_Unified] END) PERSISTED,
     [School_DocumentId] bigint NOT NULL,
@@ -7948,7 +7956,7 @@ CREATE TABLE [edfi].[StudentSchoolAssociationAlternativeGraduationPlan]
     [Ordinal] int NOT NULL,
     [StudentSchoolAssociation_DocumentId] bigint NOT NULL,
     [AlternativeGraduationPlan_DocumentId] bigint NULL,
-    [AlternativeGraduationPlan_EducationOrganizationId] int NULL,
+    [AlternativeGraduationPlan_EducationOrganizationId] bigint NULL,
     [AlternativeGraduationPlan_GraduationPlanTypeDescriptor_DescriptorId] bigint NULL,
     [AlternativeGraduationPlan_GraduationSchoolYear] int NULL,
     CONSTRAINT [PK_StudentSchoolAssociationAlternativeGraduationPlan] PRIMARY KEY ([CollectionItemId]),
@@ -7973,7 +7981,7 @@ IF OBJECT_ID(N'edfi.StudentSchoolAttendanceEvent', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSchoolAttendanceEvent]
 (
     [DocumentId] bigint NOT NULL,
-    [SchoolId_Unified] int NOT NULL,
+    [SchoolId_Unified] bigint NOT NULL,
     [School_DocumentId] bigint NOT NULL,
     [School_SchoolId] AS (CASE WHEN [School_DocumentId] IS NULL THEN NULL ELSE [SchoolId_Unified] END) PERSISTED,
     [Session_DocumentId] bigint NOT NULL,
@@ -8002,9 +8010,9 @@ CREATE TABLE [edfi].[StudentSchoolFoodServiceProgramAssociation]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_DocumentId] bigint NOT NULL,
-    [ProgramProgram_EducationOrganizationId] int NOT NULL,
+    [ProgramProgram_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_ProgramName] nvarchar(60) NOT NULL,
     [ProgramProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
@@ -8056,9 +8064,9 @@ CREATE TABLE [edfi].[StudentSection504ProgramAssociation]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_DocumentId] bigint NOT NULL,
-    [ProgramProgram_EducationOrganizationId] int NOT NULL,
+    [ProgramProgram_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_ProgramName] nvarchar(60) NOT NULL,
     [ProgramProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
@@ -8099,10 +8107,10 @@ CREATE TABLE [edfi].[StudentSectionAssociation]
 (
     [DocumentId] bigint NOT NULL,
     [DualCreditEducationOrganization_DocumentId] bigint NULL,
-    [DualCreditEducationOrganization_EducationOrganizationId] int NULL,
+    [DualCreditEducationOrganization_EducationOrganizationId] bigint NULL,
     [Section_DocumentId] bigint NOT NULL,
     [Section_LocalCourseCode] nvarchar(60) NOT NULL,
-    [Section_SchoolId] int NOT NULL,
+    [Section_SchoolId] bigint NOT NULL,
     [Section_SchoolYear] int NOT NULL,
     [Section_SessionName] nvarchar(60) NOT NULL,
     [Section_SectionIdentifier] nvarchar(255) NOT NULL,
@@ -8141,8 +8149,8 @@ CREATE TABLE [sample].[StudentSectionAssociationExtensionRelatedGeneralStudentPr
     [StudentSectionAssociation_DocumentId] bigint NOT NULL,
     [RelatedGeneralStudentProgramAssociation_DocumentId] bigint NULL,
     [RelatedGeneralStudentProgramAssociation_BeginDate] date NULL,
-    [RelatedGeneralStudentProgramAssociation_EducationOrganizationId] int NULL,
-    [RelatedGeneralStudentProgramAssociation_ProgramEducationOrganizationId] int NULL,
+    [RelatedGeneralStudentProgramAssociation_EducationOrganizationId] bigint NULL,
+    [RelatedGeneralStudentProgramAssociation_ProgramEducationOrganizationId] bigint NULL,
     [RelatedGeneralStudentProgramAssociation_ProgramName] nvarchar(60) NULL,
     [RelatedGeneralStudentProgramAssociation_ProgramTypeDescriptor_DescriptorId] bigint NULL,
     [RelatedGeneralStudentProgramAssociation_StudentUniqueId] nvarchar(32) NULL,
@@ -8159,7 +8167,7 @@ CREATE TABLE [edfi].[StudentSectionAssociationProgram]
     [Ordinal] int NOT NULL,
     [StudentSectionAssociation_DocumentId] bigint NOT NULL,
     [Program_DocumentId] bigint NULL,
-    [Program_EducationOrganizationId] int NULL,
+    [Program_EducationOrganizationId] bigint NULL,
     [Program_ProgramName] nvarchar(60) NULL,
     [Program_ProgramTypeDescriptor_DescriptorId] bigint NULL,
     CONSTRAINT [PK_StudentSectionAssociationProgram] PRIMARY KEY ([CollectionItemId]),
@@ -8174,7 +8182,7 @@ CREATE TABLE [edfi].[StudentSectionAttendanceEvent]
     [DocumentId] bigint NOT NULL,
     [Section_DocumentId] bigint NOT NULL,
     [Section_LocalCourseCode] nvarchar(60) NOT NULL,
-    [Section_SchoolId] int NOT NULL,
+    [Section_SchoolId] bigint NOT NULL,
     [Section_SchoolYear] int NOT NULL,
     [Section_SessionName] nvarchar(60) NOT NULL,
     [Section_SectionIdentifier] nvarchar(255) NOT NULL,
@@ -8202,7 +8210,7 @@ CREATE TABLE [edfi].[StudentSectionAttendanceEventClassPeriod]
     [StudentSectionAttendanceEvent_DocumentId] bigint NOT NULL,
     [ClassPeriod_DocumentId] bigint NULL,
     [ClassPeriod_ClassPeriodName] nvarchar(60) NULL,
-    [ClassPeriod_SchoolId] int NULL,
+    [ClassPeriod_SchoolId] bigint NULL,
     CONSTRAINT [PK_StudentSectionAttendanceEventClassPeriod] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_StudentSectionAttendanceEventClassPeriod_ClassPeriod_DocumentId_StudentSectionAttendanceEvent_DocumentId] UNIQUE ([StudentSectionAttendanceEvent_DocumentId], [ClassPeriod_DocumentId]),
     CONSTRAINT [UX_StudentSectionAttendanceEventClassPeriod_Ordinal_StudentSectionAttendanceEvent_DocumentId] UNIQUE ([StudentSectionAttendanceEvent_DocumentId], [Ordinal]),
@@ -8214,9 +8222,9 @@ CREATE TABLE [edfi].[StudentSpecialEducationProgramAssociation]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_DocumentId] bigint NOT NULL,
-    [ProgramProgram_EducationOrganizationId] int NOT NULL,
+    [ProgramProgram_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_ProgramName] nvarchar(60) NOT NULL,
     [ProgramProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
@@ -8343,9 +8351,9 @@ CREATE TABLE [edfi].[StudentSpecialEducationProgramEligibilityAssociation]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_DocumentId] bigint NOT NULL,
-    [ProgramProgram_EducationOrganizationId] int NOT NULL,
+    [ProgramProgram_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_ProgramName] nvarchar(60) NOT NULL,
     [ProgramProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
@@ -8378,9 +8386,9 @@ CREATE TABLE [edfi].[StudentTitleIPartAProgramAssociation]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_DocumentId] bigint NOT NULL,
-    [ProgramProgram_EducationOrganizationId] int NOT NULL,
+    [ProgramProgram_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_ProgramName] nvarchar(60) NOT NULL,
     [ProgramProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
@@ -8434,7 +8442,7 @@ CREATE TABLE [edfi].[StudentTransportation]
     [Student_DocumentId] bigint NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) NOT NULL,
     [TransportationEducationOrganization_DocumentId] bigint NOT NULL,
-    [TransportationEducationOrganization_EducationOrganizationId] int NOT NULL,
+    [TransportationEducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [StudentBusDetailsBusRouteDescriptor_DescriptorId] bigint NULL,
     [TransportationPublicExpenseEligibilityTypeDescriptor_DescriptorId] bigint NULL,
     [TransportationTypeDescriptor_DescriptorId] bigint NULL,
@@ -8477,11 +8485,11 @@ CREATE TABLE [edfi].[Survey]
     [DocumentId] bigint NOT NULL,
     [SchoolYear_Unified] int NOT NULL,
     [EducationOrganization_DocumentId] bigint NULL,
-    [EducationOrganization_EducationOrganizationId] int NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NULL,
     [SchoolYear_DocumentId] bigint NOT NULL,
     [SchoolYear_SchoolYear] AS (CASE WHEN [SchoolYear_DocumentId] IS NULL THEN NULL ELSE [SchoolYear_Unified] END) PERSISTED,
     [Session_DocumentId] bigint NULL,
-    [Session_SchoolId] int NULL,
+    [Session_SchoolId] bigint NULL,
     [Session_SchoolYear] AS (CASE WHEN [Session_DocumentId] IS NULL THEN NULL ELSE [SchoolYear_Unified] END) PERSISTED,
     [Session_SessionName] nvarchar(60) NULL,
     [SurveyCategoryDescriptor_DescriptorId] bigint NULL,
@@ -8503,7 +8511,7 @@ CREATE TABLE [edfi].[SurveyCourseAssociation]
     [DocumentId] bigint NOT NULL,
     [Course_DocumentId] bigint NOT NULL,
     [Course_CourseCode] nvarchar(60) NOT NULL,
-    [Course_EducationOrganizationId] int NOT NULL,
+    [Course_EducationOrganizationId] bigint NOT NULL,
     [Survey_DocumentId] bigint NOT NULL,
     [Survey_Namespace] nvarchar(255) NOT NULL,
     [Survey_SurveyIdentifier] nvarchar(60) NOT NULL,
@@ -8518,7 +8526,7 @@ CREATE TABLE [edfi].[SurveyProgramAssociation]
 (
     [DocumentId] bigint NOT NULL,
     [Program_DocumentId] bigint NOT NULL,
-    [Program_EducationOrganizationId] int NOT NULL,
+    [Program_EducationOrganizationId] bigint NOT NULL,
     [Program_ProgramName] nvarchar(60) NOT NULL,
     [Program_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
     [Survey_DocumentId] bigint NOT NULL,
@@ -8679,7 +8687,7 @@ CREATE TABLE [edfi].[SurveyResponseEducationOrganizationTargetAssociation]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [SurveyResponse_DocumentId] bigint NOT NULL,
     [SurveyResponse_Namespace] nvarchar(255) NOT NULL,
     [SurveyResponse_SurveyIdentifier] nvarchar(60) NOT NULL,
@@ -8726,7 +8734,7 @@ CREATE TABLE [edfi].[SurveySectionAssociation]
     [DocumentId] bigint NOT NULL,
     [Section_DocumentId] bigint NOT NULL,
     [Section_LocalCourseCode] nvarchar(60) NOT NULL,
-    [Section_SchoolId] int NOT NULL,
+    [Section_SchoolId] bigint NOT NULL,
     [Section_SchoolYear] int NOT NULL,
     [Section_SessionName] nvarchar(60) NOT NULL,
     [Section_SectionIdentifier] nvarchar(255) NOT NULL,
@@ -8768,7 +8776,7 @@ CREATE TABLE [edfi].[SurveySectionResponseEducationOrganizationTargetAssociation
     [Namespace_Unified] nvarchar(255) NOT NULL,
     [SurveyIdentifier_Unified] nvarchar(60) NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [SurveySectionResponse_DocumentId] bigint NOT NULL,
     [SurveySectionResponse_SurveyResponseReferenceNamespace] AS (CASE WHEN [SurveySectionResponse_DocumentId] IS NULL THEN NULL ELSE [Namespace_Unified] END) PERSISTED,
     [SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier] AS (CASE WHEN [SurveySectionResponse_DocumentId] IS NULL THEN NULL ELSE [SurveyIdentifier_Unified] END) PERSISTED,
@@ -8821,7 +8829,7 @@ CREATE TABLE [sample].[BusRoute]
     [Bus_BusId] nvarchar(60) NOT NULL,
     [StaffEducationOrganizationAssignmentAssociation_DocumentId] bigint NULL,
     [StaffEducationOrganizationAssignmentAssociation_BeginDate] date NULL,
-    [StaffEducationOrganizationAssignmentAssociation_EducationOrganizationId] int NULL,
+    [StaffEducationOrganizationAssignmentAssociation_EducationOrganizationId] bigint NULL,
     [StaffEducationOrganizationAssignmentAssociation_StaffClassificationDescriptor_DescriptorId] bigint NULL,
     [StaffEducationOrganizationAssignmentAssociation_StaffUniqueId] nvarchar(32) NULL,
     [DisabilityDescriptor_DescriptorId] bigint NULL,
@@ -8860,7 +8868,7 @@ CREATE TABLE [sample].[BusRouteProgram]
     [BusRoute_DocumentId] bigint NOT NULL,
     [Ordinal] int NOT NULL,
     [Program_DocumentId] bigint NULL,
-    [Program_EducationOrganizationId] int NULL,
+    [Program_EducationOrganizationId] bigint NULL,
     [Program_ProgramName] nvarchar(60) NULL,
     [Program_ProgramTypeDescriptor_DescriptorId] bigint NULL,
     CONSTRAINT [PK_BusRouteProgram] PRIMARY KEY ([CollectionItemId]),
@@ -8914,9 +8922,9 @@ CREATE TABLE [sample].[StudentArtProgramAssociation]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganization_DocumentId] bigint NOT NULL,
-    [EducationOrganization_EducationOrganizationId] int NOT NULL,
+    [EducationOrganization_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_DocumentId] bigint NOT NULL,
-    [ProgramProgram_EducationOrganizationId] int NOT NULL,
+    [ProgramProgram_EducationOrganizationId] bigint NOT NULL,
     [ProgramProgram_ProgramName] nvarchar(60) NOT NULL,
     [ProgramProgram_ProgramTypeDescriptor_DescriptorId] bigint NOT NULL,
     [Student_DocumentId] bigint NOT NULL,
@@ -9029,7 +9037,7 @@ CREATE TABLE [sample].[StudentGraduationPlanAssociation]
 (
     [DocumentId] bigint NOT NULL,
     [GraduationPlan_DocumentId] bigint NOT NULL,
-    [GraduationPlan_EducationOrganizationId] int NOT NULL,
+    [GraduationPlan_EducationOrganizationId] bigint NOT NULL,
     [GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId] bigint NOT NULL,
     [GraduationPlan_GraduationSchoolYear] int NOT NULL,
     [Staff_DocumentId] bigint NULL,
@@ -9155,7 +9163,7 @@ IF OBJECT_ID(N'edfi.EducationOrganizationIdentity', N'U') IS NULL
 CREATE TABLE [edfi].[EducationOrganizationIdentity]
 (
     [DocumentId] bigint NOT NULL,
-    [EducationOrganizationId] int NOT NULL,
+    [EducationOrganizationId] bigint NOT NULL,
     [Discriminator] nvarchar(256) NOT NULL,
     CONSTRAINT [PK_EducationOrganizationIdentity] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_EducationOrganizationIdentity_NK] UNIQUE ([EducationOrganizationId]),
@@ -9167,8 +9175,8 @@ CREATE TABLE [edfi].[GeneralStudentProgramAssociationIdentity]
 (
     [DocumentId] bigint NOT NULL,
     [BeginDate] date NOT NULL,
-    [EducationOrganizationReferenceEducationOrganizationId] int NOT NULL,
-    [ProgramReferenceEducationOrganizationId] int NOT NULL,
+    [EducationOrganizationReferenceEducationOrganizationId] bigint NOT NULL,
+    [ProgramReferenceEducationOrganizationId] bigint NOT NULL,
     [ProgramReferenceProgramName] nvarchar(60) NOT NULL,
     [ProgramReferenceProgramTypeDescriptor] bigint NOT NULL,
     [StudentReferenceStudentUniqueId] nvarchar(32) NOT NULL,
@@ -11017,17 +11025,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_ContactExtensionAddress_ContactAddress' AND parent_object_id = OBJECT_ID(N'sample.ContactExtensionAddress')
-)
-ALTER TABLE [sample].[ContactExtensionAddress]
-ADD CONSTRAINT [FK_ContactExtensionAddress_ContactAddress]
-FOREIGN KEY ([BaseCollectionItemId], [Contact_DocumentId])
-REFERENCES [edfi].[ContactAddress] ([CollectionItemId], [Contact_DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_ContactExtensionAuthor_ContactExtension' AND parent_object_id = OBJECT_ID(N'sample.ContactExtensionAuthor')
 )
 ALTER TABLE [sample].[ContactExtensionAuthor]
@@ -11156,6 +11153,17 @@ ADD CONSTRAINT [FK_ContactAddress_StateAbbreviationDescriptor]
 FOREIGN KEY ([StateAbbreviationDescriptor_DescriptorId])
 REFERENCES [dms].[Descriptor] ([DocumentId])
 ON DELETE NO ACTION
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_ContactExtensionAddress_ContactAddress' AND parent_object_id = OBJECT_ID(N'sample.ContactExtensionAddress')
+)
+ALTER TABLE [sample].[ContactExtensionAddress]
+ADD CONSTRAINT [FK_ContactExtensionAddress_ContactAddress]
+FOREIGN KEY ([BaseCollectionItemId], [Contact_DocumentId])
+REFERENCES [edfi].[ContactAddress] ([CollectionItemId], [Contact_DocumentId])
+ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -19553,6 +19561,17 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_StudentAcademicRecordExtension_StudentAcademicRecord' AND parent_object_id = OBJECT_ID(N'sample.StudentAcademicRecordExtension')
+)
+ALTER TABLE [sample].[StudentAcademicRecordExtension]
+ADD CONSTRAINT [FK_StudentAcademicRecordExtension_StudentAcademicRecord]
+FOREIGN KEY ([DocumentId])
+REFERENCES [edfi].[StudentAcademicRecord] ([DocumentId])
+ON DELETE CASCADE
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentAcademicRecordAcademicHonor_AcademicHonorCategoryDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.StudentAcademicRecordAcademicHonor')
 )
 ALTER TABLE [edfi].[StudentAcademicRecordAcademicHonor]
@@ -21170,28 +21189,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentEducationOrganizationAssociationExtensionAddress_StudentEducationOrganizationAssociationAddress' AND parent_object_id = OBJECT_ID(N'sample.StudentEducationOrganizationAssociationExtensionAddress')
-)
-ALTER TABLE [sample].[StudentEducationOrganizationAssociationExtensionAddress]
-ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationExtensionAddress_StudentEducationOrganizationAssociationAddress]
-FOREIGN KEY ([BaseCollectionItemId], [StudentEducationOrganizationAssociation_DocumentId])
-REFERENCES [edfi].[StudentEducationOrganizationAssociationAddress] ([CollectionItemId], [StudentEducationOrganizationAssociation_DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentEducationOrganizationAssociationExtensionStudentCharacteristic_StudentEducationOrganizationAssociationStude_02e1bf2916' AND parent_object_id = OBJECT_ID(N'sample.StudentEducationOrganizationAssociationExtensionStudentCharacteristic')
-)
-ALTER TABLE [sample].[StudentEducationOrganizationAssociationExtensionStudentCharacteristic]
-ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationExtensionStudentCharacteristic_StudentEducationOrganizationAssociationStude_02e1bf2916]
-FOREIGN KEY ([BaseCollectionItemId], [StudentEducationOrganizationAssociation_DocumentId])
-REFERENCES [edfi].[StudentEducationOrganizationAssociationStudentCharacteristic] ([CollectionItemId], [StudentEducationOrganizationAssociation_DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentEducationOrganizationAssociationAddress_AddressTypeDescriptor' AND parent_object_id = OBJECT_ID(N'edfi.StudentEducationOrganizationAssociationAddress')
 )
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociationAddress]
@@ -21231,6 +21228,17 @@ ALTER TABLE [edfi].[StudentEducationOrganizationAssociationAddress]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationAddress_StudentEducationOrganizationAssociation]
 FOREIGN KEY ([StudentEducationOrganizationAssociation_DocumentId])
 REFERENCES [edfi].[StudentEducationOrganizationAssociation] ([DocumentId])
+ON DELETE CASCADE
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_StudentEducationOrganizationAssociationExtensionAddress_StudentEducationOrganizationAssociationAddress' AND parent_object_id = OBJECT_ID(N'sample.StudentEducationOrganizationAssociationExtensionAddress')
+)
+ALTER TABLE [sample].[StudentEducationOrganizationAssociationExtensionAddress]
+ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationExtensionAddress_StudentEducationOrganizationAssociationAddress]
+FOREIGN KEY ([BaseCollectionItemId], [StudentEducationOrganizationAssociation_DocumentId])
+REFERENCES [edfi].[StudentEducationOrganizationAssociationAddress] ([CollectionItemId], [StudentEducationOrganizationAssociation_DocumentId])
 ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
@@ -21489,6 +21497,17 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_StudentEducationOrganizationAssociationExtensionStudentCharacteristic_StudentEducationOrganizationAssociationStude_02e1bf2916' AND parent_object_id = OBJECT_ID(N'sample.StudentEducationOrganizationAssociationExtensionStudentCharacteristic')
+)
+ALTER TABLE [sample].[StudentEducationOrganizationAssociationExtensionStudentCharacteristic]
+ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationExtensionStudentCharacteristic_StudentEducationOrganizationAssociationStude_02e1bf2916]
+FOREIGN KEY ([BaseCollectionItemId], [StudentEducationOrganizationAssociation_DocumentId])
+REFERENCES [edfi].[StudentEducationOrganizationAssociationStudentCharacteristic] ([CollectionItemId], [StudentEducationOrganizationAssociation_DocumentId])
+ON DELETE CASCADE
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentEducationOrganizationAssociationStudentIdentificationCode_StudentEducationOrganizationAssociation' AND parent_object_id = OBJECT_ID(N'edfi.StudentEducationOrganizationAssociationStudentIdentificationCode')
 )
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociationStudentIdentificationCode]
@@ -21599,17 +21618,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_StudentEducationOrganizationAssociationExtensionStudentCharacteristicStudentNeed_StudentEducationOrganizationAssoc_3200ff8a99' AND parent_object_id = OBJECT_ID(N'sample.StudentEducationOrganizationAssociationExtensionStudentCharacteristicStudentNeed')
-)
-ALTER TABLE [sample].[StudentEducationOrganizationAssociationExtensionStudentCharacteristicStudentNeed]
-ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationExtensionStudentCharacteristicStudentNeed_StudentEducationOrganizationAssoc_3200ff8a99]
-FOREIGN KEY ([BaseCollectionItemId], [StudentEducationOrganizationAssociation_DocumentId])
-REFERENCES [sample].[StudentEducationOrganizationAssociationExtensionStudentCharacteristic] ([BaseCollectionItemId], [StudentEducationOrganizationAssociation_DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_StudentEducationOrganizationAssociationAddressPeriod_StudentEducationOrganizationAssociationAddress' AND parent_object_id = OBJECT_ID(N'edfi.StudentEducationOrganizationAssociationAddressPeriod')
 )
 ALTER TABLE [edfi].[StudentEducationOrganizationAssociationAddressPeriod]
@@ -21660,6 +21668,17 @@ ALTER TABLE [edfi].[StudentEducationOrganizationAssociationLanguageUs]
 ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationLanguageUs_StudentEducationOrganizationAssociationLanguage]
 FOREIGN KEY ([ParentCollectionItemId], [StudentEducationOrganizationAssociation_DocumentId])
 REFERENCES [edfi].[StudentEducationOrganizationAssociationLanguage] ([CollectionItemId], [StudentEducationOrganizationAssociation_DocumentId])
+ON DELETE CASCADE
+ON UPDATE NO ACTION;
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_StudentEducationOrganizationAssociationExtensionStudentCharacteristicStudentNeed_StudentEducationOrganizationAssoc_3200ff8a99' AND parent_object_id = OBJECT_ID(N'sample.StudentEducationOrganizationAssociationExtensionStudentCharacteristicStudentNeed')
+)
+ALTER TABLE [sample].[StudentEducationOrganizationAssociationExtensionStudentCharacteristicStudentNeed]
+ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationExtensionStudentCharacteristicStudentNeed_StudentEducationOrganizationAssoc_3200ff8a99]
+FOREIGN KEY ([BaseCollectionItemId], [StudentEducationOrganizationAssociation_DocumentId])
+REFERENCES [sample].[StudentEducationOrganizationAssociationExtensionStudentCharacteristic] ([BaseCollectionItemId], [StudentEducationOrganizationAssociation_DocumentId])
 ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
@@ -47901,6 +47920,20 @@ BEGIN
 END;
 GO
 
+CREATE OR ALTER TRIGGER [sample].[TR_StudentAcademicRecordExtension_Stamp]
+ON [sample].[StudentAcademicRecordExtension]
+AFTER INSERT, UPDATE, DELETE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    ;WITH affectedDocs AS (SELECT [DocumentId] FROM inserted UNION SELECT [DocumentId] FROM deleted)
+    UPDATE d
+    SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
+    FROM [dms].[Document] d
+    INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
+END;
+GO
+
 CREATE OR ALTER TRIGGER [sample].[TR_StudentArtProgramAssociation_AbstractIdentity]
 ON [sample].[StudentArtProgramAssociation]
 AFTER INSERT, UPDATE
@@ -49583,25 +49616,25 @@ IF NOT EXISTS (SELECT 1 FROM [dms].[ResourceKey] WHERE [ResourceKeyId] = 351)
     VALUES (351, N'Ed-Fi', N'WeaponDescriptor', N'5.2.0');
 IF NOT EXISTS (SELECT 1 FROM [dms].[ResourceKey] WHERE [ResourceKeyId] = 352)
     INSERT INTO [dms].[ResourceKey] ([ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion])
-    VALUES (352, N'Sample', N'ArtMediumDescriptor', N'1.1.0');
+    VALUES (352, N'Sample', N'ArtMediumDescriptor', N'1.0.0');
 IF NOT EXISTS (SELECT 1 FROM [dms].[ResourceKey] WHERE [ResourceKeyId] = 353)
     INSERT INTO [dms].[ResourceKey] ([ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion])
-    VALUES (353, N'Sample', N'Bus', N'1.1.0');
+    VALUES (353, N'Sample', N'Bus', N'1.0.0');
 IF NOT EXISTS (SELECT 1 FROM [dms].[ResourceKey] WHERE [ResourceKeyId] = 354)
     INSERT INTO [dms].[ResourceKey] ([ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion])
-    VALUES (354, N'Sample', N'BusRoute', N'1.1.0');
+    VALUES (354, N'Sample', N'BusRoute', N'1.0.0');
 IF NOT EXISTS (SELECT 1 FROM [dms].[ResourceKey] WHERE [ResourceKeyId] = 355)
     INSERT INTO [dms].[ResourceKey] ([ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion])
-    VALUES (355, N'Sample', N'FavoriteBookCategoryDescriptor', N'1.1.0');
+    VALUES (355, N'Sample', N'FavoriteBookCategoryDescriptor', N'1.0.0');
 IF NOT EXISTS (SELECT 1 FROM [dms].[ResourceKey] WHERE [ResourceKeyId] = 356)
     INSERT INTO [dms].[ResourceKey] ([ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion])
-    VALUES (356, N'Sample', N'MembershipTypeDescriptor', N'1.1.0');
+    VALUES (356, N'Sample', N'MembershipTypeDescriptor', N'1.0.0');
 IF NOT EXISTS (SELECT 1 FROM [dms].[ResourceKey] WHERE [ResourceKeyId] = 357)
     INSERT INTO [dms].[ResourceKey] ([ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion])
-    VALUES (357, N'Sample', N'StudentArtProgramAssociation', N'1.1.0');
+    VALUES (357, N'Sample', N'StudentArtProgramAssociation', N'1.0.0');
 IF NOT EXISTS (SELECT 1 FROM [dms].[ResourceKey] WHERE [ResourceKeyId] = 358)
     INSERT INTO [dms].[ResourceKey] ([ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion])
-    VALUES (358, N'Sample', N'StudentGraduationPlanAssociation', N'1.1.0');
+    VALUES (358, N'Sample', N'StudentGraduationPlanAssociation', N'1.0.0');
 
 -- ResourceKey full-table validation (count + content)
 DECLARE @actual_count integer;
@@ -49970,13 +50003,13 @@ WHERE NOT EXISTS (
         (349, N'Ed-Fi', N'TribalAffiliationDescriptor', N'5.2.0'),
         (350, N'Ed-Fi', N'VisaDescriptor', N'5.2.0'),
         (351, N'Ed-Fi', N'WeaponDescriptor', N'5.2.0'),
-        (352, N'Sample', N'ArtMediumDescriptor', N'1.1.0'),
-        (353, N'Sample', N'Bus', N'1.1.0'),
-        (354, N'Sample', N'BusRoute', N'1.1.0'),
-        (355, N'Sample', N'FavoriteBookCategoryDescriptor', N'1.1.0'),
-        (356, N'Sample', N'MembershipTypeDescriptor', N'1.1.0'),
-        (357, N'Sample', N'StudentArtProgramAssociation', N'1.1.0'),
-        (358, N'Sample', N'StudentGraduationPlanAssociation', N'1.1.0')
+        (352, N'Sample', N'ArtMediumDescriptor', N'1.0.0'),
+        (353, N'Sample', N'Bus', N'1.0.0'),
+        (354, N'Sample', N'BusRoute', N'1.0.0'),
+        (355, N'Sample', N'FavoriteBookCategoryDescriptor', N'1.0.0'),
+        (356, N'Sample', N'MembershipTypeDescriptor', N'1.0.0'),
+        (357, N'Sample', N'StudentArtProgramAssociation', N'1.0.0'),
+        (358, N'Sample', N'StudentGraduationPlanAssociation', N'1.0.0')
     ) AS expected([ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion])
     WHERE expected.[ResourceKeyId] = rk.[ResourceKeyId]
     AND expected.[ProjectName] = rk.[ProjectName]
@@ -50342,13 +50375,13 @@ BEGIN
                 (349, N'Ed-Fi', N'TribalAffiliationDescriptor', N'5.2.0'),
                 (350, N'Ed-Fi', N'VisaDescriptor', N'5.2.0'),
                 (351, N'Ed-Fi', N'WeaponDescriptor', N'5.2.0'),
-                (352, N'Sample', N'ArtMediumDescriptor', N'1.1.0'),
-                (353, N'Sample', N'Bus', N'1.1.0'),
-                (354, N'Sample', N'BusRoute', N'1.1.0'),
-                (355, N'Sample', N'FavoriteBookCategoryDescriptor', N'1.1.0'),
-                (356, N'Sample', N'MembershipTypeDescriptor', N'1.1.0'),
-                (357, N'Sample', N'StudentArtProgramAssociation', N'1.1.0'),
-                (358, N'Sample', N'StudentGraduationPlanAssociation', N'1.1.0')
+                (352, N'Sample', N'ArtMediumDescriptor', N'1.0.0'),
+                (353, N'Sample', N'Bus', N'1.0.0'),
+                (354, N'Sample', N'BusRoute', N'1.0.0'),
+                (355, N'Sample', N'FavoriteBookCategoryDescriptor', N'1.0.0'),
+                (356, N'Sample', N'MembershipTypeDescriptor', N'1.0.0'),
+                (357, N'Sample', N'StudentArtProgramAssociation', N'1.0.0'),
+                (358, N'Sample', N'StudentGraduationPlanAssociation', N'1.0.0')
             ) AS expected([ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion])
             WHERE expected.[ResourceKeyId] = rk.[ResourceKeyId]
             AND expected.[ProjectName] = rk.[ProjectName]
@@ -50364,7 +50397,7 @@ END
 -- EffectiveSchema singleton insert-if-missing
 IF NOT EXISTS (SELECT 1 FROM [dms].[EffectiveSchema] WHERE [EffectiveSchemaSingletonId] = 1)
     INSERT INTO [dms].[EffectiveSchema] ([EffectiveSchemaSingletonId], [ApiSchemaFormatVersion], [EffectiveSchemaHash], [ResourceKeyCount], [ResourceKeySeedHash])
-    VALUES (1, N'1.0.0', N'7b477c2ba49991085f3c33ff7b89e2ea465d15a8fb21f18a0b103c464ff6de44', 358, 0x0E73350EB601A6157D0168CA5C627355A7A737DDCDCF8B3A545F413E2C4DD662);
+    VALUES (1, N'1.0.0', N'029283e1893259b3be7e306b3977b0777f365e621b6d651dbfa6347e72326e5b', 358, 0xB2BC1F88C9075A93585E3ABFDC25C5C6018C09F18FAE7221816B1826EB4190C4);
 
 -- EffectiveSchema validation (ApiSchemaFormatVersion + ResourceKeyCount + ResourceKeySeedHash)
 DECLARE @es_stored_api_schema_format_version nvarchar(255);
@@ -50385,27 +50418,27 @@ BEGIN
         DECLARE @es_count_msg nvarchar(200) = CONCAT(N'dms.EffectiveSchema ResourceKeyCount mismatch: expected 358, found ', CAST(@es_stored_count AS nvarchar(10)));
         THROW 50000, @es_count_msg, 1;
     END
-    IF @es_stored_hash <> 0x0E73350EB601A6157D0168CA5C627355A7A737DDCDCF8B3A545F413E2C4DD662
+    IF @es_stored_hash <> 0xB2BC1F88C9075A93585E3ABFDC25C5C6018C09F18FAE7221816B1826EB4190C4
     BEGIN
-        DECLARE @es_hash_msg nvarchar(200) = CONCAT(N'dms.EffectiveSchema ResourceKeySeedHash mismatch: stored ', CONVERT(nvarchar(66), @es_stored_hash, 1), N' but expected ', CONVERT(nvarchar(66), 0x0E73350EB601A6157D0168CA5C627355A7A737DDCDCF8B3A545F413E2C4DD662, 1));
+        DECLARE @es_hash_msg nvarchar(200) = CONCAT(N'dms.EffectiveSchema ResourceKeySeedHash mismatch: stored ', CONVERT(nvarchar(66), @es_stored_hash, 1), N' but expected ', CONVERT(nvarchar(66), 0xB2BC1F88C9075A93585E3ABFDC25C5C6018C09F18FAE7221816B1826EB4190C4, 1));
         THROW 50000, @es_hash_msg, 1;
     END
 END
 
 -- SchemaComponent seed inserts (insert-if-missing)
-IF NOT EXISTS (SELECT 1 FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'7b477c2ba49991085f3c33ff7b89e2ea465d15a8fb21f18a0b103c464ff6de44' AND [ProjectEndpointName] = N'ed-fi')
+IF NOT EXISTS (SELECT 1 FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'029283e1893259b3be7e306b3977b0777f365e621b6d651dbfa6347e72326e5b' AND [ProjectEndpointName] = N'ed-fi')
     INSERT INTO [dms].[SchemaComponent] ([EffectiveSchemaHash], [ProjectEndpointName], [ProjectName], [ProjectVersion], [IsExtensionProject])
-    VALUES (N'7b477c2ba49991085f3c33ff7b89e2ea465d15a8fb21f18a0b103c464ff6de44', N'ed-fi', N'Ed-Fi', N'5.2.0', 0);
-IF NOT EXISTS (SELECT 1 FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'7b477c2ba49991085f3c33ff7b89e2ea465d15a8fb21f18a0b103c464ff6de44' AND [ProjectEndpointName] = N'sample')
+    VALUES (N'029283e1893259b3be7e306b3977b0777f365e621b6d651dbfa6347e72326e5b', N'ed-fi', N'Ed-Fi', N'5.2.0', 0);
+IF NOT EXISTS (SELECT 1 FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'029283e1893259b3be7e306b3977b0777f365e621b6d651dbfa6347e72326e5b' AND [ProjectEndpointName] = N'sample')
     INSERT INTO [dms].[SchemaComponent] ([EffectiveSchemaHash], [ProjectEndpointName], [ProjectName], [ProjectVersion], [IsExtensionProject])
-    VALUES (N'7b477c2ba49991085f3c33ff7b89e2ea465d15a8fb21f18a0b103c464ff6de44', N'sample', N'Sample', N'1.1.0', 1);
+    VALUES (N'029283e1893259b3be7e306b3977b0777f365e621b6d651dbfa6347e72326e5b', N'sample', N'Sample', N'1.0.0', 1);
 
 -- SchemaComponent exact-match validation (count + content)
 DECLARE @sc_actual_count integer;
 DECLARE @sc_mismatched_count integer;
 DECLARE @sc_mismatched_names nvarchar(max);
 
-SELECT @sc_actual_count = COUNT(*) FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'7b477c2ba49991085f3c33ff7b89e2ea465d15a8fb21f18a0b103c464ff6de44';
+SELECT @sc_actual_count = COUNT(*) FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'029283e1893259b3be7e306b3977b0777f365e621b6d651dbfa6347e72326e5b';
 IF @sc_actual_count <> 2
 BEGIN
     DECLARE @sc_count_msg nvarchar(200) = CONCAT(N'dms.SchemaComponent count mismatch: expected 2, found ', CAST(@sc_actual_count AS nvarchar(10)));
@@ -50414,11 +50447,11 @@ END
 
 SELECT @sc_mismatched_count = COUNT(*)
 FROM [dms].[SchemaComponent] sc
-WHERE sc.[EffectiveSchemaHash] = N'7b477c2ba49991085f3c33ff7b89e2ea465d15a8fb21f18a0b103c464ff6de44'
+WHERE sc.[EffectiveSchemaHash] = N'029283e1893259b3be7e306b3977b0777f365e621b6d651dbfa6347e72326e5b'
 AND NOT EXISTS (
     SELECT 1 FROM (VALUES
         (N'ed-fi', N'Ed-Fi', N'5.2.0', 0),
-        (N'sample', N'Sample', N'1.1.0', 1)
+        (N'sample', N'Sample', N'1.0.0', 1)
     ) AS expected([ProjectEndpointName], [ProjectName], [ProjectVersion], [IsExtensionProject])
     WHERE expected.[ProjectEndpointName] = sc.[ProjectEndpointName]
     AND expected.[ProjectName] = sc.[ProjectName]
@@ -50431,11 +50464,11 @@ BEGIN
     FROM (
         SELECT TOP 10 sc.[ProjectEndpointName]
         FROM [dms].[SchemaComponent] sc
-        WHERE sc.[EffectiveSchemaHash] = N'7b477c2ba49991085f3c33ff7b89e2ea465d15a8fb21f18a0b103c464ff6de44'
+        WHERE sc.[EffectiveSchemaHash] = N'029283e1893259b3be7e306b3977b0777f365e621b6d651dbfa6347e72326e5b'
         AND NOT EXISTS (
             SELECT 1 FROM (VALUES
                 (N'ed-fi', N'Ed-Fi', N'5.2.0', 0),
-                (N'sample', N'Sample', N'1.1.0', 1)
+                (N'sample', N'Sample', N'1.0.0', 1)
             ) AS expected([ProjectEndpointName], [ProjectName], [ProjectVersion], [IsExtensionProject])
             WHERE expected.[ProjectEndpointName] = sc.[ProjectEndpointName]
             AND expected.[ProjectName] = sc.[ProjectName]
