@@ -119,7 +119,7 @@ internal static class MappingSetDocumentReferenceCompatibilityExtensions
                 {
                     throw new InvalidOperationException(
                         $"{FormatLookupPrefix(mappingSet, abstractResourceKey.Resource)}: "
-                            + $"abstract union view member '{FormatResource(memberResourceKey.Resource)}' must be concrete."
+                            + $"abstract union view member '{MappingSetResourceLookupSupport.FormatResource(memberResourceKey.Resource)}' must be concrete."
                     );
                 }
 
@@ -247,11 +247,17 @@ internal static class MappingSetDocumentReferenceCompatibilityExtensions
             return new InvalidOperationException(
                 $"{FormatLookupPrefix(mappingSet, targetResource)}: "
                     + $"ResourceKeyById entry for id '{resourceKeyId}' resolves to "
-                    + $"'{FormatResource(resourceKey.Resource)}' instead of the requested target resource."
+                    + $"'{MappingSetResourceLookupSupport.FormatResource(resourceKey.Resource)}' instead of the requested target resource."
             );
         }
 
-        if (TryGetConcreteResourceModel(mappingSet, targetResource, out var concreteResourceModel))
+        if (
+            MappingSetResourceLookupSupport.TryGetConcreteResourceModel(
+                mappingSet,
+                targetResource,
+                out var concreteResourceModel
+            )
+        )
         {
             if (concreteResourceModel.StorageKind is ResourceStorageKind.SharedDescriptorTable)
             {
@@ -281,33 +287,11 @@ internal static class MappingSetDocumentReferenceCompatibilityExtensions
         );
     }
 
-    private static bool TryGetConcreteResourceModel(
-        MappingSet mappingSet,
-        QualifiedResourceName targetResource,
-        out ConcreteResourceModel concreteResourceModel
-    )
-    {
-        foreach (var candidate in mappingSet.Model.ConcreteResourcesInNameOrder)
-        {
-            if (candidate.ResourceKey.Resource == targetResource)
-            {
-                concreteResourceModel = candidate;
-                return true;
-            }
-        }
-
-        concreteResourceModel = null!;
-        return false;
-    }
-
     private static QualifiedResourceName ToQualifiedResourceName(BaseResourceInfo targetResource) =>
         new(targetResource.ProjectName.Value, targetResource.ResourceName.Value);
 
     private static string FormatLookupPrefix(MappingSet mappingSet, QualifiedResourceName targetResource) =>
-        $"Document-reference compatibility metadata lookup failed for target '{FormatResource(targetResource)}' in mapping set '{FormatMappingSetKey(mappingSet.Key)}'";
-
-    private static string FormatResource(QualifiedResourceName resource) =>
-        $"{resource.ProjectName}.{resource.ResourceName}";
+        $"Document-reference compatibility metadata lookup failed for target '{MappingSetResourceLookupSupport.FormatResource(targetResource)}' in mapping set '{FormatMappingSetKey(mappingSet.Key)}'";
 
     private static string FormatMappingSetKey(MappingSetKey key) =>
         $"{key.EffectiveSchemaHash}/{key.Dialect}/{key.RelationalMappingVersion}";

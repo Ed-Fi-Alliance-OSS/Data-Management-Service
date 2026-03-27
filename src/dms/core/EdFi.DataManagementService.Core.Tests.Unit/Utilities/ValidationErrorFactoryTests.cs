@@ -82,6 +82,29 @@ public class ValidationErrorFactoryTests
     }
 
     [TestFixture]
+    public class Given_An_Array_Duplicate_On_The_First_Item : ValidationErrorFactoryTests
+    {
+        private (string errorKey, string message) _result;
+
+        [SetUp]
+        public void Setup()
+        {
+            _result = ValidationErrorFactory.BuildValidationError("$.items[*]", 0);
+        }
+
+        [Test]
+        public void It_uses_the_correct_ordinal_suffix()
+        {
+            _result.errorKey.Should().Be("$.items");
+            _result
+                .message.Should()
+                .Be(
+                    "The 1st item of the items has the same identifying values as another item earlier in the list."
+                );
+        }
+    }
+
+    [TestFixture]
     public class Given_Document_Only_Reference_Failures : ValidationErrorFactoryTests
     {
         private Dictionary<string, string[]> _result = null!;

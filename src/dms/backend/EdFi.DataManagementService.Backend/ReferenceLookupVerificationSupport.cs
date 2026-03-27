@@ -111,12 +111,18 @@ internal static class ReferenceLookupVerificationSupport
         if (!mappingSet.ResourceKeyIdByResource.TryGetValue(requestedResource, out var resourceKeyId))
         {
             throw new InvalidOperationException(
-                $"Reference lookup verification metadata lookup failed for target '{FormatResource(requestedResource)}': "
+                $"Reference lookup verification metadata lookup failed for target '{MappingSetResourceLookupSupport.FormatResource(requestedResource)}': "
                     + "ResourceKeyIdByResource is missing the requested resource."
             );
         }
 
-        if (TryGetConcreteResourceModel(mappingSet, requestedResource, out var concreteResourceModel))
+        if (
+            MappingSetResourceLookupSupport.TryGetConcreteResourceModel(
+                mappingSet,
+                requestedResource,
+                out var concreteResourceModel
+            )
+        )
         {
             if (concreteResourceModel.StorageKind is ResourceStorageKind.SharedDescriptorTable)
             {
@@ -155,7 +161,7 @@ internal static class ReferenceLookupVerificationSupport
         }
 
         throw new InvalidOperationException(
-            $"Reference lookup verification metadata lookup failed for target '{FormatResource(requestedResource)}': "
+            $"Reference lookup verification metadata lookup failed for target '{MappingSetResourceLookupSupport.FormatResource(requestedResource)}': "
                 + "the requested resource was not found in ConcreteResourcesInNameOrder or AbstractUnionViewsInNameOrder."
         );
     }
@@ -169,7 +175,7 @@ internal static class ReferenceLookupVerificationSupport
         if (requestedIdentity.DocumentIdentityElements.Length == 0)
         {
             throw new InvalidOperationException(
-                $"Reference lookup verification metadata lookup failed for target '{FormatResource(requestedResource)}': "
+                $"Reference lookup verification metadata lookup failed for target '{MappingSetResourceLookupSupport.FormatResource(requestedResource)}': "
                     + "the requested identity is empty."
             );
         }
@@ -180,7 +186,7 @@ internal static class ReferenceLookupVerificationSupport
                 if (!columnByPath.TryGetValue(identityElement.IdentityJsonPath.Value, out var sourceColumn))
                 {
                     throw new InvalidOperationException(
-                        $"Reference lookup verification metadata lookup failed for target '{FormatResource(requestedResource)}': "
+                        $"Reference lookup verification metadata lookup failed for target '{MappingSetResourceLookupSupport.FormatResource(requestedResource)}': "
                             + $"no authoritative column was found for identity path '{identityElement.IdentityJsonPath.Value}'."
                     );
                 }
@@ -294,28 +300,9 @@ internal static class ReferenceLookupVerificationSupport
     private static Exception CreateIdentityShapeMismatchException(ReferenceLookupRequestEntry existingLookup)
     {
         return new InvalidOperationException(
-            $"Reference lookup verification metadata lookup failed for target '{FormatResource(existingLookup.RequestedResource)}': "
+            $"Reference lookup verification metadata lookup failed for target '{MappingSetResourceLookupSupport.FormatResource(existingLookup.RequestedResource)}': "
                 + "multiple lookup entries for the same resource used different identity path orderings."
         );
-    }
-
-    private static bool TryGetConcreteResourceModel(
-        MappingSet mappingSet,
-        QualifiedResourceName requestedResource,
-        out ConcreteResourceModel concreteResourceModel
-    )
-    {
-        foreach (var candidate in mappingSet.Model.ConcreteResourcesInNameOrder)
-        {
-            if (candidate.ResourceKey.Resource == requestedResource)
-            {
-                concreteResourceModel = candidate;
-                return true;
-            }
-        }
-
-        concreteResourceModel = null!;
-        return false;
     }
 
     private static bool TryGetAbstractUnionView(
@@ -336,9 +323,6 @@ internal static class ReferenceLookupVerificationSupport
         abstractUnionView = null!;
         return false;
     }
-
-    private static string FormatResource(QualifiedResourceName resource) =>
-        $"{resource.ProjectName}.{resource.ResourceName}";
 
     private sealed record VerificationSourceColumn(
         DbColumnName Column,
