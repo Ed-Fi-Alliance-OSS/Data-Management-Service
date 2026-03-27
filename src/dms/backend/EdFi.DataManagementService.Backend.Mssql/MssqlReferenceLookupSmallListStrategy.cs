@@ -204,7 +204,7 @@ internal sealed class MssqlReferenceLookupSmallListStrategy(IRelationalCommandEx
         {
             ScalarKind.String => $"{sourceAlias}.{quotedColumnName}",
             ScalarKind.Date => $"CONVERT(nvarchar(10), {sourceAlias}.{quotedColumnName}, 23)",
-            ScalarKind.DateTime => $"CONVERT(nvarchar(19), {sourceAlias}.{quotedColumnName}, 126)",
+            ScalarKind.DateTime => $"CONVERT(nvarchar(19), {sourceAlias}.{quotedColumnName}, 126) + N'Z'",
             ScalarKind.Time => $"CONVERT(nvarchar(8), {sourceAlias}.{quotedColumnName}, 108)",
             ScalarKind.Boolean =>
                 $"CASE WHEN {sourceAlias}.{quotedColumnName} = 1 THEN N'true' ELSE N'false' END",

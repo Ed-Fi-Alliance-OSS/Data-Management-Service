@@ -324,7 +324,7 @@
       "Add at least one resolver-level test that exercises a datetime identity component and confirms a correctly matched lookup does not raise a corruption exception.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Validation Error Factory Cleanup",

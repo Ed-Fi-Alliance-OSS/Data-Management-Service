@@ -385,6 +385,7 @@ internal static class RelationalAccessTestData
         "Ed-Fi",
         "EducationOrganization"
     );
+    private static readonly QualifiedResourceName _meetingResource = new("Ed-Fi", "Meeting");
     private static readonly QualifiedResourceName _schoolTypeDescriptorResource = new(
         "Ed-Fi",
         "SchoolTypeDescriptor"
@@ -397,13 +398,14 @@ internal static class RelationalAccessTestData
         var schoolKey = new ResourceKeyEntry(11, _schoolResource, "1.0", false);
         var localEducationAgencyKey = new ResourceKeyEntry(12, _localEducationAgencyResource, "1.0", false);
         var schoolTypeDescriptorKey = new ResourceKeyEntry(13, _schoolTypeDescriptorResource, "1.0", false);
+        var meetingKey = new ResourceKeyEntry(14, _meetingResource, "1.0", false);
         var educationOrganizationKey = new ResourceKeyEntry(30, _educationOrganizationResource, "1.0", true);
 
         var effectiveSchema = new EffectiveSchemaInfo(
             ApiSchemaFormatVersion: "1.0",
             RelationalMappingVersion: "v1",
             EffectiveSchemaHash: EffectiveSchemaHash,
-            ResourceKeyCount: 5,
+            ResourceKeyCount: 6,
             ResourceKeySeedHash: new byte[32],
             SchemaComponentsInEndpointOrder: [],
             ResourceKeysInIdOrder:
@@ -412,6 +414,7 @@ internal static class RelationalAccessTestData
                 schoolKey,
                 localEducationAgencyKey,
                 schoolTypeDescriptorKey,
+                meetingKey,
                 educationOrganizationKey,
             ]
         );
@@ -436,6 +439,11 @@ internal static class RelationalAccessTestData
                     localEducationAgencyKey,
                     ResourceStorageKind.RelationalTables,
                     CreateRelationalResourceModel(_localEducationAgencyResource, "LocalEducationAgency")
+                ),
+                new ConcreteResourceModel(
+                    meetingKey,
+                    ResourceStorageKind.RelationalTables,
+                    CreateRelationalResourceModel(_meetingResource, "Meeting")
                 ),
                 new ConcreteResourceModel(
                     schoolTypeDescriptorKey,
@@ -544,6 +552,19 @@ internal static class RelationalAccessTestData
             isDescriptor: true
         );
 
+    public static ReferenceLookupRequestEntry CreateMeetingLookup(
+        ReferentialId referentialId,
+        string meetingDateTime = "2025-03-05T13:30:45Z"
+    ) =>
+        CreateLookup(
+            _meetingResource,
+            referentialId,
+            new DocumentIdentity([
+                new DocumentIdentityElement(new JsonPath("$.meetingDateTime"), meetingDateTime),
+            ]),
+            isDescriptor: false
+        );
+
     public static DescriptorReference CreateDescriptorReference(
         ReferentialId referentialId,
         string uri,
@@ -630,6 +651,7 @@ internal static class RelationalAccessTestData
             [
                 CreateIdentityColumn("LocalEducationAgencyId", "$.localEducationAgencyId", ScalarKind.Int32),
             ],
+            "Meeting" => [CreateIdentityColumn("MeetingDateTime", "$.meetingDateTime", ScalarKind.DateTime)],
             _ => [],
         };
     }

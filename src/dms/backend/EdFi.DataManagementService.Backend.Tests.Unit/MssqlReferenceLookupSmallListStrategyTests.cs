@@ -204,6 +204,21 @@ public class Given_MssqlReferenceLookupSmallListStrategy
         act.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*fewer than 2000 referential ids*");
     }
 
+    [Test]
+    public void It_formats_datetime_identity_verification_keys_in_core_canonical_utc_shape()
+    {
+        var command = MssqlReferenceLookupSmallListStrategy.BuildCommand(
+            new ReferenceLookupRequest(
+                MappingSet: RelationalAccessTestData.CreateMappingSet(_requestResource),
+                RequestResource: _requestResource,
+                Lookups: [RelationalAccessTestData.CreateMeetingLookup(CreateReferentialId(5))]
+            )
+        );
+
+        command.CommandText.Should().Contain("FROM [edfi].[Meeting] source");
+        command.CommandText.Should().Contain("CONVERT(nvarchar(19), source.[MeetingDateTime], 126) + N'Z'");
+    }
+
     private static ReferentialId CreateReferentialId(int seed)
     {
         var bytes = new byte[16];

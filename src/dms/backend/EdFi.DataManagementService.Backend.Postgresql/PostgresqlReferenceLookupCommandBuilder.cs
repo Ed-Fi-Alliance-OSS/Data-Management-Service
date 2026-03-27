@@ -164,7 +164,7 @@ internal static class PostgresqlReferenceLookupCommandBuilder
         return identityElement.ScalarType.Kind switch
         {
             ScalarKind.DateTime =>
-                $"""to_char({sourceAlias}.{quotedColumnName}, 'YYYY-MM-DD"T"HH24:MI:SS')""",
+                $"""to_char({sourceAlias}.{quotedColumnName} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')""",
             _ => $"{sourceAlias}.{quotedColumnName}::text",
         };
     }

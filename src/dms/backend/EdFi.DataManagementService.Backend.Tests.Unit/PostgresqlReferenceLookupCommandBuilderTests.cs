@@ -106,6 +106,25 @@ public class Given_PostgresqlReferenceLookupCommandBuilder
         command.CommandText.Should().Contain("'$$.descriptor=' || lower(descriptor.\"Uri\")");
     }
 
+    [Test]
+    public void It_formats_datetime_identity_verification_keys_in_core_canonical_utc_shape()
+    {
+        var command = PostgresqlReferenceLookupCommandBuilder.Build(
+            new ReferenceLookupRequest(
+                MappingSet: RelationalAccessTestData.CreateMappingSet(_requestResource),
+                RequestResource: _requestResource,
+                Lookups: [RelationalAccessTestData.CreateMeetingLookup(CreateReferentialId(4))]
+            )
+        );
+
+        command.CommandText.Should().Contain("FROM \"edfi\".\"Meeting\" source");
+        command
+            .CommandText.Should()
+            .Contain(
+                @"to_char(source.""MeetingDateTime"" AT TIME ZONE 'UTC', 'YYYY-MM-DD""T""HH24:MI:SS""Z""')"
+            );
+    }
+
     private static ReferentialId CreateReferentialId(int seed)
     {
         var bytes = new byte[16];

@@ -25,6 +25,7 @@ public class Given_ReferenceResolver
         "Ed-Fi",
         "EducationOrganization"
     );
+    private static readonly QualifiedResourceName _meetingResource = new("Ed-Fi", "Meeting");
     private static readonly QualifiedResourceName _schoolTypeDescriptorResource = new(
         "Ed-Fi",
         "SchoolTypeDescriptor"
@@ -221,6 +222,52 @@ public class Given_ReferenceResolver
             .DocumentId.Should()
             .Be(303L);
         secondResult.InvalidDocumentReferences.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_does_not_raise_corruption_for_matching_canonical_datetime_identity_verification_keys()
+    {
+        const string MeetingDateTime = "2025-03-05T13:30:45Z";
+
+        var referentialId = new ReferentialId(Guid.NewGuid());
+        var adapter = new RecordingReferenceResolverAdapter([
+            [
+                new ReferenceLookupResult(
+                    ReferentialId: referentialId,
+                    DocumentId: 404,
+                    ResourceKeyId: 15,
+                    ReferentialIdentityResourceKeyId: 15,
+                    IsDescriptor: false,
+                    VerificationIdentityKey: $"$$.meetingDateTime={MeetingDateTime}"
+                ),
+            ],
+        ]);
+
+        var sut = new ReferenceResolver(adapter);
+
+        var result = await sut.ResolveAsync(
+            new ReferenceResolverRequest(
+                MappingSet: CreateMappingSet(),
+                RequestResource: _requestResource,
+                DocumentReferences:
+                [
+                    CreateMeetingDocumentReference(referentialId, "$.meetingReference", MeetingDateTime),
+                ],
+                DescriptorReferences: []
+            )
+        );
+
+        adapter.Requests.Should().ContainSingle();
+        adapter
+            .Requests[0]
+            .Lookups.Select(static lookup => lookup.ExpectedVerificationIdentityKey)
+            .Should()
+            .Equal($"$$.meetingDateTime={MeetingDateTime}");
+        result.InvalidDocumentReferences.Should().BeEmpty();
+        result
+            .SuccessfulDocumentReferencesByPath[new JsonPath("$.meetingReference")]
+            .DocumentId.Should()
+            .Be(404L);
     }
 
     [Test]
@@ -758,12 +805,13 @@ public class Given_ReferenceResolver
             "1.0",
             false
         );
+        var meetingKey = new ResourceKeyEntry(15, _meetingResource, "1.0", false);
         var educationOrganizationKey = new ResourceKeyEntry(30, _educationOrganizationResource, "1.0", true);
         var effectiveSchema = new EffectiveSchemaInfo(
             ApiSchemaFormatVersion: "1.0",
             RelationalMappingVersion: "v1",
             EffectiveSchemaHash: EffectiveSchemaHash,
-            ResourceKeyCount: 6,
+            ResourceKeyCount: 7,
             ResourceKeySeedHash: new byte[32],
             SchemaComponentsInEndpointOrder: [],
             ResourceKeysInIdOrder:
@@ -773,6 +821,7 @@ public class Given_ReferenceResolver
                 localEducationAgencyKey,
                 schoolTypeDescriptorKey,
                 academicSubjectDescriptorKey,
+                meetingKey,
                 educationOrganizationKey,
             ]
         );
@@ -815,6 +864,11 @@ public class Given_ReferenceResolver
                         "Descriptor",
                         ResourceStorageKind.SharedDescriptorTable
                     )
+                ),
+                new ConcreteResourceModel(
+                    meetingKey,
+                    ResourceStorageKind.RelationalTables,
+                    CreateRelationalResourceModel(_meetingResource, "Meeting")
                 ),
             ],
             AbstractIdentityTablesInNameOrder: [],
@@ -886,6 +940,24 @@ public class Given_ReferenceResolver
             ),
             DocumentIdentity: new DocumentIdentity([
                 new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901"),
+            ]),
+            ReferentialId: referentialId,
+            Path: new JsonPath(path)
+        );
+
+    private static DocumentReference CreateMeetingDocumentReference(
+        ReferentialId referentialId,
+        string path,
+        string meetingDateTime
+    ) =>
+        new(
+            ResourceInfo: new BaseResourceInfo(
+                ProjectName: new ProjectName("Ed-Fi"),
+                ResourceName: new ResourceName("Meeting"),
+                IsDescriptor: false
+            ),
+            DocumentIdentity: new DocumentIdentity([
+                new DocumentIdentityElement(new JsonPath("$.meetingDateTime"), meetingDateTime),
             ]),
             ReferentialId: referentialId,
             Path: new JsonPath(path)
