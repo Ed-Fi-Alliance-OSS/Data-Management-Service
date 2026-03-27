@@ -133,7 +133,11 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
             );
             return new DeleteResult.DeleteFailureWriteConflict();
         }
-        catch (PostgresException pe) when (pe.SqlState is PostgresErrorCodes.ForeignKeyViolation or "23001")
+        catch (PostgresException pe)
+            when (pe.SqlState
+                    is PostgresErrorCodes.ForeignKeyViolation
+                        or PostgresErrorCodes.RestrictViolation
+            )
         {
             // Restore transaction save point to continue using transaction
             await transaction.RollbackAsync("beforeDelete");

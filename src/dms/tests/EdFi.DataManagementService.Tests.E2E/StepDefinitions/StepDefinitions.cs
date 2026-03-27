@@ -422,7 +422,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 )!
             );
             _featureContext["_waitOnNextQuery"] = true;
-            _logger.log.Information(_apiResponse.TextAsync().Result);
+            _logger.log.Information(await _apiResponse.TextAsync());
 
             _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
         }
@@ -617,7 +617,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         {
             _apiResponse = apiResponse;
             _scenarioContext[ApiResponseContextKey] = apiResponse;
-            _featureContext["_apiResponse"] = apiResponse;
         }
 
         [When("a PUT request is made to referenced resource {string} with")]
