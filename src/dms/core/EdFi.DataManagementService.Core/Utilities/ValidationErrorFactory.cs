@@ -61,26 +61,6 @@ internal static class ValidationErrorFactory
         );
     }
 
-    public static Dictionary<string, string[]> BuildInvalidReferenceValidationErrors(
-        IEnumerable<DocumentReferenceFailure> invalidDocumentReferences
-    ) =>
-        BuildValidationErrors(
-            invalidDocumentReferences.Select(failure => new KeyValuePair<string, string>(
-                failure.Path.Value,
-                BuildInvalidReferenceMessage(failure)
-            ))
-        );
-
-    public static Dictionary<string, string[]> BuildInvalidDescriptorValidationErrors(
-        IEnumerable<DescriptorReferenceFailure> invalidDescriptorReferences
-    ) =>
-        BuildValidationErrors(
-            invalidDescriptorReferences.Select(failure => new KeyValuePair<string, string>(
-                failure.Path.Value,
-                BuildInvalidDescriptorMessage(failure)
-            ))
-        );
-
     public static Dictionary<string, string[]> BuildInvalidWriteReferenceValidationErrors(
         IEnumerable<DocumentReferenceFailure> invalidDocumentReferences,
         IEnumerable<DescriptorReferenceFailure> invalidDescriptorReferences
