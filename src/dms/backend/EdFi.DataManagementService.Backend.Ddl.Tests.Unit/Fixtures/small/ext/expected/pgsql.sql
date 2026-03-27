@@ -587,9 +587,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -614,6 +619,9 @@ BEGIN
         WHERE "DocumentId" = OLD."School_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."Street" IS DISTINCT FROM NEW."Street") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."School_DocumentId";
@@ -636,9 +644,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."ExtensionData" IS DISTINCT FROM NEW."ExtensionData") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     RETURN NEW;
 END;
 $func$ LANGUAGE plpgsql;
@@ -657,6 +670,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."School_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."BaseCollectionItemId" IS DISTINCT FROM NEW."BaseCollectionItemId" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."AddressExtData" IS DISTINCT FROM NEW."AddressExtData") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()

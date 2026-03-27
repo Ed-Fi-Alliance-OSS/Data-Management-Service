@@ -33329,9 +33329,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."TotalInstructionalDays" IS DISTINCT FROM NEW."TotalInstructionalDays" OR OLD."WeekIdentifier" IS DISTINCT FROM NEW."WeekIdentifier") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId" OR OLD."WeekIdentifier" IS DISTINCT FROM NEW."WeekIdentifier") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -33375,9 +33380,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."SchoolYear_DocumentId" IS DISTINCT FROM NEW."SchoolYear_DocumentId" OR OLD."SchoolYear_SchoolYear" IS DISTINCT FROM NEW."SchoolYear_SchoolYear" OR OLD."Rating" IS DISTINCT FROM NEW."Rating" OR OLD."RatingDate" IS DISTINCT FROM NEW."RatingDate" OR OLD."RatingOrganization" IS DISTINCT FROM NEW."RatingOrganization" OR OLD."RatingProgram" IS DISTINCT FROM NEW."RatingProgram" OR OLD."RatingTitle" IS DISTINCT FROM NEW."RatingTitle") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."RatingTitle" IS DISTINCT FROM NEW."RatingTitle" OR OLD."SchoolYear_SchoolYear" IS DISTINCT FROM NEW."SchoolYear_SchoolYear") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -33421,9 +33431,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."MandatingEducationOrganization_DocumentId" IS DISTINCT FROM NEW."MandatingEducationOrganization_DocumentId" OR OLD."MandatingEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."MandatingEducationOrganization_EducationOrganizationId" OR OLD."AssessmentCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."AssessmentCategoryDescriptor_DescriptorId" OR OLD."ContentStandardPublicationStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."ContentStandardPublicationStatusDescriptor_DescriptorId" OR OLD."AdaptiveAssessment" IS DISTINCT FROM NEW."AdaptiveAssessment" OR OLD."AssessmentFamily" IS DISTINCT FROM NEW."AssessmentFamily" OR OLD."AssessmentForm" IS DISTINCT FROM NEW."AssessmentForm" OR OLD."AssessmentIdentifier" IS DISTINCT FROM NEW."AssessmentIdentifier" OR OLD."AssessmentTitle" IS DISTINCT FROM NEW."AssessmentTitle" OR OLD."AssessmentVersion" IS DISTINCT FROM NEW."AssessmentVersion" OR OLD."ContentStandardBeginDate" IS DISTINCT FROM NEW."ContentStandardBeginDate" OR OLD."ContentStandardEndDate" IS DISTINCT FROM NEW."ContentStandardEndDate" OR OLD."ContentStandardPublicationDate" IS DISTINCT FROM NEW."ContentStandardPublicationDate" OR OLD."ContentStandardPublicationYear" IS DISTINCT FROM NEW."ContentStandardPublicationYear" OR OLD."ContentStandardTitle" IS DISTINCT FROM NEW."ContentStandardTitle" OR OLD."ContentStandardUri" IS DISTINCT FROM NEW."ContentStandardUri" OR OLD."ContentStandardVersion" IS DISTINCT FROM NEW."ContentStandardVersion" OR OLD."MaxRawScore" IS DISTINCT FROM NEW."MaxRawScore" OR OLD."Namespace" IS DISTINCT FROM NEW."Namespace" OR OLD."Nomenclature" IS DISTINCT FROM NEW."Nomenclature" OR OLD."RevisionDate" IS DISTINCT FROM NEW."RevisionDate") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."AssessmentIdentifier" IS DISTINCT FROM NEW."AssessmentIdentifier" OR OLD."Namespace" IS DISTINCT FROM NEW."Namespace") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -33447,6 +33462,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Assessment_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Assessment_DocumentId" IS DISTINCT FROM NEW."Assessment_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."AcademicSubjectDescriptor_DescriptorId" IS DISTINCT FROM NEW."AcademicSubjectDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -33489,9 +33507,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Assessment_DocumentId" IS DISTINCT FROM NEW."Assessment_DocumentId" OR OLD."Assessment_AssessmentIdentifier" IS DISTINCT FROM NEW."Assessment_AssessmentIdentifier" OR OLD."Assessment_Namespace" IS DISTINCT FROM NEW."Assessment_Namespace" OR OLD."AssigningEducationOrganization_DocumentId" IS DISTINCT FROM NEW."AssigningEducationOrganization_DocumentId" OR OLD."AssigningEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."AssigningEducationOrganization_EducationOrganizationId" OR OLD."AdministrationIdentifier" IS DISTINCT FROM NEW."AdministrationIdentifier") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."AdministrationIdentifier" IS DISTINCT FROM NEW."AdministrationIdentifier" OR OLD."Assessment_AssessmentIdentifier" IS DISTINCT FROM NEW."Assessment_AssessmentIdentifier" OR OLD."Assessment_Namespace" IS DISTINCT FROM NEW."Assessment_Namespace" OR OLD."AssigningEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."AssigningEducationOrganization_EducationOrganizationId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -33515,6 +33538,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."AssessmentAdministration_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."AssessmentAdministration_DocumentId" IS DISTINCT FROM NEW."AssessmentAdministration_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."AssessmentBatteryPart_DocumentId" IS DISTINCT FROM NEW."AssessmentBatteryPart_DocumentId" OR OLD."AssessmentBatteryPart_AssessmentBatteryPartName" IS DISTINCT FROM NEW."AssessmentBatteryPart_AssessmentBatteryPartName" OR OLD."AssessmentBatteryPart_AssessmentIdentifier" IS DISTINCT FROM NEW."AssessmentBatteryPart_AssessmentIdentifier" OR OLD."AssessmentBatteryPart_Namespace" IS DISTINCT FROM NEW."AssessmentBatteryPart_Namespace") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -33557,9 +33583,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."AssessmentAdministration_DocumentId" IS DISTINCT FROM NEW."AssessmentAdministration_DocumentId" OR OLD."AssessmentAdministration_AdministrationIdentifier" IS DISTINCT FROM NEW."AssessmentAdministration_AdministrationIdentifier" OR OLD."AssessmentAdministration_AssessmentIdentifier" IS DISTINCT FROM NEW."AssessmentAdministration_AssessmentIdentifier" OR OLD."AssessmentAdministration_Namespace" IS DISTINCT FROM NEW."AssessmentAdministration_Namespace" OR OLD."AssessmentAdministration_AssigningEducationOrganizationId" IS DISTINCT FROM NEW."AssessmentAdministration_AssigningEducationOrganizationId" OR OLD."ParticipatingEducationOrganization_DocumentId" IS DISTINCT FROM NEW."ParticipatingEducationOrganization_DocumentId" OR OLD."ParticipatingEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."ParticipatingEducationOrganization_EducationOrganizationId") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."AssessmentAdministration_AdministrationIdentifier" IS DISTINCT FROM NEW."AssessmentAdministration_AdministrationIdentifier" OR OLD."AssessmentAdministration_AssessmentIdentifier" IS DISTINCT FROM NEW."AssessmentAdministration_AssessmentIdentifier" OR OLD."AssessmentAdministration_AssigningEducationOrganizationId" IS DISTINCT FROM NEW."AssessmentAdministration_AssigningEducationOrganizationId" OR OLD."AssessmentAdministration_Namespace" IS DISTINCT FROM NEW."AssessmentAdministration_Namespace" OR OLD."ParticipatingEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."ParticipatingEducationOrganization_EducationOrganizationId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -33584,6 +33615,9 @@ BEGIN
         WHERE "DocumentId" = OLD."AssessmentAdministrationParticipation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."AssessmentAdministrationParticipation_DocumentId" IS DISTINCT FROM NEW."AssessmentAdministrationParticipation_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."AdministrationPointOfContactEducationOrganization_DocumentId" IS DISTINCT FROM NEW."AdministrationPointOfContactEducationOrganization_DocumentId" OR OLD."AdministrationPointOfContactEducationOrganization_Ed_205063b290" IS DISTINCT FROM NEW."AdministrationPointOfContactEducationOrganization_Ed_205063b290" OR OLD."ElectronicMailAddress" IS DISTINCT FROM NEW."ElectronicMailAddress" OR OLD."FirstName" IS DISTINCT FROM NEW."FirstName" OR OLD."LastSurname" IS DISTINCT FROM NEW."LastSurname" OR OLD."LoginId" IS DISTINCT FROM NEW."LoginId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."AssessmentAdministrationParticipation_DocumentId";
@@ -33605,6 +33639,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."AssessmentAdministration_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."AssessmentAdministration_DocumentId" IS DISTINCT FROM NEW."AssessmentAdministration_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."AssessmentAdministrationBeginDate" IS DISTINCT FROM NEW."AssessmentAdministrationBeginDate" OR OLD."AssessmentAdministrationEndDate" IS DISTINCT FROM NEW."AssessmentAdministrationEndDate") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -33628,6 +33665,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Assessment_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Assessment_DocumentId" IS DISTINCT FROM NEW."Assessment_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."GradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradeLevelDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Assessment_DocumentId";
@@ -33649,6 +33689,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Assessment_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Assessment_DocumentId" IS DISTINCT FROM NEW."Assessment_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Author" IS DISTINCT FROM NEW."Author") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -33691,9 +33734,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Assessment_DocumentId" IS DISTINCT FROM NEW."Assessment_DocumentId" OR OLD."Assessment_AssessmentIdentifier" IS DISTINCT FROM NEW."Assessment_AssessmentIdentifier" OR OLD."Assessment_Namespace" IS DISTINCT FROM NEW."Assessment_Namespace" OR OLD."AssessmentBatteryPartName" IS DISTINCT FROM NEW."AssessmentBatteryPartName") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."AssessmentBatteryPartName" IS DISTINCT FROM NEW."AssessmentBatteryPartName" OR OLD."Assessment_AssessmentIdentifier" IS DISTINCT FROM NEW."Assessment_AssessmentIdentifier" OR OLD."Assessment_Namespace" IS DISTINCT FROM NEW."Assessment_Namespace") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -33718,6 +33766,9 @@ BEGIN
         WHERE "DocumentId" = OLD."AssessmentBatteryPart_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."AssessmentBatteryPart_DocumentId" IS DISTINCT FROM NEW."AssessmentBatteryPart_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ObjectiveAssessment_DocumentId" IS DISTINCT FROM NEW."ObjectiveAssessment_DocumentId" OR OLD."ObjectiveAssessment_AssessmentIdentifier" IS DISTINCT FROM NEW."ObjectiveAssessment_AssessmentIdentifier" OR OLD."ObjectiveAssessment_Namespace" IS DISTINCT FROM NEW."ObjectiveAssessment_Namespace" OR OLD."ObjectiveAssessment_IdentificationCode" IS DISTINCT FROM NEW."ObjectiveAssessment_IdentificationCode") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."AssessmentBatteryPart_DocumentId";
@@ -33739,6 +33790,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Assessment_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Assessment_DocumentId" IS DISTINCT FROM NEW."Assessment_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."AssessmentIdentificationSystemDescriptor_DescriptorId" IS DISTINCT FROM NEW."AssessmentIdentificationSystemDescriptor_DescriptorId" OR OLD."AssigningOrganizationIdentificationCode" IS DISTINCT FROM NEW."AssigningOrganizationIdentificationCode" OR OLD."IdentificationCode" IS DISTINCT FROM NEW."IdentificationCode") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -33781,9 +33835,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Assessment_DocumentId" IS DISTINCT FROM NEW."Assessment_DocumentId" OR OLD."Assessment_AssessmentIdentifier" IS DISTINCT FROM NEW."Assessment_AssessmentIdentifier" OR OLD."Assessment_Namespace" IS DISTINCT FROM NEW."Assessment_Namespace" OR OLD."AssessmentItemCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."AssessmentItemCategoryDescriptor_DescriptorId" OR OLD."AssessmentItemURI" IS DISTINCT FROM NEW."AssessmentItemURI" OR OLD."ExpectedTimeAssessed" IS DISTINCT FROM NEW."ExpectedTimeAssessed" OR OLD."IdentificationCode" IS DISTINCT FROM NEW."IdentificationCode" OR OLD."ItemText" IS DISTINCT FROM NEW."ItemText" OR OLD."MaxRawScore" IS DISTINCT FROM NEW."MaxRawScore" OR OLD."Nomenclature" IS DISTINCT FROM NEW."Nomenclature") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."Assessment_AssessmentIdentifier" IS DISTINCT FROM NEW."Assessment_AssessmentIdentifier" OR OLD."Assessment_Namespace" IS DISTINCT FROM NEW."Assessment_Namespace" OR OLD."IdentificationCode" IS DISTINCT FROM NEW."IdentificationCode") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -33808,6 +33867,9 @@ BEGIN
         WHERE "DocumentId" = OLD."AssessmentItem_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."AssessmentItem_DocumentId" IS DISTINCT FROM NEW."AssessmentItem_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."LearningStandard_DocumentId" IS DISTINCT FROM NEW."LearningStandard_DocumentId" OR OLD."LearningStandard_LearningStandardId" IS DISTINCT FROM NEW."LearningStandard_LearningStandardId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."AssessmentItem_DocumentId";
@@ -33829,6 +33891,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."AssessmentItem_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."AssessmentItem_DocumentId" IS DISTINCT FROM NEW."AssessmentItem_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."CorrectResponse" IS DISTINCT FROM NEW."CorrectResponse" OR OLD."ResponseDescription" IS DISTINCT FROM NEW."ResponseDescription" OR OLD."ResponseValue" IS DISTINCT FROM NEW."ResponseValue") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -33852,6 +33917,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Assessment_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Assessment_DocumentId" IS DISTINCT FROM NEW."Assessment_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."LanguageDescriptor_DescriptorId" IS DISTINCT FROM NEW."LanguageDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Assessment_DocumentId";
@@ -33873,6 +33941,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Assessment_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Assessment_DocumentId" IS DISTINCT FROM NEW."Assessment_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."AssessmentReportingMethodDescriptor_DescriptorId" IS DISTINCT FROM NEW."AssessmentReportingMethodDescriptor_DescriptorId" OR OLD."PerformanceLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."PerformanceLevelDescriptor_DescriptorId" OR OLD."ResultDatatypeTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ResultDatatypeTypeDescriptor_DescriptorId" OR OLD."MaximumScore" IS DISTINCT FROM NEW."MaximumScore" OR OLD."MinimumScore" IS DISTINCT FROM NEW."MinimumScore" OR OLD."PerformanceLevelIndicatorName" IS DISTINCT FROM NEW."PerformanceLevelIndicatorName") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -33896,6 +33967,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Assessment_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Assessment_DocumentId" IS DISTINCT FROM NEW."Assessment_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."AssessmentPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."AssessmentPeriodDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Assessment_DocumentId";
@@ -33917,6 +33991,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Assessment_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Assessment_DocumentId" IS DISTINCT FROM NEW."Assessment_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."PlatformTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."PlatformTypeDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -33940,6 +34017,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Assessment_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Assessment_DocumentId" IS DISTINCT FROM NEW."Assessment_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."SectionOrProgramChoiceProgram_DocumentId" IS DISTINCT FROM NEW."SectionOrProgramChoiceProgram_DocumentId" OR OLD."SectionOrProgramChoiceProgram_EducationOrganizationId" IS DISTINCT FROM NEW."SectionOrProgramChoiceProgram_EducationOrganizationId" OR OLD."SectionOrProgramChoiceProgram_ProgramName" IS DISTINCT FROM NEW."SectionOrProgramChoiceProgram_ProgramName" OR OLD."SectionOrProgramChoiceProgram_ProgramTypeDescriptor__106025b7ce" IS DISTINCT FROM NEW."SectionOrProgramChoiceProgram_ProgramTypeDescriptor__106025b7ce") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Assessment_DocumentId";
@@ -33961,6 +34041,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Assessment_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Assessment_DocumentId" IS DISTINCT FROM NEW."Assessment_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."AssessmentReportingMethodDescriptor_DescriptorId" IS DISTINCT FROM NEW."AssessmentReportingMethodDescriptor_DescriptorId" OR OLD."ResultDatatypeTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ResultDatatypeTypeDescriptor_DescriptorId" OR OLD."MaximumScore" IS DISTINCT FROM NEW."MaximumScore" OR OLD."MinimumScore" IS DISTINCT FROM NEW."MinimumScore") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -34003,9 +34086,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."AssessmentIdentifier_Unified" IS DISTINCT FROM NEW."AssessmentIdentifier_Unified" OR OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."Assessment_DocumentId" IS DISTINCT FROM NEW."Assessment_DocumentId" OR OLD."ObjectiveAssessment_DocumentId" IS DISTINCT FROM NEW."ObjectiveAssessment_DocumentId" OR OLD."ObjectiveAssessment_IdentificationCode" IS DISTINCT FROM NEW."ObjectiveAssessment_IdentificationCode" OR OLD."AssessmentReportingMethodDescriptor_DescriptorId" IS DISTINCT FROM NEW."AssessmentReportingMethodDescriptor_DescriptorId" OR OLD."MaximumScore" IS DISTINCT FROM NEW."MaximumScore" OR OLD."MinimumScore" IS DISTINCT FROM NEW."MinimumScore" OR OLD."ScoreRangeId" IS DISTINCT FROM NEW."ScoreRangeId") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."AssessmentIdentifier_Unified" IS DISTINCT FROM NEW."AssessmentIdentifier_Unified" OR OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."ScoreRangeId" IS DISTINCT FROM NEW."ScoreRangeId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -34030,6 +34118,9 @@ BEGIN
         WHERE "DocumentId" = OLD."AssessmentScoreRangeLearningStandard_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."AssessmentScoreRangeLearningStandard_DocumentId" IS DISTINCT FROM NEW."AssessmentScoreRangeLearningStandard_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."LearningStandard_DocumentId" IS DISTINCT FROM NEW."LearningStandard_DocumentId" OR OLD."LearningStandard_LearningStandardId" IS DISTINCT FROM NEW."LearningStandard_LearningStandardId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."AssessmentScoreRangeLearningStandard_DocumentId";
@@ -34051,6 +34142,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Assessment_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Assessment_DocumentId" IS DISTINCT FROM NEW."Assessment_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."SectionOrProgramChoiceSection_DocumentId" IS DISTINCT FROM NEW."SectionOrProgramChoiceSection_DocumentId" OR OLD."SectionOrProgramChoiceSection_LocalCourseCode" IS DISTINCT FROM NEW."SectionOrProgramChoiceSection_LocalCourseCode" OR OLD."SectionOrProgramChoiceSection_SchoolId" IS DISTINCT FROM NEW."SectionOrProgramChoiceSection_SchoolId" OR OLD."SectionOrProgramChoiceSection_SchoolYear" IS DISTINCT FROM NEW."SectionOrProgramChoiceSection_SchoolYear" OR OLD."SectionOrProgramChoiceSection_SessionName" IS DISTINCT FROM NEW."SectionOrProgramChoiceSection_SessionName" OR OLD."SectionOrProgramChoiceSection_SectionIdentifier" IS DISTINCT FROM NEW."SectionOrProgramChoiceSection_SectionIdentifier") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -34093,9 +34187,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."CodeName" IS DISTINCT FROM NEW."CodeName" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -34119,6 +34218,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."BalanceSheetDimension_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."BalanceSheetDimension_DocumentId" IS DISTINCT FROM NEW."BalanceSheetDimension_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ReportingTagDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReportingTagDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -34161,9 +34263,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId" OR OLD."AlternateDayName" IS DISTINCT FROM NEW."AlternateDayName" OR OLD."BellScheduleName" IS DISTINCT FROM NEW."BellScheduleName" OR OLD."EndTime" IS DISTINCT FROM NEW."EndTime" OR OLD."StartTime" IS DISTINCT FROM NEW."StartTime" OR OLD."TotalInstructionalTime" IS DISTINCT FROM NEW."TotalInstructionalTime") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."BellScheduleName" IS DISTINCT FROM NEW."BellScheduleName" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -34188,6 +34295,9 @@ BEGIN
         WHERE "DocumentId" = OLD."BellSchedule_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."BellSchedule_DocumentId" IS DISTINCT FROM NEW."BellSchedule_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ClassPeriod_DocumentId" IS DISTINCT FROM NEW."ClassPeriod_DocumentId" OR OLD."ClassPeriod_ClassPeriodName" IS DISTINCT FROM NEW."ClassPeriod_ClassPeriodName" OR OLD."ClassPeriod_SchoolId" IS DISTINCT FROM NEW."ClassPeriod_SchoolId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."BellSchedule_DocumentId";
@@ -34210,6 +34320,9 @@ BEGIN
         WHERE "DocumentId" = OLD."BellSchedule_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."BellSchedule_DocumentId" IS DISTINCT FROM NEW."BellSchedule_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Date" IS DISTINCT FROM NEW."Date") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."BellSchedule_DocumentId";
@@ -34231,6 +34344,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."BellSchedule_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."BellSchedule_DocumentId" IS DISTINCT FROM NEW."BellSchedule_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."GradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradeLevelDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -34273,9 +34389,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolYear_DocumentId" IS DISTINCT FROM NEW."SchoolYear_DocumentId" OR OLD."SchoolYear_SchoolYear" IS DISTINCT FROM NEW."SchoolYear_SchoolYear" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId" OR OLD."CalendarTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."CalendarTypeDescriptor_DescriptorId" OR OLD."CalendarCode" IS DISTINCT FROM NEW."CalendarCode") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."CalendarCode" IS DISTINCT FROM NEW."CalendarCode" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId" OR OLD."SchoolYear_SchoolYear" IS DISTINCT FROM NEW."SchoolYear_SchoolYear") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -34319,9 +34440,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Calendar_DocumentId" IS DISTINCT FROM NEW."Calendar_DocumentId" OR OLD."Calendar_CalendarCode" IS DISTINCT FROM NEW."Calendar_CalendarCode" OR OLD."Calendar_SchoolId" IS DISTINCT FROM NEW."Calendar_SchoolId" OR OLD."Calendar_SchoolYear" IS DISTINCT FROM NEW."Calendar_SchoolYear" OR OLD."Date" IS DISTINCT FROM NEW."Date") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."Calendar_CalendarCode" IS DISTINCT FROM NEW."Calendar_CalendarCode" OR OLD."Calendar_SchoolId" IS DISTINCT FROM NEW."Calendar_SchoolId" OR OLD."Calendar_SchoolYear" IS DISTINCT FROM NEW."Calendar_SchoolYear" OR OLD."Date" IS DISTINCT FROM NEW."Date") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -34346,6 +34472,9 @@ BEGIN
         WHERE "DocumentId" = OLD."CalendarDate_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."CalendarDate_DocumentId" IS DISTINCT FROM NEW."CalendarDate_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."CalendarEventDescriptor_DescriptorId" IS DISTINCT FROM NEW."CalendarEventDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."CalendarDate_DocumentId";
@@ -34367,6 +34496,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Calendar_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Calendar_DocumentId" IS DISTINCT FROM NEW."Calendar_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."GradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradeLevelDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -34409,9 +34541,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."FiscalYear_Unified" IS DISTINCT FROM NEW."FiscalYear_Unified" OR OLD."BalanceSheetBalanceSheetDimension_DocumentId" IS DISTINCT FROM NEW."BalanceSheetBalanceSheetDimension_DocumentId" OR OLD."BalanceSheetBalanceSheetDimension_Code" IS DISTINCT FROM NEW."BalanceSheetBalanceSheetDimension_Code" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."FunctionFunctionDimension_DocumentId" IS DISTINCT FROM NEW."FunctionFunctionDimension_DocumentId" OR OLD."FunctionFunctionDimension_Code" IS DISTINCT FROM NEW."FunctionFunctionDimension_Code" OR OLD."FundFundDimension_DocumentId" IS DISTINCT FROM NEW."FundFundDimension_DocumentId" OR OLD."FundFundDimension_Code" IS DISTINCT FROM NEW."FundFundDimension_Code" OR OLD."ObjectObjectDimension_DocumentId" IS DISTINCT FROM NEW."ObjectObjectDimension_DocumentId" OR OLD."ObjectObjectDimension_Code" IS DISTINCT FROM NEW."ObjectObjectDimension_Code" OR OLD."OperationalUnitOperationalUnitDimension_DocumentId" IS DISTINCT FROM NEW."OperationalUnitOperationalUnitDimension_DocumentId" OR OLD."OperationalUnitOperationalUnitDimension_Code" IS DISTINCT FROM NEW."OperationalUnitOperationalUnitDimension_Code" OR OLD."ProgramProgramDimension_DocumentId" IS DISTINCT FROM NEW."ProgramProgramDimension_DocumentId" OR OLD."ProgramProgramDimension_Code" IS DISTINCT FROM NEW."ProgramProgramDimension_Code" OR OLD."ProjectProjectDimension_DocumentId" IS DISTINCT FROM NEW."ProjectProjectDimension_DocumentId" OR OLD."ProjectProjectDimension_Code" IS DISTINCT FROM NEW."ProjectProjectDimension_Code" OR OLD."SourceSourceDimension_DocumentId" IS DISTINCT FROM NEW."SourceSourceDimension_DocumentId" OR OLD."SourceSourceDimension_Code" IS DISTINCT FROM NEW."SourceSourceDimension_Code" OR OLD."AccountTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AccountTypeDescriptor_DescriptorId" OR OLD."AccountIdentifier" IS DISTINCT FROM NEW."AccountIdentifier" OR OLD."AccountName" IS DISTINCT FROM NEW."AccountName") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."AccountIdentifier" IS DISTINCT FROM NEW."AccountIdentifier" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."FiscalYear_Unified" IS DISTINCT FROM NEW."FiscalYear_Unified") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -34435,6 +34572,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."ChartOfAccount_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."ChartOfAccount_DocumentId" IS DISTINCT FROM NEW."ChartOfAccount_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ReportingTagDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReportingTagDescriptor_DescriptorId" OR OLD."TagValue" IS DISTINCT FROM NEW."TagValue") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -34477,9 +34617,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId" OR OLD."ClassPeriodName" IS DISTINCT FROM NEW."ClassPeriodName" OR OLD."OfficialAttendancePeriod" IS DISTINCT FROM NEW."OfficialAttendancePeriod") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."ClassPeriodName" IS DISTINCT FROM NEW."ClassPeriodName" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -34503,6 +34648,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."ClassPeriod_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."ClassPeriod_DocumentId" IS DISTINCT FROM NEW."ClassPeriod_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."EndTime" IS DISTINCT FROM NEW."EndTime" OR OLD."StartTime" IS DISTINCT FROM NEW."StartTime") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -34545,9 +34693,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."AcademicSubjectDescriptor_DescriptorId" IS DISTINCT FROM NEW."AcademicSubjectDescriptor_DescriptorId" OR OLD."CohortScopeDescriptor_DescriptorId" IS DISTINCT FROM NEW."CohortScopeDescriptor_DescriptorId" OR OLD."CohortTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."CohortTypeDescriptor_DescriptorId" OR OLD."CohortDescription" IS DISTINCT FROM NEW."CohortDescription" OR OLD."CohortIdentifier" IS DISTINCT FROM NEW."CohortIdentifier") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."CohortIdentifier" IS DISTINCT FROM NEW."CohortIdentifier" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -34571,6 +34724,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Cohort_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Cohort_DocumentId" IS DISTINCT FROM NEW."Cohort_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ProgramProgram_DocumentId" IS DISTINCT FROM NEW."ProgramProgram_DocumentId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -34666,9 +34822,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."OperationalStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."OperationalStatusDescriptor_DescriptorId" OR OLD."CommunityOrganizationId" IS DISTINCT FROM NEW."CommunityOrganizationId" OR OLD."NameOfInstitution" IS DISTINCT FROM NEW."NameOfInstitution" OR OLD."ShortNameOfInstitution" IS DISTINCT FROM NEW."ShortNameOfInstitution" OR OLD."WebSite" IS DISTINCT FROM NEW."WebSite") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."CommunityOrganizationId" IS DISTINCT FROM NEW."CommunityOrganizationId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -34693,6 +34854,9 @@ BEGIN
         WHERE "DocumentId" = OLD."CommunityOrganization_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."CommunityOrganization_DocumentId" IS DISTINCT FROM NEW."CommunityOrganization_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."AddressTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AddressTypeDescriptor_DescriptorId" OR OLD."LocaleDescriptor_DescriptorId" IS DISTINCT FROM NEW."LocaleDescriptor_DescriptorId" OR OLD."StateAbbreviationDescriptor_DescriptorId" IS DISTINCT FROM NEW."StateAbbreviationDescriptor_DescriptorId" OR OLD."ApartmentRoomSuiteNumber" IS DISTINCT FROM NEW."ApartmentRoomSuiteNumber" OR OLD."BuildingSiteNumber" IS DISTINCT FROM NEW."BuildingSiteNumber" OR OLD."City" IS DISTINCT FROM NEW."City" OR OLD."CongressionalDistrict" IS DISTINCT FROM NEW."CongressionalDistrict" OR OLD."CountyFIPSCode" IS DISTINCT FROM NEW."CountyFIPSCode" OR OLD."DoNotPublishIndicator" IS DISTINCT FROM NEW."DoNotPublishIndicator" OR OLD."Latitude" IS DISTINCT FROM NEW."Latitude" OR OLD."Longitude" IS DISTINCT FROM NEW."Longitude" OR OLD."NameOfCounty" IS DISTINCT FROM NEW."NameOfCounty" OR OLD."PostalCode" IS DISTINCT FROM NEW."PostalCode" OR OLD."StreetNumberName" IS DISTINCT FROM NEW."StreetNumberName") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."CommunityOrganization_DocumentId";
@@ -34714,6 +34878,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."CommunityOrganization_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."CommunityOrganization_DocumentId" IS DISTINCT FROM NEW."CommunityOrganization_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -34737,6 +34904,9 @@ BEGIN
         WHERE "DocumentId" = OLD."CommunityOrganization_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."CommunityOrganization_DocumentId" IS DISTINCT FROM NEW."CommunityOrganization_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."EducationOrganizationCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."EducationOrganizationCategoryDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."CommunityOrganization_DocumentId";
@@ -34758,6 +34928,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."CommunityOrganization_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."CommunityOrganization_DocumentId" IS DISTINCT FROM NEW."CommunityOrganization_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" IS DISTINCT FROM NEW."EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" OR OLD."IdentificationCode" IS DISTINCT FROM NEW."IdentificationCode") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -34781,6 +34954,9 @@ BEGIN
         WHERE "DocumentId" = OLD."CommunityOrganization_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."CommunityOrganization_DocumentId" IS DISTINCT FROM NEW."CommunityOrganization_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."IndicatorDescriptor_DescriptorId" IS DISTINCT FROM NEW."IndicatorDescriptor_DescriptorId" OR OLD."IndicatorGroupDescriptor_DescriptorId" IS DISTINCT FROM NEW."IndicatorGroupDescriptor_DescriptorId" OR OLD."IndicatorLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."IndicatorLevelDescriptor_DescriptorId" OR OLD."DesignatedBy" IS DISTINCT FROM NEW."DesignatedBy" OR OLD."IndicatorValue" IS DISTINCT FROM NEW."IndicatorValue") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."CommunityOrganization_DocumentId";
@@ -34802,6 +34978,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."CommunityOrganization_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."CommunityOrganization_DocumentId" IS DISTINCT FROM NEW."CommunityOrganization_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -34825,6 +35004,9 @@ BEGIN
         WHERE "DocumentId" = OLD."CommunityOrganization_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."CommunityOrganization_DocumentId" IS DISTINCT FROM NEW."CommunityOrganization_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."InstitutionTelephoneNumberTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."InstitutionTelephoneNumberTypeDescriptor_DescriptorId" OR OLD."TelephoneNumber" IS DISTINCT FROM NEW."TelephoneNumber") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."CommunityOrganization_DocumentId";
@@ -34846,6 +35028,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."CommunityOrganization_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."CommunityOrganization_DocumentId" IS DISTINCT FROM NEW."CommunityOrganization_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."AddressTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AddressTypeDescriptor_DescriptorId" OR OLD."CountryDescriptor_DescriptorId" IS DISTINCT FROM NEW."CountryDescriptor_DescriptorId" OR OLD."AddressLine1" IS DISTINCT FROM NEW."AddressLine1" OR OLD."AddressLine2" IS DISTINCT FROM NEW."AddressLine2" OR OLD."AddressLine3" IS DISTINCT FROM NEW."AddressLine3" OR OLD."AddressLine4" IS DISTINCT FROM NEW."AddressLine4" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."Latitude" IS DISTINCT FROM NEW."Latitude" OR OLD."Longitude" IS DISTINCT FROM NEW."Longitude") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -35025,9 +35210,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."CommunityOrganization_DocumentId" IS DISTINCT FROM NEW."CommunityOrganization_DocumentId" OR OLD."CommunityOrganization_CommunityOrganizationId" IS DISTINCT FROM NEW."CommunityOrganization_CommunityOrganizationId" OR OLD."OperationalStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."OperationalStatusDescriptor_DescriptorId" OR OLD."ProviderCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProviderCategoryDescriptor_DescriptorId" OR OLD."ProviderProfitabilityDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProviderProfitabilityDescriptor_DescriptorId" OR OLD."ProviderStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProviderStatusDescriptor_DescriptorId" OR OLD."CommunityProviderId" IS DISTINCT FROM NEW."CommunityProviderId" OR OLD."LicenseExemptIndicator" IS DISTINCT FROM NEW."LicenseExemptIndicator" OR OLD."NameOfInstitution" IS DISTINCT FROM NEW."NameOfInstitution" OR OLD."SchoolIndicator" IS DISTINCT FROM NEW."SchoolIndicator" OR OLD."ShortNameOfInstitution" IS DISTINCT FROM NEW."ShortNameOfInstitution" OR OLD."WebSite" IS DISTINCT FROM NEW."WebSite") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."CommunityProviderId" IS DISTINCT FROM NEW."CommunityProviderId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -35052,6 +35242,9 @@ BEGIN
         WHERE "DocumentId" = OLD."CommunityProvider_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."CommunityProvider_DocumentId" IS DISTINCT FROM NEW."CommunityProvider_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."AddressTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AddressTypeDescriptor_DescriptorId" OR OLD."LocaleDescriptor_DescriptorId" IS DISTINCT FROM NEW."LocaleDescriptor_DescriptorId" OR OLD."StateAbbreviationDescriptor_DescriptorId" IS DISTINCT FROM NEW."StateAbbreviationDescriptor_DescriptorId" OR OLD."ApartmentRoomSuiteNumber" IS DISTINCT FROM NEW."ApartmentRoomSuiteNumber" OR OLD."BuildingSiteNumber" IS DISTINCT FROM NEW."BuildingSiteNumber" OR OLD."City" IS DISTINCT FROM NEW."City" OR OLD."CongressionalDistrict" IS DISTINCT FROM NEW."CongressionalDistrict" OR OLD."CountyFIPSCode" IS DISTINCT FROM NEW."CountyFIPSCode" OR OLD."DoNotPublishIndicator" IS DISTINCT FROM NEW."DoNotPublishIndicator" OR OLD."Latitude" IS DISTINCT FROM NEW."Latitude" OR OLD."Longitude" IS DISTINCT FROM NEW."Longitude" OR OLD."NameOfCounty" IS DISTINCT FROM NEW."NameOfCounty" OR OLD."PostalCode" IS DISTINCT FROM NEW."PostalCode" OR OLD."StreetNumberName" IS DISTINCT FROM NEW."StreetNumberName") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."CommunityProvider_DocumentId";
@@ -35073,6 +35266,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."CommunityProvider_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."CommunityProvider_DocumentId" IS DISTINCT FROM NEW."CommunityProvider_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -35096,6 +35292,9 @@ BEGIN
         WHERE "DocumentId" = OLD."CommunityProvider_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."CommunityProvider_DocumentId" IS DISTINCT FROM NEW."CommunityProvider_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."EducationOrganizationCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."EducationOrganizationCategoryDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."CommunityProvider_DocumentId";
@@ -35117,6 +35316,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."CommunityProvider_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."CommunityProvider_DocumentId" IS DISTINCT FROM NEW."CommunityProvider_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" IS DISTINCT FROM NEW."EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" OR OLD."IdentificationCode" IS DISTINCT FROM NEW."IdentificationCode") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -35140,6 +35342,9 @@ BEGIN
         WHERE "DocumentId" = OLD."CommunityProvider_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."CommunityProvider_DocumentId" IS DISTINCT FROM NEW."CommunityProvider_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."IndicatorDescriptor_DescriptorId" IS DISTINCT FROM NEW."IndicatorDescriptor_DescriptorId" OR OLD."IndicatorGroupDescriptor_DescriptorId" IS DISTINCT FROM NEW."IndicatorGroupDescriptor_DescriptorId" OR OLD."IndicatorLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."IndicatorLevelDescriptor_DescriptorId" OR OLD."DesignatedBy" IS DISTINCT FROM NEW."DesignatedBy" OR OLD."IndicatorValue" IS DISTINCT FROM NEW."IndicatorValue") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."CommunityProvider_DocumentId";
@@ -35161,6 +35366,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."CommunityProvider_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."CommunityProvider_DocumentId" IS DISTINCT FROM NEW."CommunityProvider_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -35184,6 +35392,9 @@ BEGIN
         WHERE "DocumentId" = OLD."CommunityProvider_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."CommunityProvider_DocumentId" IS DISTINCT FROM NEW."CommunityProvider_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."InstitutionTelephoneNumberTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."InstitutionTelephoneNumberTypeDescriptor_DescriptorId" OR OLD."TelephoneNumber" IS DISTINCT FROM NEW."TelephoneNumber") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."CommunityProvider_DocumentId";
@@ -35205,6 +35416,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."CommunityProvider_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."CommunityProvider_DocumentId" IS DISTINCT FROM NEW."CommunityProvider_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."AddressTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AddressTypeDescriptor_DescriptorId" OR OLD."CountryDescriptor_DescriptorId" IS DISTINCT FROM NEW."CountryDescriptor_DescriptorId" OR OLD."AddressLine1" IS DISTINCT FROM NEW."AddressLine1" OR OLD."AddressLine2" IS DISTINCT FROM NEW."AddressLine2" OR OLD."AddressLine3" IS DISTINCT FROM NEW."AddressLine3" OR OLD."AddressLine4" IS DISTINCT FROM NEW."AddressLine4" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."Latitude" IS DISTINCT FROM NEW."Latitude" OR OLD."Longitude" IS DISTINCT FROM NEW."Longitude") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -35247,9 +35461,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."CommunityProvider_DocumentId" IS DISTINCT FROM NEW."CommunityProvider_DocumentId" OR OLD."CommunityProvider_CommunityProviderId" IS DISTINCT FROM NEW."CommunityProvider_CommunityProviderId" OR OLD."LicenseStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."LicenseStatusDescriptor_DescriptorId" OR OLD."LicenseTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."LicenseTypeDescriptor_DescriptorId" OR OLD."AuthorizedFacilityCapacity" IS DISTINCT FROM NEW."AuthorizedFacilityCapacity" OR OLD."LicenseEffectiveDate" IS DISTINCT FROM NEW."LicenseEffectiveDate" OR OLD."LicenseExpirationDate" IS DISTINCT FROM NEW."LicenseExpirationDate" OR OLD."LicenseIdentifier" IS DISTINCT FROM NEW."LicenseIdentifier" OR OLD."LicenseIssueDate" IS DISTINCT FROM NEW."LicenseIssueDate" OR OLD."LicensingOrganization" IS DISTINCT FROM NEW."LicensingOrganization" OR OLD."OldestAgeAuthorizedToServe" IS DISTINCT FROM NEW."OldestAgeAuthorizedToServe" OR OLD."YoungestAgeAuthorizedToServe" IS DISTINCT FROM NEW."YoungestAgeAuthorizedToServe") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."CommunityProvider_CommunityProviderId" IS DISTINCT FROM NEW."CommunityProvider_CommunityProviderId" OR OLD."LicenseIdentifier" IS DISTINCT FROM NEW."LicenseIdentifier" OR OLD."LicensingOrganization" IS DISTINCT FROM NEW."LicensingOrganization") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -35293,9 +35512,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ObjectiveGradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."ObjectiveGradeLevelDescriptor_DescriptorId" OR OLD."CompetencyObjectiveId" IS DISTINCT FROM NEW."CompetencyObjectiveId" OR OLD."Description" IS DISTINCT FROM NEW."Description" OR OLD."Objective" IS DISTINCT FROM NEW."Objective" OR OLD."SuccessCriteria" IS DISTINCT FROM NEW."SuccessCriteria") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."Objective" IS DISTINCT FROM NEW."Objective" OR OLD."ObjectiveGradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."ObjectiveGradeLevelDescriptor_DescriptorId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -35339,9 +35563,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Person_DocumentId" IS DISTINCT FROM NEW."Person_DocumentId" OR OLD."Person_PersonId" IS DISTINCT FROM NEW."Person_PersonId" OR OLD."Person_SourceSystemDescriptor_DescriptorId" IS DISTINCT FROM NEW."Person_SourceSystemDescriptor_DescriptorId" OR OLD."HighestCompletedLevelOfEducationDescriptor_DescriptorId" IS DISTINCT FROM NEW."HighestCompletedLevelOfEducationDescriptor_DescriptorId" OR OLD."SexDescriptor_DescriptorId" IS DISTINCT FROM NEW."SexDescriptor_DescriptorId" OR OLD."ContactUniqueId" IS DISTINCT FROM NEW."ContactUniqueId" OR OLD."FirstName" IS DISTINCT FROM NEW."FirstName" OR OLD."GenderIdentity" IS DISTINCT FROM NEW."GenderIdentity" OR OLD."GenerationCodeSuffix" IS DISTINCT FROM NEW."GenerationCodeSuffix" OR OLD."LastSurname" IS DISTINCT FROM NEW."LastSurname" OR OLD."LoginId" IS DISTINCT FROM NEW."LoginId" OR OLD."MaidenName" IS DISTINCT FROM NEW."MaidenName" OR OLD."MiddleName" IS DISTINCT FROM NEW."MiddleName" OR OLD."PersonalTitlePrefix" IS DISTINCT FROM NEW."PersonalTitlePrefix" OR OLD."PreferredFirstName" IS DISTINCT FROM NEW."PreferredFirstName" OR OLD."PreferredLastSurname" IS DISTINCT FROM NEW."PreferredLastSurname") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."ContactUniqueId" IS DISTINCT FROM NEW."ContactUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -35366,6 +35595,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Contact_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Contact_DocumentId" IS DISTINCT FROM NEW."Contact_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."AddressTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AddressTypeDescriptor_DescriptorId" OR OLD."LocaleDescriptor_DescriptorId" IS DISTINCT FROM NEW."LocaleDescriptor_DescriptorId" OR OLD."StateAbbreviationDescriptor_DescriptorId" IS DISTINCT FROM NEW."StateAbbreviationDescriptor_DescriptorId" OR OLD."ApartmentRoomSuiteNumber" IS DISTINCT FROM NEW."ApartmentRoomSuiteNumber" OR OLD."BuildingSiteNumber" IS DISTINCT FROM NEW."BuildingSiteNumber" OR OLD."City" IS DISTINCT FROM NEW."City" OR OLD."CongressionalDistrict" IS DISTINCT FROM NEW."CongressionalDistrict" OR OLD."CountyFIPSCode" IS DISTINCT FROM NEW."CountyFIPSCode" OR OLD."DoNotPublishIndicator" IS DISTINCT FROM NEW."DoNotPublishIndicator" OR OLD."Latitude" IS DISTINCT FROM NEW."Latitude" OR OLD."Longitude" IS DISTINCT FROM NEW."Longitude" OR OLD."NameOfCounty" IS DISTINCT FROM NEW."NameOfCounty" OR OLD."PostalCode" IS DISTINCT FROM NEW."PostalCode" OR OLD."StreetNumberName" IS DISTINCT FROM NEW."StreetNumberName") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Contact_DocumentId";
@@ -35387,6 +35619,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Contact_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Contact_DocumentId" IS DISTINCT FROM NEW."Contact_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -35410,6 +35645,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Contact_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Contact_DocumentId" IS DISTINCT FROM NEW."Contact_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ElectronicMailTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ElectronicMailTypeDescriptor_DescriptorId" OR OLD."DoNotPublishIndicator" IS DISTINCT FROM NEW."DoNotPublishIndicator" OR OLD."ElectronicMailAddress" IS DISTINCT FROM NEW."ElectronicMailAddress" OR OLD."PrimaryEmailAddressIndicator" IS DISTINCT FROM NEW."PrimaryEmailAddressIndicator") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Contact_DocumentId";
@@ -35431,6 +35669,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Contact_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Contact_DocumentId" IS DISTINCT FROM NEW."Contact_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."AddressTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AddressTypeDescriptor_DescriptorId" OR OLD."CountryDescriptor_DescriptorId" IS DISTINCT FROM NEW."CountryDescriptor_DescriptorId" OR OLD."AddressLine1" IS DISTINCT FROM NEW."AddressLine1" OR OLD."AddressLine2" IS DISTINCT FROM NEW."AddressLine2" OR OLD."AddressLine3" IS DISTINCT FROM NEW."AddressLine3" OR OLD."AddressLine4" IS DISTINCT FROM NEW."AddressLine4" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."Latitude" IS DISTINCT FROM NEW."Latitude" OR OLD."Longitude" IS DISTINCT FROM NEW."Longitude") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -35454,6 +35695,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Contact_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Contact_DocumentId" IS DISTINCT FROM NEW."Contact_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."LanguageDescriptor_DescriptorId" IS DISTINCT FROM NEW."LanguageDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Contact_DocumentId";
@@ -35475,6 +35719,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Contact_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Contact_DocumentId" IS DISTINCT FROM NEW."Contact_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."LanguageUseDescriptor_DescriptorId" IS DISTINCT FROM NEW."LanguageUseDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -35498,6 +35745,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Contact_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Contact_DocumentId" IS DISTINCT FROM NEW."Contact_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."OtherNameTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."OtherNameTypeDescriptor_DescriptorId" OR OLD."FirstName" IS DISTINCT FROM NEW."FirstName" OR OLD."GenerationCodeSuffix" IS DISTINCT FROM NEW."GenerationCodeSuffix" OR OLD."LastSurname" IS DISTINCT FROM NEW."LastSurname" OR OLD."MiddleName" IS DISTINCT FROM NEW."MiddleName" OR OLD."PersonalTitlePrefix" IS DISTINCT FROM NEW."PersonalTitlePrefix") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Contact_DocumentId";
@@ -35520,6 +35770,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Contact_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Contact_DocumentId" IS DISTINCT FROM NEW."Contact_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."IdentificationDocumentUseDescriptor_DescriptorId" IS DISTINCT FROM NEW."IdentificationDocumentUseDescriptor_DescriptorId" OR OLD."IssuerCountryDescriptor_DescriptorId" IS DISTINCT FROM NEW."IssuerCountryDescriptor_DescriptorId" OR OLD."PersonalInformationVerificationDescriptor_DescriptorId" IS DISTINCT FROM NEW."PersonalInformationVerificationDescriptor_DescriptorId" OR OLD."PersonalDocumentExpirationDate" IS DISTINCT FROM NEW."PersonalDocumentExpirationDate" OR OLD."PersonalDocumentTitle" IS DISTINCT FROM NEW."PersonalDocumentTitle" OR OLD."PersonalIssuerDocumentIdentificationCode" IS DISTINCT FROM NEW."PersonalIssuerDocumentIdentificationCode" OR OLD."PersonalIssuerName" IS DISTINCT FROM NEW."PersonalIssuerName") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Contact_DocumentId";
@@ -35541,6 +35794,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Contact_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Contact_DocumentId" IS DISTINCT FROM NEW."Contact_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."TelephoneNumberTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."TelephoneNumberTypeDescriptor_DescriptorId" OR OLD."DoNotPublishIndicator" IS DISTINCT FROM NEW."DoNotPublishIndicator" OR OLD."OrderOfPriority" IS DISTINCT FROM NEW."OrderOfPriority" OR OLD."TelephoneNumber" IS DISTINCT FROM NEW."TelephoneNumber" OR OLD."TextMessageCapabilityIndicator" IS DISTINCT FROM NEW."TextMessageCapabilityIndicator") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -35583,9 +35839,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."CareerPathwayDescriptor_DescriptorId" IS DISTINCT FROM NEW."CareerPathwayDescriptor_DescriptorId" OR OLD."CourseDefinedByDescriptor_DescriptorId" IS DISTINCT FROM NEW."CourseDefinedByDescriptor_DescriptorId" OR OLD."CourseGPAApplicabilityDescriptor_DescriptorId" IS DISTINCT FROM NEW."CourseGPAApplicabilityDescriptor_DescriptorId" OR OLD."MaximumAvailableCreditTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."MaximumAvailableCreditTypeDescriptor_DescriptorId" OR OLD."MinimumAvailableCreditTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."MinimumAvailableCreditTypeDescriptor_DescriptorId" OR OLD."CourseCode" IS DISTINCT FROM NEW."CourseCode" OR OLD."CourseDescription" IS DISTINCT FROM NEW."CourseDescription" OR OLD."CourseTitle" IS DISTINCT FROM NEW."CourseTitle" OR OLD."DateCourseAdopted" IS DISTINCT FROM NEW."DateCourseAdopted" OR OLD."HighSchoolCourseRequirement" IS DISTINCT FROM NEW."HighSchoolCourseRequirement" OR OLD."MaxCompletionsForCredit" IS DISTINCT FROM NEW."MaxCompletionsForCredit" OR OLD."MaximumAvailableCreditConversion" IS DISTINCT FROM NEW."MaximumAvailableCreditConversion" OR OLD."MaximumAvailableCredits" IS DISTINCT FROM NEW."MaximumAvailableCredits" OR OLD."MinimumAvailableCreditConversion" IS DISTINCT FROM NEW."MinimumAvailableCreditConversion" OR OLD."MinimumAvailableCredits" IS DISTINCT FROM NEW."MinimumAvailableCredits" OR OLD."NumberOfParts" IS DISTINCT FROM NEW."NumberOfParts" OR OLD."TimeRequiredForCompletion" IS DISTINCT FROM NEW."TimeRequiredForCompletion") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."CourseCode" IS DISTINCT FROM NEW."CourseCode" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -35610,6 +35871,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Course_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Course_DocumentId" IS DISTINCT FROM NEW."Course_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."AcademicSubjectDescriptor_DescriptorId" IS DISTINCT FROM NEW."AcademicSubjectDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Course_DocumentId";
@@ -35631,6 +35895,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Course_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Course_DocumentId" IS DISTINCT FROM NEW."Course_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."CompetencyLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."CompetencyLevelDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -35654,6 +35921,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Course_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Course_DocumentId" IS DISTINCT FROM NEW."Course_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."CourseIdentificationSystemDescriptor_DescriptorId" IS DISTINCT FROM NEW."CourseIdentificationSystemDescriptor_DescriptorId" OR OLD."AssigningOrganizationIdentificationCode" IS DISTINCT FROM NEW."AssigningOrganizationIdentificationCode" OR OLD."CourseCatalogURL" IS DISTINCT FROM NEW."CourseCatalogURL" OR OLD."IdentificationCode" IS DISTINCT FROM NEW."IdentificationCode") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Course_DocumentId";
@@ -35675,6 +35945,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Course_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Course_DocumentId" IS DISTINCT FROM NEW."Course_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."LearningStandard_DocumentId" IS DISTINCT FROM NEW."LearningStandard_DocumentId" OR OLD."LearningStandard_LearningStandardId" IS DISTINCT FROM NEW."LearningStandard_LearningStandardId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -35698,6 +35971,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Course_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Course_DocumentId" IS DISTINCT FROM NEW."Course_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."CourseLevelCharacteristicDescriptor_DescriptorId" IS DISTINCT FROM NEW."CourseLevelCharacteristicDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Course_DocumentId";
@@ -35719,6 +35995,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Course_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Course_DocumentId" IS DISTINCT FROM NEW."Course_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."GradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradeLevelDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -35761,9 +36040,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."Course_DocumentId" IS DISTINCT FROM NEW."Course_DocumentId" OR OLD."Course_CourseCode" IS DISTINCT FROM NEW."Course_CourseCode" OR OLD."Course_EducationOrganizationId" IS DISTINCT FROM NEW."Course_EducationOrganizationId" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."Session_DocumentId" IS DISTINCT FROM NEW."Session_DocumentId" OR OLD."Session_SchoolYear" IS DISTINCT FROM NEW."Session_SchoolYear" OR OLD."Session_SessionName" IS DISTINCT FROM NEW."Session_SessionName" OR OLD."InstructionalTimePlanned" IS DISTINCT FROM NEW."InstructionalTimePlanned" OR OLD."LocalCourseCode" IS DISTINCT FROM NEW."LocalCourseCode" OR OLD."LocalCourseTitle" IS DISTINCT FROM NEW."LocalCourseTitle") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."LocalCourseCode" IS DISTINCT FROM NEW."LocalCourseCode" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."Session_SchoolYear" IS DISTINCT FROM NEW."Session_SchoolYear" OR OLD."Session_SessionName" IS DISTINCT FROM NEW."Session_SessionName") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -35788,6 +36072,9 @@ BEGIN
         WHERE "DocumentId" = OLD."CourseOffering_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."CourseOffering_DocumentId" IS DISTINCT FROM NEW."CourseOffering_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."CourseLevelCharacteristicDescriptor_DescriptorId" IS DISTINCT FROM NEW."CourseLevelCharacteristicDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."CourseOffering_DocumentId";
@@ -35810,6 +36097,9 @@ BEGIN
         WHERE "DocumentId" = OLD."CourseOffering_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."CourseOffering_DocumentId" IS DISTINCT FROM NEW."CourseOffering_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."CurriculumUsedDescriptor_DescriptorId" IS DISTINCT FROM NEW."CurriculumUsedDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."CourseOffering_DocumentId";
@@ -35831,6 +36121,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."CourseOffering_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."CourseOffering_DocumentId" IS DISTINCT FROM NEW."CourseOffering_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."GradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradeLevelDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -35873,9 +36166,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."CourseCourse_DocumentId" IS DISTINCT FROM NEW."CourseCourse_DocumentId" OR OLD."CourseCourse_CourseCode" IS DISTINCT FROM NEW."CourseCourse_CourseCode" OR OLD."CourseCourse_EducationOrganizationId" IS DISTINCT FROM NEW."CourseCourse_EducationOrganizationId" OR OLD."ExternalEducationOrganization_DocumentId" IS DISTINCT FROM NEW."ExternalEducationOrganization_DocumentId" OR OLD."ExternalEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."ExternalEducationOrganization_EducationOrganizationId" OR OLD."ResponsibleTeacherStaff_DocumentId" IS DISTINCT FROM NEW."ResponsibleTeacherStaff_DocumentId" OR OLD."ResponsibleTeacherStaff_StaffUniqueId" IS DISTINCT FROM NEW."ResponsibleTeacherStaff_StaffUniqueId" OR OLD."StudentAcademicRecord_DocumentId" IS DISTINCT FROM NEW."StudentAcademicRecord_DocumentId" OR OLD."StudentAcademicRecord_EducationOrganizationId" IS DISTINCT FROM NEW."StudentAcademicRecord_EducationOrganizationId" OR OLD."StudentAcademicRecord_SchoolYear" IS DISTINCT FROM NEW."StudentAcademicRecord_SchoolYear" OR OLD."StudentAcademicRecord_StudentUniqueId" IS DISTINCT FROM NEW."StudentAcademicRecord_StudentUniqueId" OR OLD."StudentAcademicRecord_TermDescriptor_DescriptorId" IS DISTINCT FROM NEW."StudentAcademicRecord_TermDescriptor_DescriptorId" OR OLD."AttemptedCreditTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AttemptedCreditTypeDescriptor_DescriptorId" OR OLD."CourseAttemptResultDescriptor_DescriptorId" IS DISTINCT FROM NEW."CourseAttemptResultDescriptor_DescriptorId" OR OLD."CourseRepeatCodeDescriptor_DescriptorId" IS DISTINCT FROM NEW."CourseRepeatCodeDescriptor_DescriptorId" OR OLD."EarnedCreditTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."EarnedCreditTypeDescriptor_DescriptorId" OR OLD."MethodCreditEarnedDescriptor_DescriptorId" IS DISTINCT FROM NEW."MethodCreditEarnedDescriptor_DescriptorId" OR OLD."WhenTakenGradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."WhenTakenGradeLevelDescriptor_DescriptorId" OR OLD."AlternativeCourseTitle" IS DISTINCT FROM NEW."AlternativeCourseTitle" OR OLD."AssigningOrganizationIdentificationCode" IS DISTINCT FROM NEW."AssigningOrganizationIdentificationCode" OR OLD."AttemptedCreditConversion" IS DISTINCT FROM NEW."AttemptedCreditConversion" OR OLD."AttemptedCredits" IS DISTINCT FROM NEW."AttemptedCredits" OR OLD."CourseCatalogURL" IS DISTINCT FROM NEW."CourseCatalogURL" OR OLD."CourseTitle" IS DISTINCT FROM NEW."CourseTitle" OR OLD."EarnedCreditConversion" IS DISTINCT FROM NEW."EarnedCreditConversion" OR OLD."EarnedCredits" IS DISTINCT FROM NEW."EarnedCredits" OR OLD."ExternalEducationOrganizationNameOfInstitution" IS DISTINCT FROM NEW."ExternalEducationOrganizationNameOfInstitution" OR OLD."FinalLetterGradeEarned" IS DISTINCT FROM NEW."FinalLetterGradeEarned" OR OLD."FinalNumericGradeEarned" IS DISTINCT FROM NEW."FinalNumericGradeEarned") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."CourseAttemptResultDescriptor_DescriptorId" IS DISTINCT FROM NEW."CourseAttemptResultDescriptor_DescriptorId" OR OLD."CourseCourse_CourseCode" IS DISTINCT FROM NEW."CourseCourse_CourseCode" OR OLD."CourseCourse_EducationOrganizationId" IS DISTINCT FROM NEW."CourseCourse_EducationOrganizationId" OR OLD."StudentAcademicRecord_EducationOrganizationId" IS DISTINCT FROM NEW."StudentAcademicRecord_EducationOrganizationId" OR OLD."StudentAcademicRecord_SchoolYear" IS DISTINCT FROM NEW."StudentAcademicRecord_SchoolYear" OR OLD."StudentAcademicRecord_StudentUniqueId" IS DISTINCT FROM NEW."StudentAcademicRecord_StudentUniqueId" OR OLD."StudentAcademicRecord_TermDescriptor_DescriptorId" IS DISTINCT FROM NEW."StudentAcademicRecord_TermDescriptor_DescriptorId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -35900,6 +36198,9 @@ BEGIN
         WHERE "DocumentId" = OLD."CourseTranscript_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."CourseTranscript_DocumentId" IS DISTINCT FROM NEW."CourseTranscript_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."AcademicSubjectDescriptor_DescriptorId" IS DISTINCT FROM NEW."AcademicSubjectDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."CourseTranscript_DocumentId";
@@ -35921,6 +36222,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."CourseTranscript_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."CourseTranscript_DocumentId" IS DISTINCT FROM NEW."CourseTranscript_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."CourseIdentificationSystemDescriptor_DescriptorId" IS DISTINCT FROM NEW."CourseIdentificationSystemDescriptor_DescriptorId" OR OLD."AlternativeAssigningOrganizationIdentificationCode" IS DISTINCT FROM NEW."AlternativeAssigningOrganizationIdentificationCode" OR OLD."AlternativeCourseCatalogURL" IS DISTINCT FROM NEW."AlternativeCourseCatalogURL" OR OLD."AlternativeIdentificationCode" IS DISTINCT FROM NEW."AlternativeIdentificationCode") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -35944,6 +36248,9 @@ BEGIN
         WHERE "DocumentId" = OLD."CourseTranscript_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."CourseTranscript_DocumentId" IS DISTINCT FROM NEW."CourseTranscript_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."CourseProgram_DocumentId" IS DISTINCT FROM NEW."CourseProgram_DocumentId" OR OLD."CourseProgram_EducationOrganizationId" IS DISTINCT FROM NEW."CourseProgram_EducationOrganizationId" OR OLD."CourseProgram_ProgramName" IS DISTINCT FROM NEW."CourseProgram_ProgramName" OR OLD."CourseProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."CourseProgram_ProgramTypeDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."CourseTranscript_DocumentId";
@@ -35965,6 +36272,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."CourseTranscript_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."CourseTranscript_DocumentId" IS DISTINCT FROM NEW."CourseTranscript_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."CreditCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."CreditCategoryDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -35988,6 +36298,9 @@ BEGIN
         WHERE "DocumentId" = OLD."CourseTranscript_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."CourseTranscript_DocumentId" IS DISTINCT FROM NEW."CourseTranscript_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."AdditionalCreditTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AdditionalCreditTypeDescriptor_DescriptorId" OR OLD."EarnedCredits" IS DISTINCT FROM NEW."EarnedCredits") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."CourseTranscript_DocumentId";
@@ -36010,6 +36323,9 @@ BEGIN
         WHERE "DocumentId" = OLD."CourseTranscript_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."CourseTranscript_DocumentId" IS DISTINCT FROM NEW."CourseTranscript_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."MethodCreditEarnedDescriptor_DescriptorId" IS DISTINCT FROM NEW."MethodCreditEarnedDescriptor_DescriptorId" OR OLD."AwardDate" IS DISTINCT FROM NEW."AwardDate" OR OLD."EarnedCredits" IS DISTINCT FROM NEW."EarnedCredits" OR OLD."LetterGradeEarned" IS DISTINCT FROM NEW."LetterGradeEarned" OR OLD."NumericGradeEarned" IS DISTINCT FROM NEW."NumericGradeEarned") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."CourseTranscript_DocumentId";
@@ -36031,6 +36347,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."CourseTranscript_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."CourseTranscript_DocumentId" IS DISTINCT FROM NEW."CourseTranscript_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Section_DocumentId" IS DISTINCT FROM NEW."Section_DocumentId" OR OLD."Section_LocalCourseCode" IS DISTINCT FROM NEW."Section_LocalCourseCode" OR OLD."Section_SchoolId" IS DISTINCT FROM NEW."Section_SchoolId" OR OLD."Section_SchoolYear" IS DISTINCT FROM NEW."Section_SchoolYear" OR OLD."Section_SessionName" IS DISTINCT FROM NEW."Section_SessionName" OR OLD."Section_SectionIdentifier" IS DISTINCT FROM NEW."Section_SectionIdentifier") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -36073,9 +36392,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."CredentialFieldDescriptor_DescriptorId" IS DISTINCT FROM NEW."CredentialFieldDescriptor_DescriptorId" OR OLD."CredentialTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."CredentialTypeDescriptor_DescriptorId" OR OLD."StateOfIssueStateAbbreviationDescriptor_DescriptorId" IS DISTINCT FROM NEW."StateOfIssueStateAbbreviationDescriptor_DescriptorId" OR OLD."TeachingCredentialBasisDescriptor_DescriptorId" IS DISTINCT FROM NEW."TeachingCredentialBasisDescriptor_DescriptorId" OR OLD."TeachingCredentialDescriptor_DescriptorId" IS DISTINCT FROM NEW."TeachingCredentialDescriptor_DescriptorId" OR OLD."CredentialIdentifier" IS DISTINCT FROM NEW."CredentialIdentifier" OR OLD."EffectiveDate" IS DISTINCT FROM NEW."EffectiveDate" OR OLD."ExpirationDate" IS DISTINCT FROM NEW."ExpirationDate" OR OLD."IssuanceDate" IS DISTINCT FROM NEW."IssuanceDate" OR OLD."Namespace" IS DISTINCT FROM NEW."Namespace") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."CredentialIdentifier" IS DISTINCT FROM NEW."CredentialIdentifier" OR OLD."StateOfIssueStateAbbreviationDescriptor_DescriptorId" IS DISTINCT FROM NEW."StateOfIssueStateAbbreviationDescriptor_DescriptorId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -36100,6 +36424,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Credential_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Credential_DocumentId" IS DISTINCT FROM NEW."Credential_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."AcademicSubjectDescriptor_DescriptorId" IS DISTINCT FROM NEW."AcademicSubjectDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Credential_DocumentId";
@@ -36122,6 +36449,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Credential_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Credential_DocumentId" IS DISTINCT FROM NEW."Credential_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."CredentialEndorsement" IS DISTINCT FROM NEW."CredentialEndorsement") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Credential_DocumentId";
@@ -36143,6 +36473,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Credential_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Credential_DocumentId" IS DISTINCT FROM NEW."Credential_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."GradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradeLevelDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -36185,9 +36518,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."CrisisTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."CrisisTypeDescriptor_DescriptorId" OR OLD."CrisisDescription" IS DISTINCT FROM NEW."CrisisDescription" OR OLD."CrisisEndDate" IS DISTINCT FROM NEW."CrisisEndDate" OR OLD."CrisisEventName" IS DISTINCT FROM NEW."CrisisEventName" OR OLD."CrisisStartDate" IS DISTINCT FROM NEW."CrisisStartDate") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."CrisisEventName" IS DISTINCT FROM NEW."CrisisEventName") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -36231,9 +36569,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."MappedNamespace" IS DISTINCT FROM NEW."MappedNamespace" OR OLD."MappedValue" IS DISTINCT FROM NEW."MappedValue" OR OLD."Namespace" IS DISTINCT FROM NEW."Namespace" OR OLD."Value" IS DISTINCT FROM NEW."Value") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."MappedNamespace" IS DISTINCT FROM NEW."MappedNamespace" OR OLD."MappedValue" IS DISTINCT FROM NEW."MappedValue" OR OLD."Namespace" IS DISTINCT FROM NEW."Namespace" OR OLD."Value" IS DISTINCT FROM NEW."Value") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -36257,6 +36600,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DescriptorMapping_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."DescriptorMapping_DocumentId" IS DISTINCT FROM NEW."DescriptorMapping_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ModelEntityDescriptor_DescriptorId" IS DISTINCT FROM NEW."ModelEntityDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -36299,9 +36645,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."AssignmentSchool_DocumentId" IS DISTINCT FROM NEW."AssignmentSchool_DocumentId" OR OLD."AssignmentSchool_SchoolId" IS DISTINCT FROM NEW."AssignmentSchool_SchoolId" OR OLD."ResponsibilitySchool_DocumentId" IS DISTINCT FROM NEW."ResponsibilitySchool_DocumentId" OR OLD."ResponsibilitySchool_SchoolId" IS DISTINCT FROM NEW."ResponsibilitySchool_SchoolId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."DisciplineActionLengthDifferenceReasonDescriptor_DescriptorId" IS DISTINCT FROM NEW."DisciplineActionLengthDifferenceReasonDescriptor_DescriptorId" OR OLD."ActualDisciplineActionLength" IS DISTINCT FROM NEW."ActualDisciplineActionLength" OR OLD."DisciplineActionIdentifier" IS DISTINCT FROM NEW."DisciplineActionIdentifier" OR OLD."DisciplineActionLength" IS DISTINCT FROM NEW."DisciplineActionLength" OR OLD."DisciplineDate" IS DISTINCT FROM NEW."DisciplineDate" OR OLD."IepPlacementMeetingIndicator" IS DISTINCT FROM NEW."IepPlacementMeetingIndicator" OR OLD."RelatedToZeroTolerancePolicy" IS DISTINCT FROM NEW."RelatedToZeroTolerancePolicy") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."DisciplineActionIdentifier" IS DISTINCT FROM NEW."DisciplineActionIdentifier" OR OLD."DisciplineDate" IS DISTINCT FROM NEW."DisciplineDate" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -36326,6 +36677,9 @@ BEGIN
         WHERE "DocumentId" = OLD."DisciplineAction_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."DisciplineAction_DocumentId" IS DISTINCT FROM NEW."DisciplineAction_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."DisciplineDescriptor_DescriptorId" IS DISTINCT FROM NEW."DisciplineDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."DisciplineAction_DocumentId";
@@ -36348,6 +36702,9 @@ BEGIN
         WHERE "DocumentId" = OLD."DisciplineAction_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."DisciplineAction_DocumentId" IS DISTINCT FROM NEW."DisciplineAction_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."DisciplineAction_DocumentId";
@@ -36369,6 +36726,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DisciplineAction_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."DisciplineAction_DocumentId" IS DISTINCT FROM NEW."DisciplineAction_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentDisciplineIncidentBehaviorAssociation_DocumentId" IS DISTINCT FROM NEW."StudentDisciplineIncidentBehaviorAssociation_DocumentId" OR OLD."StudentDisciplineIncidentBehaviorAssociation_Behavio_4bed9fbe3b" IS DISTINCT FROM NEW."StudentDisciplineIncidentBehaviorAssociation_Behavio_4bed9fbe3b" OR OLD."StudentDisciplineIncidentBehaviorAssociation_IncidentIdentifier" IS DISTINCT FROM NEW."StudentDisciplineIncidentBehaviorAssociation_IncidentIdentifier" OR OLD."StudentDisciplineIncidentBehaviorAssociation_SchoolId" IS DISTINCT FROM NEW."StudentDisciplineIncidentBehaviorAssociation_SchoolId" OR OLD."StudentDisciplineIncidentBehaviorAssociation_StudentUniqueId" IS DISTINCT FROM NEW."StudentDisciplineIncidentBehaviorAssociation_StudentUniqueId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -36411,9 +36771,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId" OR OLD."IncidentLocationDescriptor_DescriptorId" IS DISTINCT FROM NEW."IncidentLocationDescriptor_DescriptorId" OR OLD."ReporterDescriptionDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReporterDescriptionDescriptor_DescriptorId" OR OLD."CaseNumber" IS DISTINCT FROM NEW."CaseNumber" OR OLD."IncidentCost" IS DISTINCT FROM NEW."IncidentCost" OR OLD."IncidentDate" IS DISTINCT FROM NEW."IncidentDate" OR OLD."IncidentDescription" IS DISTINCT FROM NEW."IncidentDescription" OR OLD."IncidentIdentifier" IS DISTINCT FROM NEW."IncidentIdentifier" OR OLD."IncidentTime" IS DISTINCT FROM NEW."IncidentTime" OR OLD."ReportedToLawEnforcement" IS DISTINCT FROM NEW."ReportedToLawEnforcement" OR OLD."ReporterName" IS DISTINCT FROM NEW."ReporterName") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."IncidentIdentifier" IS DISTINCT FROM NEW."IncidentIdentifier" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -36438,6 +36803,9 @@ BEGIN
         WHERE "DocumentId" = OLD."DisciplineIncident_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."DisciplineIncident_DocumentId" IS DISTINCT FROM NEW."DisciplineIncident_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."BehaviorDescriptor_DescriptorId" IS DISTINCT FROM NEW."BehaviorDescriptor_DescriptorId" OR OLD."BehaviorDetailedDescription" IS DISTINCT FROM NEW."BehaviorDetailedDescription") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."DisciplineIncident_DocumentId";
@@ -36460,6 +36828,9 @@ BEGIN
         WHERE "DocumentId" = OLD."DisciplineIncident_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."DisciplineIncident_DocumentId" IS DISTINCT FROM NEW."DisciplineIncident_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."DisciplineIncidentParticipationCodeDescriptor_DescriptorId" IS DISTINCT FROM NEW."DisciplineIncidentParticipationCodeDescriptor_DescriptorId" OR OLD."FirstName" IS DISTINCT FROM NEW."FirstName" OR OLD."LastSurname" IS DISTINCT FROM NEW."LastSurname") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."DisciplineIncident_DocumentId";
@@ -36481,6 +36852,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."DisciplineIncident_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."DisciplineIncident_DocumentId" IS DISTINCT FROM NEW."DisciplineIncident_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."WeaponDescriptor_DescriptorId" IS DISTINCT FROM NEW."WeaponDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -36523,9 +36897,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."LearningResourceChoiceLearningResourceLearningStanda_5916be65e2" IS DISTINCT FROM NEW."LearningResourceChoiceLearningResourceLearningStanda_5916be65e2" OR OLD."LearningResourceChoiceLearningResourceLearningStanda_bd2bbf48c0" IS DISTINCT FROM NEW."LearningResourceChoiceLearningResourceLearningStanda_bd2bbf48c0" OR OLD."ContentClassDescriptor_DescriptorId" IS DISTINCT FROM NEW."ContentClassDescriptor_DescriptorId" OR OLD."CostRateDescriptor_DescriptorId" IS DISTINCT FROM NEW."CostRateDescriptor_DescriptorId" OR OLD."InteractivityStyleDescriptor_DescriptorId" IS DISTINCT FROM NEW."InteractivityStyleDescriptor_DescriptorId" OR OLD."AdditionalAuthorsIndicator" IS DISTINCT FROM NEW."AdditionalAuthorsIndicator" OR OLD."ContentIdentifier" IS DISTINCT FROM NEW."ContentIdentifier" OR OLD."Cost" IS DISTINCT FROM NEW."Cost" OR OLD."Description" IS DISTINCT FROM NEW."Description" OR OLD."LearningResourceMetadataURI" IS DISTINCT FROM NEW."LearningResourceMetadataURI" OR OLD."Namespace" IS DISTINCT FROM NEW."Namespace" OR OLD."PublicationDate" IS DISTINCT FROM NEW."PublicationDate" OR OLD."PublicationYear" IS DISTINCT FROM NEW."PublicationYear" OR OLD."Publisher" IS DISTINCT FROM NEW."Publisher" OR OLD."ShortDescription" IS DISTINCT FROM NEW."ShortDescription" OR OLD."TimeRequired" IS DISTINCT FROM NEW."TimeRequired" OR OLD."UseRightsURL" IS DISTINCT FROM NEW."UseRightsURL" OR OLD."Version" IS DISTINCT FROM NEW."Version") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."ContentIdentifier" IS DISTINCT FROM NEW."ContentIdentifier") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -36550,6 +36929,9 @@ BEGIN
         WHERE "DocumentId" = OLD."EducationContent_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."EducationContent_DocumentId" IS DISTINCT FROM NEW."EducationContent_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."GradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradeLevelDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."EducationContent_DocumentId";
@@ -36571,6 +36953,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."EducationContent_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."EducationContent_DocumentId" IS DISTINCT FROM NEW."EducationContent_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."SexDescriptor_DescriptorId" IS DISTINCT FROM NEW."SexDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -36594,6 +36979,9 @@ BEGIN
         WHERE "DocumentId" = OLD."EducationContent_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."EducationContent_DocumentId" IS DISTINCT FROM NEW."EducationContent_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Author" IS DISTINCT FROM NEW."Author") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."EducationContent_DocumentId";
@@ -36615,6 +37003,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."EducationContent_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."EducationContent_DocumentId" IS DISTINCT FROM NEW."EducationContent_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."DerivativeSourceEducationContent_DocumentId" IS DISTINCT FROM NEW."DerivativeSourceEducationContent_DocumentId" OR OLD."DerivativeSourceEducationContent_ContentIdentifier" IS DISTINCT FROM NEW."DerivativeSourceEducationContent_ContentIdentifier") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -36638,6 +37029,9 @@ BEGIN
         WHERE "DocumentId" = OLD."EducationContent_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."EducationContent_DocumentId" IS DISTINCT FROM NEW."EducationContent_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."DerivativeSourceLearningResourceMetadataURI" IS DISTINCT FROM NEW."DerivativeSourceLearningResourceMetadataURI") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."EducationContent_DocumentId";
@@ -36659,6 +37053,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."EducationContent_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."EducationContent_DocumentId" IS DISTINCT FROM NEW."EducationContent_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."DerivativeSourceURI" IS DISTINCT FROM NEW."DerivativeSourceURI") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -36682,6 +37079,9 @@ BEGIN
         WHERE "DocumentId" = OLD."EducationContent_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."EducationContent_DocumentId" IS DISTINCT FROM NEW."EducationContent_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."LanguageDescriptor_DescriptorId" IS DISTINCT FROM NEW."LanguageDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."EducationContent_DocumentId";
@@ -36704,9 +37104,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."InterventionPrescriptionInterventionPrescription_DocumentId" IS DISTINCT FROM NEW."InterventionPrescriptionInterventionPrescription_DocumentId" OR OLD."InterventionPrescriptionInterventionPrescription_Edu_532babb247" IS DISTINCT FROM NEW."InterventionPrescriptionInterventionPrescription_Edu_532babb247" OR OLD."InterventionPrescriptionInterventionPrescription_Int_409fc39d28" IS DISTINCT FROM NEW."InterventionPrescriptionInterventionPrescription_Int_409fc39d28" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."InterventionPrescriptionInterventionPrescription_Edu_532babb247" IS DISTINCT FROM NEW."InterventionPrescriptionInterventionPrescription_Edu_532babb247" OR OLD."InterventionPrescriptionInterventionPrescription_Int_409fc39d28" IS DISTINCT FROM NEW."InterventionPrescriptionInterventionPrescription_Int_409fc39d28") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -36822,9 +37227,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."NetworkPurposeDescriptor_DescriptorId" IS DISTINCT FROM NEW."NetworkPurposeDescriptor_DescriptorId" OR OLD."OperationalStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."OperationalStatusDescriptor_DescriptorId" OR OLD."EducationOrganizationNetworkId" IS DISTINCT FROM NEW."EducationOrganizationNetworkId" OR OLD."NameOfInstitution" IS DISTINCT FROM NEW."NameOfInstitution" OR OLD."ShortNameOfInstitution" IS DISTINCT FROM NEW."ShortNameOfInstitution" OR OLD."WebSite" IS DISTINCT FROM NEW."WebSite") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."EducationOrganizationNetworkId" IS DISTINCT FROM NEW."EducationOrganizationNetworkId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -36849,6 +37259,9 @@ BEGIN
         WHERE "DocumentId" = OLD."EducationOrganizationNetwork_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."EducationOrganizationNetwork_DocumentId" IS DISTINCT FROM NEW."EducationOrganizationNetwork_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."AddressTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AddressTypeDescriptor_DescriptorId" OR OLD."LocaleDescriptor_DescriptorId" IS DISTINCT FROM NEW."LocaleDescriptor_DescriptorId" OR OLD."StateAbbreviationDescriptor_DescriptorId" IS DISTINCT FROM NEW."StateAbbreviationDescriptor_DescriptorId" OR OLD."ApartmentRoomSuiteNumber" IS DISTINCT FROM NEW."ApartmentRoomSuiteNumber" OR OLD."BuildingSiteNumber" IS DISTINCT FROM NEW."BuildingSiteNumber" OR OLD."City" IS DISTINCT FROM NEW."City" OR OLD."CongressionalDistrict" IS DISTINCT FROM NEW."CongressionalDistrict" OR OLD."CountyFIPSCode" IS DISTINCT FROM NEW."CountyFIPSCode" OR OLD."DoNotPublishIndicator" IS DISTINCT FROM NEW."DoNotPublishIndicator" OR OLD."Latitude" IS DISTINCT FROM NEW."Latitude" OR OLD."Longitude" IS DISTINCT FROM NEW."Longitude" OR OLD."NameOfCounty" IS DISTINCT FROM NEW."NameOfCounty" OR OLD."PostalCode" IS DISTINCT FROM NEW."PostalCode" OR OLD."StreetNumberName" IS DISTINCT FROM NEW."StreetNumberName") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."EducationOrganizationNetwork_DocumentId";
@@ -36870,6 +37283,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."EducationOrganizationNetwork_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."EducationOrganizationNetwork_DocumentId" IS DISTINCT FROM NEW."EducationOrganizationNetwork_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -36912,9 +37328,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganizationNetwork_DocumentId" IS DISTINCT FROM NEW."EducationOrganizationNetwork_DocumentId" OR OLD."EducationOrganizationNetwork_EducationOrganizationNetworkId" IS DISTINCT FROM NEW."EducationOrganizationNetwork_EducationOrganizationNetworkId" OR OLD."MemberEducationOrganization_DocumentId" IS DISTINCT FROM NEW."MemberEducationOrganization_DocumentId" OR OLD."MemberEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."MemberEducationOrganization_EducationOrganizationId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."EducationOrganizationNetwork_EducationOrganizationNetworkId" IS DISTINCT FROM NEW."EducationOrganizationNetwork_EducationOrganizationNetworkId" OR OLD."MemberEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."MemberEducationOrganization_EducationOrganizationId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -36939,6 +37360,9 @@ BEGIN
         WHERE "DocumentId" = OLD."EducationOrganizationNetwork_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."EducationOrganizationNetwork_DocumentId" IS DISTINCT FROM NEW."EducationOrganizationNetwork_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."EducationOrganizationCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."EducationOrganizationCategoryDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."EducationOrganizationNetwork_DocumentId";
@@ -36960,6 +37384,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."EducationOrganizationNetwork_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."EducationOrganizationNetwork_DocumentId" IS DISTINCT FROM NEW."EducationOrganizationNetwork_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" IS DISTINCT FROM NEW."EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" OR OLD."IdentificationCode" IS DISTINCT FROM NEW."IdentificationCode") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -36983,6 +37410,9 @@ BEGIN
         WHERE "DocumentId" = OLD."EducationOrganizationNetwork_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."EducationOrganizationNetwork_DocumentId" IS DISTINCT FROM NEW."EducationOrganizationNetwork_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."IndicatorDescriptor_DescriptorId" IS DISTINCT FROM NEW."IndicatorDescriptor_DescriptorId" OR OLD."IndicatorGroupDescriptor_DescriptorId" IS DISTINCT FROM NEW."IndicatorGroupDescriptor_DescriptorId" OR OLD."IndicatorLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."IndicatorLevelDescriptor_DescriptorId" OR OLD."DesignatedBy" IS DISTINCT FROM NEW."DesignatedBy" OR OLD."IndicatorValue" IS DISTINCT FROM NEW."IndicatorValue") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."EducationOrganizationNetwork_DocumentId";
@@ -37004,6 +37434,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."EducationOrganizationNetwork_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."EducationOrganizationNetwork_DocumentId" IS DISTINCT FROM NEW."EducationOrganizationNetwork_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -37027,6 +37460,9 @@ BEGIN
         WHERE "DocumentId" = OLD."EducationOrganizationNetwork_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."EducationOrganizationNetwork_DocumentId" IS DISTINCT FROM NEW."EducationOrganizationNetwork_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."InstitutionTelephoneNumberTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."InstitutionTelephoneNumberTypeDescriptor_DescriptorId" OR OLD."TelephoneNumber" IS DISTINCT FROM NEW."TelephoneNumber") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."EducationOrganizationNetwork_DocumentId";
@@ -37048,6 +37484,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."EducationOrganizationNetwork_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."EducationOrganizationNetwork_DocumentId" IS DISTINCT FROM NEW."EducationOrganizationNetwork_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."AddressTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AddressTypeDescriptor_DescriptorId" OR OLD."CountryDescriptor_DescriptorId" IS DISTINCT FROM NEW."CountryDescriptor_DescriptorId" OR OLD."AddressLine1" IS DISTINCT FROM NEW."AddressLine1" OR OLD."AddressLine2" IS DISTINCT FROM NEW."AddressLine2" OR OLD."AddressLine3" IS DISTINCT FROM NEW."AddressLine3" OR OLD."AddressLine4" IS DISTINCT FROM NEW."AddressLine4" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."Latitude" IS DISTINCT FROM NEW."Latitude" OR OLD."Longitude" IS DISTINCT FROM NEW."Longitude") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -37090,9 +37529,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."PeerEducationOrganization_DocumentId" IS DISTINCT FROM NEW."PeerEducationOrganization_DocumentId" OR OLD."PeerEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."PeerEducationOrganization_EducationOrganizationId") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."PeerEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."PeerEducationOrganization_EducationOrganizationId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -37273,9 +37717,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."StateEducationAgency_DocumentId" IS DISTINCT FROM NEW."StateEducationAgency_DocumentId" OR OLD."StateEducationAgency_StateEducationAgencyId" IS DISTINCT FROM NEW."StateEducationAgency_StateEducationAgencyId" OR OLD."OperationalStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."OperationalStatusDescriptor_DescriptorId" OR OLD."EducationServiceCenterId" IS DISTINCT FROM NEW."EducationServiceCenterId" OR OLD."NameOfInstitution" IS DISTINCT FROM NEW."NameOfInstitution" OR OLD."ShortNameOfInstitution" IS DISTINCT FROM NEW."ShortNameOfInstitution" OR OLD."WebSite" IS DISTINCT FROM NEW."WebSite") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."EducationServiceCenterId" IS DISTINCT FROM NEW."EducationServiceCenterId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -37300,6 +37749,9 @@ BEGIN
         WHERE "DocumentId" = OLD."EducationServiceCenter_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."EducationServiceCenter_DocumentId" IS DISTINCT FROM NEW."EducationServiceCenter_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."AddressTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AddressTypeDescriptor_DescriptorId" OR OLD."LocaleDescriptor_DescriptorId" IS DISTINCT FROM NEW."LocaleDescriptor_DescriptorId" OR OLD."StateAbbreviationDescriptor_DescriptorId" IS DISTINCT FROM NEW."StateAbbreviationDescriptor_DescriptorId" OR OLD."ApartmentRoomSuiteNumber" IS DISTINCT FROM NEW."ApartmentRoomSuiteNumber" OR OLD."BuildingSiteNumber" IS DISTINCT FROM NEW."BuildingSiteNumber" OR OLD."City" IS DISTINCT FROM NEW."City" OR OLD."CongressionalDistrict" IS DISTINCT FROM NEW."CongressionalDistrict" OR OLD."CountyFIPSCode" IS DISTINCT FROM NEW."CountyFIPSCode" OR OLD."DoNotPublishIndicator" IS DISTINCT FROM NEW."DoNotPublishIndicator" OR OLD."Latitude" IS DISTINCT FROM NEW."Latitude" OR OLD."Longitude" IS DISTINCT FROM NEW."Longitude" OR OLD."NameOfCounty" IS DISTINCT FROM NEW."NameOfCounty" OR OLD."PostalCode" IS DISTINCT FROM NEW."PostalCode" OR OLD."StreetNumberName" IS DISTINCT FROM NEW."StreetNumberName") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."EducationServiceCenter_DocumentId";
@@ -37321,6 +37773,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."EducationServiceCenter_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."EducationServiceCenter_DocumentId" IS DISTINCT FROM NEW."EducationServiceCenter_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -37344,6 +37799,9 @@ BEGIN
         WHERE "DocumentId" = OLD."EducationServiceCenter_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."EducationServiceCenter_DocumentId" IS DISTINCT FROM NEW."EducationServiceCenter_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."EducationOrganizationCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."EducationOrganizationCategoryDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."EducationServiceCenter_DocumentId";
@@ -37365,6 +37823,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."EducationServiceCenter_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."EducationServiceCenter_DocumentId" IS DISTINCT FROM NEW."EducationServiceCenter_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" IS DISTINCT FROM NEW."EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" OR OLD."IdentificationCode" IS DISTINCT FROM NEW."IdentificationCode") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -37388,6 +37849,9 @@ BEGIN
         WHERE "DocumentId" = OLD."EducationServiceCenter_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."EducationServiceCenter_DocumentId" IS DISTINCT FROM NEW."EducationServiceCenter_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."IndicatorDescriptor_DescriptorId" IS DISTINCT FROM NEW."IndicatorDescriptor_DescriptorId" OR OLD."IndicatorGroupDescriptor_DescriptorId" IS DISTINCT FROM NEW."IndicatorGroupDescriptor_DescriptorId" OR OLD."IndicatorLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."IndicatorLevelDescriptor_DescriptorId" OR OLD."DesignatedBy" IS DISTINCT FROM NEW."DesignatedBy" OR OLD."IndicatorValue" IS DISTINCT FROM NEW."IndicatorValue") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."EducationServiceCenter_DocumentId";
@@ -37409,6 +37873,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."EducationServiceCenter_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."EducationServiceCenter_DocumentId" IS DISTINCT FROM NEW."EducationServiceCenter_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -37432,6 +37899,9 @@ BEGIN
         WHERE "DocumentId" = OLD."EducationServiceCenter_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."EducationServiceCenter_DocumentId" IS DISTINCT FROM NEW."EducationServiceCenter_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."InstitutionTelephoneNumberTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."InstitutionTelephoneNumberTypeDescriptor_DescriptorId" OR OLD."TelephoneNumber" IS DISTINCT FROM NEW."TelephoneNumber") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."EducationServiceCenter_DocumentId";
@@ -37453,6 +37923,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."EducationServiceCenter_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."EducationServiceCenter_DocumentId" IS DISTINCT FROM NEW."EducationServiceCenter_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."AddressTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AddressTypeDescriptor_DescriptorId" OR OLD."CountryDescriptor_DescriptorId" IS DISTINCT FROM NEW."CountryDescriptor_DescriptorId" OR OLD."AddressLine1" IS DISTINCT FROM NEW."AddressLine1" OR OLD."AddressLine2" IS DISTINCT FROM NEW."AddressLine2" OR OLD."AddressLine3" IS DISTINCT FROM NEW."AddressLine3" OR OLD."AddressLine4" IS DISTINCT FROM NEW."AddressLine4" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."Latitude" IS DISTINCT FROM NEW."Latitude" OR OLD."Longitude" IS DISTINCT FROM NEW."Longitude") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -37495,9 +37968,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."ProgramEvaluationElement_DocumentId" IS DISTINCT FROM NEW."ProgramEvaluationElement_DocumentId" OR OLD."ProgramEvaluationElement_ProgramEvaluationElementTitle" IS DISTINCT FROM NEW."ProgramEvaluationElement_ProgramEvaluationElementTitle" OR OLD."ProgramEvaluationElement_ProgramEducationOrganizationId" IS DISTINCT FROM NEW."ProgramEvaluationElement_ProgramEducationOrganizationId" OR OLD."ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706" IS DISTINCT FROM NEW."ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706" OR OLD."ProgramEvaluationElement_ProgramEvaluationTitle" IS DISTINCT FROM NEW."ProgramEvaluationElement_ProgramEvaluationTitle" OR OLD."ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71" IS DISTINCT FROM NEW."ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71" OR OLD."ProgramEvaluationElement_ProgramName" IS DISTINCT FROM NEW."ProgramEvaluationElement_ProgramName" OR OLD."ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId" OR OLD."EvaluationRubricRatingLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."EvaluationRubricRatingLevelDescriptor_DescriptorId" OR OLD."EvaluationCriterionDescription" IS DISTINCT FROM NEW."EvaluationCriterionDescription" OR OLD."EvaluationRubricRating" IS DISTINCT FROM NEW."EvaluationRubricRating" OR OLD."RubricDimensionSortOrder" IS DISTINCT FROM NEW."RubricDimensionSortOrder") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."EvaluationRubricRating" IS DISTINCT FROM NEW."EvaluationRubricRating" OR OLD."ProgramEvaluationElement_ProgramEducationOrganizationId" IS DISTINCT FROM NEW."ProgramEvaluationElement_ProgramEducationOrganizationId" OR OLD."ProgramEvaluationElement_ProgramEvaluationElementTitle" IS DISTINCT FROM NEW."ProgramEvaluationElement_ProgramEvaluationElementTitle" OR OLD."ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706" IS DISTINCT FROM NEW."ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706" OR OLD."ProgramEvaluationElement_ProgramEvaluationTitle" IS DISTINCT FROM NEW."ProgramEvaluationElement_ProgramEvaluationTitle" OR OLD."ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71" IS DISTINCT FROM NEW."ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71" OR OLD."ProgramEvaluationElement_ProgramName" IS DISTINCT FROM NEW."ProgramEvaluationElement_ProgramName" OR OLD."ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -37541,9 +38019,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."FeederSchool_DocumentId" IS DISTINCT FROM NEW."FeederSchool_DocumentId" OR OLD."FeederSchool_SchoolId" IS DISTINCT FROM NEW."FeederSchool_SchoolId" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."FeederRelationshipDescription" IS DISTINCT FROM NEW."FeederRelationshipDescription") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."FeederSchool_SchoolId" IS DISTINCT FROM NEW."FeederSchool_SchoolId" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -37587,9 +38070,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."CodeName" IS DISTINCT FROM NEW."CodeName" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -37613,6 +38101,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."FunctionDimension_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."FunctionDimension_DocumentId" IS DISTINCT FROM NEW."FunctionDimension_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ReportingTagDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReportingTagDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -37655,9 +38146,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."CodeName" IS DISTINCT FROM NEW."CodeName" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -37681,6 +38177,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."FundDimension_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."FundDimension_DocumentId" IS DISTINCT FROM NEW."FundDimension_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ReportingTagDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReportingTagDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -37723,9 +38222,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."SchoolYear_Unified" IS DISTINCT FROM NEW."SchoolYear_Unified" OR OLD."GradingPeriodGradingPeriod_DocumentId" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_DocumentId" OR OLD."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" OR OLD."GradingPeriodGradingPeriod_GradingPeriodName" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_GradingPeriodName" OR OLD."StudentSectionAssociation_DocumentId" IS DISTINCT FROM NEW."StudentSectionAssociation_DocumentId" OR OLD."StudentSectionAssociation_BeginDate" IS DISTINCT FROM NEW."StudentSectionAssociation_BeginDate" OR OLD."StudentSectionAssociation_LocalCourseCode" IS DISTINCT FROM NEW."StudentSectionAssociation_LocalCourseCode" OR OLD."StudentSectionAssociation_SectionIdentifier" IS DISTINCT FROM NEW."StudentSectionAssociation_SectionIdentifier" OR OLD."StudentSectionAssociation_SessionName" IS DISTINCT FROM NEW."StudentSectionAssociation_SessionName" OR OLD."StudentSectionAssociation_StudentUniqueId" IS DISTINCT FROM NEW."StudentSectionAssociation_StudentUniqueId" OR OLD."GradeTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradeTypeDescriptor_DescriptorId" OR OLD."PerformanceBaseConversionDescriptor_DescriptorId" IS DISTINCT FROM NEW."PerformanceBaseConversionDescriptor_DescriptorId" OR OLD."CurrentGradeAsOfDate" IS DISTINCT FROM NEW."CurrentGradeAsOfDate" OR OLD."CurrentGradeIndicator" IS DISTINCT FROM NEW."CurrentGradeIndicator" OR OLD."DiagnosticStatement" IS DISTINCT FROM NEW."DiagnosticStatement" OR OLD."GradeEarnedDescription" IS DISTINCT FROM NEW."GradeEarnedDescription" OR OLD."LetterGradeEarned" IS DISTINCT FROM NEW."LetterGradeEarned" OR OLD."NumericGradeEarned" IS DISTINCT FROM NEW."NumericGradeEarned") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."GradeTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradeTypeDescriptor_DescriptorId" OR OLD."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" OR OLD."GradingPeriodGradingPeriod_GradingPeriodName" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_GradingPeriodName" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."SchoolYear_Unified" IS DISTINCT FROM NEW."SchoolYear_Unified" OR OLD."StudentSectionAssociation_BeginDate" IS DISTINCT FROM NEW."StudentSectionAssociation_BeginDate" OR OLD."StudentSectionAssociation_LocalCourseCode" IS DISTINCT FROM NEW."StudentSectionAssociation_LocalCourseCode" OR OLD."StudentSectionAssociation_SectionIdentifier" IS DISTINCT FROM NEW."StudentSectionAssociation_SectionIdentifier" OR OLD."StudentSectionAssociation_SessionName" IS DISTINCT FROM NEW."StudentSectionAssociation_SessionName" OR OLD."StudentSectionAssociation_StudentUniqueId" IS DISTINCT FROM NEW."StudentSectionAssociation_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -37749,6 +38253,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Grade_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Grade_DocumentId" IS DISTINCT FROM NEW."Grade_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."LearningStandardGradeLearningStandard_DocumentId" IS DISTINCT FROM NEW."LearningStandardGradeLearningStandard_DocumentId" OR OLD."LearningStandardGradeLearningStandard_LearningStandardId" IS DISTINCT FROM NEW."LearningStandardGradeLearningStandard_LearningStandardId" OR OLD."PerformanceBaseConversionDescriptor_DescriptorId" IS DISTINCT FROM NEW."PerformanceBaseConversionDescriptor_DescriptorId" OR OLD."DiagnosticStatement" IS DISTINCT FROM NEW."DiagnosticStatement" OR OLD."LetterGradeEarned" IS DISTINCT FROM NEW."LetterGradeEarned" OR OLD."NumericGradeEarned" IS DISTINCT FROM NEW."NumericGradeEarned") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -37791,9 +38298,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."SchoolYear_Unified" IS DISTINCT FROM NEW."SchoolYear_Unified" OR OLD."GradingPeriod_DocumentId" IS DISTINCT FROM NEW."GradingPeriod_DocumentId" OR OLD."GradingPeriod_GradingPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradingPeriod_GradingPeriodDescriptor_DescriptorId" OR OLD."GradingPeriod_GradingPeriodName" IS DISTINCT FROM NEW."GradingPeriod_GradingPeriodName" OR OLD."Section_DocumentId" IS DISTINCT FROM NEW."Section_DocumentId" OR OLD."Section_LocalCourseCode" IS DISTINCT FROM NEW."Section_LocalCourseCode" OR OLD."Section_SessionName" IS DISTINCT FROM NEW."Section_SessionName" OR OLD."Section_SectionIdentifier" IS DISTINCT FROM NEW."Section_SectionIdentifier" OR OLD."GradebookEntryTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradebookEntryTypeDescriptor_DescriptorId" OR OLD."DateAssigned" IS DISTINCT FROM NEW."DateAssigned" OR OLD."Description" IS DISTINCT FROM NEW."Description" OR OLD."DueDate" IS DISTINCT FROM NEW."DueDate" OR OLD."DueTime" IS DISTINCT FROM NEW."DueTime" OR OLD."GradebookEntryIdentifier" IS DISTINCT FROM NEW."GradebookEntryIdentifier" OR OLD."MaxPoints" IS DISTINCT FROM NEW."MaxPoints" OR OLD."Namespace" IS DISTINCT FROM NEW."Namespace" OR OLD."SourceSectionIdentifier" IS DISTINCT FROM NEW."SourceSectionIdentifier" OR OLD."Title" IS DISTINCT FROM NEW."Title") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."GradebookEntryIdentifier" IS DISTINCT FROM NEW."GradebookEntryIdentifier" OR OLD."Namespace" IS DISTINCT FROM NEW."Namespace") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -37817,6 +38329,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."GradebookEntry_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."GradebookEntry_DocumentId" IS DISTINCT FROM NEW."GradebookEntry_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."LearningStandard_DocumentId" IS DISTINCT FROM NEW."LearningStandard_DocumentId" OR OLD."LearningStandard_LearningStandardId" IS DISTINCT FROM NEW."LearningStandard_LearningStandardId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -37859,9 +38374,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolYear_DocumentId" IS DISTINCT FROM NEW."SchoolYear_DocumentId" OR OLD."SchoolYear_SchoolYear" IS DISTINCT FROM NEW."SchoolYear_SchoolYear" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId" OR OLD."GradingPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradingPeriodDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."GradingPeriodName" IS DISTINCT FROM NEW."GradingPeriodName" OR OLD."PeriodSequence" IS DISTINCT FROM NEW."PeriodSequence" OR OLD."TotalInstructionalDays" IS DISTINCT FROM NEW."TotalInstructionalDays") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."GradingPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradingPeriodDescriptor_DescriptorId" OR OLD."GradingPeriodName" IS DISTINCT FROM NEW."GradingPeriodName" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId" OR OLD."SchoolYear_SchoolYear" IS DISTINCT FROM NEW."SchoolYear_SchoolYear") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -37905,9 +38425,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."GraduationSchoolYear_DocumentId" IS DISTINCT FROM NEW."GraduationSchoolYear_DocumentId" OR OLD."GraduationSchoolYear_GraduationSchoolYear" IS DISTINCT FROM NEW."GraduationSchoolYear_GraduationSchoolYear" OR OLD."GraduationPlanTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."GraduationPlanTypeDescriptor_DescriptorId" OR OLD."TotalRequiredCreditTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."TotalRequiredCreditTypeDescriptor_DescriptorId" OR OLD."IndividualPlan" IS DISTINCT FROM NEW."IndividualPlan" OR OLD."TotalRequiredCreditConversion" IS DISTINCT FROM NEW."TotalRequiredCreditConversion" OR OLD."TotalRequiredCredits" IS DISTINCT FROM NEW."TotalRequiredCredits") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."GraduationPlanTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."GraduationPlanTypeDescriptor_DescriptorId" OR OLD."GraduationSchoolYear_GraduationSchoolYear" IS DISTINCT FROM NEW."GraduationSchoolYear_GraduationSchoolYear") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -37932,6 +38457,9 @@ BEGIN
         WHERE "DocumentId" = OLD."GraduationPlan_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."GraduationPlan_DocumentId" IS DISTINCT FROM NEW."GraduationPlan_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."CreditTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."CreditTypeDescriptor_DescriptorId" OR OLD."WhenTakenGradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."WhenTakenGradeLevelDescriptor_DescriptorId" OR OLD."CourseSetName" IS DISTINCT FROM NEW."CourseSetName" OR OLD."CreditConversion" IS DISTINCT FROM NEW."CreditConversion" OR OLD."Credits" IS DISTINCT FROM NEW."Credits") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."GraduationPlan_DocumentId";
@@ -37953,6 +38481,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."GraduationPlan_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."GraduationPlan_DocumentId" IS DISTINCT FROM NEW."GraduationPlan_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."CourseCourse_DocumentId" IS DISTINCT FROM NEW."CourseCourse_DocumentId" OR OLD."CourseCourse_CourseCode" IS DISTINCT FROM NEW."CourseCourse_CourseCode" OR OLD."CourseCourse_EducationOrganizationId" IS DISTINCT FROM NEW."CourseCourse_EducationOrganizationId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -37976,6 +38507,9 @@ BEGIN
         WHERE "DocumentId" = OLD."GraduationPlan_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."GraduationPlan_DocumentId" IS DISTINCT FROM NEW."GraduationPlan_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."CreditCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."CreditCategoryDescriptor_DescriptorId" OR OLD."CreditTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."CreditTypeDescriptor_DescriptorId" OR OLD."CreditConversion" IS DISTINCT FROM NEW."CreditConversion" OR OLD."Credits" IS DISTINCT FROM NEW."Credits") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."GraduationPlan_DocumentId";
@@ -37997,6 +38531,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."GraduationPlan_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."GraduationPlan_DocumentId" IS DISTINCT FROM NEW."GraduationPlan_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."AcademicSubjectDescriptor_DescriptorId" IS DISTINCT FROM NEW."AcademicSubjectDescriptor_DescriptorId" OR OLD."CreditTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."CreditTypeDescriptor_DescriptorId" OR OLD."CreditConversion" IS DISTINCT FROM NEW."CreditConversion" OR OLD."Credits" IS DISTINCT FROM NEW."Credits") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -38020,6 +38557,9 @@ BEGIN
         WHERE "DocumentId" = OLD."GraduationPlan_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."GraduationPlan_DocumentId" IS DISTINCT FROM NEW."GraduationPlan_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."RequiredAssessmentAssessment_DocumentId" IS DISTINCT FROM NEW."RequiredAssessmentAssessment_DocumentId" OR OLD."RequiredAssessmentAssessment_AssessmentIdentifier" IS DISTINCT FROM NEW."RequiredAssessmentAssessment_AssessmentIdentifier" OR OLD."RequiredAssessmentAssessment_Namespace" IS DISTINCT FROM NEW."RequiredAssessmentAssessment_Namespace" OR OLD."PerformanceLevelAssessmentReportingMethodDescriptor__5b84c3b397" IS DISTINCT FROM NEW."PerformanceLevelAssessmentReportingMethodDescriptor__5b84c3b397" OR OLD."PerformanceLevelPerformanceLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."PerformanceLevelPerformanceLevelDescriptor_DescriptorId" OR OLD."PerformanceLevelResultDatatypeTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."PerformanceLevelResultDatatypeTypeDescriptor_DescriptorId" OR OLD."RequiredMaximumScore" IS DISTINCT FROM NEW."RequiredMaximumScore" OR OLD."RequiredMinimumScore" IS DISTINCT FROM NEW."RequiredMinimumScore" OR OLD."RequiredPerformanceLevelIndicatorName" IS DISTINCT FROM NEW."RequiredPerformanceLevelIndicatorName") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."GraduationPlan_DocumentId";
@@ -38041,6 +38581,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."GraduationPlan_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."GraduationPlan_DocumentId" IS DISTINCT FROM NEW."GraduationPlan_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."AssessmentReportingMethodDescriptor_DescriptorId" IS DISTINCT FROM NEW."AssessmentReportingMethodDescriptor_DescriptorId" OR OLD."ResultDatatypeTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ResultDatatypeTypeDescriptor_DescriptorId" OR OLD."RequiredMaximumScore" IS DISTINCT FROM NEW."RequiredMaximumScore" OR OLD."RequiredMinimumScore" IS DISTINCT FROM NEW."RequiredMinimumScore") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -38083,9 +38626,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."DeliveryMethodDescriptor_DescriptorId" IS DISTINCT FROM NEW."DeliveryMethodDescriptor_DescriptorId" OR OLD."InterventionClassDescriptor_DescriptorId" IS DISTINCT FROM NEW."InterventionClassDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."InterventionIdentificationCode" IS DISTINCT FROM NEW."InterventionIdentificationCode" OR OLD."MaxDosage" IS DISTINCT FROM NEW."MaxDosage" OR OLD."MinDosage" IS DISTINCT FROM NEW."MinDosage" OR OLD."Namespace" IS DISTINCT FROM NEW."Namespace") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."InterventionIdentificationCode" IS DISTINCT FROM NEW."InterventionIdentificationCode") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -38110,6 +38658,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Intervention_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Intervention_DocumentId" IS DISTINCT FROM NEW."Intervention_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."GradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradeLevelDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Intervention_DocumentId";
@@ -38131,6 +38682,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Intervention_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Intervention_DocumentId" IS DISTINCT FROM NEW."Intervention_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."SexDescriptor_DescriptorId" IS DISTINCT FROM NEW."SexDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -38154,6 +38708,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Intervention_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Intervention_DocumentId" IS DISTINCT FROM NEW."Intervention_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."DiagnosisDescriptor_DescriptorId" IS DISTINCT FROM NEW."DiagnosisDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Intervention_DocumentId";
@@ -38175,6 +38732,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Intervention_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Intervention_DocumentId" IS DISTINCT FROM NEW."Intervention_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."EducationContentSourceEducationContent_DocumentId" IS DISTINCT FROM NEW."EducationContentSourceEducationContent_DocumentId" OR OLD."EducationContentSourceEducationContent_ContentIdentifier" IS DISTINCT FROM NEW."EducationContentSourceEducationContent_ContentIdentifier") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -38198,6 +38758,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Intervention_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Intervention_DocumentId" IS DISTINCT FROM NEW."Intervention_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."InterventionPrescriptionInterventionPrescription_DocumentId" IS DISTINCT FROM NEW."InterventionPrescriptionInterventionPrescription_DocumentId" OR OLD."InterventionPrescriptionInterventionPrescription_Edu_532babb247" IS DISTINCT FROM NEW."InterventionPrescriptionInterventionPrescription_Edu_532babb247" OR OLD."InterventionPrescriptionInterventionPrescription_Int_409fc39d28" IS DISTINCT FROM NEW."InterventionPrescriptionInterventionPrescription_Int_409fc39d28") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Intervention_DocumentId";
@@ -38219,6 +38782,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Intervention_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Intervention_DocumentId" IS DISTINCT FROM NEW."Intervention_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."LearningResourceMetadataURI" IS DISTINCT FROM NEW."LearningResourceMetadataURI") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -38242,6 +38808,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Intervention_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Intervention_DocumentId" IS DISTINCT FROM NEW."Intervention_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."EndTime" IS DISTINCT FROM NEW."EndTime" OR OLD."StartTime" IS DISTINCT FROM NEW."StartTime") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Intervention_DocumentId";
@@ -38263,6 +38832,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Intervention_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Intervention_DocumentId" IS DISTINCT FROM NEW."Intervention_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."PopulationServedDescriptor_DescriptorId" IS DISTINCT FROM NEW."PopulationServedDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -38305,9 +38877,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."DeliveryMethodDescriptor_DescriptorId" IS DISTINCT FROM NEW."DeliveryMethodDescriptor_DescriptorId" OR OLD."InterventionClassDescriptor_DescriptorId" IS DISTINCT FROM NEW."InterventionClassDescriptor_DescriptorId" OR OLD."InterventionPrescriptionIdentificationCode" IS DISTINCT FROM NEW."InterventionPrescriptionIdentificationCode" OR OLD."MaxDosage" IS DISTINCT FROM NEW."MaxDosage" OR OLD."MinDosage" IS DISTINCT FROM NEW."MinDosage" OR OLD."Namespace" IS DISTINCT FROM NEW."Namespace") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."InterventionPrescriptionIdentificationCode" IS DISTINCT FROM NEW."InterventionPrescriptionIdentificationCode") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -38332,6 +38909,9 @@ BEGIN
         WHERE "DocumentId" = OLD."InterventionPrescription_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."InterventionPrescription_DocumentId" IS DISTINCT FROM NEW."InterventionPrescription_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."GradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradeLevelDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."InterventionPrescription_DocumentId";
@@ -38353,6 +38933,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."InterventionPrescription_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."InterventionPrescription_DocumentId" IS DISTINCT FROM NEW."InterventionPrescription_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."SexDescriptor_DescriptorId" IS DISTINCT FROM NEW."SexDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -38376,6 +38959,9 @@ BEGIN
         WHERE "DocumentId" = OLD."InterventionPrescription_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."InterventionPrescription_DocumentId" IS DISTINCT FROM NEW."InterventionPrescription_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."DiagnosisDescriptor_DescriptorId" IS DISTINCT FROM NEW."DiagnosisDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."InterventionPrescription_DocumentId";
@@ -38397,6 +38983,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."InterventionPrescription_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."InterventionPrescription_DocumentId" IS DISTINCT FROM NEW."InterventionPrescription_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."EducationContentSourceEducationContent_DocumentId" IS DISTINCT FROM NEW."EducationContentSourceEducationContent_DocumentId" OR OLD."EducationContentSourceEducationContent_ContentIdentifier" IS DISTINCT FROM NEW."EducationContentSourceEducationContent_ContentIdentifier") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -38420,6 +39009,9 @@ BEGIN
         WHERE "DocumentId" = OLD."InterventionPrescription_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."InterventionPrescription_DocumentId" IS DISTINCT FROM NEW."InterventionPrescription_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."LearningResourceMetadataURI" IS DISTINCT FROM NEW."LearningResourceMetadataURI") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."InterventionPrescription_DocumentId";
@@ -38441,6 +39033,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."InterventionPrescription_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."InterventionPrescription_DocumentId" IS DISTINCT FROM NEW."InterventionPrescription_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."PopulationServedDescriptor_DescriptorId" IS DISTINCT FROM NEW."PopulationServedDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -38464,6 +39059,9 @@ BEGIN
         WHERE "DocumentId" = OLD."InterventionPrescription_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."InterventionPrescription_DocumentId" IS DISTINCT FROM NEW."InterventionPrescription_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Uri" IS DISTINCT FROM NEW."Uri") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."InterventionPrescription_DocumentId";
@@ -38485,6 +39083,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Intervention_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Intervention_DocumentId" IS DISTINCT FROM NEW."Intervention_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -38527,9 +39128,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."InterventionPrescriptionInterventionPrescription_DocumentId" IS DISTINCT FROM NEW."InterventionPrescriptionInterventionPrescription_DocumentId" OR OLD."InterventionPrescriptionInterventionPrescription_Edu_532babb247" IS DISTINCT FROM NEW."InterventionPrescriptionInterventionPrescription_Edu_532babb247" OR OLD."InterventionPrescriptionInterventionPrescription_Int_409fc39d28" IS DISTINCT FROM NEW."InterventionPrescriptionInterventionPrescription_Int_409fc39d28" OR OLD."DeliveryMethodDescriptor_DescriptorId" IS DISTINCT FROM NEW."DeliveryMethodDescriptor_DescriptorId" OR OLD."InterventionClassDescriptor_DescriptorId" IS DISTINCT FROM NEW."InterventionClassDescriptor_DescriptorId" OR OLD."InterventionStudyIdentificationCode" IS DISTINCT FROM NEW."InterventionStudyIdentificationCode" OR OLD."Participants" IS DISTINCT FROM NEW."Participants") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."InterventionStudyIdentificationCode" IS DISTINCT FROM NEW."InterventionStudyIdentificationCode") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -38554,6 +39160,9 @@ BEGIN
         WHERE "DocumentId" = OLD."InterventionStudy_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."InterventionStudy_DocumentId" IS DISTINCT FROM NEW."InterventionStudy_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."GradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradeLevelDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."InterventionStudy_DocumentId";
@@ -38575,6 +39184,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."InterventionStudy_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."InterventionStudy_DocumentId" IS DISTINCT FROM NEW."InterventionStudy_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."SexDescriptor_DescriptorId" IS DISTINCT FROM NEW."SexDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -38598,6 +39210,9 @@ BEGIN
         WHERE "DocumentId" = OLD."InterventionStudy_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."InterventionStudy_DocumentId" IS DISTINCT FROM NEW."InterventionStudy_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."EducationContentSourceEducationContent_DocumentId" IS DISTINCT FROM NEW."EducationContentSourceEducationContent_DocumentId" OR OLD."EducationContentSourceEducationContent_ContentIdentifier" IS DISTINCT FROM NEW."EducationContentSourceEducationContent_ContentIdentifier") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."InterventionStudy_DocumentId";
@@ -38619,6 +39234,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."InterventionStudy_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."InterventionStudy_DocumentId" IS DISTINCT FROM NEW."InterventionStudy_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."DiagnosisDescriptor_DescriptorId" IS DISTINCT FROM NEW."DiagnosisDescriptor_DescriptorId" OR OLD."GradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradeLevelDescriptor_DescriptorId" OR OLD."InterventionEffectivenessRatingDescriptor_DescriptorId" IS DISTINCT FROM NEW."InterventionEffectivenessRatingDescriptor_DescriptorId" OR OLD."PopulationServedDescriptor_DescriptorId" IS DISTINCT FROM NEW."PopulationServedDescriptor_DescriptorId" OR OLD."ImprovementIndex" IS DISTINCT FROM NEW."ImprovementIndex") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -38642,6 +39260,9 @@ BEGIN
         WHERE "DocumentId" = OLD."InterventionStudy_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."InterventionStudy_DocumentId" IS DISTINCT FROM NEW."InterventionStudy_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."LearningResourceMetadataURI" IS DISTINCT FROM NEW."LearningResourceMetadataURI") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."InterventionStudy_DocumentId";
@@ -38663,6 +39284,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."InterventionStudy_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."InterventionStudy_DocumentId" IS DISTINCT FROM NEW."InterventionStudy_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."PopulationServedDescriptor_DescriptorId" IS DISTINCT FROM NEW."PopulationServedDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -38686,6 +39310,9 @@ BEGIN
         WHERE "DocumentId" = OLD."InterventionStudy_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."InterventionStudy_DocumentId" IS DISTINCT FROM NEW."InterventionStudy_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StateAbbreviationDescriptor_DescriptorId" IS DISTINCT FROM NEW."StateAbbreviationDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."InterventionStudy_DocumentId";
@@ -38708,6 +39335,9 @@ BEGIN
         WHERE "DocumentId" = OLD."InterventionStudy_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."InterventionStudy_DocumentId" IS DISTINCT FROM NEW."InterventionStudy_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Uri" IS DISTINCT FROM NEW."Uri") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."InterventionStudy_DocumentId";
@@ -38729,6 +39359,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Intervention_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Intervention_DocumentId" IS DISTINCT FROM NEW."Intervention_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Uri" IS DISTINCT FROM NEW."Uri") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -38771,9 +39404,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."MandatingEducationOrganization_DocumentId" IS DISTINCT FROM NEW."MandatingEducationOrganization_DocumentId" OR OLD."MandatingEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."MandatingEducationOrganization_EducationOrganizationId" OR OLD."ParentLearningStandard_DocumentId" IS DISTINCT FROM NEW."ParentLearningStandard_DocumentId" OR OLD."ParentLearningStandard_LearningStandardId" IS DISTINCT FROM NEW."ParentLearningStandard_LearningStandardId" OR OLD."ContentStandardPublicationStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."ContentStandardPublicationStatusDescriptor_DescriptorId" OR OLD."LearningStandardCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."LearningStandardCategoryDescriptor_DescriptorId" OR OLD."LearningStandardScopeDescriptor_DescriptorId" IS DISTINCT FROM NEW."LearningStandardScopeDescriptor_DescriptorId" OR OLD."ContentStandardBeginDate" IS DISTINCT FROM NEW."ContentStandardBeginDate" OR OLD."ContentStandardEndDate" IS DISTINCT FROM NEW."ContentStandardEndDate" OR OLD."ContentStandardPublicationDate" IS DISTINCT FROM NEW."ContentStandardPublicationDate" OR OLD."ContentStandardPublicationYear" IS DISTINCT FROM NEW."ContentStandardPublicationYear" OR OLD."ContentStandardTitle" IS DISTINCT FROM NEW."ContentStandardTitle" OR OLD."ContentStandardUri" IS DISTINCT FROM NEW."ContentStandardUri" OR OLD."ContentStandardVersion" IS DISTINCT FROM NEW."ContentStandardVersion" OR OLD."CourseTitle" IS DISTINCT FROM NEW."CourseTitle" OR OLD."Description" IS DISTINCT FROM NEW."Description" OR OLD."LearningStandardId" IS DISTINCT FROM NEW."LearningStandardId" OR OLD."LearningStandardItemCode" IS DISTINCT FROM NEW."LearningStandardItemCode" OR OLD."Namespace" IS DISTINCT FROM NEW."Namespace" OR OLD."SuccessCriteria" IS DISTINCT FROM NEW."SuccessCriteria" OR OLD."Uri" IS DISTINCT FROM NEW."Uri") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."LearningStandardId" IS DISTINCT FROM NEW."LearningStandardId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -38798,6 +39436,9 @@ BEGIN
         WHERE "DocumentId" = OLD."LearningStandard_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."LearningStandard_DocumentId" IS DISTINCT FROM NEW."LearningStandard_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."AcademicSubjectDescriptor_DescriptorId" IS DISTINCT FROM NEW."AcademicSubjectDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."LearningStandard_DocumentId";
@@ -38819,6 +39460,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."LearningStandard_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."LearningStandard_DocumentId" IS DISTINCT FROM NEW."LearningStandard_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Author" IS DISTINCT FROM NEW."Author") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -38861,9 +39505,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SourceLearningStandard_DocumentId" IS DISTINCT FROM NEW."SourceLearningStandard_DocumentId" OR OLD."SourceLearningStandard_LearningStandardId" IS DISTINCT FROM NEW."SourceLearningStandard_LearningStandardId" OR OLD."TargetLearningStandard_DocumentId" IS DISTINCT FROM NEW."TargetLearningStandard_DocumentId" OR OLD."TargetLearningStandard_LearningStandardId" IS DISTINCT FROM NEW."TargetLearningStandard_LearningStandardId" OR OLD."LearningStandardEquivalenceStrengthDescriptor_DescriptorId" IS DISTINCT FROM NEW."LearningStandardEquivalenceStrengthDescriptor_DescriptorId" OR OLD."EffectiveDate" IS DISTINCT FROM NEW."EffectiveDate" OR OLD."LearningStandardEquivalenceStrengthDescription" IS DISTINCT FROM NEW."LearningStandardEquivalenceStrengthDescription" OR OLD."Namespace" IS DISTINCT FROM NEW."Namespace") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."Namespace" IS DISTINCT FROM NEW."Namespace" OR OLD."SourceLearningStandard_LearningStandardId" IS DISTINCT FROM NEW."SourceLearningStandard_LearningStandardId" OR OLD."TargetLearningStandard_LearningStandardId" IS DISTINCT FROM NEW."TargetLearningStandard_LearningStandardId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -38888,6 +39537,9 @@ BEGIN
         WHERE "DocumentId" = OLD."LearningStandard_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."LearningStandard_DocumentId" IS DISTINCT FROM NEW."LearningStandard_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."GradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradeLevelDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."LearningStandard_DocumentId";
@@ -38909,6 +39561,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."LearningStandard_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."LearningStandard_DocumentId" IS DISTINCT FROM NEW."LearningStandard_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ContentStandardName" IS DISTINCT FROM NEW."ContentStandardName" OR OLD."IdentificationCode" IS DISTINCT FROM NEW."IdentificationCode") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -38951,9 +39606,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."FiscalYear_Unified" IS DISTINCT FROM NEW."FiscalYear_Unified" OR OLD."ChartOfAccountChartOfAccount_DocumentId" IS DISTINCT FROM NEW."ChartOfAccountChartOfAccount_DocumentId" OR OLD."ChartOfAccountChartOfAccount_AccountIdentifier" IS DISTINCT FROM NEW."ChartOfAccountChartOfAccount_AccountIdentifier" OR OLD."ChartOfAccountChartOfAccount_EducationOrganizationId" IS DISTINCT FROM NEW."ChartOfAccountChartOfAccount_EducationOrganizationId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."AccountIdentifier" IS DISTINCT FROM NEW."AccountIdentifier" OR OLD."AccountName" IS DISTINCT FROM NEW."AccountName") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."AccountIdentifier" IS DISTINCT FROM NEW."AccountIdentifier" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."FiscalYear_Unified" IS DISTINCT FROM NEW."FiscalYear_Unified") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -38977,6 +39637,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."LocalAccount_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."LocalAccount_DocumentId" IS DISTINCT FROM NEW."LocalAccount_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ReportingTagDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReportingTagDescriptor_DescriptorId" OR OLD."TagValue" IS DISTINCT FROM NEW."TagValue") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -39019,9 +39682,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."LocalAccount_DocumentId" IS DISTINCT FROM NEW."LocalAccount_DocumentId" OR OLD."LocalAccount_AccountIdentifier" IS DISTINCT FROM NEW."LocalAccount_AccountIdentifier" OR OLD."LocalAccount_EducationOrganizationId" IS DISTINCT FROM NEW."LocalAccount_EducationOrganizationId" OR OLD."LocalAccount_FiscalYear" IS DISTINCT FROM NEW."LocalAccount_FiscalYear" OR OLD."FinancialCollectionDescriptor_DescriptorId" IS DISTINCT FROM NEW."FinancialCollectionDescriptor_DescriptorId" OR OLD."Amount" IS DISTINCT FROM NEW."Amount" OR OLD."AsOfDate" IS DISTINCT FROM NEW."AsOfDate") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."AsOfDate" IS DISTINCT FROM NEW."AsOfDate" OR OLD."LocalAccount_AccountIdentifier" IS DISTINCT FROM NEW."LocalAccount_AccountIdentifier" OR OLD."LocalAccount_EducationOrganizationId" IS DISTINCT FROM NEW."LocalAccount_EducationOrganizationId" OR OLD."LocalAccount_FiscalYear" IS DISTINCT FROM NEW."LocalAccount_FiscalYear") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -39065,9 +39733,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."LocalAccount_DocumentId" IS DISTINCT FROM NEW."LocalAccount_DocumentId" OR OLD."LocalAccount_AccountIdentifier" IS DISTINCT FROM NEW."LocalAccount_AccountIdentifier" OR OLD."LocalAccount_EducationOrganizationId" IS DISTINCT FROM NEW."LocalAccount_EducationOrganizationId" OR OLD."LocalAccount_FiscalYear" IS DISTINCT FROM NEW."LocalAccount_FiscalYear" OR OLD."FinancialCollectionDescriptor_DescriptorId" IS DISTINCT FROM NEW."FinancialCollectionDescriptor_DescriptorId" OR OLD."Amount" IS DISTINCT FROM NEW."Amount" OR OLD."AsOfDate" IS DISTINCT FROM NEW."AsOfDate") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."AsOfDate" IS DISTINCT FROM NEW."AsOfDate" OR OLD."LocalAccount_AccountIdentifier" IS DISTINCT FROM NEW."LocalAccount_AccountIdentifier" OR OLD."LocalAccount_EducationOrganizationId" IS DISTINCT FROM NEW."LocalAccount_EducationOrganizationId" OR OLD."LocalAccount_FiscalYear" IS DISTINCT FROM NEW."LocalAccount_FiscalYear") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -39111,9 +39784,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."LocalAccount_DocumentId" IS DISTINCT FROM NEW."LocalAccount_DocumentId" OR OLD."LocalAccount_AccountIdentifier" IS DISTINCT FROM NEW."LocalAccount_AccountIdentifier" OR OLD."LocalAccount_EducationOrganizationId" IS DISTINCT FROM NEW."LocalAccount_EducationOrganizationId" OR OLD."LocalAccount_FiscalYear" IS DISTINCT FROM NEW."LocalAccount_FiscalYear" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId" OR OLD."FinancialCollectionDescriptor_DescriptorId" IS DISTINCT FROM NEW."FinancialCollectionDescriptor_DescriptorId" OR OLD."Amount" IS DISTINCT FROM NEW."Amount" OR OLD."AsOfDate" IS DISTINCT FROM NEW."AsOfDate") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."AsOfDate" IS DISTINCT FROM NEW."AsOfDate" OR OLD."LocalAccount_AccountIdentifier" IS DISTINCT FROM NEW."LocalAccount_AccountIdentifier" OR OLD."LocalAccount_EducationOrganizationId" IS DISTINCT FROM NEW."LocalAccount_EducationOrganizationId" OR OLD."LocalAccount_FiscalYear" IS DISTINCT FROM NEW."LocalAccount_FiscalYear" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -39364,9 +40042,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationServiceCenter_DocumentId" IS DISTINCT FROM NEW."EducationServiceCenter_DocumentId" OR OLD."EducationServiceCenter_EducationServiceCenterId" IS DISTINCT FROM NEW."EducationServiceCenter_EducationServiceCenterId" OR OLD."ParentLocalEducationAgency_DocumentId" IS DISTINCT FROM NEW."ParentLocalEducationAgency_DocumentId" OR OLD."ParentLocalEducationAgency_LocalEducationAgencyId" IS DISTINCT FROM NEW."ParentLocalEducationAgency_LocalEducationAgencyId" OR OLD."StateEducationAgency_DocumentId" IS DISTINCT FROM NEW."StateEducationAgency_DocumentId" OR OLD."StateEducationAgency_StateEducationAgencyId" IS DISTINCT FROM NEW."StateEducationAgency_StateEducationAgencyId" OR OLD."CharterStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."CharterStatusDescriptor_DescriptorId" OR OLD."LocalEducationAgencyCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."LocalEducationAgencyCategoryDescriptor_DescriptorId" OR OLD."OperationalStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."OperationalStatusDescriptor_DescriptorId" OR OLD."LocalEducationAgencyId" IS DISTINCT FROM NEW."LocalEducationAgencyId" OR OLD."NameOfInstitution" IS DISTINCT FROM NEW."NameOfInstitution" OR OLD."ShortNameOfInstitution" IS DISTINCT FROM NEW."ShortNameOfInstitution" OR OLD."WebSite" IS DISTINCT FROM NEW."WebSite") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."LocalEducationAgencyId" IS DISTINCT FROM NEW."LocalEducationAgencyId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -39391,6 +40074,9 @@ BEGIN
         WHERE "DocumentId" = OLD."LocalEducationAgency_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."LocalEducationAgency_DocumentId" IS DISTINCT FROM NEW."LocalEducationAgency_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."LocalEducationAgencyAccountabilitySchoolYear_DocumentId" IS DISTINCT FROM NEW."LocalEducationAgencyAccountabilitySchoolYear_DocumentId" OR OLD."LocalEducationAgencyAccountabilitySchoolYear_SchoolYear" IS DISTINCT FROM NEW."LocalEducationAgencyAccountabilitySchoolYear_SchoolYear" OR OLD."GunFreeSchoolsActReportingStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."GunFreeSchoolsActReportingStatusDescriptor_DescriptorId" OR OLD."SchoolChoiceImplementStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."SchoolChoiceImplementStatusDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."LocalEducationAgency_DocumentId";
@@ -39412,6 +40098,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."LocalEducationAgency_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."LocalEducationAgency_DocumentId" IS DISTINCT FROM NEW."LocalEducationAgency_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."AddressTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AddressTypeDescriptor_DescriptorId" OR OLD."LocaleDescriptor_DescriptorId" IS DISTINCT FROM NEW."LocaleDescriptor_DescriptorId" OR OLD."StateAbbreviationDescriptor_DescriptorId" IS DISTINCT FROM NEW."StateAbbreviationDescriptor_DescriptorId" OR OLD."ApartmentRoomSuiteNumber" IS DISTINCT FROM NEW."ApartmentRoomSuiteNumber" OR OLD."BuildingSiteNumber" IS DISTINCT FROM NEW."BuildingSiteNumber" OR OLD."City" IS DISTINCT FROM NEW."City" OR OLD."CongressionalDistrict" IS DISTINCT FROM NEW."CongressionalDistrict" OR OLD."CountyFIPSCode" IS DISTINCT FROM NEW."CountyFIPSCode" OR OLD."DoNotPublishIndicator" IS DISTINCT FROM NEW."DoNotPublishIndicator" OR OLD."Latitude" IS DISTINCT FROM NEW."Latitude" OR OLD."Longitude" IS DISTINCT FROM NEW."Longitude" OR OLD."NameOfCounty" IS DISTINCT FROM NEW."NameOfCounty" OR OLD."PostalCode" IS DISTINCT FROM NEW."PostalCode" OR OLD."StreetNumberName" IS DISTINCT FROM NEW."StreetNumberName") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -39435,6 +40124,9 @@ BEGIN
         WHERE "DocumentId" = OLD."LocalEducationAgency_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."LocalEducationAgency_DocumentId" IS DISTINCT FROM NEW."LocalEducationAgency_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."LocalEducationAgency_DocumentId";
@@ -39456,6 +40148,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."LocalEducationAgency_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."LocalEducationAgency_DocumentId" IS DISTINCT FROM NEW."LocalEducationAgency_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."EducationOrganizationCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."EducationOrganizationCategoryDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -39479,6 +40174,9 @@ BEGIN
         WHERE "DocumentId" = OLD."LocalEducationAgency_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."LocalEducationAgency_DocumentId" IS DISTINCT FROM NEW."LocalEducationAgency_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear" OR OLD."InnovativeDollarsSpent" IS DISTINCT FROM NEW."InnovativeDollarsSpent" OR OLD."InnovativeDollarsSpentStrategicPriorities" IS DISTINCT FROM NEW."InnovativeDollarsSpentStrategicPriorities" OR OLD."InnovativeProgramsFundsReceived" IS DISTINCT FROM NEW."InnovativeProgramsFundsReceived" OR OLD."SchoolImprovementAllocation" IS DISTINCT FROM NEW."SchoolImprovementAllocation" OR OLD."SchoolImprovementReservedFundsPercentage" IS DISTINCT FROM NEW."SchoolImprovementReservedFundsPercentage" OR OLD."StateAssessmentAdministrationFunding" IS DISTINCT FROM NEW."StateAssessmentAdministrationFunding" OR OLD."SupplementalEducationalServicesFundsSpent" IS DISTINCT FROM NEW."SupplementalEducationalServicesFundsSpent" OR OLD."SupplementalEducationalServicesPerPupilExpenditure" IS DISTINCT FROM NEW."SupplementalEducationalServicesPerPupilExpenditure") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."LocalEducationAgency_DocumentId";
@@ -39500,6 +40198,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."LocalEducationAgency_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."LocalEducationAgency_DocumentId" IS DISTINCT FROM NEW."LocalEducationAgency_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" IS DISTINCT FROM NEW."EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" OR OLD."IdentificationCode" IS DISTINCT FROM NEW."IdentificationCode") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -39523,6 +40224,9 @@ BEGIN
         WHERE "DocumentId" = OLD."LocalEducationAgency_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."LocalEducationAgency_DocumentId" IS DISTINCT FROM NEW."LocalEducationAgency_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."IndicatorDescriptor_DescriptorId" IS DISTINCT FROM NEW."IndicatorDescriptor_DescriptorId" OR OLD."IndicatorGroupDescriptor_DescriptorId" IS DISTINCT FROM NEW."IndicatorGroupDescriptor_DescriptorId" OR OLD."IndicatorLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."IndicatorLevelDescriptor_DescriptorId" OR OLD."DesignatedBy" IS DISTINCT FROM NEW."DesignatedBy" OR OLD."IndicatorValue" IS DISTINCT FROM NEW."IndicatorValue") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."LocalEducationAgency_DocumentId";
@@ -39544,6 +40248,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."LocalEducationAgency_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."LocalEducationAgency_DocumentId" IS DISTINCT FROM NEW."LocalEducationAgency_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -39567,6 +40274,9 @@ BEGIN
         WHERE "DocumentId" = OLD."LocalEducationAgency_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."LocalEducationAgency_DocumentId" IS DISTINCT FROM NEW."LocalEducationAgency_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."InstitutionTelephoneNumberTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."InstitutionTelephoneNumberTypeDescriptor_DescriptorId" OR OLD."TelephoneNumber" IS DISTINCT FROM NEW."TelephoneNumber") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."LocalEducationAgency_DocumentId";
@@ -39588,6 +40298,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."LocalEducationAgency_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."LocalEducationAgency_DocumentId" IS DISTINCT FROM NEW."LocalEducationAgency_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."AddressTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AddressTypeDescriptor_DescriptorId" OR OLD."CountryDescriptor_DescriptorId" IS DISTINCT FROM NEW."CountryDescriptor_DescriptorId" OR OLD."AddressLine1" IS DISTINCT FROM NEW."AddressLine1" OR OLD."AddressLine2" IS DISTINCT FROM NEW."AddressLine2" OR OLD."AddressLine3" IS DISTINCT FROM NEW."AddressLine3" OR OLD."AddressLine4" IS DISTINCT FROM NEW."AddressLine4" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."Latitude" IS DISTINCT FROM NEW."Latitude" OR OLD."Longitude" IS DISTINCT FROM NEW."Longitude") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -39630,9 +40343,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."LocalAccount_DocumentId" IS DISTINCT FROM NEW."LocalAccount_DocumentId" OR OLD."LocalAccount_AccountIdentifier" IS DISTINCT FROM NEW."LocalAccount_AccountIdentifier" OR OLD."LocalAccount_EducationOrganizationId" IS DISTINCT FROM NEW."LocalAccount_EducationOrganizationId" OR OLD."LocalAccount_FiscalYear" IS DISTINCT FROM NEW."LocalAccount_FiscalYear" OR OLD."FinancialCollectionDescriptor_DescriptorId" IS DISTINCT FROM NEW."FinancialCollectionDescriptor_DescriptorId" OR OLD."Amount" IS DISTINCT FROM NEW."Amount" OR OLD."AsOfDate" IS DISTINCT FROM NEW."AsOfDate") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."AsOfDate" IS DISTINCT FROM NEW."AsOfDate" OR OLD."LocalAccount_AccountIdentifier" IS DISTINCT FROM NEW."LocalAccount_AccountIdentifier" OR OLD."LocalAccount_EducationOrganizationId" IS DISTINCT FROM NEW."LocalAccount_EducationOrganizationId" OR OLD."LocalAccount_FiscalYear" IS DISTINCT FROM NEW."LocalAccount_FiscalYear") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -39676,9 +40394,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."LocalAccount_DocumentId" IS DISTINCT FROM NEW."LocalAccount_DocumentId" OR OLD."LocalAccount_AccountIdentifier" IS DISTINCT FROM NEW."LocalAccount_AccountIdentifier" OR OLD."LocalAccount_EducationOrganizationId" IS DISTINCT FROM NEW."LocalAccount_EducationOrganizationId" OR OLD."LocalAccount_FiscalYear" IS DISTINCT FROM NEW."LocalAccount_FiscalYear" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId" OR OLD."FinancialCollectionDescriptor_DescriptorId" IS DISTINCT FROM NEW."FinancialCollectionDescriptor_DescriptorId" OR OLD."Amount" IS DISTINCT FROM NEW."Amount" OR OLD."AsOfDate" IS DISTINCT FROM NEW."AsOfDate") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."AsOfDate" IS DISTINCT FROM NEW."AsOfDate" OR OLD."LocalAccount_AccountIdentifier" IS DISTINCT FROM NEW."LocalAccount_AccountIdentifier" OR OLD."LocalAccount_EducationOrganizationId" IS DISTINCT FROM NEW."LocalAccount_EducationOrganizationId" OR OLD."LocalAccount_FiscalYear" IS DISTINCT FROM NEW."LocalAccount_FiscalYear" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -39722,9 +40445,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId" OR OLD."ClassroomIdentificationCode" IS DISTINCT FROM NEW."ClassroomIdentificationCode" OR OLD."MaximumNumberOfSeats" IS DISTINCT FROM NEW."MaximumNumberOfSeats" OR OLD."OptimalNumberOfSeats" IS DISTINCT FROM NEW."OptimalNumberOfSeats") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."ClassroomIdentificationCode" IS DISTINCT FROM NEW."ClassroomIdentificationCode" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -39768,9 +40496,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."CodeName" IS DISTINCT FROM NEW."CodeName" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -39794,6 +40527,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."ObjectDimension_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."ObjectDimension_DocumentId" IS DISTINCT FROM NEW."ObjectDimension_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ReportingTagDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReportingTagDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -39836,9 +40572,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."AssessmentIdentifier_Unified" IS DISTINCT FROM NEW."AssessmentIdentifier_Unified" OR OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."Assessment_DocumentId" IS DISTINCT FROM NEW."Assessment_DocumentId" OR OLD."ParentObjectiveAssessment_DocumentId" IS DISTINCT FROM NEW."ParentObjectiveAssessment_DocumentId" OR OLD."ParentObjectiveAssessment_IdentificationCode" IS DISTINCT FROM NEW."ParentObjectiveAssessment_IdentificationCode" OR OLD."AcademicSubjectDescriptor_DescriptorId" IS DISTINCT FROM NEW."AcademicSubjectDescriptor_DescriptorId" OR OLD."Description" IS DISTINCT FROM NEW."Description" OR OLD."IdentificationCode" IS DISTINCT FROM NEW."IdentificationCode" OR OLD."MaxRawScore" IS DISTINCT FROM NEW."MaxRawScore" OR OLD."Nomenclature" IS DISTINCT FROM NEW."Nomenclature" OR OLD."PercentOfAssessment" IS DISTINCT FROM NEW."PercentOfAssessment") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."AssessmentIdentifier_Unified" IS DISTINCT FROM NEW."AssessmentIdentifier_Unified" OR OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."IdentificationCode" IS DISTINCT FROM NEW."IdentificationCode") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -39863,6 +40604,9 @@ BEGIN
         WHERE "DocumentId" = OLD."ObjectiveAssessment_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."ObjectiveAssessment_DocumentId" IS DISTINCT FROM NEW."ObjectiveAssessment_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."AssessmentItemAssessmentItem_DocumentId" IS DISTINCT FROM NEW."AssessmentItemAssessmentItem_DocumentId" OR OLD."AssessmentItemAssessmentItem_AssessmentIdentifier" IS DISTINCT FROM NEW."AssessmentItemAssessmentItem_AssessmentIdentifier" OR OLD."AssessmentItemAssessmentItem_Namespace" IS DISTINCT FROM NEW."AssessmentItemAssessmentItem_Namespace" OR OLD."AssessmentItemAssessmentItem_IdentificationCode" IS DISTINCT FROM NEW."AssessmentItemAssessmentItem_IdentificationCode") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."ObjectiveAssessment_DocumentId";
@@ -39884,6 +40628,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."ObjectiveAssessment_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."ObjectiveAssessment_DocumentId" IS DISTINCT FROM NEW."ObjectiveAssessment_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."LearningStandard_DocumentId" IS DISTINCT FROM NEW."LearningStandard_DocumentId" OR OLD."LearningStandard_LearningStandardId" IS DISTINCT FROM NEW."LearningStandard_LearningStandardId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -39907,6 +40654,9 @@ BEGIN
         WHERE "DocumentId" = OLD."ObjectiveAssessment_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."ObjectiveAssessment_DocumentId" IS DISTINCT FROM NEW."ObjectiveAssessment_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."AssessmentReportingMethodDescriptor_DescriptorId" IS DISTINCT FROM NEW."AssessmentReportingMethodDescriptor_DescriptorId" OR OLD."PerformanceLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."PerformanceLevelDescriptor_DescriptorId" OR OLD."ResultDatatypeTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ResultDatatypeTypeDescriptor_DescriptorId" OR OLD."MaximumScore" IS DISTINCT FROM NEW."MaximumScore" OR OLD."MinimumScore" IS DISTINCT FROM NEW."MinimumScore" OR OLD."PerformanceLevelIndicatorName" IS DISTINCT FROM NEW."PerformanceLevelIndicatorName") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."ObjectiveAssessment_DocumentId";
@@ -39928,6 +40678,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."ObjectiveAssessment_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."ObjectiveAssessment_DocumentId" IS DISTINCT FROM NEW."ObjectiveAssessment_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."AssessmentReportingMethodDescriptor_DescriptorId" IS DISTINCT FROM NEW."AssessmentReportingMethodDescriptor_DescriptorId" OR OLD."ResultDatatypeTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ResultDatatypeTypeDescriptor_DescriptorId" OR OLD."MaximumScore" IS DISTINCT FROM NEW."MaximumScore" OR OLD."MinimumScore" IS DISTINCT FROM NEW."MinimumScore") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -39970,9 +40723,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."EmploymentStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."EmploymentStatusDescriptor_DescriptorId" OR OLD."PostingResultDescriptor_DescriptorId" IS DISTINCT FROM NEW."PostingResultDescriptor_DescriptorId" OR OLD."ProgramAssignmentDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramAssignmentDescriptor_DescriptorId" OR OLD."StaffClassificationDescriptor_DescriptorId" IS DISTINCT FROM NEW."StaffClassificationDescriptor_DescriptorId" OR OLD."DatePosted" IS DISTINCT FROM NEW."DatePosted" OR OLD."DatePostingRemoved" IS DISTINCT FROM NEW."DatePostingRemoved" OR OLD."PositionTitle" IS DISTINCT FROM NEW."PositionTitle" OR OLD."RequisitionNumber" IS DISTINCT FROM NEW."RequisitionNumber") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."RequisitionNumber" IS DISTINCT FROM NEW."RequisitionNumber") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -39997,6 +40755,9 @@ BEGIN
         WHERE "DocumentId" = OLD."OpenStaffPosition_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."OpenStaffPosition_DocumentId" IS DISTINCT FROM NEW."OpenStaffPosition_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."AcademicSubjectDescriptor_DescriptorId" IS DISTINCT FROM NEW."AcademicSubjectDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."OpenStaffPosition_DocumentId";
@@ -40018,6 +40779,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."OpenStaffPosition_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."OpenStaffPosition_DocumentId" IS DISTINCT FROM NEW."OpenStaffPosition_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."GradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradeLevelDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -40060,9 +40824,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."CodeName" IS DISTINCT FROM NEW."CodeName" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -40086,6 +40855,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."OperationalUnitDimension_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."OperationalUnitDimension_DocumentId" IS DISTINCT FROM NEW."OperationalUnitDimension_DocumentId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ReportingTagDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReportingTagDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -40265,9 +41037,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."ParentEducationOrganization_DocumentId" IS DISTINCT FROM NEW."ParentEducationOrganization_DocumentId" OR OLD."ParentEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."ParentEducationOrganization_EducationOrganizationId" OR OLD."AcademicSubjectDescriptor_DescriptorId" IS DISTINCT FROM NEW."AcademicSubjectDescriptor_DescriptorId" OR OLD."OperationalStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."OperationalStatusDescriptor_DescriptorId" OR OLD."NameOfInstitution" IS DISTINCT FROM NEW."NameOfInstitution" OR OLD."OrganizationDepartmentId" IS DISTINCT FROM NEW."OrganizationDepartmentId" OR OLD."ShortNameOfInstitution" IS DISTINCT FROM NEW."ShortNameOfInstitution" OR OLD."WebSite" IS DISTINCT FROM NEW."WebSite") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."OrganizationDepartmentId" IS DISTINCT FROM NEW."OrganizationDepartmentId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -40292,6 +41069,9 @@ BEGIN
         WHERE "DocumentId" = OLD."OrganizationDepartment_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."OrganizationDepartment_DocumentId" IS DISTINCT FROM NEW."OrganizationDepartment_DocumentId" OR OLD."AddressTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AddressTypeDescriptor_DescriptorId" OR OLD."LocaleDescriptor_DescriptorId" IS DISTINCT FROM NEW."LocaleDescriptor_DescriptorId" OR OLD."StateAbbreviationDescriptor_DescriptorId" IS DISTINCT FROM NEW."StateAbbreviationDescriptor_DescriptorId" OR OLD."ApartmentRoomSuiteNumber" IS DISTINCT FROM NEW."ApartmentRoomSuiteNumber" OR OLD."BuildingSiteNumber" IS DISTINCT FROM NEW."BuildingSiteNumber" OR OLD."City" IS DISTINCT FROM NEW."City" OR OLD."CongressionalDistrict" IS DISTINCT FROM NEW."CongressionalDistrict" OR OLD."CountyFIPSCode" IS DISTINCT FROM NEW."CountyFIPSCode" OR OLD."DoNotPublishIndicator" IS DISTINCT FROM NEW."DoNotPublishIndicator" OR OLD."Latitude" IS DISTINCT FROM NEW."Latitude" OR OLD."Longitude" IS DISTINCT FROM NEW."Longitude" OR OLD."NameOfCounty" IS DISTINCT FROM NEW."NameOfCounty" OR OLD."PostalCode" IS DISTINCT FROM NEW."PostalCode" OR OLD."StreetNumberName" IS DISTINCT FROM NEW."StreetNumberName") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."OrganizationDepartment_DocumentId";
@@ -40313,6 +41093,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."OrganizationDepartment_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."OrganizationDepartment_DocumentId" IS DISTINCT FROM NEW."OrganizationDepartment_DocumentId" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -40336,6 +41119,9 @@ BEGIN
         WHERE "DocumentId" = OLD."OrganizationDepartment_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."OrganizationDepartment_DocumentId" IS DISTINCT FROM NEW."OrganizationDepartment_DocumentId" OR OLD."EducationOrganizationCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."EducationOrganizationCategoryDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."OrganizationDepartment_DocumentId";
@@ -40357,6 +41143,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."OrganizationDepartment_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."OrganizationDepartment_DocumentId" IS DISTINCT FROM NEW."OrganizationDepartment_DocumentId" OR OLD."EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" IS DISTINCT FROM NEW."EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" OR OLD."IdentificationCode" IS DISTINCT FROM NEW."IdentificationCode") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -40380,6 +41169,9 @@ BEGIN
         WHERE "DocumentId" = OLD."OrganizationDepartment_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."OrganizationDepartment_DocumentId" IS DISTINCT FROM NEW."OrganizationDepartment_DocumentId" OR OLD."IndicatorDescriptor_DescriptorId" IS DISTINCT FROM NEW."IndicatorDescriptor_DescriptorId" OR OLD."IndicatorGroupDescriptor_DescriptorId" IS DISTINCT FROM NEW."IndicatorGroupDescriptor_DescriptorId" OR OLD."IndicatorLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."IndicatorLevelDescriptor_DescriptorId" OR OLD."DesignatedBy" IS DISTINCT FROM NEW."DesignatedBy" OR OLD."IndicatorValue" IS DISTINCT FROM NEW."IndicatorValue") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."OrganizationDepartment_DocumentId";
@@ -40401,6 +41193,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."OrganizationDepartment_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."OrganizationDepartment_DocumentId" IS DISTINCT FROM NEW."OrganizationDepartment_DocumentId" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -40424,6 +41219,9 @@ BEGIN
         WHERE "DocumentId" = OLD."OrganizationDepartment_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."OrganizationDepartment_DocumentId" IS DISTINCT FROM NEW."OrganizationDepartment_DocumentId" OR OLD."InstitutionTelephoneNumberTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."InstitutionTelephoneNumberTypeDescriptor_DescriptorId" OR OLD."TelephoneNumber" IS DISTINCT FROM NEW."TelephoneNumber") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."OrganizationDepartment_DocumentId";
@@ -40445,6 +41243,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."OrganizationDepartment_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."OrganizationDepartment_DocumentId" IS DISTINCT FROM NEW."OrganizationDepartment_DocumentId" OR OLD."AddressTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AddressTypeDescriptor_DescriptorId" OR OLD."CountryDescriptor_DescriptorId" IS DISTINCT FROM NEW."CountryDescriptor_DescriptorId" OR OLD."AddressLine1" IS DISTINCT FROM NEW."AddressLine1" OR OLD."AddressLine2" IS DISTINCT FROM NEW."AddressLine2" OR OLD."AddressLine3" IS DISTINCT FROM NEW."AddressLine3" OR OLD."AddressLine4" IS DISTINCT FROM NEW."AddressLine4" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."Latitude" IS DISTINCT FROM NEW."Latitude" OR OLD."Longitude" IS DISTINCT FROM NEW."Longitude") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -40487,9 +41288,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SourceSystemDescriptor_DescriptorId" IS DISTINCT FROM NEW."SourceSystemDescriptor_DescriptorId" OR OLD."PersonId" IS DISTINCT FROM NEW."PersonId") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."PersonId" IS DISTINCT FROM NEW."PersonId" OR OLD."SourceSystemDescriptor_DescriptorId" IS DISTINCT FROM NEW."SourceSystemDescriptor_DescriptorId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -40533,9 +41339,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."PostSecondaryInstitution_DocumentId" IS DISTINCT FROM NEW."PostSecondaryInstitution_DocumentId" OR OLD."PostSecondaryInstitution_PostSecondaryInstitutionId" IS DISTINCT FROM NEW."PostSecondaryInstitution_PostSecondaryInstitutionId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."PostSecondaryEventCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."PostSecondaryEventCategoryDescriptor_DescriptorId" OR OLD."EventDate" IS DISTINCT FROM NEW."EventDate") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."EventDate" IS DISTINCT FROM NEW."EventDate" OR OLD."PostSecondaryEventCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."PostSecondaryEventCategoryDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -40632,9 +41443,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."AdministrativeFundingControlDescriptor_DescriptorId" IS DISTINCT FROM NEW."AdministrativeFundingControlDescriptor_DescriptorId" OR OLD."OperationalStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."OperationalStatusDescriptor_DescriptorId" OR OLD."PostSecondaryInstitutionLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."PostSecondaryInstitutionLevelDescriptor_DescriptorId" OR OLD."NameOfInstitution" IS DISTINCT FROM NEW."NameOfInstitution" OR OLD."PostSecondaryInstitutionId" IS DISTINCT FROM NEW."PostSecondaryInstitutionId" OR OLD."ShortNameOfInstitution" IS DISTINCT FROM NEW."ShortNameOfInstitution" OR OLD."WebSite" IS DISTINCT FROM NEW."WebSite") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."PostSecondaryInstitutionId" IS DISTINCT FROM NEW."PostSecondaryInstitutionId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -40659,6 +41475,9 @@ BEGIN
         WHERE "DocumentId" = OLD."PostSecondaryInstitution_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."PostSecondaryInstitution_DocumentId" IS DISTINCT FROM NEW."PostSecondaryInstitution_DocumentId" OR OLD."AddressTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AddressTypeDescriptor_DescriptorId" OR OLD."LocaleDescriptor_DescriptorId" IS DISTINCT FROM NEW."LocaleDescriptor_DescriptorId" OR OLD."StateAbbreviationDescriptor_DescriptorId" IS DISTINCT FROM NEW."StateAbbreviationDescriptor_DescriptorId" OR OLD."ApartmentRoomSuiteNumber" IS DISTINCT FROM NEW."ApartmentRoomSuiteNumber" OR OLD."BuildingSiteNumber" IS DISTINCT FROM NEW."BuildingSiteNumber" OR OLD."City" IS DISTINCT FROM NEW."City" OR OLD."CongressionalDistrict" IS DISTINCT FROM NEW."CongressionalDistrict" OR OLD."CountyFIPSCode" IS DISTINCT FROM NEW."CountyFIPSCode" OR OLD."DoNotPublishIndicator" IS DISTINCT FROM NEW."DoNotPublishIndicator" OR OLD."Latitude" IS DISTINCT FROM NEW."Latitude" OR OLD."Longitude" IS DISTINCT FROM NEW."Longitude" OR OLD."NameOfCounty" IS DISTINCT FROM NEW."NameOfCounty" OR OLD."PostalCode" IS DISTINCT FROM NEW."PostalCode" OR OLD."StreetNumberName" IS DISTINCT FROM NEW."StreetNumberName") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."PostSecondaryInstitution_DocumentId";
@@ -40680,6 +41499,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."PostSecondaryInstitution_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."PostSecondaryInstitution_DocumentId" IS DISTINCT FROM NEW."PostSecondaryInstitution_DocumentId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -40703,6 +41525,9 @@ BEGIN
         WHERE "DocumentId" = OLD."PostSecondaryInstitution_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."PostSecondaryInstitution_DocumentId" IS DISTINCT FROM NEW."PostSecondaryInstitution_DocumentId" OR OLD."EducationOrganizationCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."EducationOrganizationCategoryDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."PostSecondaryInstitution_DocumentId";
@@ -40724,6 +41549,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."PostSecondaryInstitution_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."PostSecondaryInstitution_DocumentId" IS DISTINCT FROM NEW."PostSecondaryInstitution_DocumentId" OR OLD."EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" IS DISTINCT FROM NEW."EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" OR OLD."IdentificationCode" IS DISTINCT FROM NEW."IdentificationCode") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -40747,6 +41575,9 @@ BEGIN
         WHERE "DocumentId" = OLD."PostSecondaryInstitution_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."PostSecondaryInstitution_DocumentId" IS DISTINCT FROM NEW."PostSecondaryInstitution_DocumentId" OR OLD."IndicatorDescriptor_DescriptorId" IS DISTINCT FROM NEW."IndicatorDescriptor_DescriptorId" OR OLD."IndicatorGroupDescriptor_DescriptorId" IS DISTINCT FROM NEW."IndicatorGroupDescriptor_DescriptorId" OR OLD."IndicatorLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."IndicatorLevelDescriptor_DescriptorId" OR OLD."DesignatedBy" IS DISTINCT FROM NEW."DesignatedBy" OR OLD."IndicatorValue" IS DISTINCT FROM NEW."IndicatorValue") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."PostSecondaryInstitution_DocumentId";
@@ -40768,6 +41599,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."PostSecondaryInstitution_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."PostSecondaryInstitution_DocumentId" IS DISTINCT FROM NEW."PostSecondaryInstitution_DocumentId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -40791,6 +41625,9 @@ BEGIN
         WHERE "DocumentId" = OLD."PostSecondaryInstitution_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."PostSecondaryInstitution_DocumentId" IS DISTINCT FROM NEW."PostSecondaryInstitution_DocumentId" OR OLD."InstitutionTelephoneNumberTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."InstitutionTelephoneNumberTypeDescriptor_DescriptorId" OR OLD."TelephoneNumber" IS DISTINCT FROM NEW."TelephoneNumber") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."PostSecondaryInstitution_DocumentId";
@@ -40813,6 +41650,9 @@ BEGIN
         WHERE "DocumentId" = OLD."PostSecondaryInstitution_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."PostSecondaryInstitution_DocumentId" IS DISTINCT FROM NEW."PostSecondaryInstitution_DocumentId" OR OLD."AddressTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AddressTypeDescriptor_DescriptorId" OR OLD."CountryDescriptor_DescriptorId" IS DISTINCT FROM NEW."CountryDescriptor_DescriptorId" OR OLD."AddressLine1" IS DISTINCT FROM NEW."AddressLine1" OR OLD."AddressLine2" IS DISTINCT FROM NEW."AddressLine2" OR OLD."AddressLine3" IS DISTINCT FROM NEW."AddressLine3" OR OLD."AddressLine4" IS DISTINCT FROM NEW."AddressLine4" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."Latitude" IS DISTINCT FROM NEW."Latitude" OR OLD."Longitude" IS DISTINCT FROM NEW."Longitude") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."PostSecondaryInstitution_DocumentId";
@@ -40834,6 +41674,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."PostSecondaryInstitution_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."PostSecondaryInstitution_DocumentId" IS DISTINCT FROM NEW."PostSecondaryInstitution_DocumentId" OR OLD."MediumOfInstructionDescriptor_DescriptorId" IS DISTINCT FROM NEW."MediumOfInstructionDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -40876,9 +41719,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramTypeDescriptor_DescriptorId" OR OLD."ProgramId" IS DISTINCT FROM NEW."ProgramId" OR OLD."ProgramName" IS DISTINCT FROM NEW."ProgramName") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramName" IS DISTINCT FROM NEW."ProgramName" OR OLD."ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramTypeDescriptor_DescriptorId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -40902,6 +41750,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Program_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Program_DocumentId" IS DISTINCT FROM NEW."Program_DocumentId" OR OLD."ProgramCharacteristicDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramCharacteristicDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -40944,9 +41795,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."CodeName" IS DISTINCT FROM NEW."CodeName" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -40970,6 +41826,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."ProgramDimension_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ProgramDimension_DocumentId" IS DISTINCT FROM NEW."ProgramDimension_DocumentId" OR OLD."ReportingTagDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReportingTagDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -41012,9 +41871,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."ProgramProgram_DocumentId" IS DISTINCT FROM NEW."ProgramProgram_DocumentId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."ProgramEvaluationPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluationPeriodDescriptor_DescriptorId" OR OLD."ProgramEvaluationTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluationTypeDescriptor_DescriptorId" OR OLD."EvaluationMaxNumericRating" IS DISTINCT FROM NEW."EvaluationMaxNumericRating" OR OLD."EvaluationMinNumericRating" IS DISTINCT FROM NEW."EvaluationMinNumericRating" OR OLD."ProgramEvaluationDescription" IS DISTINCT FROM NEW."ProgramEvaluationDescription" OR OLD."ProgramEvaluationTitle" IS DISTINCT FROM NEW."ProgramEvaluationTitle") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."ProgramEvaluationPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluationPeriodDescriptor_DescriptorId" OR OLD."ProgramEvaluationTitle" IS DISTINCT FROM NEW."ProgramEvaluationTitle" OR OLD."ProgramEvaluationTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluationTypeDescriptor_DescriptorId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -41058,9 +41922,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."ProgramEducationOrganizationId_Unified" IS DISTINCT FROM NEW."ProgramEducationOrganizationId_Unified" OR OLD."ProgramEvaluationPeriodDescriptor_Unified_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluationPeriodDescriptor_Unified_DescriptorId" OR OLD."ProgramEvaluationTitle_Unified" IS DISTINCT FROM NEW."ProgramEvaluationTitle_Unified" OR OLD."ProgramEvaluationTypeDescriptor_Unified_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluationTypeDescriptor_Unified_DescriptorId" OR OLD."ProgramName_Unified" IS DISTINCT FROM NEW."ProgramName_Unified" OR OLD."ProgramTypeDescriptor_Unified_DescriptorId" IS DISTINCT FROM NEW."ProgramTypeDescriptor_Unified_DescriptorId" OR OLD."ProgramEvaluationObjective_DocumentId" IS DISTINCT FROM NEW."ProgramEvaluationObjective_DocumentId" OR OLD."ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle" IS DISTINCT FROM NEW."ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle" OR OLD."ProgramEvaluation_DocumentId" IS DISTINCT FROM NEW."ProgramEvaluation_DocumentId" OR OLD."ElementMaxNumericRating" IS DISTINCT FROM NEW."ElementMaxNumericRating" OR OLD."ElementMinNumericRating" IS DISTINCT FROM NEW."ElementMinNumericRating" OR OLD."ElementSortOrder" IS DISTINCT FROM NEW."ElementSortOrder" OR OLD."ProgramEvaluationElementDescription" IS DISTINCT FROM NEW."ProgramEvaluationElementDescription" OR OLD."ProgramEvaluationElementTitle" IS DISTINCT FROM NEW."ProgramEvaluationElementTitle") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."ProgramEvaluationElementTitle" IS DISTINCT FROM NEW."ProgramEvaluationElementTitle" OR OLD."ProgramEducationOrganizationId_Unified" IS DISTINCT FROM NEW."ProgramEducationOrganizationId_Unified" OR OLD."ProgramEvaluationPeriodDescriptor_Unified_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluationPeriodDescriptor_Unified_DescriptorId" OR OLD."ProgramEvaluationTitle_Unified" IS DISTINCT FROM NEW."ProgramEvaluationTitle_Unified" OR OLD."ProgramEvaluationTypeDescriptor_Unified_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluationTypeDescriptor_Unified_DescriptorId" OR OLD."ProgramName_Unified" IS DISTINCT FROM NEW."ProgramName_Unified" OR OLD."ProgramTypeDescriptor_Unified_DescriptorId" IS DISTINCT FROM NEW."ProgramTypeDescriptor_Unified_DescriptorId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -41085,6 +41954,9 @@ BEGIN
         WHERE "DocumentId" = OLD."ProgramEvaluationElement_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ProgramEvaluationElement_DocumentId" IS DISTINCT FROM NEW."ProgramEvaluationElement_DocumentId" OR OLD."RatingLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."RatingLevelDescriptor_DescriptorId" OR OLD."ElementMaxNumericRating" IS DISTINCT FROM NEW."ElementMaxNumericRating" OR OLD."ElementMinNumericRating" IS DISTINCT FROM NEW."ElementMinNumericRating") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."ProgramEvaluationElement_DocumentId";
@@ -41106,6 +41978,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."ProgramEvaluation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ProgramEvaluation_DocumentId" IS DISTINCT FROM NEW."ProgramEvaluation_DocumentId" OR OLD."RatingLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."RatingLevelDescriptor_DescriptorId" OR OLD."MaxNumericRating" IS DISTINCT FROM NEW."MaxNumericRating" OR OLD."MinNumericRating" IS DISTINCT FROM NEW."MinNumericRating") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -41148,9 +42023,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."ProgramEvaluation_DocumentId" IS DISTINCT FROM NEW."ProgramEvaluation_DocumentId" OR OLD."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" OR OLD."ProgramEvaluation_ProgramEvaluationTitle" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEvaluationTitle" OR OLD."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" OR OLD."ProgramEvaluation_ProgramEducationOrganizationId" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEducationOrganizationId" OR OLD."ProgramEvaluation_ProgramName" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramName" OR OLD."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId" OR OLD."ObjectiveMaxNumericRating" IS DISTINCT FROM NEW."ObjectiveMaxNumericRating" OR OLD."ObjectiveMinNumericRating" IS DISTINCT FROM NEW."ObjectiveMinNumericRating" OR OLD."ObjectiveSortOrder" IS DISTINCT FROM NEW."ObjectiveSortOrder" OR OLD."ProgramEvaluationObjectiveDescription" IS DISTINCT FROM NEW."ProgramEvaluationObjectiveDescription" OR OLD."ProgramEvaluationObjectiveTitle" IS DISTINCT FROM NEW."ProgramEvaluationObjectiveTitle") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."ProgramEvaluationObjectiveTitle" IS DISTINCT FROM NEW."ProgramEvaluationObjectiveTitle" OR OLD."ProgramEvaluation_ProgramEducationOrganizationId" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEducationOrganizationId" OR OLD."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" OR OLD."ProgramEvaluation_ProgramEvaluationTitle" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEvaluationTitle" OR OLD."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" OR OLD."ProgramEvaluation_ProgramName" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramName" OR OLD."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -41175,6 +42055,9 @@ BEGIN
         WHERE "DocumentId" = OLD."ProgramEvaluationObjective_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ProgramEvaluationObjective_DocumentId" IS DISTINCT FROM NEW."ProgramEvaluationObjective_DocumentId" OR OLD."RatingLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."RatingLevelDescriptor_DescriptorId" OR OLD."ObjectiveMaxNumericRating" IS DISTINCT FROM NEW."ObjectiveMaxNumericRating" OR OLD."ObjectiveMinNumericRating" IS DISTINCT FROM NEW."ObjectiveMinNumericRating") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."ProgramEvaluationObjective_DocumentId";
@@ -41197,6 +42080,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Program_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Program_DocumentId" IS DISTINCT FROM NEW."Program_DocumentId" OR OLD."LearningStandard_DocumentId" IS DISTINCT FROM NEW."LearningStandard_DocumentId" OR OLD."LearningStandard_LearningStandardId" IS DISTINCT FROM NEW."LearningStandard_LearningStandardId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Program_DocumentId";
@@ -41218,6 +42104,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Program_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Program_DocumentId" IS DISTINCT FROM NEW."Program_DocumentId" OR OLD."ProgramSponsorDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramSponsorDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -41260,9 +42149,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."CodeName" IS DISTINCT FROM NEW."CodeName" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -41286,6 +42180,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."ProjectDimension_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ProjectDimension_DocumentId" IS DISTINCT FROM NEW."ProjectDimension_DocumentId" OR OLD."ReportingTagDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReportingTagDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -41328,9 +42225,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."GradingPeriodGradingPeriod_DocumentId" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_DocumentId" OR OLD."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" OR OLD."GradingPeriodGradingPeriod_GradingPeriodName" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_GradingPeriodName" OR OLD."GradingPeriodGradingPeriod_SchoolId" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_SchoolId" OR OLD."GradingPeriodGradingPeriod_SchoolYear" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_SchoolYear" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."NumberOfDaysAbsent" IS DISTINCT FROM NEW."NumberOfDaysAbsent" OR OLD."NumberOfDaysInAttendance" IS DISTINCT FROM NEW."NumberOfDaysInAttendance" OR OLD."NumberOfDaysTardy" IS DISTINCT FROM NEW."NumberOfDaysTardy") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" OR OLD."GradingPeriodGradingPeriod_GradingPeriodName" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_GradingPeriodName" OR OLD."GradingPeriodGradingPeriod_SchoolId" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_SchoolId" OR OLD."GradingPeriodGradingPeriod_SchoolYear" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_SchoolYear" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -41355,6 +42257,9 @@ BEGIN
         WHERE "DocumentId" = OLD."ReportCard_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ReportCard_DocumentId" IS DISTINCT FROM NEW."ReportCard_DocumentId" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."Grade_DocumentId" IS DISTINCT FROM NEW."Grade_DocumentId" OR OLD."Grade_GradeTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."Grade_GradeTypeDescriptor_DescriptorId" OR OLD."Grade_GradingPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."Grade_GradingPeriodDescriptor_DescriptorId" OR OLD."Grade_GradingPeriodName" IS DISTINCT FROM NEW."Grade_GradingPeriodName" OR OLD."Grade_GradingPeriodSchoolYear" IS DISTINCT FROM NEW."Grade_GradingPeriodSchoolYear" OR OLD."Grade_BeginDate" IS DISTINCT FROM NEW."Grade_BeginDate" OR OLD."Grade_LocalCourseCode" IS DISTINCT FROM NEW."Grade_LocalCourseCode" OR OLD."Grade_SchoolYear" IS DISTINCT FROM NEW."Grade_SchoolYear" OR OLD."Grade_SectionIdentifier" IS DISTINCT FROM NEW."Grade_SectionIdentifier" OR OLD."Grade_SessionName" IS DISTINCT FROM NEW."Grade_SessionName" OR OLD."Grade_StudentUniqueId" IS DISTINCT FROM NEW."Grade_StudentUniqueId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."ReportCard_DocumentId";
@@ -41377,6 +42282,9 @@ BEGIN
         WHERE "DocumentId" = OLD."ReportCard_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ReportCard_DocumentId" IS DISTINCT FROM NEW."ReportCard_DocumentId" OR OLD."GradePointAverageTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradePointAverageTypeDescriptor_DescriptorId" OR OLD."GradePointAverageValue" IS DISTINCT FROM NEW."GradePointAverageValue" OR OLD."IsCumulative" IS DISTINCT FROM NEW."IsCumulative" OR OLD."MaxGradePointAverageValue" IS DISTINCT FROM NEW."MaxGradePointAverageValue") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."ReportCard_DocumentId";
@@ -41398,6 +42306,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."ReportCard_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ReportCard_DocumentId" IS DISTINCT FROM NEW."ReportCard_DocumentId" OR OLD."StudentCompetencyObjective_DocumentId" IS DISTINCT FROM NEW."StudentCompetencyObjective_DocumentId" OR OLD."StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."StudentCompetencyObjective_GradingPeriodDescriptor_DescriptorId" OR OLD."StudentCompetencyObjective_GradingPeriodName" IS DISTINCT FROM NEW."StudentCompetencyObjective_GradingPeriodName" OR OLD."StudentCompetencyObjective_GradingPeriodSchoolId" IS DISTINCT FROM NEW."StudentCompetencyObjective_GradingPeriodSchoolId" OR OLD."StudentCompetencyObjective_GradingPeriodSchoolYear" IS DISTINCT FROM NEW."StudentCompetencyObjective_GradingPeriodSchoolYear" OR OLD."StudentCompetencyObjective_ObjectiveEducationOrganizationId" IS DISTINCT FROM NEW."StudentCompetencyObjective_ObjectiveEducationOrganizationId" OR OLD."StudentCompetencyObjective_Objective" IS DISTINCT FROM NEW."StudentCompetencyObjective_Objective" OR OLD."StudentCompetencyObjective_ObjectiveGradeLevelDescri_16507c4e9d" IS DISTINCT FROM NEW."StudentCompetencyObjective_ObjectiveGradeLevelDescri_16507c4e9d" OR OLD."StudentCompetencyObjective_StudentUniqueId" IS DISTINCT FROM NEW."StudentCompetencyObjective_StudentUniqueId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -41440,9 +42351,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."DisciplineIncident_DocumentId" IS DISTINCT FROM NEW."DisciplineIncident_DocumentId" OR OLD."DisciplineIncident_IncidentIdentifier" IS DISTINCT FROM NEW."DisciplineIncident_IncidentIdentifier" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."EducationalEnvironmentDescriptor_DescriptorId" IS DISTINCT FROM NEW."EducationalEnvironmentDescriptor_DescriptorId" OR OLD."EventDate" IS DISTINCT FROM NEW."EventDate" OR OLD."RestraintEventIdentifier" IS DISTINCT FROM NEW."RestraintEventIdentifier") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."RestraintEventIdentifier" IS DISTINCT FROM NEW."RestraintEventIdentifier" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -41467,6 +42383,9 @@ BEGIN
         WHERE "DocumentId" = OLD."RestraintEvent_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."RestraintEvent_DocumentId" IS DISTINCT FROM NEW."RestraintEvent_DocumentId" OR OLD."Program_DocumentId" IS DISTINCT FROM NEW."Program_DocumentId" OR OLD."Program_EducationOrganizationId" IS DISTINCT FROM NEW."Program_EducationOrganizationId" OR OLD."Program_ProgramName" IS DISTINCT FROM NEW."Program_ProgramName" OR OLD."Program_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."Program_ProgramTypeDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."RestraintEvent_DocumentId";
@@ -41488,6 +42407,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."RestraintEvent_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."RestraintEvent_DocumentId" IS DISTINCT FROM NEW."RestraintEvent_DocumentId" OR OLD."RestraintEventReasonDescriptor_DescriptorId" IS DISTINCT FROM NEW."RestraintEventReasonDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -41667,9 +42589,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."CharterApprovalSchoolYear_DocumentId" IS DISTINCT FROM NEW."CharterApprovalSchoolYear_DocumentId" OR OLD."CharterApprovalSchoolYear_CharterApprovalSchoolYear" IS DISTINCT FROM NEW."CharterApprovalSchoolYear_CharterApprovalSchoolYear" OR OLD."LocalEducationAgency_DocumentId" IS DISTINCT FROM NEW."LocalEducationAgency_DocumentId" OR OLD."LocalEducationAgency_LocalEducationAgencyId" IS DISTINCT FROM NEW."LocalEducationAgency_LocalEducationAgencyId" OR OLD."AdministrativeFundingControlDescriptor_DescriptorId" IS DISTINCT FROM NEW."AdministrativeFundingControlDescriptor_DescriptorId" OR OLD."CharterApprovalAgencyTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."CharterApprovalAgencyTypeDescriptor_DescriptorId" OR OLD."CharterStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."CharterStatusDescriptor_DescriptorId" OR OLD."InternetAccessDescriptor_DescriptorId" IS DISTINCT FROM NEW."InternetAccessDescriptor_DescriptorId" OR OLD."MagnetSpecialProgramEmphasisSchoolDescriptor_DescriptorId" IS DISTINCT FROM NEW."MagnetSpecialProgramEmphasisSchoolDescriptor_DescriptorId" OR OLD."OperationalStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."OperationalStatusDescriptor_DescriptorId" OR OLD."SchoolTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."SchoolTypeDescriptor_DescriptorId" OR OLD."TitleIPartASchoolDesignationDescriptor_DescriptorId" IS DISTINCT FROM NEW."TitleIPartASchoolDesignationDescriptor_DescriptorId" OR OLD."NameOfInstitution" IS DISTINCT FROM NEW."NameOfInstitution" OR OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId" OR OLD."ShortNameOfInstitution" IS DISTINCT FROM NEW."ShortNameOfInstitution" OR OLD."WebSite" IS DISTINCT FROM NEW."WebSite") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -41694,6 +42621,9 @@ BEGIN
         WHERE "DocumentId" = OLD."School_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."AddressTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AddressTypeDescriptor_DescriptorId" OR OLD."LocaleDescriptor_DescriptorId" IS DISTINCT FROM NEW."LocaleDescriptor_DescriptorId" OR OLD."StateAbbreviationDescriptor_DescriptorId" IS DISTINCT FROM NEW."StateAbbreviationDescriptor_DescriptorId" OR OLD."ApartmentRoomSuiteNumber" IS DISTINCT FROM NEW."ApartmentRoomSuiteNumber" OR OLD."BuildingSiteNumber" IS DISTINCT FROM NEW."BuildingSiteNumber" OR OLD."City" IS DISTINCT FROM NEW."City" OR OLD."CongressionalDistrict" IS DISTINCT FROM NEW."CongressionalDistrict" OR OLD."CountyFIPSCode" IS DISTINCT FROM NEW."CountyFIPSCode" OR OLD."DoNotPublishIndicator" IS DISTINCT FROM NEW."DoNotPublishIndicator" OR OLD."Latitude" IS DISTINCT FROM NEW."Latitude" OR OLD."Longitude" IS DISTINCT FROM NEW."Longitude" OR OLD."NameOfCounty" IS DISTINCT FROM NEW."NameOfCounty" OR OLD."PostalCode" IS DISTINCT FROM NEW."PostalCode" OR OLD."StreetNumberName" IS DISTINCT FROM NEW."StreetNumberName") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."School_DocumentId";
@@ -41715,6 +42645,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."School_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -41738,6 +42671,9 @@ BEGIN
         WHERE "DocumentId" = OLD."School_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."SchoolCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."SchoolCategoryDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."School_DocumentId";
@@ -41759,6 +42695,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."School_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."EducationOrganizationCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."EducationOrganizationCategoryDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -41782,6 +42721,9 @@ BEGIN
         WHERE "DocumentId" = OLD."School_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."GradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradeLevelDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."School_DocumentId";
@@ -41803,6 +42745,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."School_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" IS DISTINCT FROM NEW."EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" OR OLD."IdentificationCode" IS DISTINCT FROM NEW."IdentificationCode") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -41826,6 +42771,9 @@ BEGIN
         WHERE "DocumentId" = OLD."School_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."IndicatorDescriptor_DescriptorId" IS DISTINCT FROM NEW."IndicatorDescriptor_DescriptorId" OR OLD."IndicatorGroupDescriptor_DescriptorId" IS DISTINCT FROM NEW."IndicatorGroupDescriptor_DescriptorId" OR OLD."IndicatorLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."IndicatorLevelDescriptor_DescriptorId" OR OLD."DesignatedBy" IS DISTINCT FROM NEW."DesignatedBy" OR OLD."IndicatorValue" IS DISTINCT FROM NEW."IndicatorValue") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."School_DocumentId";
@@ -41847,6 +42795,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."School_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -41870,6 +42821,9 @@ BEGIN
         WHERE "DocumentId" = OLD."School_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."InstitutionTelephoneNumberTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."InstitutionTelephoneNumberTypeDescriptor_DescriptorId" OR OLD."TelephoneNumber" IS DISTINCT FROM NEW."TelephoneNumber") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."School_DocumentId";
@@ -41891,6 +42845,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."School_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."AddressTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AddressTypeDescriptor_DescriptorId" OR OLD."CountryDescriptor_DescriptorId" IS DISTINCT FROM NEW."CountryDescriptor_DescriptorId" OR OLD."AddressLine1" IS DISTINCT FROM NEW."AddressLine1" OR OLD."AddressLine2" IS DISTINCT FROM NEW."AddressLine2" OR OLD."AddressLine3" IS DISTINCT FROM NEW."AddressLine3" OR OLD."AddressLine4" IS DISTINCT FROM NEW."AddressLine4" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."Latitude" IS DISTINCT FROM NEW."Latitude" OR OLD."Longitude" IS DISTINCT FROM NEW."Longitude") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -41933,9 +42890,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."CurrentSchoolYear" IS DISTINCT FROM NEW."CurrentSchoolYear" OR OLD."SchoolYear" IS DISTINCT FROM NEW."SchoolYear" OR OLD."SchoolYearDescription" IS DISTINCT FROM NEW."SchoolYearDescription") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."SchoolYear" IS DISTINCT FROM NEW."SchoolYear") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -41979,9 +42941,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolId_U35501e03_Unified" IS DISTINCT FROM NEW."SchoolId_U35501e03_Unified" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."CourseOffering_DocumentId" IS DISTINCT FROM NEW."CourseOffering_DocumentId" OR OLD."CourseOffering_LocalCourseCode" IS DISTINCT FROM NEW."CourseOffering_LocalCourseCode" OR OLD."CourseOffering_SchoolYear" IS DISTINCT FROM NEW."CourseOffering_SchoolYear" OR OLD."CourseOffering_SessionName" IS DISTINCT FROM NEW."CourseOffering_SessionName" OR OLD."LocationLocation_DocumentId" IS DISTINCT FROM NEW."LocationLocation_DocumentId" OR OLD."LocationLocation_ClassroomIdentificationCode" IS DISTINCT FROM NEW."LocationLocation_ClassroomIdentificationCode" OR OLD."LocationSchool_DocumentId" IS DISTINCT FROM NEW."LocationSchool_DocumentId" OR OLD."AvailableCreditTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AvailableCreditTypeDescriptor_DescriptorId" OR OLD."EducationalEnvironmentDescriptor_DescriptorId" IS DISTINCT FROM NEW."EducationalEnvironmentDescriptor_DescriptorId" OR OLD."InstructionLanguageDescriptor_DescriptorId" IS DISTINCT FROM NEW."InstructionLanguageDescriptor_DescriptorId" OR OLD."MediumOfInstructionDescriptor_DescriptorId" IS DISTINCT FROM NEW."MediumOfInstructionDescriptor_DescriptorId" OR OLD."PopulationServedDescriptor_DescriptorId" IS DISTINCT FROM NEW."PopulationServedDescriptor_DescriptorId" OR OLD."SectionTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."SectionTypeDescriptor_DescriptorId" OR OLD."AvailableCreditConversion" IS DISTINCT FROM NEW."AvailableCreditConversion" OR OLD."AvailableCredits" IS DISTINCT FROM NEW."AvailableCredits" OR OLD."OfficialAttendancePeriod" IS DISTINCT FROM NEW."OfficialAttendancePeriod" OR OLD."SectionIdentifier" IS DISTINCT FROM NEW."SectionIdentifier" OR OLD."SectionName" IS DISTINCT FROM NEW."SectionName" OR OLD."SequenceOfCourse" IS DISTINCT FROM NEW."SequenceOfCourse") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."CourseOffering_LocalCourseCode" IS DISTINCT FROM NEW."CourseOffering_LocalCourseCode" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."CourseOffering_SchoolYear" IS DISTINCT FROM NEW."CourseOffering_SchoolYear" OR OLD."CourseOffering_SessionName" IS DISTINCT FROM NEW."CourseOffering_SessionName" OR OLD."SectionIdentifier" IS DISTINCT FROM NEW."SectionIdentifier") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -42025,9 +42992,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."SchoolYear_Unified" IS DISTINCT FROM NEW."SchoolYear_Unified" OR OLD."CalendarDate_DocumentId" IS DISTINCT FROM NEW."CalendarDate_DocumentId" OR OLD."CalendarDate_CalendarCode" IS DISTINCT FROM NEW."CalendarDate_CalendarCode" OR OLD."CalendarDate_Date" IS DISTINCT FROM NEW."CalendarDate_Date" OR OLD."Section_DocumentId" IS DISTINCT FROM NEW."Section_DocumentId" OR OLD."Section_LocalCourseCode" IS DISTINCT FROM NEW."Section_LocalCourseCode" OR OLD."Section_SessionName" IS DISTINCT FROM NEW."Section_SessionName" OR OLD."Section_SectionIdentifier" IS DISTINCT FROM NEW."Section_SectionIdentifier" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId" OR OLD."EventDate" IS DISTINCT FROM NEW."EventDate") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."CalendarDate_CalendarCode" IS DISTINCT FROM NEW."CalendarDate_CalendarCode" OR OLD."CalendarDate_Date" IS DISTINCT FROM NEW."CalendarDate_Date" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."SchoolYear_Unified" IS DISTINCT FROM NEW."SchoolYear_Unified" OR OLD."Section_LocalCourseCode" IS DISTINCT FROM NEW."Section_LocalCourseCode" OR OLD."Section_SectionIdentifier" IS DISTINCT FROM NEW."Section_SectionIdentifier" OR OLD."Section_SessionName" IS DISTINCT FROM NEW."Section_SessionName") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -42052,6 +43024,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Section_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Section_DocumentId" IS DISTINCT FROM NEW."Section_DocumentId" OR OLD."SectionCharacteristicDescriptor_DescriptorId" IS DISTINCT FROM NEW."SectionCharacteristicDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Section_DocumentId";
@@ -42073,6 +43048,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Section_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Section_DocumentId" IS DISTINCT FROM NEW."Section_DocumentId" OR OLD."ClassPeriod_DocumentId" IS DISTINCT FROM NEW."ClassPeriod_DocumentId" OR OLD."ClassPeriod_ClassPeriodName" IS DISTINCT FROM NEW."ClassPeriod_ClassPeriodName" OR OLD."ClassPeriod_SchoolId" IS DISTINCT FROM NEW."ClassPeriod_SchoolId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -42096,6 +43074,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Section_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Section_DocumentId" IS DISTINCT FROM NEW."Section_DocumentId" OR OLD."CourseLevelCharacteristicDescriptor_DescriptorId" IS DISTINCT FROM NEW."CourseLevelCharacteristicDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Section_DocumentId";
@@ -42118,6 +43099,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Section_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Section_DocumentId" IS DISTINCT FROM NEW."Section_DocumentId" OR OLD."GradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradeLevelDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Section_DocumentId";
@@ -42139,6 +43123,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Section_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Section_DocumentId" IS DISTINCT FROM NEW."Section_DocumentId" OR OLD."Program_DocumentId" IS DISTINCT FROM NEW."Program_DocumentId" OR OLD."Program_EducationOrganizationId" IS DISTINCT FROM NEW."Program_EducationOrganizationId" OR OLD."Program_ProgramName" IS DISTINCT FROM NEW."Program_ProgramName" OR OLD."Program_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."Program_ProgramTypeDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -42181,9 +43168,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolYear_DocumentId" IS DISTINCT FROM NEW."SchoolYear_DocumentId" OR OLD."SchoolYear_SchoolYear" IS DISTINCT FROM NEW."SchoolYear_SchoolYear" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId" OR OLD."TermDescriptor_DescriptorId" IS DISTINCT FROM NEW."TermDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."SessionName" IS DISTINCT FROM NEW."SessionName" OR OLD."TotalInstructionalDays" IS DISTINCT FROM NEW."TotalInstructionalDays") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."School_SchoolId" IS DISTINCT FROM NEW."School_SchoolId" OR OLD."SchoolYear_SchoolYear" IS DISTINCT FROM NEW."SchoolYear_SchoolYear" OR OLD."SessionName" IS DISTINCT FROM NEW."SessionName") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -42208,6 +43200,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Session_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Session_DocumentId" IS DISTINCT FROM NEW."Session_DocumentId" OR OLD."AcademicWeek_DocumentId" IS DISTINCT FROM NEW."AcademicWeek_DocumentId" OR OLD."AcademicWeek_SchoolId" IS DISTINCT FROM NEW."AcademicWeek_SchoolId" OR OLD."AcademicWeek_WeekIdentifier" IS DISTINCT FROM NEW."AcademicWeek_WeekIdentifier") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Session_DocumentId";
@@ -42229,6 +43224,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Session_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Session_DocumentId" IS DISTINCT FROM NEW."Session_DocumentId" OR OLD."GradingPeriod_DocumentId" IS DISTINCT FROM NEW."GradingPeriod_DocumentId" OR OLD."GradingPeriod_GradingPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradingPeriod_GradingPeriodDescriptor_DescriptorId" OR OLD."GradingPeriod_GradingPeriodName" IS DISTINCT FROM NEW."GradingPeriod_GradingPeriodName" OR OLD."GradingPeriod_SchoolId" IS DISTINCT FROM NEW."GradingPeriod_SchoolId" OR OLD."GradingPeriod_SchoolYear" IS DISTINCT FROM NEW."GradingPeriod_SchoolYear") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -42271,9 +43269,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."CodeName" IS DISTINCT FROM NEW."CodeName" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."Code" IS DISTINCT FROM NEW."Code" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -42297,6 +43300,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."SourceDimension_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."SourceDimension_DocumentId" IS DISTINCT FROM NEW."SourceDimension_DocumentId" OR OLD."ReportingTagDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReportingTagDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -42339,9 +43345,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Person_DocumentId" IS DISTINCT FROM NEW."Person_DocumentId" OR OLD."Person_PersonId" IS DISTINCT FROM NEW."Person_PersonId" OR OLD."Person_SourceSystemDescriptor_DescriptorId" IS DISTINCT FROM NEW."Person_SourceSystemDescriptor_DescriptorId" OR OLD."CitizenshipStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."CitizenshipStatusDescriptor_DescriptorId" OR OLD."HighestCompletedLevelOfEducationDescriptor_DescriptorId" IS DISTINCT FROM NEW."HighestCompletedLevelOfEducationDescriptor_DescriptorId" OR OLD."SexDescriptor_DescriptorId" IS DISTINCT FROM NEW."SexDescriptor_DescriptorId" OR OLD."BirthDate" IS DISTINCT FROM NEW."BirthDate" OR OLD."FirstName" IS DISTINCT FROM NEW."FirstName" OR OLD."GenderIdentity" IS DISTINCT FROM NEW."GenderIdentity" OR OLD."GenerationCodeSuffix" IS DISTINCT FROM NEW."GenerationCodeSuffix" OR OLD."HighlyQualifiedTeacher" IS DISTINCT FROM NEW."HighlyQualifiedTeacher" OR OLD."HispanicLatinoEthnicity" IS DISTINCT FROM NEW."HispanicLatinoEthnicity" OR OLD."LastSurname" IS DISTINCT FROM NEW."LastSurname" OR OLD."LoginId" IS DISTINCT FROM NEW."LoginId" OR OLD."MaidenName" IS DISTINCT FROM NEW."MaidenName" OR OLD."MiddleName" IS DISTINCT FROM NEW."MiddleName" OR OLD."PersonalTitlePrefix" IS DISTINCT FROM NEW."PersonalTitlePrefix" OR OLD."PreferredFirstName" IS DISTINCT FROM NEW."PreferredFirstName" OR OLD."PreferredLastSurname" IS DISTINCT FROM NEW."PreferredLastSurname" OR OLD."StaffUniqueId" IS DISTINCT FROM NEW."StaffUniqueId" OR OLD."YearsOfPriorProfessionalExperience" IS DISTINCT FROM NEW."YearsOfPriorProfessionalExperience" OR OLD."YearsOfPriorTeachingExperience" IS DISTINCT FROM NEW."YearsOfPriorTeachingExperience") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."StaffUniqueId" IS DISTINCT FROM NEW."StaffUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -42385,9 +43396,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId" OR OLD."AbsenceEventCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."AbsenceEventCategoryDescriptor_DescriptorId" OR OLD."AbsenceEventReason" IS DISTINCT FROM NEW."AbsenceEventReason" OR OLD."EventDate" IS DISTINCT FROM NEW."EventDate" OR OLD."HoursAbsent" IS DISTINCT FROM NEW."HoursAbsent") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."AbsenceEventCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."AbsenceEventCategoryDescriptor_DescriptorId" OR OLD."EventDate" IS DISTINCT FROM NEW."EventDate" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -42412,6 +43428,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Staff_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."AddressTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AddressTypeDescriptor_DescriptorId" OR OLD."LocaleDescriptor_DescriptorId" IS DISTINCT FROM NEW."LocaleDescriptor_DescriptorId" OR OLD."StateAbbreviationDescriptor_DescriptorId" IS DISTINCT FROM NEW."StateAbbreviationDescriptor_DescriptorId" OR OLD."ApartmentRoomSuiteNumber" IS DISTINCT FROM NEW."ApartmentRoomSuiteNumber" OR OLD."BuildingSiteNumber" IS DISTINCT FROM NEW."BuildingSiteNumber" OR OLD."City" IS DISTINCT FROM NEW."City" OR OLD."CongressionalDistrict" IS DISTINCT FROM NEW."CongressionalDistrict" OR OLD."CountyFIPSCode" IS DISTINCT FROM NEW."CountyFIPSCode" OR OLD."DoNotPublishIndicator" IS DISTINCT FROM NEW."DoNotPublishIndicator" OR OLD."Latitude" IS DISTINCT FROM NEW."Latitude" OR OLD."Longitude" IS DISTINCT FROM NEW."Longitude" OR OLD."NameOfCounty" IS DISTINCT FROM NEW."NameOfCounty" OR OLD."PostalCode" IS DISTINCT FROM NEW."PostalCode" OR OLD."StreetNumberName" IS DISTINCT FROM NEW."StreetNumberName") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Staff_DocumentId";
@@ -42434,6 +43453,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Staff_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Staff_DocumentId";
@@ -42455,6 +43477,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Staff_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."AncestryEthnicOriginDescriptor_DescriptorId" IS DISTINCT FROM NEW."AncestryEthnicOriginDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -42497,9 +43522,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Cohort_DocumentId" IS DISTINCT FROM NEW."Cohort_DocumentId" OR OLD."Cohort_CohortIdentifier" IS DISTINCT FROM NEW."Cohort_CohortIdentifier" OR OLD."Cohort_EducationOrganizationId" IS DISTINCT FROM NEW."Cohort_EducationOrganizationId" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."StudentRecordAccess" IS DISTINCT FROM NEW."StudentRecordAccess") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."Cohort_CohortIdentifier" IS DISTINCT FROM NEW."Cohort_CohortIdentifier" OR OLD."Cohort_EducationOrganizationId" IS DISTINCT FROM NEW."Cohort_EducationOrganizationId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -42523,6 +43553,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Staff_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."Credential_DocumentId" IS DISTINCT FROM NEW."Credential_DocumentId" OR OLD."Credential_CredentialIdentifier" IS DISTINCT FROM NEW."Credential_CredentialIdentifier" OR OLD."Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId" IS DISTINCT FROM NEW."Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -42565,9 +43598,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."DisciplineIncident_DocumentId" IS DISTINCT FROM NEW."DisciplineIncident_DocumentId" OR OLD."DisciplineIncident_IncidentIdentifier" IS DISTINCT FROM NEW."DisciplineIncident_IncidentIdentifier" OR OLD."DisciplineIncident_SchoolId" IS DISTINCT FROM NEW."DisciplineIncident_SchoolId" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."DisciplineIncident_IncidentIdentifier" IS DISTINCT FROM NEW."DisciplineIncident_IncidentIdentifier" OR OLD."DisciplineIncident_SchoolId" IS DISTINCT FROM NEW."DisciplineIncident_SchoolId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -42591,6 +43629,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StaffDisciplineIncidentAssociation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StaffDisciplineIncidentAssociation_DocumentId" IS DISTINCT FROM NEW."StaffDisciplineIncidentAssociation_DocumentId" OR OLD."DisciplineIncidentParticipationCodeDescriptor_DescriptorId" IS DISTINCT FROM NEW."DisciplineIncidentParticipationCodeDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -42633,9 +43674,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."StaffUniqueId_Unified" IS DISTINCT FROM NEW."StaffUniqueId_Unified" OR OLD."Credential_DocumentId" IS DISTINCT FROM NEW."Credential_DocumentId" OR OLD."Credential_CredentialIdentifier" IS DISTINCT FROM NEW."Credential_CredentialIdentifier" OR OLD."Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId" IS DISTINCT FROM NEW."Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."EmploymentStaffEducationOrganizationEmploymentAssoci_7a3d86aa2b" IS DISTINCT FROM NEW."EmploymentStaffEducationOrganizationEmploymentAssoci_7a3d86aa2b" OR OLD."EmploymentStaffEducationOrganizationEmploymentAssoci_af1202f2de" IS DISTINCT FROM NEW."EmploymentStaffEducationOrganizationEmploymentAssoci_af1202f2de" OR OLD."EmploymentStaffEducationOrganizationEmploymentAssoci_48a7f76b56" IS DISTINCT FROM NEW."EmploymentStaffEducationOrganizationEmploymentAssoci_48a7f76b56" OR OLD."EmploymentStaffEducationOrganizationEmploymentAssoci_0cbe1eb337" IS DISTINCT FROM NEW."EmploymentStaffEducationOrganizationEmploymentAssoci_0cbe1eb337" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."StaffClassificationDescriptor_DescriptorId" IS DISTINCT FROM NEW."StaffClassificationDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."FullTimeEquivalency" IS DISTINCT FROM NEW."FullTimeEquivalency" OR OLD."OrderOfAssignment" IS DISTINCT FROM NEW."OrderOfAssignment" OR OLD."PositionTitle" IS DISTINCT FROM NEW."PositionTitle") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."StaffClassificationDescriptor_DescriptorId" IS DISTINCT FROM NEW."StaffClassificationDescriptor_DescriptorId" OR OLD."StaffUniqueId_Unified" IS DISTINCT FROM NEW."StaffUniqueId_Unified") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -42679,9 +43725,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId" OR OLD."AddressAddressTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AddressAddressTypeDescriptor_DescriptorId" OR OLD."AddressLocaleDescriptor_DescriptorId" IS DISTINCT FROM NEW."AddressLocaleDescriptor_DescriptorId" OR OLD."AddressStateAbbreviationDescriptor_DescriptorId" IS DISTINCT FROM NEW."AddressStateAbbreviationDescriptor_DescriptorId" OR OLD."ContactTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ContactTypeDescriptor_DescriptorId" OR OLD."AddressApartmentRoomSuiteNumber" IS DISTINCT FROM NEW."AddressApartmentRoomSuiteNumber" OR OLD."AddressBuildingSiteNumber" IS DISTINCT FROM NEW."AddressBuildingSiteNumber" OR OLD."AddressCity" IS DISTINCT FROM NEW."AddressCity" OR OLD."AddressCongressionalDistrict" IS DISTINCT FROM NEW."AddressCongressionalDistrict" OR OLD."AddressCountyFIPSCode" IS DISTINCT FROM NEW."AddressCountyFIPSCode" OR OLD."AddressDoNotPublishIndicator" IS DISTINCT FROM NEW."AddressDoNotPublishIndicator" OR OLD."AddressLatitude" IS DISTINCT FROM NEW."AddressLatitude" OR OLD."AddressLongitude" IS DISTINCT FROM NEW."AddressLongitude" OR OLD."AddressNameOfCounty" IS DISTINCT FROM NEW."AddressNameOfCounty" OR OLD."AddressPostalCode" IS DISTINCT FROM NEW."AddressPostalCode" OR OLD."AddressStreetNumberName" IS DISTINCT FROM NEW."AddressStreetNumberName" OR OLD."ContactTitle" IS DISTINCT FROM NEW."ContactTitle" OR OLD."ElectronicMailAddress" IS DISTINCT FROM NEW."ElectronicMailAddress") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."ContactTitle" IS DISTINCT FROM NEW."ContactTitle" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -42706,6 +43757,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StaffEducationOrganizationContactAssociation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StaffEducationOrganizationContactAssociation_DocumentId" IS DISTINCT FROM NEW."StaffEducationOrganizationContactAssociation_DocumentId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StaffEducationOrganizationContactAssociation_DocumentId";
@@ -42727,6 +43781,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StaffEducationOrganizationContactAssociation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StaffEducationOrganizationContactAssociation_DocumentId" IS DISTINCT FROM NEW."StaffEducationOrganizationContactAssociation_DocumentId" OR OLD."TelephoneNumberTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."TelephoneNumberTypeDescriptor_DescriptorId" OR OLD."DoNotPublishIndicator" IS DISTINCT FROM NEW."DoNotPublishIndicator" OR OLD."OrderOfPriority" IS DISTINCT FROM NEW."OrderOfPriority" OR OLD."TelephoneNumber" IS DISTINCT FROM NEW."TelephoneNumber" OR OLD."TextMessageCapabilityIndicator" IS DISTINCT FROM NEW."TextMessageCapabilityIndicator") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -42769,9 +43826,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Credential_DocumentId" IS DISTINCT FROM NEW."Credential_DocumentId" OR OLD."Credential_CredentialIdentifier" IS DISTINCT FROM NEW."Credential_CredentialIdentifier" OR OLD."Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId" IS DISTINCT FROM NEW."Credential_StateOfIssueStateAbbreviationDescriptor_DescriptorId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId" OR OLD."EmploymentStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."EmploymentStatusDescriptor_DescriptorId" OR OLD."SeparationDescriptor_DescriptorId" IS DISTINCT FROM NEW."SeparationDescriptor_DescriptorId" OR OLD."SeparationReasonDescriptor_DescriptorId" IS DISTINCT FROM NEW."SeparationReasonDescriptor_DescriptorId" OR OLD."AnnualWage" IS DISTINCT FROM NEW."AnnualWage" OR OLD."Department" IS DISTINCT FROM NEW."Department" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."FullTimeEquivalency" IS DISTINCT FROM NEW."FullTimeEquivalency" OR OLD."HireDate" IS DISTINCT FROM NEW."HireDate" OR OLD."HourlyWage" IS DISTINCT FROM NEW."HourlyWage" OR OLD."OfferDate" IS DISTINCT FROM NEW."OfferDate") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."EmploymentStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."EmploymentStatusDescriptor_DescriptorId" OR OLD."HireDate" IS DISTINCT FROM NEW."HireDate" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -42796,6 +43858,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Staff_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."ElectronicMailTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ElectronicMailTypeDescriptor_DescriptorId" OR OLD."DoNotPublishIndicator" IS DISTINCT FROM NEW."DoNotPublishIndicator" OR OLD."ElectronicMailAddress" IS DISTINCT FROM NEW."ElectronicMailAddress" OR OLD."PrimaryEmailAddressIndicator" IS DISTINCT FROM NEW."PrimaryEmailAddressIndicator") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Staff_DocumentId";
@@ -42817,6 +43882,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Staff_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."StaffIdentificationSystemDescriptor_DescriptorId" IS DISTINCT FROM NEW."StaffIdentificationSystemDescriptor_DescriptorId" OR OLD."AssigningOrganizationIdentificationCode" IS DISTINCT FROM NEW."AssigningOrganizationIdentificationCode" OR OLD."IdentificationCode" IS DISTINCT FROM NEW."IdentificationCode") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -42840,6 +43908,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Staff_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."IdentificationDocumentUseDescriptor_DescriptorId" IS DISTINCT FROM NEW."IdentificationDocumentUseDescriptor_DescriptorId" OR OLD."IssuerCountryDescriptor_DescriptorId" IS DISTINCT FROM NEW."IssuerCountryDescriptor_DescriptorId" OR OLD."PersonalInformationVerificationDescriptor_DescriptorId" IS DISTINCT FROM NEW."PersonalInformationVerificationDescriptor_DescriptorId" OR OLD."DocumentExpirationDate" IS DISTINCT FROM NEW."DocumentExpirationDate" OR OLD."DocumentTitle" IS DISTINCT FROM NEW."DocumentTitle" OR OLD."IssuerDocumentIdentificationCode" IS DISTINCT FROM NEW."IssuerDocumentIdentificationCode" OR OLD."IssuerName" IS DISTINCT FROM NEW."IssuerName") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Staff_DocumentId";
@@ -42861,6 +43932,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Staff_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."AddressTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AddressTypeDescriptor_DescriptorId" OR OLD."CountryDescriptor_DescriptorId" IS DISTINCT FROM NEW."CountryDescriptor_DescriptorId" OR OLD."AddressLine1" IS DISTINCT FROM NEW."AddressLine1" OR OLD."AddressLine2" IS DISTINCT FROM NEW."AddressLine2" OR OLD."AddressLine3" IS DISTINCT FROM NEW."AddressLine3" OR OLD."AddressLine4" IS DISTINCT FROM NEW."AddressLine4" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."Latitude" IS DISTINCT FROM NEW."Latitude" OR OLD."Longitude" IS DISTINCT FROM NEW."Longitude") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -42884,6 +43958,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Staff_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."LanguageDescriptor_DescriptorId" IS DISTINCT FROM NEW."LanguageDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Staff_DocumentId";
@@ -42905,6 +43982,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Staff_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."LanguageUseDescriptor_DescriptorId" IS DISTINCT FROM NEW."LanguageUseDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -42947,9 +44027,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId" OR OLD."StaffLeaveEventCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."StaffLeaveEventCategoryDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."Reason" IS DISTINCT FROM NEW."Reason" OR OLD."SubstituteAssigned" IS DISTINCT FROM NEW."SubstituteAssigned") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."StaffLeaveEventCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."StaffLeaveEventCategoryDescriptor_DescriptorId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -42974,6 +44059,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Staff_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."OtherNameTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."OtherNameTypeDescriptor_DescriptorId" OR OLD."FirstName" IS DISTINCT FROM NEW."FirstName" OR OLD."GenerationCodeSuffix" IS DISTINCT FROM NEW."GenerationCodeSuffix" OR OLD."LastSurname" IS DISTINCT FROM NEW."LastSurname" OR OLD."MiddleName" IS DISTINCT FROM NEW."MiddleName" OR OLD."PersonalTitlePrefix" IS DISTINCT FROM NEW."PersonalTitlePrefix") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Staff_DocumentId";
@@ -42995,6 +44083,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Staff_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."IdentificationDocumentUseDescriptor_DescriptorId" IS DISTINCT FROM NEW."IdentificationDocumentUseDescriptor_DescriptorId" OR OLD."IssuerCountryDescriptor_DescriptorId" IS DISTINCT FROM NEW."IssuerCountryDescriptor_DescriptorId" OR OLD."PersonalInformationVerificationDescriptor_DescriptorId" IS DISTINCT FROM NEW."PersonalInformationVerificationDescriptor_DescriptorId" OR OLD."PersonalDocumentExpirationDate" IS DISTINCT FROM NEW."PersonalDocumentExpirationDate" OR OLD."PersonalDocumentTitle" IS DISTINCT FROM NEW."PersonalDocumentTitle" OR OLD."PersonalIssuerDocumentIdentificationCode" IS DISTINCT FROM NEW."PersonalIssuerDocumentIdentificationCode" OR OLD."PersonalIssuerName" IS DISTINCT FROM NEW."PersonalIssuerName") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -43037,9 +44128,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."ProgramProgram_DocumentId" IS DISTINCT FROM NEW."ProgramProgram_DocumentId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."StudentRecordAccess" IS DISTINCT FROM NEW."StudentRecordAccess") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -43064,6 +44160,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Staff_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."RaceDescriptor_DescriptorId" IS DISTINCT FROM NEW."RaceDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Staff_DocumentId";
@@ -43085,6 +44184,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Staff_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."AchievementCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."AchievementCategoryDescriptor_DescriptorId" OR OLD."RecognitionTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."RecognitionTypeDescriptor_DescriptorId" OR OLD."AchievementCategorySystem" IS DISTINCT FROM NEW."AchievementCategorySystem" OR OLD."AchievementTitle" IS DISTINCT FROM NEW."AchievementTitle" OR OLD."Criteria" IS DISTINCT FROM NEW."Criteria" OR OLD."CriteriaURL" IS DISTINCT FROM NEW."CriteriaURL" OR OLD."EvidenceStatement" IS DISTINCT FROM NEW."EvidenceStatement" OR OLD."ImageURL" IS DISTINCT FROM NEW."ImageURL" OR OLD."IssuerName" IS DISTINCT FROM NEW."IssuerName" OR OLD."IssuerOriginURL" IS DISTINCT FROM NEW."IssuerOriginURL" OR OLD."RecognitionAwardDate" IS DISTINCT FROM NEW."RecognitionAwardDate" OR OLD."RecognitionAwardExpiresDate" IS DISTINCT FROM NEW."RecognitionAwardExpiresDate" OR OLD."RecognitionDescription" IS DISTINCT FROM NEW."RecognitionDescription") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -43127,9 +44229,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."SchoolYear_Unified" IS DISTINCT FROM NEW."SchoolYear_Unified" OR OLD."Calendar_DocumentId" IS DISTINCT FROM NEW."Calendar_DocumentId" OR OLD."Calendar_CalendarCode" IS DISTINCT FROM NEW."Calendar_CalendarCode" OR OLD."SchoolYear_DocumentId" IS DISTINCT FROM NEW."SchoolYear_DocumentId" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId" OR OLD."ProgramAssignmentDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramAssignmentDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."ProgramAssignmentDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramAssignmentDescriptor_DescriptorId" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -43154,6 +44261,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StaffSchoolAssociation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StaffSchoolAssociation_DocumentId" IS DISTINCT FROM NEW."StaffSchoolAssociation_DocumentId" OR OLD."AcademicSubjectDescriptor_DescriptorId" IS DISTINCT FROM NEW."AcademicSubjectDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StaffSchoolAssociation_DocumentId";
@@ -43175,6 +44285,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StaffSchoolAssociation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StaffSchoolAssociation_DocumentId" IS DISTINCT FROM NEW."StaffSchoolAssociation_DocumentId" OR OLD."GradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradeLevelDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -43217,9 +44330,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Section_DocumentId" IS DISTINCT FROM NEW."Section_DocumentId" OR OLD."Section_LocalCourseCode" IS DISTINCT FROM NEW."Section_LocalCourseCode" OR OLD."Section_SchoolId" IS DISTINCT FROM NEW."Section_SchoolId" OR OLD."Section_SchoolYear" IS DISTINCT FROM NEW."Section_SchoolYear" OR OLD."Section_SessionName" IS DISTINCT FROM NEW."Section_SessionName" OR OLD."Section_SectionIdentifier" IS DISTINCT FROM NEW."Section_SectionIdentifier" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId" OR OLD."ClassroomPositionDescriptor_DescriptorId" IS DISTINCT FROM NEW."ClassroomPositionDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."HighlyQualifiedTeacher" IS DISTINCT FROM NEW."HighlyQualifiedTeacher" OR OLD."PercentageContribution" IS DISTINCT FROM NEW."PercentageContribution" OR OLD."TeacherStudentDataLinkExclusion" IS DISTINCT FROM NEW."TeacherStudentDataLinkExclusion") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."Section_LocalCourseCode" IS DISTINCT FROM NEW."Section_LocalCourseCode" OR OLD."Section_SchoolId" IS DISTINCT FROM NEW."Section_SchoolId" OR OLD."Section_SchoolYear" IS DISTINCT FROM NEW."Section_SchoolYear" OR OLD."Section_SectionIdentifier" IS DISTINCT FROM NEW."Section_SectionIdentifier" OR OLD."Section_SessionName" IS DISTINCT FROM NEW."Section_SessionName" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -43244,6 +44362,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Staff_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."TelephoneNumberTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."TelephoneNumberTypeDescriptor_DescriptorId" OR OLD."DoNotPublishIndicator" IS DISTINCT FROM NEW."DoNotPublishIndicator" OR OLD."OrderOfPriority" IS DISTINCT FROM NEW."OrderOfPriority" OR OLD."TelephoneNumber" IS DISTINCT FROM NEW."TelephoneNumber" OR OLD."TextMessageCapabilityIndicator" IS DISTINCT FROM NEW."TextMessageCapabilityIndicator") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Staff_DocumentId";
@@ -43266,6 +44387,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Staff_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."TribalAffiliationDescriptor_DescriptorId" IS DISTINCT FROM NEW."TribalAffiliationDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Staff_DocumentId";
@@ -43287,6 +44411,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Staff_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."VisaDescriptor_DescriptorId" IS DISTINCT FROM NEW."VisaDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -43382,9 +44509,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."OperationalStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."OperationalStatusDescriptor_DescriptorId" OR OLD."NameOfInstitution" IS DISTINCT FROM NEW."NameOfInstitution" OR OLD."ShortNameOfInstitution" IS DISTINCT FROM NEW."ShortNameOfInstitution" OR OLD."StateEducationAgencyId" IS DISTINCT FROM NEW."StateEducationAgencyId" OR OLD."WebSite" IS DISTINCT FROM NEW."WebSite") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."StateEducationAgencyId" IS DISTINCT FROM NEW."StateEducationAgencyId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -43409,6 +44541,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StateEducationAgency_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StateEducationAgency_DocumentId" IS DISTINCT FROM NEW."StateEducationAgency_DocumentId" OR OLD."StateEducationAgencyAccountabilitySchoolYear_DocumentId" IS DISTINCT FROM NEW."StateEducationAgencyAccountabilitySchoolYear_DocumentId" OR OLD."StateEducationAgencyAccountabilitySchoolYear_SchoolYear" IS DISTINCT FROM NEW."StateEducationAgencyAccountabilitySchoolYear_SchoolYear" OR OLD."CteGraduationRateInclusion" IS DISTINCT FROM NEW."CteGraduationRateInclusion") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StateEducationAgency_DocumentId";
@@ -43430,6 +44565,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StateEducationAgency_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StateEducationAgency_DocumentId" IS DISTINCT FROM NEW."StateEducationAgency_DocumentId" OR OLD."AddressTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AddressTypeDescriptor_DescriptorId" OR OLD."LocaleDescriptor_DescriptorId" IS DISTINCT FROM NEW."LocaleDescriptor_DescriptorId" OR OLD."StateAbbreviationDescriptor_DescriptorId" IS DISTINCT FROM NEW."StateAbbreviationDescriptor_DescriptorId" OR OLD."ApartmentRoomSuiteNumber" IS DISTINCT FROM NEW."ApartmentRoomSuiteNumber" OR OLD."BuildingSiteNumber" IS DISTINCT FROM NEW."BuildingSiteNumber" OR OLD."City" IS DISTINCT FROM NEW."City" OR OLD."CongressionalDistrict" IS DISTINCT FROM NEW."CongressionalDistrict" OR OLD."CountyFIPSCode" IS DISTINCT FROM NEW."CountyFIPSCode" OR OLD."DoNotPublishIndicator" IS DISTINCT FROM NEW."DoNotPublishIndicator" OR OLD."Latitude" IS DISTINCT FROM NEW."Latitude" OR OLD."Longitude" IS DISTINCT FROM NEW."Longitude" OR OLD."NameOfCounty" IS DISTINCT FROM NEW."NameOfCounty" OR OLD."PostalCode" IS DISTINCT FROM NEW."PostalCode" OR OLD."StreetNumberName" IS DISTINCT FROM NEW."StreetNumberName") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -43453,6 +44591,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StateEducationAgency_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."StateEducationAgency_DocumentId" IS DISTINCT FROM NEW."StateEducationAgency_DocumentId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StateEducationAgency_DocumentId";
@@ -43474,6 +44615,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StateEducationAgency_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StateEducationAgency_DocumentId" IS DISTINCT FROM NEW."StateEducationAgency_DocumentId" OR OLD."EducationOrganizationCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."EducationOrganizationCategoryDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -43497,6 +44641,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StateEducationAgency_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StateEducationAgency_DocumentId" IS DISTINCT FROM NEW."StateEducationAgency_DocumentId" OR OLD."FederalProgramsFundingAllocation" IS DISTINCT FROM NEW."FederalProgramsFundingAllocation" OR OLD."FiscalYear" IS DISTINCT FROM NEW."FiscalYear") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StateEducationAgency_DocumentId";
@@ -43518,6 +44665,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StateEducationAgency_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StateEducationAgency_DocumentId" IS DISTINCT FROM NEW."StateEducationAgency_DocumentId" OR OLD."EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" IS DISTINCT FROM NEW."EducationOrganizationIdentificationSystemDescriptor__f63fb21ede" OR OLD."IdentificationCode" IS DISTINCT FROM NEW."IdentificationCode") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -43541,6 +44691,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StateEducationAgency_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StateEducationAgency_DocumentId" IS DISTINCT FROM NEW."StateEducationAgency_DocumentId" OR OLD."IndicatorDescriptor_DescriptorId" IS DISTINCT FROM NEW."IndicatorDescriptor_DescriptorId" OR OLD."IndicatorGroupDescriptor_DescriptorId" IS DISTINCT FROM NEW."IndicatorGroupDescriptor_DescriptorId" OR OLD."IndicatorLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."IndicatorLevelDescriptor_DescriptorId" OR OLD."DesignatedBy" IS DISTINCT FROM NEW."DesignatedBy" OR OLD."IndicatorValue" IS DISTINCT FROM NEW."IndicatorValue") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StateEducationAgency_DocumentId";
@@ -43562,6 +44715,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StateEducationAgency_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."StateEducationAgency_DocumentId" IS DISTINCT FROM NEW."StateEducationAgency_DocumentId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -43585,6 +44741,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StateEducationAgency_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StateEducationAgency_DocumentId" IS DISTINCT FROM NEW."StateEducationAgency_DocumentId" OR OLD."InstitutionTelephoneNumberTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."InstitutionTelephoneNumberTypeDescriptor_DescriptorId" OR OLD."TelephoneNumber" IS DISTINCT FROM NEW."TelephoneNumber") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StateEducationAgency_DocumentId";
@@ -43606,6 +44765,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StateEducationAgency_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StateEducationAgency_DocumentId" IS DISTINCT FROM NEW."StateEducationAgency_DocumentId" OR OLD."AddressTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AddressTypeDescriptor_DescriptorId" OR OLD."CountryDescriptor_DescriptorId" IS DISTINCT FROM NEW."CountryDescriptor_DescriptorId" OR OLD."AddressLine1" IS DISTINCT FROM NEW."AddressLine1" OR OLD."AddressLine2" IS DISTINCT FROM NEW."AddressLine2" OR OLD."AddressLine3" IS DISTINCT FROM NEW."AddressLine3" OR OLD."AddressLine4" IS DISTINCT FROM NEW."AddressLine4" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."Latitude" IS DISTINCT FROM NEW."Latitude" OR OLD."Longitude" IS DISTINCT FROM NEW."Longitude") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -43648,9 +44810,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Person_DocumentId" IS DISTINCT FROM NEW."Person_DocumentId" OR OLD."Person_PersonId" IS DISTINCT FROM NEW."Person_PersonId" OR OLD."Person_SourceSystemDescriptor_DescriptorId" IS DISTINCT FROM NEW."Person_SourceSystemDescriptor_DescriptorId" OR OLD."BirthCountryDescriptor_DescriptorId" IS DISTINCT FROM NEW."BirthCountryDescriptor_DescriptorId" OR OLD."BirthSexDescriptor_DescriptorId" IS DISTINCT FROM NEW."BirthSexDescriptor_DescriptorId" OR OLD."BirthStateAbbreviationDescriptor_DescriptorId" IS DISTINCT FROM NEW."BirthStateAbbreviationDescriptor_DescriptorId" OR OLD."CitizenshipStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."CitizenshipStatusDescriptor_DescriptorId" OR OLD."BirthCity" IS DISTINCT FROM NEW."BirthCity" OR OLD."BirthDate" IS DISTINCT FROM NEW."BirthDate" OR OLD."BirthInternationalProvince" IS DISTINCT FROM NEW."BirthInternationalProvince" OR OLD."DateEnteredUS" IS DISTINCT FROM NEW."DateEnteredUS" OR OLD."FirstName" IS DISTINCT FROM NEW."FirstName" OR OLD."GenerationCodeSuffix" IS DISTINCT FROM NEW."GenerationCodeSuffix" OR OLD."LastSurname" IS DISTINCT FROM NEW."LastSurname" OR OLD."MaidenName" IS DISTINCT FROM NEW."MaidenName" OR OLD."MiddleName" IS DISTINCT FROM NEW."MiddleName" OR OLD."MultipleBirthStatus" IS DISTINCT FROM NEW."MultipleBirthStatus" OR OLD."PersonalTitlePrefix" IS DISTINCT FROM NEW."PersonalTitlePrefix" OR OLD."PreferredFirstName" IS DISTINCT FROM NEW."PreferredFirstName" OR OLD."PreferredLastSurname" IS DISTINCT FROM NEW."PreferredLastSurname" OR OLD."StudentUniqueId" IS DISTINCT FROM NEW."StudentUniqueId") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."StudentUniqueId" IS DISTINCT FROM NEW."StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -43694,9 +44861,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."SchoolYear_DocumentId" IS DISTINCT FROM NEW."SchoolYear_DocumentId" OR OLD."SchoolYear_SchoolYear" IS DISTINCT FROM NEW."SchoolYear_SchoolYear" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."CumulativeAttemptedCreditTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."CumulativeAttemptedCreditTypeDescriptor_DescriptorId" OR OLD."CumulativeEarnedCreditTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."CumulativeEarnedCreditTypeDescriptor_DescriptorId" OR OLD."SessionAttemptedCreditTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."SessionAttemptedCreditTypeDescriptor_DescriptorId" OR OLD."SessionEarnedCreditTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."SessionEarnedCreditTypeDescriptor_DescriptorId" OR OLD."TermDescriptor_DescriptorId" IS DISTINCT FROM NEW."TermDescriptor_DescriptorId" OR OLD."ClassRankingClassRank" IS DISTINCT FROM NEW."ClassRankingClassRank" OR OLD."ClassRankingClassRankingDate" IS DISTINCT FROM NEW."ClassRankingClassRankingDate" OR OLD."ClassRankingPercentageRanking" IS DISTINCT FROM NEW."ClassRankingPercentageRanking" OR OLD."ClassRankingTotalNumberInClass" IS DISTINCT FROM NEW."ClassRankingTotalNumberInClass" OR OLD."CumulativeAttemptedCreditConversion" IS DISTINCT FROM NEW."CumulativeAttemptedCreditConversion" OR OLD."CumulativeAttemptedCredits" IS DISTINCT FROM NEW."CumulativeAttemptedCredits" OR OLD."CumulativeEarnedCreditConversion" IS DISTINCT FROM NEW."CumulativeEarnedCreditConversion" OR OLD."CumulativeEarnedCredits" IS DISTINCT FROM NEW."CumulativeEarnedCredits" OR OLD."ProjectedGraduationDate" IS DISTINCT FROM NEW."ProjectedGraduationDate" OR OLD."SessionAttemptedCreditConversion" IS DISTINCT FROM NEW."SessionAttemptedCreditConversion" OR OLD."SessionAttemptedCredits" IS DISTINCT FROM NEW."SessionAttemptedCredits" OR OLD."SessionEarnedCreditConversion" IS DISTINCT FROM NEW."SessionEarnedCreditConversion" OR OLD."SessionEarnedCredits" IS DISTINCT FROM NEW."SessionEarnedCredits") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."SchoolYear_SchoolYear" IS DISTINCT FROM NEW."SchoolYear_SchoolYear" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."TermDescriptor_DescriptorId" IS DISTINCT FROM NEW."TermDescriptor_DescriptorId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -43721,6 +44893,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentAcademicRecord_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentAcademicRecord_DocumentId" IS DISTINCT FROM NEW."StudentAcademicRecord_DocumentId" OR OLD."AcademicHonorCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."AcademicHonorCategoryDescriptor_DescriptorId" OR OLD."AchievementCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."AchievementCategoryDescriptor_DescriptorId" OR OLD."AchievementCategorySystem" IS DISTINCT FROM NEW."AchievementCategorySystem" OR OLD."AchievementTitle" IS DISTINCT FROM NEW."AchievementTitle" OR OLD."Criteria" IS DISTINCT FROM NEW."Criteria" OR OLD."CriteriaURL" IS DISTINCT FROM NEW."CriteriaURL" OR OLD."EvidenceStatement" IS DISTINCT FROM NEW."EvidenceStatement" OR OLD."HonorAwardDate" IS DISTINCT FROM NEW."HonorAwardDate" OR OLD."HonorAwardExpiresDate" IS DISTINCT FROM NEW."HonorAwardExpiresDate" OR OLD."HonorDescription" IS DISTINCT FROM NEW."HonorDescription" OR OLD."ImageURL" IS DISTINCT FROM NEW."ImageURL" OR OLD."IssuerName" IS DISTINCT FROM NEW."IssuerName" OR OLD."IssuerOriginURL" IS DISTINCT FROM NEW."IssuerOriginURL") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentAcademicRecord_DocumentId";
@@ -43742,6 +44917,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentAcademicRecord_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentAcademicRecord_DocumentId" IS DISTINCT FROM NEW."StudentAcademicRecord_DocumentId" OR OLD."AchievementCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."AchievementCategoryDescriptor_DescriptorId" OR OLD."DiplomaLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."DiplomaLevelDescriptor_DescriptorId" OR OLD."DiplomaTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."DiplomaTypeDescriptor_DescriptorId" OR OLD."AchievementCategorySystem" IS DISTINCT FROM NEW."AchievementCategorySystem" OR OLD."AchievementTitle" IS DISTINCT FROM NEW."AchievementTitle" OR OLD."Criteria" IS DISTINCT FROM NEW."Criteria" OR OLD."CriteriaURL" IS DISTINCT FROM NEW."CriteriaURL" OR OLD."CteCompleter" IS DISTINCT FROM NEW."CteCompleter" OR OLD."DiplomaAwardDate" IS DISTINCT FROM NEW."DiplomaAwardDate" OR OLD."DiplomaAwardExpiresDate" IS DISTINCT FROM NEW."DiplomaAwardExpiresDate" OR OLD."DiplomaDescription" IS DISTINCT FROM NEW."DiplomaDescription" OR OLD."EvidenceStatement" IS DISTINCT FROM NEW."EvidenceStatement" OR OLD."ImageURL" IS DISTINCT FROM NEW."ImageURL" OR OLD."IssuerName" IS DISTINCT FROM NEW."IssuerName" OR OLD."IssuerOriginURL" IS DISTINCT FROM NEW."IssuerOriginURL") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -43765,6 +44943,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentAcademicRecord_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentAcademicRecord_DocumentId" IS DISTINCT FROM NEW."StudentAcademicRecord_DocumentId" OR OLD."GradePointAverageTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradePointAverageTypeDescriptor_DescriptorId" OR OLD."GradePointAverageValue" IS DISTINCT FROM NEW."GradePointAverageValue" OR OLD."IsCumulative" IS DISTINCT FROM NEW."IsCumulative" OR OLD."MaxGradePointAverageValue" IS DISTINCT FROM NEW."MaxGradePointAverageValue") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentAcademicRecord_DocumentId";
@@ -43787,6 +44968,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentAcademicRecord_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentAcademicRecord_DocumentId" IS DISTINCT FROM NEW."StudentAcademicRecord_DocumentId" OR OLD."AchievementCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."AchievementCategoryDescriptor_DescriptorId" OR OLD."RecognitionTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."RecognitionTypeDescriptor_DescriptorId" OR OLD."AchievementCategorySystem" IS DISTINCT FROM NEW."AchievementCategorySystem" OR OLD."AchievementTitle" IS DISTINCT FROM NEW."AchievementTitle" OR OLD."Criteria" IS DISTINCT FROM NEW."Criteria" OR OLD."CriteriaURL" IS DISTINCT FROM NEW."CriteriaURL" OR OLD."EvidenceStatement" IS DISTINCT FROM NEW."EvidenceStatement" OR OLD."ImageURL" IS DISTINCT FROM NEW."ImageURL" OR OLD."IssuerName" IS DISTINCT FROM NEW."IssuerName" OR OLD."IssuerOriginURL" IS DISTINCT FROM NEW."IssuerOriginURL" OR OLD."RecognitionAwardDate" IS DISTINCT FROM NEW."RecognitionAwardDate" OR OLD."RecognitionAwardExpiresDate" IS DISTINCT FROM NEW."RecognitionAwardExpiresDate" OR OLD."RecognitionDescription" IS DISTINCT FROM NEW."RecognitionDescription") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentAcademicRecord_DocumentId";
@@ -43808,6 +44992,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentAcademicRecord_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentAcademicRecord_DocumentId" IS DISTINCT FROM NEW."StudentAcademicRecord_DocumentId" OR OLD."ReportCard_DocumentId" IS DISTINCT FROM NEW."ReportCard_DocumentId" OR OLD."ReportCard_EducationOrganizationId" IS DISTINCT FROM NEW."ReportCard_EducationOrganizationId" OR OLD."ReportCard_GradingPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReportCard_GradingPeriodDescriptor_DescriptorId" OR OLD."ReportCard_GradingPeriodName" IS DISTINCT FROM NEW."ReportCard_GradingPeriodName" OR OLD."ReportCard_GradingPeriodSchoolId" IS DISTINCT FROM NEW."ReportCard_GradingPeriodSchoolId" OR OLD."ReportCard_GradingPeriodSchoolYear" IS DISTINCT FROM NEW."ReportCard_GradingPeriodSchoolYear" OR OLD."ReportCard_StudentUniqueId" IS DISTINCT FROM NEW."ReportCard_StudentUniqueId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -43850,9 +45037,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Assessment_DocumentId" IS DISTINCT FROM NEW."Assessment_DocumentId" OR OLD."Assessment_AssessmentIdentifier" IS DISTINCT FROM NEW."Assessment_AssessmentIdentifier" OR OLD."Assessment_Namespace" IS DISTINCT FROM NEW."Assessment_Namespace" OR OLD."ReportedSchool_DocumentId" IS DISTINCT FROM NEW."ReportedSchool_DocumentId" OR OLD."ReportedSchool_SchoolId" IS DISTINCT FROM NEW."ReportedSchool_SchoolId" OR OLD."SchoolYear_DocumentId" IS DISTINCT FROM NEW."SchoolYear_DocumentId" OR OLD."SchoolYear_SchoolYear" IS DISTINCT FROM NEW."SchoolYear_SchoolYear" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."AdministrationEnvironmentDescriptor_DescriptorId" IS DISTINCT FROM NEW."AdministrationEnvironmentDescriptor_DescriptorId" OR OLD."AdministrationLanguageDescriptor_DescriptorId" IS DISTINCT FROM NEW."AdministrationLanguageDescriptor_DescriptorId" OR OLD."EventCircumstanceDescriptor_DescriptorId" IS DISTINCT FROM NEW."EventCircumstanceDescriptor_DescriptorId" OR OLD."PeriodAssessmentPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."PeriodAssessmentPeriodDescriptor_DescriptorId" OR OLD."PlatformTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."PlatformTypeDescriptor_DescriptorId" OR OLD."ReasonNotTestedDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReasonNotTestedDescriptor_DescriptorId" OR OLD."RetestIndicatorDescriptor_DescriptorId" IS DISTINCT FROM NEW."RetestIndicatorDescriptor_DescriptorId" OR OLD."WhenAssessedGradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."WhenAssessedGradeLevelDescriptor_DescriptorId" OR OLD."AdministrationDate" IS DISTINCT FROM NEW."AdministrationDate" OR OLD."AdministrationEndDate" IS DISTINCT FROM NEW."AdministrationEndDate" OR OLD."AssessedMinutes" IS DISTINCT FROM NEW."AssessedMinutes" OR OLD."EventDescription" IS DISTINCT FROM NEW."EventDescription" OR OLD."PeriodBeginDate" IS DISTINCT FROM NEW."PeriodBeginDate" OR OLD."PeriodEndDate" IS DISTINCT FROM NEW."PeriodEndDate" OR OLD."ReportedSchoolIdentifier" IS DISTINCT FROM NEW."ReportedSchoolIdentifier" OR OLD."SerialNumber" IS DISTINCT FROM NEW."SerialNumber" OR OLD."StudentAssessmentIdentifier" IS DISTINCT FROM NEW."StudentAssessmentIdentifier") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."Assessment_AssessmentIdentifier" IS DISTINCT FROM NEW."Assessment_AssessmentIdentifier" OR OLD."Assessment_Namespace" IS DISTINCT FROM NEW."Assessment_Namespace" OR OLD."StudentAssessmentIdentifier" IS DISTINCT FROM NEW."StudentAssessmentIdentifier" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -43876,6 +45068,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentAssessment_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentAssessment_DocumentId" IS DISTINCT FROM NEW."StudentAssessment_DocumentId" OR OLD."AccommodationDescriptor_DescriptorId" IS DISTINCT FROM NEW."AccommodationDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -43918,9 +45113,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."SchoolYear_DocumentId" IS DISTINCT FROM NEW."SchoolYear_DocumentId" OR OLD."SchoolYear_SchoolYear" IS DISTINCT FROM NEW."SchoolYear_SchoolYear" OR OLD."StudentAssessment_DocumentId" IS DISTINCT FROM NEW."StudentAssessment_DocumentId" OR OLD."StudentAssessment_AssessmentIdentifier" IS DISTINCT FROM NEW."StudentAssessment_AssessmentIdentifier" OR OLD."StudentAssessment_Namespace" IS DISTINCT FROM NEW."StudentAssessment_Namespace" OR OLD."StudentAssessment_StudentAssessmentIdentifier" IS DISTINCT FROM NEW."StudentAssessment_StudentAssessmentIdentifier" OR OLD."StudentAssessment_StudentUniqueId" IS DISTINCT FROM NEW."StudentAssessment_StudentUniqueId" OR OLD."EducationOrganizationAssociationTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."EducationOrganizationAssociationTypeDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."EducationOrganizationAssociationTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."EducationOrganizationAssociationTypeDescriptor_DescriptorId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."StudentAssessment_AssessmentIdentifier" IS DISTINCT FROM NEW."StudentAssessment_AssessmentIdentifier" OR OLD."StudentAssessment_Namespace" IS DISTINCT FROM NEW."StudentAssessment_Namespace" OR OLD."StudentAssessment_StudentAssessmentIdentifier" IS DISTINCT FROM NEW."StudentAssessment_StudentAssessmentIdentifier" OR OLD."StudentAssessment_StudentUniqueId" IS DISTINCT FROM NEW."StudentAssessment_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -43945,6 +45145,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentAssessment_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentAssessment_DocumentId" IS DISTINCT FROM NEW."StudentAssessment_DocumentId" OR OLD."StudentAssessmentItemAssessmentItem_DocumentId" IS DISTINCT FROM NEW."StudentAssessmentItemAssessmentItem_DocumentId" OR OLD."StudentAssessmentItemAssessmentItem_AssessmentIdentifier" IS DISTINCT FROM NEW."StudentAssessmentItemAssessmentItem_AssessmentIdentifier" OR OLD."StudentAssessmentItemAssessmentItem_Namespace" IS DISTINCT FROM NEW."StudentAssessmentItemAssessmentItem_Namespace" OR OLD."StudentAssessmentItemAssessmentItem_IdentificationCode" IS DISTINCT FROM NEW."StudentAssessmentItemAssessmentItem_IdentificationCode" OR OLD."AssessmentItemResultDescriptor_DescriptorId" IS DISTINCT FROM NEW."AssessmentItemResultDescriptor_DescriptorId" OR OLD."ResponseIndicatorDescriptor_DescriptorId" IS DISTINCT FROM NEW."ResponseIndicatorDescriptor_DescriptorId" OR OLD."AssessmentResponse" IS DISTINCT FROM NEW."AssessmentResponse" OR OLD."DescriptiveFeedback" IS DISTINCT FROM NEW."DescriptiveFeedback" OR OLD."ItemNumber" IS DISTINCT FROM NEW."ItemNumber" OR OLD."RawScoreResult" IS DISTINCT FROM NEW."RawScoreResult" OR OLD."TimeAssessed" IS DISTINCT FROM NEW."TimeAssessed") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentAssessment_DocumentId";
@@ -43966,6 +45169,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentAssessment_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentAssessment_DocumentId" IS DISTINCT FROM NEW."StudentAssessment_DocumentId" OR OLD."AssessmentReportingMethodDescriptor_DescriptorId" IS DISTINCT FROM NEW."AssessmentReportingMethodDescriptor_DescriptorId" OR OLD."PerformanceLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."PerformanceLevelDescriptor_DescriptorId" OR OLD."PerformanceLevelIndicatorName" IS DISTINCT FROM NEW."PerformanceLevelIndicatorName") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -44008,9 +45214,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."StudentUniqueId_Unified" IS DISTINCT FROM NEW."StudentUniqueId_Unified" OR OLD."AssessmentAdministration_DocumentId" IS DISTINCT FROM NEW."AssessmentAdministration_DocumentId" OR OLD."AssessmentAdministration_AdministrationIdentifier" IS DISTINCT FROM NEW."AssessmentAdministration_AdministrationIdentifier" OR OLD."AssessmentAdministration_AssessmentIdentifier" IS DISTINCT FROM NEW."AssessmentAdministration_AssessmentIdentifier" OR OLD."AssessmentAdministration_Namespace" IS DISTINCT FROM NEW."AssessmentAdministration_Namespace" OR OLD."AssessmentAdministration_AssigningEducationOrganizationId" IS DISTINCT FROM NEW."AssessmentAdministration_AssigningEducationOrganizationId" OR OLD."ReportingEducationOrganization_DocumentId" IS DISTINCT FROM NEW."ReportingEducationOrganization_DocumentId" OR OLD."ReportingEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."ReportingEducationOrganization_EducationOrganizationId" OR OLD."ScheduledStudentEducationOrganizationAssessmentAccom_8a1ccd30ea" IS DISTINCT FROM NEW."ScheduledStudentEducationOrganizationAssessmentAccom_8a1ccd30ea" OR OLD."ScheduledStudentEducationOrganizationAssessmentAccom_42c01c7c2c" IS DISTINCT FROM NEW."ScheduledStudentEducationOrganizationAssessmentAccom_42c01c7c2c" OR OLD."ScheduledStudentEducationOrganizationAssessmentAccom_44578471b1" IS DISTINCT FROM NEW."ScheduledStudentEducationOrganizationAssessmentAccom_44578471b1" OR OLD."StudentEducationOrganizationAssociation_DocumentId" IS DISTINCT FROM NEW."StudentEducationOrganizationAssociation_DocumentId" OR OLD."StudentEducationOrganizationAssociation_EducationOrganizationId" IS DISTINCT FROM NEW."StudentEducationOrganizationAssociation_EducationOrganizationId" OR OLD."StudentSchoolAssociation_DocumentId" IS DISTINCT FROM NEW."StudentSchoolAssociation_DocumentId" OR OLD."StudentSchoolAssociation_EntryDate" IS DISTINCT FROM NEW."StudentSchoolAssociation_EntryDate" OR OLD."StudentSchoolAssociation_SchoolId" IS DISTINCT FROM NEW."StudentSchoolAssociation_SchoolId" OR OLD."TestingEducationOrganization_DocumentId" IS DISTINCT FROM NEW."TestingEducationOrganization_DocumentId" OR OLD."TestingEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."TestingEducationOrganization_EducationOrganizationId" OR OLD."AssessmentGradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."AssessmentGradeLevelDescriptor_DescriptorId" OR OLD."PlatformTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."PlatformTypeDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."AssessmentAdministration_AdministrationIdentifier" IS DISTINCT FROM NEW."AssessmentAdministration_AdministrationIdentifier" OR OLD."AssessmentAdministration_AssessmentIdentifier" IS DISTINCT FROM NEW."AssessmentAdministration_AssessmentIdentifier" OR OLD."AssessmentAdministration_AssigningEducationOrganizationId" IS DISTINCT FROM NEW."AssessmentAdministration_AssigningEducationOrganizationId" OR OLD."AssessmentAdministration_Namespace" IS DISTINCT FROM NEW."AssessmentAdministration_Namespace" OR OLD."StudentEducationOrganizationAssociation_EducationOrganizationId" IS DISTINCT FROM NEW."StudentEducationOrganizationAssociation_EducationOrganizationId" OR OLD."StudentUniqueId_Unified" IS DISTINCT FROM NEW."StudentUniqueId_Unified") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -44035,6 +45246,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentAssessmentRegistration_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentAssessmentRegistration_DocumentId" IS DISTINCT FROM NEW."StudentAssessmentRegistration_DocumentId" OR OLD."AccommodationDescriptor_DescriptorId" IS DISTINCT FROM NEW."AccommodationDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentAssessmentRegistration_DocumentId";
@@ -44056,6 +45270,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentAssessmentRegistration_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentAssessmentRegistration_DocumentId" IS DISTINCT FROM NEW."StudentAssessmentRegistration_DocumentId" OR OLD."CustomizationKey" IS DISTINCT FROM NEW."CustomizationKey" OR OLD."CustomizationValue" IS DISTINCT FROM NEW."CustomizationValue") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -44098,9 +45315,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."AssessmentIdentifier_Unified" IS DISTINCT FROM NEW."AssessmentIdentifier_Unified" OR OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."AssessmentBatteryPart_DocumentId" IS DISTINCT FROM NEW."AssessmentBatteryPart_DocumentId" OR OLD."AssessmentBatteryPart_AssessmentBatteryPartName" IS DISTINCT FROM NEW."AssessmentBatteryPart_AssessmentBatteryPartName" OR OLD."StudentAssessmentRegistration_DocumentId" IS DISTINCT FROM NEW."StudentAssessmentRegistration_DocumentId" OR OLD."StudentAssessmentRegistration_AdministrationIdentifier" IS DISTINCT FROM NEW."StudentAssessmentRegistration_AdministrationIdentifier" OR OLD."StudentAssessmentRegistration_AssigningEducationOrganizationId" IS DISTINCT FROM NEW."StudentAssessmentRegistration_AssigningEducationOrganizationId" OR OLD."StudentAssessmentRegistration_EducationOrganizationId" IS DISTINCT FROM NEW."StudentAssessmentRegistration_EducationOrganizationId" OR OLD."StudentAssessmentRegistration_StudentUniqueId" IS DISTINCT FROM NEW."StudentAssessmentRegistration_StudentUniqueId") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."AssessmentBatteryPart_AssessmentBatteryPartName" IS DISTINCT FROM NEW."AssessmentBatteryPart_AssessmentBatteryPartName" OR OLD."AssessmentIdentifier_Unified" IS DISTINCT FROM NEW."AssessmentIdentifier_Unified" OR OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."StudentAssessmentRegistration_AdministrationIdentifier" IS DISTINCT FROM NEW."StudentAssessmentRegistration_AdministrationIdentifier" OR OLD."StudentAssessmentRegistration_AssigningEducationOrganizationId" IS DISTINCT FROM NEW."StudentAssessmentRegistration_AssigningEducationOrganizationId" OR OLD."StudentAssessmentRegistration_EducationOrganizationId" IS DISTINCT FROM NEW."StudentAssessmentRegistration_EducationOrganizationId" OR OLD."StudentAssessmentRegistration_StudentUniqueId" IS DISTINCT FROM NEW."StudentAssessmentRegistration_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -44125,6 +45347,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentAssessmentRegistrationBatteryPartAssociation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentAssessmentRegistrationBatteryPartAssociation_DocumentId" IS DISTINCT FROM NEW."StudentAssessmentRegistrationBatteryPartAssociation_DocumentId" OR OLD."AccommodationDescriptor_DescriptorId" IS DISTINCT FROM NEW."AccommodationDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentAssessmentRegistrationBatteryPartAssociation_DocumentId";
@@ -44146,6 +45371,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentAssessment_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentAssessment_DocumentId" IS DISTINCT FROM NEW."StudentAssessment_DocumentId" OR OLD."AssessmentReportingMethodDescriptor_DescriptorId" IS DISTINCT FROM NEW."AssessmentReportingMethodDescriptor_DescriptorId" OR OLD."ResultDatatypeTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ResultDatatypeTypeDescriptor_DescriptorId" OR OLD."Result" IS DISTINCT FROM NEW."Result") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -44169,6 +45397,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentAssessment_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentAssessment_DocumentId" IS DISTINCT FROM NEW."StudentAssessment_DocumentId" OR OLD."StudentObjectiveAssessmentObjectiveAssessment_DocumentId" IS DISTINCT FROM NEW."StudentObjectiveAssessmentObjectiveAssessment_DocumentId" OR OLD."StudentObjectiveAssessmentObjectiveAssessment_Assess_2cf36d20d7" IS DISTINCT FROM NEW."StudentObjectiveAssessmentObjectiveAssessment_Assess_2cf36d20d7" OR OLD."StudentObjectiveAssessmentObjectiveAssessment_Namespace" IS DISTINCT FROM NEW."StudentObjectiveAssessmentObjectiveAssessment_Namespace" OR OLD."StudentObjectiveAssessmentObjectiveAssessment_Identi_8450435919" IS DISTINCT FROM NEW."StudentObjectiveAssessmentObjectiveAssessment_Identi_8450435919" OR OLD."AdministrationDate" IS DISTINCT FROM NEW."AdministrationDate" OR OLD."AdministrationEndDate" IS DISTINCT FROM NEW."AdministrationEndDate" OR OLD."AssessedMinutes" IS DISTINCT FROM NEW."AssessedMinutes") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentAssessment_DocumentId";
@@ -44191,6 +45422,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentAssessment_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."StudentAssessment_DocumentId" IS DISTINCT FROM NEW."StudentAssessment_DocumentId" OR OLD."AssessmentReportingMethodDescriptor_DescriptorId" IS DISTINCT FROM NEW."AssessmentReportingMethodDescriptor_DescriptorId" OR OLD."PerformanceLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."PerformanceLevelDescriptor_DescriptorId" OR OLD."PerformanceLevelIndicatorName" IS DISTINCT FROM NEW."PerformanceLevelIndicatorName") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentAssessment_DocumentId";
@@ -44212,6 +45446,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentAssessment_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."StudentAssessment_DocumentId" IS DISTINCT FROM NEW."StudentAssessment_DocumentId" OR OLD."AssessmentReportingMethodDescriptor_DescriptorId" IS DISTINCT FROM NEW."AssessmentReportingMethodDescriptor_DescriptorId" OR OLD."ResultDatatypeTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ResultDatatypeTypeDescriptor_DescriptorId" OR OLD."Result" IS DISTINCT FROM NEW."Result") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -44277,9 +45514,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_DocumentId" IS DISTINCT FROM NEW."ProgramProgram_DocumentId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."ReasonExitedDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReasonExitedDescriptor_DescriptorId" OR OLD."TechnicalSkillsAssessmentDescriptor_DescriptorId" IS DISTINCT FROM NEW."TechnicalSkillsAssessmentDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."NonTraditionalGenderStatus" IS DISTINCT FROM NEW."NonTraditionalGenderStatus" OR OLD."PrivateCTEProgram" IS DISTINCT FROM NEW."PrivateCTEProgram" OR OLD."ServedOutsideOfRegularSession" IS DISTINCT FROM NEW."ServedOutsideOfRegularSession") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -44304,6 +45546,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentCTEProgramAssociation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentCTEProgramAssociation_DocumentId" IS DISTINCT FROM NEW."StudentCTEProgramAssociation_DocumentId" OR OLD."CteProgramServiceDescriptor_DescriptorId" IS DISTINCT FROM NEW."CteProgramServiceDescriptor_DescriptorId" OR OLD."CipCode" IS DISTINCT FROM NEW."CipCode" OR OLD."PrimaryIndicator" IS DISTINCT FROM NEW."PrimaryIndicator" OR OLD."ServiceBeginDate" IS DISTINCT FROM NEW."ServiceBeginDate" OR OLD."ServiceEndDate" IS DISTINCT FROM NEW."ServiceEndDate") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentCTEProgramAssociation_DocumentId";
@@ -44325,6 +45570,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentCTEProgramAssociation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentCTEProgramAssociation_DocumentId" IS DISTINCT FROM NEW."StudentCTEProgramAssociation_DocumentId" OR OLD."ParticipationStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."ParticipationStatusDescriptor_DescriptorId" OR OLD."DesignatedBy" IS DISTINCT FROM NEW."DesignatedBy" OR OLD."StatusBeginDate" IS DISTINCT FROM NEW."StatusBeginDate" OR OLD."StatusEndDate" IS DISTINCT FROM NEW."StatusEndDate") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -44367,9 +45615,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Cohort_DocumentId" IS DISTINCT FROM NEW."Cohort_DocumentId" OR OLD."Cohort_CohortIdentifier" IS DISTINCT FROM NEW."Cohort_CohortIdentifier" OR OLD."Cohort_EducationOrganizationId" IS DISTINCT FROM NEW."Cohort_EducationOrganizationId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."Cohort_CohortIdentifier" IS DISTINCT FROM NEW."Cohort_CohortIdentifier" OR OLD."Cohort_EducationOrganizationId" IS DISTINCT FROM NEW."Cohort_EducationOrganizationId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -44393,6 +45646,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentCohortAssociation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentCohortAssociation_DocumentId" IS DISTINCT FROM NEW."StudentCohortAssociation_DocumentId" OR OLD."Section_DocumentId" IS DISTINCT FROM NEW."Section_DocumentId" OR OLD."Section_LocalCourseCode" IS DISTINCT FROM NEW."Section_LocalCourseCode" OR OLD."Section_SchoolId" IS DISTINCT FROM NEW."Section_SchoolId" OR OLD."Section_SchoolYear" IS DISTINCT FROM NEW."Section_SchoolYear" OR OLD."Section_SessionName" IS DISTINCT FROM NEW."Section_SessionName" OR OLD."Section_SectionIdentifier" IS DISTINCT FROM NEW."Section_SectionIdentifier") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -44435,9 +45691,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."GradingPeriodGradingPeriod_DocumentId" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_DocumentId" OR OLD."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" OR OLD."GradingPeriodGradingPeriod_GradingPeriodName" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_GradingPeriodName" OR OLD."GradingPeriodGradingPeriod_SchoolId" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_SchoolId" OR OLD."GradingPeriodGradingPeriod_SchoolYear" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_SchoolYear" OR OLD."ObjectiveCompetencyObjective_DocumentId" IS DISTINCT FROM NEW."ObjectiveCompetencyObjective_DocumentId" OR OLD."ObjectiveCompetencyObjective_EducationOrganizationId" IS DISTINCT FROM NEW."ObjectiveCompetencyObjective_EducationOrganizationId" OR OLD."ObjectiveCompetencyObjective_Objective" IS DISTINCT FROM NEW."ObjectiveCompetencyObjective_Objective" OR OLD."ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e" IS DISTINCT FROM NEW."ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."CompetencyLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."CompetencyLevelDescriptor_DescriptorId" OR OLD."DiagnosticStatement" IS DISTINCT FROM NEW."DiagnosticStatement") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId" OR OLD."GradingPeriodGradingPeriod_GradingPeriodName" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_GradingPeriodName" OR OLD."GradingPeriodGradingPeriod_SchoolId" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_SchoolId" OR OLD."GradingPeriodGradingPeriod_SchoolYear" IS DISTINCT FROM NEW."GradingPeriodGradingPeriod_SchoolYear" OR OLD."ObjectiveCompetencyObjective_EducationOrganizationId" IS DISTINCT FROM NEW."ObjectiveCompetencyObjective_EducationOrganizationId" OR OLD."ObjectiveCompetencyObjective_Objective" IS DISTINCT FROM NEW."ObjectiveCompetencyObjective_Objective" OR OLD."ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e" IS DISTINCT FROM NEW."ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -44462,6 +45723,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentCompetencyObjective_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentCompetencyObjective_DocumentId" IS DISTINCT FROM NEW."StudentCompetencyObjective_DocumentId" OR OLD."StudentCompetencyObjectiveSectionOrProgramChoiceGene_9ca396b829" IS DISTINCT FROM NEW."StudentCompetencyObjectiveSectionOrProgramChoiceGene_9ca396b829" OR OLD."StudentCompetencyObjectiveSectionOrProgramChoiceGene_e4556d7896" IS DISTINCT FROM NEW."StudentCompetencyObjectiveSectionOrProgramChoiceGene_e4556d7896" OR OLD."StudentCompetencyObjectiveSectionOrProgramChoiceGene_284e84bf96" IS DISTINCT FROM NEW."StudentCompetencyObjectiveSectionOrProgramChoiceGene_284e84bf96" OR OLD."StudentCompetencyObjectiveSectionOrProgramChoiceGene_20ceb9d821" IS DISTINCT FROM NEW."StudentCompetencyObjectiveSectionOrProgramChoiceGene_20ceb9d821" OR OLD."StudentCompetencyObjectiveSectionOrProgramChoiceGene_72e6052582" IS DISTINCT FROM NEW."StudentCompetencyObjectiveSectionOrProgramChoiceGene_72e6052582" OR OLD."StudentCompetencyObjectiveSectionOrProgramChoiceGene_7c5bfc584c" IS DISTINCT FROM NEW."StudentCompetencyObjectiveSectionOrProgramChoiceGene_7c5bfc584c" OR OLD."StudentCompetencyObjectiveSectionOrProgramChoiceGene_d759bcc32e" IS DISTINCT FROM NEW."StudentCompetencyObjectiveSectionOrProgramChoiceGene_d759bcc32e") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentCompetencyObjective_DocumentId";
@@ -44483,6 +45747,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentCompetencyObjective_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentCompetencyObjective_DocumentId" IS DISTINCT FROM NEW."StudentCompetencyObjective_DocumentId" OR OLD."StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0" IS DISTINCT FROM NEW."StudentCompetencyObjectiveSectionOrProgramChoiceStud_393aa361a0" OR OLD."StudentCompetencyObjectiveSectionOrProgramChoiceStud_87433eab93" IS DISTINCT FROM NEW."StudentCompetencyObjectiveSectionOrProgramChoiceStud_87433eab93" OR OLD."StudentCompetencyObjectiveSectionOrProgramChoiceStud_8caa9ebb36" IS DISTINCT FROM NEW."StudentCompetencyObjectiveSectionOrProgramChoiceStud_8caa9ebb36" OR OLD."StudentCompetencyObjectiveSectionOrProgramChoiceStud_f52295ff38" IS DISTINCT FROM NEW."StudentCompetencyObjectiveSectionOrProgramChoiceStud_f52295ff38" OR OLD."StudentCompetencyObjectiveSectionOrProgramChoiceStud_c56563e4b7" IS DISTINCT FROM NEW."StudentCompetencyObjectiveSectionOrProgramChoiceStud_c56563e4b7" OR OLD."StudentCompetencyObjectiveSectionOrProgramChoiceStud_650d92a922" IS DISTINCT FROM NEW."StudentCompetencyObjectiveSectionOrProgramChoiceStud_650d92a922" OR OLD."StudentCompetencyObjectiveSectionOrProgramChoiceStud_82873650ab" IS DISTINCT FROM NEW."StudentCompetencyObjectiveSectionOrProgramChoiceStud_82873650ab" OR OLD."StudentCompetencyObjectiveSectionOrProgramChoiceStud_1128ef7fe6" IS DISTINCT FROM NEW."StudentCompetencyObjectiveSectionOrProgramChoiceStud_1128ef7fe6") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -44525,9 +45792,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Contact_DocumentId" IS DISTINCT FROM NEW."Contact_DocumentId" OR OLD."Contact_ContactUniqueId" IS DISTINCT FROM NEW."Contact_ContactUniqueId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."RelationDescriptor_DescriptorId" IS DISTINCT FROM NEW."RelationDescriptor_DescriptorId" OR OLD."ContactPriority" IS DISTINCT FROM NEW."ContactPriority" OR OLD."ContactRestrictions" IS DISTINCT FROM NEW."ContactRestrictions" OR OLD."EmergencyContactStatus" IS DISTINCT FROM NEW."EmergencyContactStatus" OR OLD."LegalGuardian" IS DISTINCT FROM NEW."LegalGuardian" OR OLD."LivesWith" IS DISTINCT FROM NEW."LivesWith" OR OLD."PrimaryContactStatus" IS DISTINCT FROM NEW."PrimaryContactStatus") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."Contact_ContactUniqueId" IS DISTINCT FROM NEW."Contact_ContactUniqueId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -44571,9 +45843,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."DisciplineIncident_DocumentId" IS DISTINCT FROM NEW."DisciplineIncident_DocumentId" OR OLD."DisciplineIncident_IncidentIdentifier" IS DISTINCT FROM NEW."DisciplineIncident_IncidentIdentifier" OR OLD."DisciplineIncident_SchoolId" IS DISTINCT FROM NEW."DisciplineIncident_SchoolId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."BehaviorDescriptor_DescriptorId" IS DISTINCT FROM NEW."BehaviorDescriptor_DescriptorId" OR OLD."BehaviorDetailedDescription" IS DISTINCT FROM NEW."BehaviorDetailedDescription") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."BehaviorDescriptor_DescriptorId" IS DISTINCT FROM NEW."BehaviorDescriptor_DescriptorId" OR OLD."DisciplineIncident_IncidentIdentifier" IS DISTINCT FROM NEW."DisciplineIncident_IncidentIdentifier" OR OLD."DisciplineIncident_SchoolId" IS DISTINCT FROM NEW."DisciplineIncident_SchoolId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -44598,6 +45875,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentDisciplineIncidentBehaviorAssociation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentDisciplineIncidentBehaviorAssociation_DocumentId" IS DISTINCT FROM NEW."StudentDisciplineIncidentBehaviorAssociation_DocumentId" OR OLD."DisciplineIncidentParticipationCodeDescriptor_DescriptorId" IS DISTINCT FROM NEW."DisciplineIncidentParticipationCodeDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentDisciplineIncidentBehaviorAssociation_DocumentId";
@@ -44619,6 +45899,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentDisciplineIncidentBehaviorAssociation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentDisciplineIncidentBehaviorAssociation_DocumentId" IS DISTINCT FROM NEW."StudentDisciplineIncidentBehaviorAssociation_DocumentId" OR OLD."WeaponDescriptor_DescriptorId" IS DISTINCT FROM NEW."WeaponDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -44661,9 +45944,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."DisciplineIncident_DocumentId" IS DISTINCT FROM NEW."DisciplineIncident_DocumentId" OR OLD."DisciplineIncident_IncidentIdentifier" IS DISTINCT FROM NEW."DisciplineIncident_IncidentIdentifier" OR OLD."DisciplineIncident_SchoolId" IS DISTINCT FROM NEW."DisciplineIncident_SchoolId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."DisciplineIncident_IncidentIdentifier" IS DISTINCT FROM NEW."DisciplineIncident_IncidentIdentifier" OR OLD."DisciplineIncident_SchoolId" IS DISTINCT FROM NEW."DisciplineIncident_SchoolId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -44687,6 +45975,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentDisciplineIncidentNonOffenderAssociation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentDisciplineIncidentNonOffenderAssociation_DocumentId" IS DISTINCT FROM NEW."StudentDisciplineIncidentNonOffenderAssociation_DocumentId" OR OLD."DisciplineIncidentParticipationCodeDescriptor_DescriptorId" IS DISTINCT FROM NEW."DisciplineIncidentParticipationCodeDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -44729,9 +46020,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -44755,6 +46051,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentEducationOrganizationAssessmentAccommodation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentEducationOrganizationAssessmentAccommodation_DocumentId" IS DISTINCT FROM NEW."StudentEducationOrganizationAssessmentAccommodation_DocumentId" OR OLD."AccommodationDescriptor_DescriptorId" IS DISTINCT FROM NEW."AccommodationDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -44797,9 +46096,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."BarrierToInternetAccessInResidenceDescriptor_DescriptorId" IS DISTINCT FROM NEW."BarrierToInternetAccessInResidenceDescriptor_DescriptorId" OR OLD."InternetAccessTypeInResidenceDescriptor_DescriptorId" IS DISTINCT FROM NEW."InternetAccessTypeInResidenceDescriptor_DescriptorId" OR OLD."InternetPerformanceInResidenceDescriptor_DescriptorId" IS DISTINCT FROM NEW."InternetPerformanceInResidenceDescriptor_DescriptorId" OR OLD."LimitedEnglishProficiencyDescriptor_DescriptorId" IS DISTINCT FROM NEW."LimitedEnglishProficiencyDescriptor_DescriptorId" OR OLD."PrimaryLearningDeviceAccessDescriptor_DescriptorId" IS DISTINCT FROM NEW."PrimaryLearningDeviceAccessDescriptor_DescriptorId" OR OLD."PrimaryLearningDeviceAwayFromSchoolDescriptor_DescriptorId" IS DISTINCT FROM NEW."PrimaryLearningDeviceAwayFromSchoolDescriptor_DescriptorId" OR OLD."PrimaryLearningDeviceProviderDescriptor_DescriptorId" IS DISTINCT FROM NEW."PrimaryLearningDeviceProviderDescriptor_DescriptorId" OR OLD."SexDescriptor_DescriptorId" IS DISTINCT FROM NEW."SexDescriptor_DescriptorId" OR OLD."SupporterMilitaryConnectionDescriptor_DescriptorId" IS DISTINCT FROM NEW."SupporterMilitaryConnectionDescriptor_DescriptorId" OR OLD."GenderIdentity" IS DISTINCT FROM NEW."GenderIdentity" OR OLD."HispanicLatinoEthnicity" IS DISTINCT FROM NEW."HispanicLatinoEthnicity" OR OLD."InternetAccessInResidence" IS DISTINCT FROM NEW."InternetAccessInResidence" OR OLD."LoginId" IS DISTINCT FROM NEW."LoginId" OR OLD."ProfileThumbnail" IS DISTINCT FROM NEW."ProfileThumbnail") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -44824,6 +46128,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentEducationOrganizationAssociation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentEducationOrganizationAssociation_DocumentId" IS DISTINCT FROM NEW."StudentEducationOrganizationAssociation_DocumentId" OR OLD."AddressTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AddressTypeDescriptor_DescriptorId" OR OLD."LocaleDescriptor_DescriptorId" IS DISTINCT FROM NEW."LocaleDescriptor_DescriptorId" OR OLD."StateAbbreviationDescriptor_DescriptorId" IS DISTINCT FROM NEW."StateAbbreviationDescriptor_DescriptorId" OR OLD."ApartmentRoomSuiteNumber" IS DISTINCT FROM NEW."ApartmentRoomSuiteNumber" OR OLD."BuildingSiteNumber" IS DISTINCT FROM NEW."BuildingSiteNumber" OR OLD."City" IS DISTINCT FROM NEW."City" OR OLD."CongressionalDistrict" IS DISTINCT FROM NEW."CongressionalDistrict" OR OLD."CountyFIPSCode" IS DISTINCT FROM NEW."CountyFIPSCode" OR OLD."DoNotPublishIndicator" IS DISTINCT FROM NEW."DoNotPublishIndicator" OR OLD."Latitude" IS DISTINCT FROM NEW."Latitude" OR OLD."Longitude" IS DISTINCT FROM NEW."Longitude" OR OLD."NameOfCounty" IS DISTINCT FROM NEW."NameOfCounty" OR OLD."PostalCode" IS DISTINCT FROM NEW."PostalCode" OR OLD."StreetNumberName" IS DISTINCT FROM NEW."StreetNumberName") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentEducationOrganizationAssociation_DocumentId";
@@ -44845,6 +46152,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentEducationOrganizationAssociation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."StudentEducationOrganizationAssociation_DocumentId" IS DISTINCT FROM NEW."StudentEducationOrganizationAssociation_DocumentId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -44868,6 +46178,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentEducationOrganizationAssociation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentEducationOrganizationAssociation_DocumentId" IS DISTINCT FROM NEW."StudentEducationOrganizationAssociation_DocumentId" OR OLD."AncestryEthnicOriginDescriptor_DescriptorId" IS DISTINCT FROM NEW."AncestryEthnicOriginDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentEducationOrganizationAssociation_DocumentId";
@@ -44889,6 +46202,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentEducationOrganizationAssociation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentEducationOrganizationAssociation_DocumentId" IS DISTINCT FROM NEW."StudentEducationOrganizationAssociation_DocumentId" OR OLD."CohortYearSchoolYear_DocumentId" IS DISTINCT FROM NEW."CohortYearSchoolYear_DocumentId" OR OLD."CohortYearSchoolYear_SchoolYear" IS DISTINCT FROM NEW."CohortYearSchoolYear_SchoolYear" OR OLD."CohortYearTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."CohortYearTypeDescriptor_DescriptorId" OR OLD."TermDescriptor_DescriptorId" IS DISTINCT FROM NEW."TermDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -44912,6 +46228,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentEducationOrganizationAssociation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentEducationOrganizationAssociation_DocumentId" IS DISTINCT FROM NEW."StudentEducationOrganizationAssociation_DocumentId" OR OLD."DisabilityDescriptor_DescriptorId" IS DISTINCT FROM NEW."DisabilityDescriptor_DescriptorId" OR OLD."DisabilityDeterminationSourceTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."DisabilityDeterminationSourceTypeDescriptor_DescriptorId" OR OLD."DisabilityDiagnosis" IS DISTINCT FROM NEW."DisabilityDiagnosis" OR OLD."OrderOfDisability" IS DISTINCT FROM NEW."OrderOfDisability") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentEducationOrganizationAssociation_DocumentId";
@@ -44933,6 +46252,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentEducationOrganizationAssociation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."StudentEducationOrganizationAssociation_DocumentId" IS DISTINCT FROM NEW."StudentEducationOrganizationAssociation_DocumentId" OR OLD."DisabilityDesignationDescriptor_DescriptorId" IS DISTINCT FROM NEW."DisabilityDesignationDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -44956,6 +46278,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentEducationOrganizationAssociation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentEducationOrganizationAssociation_DocumentId" IS DISTINCT FROM NEW."StudentEducationOrganizationAssociation_DocumentId" OR OLD."DisplacedStudentCrisisEvent_DocumentId" IS DISTINCT FROM NEW."DisplacedStudentCrisisEvent_DocumentId" OR OLD."DisplacedStudentCrisisEvent_CrisisEventName" IS DISTINCT FROM NEW."DisplacedStudentCrisisEvent_CrisisEventName" OR OLD."DisplacedStudentStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."DisplacedStudentStatusDescriptor_DescriptorId" OR OLD."CrisisHomelessnessIndicator" IS DISTINCT FROM NEW."CrisisHomelessnessIndicator" OR OLD."DisplacedStudentEndDate" IS DISTINCT FROM NEW."DisplacedStudentEndDate" OR OLD."DisplacedStudentStartDate" IS DISTINCT FROM NEW."DisplacedStudentStartDate") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentEducationOrganizationAssociation_DocumentId";
@@ -44977,6 +46302,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentEducationOrganizationAssociation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentEducationOrganizationAssociation_DocumentId" IS DISTINCT FROM NEW."StudentEducationOrganizationAssociation_DocumentId" OR OLD."ElectronicMailTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ElectronicMailTypeDescriptor_DescriptorId" OR OLD."DoNotPublishIndicator" IS DISTINCT FROM NEW."DoNotPublishIndicator" OR OLD."ElectronicMailAddress" IS DISTINCT FROM NEW."ElectronicMailAddress" OR OLD."PrimaryEmailAddressIndicator" IS DISTINCT FROM NEW."PrimaryEmailAddressIndicator") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -45000,6 +46328,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentEducationOrganizationAssociation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentEducationOrganizationAssociation_DocumentId" IS DISTINCT FROM NEW."StudentEducationOrganizationAssociation_DocumentId" OR OLD."AddressTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."AddressTypeDescriptor_DescriptorId" OR OLD."CountryDescriptor_DescriptorId" IS DISTINCT FROM NEW."CountryDescriptor_DescriptorId" OR OLD."AddressLine1" IS DISTINCT FROM NEW."AddressLine1" OR OLD."AddressLine2" IS DISTINCT FROM NEW."AddressLine2" OR OLD."AddressLine3" IS DISTINCT FROM NEW."AddressLine3" OR OLD."AddressLine4" IS DISTINCT FROM NEW."AddressLine4" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."Latitude" IS DISTINCT FROM NEW."Latitude" OR OLD."Longitude" IS DISTINCT FROM NEW."Longitude") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentEducationOrganizationAssociation_DocumentId";
@@ -45021,6 +46352,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentEducationOrganizationAssociation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentEducationOrganizationAssociation_DocumentId" IS DISTINCT FROM NEW."StudentEducationOrganizationAssociation_DocumentId" OR OLD."LanguageDescriptor_DescriptorId" IS DISTINCT FROM NEW."LanguageDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -45044,6 +46378,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentEducationOrganizationAssociation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."StudentEducationOrganizationAssociation_DocumentId" IS DISTINCT FROM NEW."StudentEducationOrganizationAssociation_DocumentId" OR OLD."LanguageUseDescriptor_DescriptorId" IS DISTINCT FROM NEW."LanguageUseDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentEducationOrganizationAssociation_DocumentId";
@@ -45065,6 +46402,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentEducationOrganizationAssociation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentEducationOrganizationAssociation_DocumentId" IS DISTINCT FROM NEW."StudentEducationOrganizationAssociation_DocumentId" OR OLD."RaceDescriptor_DescriptorId" IS DISTINCT FROM NEW."RaceDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -45088,6 +46428,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentEducationOrganizationAssociation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."StudentEducationOrganizationAssociation_DocumentId" IS DISTINCT FROM NEW."StudentEducationOrganizationAssociation_DocumentId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentEducationOrganizationAssociation_DocumentId";
@@ -45109,6 +46452,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentEducationOrganizationAssociation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentEducationOrganizationAssociation_DocumentId" IS DISTINCT FROM NEW."StudentEducationOrganizationAssociation_DocumentId" OR OLD."StudentCharacteristicDescriptor_DescriptorId" IS DISTINCT FROM NEW."StudentCharacteristicDescriptor_DescriptorId" OR OLD."DesignatedBy" IS DISTINCT FROM NEW."DesignatedBy") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -45132,6 +46478,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentEducationOrganizationAssociation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentEducationOrganizationAssociation_DocumentId" IS DISTINCT FROM NEW."StudentEducationOrganizationAssociation_DocumentId" OR OLD."StudentIdentificationSystemDescriptor_DescriptorId" IS DISTINCT FROM NEW."StudentIdentificationSystemDescriptor_DescriptorId" OR OLD."AssigningOrganizationIdentificationCode" IS DISTINCT FROM NEW."AssigningOrganizationIdentificationCode" OR OLD."IdentificationCode" IS DISTINCT FROM NEW."IdentificationCode") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentEducationOrganizationAssociation_DocumentId";
@@ -45153,6 +46502,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentEducationOrganizationAssociation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentEducationOrganizationAssociation_DocumentId" IS DISTINCT FROM NEW."StudentEducationOrganizationAssociation_DocumentId" OR OLD."DesignatedBy" IS DISTINCT FROM NEW."DesignatedBy" OR OLD."Indicator" IS DISTINCT FROM NEW."Indicator" OR OLD."IndicatorGroup" IS DISTINCT FROM NEW."IndicatorGroup" OR OLD."IndicatorName" IS DISTINCT FROM NEW."IndicatorName") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -45176,6 +46528,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentEducationOrganizationAssociation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."StudentEducationOrganizationAssociation_DocumentId" IS DISTINCT FROM NEW."StudentEducationOrganizationAssociation_DocumentId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentEducationOrganizationAssociation_DocumentId";
@@ -45198,6 +46553,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentEducationOrganizationAssociation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentEducationOrganizationAssociation_DocumentId" IS DISTINCT FROM NEW."StudentEducationOrganizationAssociation_DocumentId" OR OLD."TelephoneNumberTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."TelephoneNumberTypeDescriptor_DescriptorId" OR OLD."DoNotPublishIndicator" IS DISTINCT FROM NEW."DoNotPublishIndicator" OR OLD."OrderOfPriority" IS DISTINCT FROM NEW."OrderOfPriority" OR OLD."TelephoneNumber" IS DISTINCT FROM NEW."TelephoneNumber" OR OLD."TextMessageCapabilityIndicator" IS DISTINCT FROM NEW."TextMessageCapabilityIndicator") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentEducationOrganizationAssociation_DocumentId";
@@ -45219,6 +46577,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentEducationOrganizationAssociation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentEducationOrganizationAssociation_DocumentId" IS DISTINCT FROM NEW."StudentEducationOrganizationAssociation_DocumentId" OR OLD."TribalAffiliationDescriptor_DescriptorId" IS DISTINCT FROM NEW."TribalAffiliationDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -45261,9 +46622,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."ResponsibilityDescriptor_DescriptorId" IS DISTINCT FROM NEW."ResponsibilityDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ResponsibilityDescriptor_DescriptorId" IS DISTINCT FROM NEW."ResponsibilityDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -45307,9 +46673,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."GradebookEntry_DocumentId" IS DISTINCT FROM NEW."GradebookEntry_DocumentId" OR OLD."GradebookEntry_GradebookEntryIdentifier" IS DISTINCT FROM NEW."GradebookEntry_GradebookEntryIdentifier" OR OLD."GradebookEntry_Namespace" IS DISTINCT FROM NEW."GradebookEntry_Namespace" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."AssignmentLateStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."AssignmentLateStatusDescriptor_DescriptorId" OR OLD."CompetencyLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."CompetencyLevelDescriptor_DescriptorId" OR OLD."SubmissionStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."SubmissionStatusDescriptor_DescriptorId" OR OLD."DateFulfilled" IS DISTINCT FROM NEW."DateFulfilled" OR OLD."DiagnosticStatement" IS DISTINCT FROM NEW."DiagnosticStatement" OR OLD."LetterGradeEarned" IS DISTINCT FROM NEW."LetterGradeEarned" OR OLD."NumericGradeEarned" IS DISTINCT FROM NEW."NumericGradeEarned" OR OLD."PointsEarned" IS DISTINCT FROM NEW."PointsEarned" OR OLD."TimeFulfilled" IS DISTINCT FROM NEW."TimeFulfilled") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."GradebookEntry_GradebookEntryIdentifier" IS DISTINCT FROM NEW."GradebookEntry_GradebookEntryIdentifier" OR OLD."GradebookEntry_Namespace" IS DISTINCT FROM NEW."GradebookEntry_Namespace" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -45353,9 +46724,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."NonMedicalImmunizationExemptionDescriptor_DescriptorId" IS DISTINCT FROM NEW."NonMedicalImmunizationExemptionDescriptor_DescriptorId" OR OLD."AsOfDate" IS DISTINCT FROM NEW."AsOfDate" OR OLD."NonMedicalImmunizationExemptionDate" IS DISTINCT FROM NEW."NonMedicalImmunizationExemptionDate") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -45380,6 +46756,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentHealth_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentHealth_DocumentId" IS DISTINCT FROM NEW."StudentHealth_DocumentId" OR OLD."ImmunizationName" IS DISTINCT FROM NEW."ImmunizationName") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentHealth_DocumentId";
@@ -45401,6 +46780,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentHealth_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."StudentHealth_DocumentId" IS DISTINCT FROM NEW."StudentHealth_DocumentId" OR OLD."ImmunizationDate" IS DISTINCT FROM NEW."ImmunizationDate") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -45424,6 +46806,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentHealth_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentHealth_DocumentId" IS DISTINCT FROM NEW."StudentHealth_DocumentId" OR OLD."ImmunizationTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ImmunizationTypeDescriptor_DescriptorId" OR OLD."MedicalExemption" IS DISTINCT FROM NEW."MedicalExemption" OR OLD."MedicalExemptionDate" IS DISTINCT FROM NEW."MedicalExemptionDate") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentHealth_DocumentId";
@@ -45445,6 +46830,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentHealth_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."StudentHealth_DocumentId" IS DISTINCT FROM NEW."StudentHealth_DocumentId" OR OLD."ImmunizationDate" IS DISTINCT FROM NEW."ImmunizationDate") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -45510,9 +46898,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_DocumentId" IS DISTINCT FROM NEW."ProgramProgram_DocumentId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."HomelessPrimaryNighttimeResidenceDescriptor_DescriptorId" IS DISTINCT FROM NEW."HomelessPrimaryNighttimeResidenceDescriptor_DescriptorId" OR OLD."ReasonExitedDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReasonExitedDescriptor_DescriptorId" OR OLD."AwaitingFosterCare" IS DISTINCT FROM NEW."AwaitingFosterCare" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."HomelessUnaccompaniedYouth" IS DISTINCT FROM NEW."HomelessUnaccompaniedYouth" OR OLD."ServedOutsideOfRegularSession" IS DISTINCT FROM NEW."ServedOutsideOfRegularSession") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -45537,6 +46930,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentHomelessProgramAssociation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentHomelessProgramAssociation_DocumentId" IS DISTINCT FROM NEW."StudentHomelessProgramAssociation_DocumentId" OR OLD."HomelessProgramServiceDescriptor_DescriptorId" IS DISTINCT FROM NEW."HomelessProgramServiceDescriptor_DescriptorId" OR OLD."PrimaryIndicator" IS DISTINCT FROM NEW."PrimaryIndicator" OR OLD."ServiceBeginDate" IS DISTINCT FROM NEW."ServiceBeginDate" OR OLD."ServiceEndDate" IS DISTINCT FROM NEW."ServiceEndDate") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentHomelessProgramAssociation_DocumentId";
@@ -45559,6 +46955,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentHomelessProgramAssociation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentHomelessProgramAssociation_DocumentId" IS DISTINCT FROM NEW."StudentHomelessProgramAssociation_DocumentId" OR OLD."ParticipationStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."ParticipationStatusDescriptor_DescriptorId" OR OLD."DesignatedBy" IS DISTINCT FROM NEW."DesignatedBy" OR OLD."StatusBeginDate" IS DISTINCT FROM NEW."StatusBeginDate" OR OLD."StatusEndDate" IS DISTINCT FROM NEW."StatusEndDate") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentHomelessProgramAssociation_DocumentId";
@@ -45580,6 +46979,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Student_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."IdentificationDocumentUseDescriptor_DescriptorId" IS DISTINCT FROM NEW."IdentificationDocumentUseDescriptor_DescriptorId" OR OLD."IssuerCountryDescriptor_DescriptorId" IS DISTINCT FROM NEW."IssuerCountryDescriptor_DescriptorId" OR OLD."PersonalInformationVerificationDescriptor_DescriptorId" IS DISTINCT FROM NEW."PersonalInformationVerificationDescriptor_DescriptorId" OR OLD."DocumentExpirationDate" IS DISTINCT FROM NEW."DocumentExpirationDate" OR OLD."DocumentTitle" IS DISTINCT FROM NEW."DocumentTitle" OR OLD."IssuerDocumentIdentificationCode" IS DISTINCT FROM NEW."IssuerDocumentIdentificationCode" OR OLD."IssuerName" IS DISTINCT FROM NEW."IssuerName") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -45622,9 +47024,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."CohortCohort_DocumentId" IS DISTINCT FROM NEW."CohortCohort_DocumentId" OR OLD."CohortCohort_CohortIdentifier" IS DISTINCT FROM NEW."CohortCohort_CohortIdentifier" OR OLD."CohortCohort_EducationOrganizationId" IS DISTINCT FROM NEW."CohortCohort_EducationOrganizationId" OR OLD."Intervention_DocumentId" IS DISTINCT FROM NEW."Intervention_DocumentId" OR OLD."Intervention_EducationOrganizationId" IS DISTINCT FROM NEW."Intervention_EducationOrganizationId" OR OLD."Intervention_InterventionIdentificationCode" IS DISTINCT FROM NEW."Intervention_InterventionIdentificationCode" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."DiagnosticStatement" IS DISTINCT FROM NEW."DiagnosticStatement" OR OLD."Dosage" IS DISTINCT FROM NEW."Dosage") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."Intervention_EducationOrganizationId" IS DISTINCT FROM NEW."Intervention_EducationOrganizationId" OR OLD."Intervention_InterventionIdentificationCode" IS DISTINCT FROM NEW."Intervention_InterventionIdentificationCode" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -45648,6 +47055,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentInterventionAssociation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentInterventionAssociation_DocumentId" IS DISTINCT FROM NEW."StudentInterventionAssociation_DocumentId" OR OLD."DiagnosisDescriptor_DescriptorId" IS DISTINCT FROM NEW."DiagnosisDescriptor_DescriptorId" OR OLD."GradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."GradeLevelDescriptor_DescriptorId" OR OLD."InterventionEffectivenessRatingDescriptor_DescriptorId" IS DISTINCT FROM NEW."InterventionEffectivenessRatingDescriptor_DescriptorId" OR OLD."PopulationServedDescriptor_DescriptorId" IS DISTINCT FROM NEW."PopulationServedDescriptor_DescriptorId" OR OLD."ImprovementIndex" IS DISTINCT FROM NEW."ImprovementIndex") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -45690,9 +47100,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Intervention_DocumentId" IS DISTINCT FROM NEW."Intervention_DocumentId" OR OLD."Intervention_EducationOrganizationId" IS DISTINCT FROM NEW."Intervention_EducationOrganizationId" OR OLD."Intervention_InterventionIdentificationCode" IS DISTINCT FROM NEW."Intervention_InterventionIdentificationCode" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."AttendanceEventCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."AttendanceEventCategoryDescriptor_DescriptorId" OR OLD."EducationalEnvironmentDescriptor_DescriptorId" IS DISTINCT FROM NEW."EducationalEnvironmentDescriptor_DescriptorId" OR OLD."AttendanceEventReason" IS DISTINCT FROM NEW."AttendanceEventReason" OR OLD."EventDate" IS DISTINCT FROM NEW."EventDate" OR OLD."EventDuration" IS DISTINCT FROM NEW."EventDuration" OR OLD."InterventionDuration" IS DISTINCT FROM NEW."InterventionDuration") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."AttendanceEventCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."AttendanceEventCategoryDescriptor_DescriptorId" OR OLD."EventDate" IS DISTINCT FROM NEW."EventDate" OR OLD."Intervention_EducationOrganizationId" IS DISTINCT FROM NEW."Intervention_EducationOrganizationId" OR OLD."Intervention_InterventionIdentificationCode" IS DISTINCT FROM NEW."Intervention_InterventionIdentificationCode" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -45759,9 +47174,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_DocumentId" IS DISTINCT FROM NEW."ProgramProgram_DocumentId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."ReasonExitedDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReasonExitedDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."Dosage" IS DISTINCT FROM NEW."Dosage" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."EnglishLearnerParticipation" IS DISTINCT FROM NEW."EnglishLearnerParticipation" OR OLD."ServedOutsideOfRegularSession" IS DISTINCT FROM NEW."ServedOutsideOfRegularSession") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -45786,6 +47206,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentLanguageInstructionProgramAssociation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentLanguageInstructionProgramAssociation_DocumentId" IS DISTINCT FROM NEW."StudentLanguageInstructionProgramAssociation_DocumentId" OR OLD."EnglishLanguageProficiencyAssessmentSchoolYear_DocumentId" IS DISTINCT FROM NEW."EnglishLanguageProficiencyAssessmentSchoolYear_DocumentId" OR OLD."EnglishLanguageProficiencyAssessmentSchoolYear_SchoolYear" IS DISTINCT FROM NEW."EnglishLanguageProficiencyAssessmentSchoolYear_SchoolYear" OR OLD."MonitoredDescriptor_DescriptorId" IS DISTINCT FROM NEW."MonitoredDescriptor_DescriptorId" OR OLD."ParticipationDescriptor_DescriptorId" IS DISTINCT FROM NEW."ParticipationDescriptor_DescriptorId" OR OLD."ProficiencyDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProficiencyDescriptor_DescriptorId" OR OLD."ProgressDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgressDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentLanguageInstructionProgramAssociation_DocumentId";
@@ -45808,6 +47231,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentLanguageInstructionProgramAssociation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentLanguageInstructionProgramAssociation_DocumentId" IS DISTINCT FROM NEW."StudentLanguageInstructionProgramAssociation_DocumentId" OR OLD."LanguageInstructionProgramServiceDescriptor_DescriptorId" IS DISTINCT FROM NEW."LanguageInstructionProgramServiceDescriptor_DescriptorId" OR OLD."PrimaryIndicator" IS DISTINCT FROM NEW."PrimaryIndicator" OR OLD."ServiceBeginDate" IS DISTINCT FROM NEW."ServiceBeginDate" OR OLD."ServiceEndDate" IS DISTINCT FROM NEW."ServiceEndDate") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentLanguageInstructionProgramAssociation_DocumentId";
@@ -45829,6 +47255,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentLanguageInstructionProgramAssociation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentLanguageInstructionProgramAssociation_DocumentId" IS DISTINCT FROM NEW."StudentLanguageInstructionProgramAssociation_DocumentId" OR OLD."ParticipationStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."ParticipationStatusDescriptor_DescriptorId" OR OLD."DesignatedBy" IS DISTINCT FROM NEW."DesignatedBy" OR OLD."StatusBeginDate" IS DISTINCT FROM NEW."StatusBeginDate" OR OLD."StatusEndDate" IS DISTINCT FROM NEW."StatusEndDate") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -45894,9 +47323,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_DocumentId" IS DISTINCT FROM NEW."ProgramProgram_DocumentId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."ContinuationOfServicesReasonDescriptor_DescriptorId" IS DISTINCT FROM NEW."ContinuationOfServicesReasonDescriptor_DescriptorId" OR OLD."ReasonExitedDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReasonExitedDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EligibilityExpirationDate" IS DISTINCT FROM NEW."EligibilityExpirationDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."LastQualifyingMove" IS DISTINCT FROM NEW."LastQualifyingMove" OR OLD."PriorityForServices" IS DISTINCT FROM NEW."PriorityForServices" OR OLD."QualifyingArrivalDate" IS DISTINCT FROM NEW."QualifyingArrivalDate" OR OLD."ServedOutsideOfRegularSession" IS DISTINCT FROM NEW."ServedOutsideOfRegularSession" OR OLD."StateResidencyDate" IS DISTINCT FROM NEW."StateResidencyDate" OR OLD."UsInitialEntry" IS DISTINCT FROM NEW."UsInitialEntry" OR OLD."UsInitialSchoolEntry" IS DISTINCT FROM NEW."UsInitialSchoolEntry" OR OLD."UsMostRecentEntry" IS DISTINCT FROM NEW."UsMostRecentEntry") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -45921,6 +47355,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentMigrantEducationProgramAssociation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentMigrantEducationProgramAssociation_DocumentId" IS DISTINCT FROM NEW."StudentMigrantEducationProgramAssociation_DocumentId" OR OLD."MigrantEducationProgramServiceDescriptor_DescriptorId" IS DISTINCT FROM NEW."MigrantEducationProgramServiceDescriptor_DescriptorId" OR OLD."PrimaryIndicator" IS DISTINCT FROM NEW."PrimaryIndicator" OR OLD."ServiceBeginDate" IS DISTINCT FROM NEW."ServiceBeginDate" OR OLD."ServiceEndDate" IS DISTINCT FROM NEW."ServiceEndDate") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentMigrantEducationProgramAssociation_DocumentId";
@@ -45942,6 +47379,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentMigrantEducationProgramAssociation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentMigrantEducationProgramAssociation_DocumentId" IS DISTINCT FROM NEW."StudentMigrantEducationProgramAssociation_DocumentId" OR OLD."ParticipationStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."ParticipationStatusDescriptor_DescriptorId" OR OLD."DesignatedBy" IS DISTINCT FROM NEW."DesignatedBy" OR OLD."StatusBeginDate" IS DISTINCT FROM NEW."StatusBeginDate" OR OLD."StatusEndDate" IS DISTINCT FROM NEW."StatusEndDate") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -46007,9 +47447,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_DocumentId" IS DISTINCT FROM NEW."ProgramProgram_DocumentId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."ElaProgressLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."ElaProgressLevelDescriptor_DescriptorId" OR OLD."MathematicsProgressLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."MathematicsProgressLevelDescriptor_DescriptorId" OR OLD."NeglectedOrDelinquentProgramDescriptor_DescriptorId" IS DISTINCT FROM NEW."NeglectedOrDelinquentProgramDescriptor_DescriptorId" OR OLD."ReasonExitedDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReasonExitedDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."ServedOutsideOfRegularSession" IS DISTINCT FROM NEW."ServedOutsideOfRegularSession") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -46034,6 +47479,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentNeglectedOrDelinquentProgramAssociation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentNeglectedOrDelinquentProgramAssociation_DocumentId" IS DISTINCT FROM NEW."StudentNeglectedOrDelinquentProgramAssociation_DocumentId" OR OLD."NeglectedOrDelinquentProgramServiceDescriptor_DescriptorId" IS DISTINCT FROM NEW."NeglectedOrDelinquentProgramServiceDescriptor_DescriptorId" OR OLD."PrimaryIndicator" IS DISTINCT FROM NEW."PrimaryIndicator" OR OLD."ServiceBeginDate" IS DISTINCT FROM NEW."ServiceBeginDate" OR OLD."ServiceEndDate" IS DISTINCT FROM NEW."ServiceEndDate") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentNeglectedOrDelinquentProgramAssociation_DocumentId";
@@ -46055,6 +47503,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentNeglectedOrDelinquentProgramAssociation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentNeglectedOrDelinquentProgramAssociation_DocumentId" IS DISTINCT FROM NEW."StudentNeglectedOrDelinquentProgramAssociation_DocumentId" OR OLD."ParticipationStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."ParticipationStatusDescriptor_DescriptorId" OR OLD."DesignatedBy" IS DISTINCT FROM NEW."DesignatedBy" OR OLD."StatusBeginDate" IS DISTINCT FROM NEW."StatusBeginDate" OR OLD."StatusEndDate" IS DISTINCT FROM NEW."StatusEndDate") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -46078,6 +47529,9 @@ BEGIN
         WHERE "DocumentId" = OLD."Student_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."OtherNameTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."OtherNameTypeDescriptor_DescriptorId" OR OLD."FirstName" IS DISTINCT FROM NEW."FirstName" OR OLD."GenerationCodeSuffix" IS DISTINCT FROM NEW."GenerationCodeSuffix" OR OLD."LastSurname" IS DISTINCT FROM NEW."LastSurname" OR OLD."MiddleName" IS DISTINCT FROM NEW."MiddleName" OR OLD."PersonalTitlePrefix" IS DISTINCT FROM NEW."PersonalTitlePrefix") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."Student_DocumentId";
@@ -46099,6 +47553,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Student_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."IdentificationDocumentUseDescriptor_DescriptorId" IS DISTINCT FROM NEW."IdentificationDocumentUseDescriptor_DescriptorId" OR OLD."IssuerCountryDescriptor_DescriptorId" IS DISTINCT FROM NEW."IssuerCountryDescriptor_DescriptorId" OR OLD."PersonalInformationVerificationDescriptor_DescriptorId" IS DISTINCT FROM NEW."PersonalInformationVerificationDescriptor_DescriptorId" OR OLD."PersonalDocumentExpirationDate" IS DISTINCT FROM NEW."PersonalDocumentExpirationDate" OR OLD."PersonalDocumentTitle" IS DISTINCT FROM NEW."PersonalDocumentTitle" OR OLD."PersonalIssuerDocumentIdentificationCode" IS DISTINCT FROM NEW."PersonalIssuerDocumentIdentificationCode" OR OLD."PersonalIssuerName" IS DISTINCT FROM NEW."PersonalIssuerName") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -46164,9 +47621,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_DocumentId" IS DISTINCT FROM NEW."ProgramProgram_DocumentId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."ReasonExitedDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReasonExitedDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."ServedOutsideOfRegularSession" IS DISTINCT FROM NEW."ServedOutsideOfRegularSession") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -46191,6 +47653,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentProgramAssociation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentProgramAssociation_DocumentId" IS DISTINCT FROM NEW."StudentProgramAssociation_DocumentId" OR OLD."ParticipationStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."ParticipationStatusDescriptor_DescriptorId" OR OLD."DesignatedBy" IS DISTINCT FROM NEW."DesignatedBy" OR OLD."StatusBeginDate" IS DISTINCT FROM NEW."StatusBeginDate" OR OLD."StatusEndDate" IS DISTINCT FROM NEW."StatusEndDate") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentProgramAssociation_DocumentId";
@@ -46212,6 +47677,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentProgramAssociation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentProgramAssociation_DocumentId" IS DISTINCT FROM NEW."StudentProgramAssociation_DocumentId" OR OLD."ServiceDescriptor_DescriptorId" IS DISTINCT FROM NEW."ServiceDescriptor_DescriptorId" OR OLD."PrimaryIndicator" IS DISTINCT FROM NEW."PrimaryIndicator" OR OLD."ServiceBeginDate" IS DISTINCT FROM NEW."ServiceBeginDate" OR OLD."ServiceEndDate" IS DISTINCT FROM NEW."ServiceEndDate") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -46254,9 +47722,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_DocumentId" IS DISTINCT FROM NEW."ProgramProgram_DocumentId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."AttendanceEventCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."AttendanceEventCategoryDescriptor_DescriptorId" OR OLD."EducationalEnvironmentDescriptor_DescriptorId" IS DISTINCT FROM NEW."EducationalEnvironmentDescriptor_DescriptorId" OR OLD."AttendanceEventReason" IS DISTINCT FROM NEW."AttendanceEventReason" OR OLD."EventDate" IS DISTINCT FROM NEW."EventDate" OR OLD."EventDuration" IS DISTINCT FROM NEW."EventDuration" OR OLD."ProgramAttendanceDuration" IS DISTINCT FROM NEW."ProgramAttendanceDuration") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."AttendanceEventCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."AttendanceEventCategoryDescriptor_DescriptorId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."EventDate" IS DISTINCT FROM NEW."EventDate" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -46300,9 +47773,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramEvaluation_DocumentId" IS DISTINCT FROM NEW."ProgramEvaluation_DocumentId" OR OLD."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" OR OLD."ProgramEvaluation_ProgramEvaluationTitle" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEvaluationTitle" OR OLD."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" OR OLD."ProgramEvaluation_ProgramEducationOrganizationId" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEducationOrganizationId" OR OLD."ProgramEvaluation_ProgramName" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramName" OR OLD."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId" OR OLD."StaffEvaluatorStaff_DocumentId" IS DISTINCT FROM NEW."StaffEvaluatorStaff_DocumentId" OR OLD."StaffEvaluatorStaff_StaffUniqueId" IS DISTINCT FROM NEW."StaffEvaluatorStaff_StaffUniqueId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."SummaryEvaluationRatingLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."SummaryEvaluationRatingLevelDescriptor_DescriptorId" OR OLD."EvaluationDate" IS DISTINCT FROM NEW."EvaluationDate" OR OLD."EvaluationDuration" IS DISTINCT FROM NEW."EvaluationDuration" OR OLD."SummaryEvaluationComment" IS DISTINCT FROM NEW."SummaryEvaluationComment" OR OLD."SummaryEvaluationNumericRating" IS DISTINCT FROM NEW."SummaryEvaluationNumericRating") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."EvaluationDate" IS DISTINCT FROM NEW."EvaluationDate" OR OLD."ProgramEvaluation_ProgramEducationOrganizationId" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEducationOrganizationId" OR OLD."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e" OR OLD."ProgramEvaluation_ProgramEvaluationTitle" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEvaluationTitle" OR OLD."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId" OR OLD."ProgramEvaluation_ProgramName" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramName" OR OLD."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramEvaluation_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -46327,6 +47805,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentProgramEvaluation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentProgramEvaluation_DocumentId" IS DISTINCT FROM NEW."StudentProgramEvaluation_DocumentId" OR OLD."ExternalEvaluator" IS DISTINCT FROM NEW."ExternalEvaluator") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentProgramEvaluation_DocumentId";
@@ -46349,6 +47830,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentProgramEvaluation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentProgramEvaluation_DocumentId" IS DISTINCT FROM NEW."StudentProgramEvaluation_DocumentId" OR OLD."StudentEvaluationElementProgramEvaluationElement_DocumentId" IS DISTINCT FROM NEW."StudentEvaluationElementProgramEvaluationElement_DocumentId" OR OLD."StudentEvaluationElementProgramEvaluationElement_Pro_56aa4525fb" IS DISTINCT FROM NEW."StudentEvaluationElementProgramEvaluationElement_Pro_56aa4525fb" OR OLD."StudentEvaluationElementProgramEvaluationElement_Pro_467059facd" IS DISTINCT FROM NEW."StudentEvaluationElementProgramEvaluationElement_Pro_467059facd" OR OLD."StudentEvaluationElementProgramEvaluationElement_Pro_38d123670f" IS DISTINCT FROM NEW."StudentEvaluationElementProgramEvaluationElement_Pro_38d123670f" OR OLD."StudentEvaluationElementProgramEvaluationElement_Pro_57fb6d52f8" IS DISTINCT FROM NEW."StudentEvaluationElementProgramEvaluationElement_Pro_57fb6d52f8" OR OLD."StudentEvaluationElementProgramEvaluationElement_Pro_b27b83c178" IS DISTINCT FROM NEW."StudentEvaluationElementProgramEvaluationElement_Pro_b27b83c178" OR OLD."StudentEvaluationElementProgramEvaluationElement_ProgramName" IS DISTINCT FROM NEW."StudentEvaluationElementProgramEvaluationElement_ProgramName" OR OLD."StudentEvaluationElementProgramEvaluationElement_Pro_ef497c5466" IS DISTINCT FROM NEW."StudentEvaluationElementProgramEvaluationElement_Pro_ef497c5466" OR OLD."EvaluationElementRatingLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."EvaluationElementRatingLevelDescriptor_DescriptorId" OR OLD."EvaluationElementNumericRating" IS DISTINCT FROM NEW."EvaluationElementNumericRating") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentProgramEvaluation_DocumentId";
@@ -46370,6 +47854,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentProgramEvaluation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentProgramEvaluation_DocumentId" IS DISTINCT FROM NEW."StudentProgramEvaluation_DocumentId" OR OLD."StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId" IS DISTINCT FROM NEW."StudentEvaluationObjectiveProgramEvaluationObjective_DocumentId" OR OLD."StudentEvaluationObjectiveProgramEvaluationObjective_74b56ed982" IS DISTINCT FROM NEW."StudentEvaluationObjectiveProgramEvaluationObjective_74b56ed982" OR OLD."StudentEvaluationObjectiveProgramEvaluationObjective_dd70a2e950" IS DISTINCT FROM NEW."StudentEvaluationObjectiveProgramEvaluationObjective_dd70a2e950" OR OLD."StudentEvaluationObjectiveProgramEvaluationObjective_a646232b23" IS DISTINCT FROM NEW."StudentEvaluationObjectiveProgramEvaluationObjective_a646232b23" OR OLD."StudentEvaluationObjectiveProgramEvaluationObjective_4b2b771726" IS DISTINCT FROM NEW."StudentEvaluationObjectiveProgramEvaluationObjective_4b2b771726" OR OLD."StudentEvaluationObjectiveProgramEvaluationObjective_5c8a926f84" IS DISTINCT FROM NEW."StudentEvaluationObjectiveProgramEvaluationObjective_5c8a926f84" OR OLD."StudentEvaluationObjectiveProgramEvaluationObjective_e1d44bbcf0" IS DISTINCT FROM NEW."StudentEvaluationObjectiveProgramEvaluationObjective_e1d44bbcf0" OR OLD."StudentEvaluationObjectiveProgramEvaluationObjective_344bbaad76" IS DISTINCT FROM NEW."StudentEvaluationObjectiveProgramEvaluationObjective_344bbaad76" OR OLD."EvaluationObjectiveRatingLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."EvaluationObjectiveRatingLevelDescriptor_DescriptorId" OR OLD."EvaluationObjectiveNumericRating" IS DISTINCT FROM NEW."EvaluationObjectiveNumericRating") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -46412,9 +47899,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."SchoolYear_Unified" IS DISTINCT FROM NEW."SchoolYear_Unified" OR OLD."Calendar_DocumentId" IS DISTINCT FROM NEW."Calendar_DocumentId" OR OLD."Calendar_CalendarCode" IS DISTINCT FROM NEW."Calendar_CalendarCode" OR OLD."ClassOfSchoolYear_DocumentId" IS DISTINCT FROM NEW."ClassOfSchoolYear_DocumentId" OR OLD."ClassOfSchoolYear_ClassOfSchoolYear" IS DISTINCT FROM NEW."ClassOfSchoolYear_ClassOfSchoolYear" OR OLD."GraduationPlan_DocumentId" IS DISTINCT FROM NEW."GraduationPlan_DocumentId" OR OLD."GraduationPlan_EducationOrganizationId" IS DISTINCT FROM NEW."GraduationPlan_EducationOrganizationId" OR OLD."GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId" OR OLD."GraduationPlan_GraduationSchoolYear" IS DISTINCT FROM NEW."GraduationPlan_GraduationSchoolYear" OR OLD."NextYearSchool_DocumentId" IS DISTINCT FROM NEW."NextYearSchool_DocumentId" OR OLD."NextYearSchool_SchoolId" IS DISTINCT FROM NEW."NextYearSchool_SchoolId" OR OLD."SchoolYear_DocumentId" IS DISTINCT FROM NEW."SchoolYear_DocumentId" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."EnrollmentTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."EnrollmentTypeDescriptor_DescriptorId" OR OLD."EntryGradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."EntryGradeLevelDescriptor_DescriptorId" OR OLD."EntryGradeLevelReasonDescriptor_DescriptorId" IS DISTINCT FROM NEW."EntryGradeLevelReasonDescriptor_DescriptorId" OR OLD."EntryTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."EntryTypeDescriptor_DescriptorId" OR OLD."ExitWithdrawTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ExitWithdrawTypeDescriptor_DescriptorId" OR OLD."NextYearGradeLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."NextYearGradeLevelDescriptor_DescriptorId" OR OLD."ResidencyStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."ResidencyStatusDescriptor_DescriptorId" OR OLD."SchoolChoiceBasisDescriptor_DescriptorId" IS DISTINCT FROM NEW."SchoolChoiceBasisDescriptor_DescriptorId" OR OLD."EmployedWhileEnrolled" IS DISTINCT FROM NEW."EmployedWhileEnrolled" OR OLD."EntryDate" IS DISTINCT FROM NEW."EntryDate" OR OLD."ExitWithdrawDate" IS DISTINCT FROM NEW."ExitWithdrawDate" OR OLD."FullTimeEquivalency" IS DISTINCT FROM NEW."FullTimeEquivalency" OR OLD."PrimarySchool" IS DISTINCT FROM NEW."PrimarySchool" OR OLD."RepeatGradeIndicator" IS DISTINCT FROM NEW."RepeatGradeIndicator" OR OLD."SchoolChoice" IS DISTINCT FROM NEW."SchoolChoice" OR OLD."SchoolChoiceTransfer" IS DISTINCT FROM NEW."SchoolChoiceTransfer" OR OLD."TermCompletionIndicator" IS DISTINCT FROM NEW."TermCompletionIndicator") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."EntryDate" IS DISTINCT FROM NEW."EntryDate" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -46439,6 +47931,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentSchoolAssociation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentSchoolAssociation_DocumentId" IS DISTINCT FROM NEW."StudentSchoolAssociation_DocumentId" OR OLD."AlternativeGraduationPlan_DocumentId" IS DISTINCT FROM NEW."AlternativeGraduationPlan_DocumentId" OR OLD."AlternativeGraduationPlan_EducationOrganizationId" IS DISTINCT FROM NEW."AlternativeGraduationPlan_EducationOrganizationId" OR OLD."AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181" IS DISTINCT FROM NEW."AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181" OR OLD."AlternativeGraduationPlan_GraduationSchoolYear" IS DISTINCT FROM NEW."AlternativeGraduationPlan_GraduationSchoolYear") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentSchoolAssociation_DocumentId";
@@ -46460,6 +47955,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentSchoolAssociation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentSchoolAssociation_DocumentId" IS DISTINCT FROM NEW."StudentSchoolAssociation_DocumentId" OR OLD."EducationPlanDescriptor_DescriptorId" IS DISTINCT FROM NEW."EducationPlanDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -46502,9 +48000,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."School_DocumentId" IS DISTINCT FROM NEW."School_DocumentId" OR OLD."Session_DocumentId" IS DISTINCT FROM NEW."Session_DocumentId" OR OLD."Session_SchoolYear" IS DISTINCT FROM NEW."Session_SchoolYear" OR OLD."Session_SessionName" IS DISTINCT FROM NEW."Session_SessionName" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."AttendanceEventCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."AttendanceEventCategoryDescriptor_DescriptorId" OR OLD."EducationalEnvironmentDescriptor_DescriptorId" IS DISTINCT FROM NEW."EducationalEnvironmentDescriptor_DescriptorId" OR OLD."ArrivalTime" IS DISTINCT FROM NEW."ArrivalTime" OR OLD."AttendanceEventReason" IS DISTINCT FROM NEW."AttendanceEventReason" OR OLD."DepartureTime" IS DISTINCT FROM NEW."DepartureTime" OR OLD."EventDate" IS DISTINCT FROM NEW."EventDate" OR OLD."EventDuration" IS DISTINCT FROM NEW."EventDuration" OR OLD."SchoolAttendanceDuration" IS DISTINCT FROM NEW."SchoolAttendanceDuration") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."AttendanceEventCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."AttendanceEventCategoryDescriptor_DescriptorId" OR OLD."EventDate" IS DISTINCT FROM NEW."EventDate" OR OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."Session_SchoolYear" IS DISTINCT FROM NEW."Session_SchoolYear" OR OLD."Session_SessionName" IS DISTINCT FROM NEW."Session_SessionName" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -46571,9 +48074,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_DocumentId" IS DISTINCT FROM NEW."ProgramProgram_DocumentId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."ReasonExitedDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReasonExitedDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."DirectCertification" IS DISTINCT FROM NEW."DirectCertification" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."ServedOutsideOfRegularSession" IS DISTINCT FROM NEW."ServedOutsideOfRegularSession") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -46598,6 +48106,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentSchoolFoodServiceProgramAssociation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentSchoolFoodServiceProgramAssociation_DocumentId" IS DISTINCT FROM NEW."StudentSchoolFoodServiceProgramAssociation_DocumentId" OR OLD."ParticipationStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."ParticipationStatusDescriptor_DescriptorId" OR OLD."DesignatedBy" IS DISTINCT FROM NEW."DesignatedBy" OR OLD."StatusBeginDate" IS DISTINCT FROM NEW."StatusBeginDate" OR OLD."StatusEndDate" IS DISTINCT FROM NEW."StatusEndDate") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentSchoolFoodServiceProgramAssociation_DocumentId";
@@ -46619,6 +48130,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentSchoolFoodServiceProgramAssociation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentSchoolFoodServiceProgramAssociation_DocumentId" IS DISTINCT FROM NEW."StudentSchoolFoodServiceProgramAssociation_DocumentId" OR OLD."SchoolFoodServiceProgramServiceDescriptor_DescriptorId" IS DISTINCT FROM NEW."SchoolFoodServiceProgramServiceDescriptor_DescriptorId" OR OLD."PrimaryIndicator" IS DISTINCT FROM NEW."PrimaryIndicator" OR OLD."ServiceBeginDate" IS DISTINCT FROM NEW."ServiceBeginDate" OR OLD."ServiceEndDate" IS DISTINCT FROM NEW."ServiceEndDate") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -46684,9 +48198,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_DocumentId" IS DISTINCT FROM NEW."ProgramProgram_DocumentId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."ReasonExitedDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReasonExitedDescriptor_DescriptorId" OR OLD."Section504DisabilityDescriptor_DescriptorId" IS DISTINCT FROM NEW."Section504DisabilityDescriptor_DescriptorId" OR OLD."AccommodationPlan" IS DISTINCT FROM NEW."AccommodationPlan" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."Section504Eligibility" IS DISTINCT FROM NEW."Section504Eligibility" OR OLD."Section504EligibilityDecisionDate" IS DISTINCT FROM NEW."Section504EligibilityDecisionDate" OR OLD."Section504MeetingDate" IS DISTINCT FROM NEW."Section504MeetingDate" OR OLD."ServedOutsideOfRegularSession" IS DISTINCT FROM NEW."ServedOutsideOfRegularSession") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -46710,6 +48229,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentSection504ProgramAssociation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentSection504ProgramAssociation_DocumentId" IS DISTINCT FROM NEW."StudentSection504ProgramAssociation_DocumentId" OR OLD."ParticipationStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."ParticipationStatusDescriptor_DescriptorId" OR OLD."DesignatedBy" IS DISTINCT FROM NEW."DesignatedBy" OR OLD."StatusBeginDate" IS DISTINCT FROM NEW."StatusBeginDate" OR OLD."StatusEndDate" IS DISTINCT FROM NEW."StatusEndDate") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -46752,9 +48274,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."DualCreditEducationOrganization_DocumentId" IS DISTINCT FROM NEW."DualCreditEducationOrganization_DocumentId" OR OLD."DualCreditEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."DualCreditEducationOrganization_EducationOrganizationId" OR OLD."Section_DocumentId" IS DISTINCT FROM NEW."Section_DocumentId" OR OLD."Section_LocalCourseCode" IS DISTINCT FROM NEW."Section_LocalCourseCode" OR OLD."Section_SchoolId" IS DISTINCT FROM NEW."Section_SchoolId" OR OLD."Section_SchoolYear" IS DISTINCT FROM NEW."Section_SchoolYear" OR OLD."Section_SessionName" IS DISTINCT FROM NEW."Section_SessionName" OR OLD."Section_SectionIdentifier" IS DISTINCT FROM NEW."Section_SectionIdentifier" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."AttemptStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."AttemptStatusDescriptor_DescriptorId" OR OLD."DualCreditInstitutionDescriptor_DescriptorId" IS DISTINCT FROM NEW."DualCreditInstitutionDescriptor_DescriptorId" OR OLD."DualCreditTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."DualCreditTypeDescriptor_DescriptorId" OR OLD."RepeatIdentifierDescriptor_DescriptorId" IS DISTINCT FROM NEW."RepeatIdentifierDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."DualCreditIndicator" IS DISTINCT FROM NEW."DualCreditIndicator" OR OLD."DualHighSchoolCreditIndicator" IS DISTINCT FROM NEW."DualHighSchoolCreditIndicator" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."HomeroomIndicator" IS DISTINCT FROM NEW."HomeroomIndicator" OR OLD."TeacherStudentDataLinkExclusion" IS DISTINCT FROM NEW."TeacherStudentDataLinkExclusion") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."Section_LocalCourseCode" IS DISTINCT FROM NEW."Section_LocalCourseCode" OR OLD."Section_SchoolId" IS DISTINCT FROM NEW."Section_SchoolId" OR OLD."Section_SchoolYear" IS DISTINCT FROM NEW."Section_SchoolYear" OR OLD."Section_SectionIdentifier" IS DISTINCT FROM NEW."Section_SectionIdentifier" OR OLD."Section_SessionName" IS DISTINCT FROM NEW."Section_SessionName" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -46778,6 +48305,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentSectionAssociation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentSectionAssociation_DocumentId" IS DISTINCT FROM NEW."StudentSectionAssociation_DocumentId" OR OLD."Program_DocumentId" IS DISTINCT FROM NEW."Program_DocumentId" OR OLD."Program_EducationOrganizationId" IS DISTINCT FROM NEW."Program_EducationOrganizationId" OR OLD."Program_ProgramName" IS DISTINCT FROM NEW."Program_ProgramName" OR OLD."Program_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."Program_ProgramTypeDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -46820,9 +48350,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Section_DocumentId" IS DISTINCT FROM NEW."Section_DocumentId" OR OLD."Section_LocalCourseCode" IS DISTINCT FROM NEW."Section_LocalCourseCode" OR OLD."Section_SchoolId" IS DISTINCT FROM NEW."Section_SchoolId" OR OLD."Section_SchoolYear" IS DISTINCT FROM NEW."Section_SchoolYear" OR OLD."Section_SessionName" IS DISTINCT FROM NEW."Section_SessionName" OR OLD."Section_SectionIdentifier" IS DISTINCT FROM NEW."Section_SectionIdentifier" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."AttendanceEventCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."AttendanceEventCategoryDescriptor_DescriptorId" OR OLD."EducationalEnvironmentDescriptor_DescriptorId" IS DISTINCT FROM NEW."EducationalEnvironmentDescriptor_DescriptorId" OR OLD."ArrivalTime" IS DISTINCT FROM NEW."ArrivalTime" OR OLD."AttendanceEventReason" IS DISTINCT FROM NEW."AttendanceEventReason" OR OLD."DepartureTime" IS DISTINCT FROM NEW."DepartureTime" OR OLD."EventDate" IS DISTINCT FROM NEW."EventDate" OR OLD."EventDuration" IS DISTINCT FROM NEW."EventDuration" OR OLD."SectionAttendanceDuration" IS DISTINCT FROM NEW."SectionAttendanceDuration") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."AttendanceEventCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."AttendanceEventCategoryDescriptor_DescriptorId" OR OLD."EventDate" IS DISTINCT FROM NEW."EventDate" OR OLD."Section_LocalCourseCode" IS DISTINCT FROM NEW."Section_LocalCourseCode" OR OLD."Section_SchoolId" IS DISTINCT FROM NEW."Section_SchoolId" OR OLD."Section_SchoolYear" IS DISTINCT FROM NEW."Section_SchoolYear" OR OLD."Section_SectionIdentifier" IS DISTINCT FROM NEW."Section_SectionIdentifier" OR OLD."Section_SessionName" IS DISTINCT FROM NEW."Section_SessionName" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -46846,6 +48381,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentSectionAttendanceEvent_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentSectionAttendanceEvent_DocumentId" IS DISTINCT FROM NEW."StudentSectionAttendanceEvent_DocumentId" OR OLD."ClassPeriod_DocumentId" IS DISTINCT FROM NEW."ClassPeriod_DocumentId" OR OLD."ClassPeriod_ClassPeriodName" IS DISTINCT FROM NEW."ClassPeriod_ClassPeriodName" OR OLD."ClassPeriod_SchoolId" IS DISTINCT FROM NEW."ClassPeriod_SchoolId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -46911,9 +48449,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_DocumentId" IS DISTINCT FROM NEW."ProgramProgram_DocumentId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."ReasonExitedDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReasonExitedDescriptor_DescriptorId" OR OLD."SpecialEducationExitReasonDescriptor_DescriptorId" IS DISTINCT FROM NEW."SpecialEducationExitReasonDescriptor_DescriptorId" OR OLD."SpecialEducationSettingDescriptor_DescriptorId" IS DISTINCT FROM NEW."SpecialEducationSettingDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."IdeaEligibility" IS DISTINCT FROM NEW."IdeaEligibility" OR OLD."IepBeginDate" IS DISTINCT FROM NEW."IepBeginDate" OR OLD."IepEndDate" IS DISTINCT FROM NEW."IepEndDate" OR OLD."IepReviewDate" IS DISTINCT FROM NEW."IepReviewDate" OR OLD."LastEvaluationDate" IS DISTINCT FROM NEW."LastEvaluationDate" OR OLD."MedicallyFragile" IS DISTINCT FROM NEW."MedicallyFragile" OR OLD."MultiplyDisabled" IS DISTINCT FROM NEW."MultiplyDisabled" OR OLD."ReductionInHoursPerWeekComparedToPeers" IS DISTINCT FROM NEW."ReductionInHoursPerWeekComparedToPeers" OR OLD."SchoolHoursPerWeek" IS DISTINCT FROM NEW."SchoolHoursPerWeek" OR OLD."ServedOutsideOfRegularSession" IS DISTINCT FROM NEW."ServedOutsideOfRegularSession" OR OLD."ShortenedSchoolDayIndicator" IS DISTINCT FROM NEW."ShortenedSchoolDayIndicator" OR OLD."SpecialEducationExitDate" IS DISTINCT FROM NEW."SpecialEducationExitDate" OR OLD."SpecialEducationExitExplained" IS DISTINCT FROM NEW."SpecialEducationExitExplained" OR OLD."SpecialEducationHoursPerWeek" IS DISTINCT FROM NEW."SpecialEducationHoursPerWeek") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -46938,6 +48481,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentSpecialEducationProgramAssociation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentSpecialEducationProgramAssociation_DocumentId" IS DISTINCT FROM NEW."StudentSpecialEducationProgramAssociation_DocumentId" OR OLD."DisabilityDescriptor_DescriptorId" IS DISTINCT FROM NEW."DisabilityDescriptor_DescriptorId" OR OLD."DisabilityDeterminationSourceTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."DisabilityDeterminationSourceTypeDescriptor_DescriptorId" OR OLD."DisabilityDiagnosis" IS DISTINCT FROM NEW."DisabilityDiagnosis" OR OLD."OrderOfDisability" IS DISTINCT FROM NEW."OrderOfDisability") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentSpecialEducationProgramAssociation_DocumentId";
@@ -46959,6 +48505,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentSpecialEducationProgramAssociation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."StudentSpecialEducationProgramAssociation_DocumentId" IS DISTINCT FROM NEW."StudentSpecialEducationProgramAssociation_DocumentId" OR OLD."DisabilityDesignationDescriptor_DescriptorId" IS DISTINCT FROM NEW."DisabilityDesignationDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -46982,6 +48531,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentSpecialEducationProgramAssociation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentSpecialEducationProgramAssociation_DocumentId" IS DISTINCT FROM NEW."StudentSpecialEducationProgramAssociation_DocumentId" OR OLD."ParticipationStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."ParticipationStatusDescriptor_DescriptorId" OR OLD."DesignatedBy" IS DISTINCT FROM NEW."DesignatedBy" OR OLD."StatusBeginDate" IS DISTINCT FROM NEW."StatusBeginDate" OR OLD."StatusEndDate" IS DISTINCT FROM NEW."StatusEndDate") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentSpecialEducationProgramAssociation_DocumentId";
@@ -47003,6 +48555,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentSpecialEducationProgramAssociation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentSpecialEducationProgramAssociation_DocumentId" IS DISTINCT FROM NEW."StudentSpecialEducationProgramAssociation_DocumentId" OR OLD."ServiceProviderStaff_DocumentId" IS DISTINCT FROM NEW."ServiceProviderStaff_DocumentId" OR OLD."ServiceProviderStaff_StaffUniqueId" IS DISTINCT FROM NEW."ServiceProviderStaff_StaffUniqueId" OR OLD."PrimaryProvider" IS DISTINCT FROM NEW."PrimaryProvider") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -47026,6 +48581,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentSpecialEducationProgramAssociation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."ParentCollectionItemId" IS DISTINCT FROM NEW."ParentCollectionItemId" OR OLD."StudentSpecialEducationProgramAssociation_DocumentId" IS DISTINCT FROM NEW."StudentSpecialEducationProgramAssociation_DocumentId" OR OLD."SpecialEducationProgramServiceServiceProviderStaff_DocumentId" IS DISTINCT FROM NEW."SpecialEducationProgramServiceServiceProviderStaff_DocumentId" OR OLD."SpecialEducationProgramServiceServiceProviderStaff_S_464a707dc3" IS DISTINCT FROM NEW."SpecialEducationProgramServiceServiceProviderStaff_S_464a707dc3" OR OLD."PrimaryProvider" IS DISTINCT FROM NEW."PrimaryProvider") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentSpecialEducationProgramAssociation_DocumentId";
@@ -47047,6 +48605,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentSpecialEducationProgramAssociation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentSpecialEducationProgramAssociation_DocumentId" IS DISTINCT FROM NEW."StudentSpecialEducationProgramAssociation_DocumentId" OR OLD."SpecialEducationProgramServiceDescriptor_DescriptorId" IS DISTINCT FROM NEW."SpecialEducationProgramServiceDescriptor_DescriptorId" OR OLD."PrimaryIndicator" IS DISTINCT FROM NEW."PrimaryIndicator" OR OLD."ServiceBeginDate" IS DISTINCT FROM NEW."ServiceBeginDate" OR OLD."ServiceEndDate" IS DISTINCT FROM NEW."ServiceEndDate") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -47089,9 +48650,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_DocumentId" IS DISTINCT FROM NEW."ProgramProgram_DocumentId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."EligibilityDelayReasonDescriptor_DescriptorId" IS DISTINCT FROM NEW."EligibilityDelayReasonDescriptor_DescriptorId" OR OLD."EligibilityEvaluationTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."EligibilityEvaluationTypeDescriptor_DescriptorId" OR OLD."EvaluationDelayReasonDescriptor_DescriptorId" IS DISTINCT FROM NEW."EvaluationDelayReasonDescriptor_DescriptorId" OR OLD."IdeaPartDescriptor_DescriptorId" IS DISTINCT FROM NEW."IdeaPartDescriptor_DescriptorId" OR OLD."ConsentToEvaluationDate" IS DISTINCT FROM NEW."ConsentToEvaluationDate" OR OLD."ConsentToEvaluationReceivedDate" IS DISTINCT FROM NEW."ConsentToEvaluationReceivedDate" OR OLD."EligibilityConferenceDate" IS DISTINCT FROM NEW."EligibilityConferenceDate" OR OLD."EligibilityDeterminationDate" IS DISTINCT FROM NEW."EligibilityDeterminationDate" OR OLD."EligibilityEvaluationDate" IS DISTINCT FROM NEW."EligibilityEvaluationDate" OR OLD."EvaluationCompleteIndicator" IS DISTINCT FROM NEW."EvaluationCompleteIndicator" OR OLD."EvaluationDelayDays" IS DISTINCT FROM NEW."EvaluationDelayDays" OR OLD."EvaluationLateReason" IS DISTINCT FROM NEW."EvaluationLateReason" OR OLD."IdeaIndicator" IS DISTINCT FROM NEW."IdeaIndicator" OR OLD."OriginalECIServicesDate" IS DISTINCT FROM NEW."OriginalECIServicesDate" OR OLD."TransitionConferenceDate" IS DISTINCT FROM NEW."TransitionConferenceDate" OR OLD."TransitionNotificationDate" IS DISTINCT FROM NEW."TransitionNotificationDate") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."ConsentToEvaluationReceivedDate" IS DISTINCT FROM NEW."ConsentToEvaluationReceivedDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -47158,9 +48724,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_DocumentId" IS DISTINCT FROM NEW."ProgramProgram_DocumentId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."ReasonExitedDescriptor_DescriptorId" IS DISTINCT FROM NEW."ReasonExitedDescriptor_DescriptorId" OR OLD."TitleIPartAParticipantDescriptor_DescriptorId" IS DISTINCT FROM NEW."TitleIPartAParticipantDescriptor_DescriptorId" OR OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EndDate" IS DISTINCT FROM NEW."EndDate" OR OLD."ServedOutsideOfRegularSession" IS DISTINCT FROM NEW."ServedOutsideOfRegularSession") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."BeginDate" IS DISTINCT FROM NEW."BeginDate" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."ProgramProgram_EducationOrganizationId" IS DISTINCT FROM NEW."ProgramProgram_EducationOrganizationId" OR OLD."ProgramProgram_ProgramName" IS DISTINCT FROM NEW."ProgramProgram_ProgramName" OR OLD."ProgramProgram_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."ProgramProgram_ProgramTypeDescriptor_DescriptorId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -47185,6 +48756,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentTitleIPartAProgramAssociation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentTitleIPartAProgramAssociation_DocumentId" IS DISTINCT FROM NEW."StudentTitleIPartAProgramAssociation_DocumentId" OR OLD."ParticipationStatusDescriptor_DescriptorId" IS DISTINCT FROM NEW."ParticipationStatusDescriptor_DescriptorId" OR OLD."DesignatedBy" IS DISTINCT FROM NEW."DesignatedBy" OR OLD."StatusBeginDate" IS DISTINCT FROM NEW."StatusBeginDate" OR OLD."StatusEndDate" IS DISTINCT FROM NEW."StatusEndDate") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentTitleIPartAProgramAssociation_DocumentId";
@@ -47206,6 +48780,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."StudentTitleIPartAProgramAssociation_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentTitleIPartAProgramAssociation_DocumentId" IS DISTINCT FROM NEW."StudentTitleIPartAProgramAssociation_DocumentId" OR OLD."TitleIPartAProgramServiceDescriptor_DescriptorId" IS DISTINCT FROM NEW."TitleIPartAProgramServiceDescriptor_DescriptorId" OR OLD."PrimaryIndicator" IS DISTINCT FROM NEW."PrimaryIndicator" OR OLD."ServiceBeginDate" IS DISTINCT FROM NEW."ServiceBeginDate" OR OLD."ServiceEndDate" IS DISTINCT FROM NEW."ServiceEndDate") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -47248,9 +48825,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."TransportationEducationOrganization_DocumentId" IS DISTINCT FROM NEW."TransportationEducationOrganization_DocumentId" OR OLD."TransportationEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."TransportationEducationOrganization_EducationOrganizationId" OR OLD."StudentBusDetailsBusRouteDescriptor_DescriptorId" IS DISTINCT FROM NEW."StudentBusDetailsBusRouteDescriptor_DescriptorId" OR OLD."TransportationPublicExpenseEligibilityTypeDescriptor_16bbab4652" IS DISTINCT FROM NEW."TransportationPublicExpenseEligibilityTypeDescriptor_16bbab4652" OR OLD."TransportationTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."TransportationTypeDescriptor_DescriptorId" OR OLD."SpecialAccomodationRequirements" IS DISTINCT FROM NEW."SpecialAccomodationRequirements" OR OLD."StudentBusDetailsBusNumber" IS DISTINCT FROM NEW."StudentBusDetailsBusNumber" OR OLD."StudentBusDetailsMileage" IS DISTINCT FROM NEW."StudentBusDetailsMileage") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."Student_StudentUniqueId" IS DISTINCT FROM NEW."Student_StudentUniqueId" OR OLD."TransportationEducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."TransportationEducationOrganization_EducationOrganizationId") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -47275,6 +48857,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentTransportation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentTransportation_DocumentId" IS DISTINCT FROM NEW."StudentTransportation_DocumentId" OR OLD."TravelDayofWeekDescriptor_DescriptorId" IS DISTINCT FROM NEW."TravelDayofWeekDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentTransportation_DocumentId";
@@ -47297,6 +48882,9 @@ BEGIN
         WHERE "DocumentId" = OLD."StudentTransportation_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."StudentTransportation_DocumentId" IS DISTINCT FROM NEW."StudentTransportation_DocumentId" OR OLD."TravelDirectionDescriptor_DescriptorId" IS DISTINCT FROM NEW."TravelDirectionDescriptor_DescriptorId") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."StudentTransportation_DocumentId";
@@ -47318,6 +48906,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."Student_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."Student_DocumentId" IS DISTINCT FROM NEW."Student_DocumentId" OR OLD."VisaDescriptor_DescriptorId" IS DISTINCT FROM NEW."VisaDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -47360,9 +48951,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SchoolYear_Unified" IS DISTINCT FROM NEW."SchoolYear_Unified" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."SchoolYear_DocumentId" IS DISTINCT FROM NEW."SchoolYear_DocumentId" OR OLD."Session_DocumentId" IS DISTINCT FROM NEW."Session_DocumentId" OR OLD."Session_SchoolId" IS DISTINCT FROM NEW."Session_SchoolId" OR OLD."Session_SessionName" IS DISTINCT FROM NEW."Session_SessionName" OR OLD."SurveyCategoryDescriptor_DescriptorId" IS DISTINCT FROM NEW."SurveyCategoryDescriptor_DescriptorId" OR OLD."Namespace" IS DISTINCT FROM NEW."Namespace" OR OLD."NumberAdministered" IS DISTINCT FROM NEW."NumberAdministered" OR OLD."SurveyIdentifier" IS DISTINCT FROM NEW."SurveyIdentifier" OR OLD."SurveyTitle" IS DISTINCT FROM NEW."SurveyTitle") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."Namespace" IS DISTINCT FROM NEW."Namespace" OR OLD."SurveyIdentifier" IS DISTINCT FROM NEW."SurveyIdentifier") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -47406,9 +49002,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Course_DocumentId" IS DISTINCT FROM NEW."Course_DocumentId" OR OLD."Course_CourseCode" IS DISTINCT FROM NEW."Course_CourseCode" OR OLD."Course_EducationOrganizationId" IS DISTINCT FROM NEW."Course_EducationOrganizationId" OR OLD."Survey_DocumentId" IS DISTINCT FROM NEW."Survey_DocumentId" OR OLD."Survey_Namespace" IS DISTINCT FROM NEW."Survey_Namespace" OR OLD."Survey_SurveyIdentifier" IS DISTINCT FROM NEW."Survey_SurveyIdentifier") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."Course_CourseCode" IS DISTINCT FROM NEW."Course_CourseCode" OR OLD."Course_EducationOrganizationId" IS DISTINCT FROM NEW."Course_EducationOrganizationId" OR OLD."Survey_Namespace" IS DISTINCT FROM NEW."Survey_Namespace" OR OLD."Survey_SurveyIdentifier" IS DISTINCT FROM NEW."Survey_SurveyIdentifier") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -47452,9 +49053,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Program_DocumentId" IS DISTINCT FROM NEW."Program_DocumentId" OR OLD."Program_EducationOrganizationId" IS DISTINCT FROM NEW."Program_EducationOrganizationId" OR OLD."Program_ProgramName" IS DISTINCT FROM NEW."Program_ProgramName" OR OLD."Program_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."Program_ProgramTypeDescriptor_DescriptorId" OR OLD."Survey_DocumentId" IS DISTINCT FROM NEW."Survey_DocumentId" OR OLD."Survey_Namespace" IS DISTINCT FROM NEW."Survey_Namespace" OR OLD."Survey_SurveyIdentifier" IS DISTINCT FROM NEW."Survey_SurveyIdentifier") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."Program_EducationOrganizationId" IS DISTINCT FROM NEW."Program_EducationOrganizationId" OR OLD."Program_ProgramName" IS DISTINCT FROM NEW."Program_ProgramName" OR OLD."Program_ProgramTypeDescriptor_DescriptorId" IS DISTINCT FROM NEW."Program_ProgramTypeDescriptor_DescriptorId" OR OLD."Survey_Namespace" IS DISTINCT FROM NEW."Survey_Namespace" OR OLD."Survey_SurveyIdentifier" IS DISTINCT FROM NEW."Survey_SurveyIdentifier") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -47498,9 +49104,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."SurveyIdentifier_Unified" IS DISTINCT FROM NEW."SurveyIdentifier_Unified" OR OLD."SurveySection_DocumentId" IS DISTINCT FROM NEW."SurveySection_DocumentId" OR OLD."SurveySection_SurveySectionTitle" IS DISTINCT FROM NEW."SurveySection_SurveySectionTitle" OR OLD."Survey_DocumentId" IS DISTINCT FROM NEW."Survey_DocumentId" OR OLD."QuestionFormDescriptor_DescriptorId" IS DISTINCT FROM NEW."QuestionFormDescriptor_DescriptorId" OR OLD."QuestionCode" IS DISTINCT FROM NEW."QuestionCode" OR OLD."QuestionText" IS DISTINCT FROM NEW."QuestionText") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."QuestionCode" IS DISTINCT FROM NEW."QuestionCode" OR OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."SurveyIdentifier_Unified" IS DISTINCT FROM NEW."SurveyIdentifier_Unified") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -47524,6 +49135,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."SurveyQuestion_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."SurveyQuestion_DocumentId" IS DISTINCT FROM NEW."SurveyQuestion_DocumentId" OR OLD."MatrixElement" IS DISTINCT FROM NEW."MatrixElement" OR OLD."MaxRawScore" IS DISTINCT FROM NEW."MaxRawScore" OR OLD."MinRawScore" IS DISTINCT FROM NEW."MinRawScore") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -47566,9 +49180,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."SurveyIdentifier_Unified" IS DISTINCT FROM NEW."SurveyIdentifier_Unified" OR OLD."SurveyQuestion_DocumentId" IS DISTINCT FROM NEW."SurveyQuestion_DocumentId" OR OLD."SurveyQuestion_QuestionCode" IS DISTINCT FROM NEW."SurveyQuestion_QuestionCode" OR OLD."SurveyResponse_DocumentId" IS DISTINCT FROM NEW."SurveyResponse_DocumentId" OR OLD."SurveyResponse_SurveyResponseIdentifier" IS DISTINCT FROM NEW."SurveyResponse_SurveyResponseIdentifier" OR OLD."Comment" IS DISTINCT FROM NEW."Comment" OR OLD."NoResponse" IS DISTINCT FROM NEW."NoResponse") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."SurveyQuestion_QuestionCode" IS DISTINCT FROM NEW."SurveyQuestion_QuestionCode" OR OLD."SurveyIdentifier_Unified" IS DISTINCT FROM NEW."SurveyIdentifier_Unified" OR OLD."SurveyResponse_SurveyResponseIdentifier" IS DISTINCT FROM NEW."SurveyResponse_SurveyResponseIdentifier") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -47593,6 +49212,9 @@ BEGIN
         WHERE "DocumentId" = OLD."SurveyQuestion_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."SurveyQuestion_DocumentId" IS DISTINCT FROM NEW."SurveyQuestion_DocumentId" OR OLD."NumericValue" IS DISTINCT FROM NEW."NumericValue" OR OLD."SortOrder" IS DISTINCT FROM NEW."SortOrder" OR OLD."TextValue" IS DISTINCT FROM NEW."TextValue") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."SurveyQuestion_DocumentId";
@@ -47615,6 +49237,9 @@ BEGIN
         WHERE "DocumentId" = OLD."SurveyQuestionResponse_DocumentId";
         RETURN OLD;
     END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."SurveyQuestionResponse_DocumentId" IS DISTINCT FROM NEW."SurveyQuestionResponse_DocumentId" OR OLD."MatrixElement" IS DISTINCT FROM NEW."MatrixElement" OR OLD."MaxNumericResponse" IS DISTINCT FROM NEW."MaxNumericResponse" OR OLD."MinNumericResponse" IS DISTINCT FROM NEW."MinNumericResponse" OR OLD."NoResponse" IS DISTINCT FROM NEW."NoResponse" OR OLD."NumericResponse" IS DISTINCT FROM NEW."NumericResponse" OR OLD."TextResponse" IS DISTINCT FROM NEW."TextResponse") THEN
+        RETURN NEW;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."SurveyQuestionResponse_DocumentId";
@@ -47636,6 +49261,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."SurveyQuestionResponse_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."SurveyQuestionResponse_DocumentId" IS DISTINCT FROM NEW."SurveyQuestionResponse_DocumentId" OR OLD."NumericResponse" IS DISTINCT FROM NEW."NumericResponse" OR OLD."SurveyQuestionResponseValueIdentifier" IS DISTINCT FROM NEW."SurveyQuestionResponseValueIdentifier" OR OLD."TextResponse" IS DISTINCT FROM NEW."TextResponse") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -47678,9 +49306,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."SurveyResponderChoiceContact_DocumentId" IS DISTINCT FROM NEW."SurveyResponderChoiceContact_DocumentId" OR OLD."SurveyResponderChoiceContact_ContactUniqueId" IS DISTINCT FROM NEW."SurveyResponderChoiceContact_ContactUniqueId" OR OLD."SurveyResponderChoiceStaff_DocumentId" IS DISTINCT FROM NEW."SurveyResponderChoiceStaff_DocumentId" OR OLD."SurveyResponderChoiceStaff_StaffUniqueId" IS DISTINCT FROM NEW."SurveyResponderChoiceStaff_StaffUniqueId" OR OLD."SurveyResponderChoiceStudent_DocumentId" IS DISTINCT FROM NEW."SurveyResponderChoiceStudent_DocumentId" OR OLD."SurveyResponderChoiceStudent_StudentUniqueId" IS DISTINCT FROM NEW."SurveyResponderChoiceStudent_StudentUniqueId" OR OLD."Survey_DocumentId" IS DISTINCT FROM NEW."Survey_DocumentId" OR OLD."Survey_Namespace" IS DISTINCT FROM NEW."Survey_Namespace" OR OLD."Survey_SurveyIdentifier" IS DISTINCT FROM NEW."Survey_SurveyIdentifier" OR OLD."ElectronicMailAddress" IS DISTINCT FROM NEW."ElectronicMailAddress" OR OLD."FullName" IS DISTINCT FROM NEW."FullName" OR OLD."Location" IS DISTINCT FROM NEW."Location" OR OLD."ResponseDate" IS DISTINCT FROM NEW."ResponseDate" OR OLD."ResponseTime" IS DISTINCT FROM NEW."ResponseTime" OR OLD."SurveyResponseIdentifier" IS DISTINCT FROM NEW."SurveyResponseIdentifier") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."Survey_Namespace" IS DISTINCT FROM NEW."Survey_Namespace" OR OLD."Survey_SurveyIdentifier" IS DISTINCT FROM NEW."Survey_SurveyIdentifier" OR OLD."SurveyResponseIdentifier" IS DISTINCT FROM NEW."SurveyResponseIdentifier") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -47724,9 +49357,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."SurveyResponse_DocumentId" IS DISTINCT FROM NEW."SurveyResponse_DocumentId" OR OLD."SurveyResponse_Namespace" IS DISTINCT FROM NEW."SurveyResponse_Namespace" OR OLD."SurveyResponse_SurveyIdentifier" IS DISTINCT FROM NEW."SurveyResponse_SurveyIdentifier" OR OLD."SurveyResponse_SurveyResponseIdentifier" IS DISTINCT FROM NEW."SurveyResponse_SurveyResponseIdentifier") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."SurveyResponse_Namespace" IS DISTINCT FROM NEW."SurveyResponse_Namespace" OR OLD."SurveyResponse_SurveyIdentifier" IS DISTINCT FROM NEW."SurveyResponse_SurveyIdentifier" OR OLD."SurveyResponse_SurveyResponseIdentifier" IS DISTINCT FROM NEW."SurveyResponse_SurveyResponseIdentifier") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -47770,9 +49408,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId" OR OLD."SurveyResponse_DocumentId" IS DISTINCT FROM NEW."SurveyResponse_DocumentId" OR OLD."SurveyResponse_Namespace" IS DISTINCT FROM NEW."SurveyResponse_Namespace" OR OLD."SurveyResponse_SurveyIdentifier" IS DISTINCT FROM NEW."SurveyResponse_SurveyIdentifier" OR OLD."SurveyResponse_SurveyResponseIdentifier" IS DISTINCT FROM NEW."SurveyResponse_SurveyResponseIdentifier") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId" OR OLD."SurveyResponse_Namespace" IS DISTINCT FROM NEW."SurveyResponse_Namespace" OR OLD."SurveyResponse_SurveyIdentifier" IS DISTINCT FROM NEW."SurveyResponse_SurveyIdentifier" OR OLD."SurveyResponse_SurveyResponseIdentifier" IS DISTINCT FROM NEW."SurveyResponse_SurveyResponseIdentifier") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -47796,6 +49439,9 @@ BEGIN
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
         WHERE "DocumentId" = OLD."SurveyResponse_DocumentId";
         RETURN OLD;
+    END IF;
+    IF TG_OP = 'UPDATE' AND NOT (OLD."CollectionItemId" IS DISTINCT FROM NEW."CollectionItemId" OR OLD."Ordinal" IS DISTINCT FROM NEW."Ordinal" OR OLD."SurveyResponse_DocumentId" IS DISTINCT FROM NEW."SurveyResponse_DocumentId" OR OLD."SurveyLevelDescriptor_DescriptorId" IS DISTINCT FROM NEW."SurveyLevelDescriptor_DescriptorId") THEN
+        RETURN NEW;
     END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
@@ -47838,9 +49484,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Survey_DocumentId" IS DISTINCT FROM NEW."Survey_DocumentId" OR OLD."Survey_Namespace" IS DISTINCT FROM NEW."Survey_Namespace" OR OLD."Survey_SurveyIdentifier" IS DISTINCT FROM NEW."Survey_SurveyIdentifier" OR OLD."SurveySectionTitle" IS DISTINCT FROM NEW."SurveySectionTitle") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."Survey_Namespace" IS DISTINCT FROM NEW."Survey_Namespace" OR OLD."Survey_SurveyIdentifier" IS DISTINCT FROM NEW."Survey_SurveyIdentifier" OR OLD."SurveySectionTitle" IS DISTINCT FROM NEW."SurveySectionTitle") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -47884,9 +49535,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Section_DocumentId" IS DISTINCT FROM NEW."Section_DocumentId" OR OLD."Section_LocalCourseCode" IS DISTINCT FROM NEW."Section_LocalCourseCode" OR OLD."Section_SchoolId" IS DISTINCT FROM NEW."Section_SchoolId" OR OLD."Section_SchoolYear" IS DISTINCT FROM NEW."Section_SchoolYear" OR OLD."Section_SessionName" IS DISTINCT FROM NEW."Section_SessionName" OR OLD."Section_SectionIdentifier" IS DISTINCT FROM NEW."Section_SectionIdentifier" OR OLD."Survey_DocumentId" IS DISTINCT FROM NEW."Survey_DocumentId" OR OLD."Survey_Namespace" IS DISTINCT FROM NEW."Survey_Namespace" OR OLD."Survey_SurveyIdentifier" IS DISTINCT FROM NEW."Survey_SurveyIdentifier") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."Section_LocalCourseCode" IS DISTINCT FROM NEW."Section_LocalCourseCode" OR OLD."Section_SchoolId" IS DISTINCT FROM NEW."Section_SchoolId" OR OLD."Section_SchoolYear" IS DISTINCT FROM NEW."Section_SchoolYear" OR OLD."Section_SectionIdentifier" IS DISTINCT FROM NEW."Section_SectionIdentifier" OR OLD."Section_SessionName" IS DISTINCT FROM NEW."Section_SessionName" OR OLD."Survey_Namespace" IS DISTINCT FROM NEW."Survey_Namespace" OR OLD."Survey_SurveyIdentifier" IS DISTINCT FROM NEW."Survey_SurveyIdentifier") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -47930,9 +49586,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."SurveyIdentifier_Unified" IS DISTINCT FROM NEW."SurveyIdentifier_Unified" OR OLD."SurveyResponse_DocumentId" IS DISTINCT FROM NEW."SurveyResponse_DocumentId" OR OLD."SurveyResponse_SurveyResponseIdentifier" IS DISTINCT FROM NEW."SurveyResponse_SurveyResponseIdentifier" OR OLD."SurveySection_DocumentId" IS DISTINCT FROM NEW."SurveySection_DocumentId" OR OLD."SurveySection_SurveySectionTitle" IS DISTINCT FROM NEW."SurveySection_SurveySectionTitle" OR OLD."SectionRating" IS DISTINCT FROM NEW."SectionRating") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."SurveyIdentifier_Unified" IS DISTINCT FROM NEW."SurveyIdentifier_Unified" OR OLD."SurveyResponse_SurveyResponseIdentifier" IS DISTINCT FROM NEW."SurveyResponse_SurveyResponseIdentifier" OR OLD."SurveySection_SurveySectionTitle" IS DISTINCT FROM NEW."SurveySection_SurveySectionTitle") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -47957,9 +49618,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."SurveyIdentifier_Unified" IS DISTINCT FROM NEW."SurveyIdentifier_Unified" OR OLD."EducationOrganization_DocumentId" IS DISTINCT FROM NEW."EducationOrganization_DocumentId" OR OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."SurveySectionResponse_DocumentId" IS DISTINCT FROM NEW."SurveySectionResponse_DocumentId" OR OLD."SurveySectionResponse_SurveyResponseIdentifier" IS DISTINCT FROM NEW."SurveySectionResponse_SurveyResponseIdentifier" OR OLD."SurveySectionResponse_SurveySectionTitle" IS DISTINCT FROM NEW."SurveySectionResponse_SurveySectionTitle") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."EducationOrganization_EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganization_EducationOrganizationId" OR OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."SurveyIdentifier_Unified" IS DISTINCT FROM NEW."SurveyIdentifier_Unified" OR OLD."SurveySectionResponse_SurveyResponseIdentifier" IS DISTINCT FROM NEW."SurveySectionResponse_SurveyResponseIdentifier" OR OLD."SurveySectionResponse_SurveySectionTitle" IS DISTINCT FROM NEW."SurveySectionResponse_SurveySectionTitle") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
@@ -48022,9 +49688,14 @@ BEGIN
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND NOT (OLD."DocumentId" IS DISTINCT FROM NEW."DocumentId" OR OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."SurveyIdentifier_Unified" IS DISTINCT FROM NEW."SurveyIdentifier_Unified" OR OLD."Staff_DocumentId" IS DISTINCT FROM NEW."Staff_DocumentId" OR OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId" OR OLD."SurveySectionResponse_DocumentId" IS DISTINCT FROM NEW."SurveySectionResponse_DocumentId" OR OLD."SurveySectionResponse_SurveyResponseIdentifier" IS DISTINCT FROM NEW."SurveySectionResponse_SurveyResponseIdentifier" OR OLD."SurveySectionResponse_SurveySectionTitle" IS DISTINCT FROM NEW."SurveySectionResponse_SurveySectionTitle") THEN
+        RETURN NEW;
+    END IF;
+    IF TG_OP = 'UPDATE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
     IF TG_OP = 'UPDATE' AND (OLD."Staff_StaffUniqueId" IS DISTINCT FROM NEW."Staff_StaffUniqueId" OR OLD."Namespace_Unified" IS DISTINCT FROM NEW."Namespace_Unified" OR OLD."SurveyIdentifier_Unified" IS DISTINCT FROM NEW."SurveyIdentifier_Unified" OR OLD."SurveySectionResponse_SurveyResponseIdentifier" IS DISTINCT FROM NEW."SurveySectionResponse_SurveyResponseIdentifier" OR OLD."SurveySectionResponse_SurveySectionTitle" IS DISTINCT FROM NEW."SurveySectionResponse_SurveySectionTitle") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()

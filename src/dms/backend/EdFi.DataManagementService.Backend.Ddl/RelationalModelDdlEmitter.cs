@@ -121,8 +121,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         // Phase 6: Abstract Union Views (must precede Triggers per design)
         EmitAbstractUnionViews(writer, abstractUnionViews);
 
+        var tableModelsByTableName = BuildTableModelLookup(concreteResources, abstractIdentityTables);
+
         // Phase 7: Triggers (includes auth hierarchy triggers)
-        EmitTriggers(writer, triggers);
+        EmitTriggers(writer, triggers, tableModelsByTableName);
 
         return writer.ToString();
     }
@@ -396,7 +398,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// <summary>
     /// Emits <c>CREATE TRIGGER</c> statements for each trigger in create-order.
     /// </summary>
-    private void EmitTriggers(SqlWriter writer, IReadOnlyList<DbTriggerInfo> triggers)
+    private void EmitTriggers(
+        SqlWriter writer,
+        IReadOnlyList<DbTriggerInfo> triggers,
+        IReadOnlyDictionary<DbTableName, DbTableModel> tableModelsByTableName
+    )
     {
         // MSSQL requires a batch boundary before the first CREATE OR ALTER TRIGGER.
         // Each trigger emits its own trailing GO, so only the leading GO is needed here.
@@ -428,11 +434,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             // EmitStringLiteralWithCast.
             if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
             {
-                EmitPgsqlTrigger(writer, trigger);
+                EmitPgsqlTrigger(writer, trigger, tableModelsByTableName);
             }
             else
             {
-                EmitMssqlTrigger(writer, trigger);
+                EmitMssqlTrigger(writer, trigger, tableModelsByTableName);
             }
         }
     }
@@ -441,7 +447,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// Emits a PostgreSQL trigger (function + trigger).
     /// Uses DROP TRIGGER IF EXISTS + CREATE TRIGGER per design (not CREATE OR REPLACE TRIGGER).
     /// </summary>
-    private void EmitPgsqlTrigger(SqlWriter writer, DbTriggerInfo trigger)
+    private void EmitPgsqlTrigger(
+        SqlWriter writer,
+        DbTriggerInfo trigger,
+        IReadOnlyDictionary<DbTableName, DbTableModel> tableModelsByTableName
+    )
     {
         var funcName = _dialect.Rules.ShortenIdentifier($"TF_{trigger.Name.Value}");
         var schema = trigger.Table.Schema;
@@ -456,8 +466,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.AppendLine("BEGIN");
         using (writer.Indent())
         {
-            // DocumentStamping triggers fire on DELETE as well. On DELETE there is no NEW row,
-            // so we bump ContentVersion via OLD, return OLD, and skip the normal body.
+            // DMS-1002 accepts INSERT/UPDATE representation stamping as the main behavior.
+            // We still emit DELETE handling here as future-facing prevision for later
+            // delete-tracking work. On DELETE there is no NEW row, so we bump
+            // ContentVersion via OLD, return OLD, and skip the normal body.
             if (trigger.Parameters is TriggerKindParameters.DocumentStamping)
             {
                 if (trigger.KeyColumns.Count != 1)
@@ -490,7 +502,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 writer.AppendLine("END IF;");
             }
 
-            EmitTriggerBody(writer, trigger);
+            EmitTriggerBody(writer, trigger, tableModelsByTableName);
             writer.AppendLine("RETURN NEW;");
         }
         writer.AppendLine("END;");
@@ -504,8 +516,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append("CREATE TRIGGER ");
         writer.AppendLine(Quote(trigger.Name));
 
-        // DocumentStamping triggers must also fire on DELETE so that change-event consumers
-        // detect document removal via a bumped ContentVersion.
+        // Keep DELETE in the emitted trigger shape as future-facing prevision for later
+        // delete-tracking work, even though DMS-1002 acceptance is centered on
+        // INSERT/UPDATE representation stamping.
         var pgsqlTriggerEvent =
             trigger.Parameters is TriggerKindParameters.DocumentStamping
                 ? "BEFORE INSERT OR UPDATE OR DELETE ON "
@@ -524,7 +537,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// <summary>
     /// Emits a SQL Server trigger.
     /// </summary>
-    private void EmitMssqlTrigger(SqlWriter writer, DbTriggerInfo trigger)
+    private void EmitMssqlTrigger(
+        SqlWriter writer,
+        DbTriggerInfo trigger,
+        IReadOnlyDictionary<DbTableName, DbTableModel> tableModelsByTableName
+    )
     {
         writer.Append("CREATE OR ALTER TRIGGER ");
         writer.Append(Quote(trigger.Table.Schema));
@@ -534,7 +551,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.AppendLine(Quote(trigger.Table));
         var mssqlTriggerEvent = trigger.Parameters switch
         {
-            TriggerKindParameters.IdentityPropagationFallback => "AFTER UPDATE",
+            TriggerKindParameters.IdentityPropagationFallback => "INSTEAD OF UPDATE",
             TriggerKindParameters.DocumentStamping => "AFTER INSERT, UPDATE, DELETE",
             _ => "AFTER INSERT, UPDATE",
         };
@@ -544,7 +561,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         using (writer.Indent())
         {
             writer.AppendLine("SET NOCOUNT ON;");
-            EmitTriggerBody(writer, trigger);
+            EmitTriggerBody(writer, trigger, tableModelsByTableName);
         }
         writer.AppendLine("END;");
         // Close the batch so that the next trigger (or any subsequent DDL/DML
@@ -649,12 +666,23 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// <summary>
     /// Emits the trigger body logic based on trigger kind.
     /// </summary>
-    private void EmitTriggerBody(SqlWriter writer, DbTriggerInfo trigger)
+    private void EmitTriggerBody(
+        SqlWriter writer,
+        DbTriggerInfo trigger,
+        IReadOnlyDictionary<DbTableName, DbTableModel> tableModelsByTableName
+    )
     {
         switch (trigger.Parameters)
         {
             case TriggerKindParameters.DocumentStamping:
-                EmitDocumentStampingBody(writer, trigger);
+                if (!tableModelsByTableName.TryGetValue(trigger.Table, out var tableModel))
+                {
+                    throw new InvalidOperationException(
+                        $"DocumentStamping trigger '{trigger.Name.Value}' requires a table model for '{trigger.Table.Schema.Value}.{trigger.Table.Name}', but none was found."
+                    );
+                }
+
+                EmitDocumentStampingBody(writer, trigger, tableModel);
                 break;
             case TriggerKindParameters.ReferentialIdentityMaintenance refId:
                 EmitReferentialIdentityBody(writer, trigger, refId);
@@ -663,7 +691,14 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 EmitAbstractIdentityBody(writer, trigger, abstractId);
                 break;
             case TriggerKindParameters.IdentityPropagationFallback propagation:
-                EmitIdentityPropagationBody(writer, trigger, propagation);
+                if (!tableModelsByTableName.TryGetValue(trigger.Table, out var propagationTableModel))
+                {
+                    throw new InvalidOperationException(
+                        $"IdentityPropagationFallback trigger '{trigger.Name.Value}' requires a table model for '{trigger.Table.Schema.Value}.{trigger.Table.Name}', but none was found."
+                    );
+                }
+
+                EmitIdentityPropagationBody(writer, trigger, propagationTableModel, propagation);
                 break;
             case TriggerKindParameters.AuthHierarchyMaintenance:
                 // Auth triggers are handled by dedicated scaffolding methods
@@ -677,10 +712,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     }
 
     /// <summary>
-    /// Emits document stamping trigger body that stamps <c>dms.Document.ContentVersion</c>
-    /// and (for root tables with identity projection columns) <c>IdentityVersion</c> on writes.
+    /// Emits document stamping trigger body for DMS-1002 INSERT/UPDATE representation
+    /// stamping, with retained DELETE prevision left in place for later delete-tracking work.
+    /// Root tables with identity projection columns also stamp <c>IdentityVersion</c>.
     /// </summary>
-    private void EmitDocumentStampingBody(SqlWriter writer, DbTriggerInfo trigger)
+    private void EmitDocumentStampingBody(SqlWriter writer, DbTriggerInfo trigger, DbTableModel tableModel)
     {
         if (trigger.KeyColumns.Count != 1)
         {
@@ -695,37 +731,65 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
         if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
-            EmitPgsqlDocumentStampingBody(writer, trigger, documentTable, sequenceName, keyColumn);
+            EmitPgsqlDocumentStampingBody(
+                writer,
+                trigger,
+                tableModel,
+                documentTable,
+                sequenceName,
+                keyColumn
+            );
         }
         else
         {
-            EmitMssqlDocumentStampingBody(writer, trigger, documentTable, sequenceName, keyColumn);
+            EmitMssqlDocumentStampingBody(
+                writer,
+                trigger,
+                tableModel,
+                documentTable,
+                sequenceName,
+                keyColumn
+            );
         }
     }
 
     private void EmitPgsqlDocumentStampingBody(
         SqlWriter writer,
         DbTriggerInfo trigger,
+        DbTableModel tableModel,
         string documentTable,
         string sequenceName,
         DbColumnName keyColumn
     )
     {
-        // ContentVersion stamp
-        writer.Append("UPDATE ");
-        writer.AppendLine(documentTable);
-        writer.Append("SET ");
-        writer.Append(Quote(ContentVersionColumn));
-        writer.Append(" = nextval('");
-        writer.Append(sequenceName);
-        writer.Append("'), ");
-        writer.Append(Quote(ContentLastModifiedAtColumn));
-        writer.AppendLine(" = now()");
-        writer.Append("WHERE ");
-        writer.Append(Quote(DocumentIdColumn));
-        writer.Append(" = NEW.");
-        writer.Append(Quote(keyColumn));
-        writer.AppendLine(";");
+        var storedColumns = GetStoredColumnsForDocumentStamping(tableModel, trigger.Name.Value);
+        var isRootDocumentStampingTrigger = keyColumn.Equals(DocumentIdColumn);
+
+        // Skip successful no-op UPDATEs that do not change any stored row values.
+        writer.Append("IF TG_OP = 'UPDATE' AND NOT (");
+        EmitPgsqlValueDiffDisjunction(writer, storedColumns);
+        writer.AppendLine(") THEN");
+        using (writer.Indent())
+        {
+            writer.AppendLine("RETURN NEW;");
+        }
+        writer.AppendLine("END IF;");
+
+        // Root-document INSERTs reuse dms.Document defaults so we do not burn an
+        // extra sequence value and journal row before the resource row exists.
+        if (isRootDocumentStampingTrigger)
+        {
+            writer.AppendLine("IF TG_OP = 'UPDATE' THEN");
+            using (writer.Indent())
+            {
+                EmitPgsqlDocumentContentStampUpdate(writer, documentTable, sequenceName, keyColumn);
+            }
+            writer.AppendLine("END IF;");
+        }
+        else
+        {
+            EmitPgsqlDocumentContentStampUpdate(writer, documentTable, sequenceName, keyColumn);
+        }
 
         // IdentityVersion stamp for root tables with identity projection columns
         if (trigger.IdentityProjectionColumns.Count > 0)
@@ -760,22 +824,74 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         }
     }
 
-    private void EmitMssqlDocumentStampingBody(
+    private void EmitPgsqlDocumentContentStampUpdate(
         SqlWriter writer,
-        DbTriggerInfo trigger,
         string documentTable,
         string sequenceName,
         DbColumnName keyColumn
     )
     {
-        // ContentVersion stamp — use a CTE that unions inserted and deleted so that
-        // INSERT, UPDATE, and DELETE all bump the version.
+        writer.Append("UPDATE ");
+        writer.AppendLine(documentTable);
+        writer.Append("SET ");
+        writer.Append(Quote(ContentVersionColumn));
+        writer.Append(" = nextval('");
+        writer.Append(sequenceName);
+        writer.Append("'), ");
+        writer.Append(Quote(ContentLastModifiedAtColumn));
+        writer.AppendLine(" = now()");
+        writer.Append("WHERE ");
+        writer.Append(Quote(DocumentIdColumn));
+        writer.Append(" = NEW.");
+        writer.Append(Quote(keyColumn));
+        writer.AppendLine(";");
+    }
+
+    private void EmitMssqlDocumentStampingBody(
+        SqlWriter writer,
+        DbTriggerInfo trigger,
+        DbTableModel tableModel,
+        string documentTable,
+        string sequenceName,
+        DbColumnName keyColumn
+    )
+    {
+        var tableKeyColumns = GetKeyColumnsForDocumentStamping(tableModel, trigger.Name.Value);
+        var storedColumns = GetStoredColumnsForDocumentStamping(tableModel, trigger.Name.Value);
         var quotedKeyColumn = Quote(keyColumn);
-        writer.Append(";WITH affectedDocs AS (SELECT ");
-        writer.Append(quotedKeyColumn);
-        writer.Append(" FROM inserted UNION SELECT ");
-        writer.Append(quotedKeyColumn);
-        writer.AppendLine(" FROM deleted)");
+        var quotedProbeKeyColumn = Quote(tableKeyColumns[0]);
+
+        // ContentVersion stamp - compute the set of affected documents from inserted/deleted
+        // rows that are inserts, deletes, or actual value changes. No-op UPDATEs are excluded.
+        writer.AppendLine(";WITH affectedDocs AS (");
+        using (writer.Indent())
+        {
+            writer.Append("SELECT i.");
+            writer.AppendLine(quotedKeyColumn);
+            writer.AppendLine("FROM inserted i");
+            writer.Append("LEFT JOIN deleted del ON ");
+            EmitMssqlJoinConjunction(writer, "del", "i", tableKeyColumns);
+            writer.AppendLine();
+            writer.Append("WHERE del.");
+            writer.Append(quotedProbeKeyColumn);
+            writer.Append(" IS NULL OR ");
+            EmitMssqlColumnValueDiffDisjunction(writer, "i", "del", storedColumns);
+            writer.AppendLine();
+            writer.AppendLine("UNION");
+            writer.Append("SELECT del.");
+            writer.AppendLine(quotedKeyColumn);
+            writer.AppendLine("FROM deleted del");
+            writer.Append("LEFT JOIN inserted i ON ");
+            EmitMssqlJoinConjunction(writer, "i", "del", tableKeyColumns);
+            writer.AppendLine();
+            writer.Append("WHERE i.");
+            writer.Append(quotedProbeKeyColumn);
+            writer.Append(" IS NULL OR ");
+            EmitMssqlColumnValueDiffDisjunction(writer, "i", "del", storedColumns);
+            writer.AppendLine();
+        }
+        writer.AppendLine(")");
+
         writer.AppendLine("UPDATE d");
         writer.Append("SET d.");
         writer.Append(Quote(ContentVersionColumn));
@@ -1473,6 +1589,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     private void EmitIdentityPropagationBody(
         SqlWriter writer,
         DbTriggerInfo trigger,
+        DbTableModel tableModel,
         TriggerKindParameters.IdentityPropagationFallback propagation
     )
     {
@@ -1493,11 +1610,12 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         }
 
         var documentIdCol = Quote(DocumentIdColumn);
+        var tableKeyColumns = GetKeyColumnsForDocumentStamping(tableModel, trigger.Name.Value);
+        var updatableColumns = GetWritableStoredNonKeyColumns(tableModel, trigger.Name.Value);
 
-        // Performance pre-filter: UPDATE(col) returns true if the column appeared in the SET
-        // clause, regardless of whether the value actually changed. This short-circuits the
-        // entire trigger body when non-identity columns are updated, avoiding the cost of
-        // joining inserted/deleted for every UPDATE on the table.
+        // Identity propagation must happen before the owning row update so the subsequent
+        // base-table UPDATE can satisfy ON UPDATE NO ACTION reference FKs without transient
+        // violations.
         writer.Append("IF (");
         EmitMssqlUpdateColumnDisjunction(writer, trigger.IdentityProjectionColumns);
         writer.AppendLine(")");
@@ -1555,12 +1673,39 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                     var col = Quote(referrer.ColumnMappings[i].SourceColumn);
                     EmitMssqlNullSafeNotEqual(writer, "i", col, "d", col);
                 }
+                writer.AppendLine();
+                writer.Append("AND ");
+                EmitMssqlPropagationOldValueConjunction(writer, referrer.ColumnMappings);
                 writer.AppendLine(";");
                 writer.AppendLine();
             }
         }
 
         writer.AppendLine("END");
+        writer.AppendLine();
+
+        writer.AppendLine("UPDATE t");
+        writer.Append("SET ");
+        for (int i = 0; i < updatableColumns.Count; i++)
+        {
+            if (i > 0)
+            {
+                writer.Append(", ");
+            }
+
+            var quotedColumn = Quote(updatableColumns[i]);
+            writer.Append("t.");
+            writer.Append(quotedColumn);
+            writer.Append(" = i.");
+            writer.Append(quotedColumn);
+        }
+        writer.AppendLine();
+        writer.Append("FROM ");
+        writer.Append(Quote(trigger.Table));
+        writer.AppendLine(" t");
+        writer.Append("INNER JOIN inserted i ON ");
+        EmitMssqlJoinConjunction(writer, "t", "i", tableKeyColumns);
+        writer.AppendLine(";");
     }
 
     /// <summary>
@@ -1692,6 +1837,33 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append(".");
         writer.Append(quotedColumn);
         writer.Append(" IS NOT NULL AND ");
+        writer.Append(rightAlias);
+        writer.Append(".");
+        writer.Append(rightQuotedColumn);
+        writer.Append(" IS NULL))");
+    }
+
+    private static void EmitMssqlNullSafeEqual(
+        SqlWriter writer,
+        string leftAlias,
+        string quotedColumn,
+        string rightAlias,
+        string rightQuotedColumn
+    )
+    {
+        writer.Append("((");
+        writer.Append(leftAlias);
+        writer.Append(".");
+        writer.Append(quotedColumn);
+        writer.Append(" = ");
+        writer.Append(rightAlias);
+        writer.Append(".");
+        writer.Append(rightQuotedColumn);
+        writer.Append(") OR (");
+        writer.Append(leftAlias);
+        writer.Append(".");
+        writer.Append(quotedColumn);
+        writer.Append(" IS NULL AND ");
         writer.Append(rightAlias);
         writer.Append(".");
         writer.Append(rightQuotedColumn);
@@ -1984,6 +2156,153 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.Append(" AS ");
             writer.Append(sqlType);
             writer.Append(")");
+        }
+    }
+
+    private static IReadOnlyDictionary<DbTableName, DbTableModel> BuildTableModelLookup(
+        IReadOnlyList<ConcreteResourceModel> concreteResources,
+        IReadOnlyList<AbstractIdentityTableInfo> abstractIdentityTables
+    )
+    {
+        Dictionary<DbTableName, DbTableModel> tableModelsByTableName = [];
+
+        foreach (var resource in concreteResources)
+        {
+            foreach (var table in resource.RelationalModel.TablesInDependencyOrder)
+            {
+                tableModelsByTableName[table.Table] = table;
+            }
+        }
+
+        foreach (var abstractIdentityTable in abstractIdentityTables)
+        {
+            tableModelsByTableName[abstractIdentityTable.TableModel.Table] = abstractIdentityTable.TableModel;
+        }
+
+        return tableModelsByTableName;
+    }
+
+    private static IReadOnlyList<DbColumnName> GetStoredColumnsForDocumentStamping(
+        DbTableModel tableModel,
+        string triggerName
+    )
+    {
+        var storedColumns = tableModel
+            .Columns.Where(column => column.Storage is ColumnStorage.Stored)
+            .Select(column => column.ColumnName)
+            .ToArray();
+
+        if (storedColumns.Length == 0)
+        {
+            throw new InvalidOperationException(
+                $"DocumentStamping trigger '{triggerName}' requires at least one stored column on table '{tableModel.Table.Schema.Value}.{tableModel.Table.Name}'."
+            );
+        }
+
+        return storedColumns;
+    }
+
+    private static IReadOnlyList<DbColumnName> GetKeyColumnsForDocumentStamping(
+        DbTableModel tableModel,
+        string triggerName
+    )
+    {
+        var keyColumns = tableModel.Key.Columns.Select(column => column.ColumnName).ToArray();
+
+        if (keyColumns.Length == 0)
+        {
+            throw new InvalidOperationException(
+                $"DocumentStamping trigger '{triggerName}' requires at least one key column on table '{tableModel.Table.Schema.Value}.{tableModel.Table.Name}'."
+            );
+        }
+
+        return keyColumns;
+    }
+
+    private static IReadOnlyList<DbColumnName> GetWritableStoredNonKeyColumns(
+        DbTableModel tableModel,
+        string triggerName
+    )
+    {
+        var keyColumns = tableModel.Key.Columns.Select(column => column.ColumnName).ToHashSet();
+        var updatableColumns = tableModel
+            .Columns.Where(column =>
+                column.Storage is ColumnStorage.Stored
+                && column.IsWritable
+                && !keyColumns.Contains(column.ColumnName)
+            )
+            .Select(column => column.ColumnName)
+            .ToArray();
+
+        if (updatableColumns.Length == 0)
+        {
+            throw new InvalidOperationException(
+                $"IdentityPropagationFallback trigger '{triggerName}' requires at least one writable stored non-key column on table '{tableModel.Table.Schema.Value}.{tableModel.Table.Name}'."
+            );
+        }
+
+        return updatableColumns;
+    }
+
+    private void EmitMssqlJoinConjunction(
+        SqlWriter writer,
+        string leftAlias,
+        string rightAlias,
+        IReadOnlyList<DbColumnName> keyColumns
+    )
+    {
+        for (int i = 0; i < keyColumns.Count; i++)
+        {
+            if (i > 0)
+            {
+                writer.Append(" AND ");
+            }
+
+            var quotedColumn = Quote(keyColumns[i]);
+            writer.Append(leftAlias);
+            writer.Append(".");
+            writer.Append(quotedColumn);
+            writer.Append(" = ");
+            writer.Append(rightAlias);
+            writer.Append(".");
+            writer.Append(quotedColumn);
+        }
+    }
+
+    private void EmitMssqlColumnValueDiffDisjunction(
+        SqlWriter writer,
+        string leftAlias,
+        string rightAlias,
+        IReadOnlyList<DbColumnName> columns
+    )
+    {
+        for (int i = 0; i < columns.Count; i++)
+        {
+            if (i > 0)
+            {
+                writer.Append(" OR ");
+            }
+
+            var quotedColumn = Quote(columns[i]);
+            EmitMssqlNullSafeNotEqual(writer, leftAlias, quotedColumn, rightAlias, quotedColumn);
+        }
+    }
+
+    private void EmitMssqlPropagationOldValueConjunction(
+        SqlWriter writer,
+        IReadOnlyList<TriggerColumnMapping> columnMappings
+    )
+    {
+        for (int i = 0; i < columnMappings.Count; i++)
+        {
+            if (i > 0)
+            {
+                writer.Append(" AND ");
+            }
+
+            var targetColumn = Quote(columnMappings[i].TargetColumn);
+            var sourceColumn = Quote(columnMappings[i].SourceColumn);
+            EmitMssqlNullSafeEqual(writer, "r", targetColumn, "d", sourceColumn);
         }
     }
 
