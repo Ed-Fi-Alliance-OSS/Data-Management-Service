@@ -79,7 +79,7 @@ function Get-SmokeTestCredentials {
         $SysAdminId = "smoke-test-admin",
 
         [string]
-        $SysAdminSecret = "SmokeTest12!",
+        $SysAdminSecret = "SdfH)98&JkSdfH)98&JkSdfH)98&JkSdfH)9",
 
         [string]
         $VendorName = "Smoke Test Vendor",
