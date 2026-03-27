@@ -86,7 +86,13 @@ public sealed record ConcreteResourceModel(
     ResourceStorageKind StorageKind,
     RelationalResourceModel RelationalModel,
     DescriptorMetadata? DescriptorMetadata = null
-);
+)
+{
+    /// <summary>
+    /// Securable element metadata extracted from ApiSchema.json for authorization path resolution.
+    /// </summary>
+    public ResourceSecurableElements SecurableElements { get; init; } = ResourceSecurableElements.Empty;
+}
 
 /// <summary>
 /// Derived identity table metadata for an abstract resource.

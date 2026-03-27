@@ -273,7 +273,11 @@ public class Given_PostgresqlRuntimeInstanceMappingValidator_Against_A_Provision
             ResourceKeyById: new Dictionary<short, ResourceKeyEntry>
             {
                 [resourceKeyEntry.ResourceKeyId] = resourceKeyEntry,
-            }
+            },
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<IReadOnlyList<ColumnPathStep>>
+            >()
         );
     }
 

@@ -314,7 +314,11 @@ public class Given_MappingSetCache
             ResourceKeyById: new Dictionary<short, ResourceKeyEntry>
             {
                 [resourceKeyEntry.ResourceKeyId] = resourceKeyEntry,
-            }
+            },
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<IReadOnlyList<ColumnPathStep>>
+            >()
         );
     }
 

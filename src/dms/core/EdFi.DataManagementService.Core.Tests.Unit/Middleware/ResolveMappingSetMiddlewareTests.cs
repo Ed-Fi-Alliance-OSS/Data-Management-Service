@@ -126,7 +126,11 @@ public class ResolveMappingSetMiddlewareTests
             WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>(),
             ReadPlansByResource: new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
             ResourceKeyIdByResource: new Dictionary<QualifiedResourceName, short>(),
-            ResourceKeyById: new Dictionary<short, ResourceKeyEntry>()
+            ResourceKeyById: new Dictionary<short, ResourceKeyEntry>(),
+            SecurableElementColumnPathsByResource: new Dictionary<
+                QualifiedResourceName,
+                IReadOnlyList<IReadOnlyList<ColumnPathStep>>
+            >()
         );
     }
 

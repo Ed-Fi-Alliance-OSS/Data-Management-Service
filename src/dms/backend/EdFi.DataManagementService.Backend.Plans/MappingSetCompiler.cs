@@ -68,6 +68,24 @@ public sealed class MappingSetCompiler
             }
         }
 
+        var securableElementPathsByResource =
+            new Dictionary<QualifiedResourceName, IReadOnlyList<IReadOnlyList<ColumnPathStep>>>();
+
+        foreach (var concreteResource in modelSet.ConcreteResourcesInNameOrder)
+        {
+            if (concreteResource.SecurableElements.HasAny)
+            {
+                var paths = SecurableElementColumnPathResolver.ResolveAll(
+                    concreteResource,
+                    modelSet.ConcreteResourcesInNameOrder
+                );
+                if (paths.Count > 0)
+                {
+                    securableElementPathsByResource.Add(concreteResource.RelationalModel.Resource, paths);
+                }
+            }
+        }
+
         var resourceKeyIdByResource = new Dictionary<QualifiedResourceName, short>();
         var resourceKeyById = new Dictionary<short, ResourceKeyEntry>();
 
@@ -94,7 +112,8 @@ public sealed class MappingSetCompiler
             WritePlansByResource: writePlansByResource.ToFrozenDictionary(),
             ReadPlansByResource: readPlansByResource.ToFrozenDictionary(),
             ResourceKeyIdByResource: resourceKeyIdByResource.ToFrozenDictionary(),
-            ResourceKeyById: resourceKeyById.ToFrozenDictionary()
+            ResourceKeyById: resourceKeyById.ToFrozenDictionary(),
+            SecurableElementColumnPathsByResource: securableElementPathsByResource.ToFrozenDictionary()
         );
     }
 }
