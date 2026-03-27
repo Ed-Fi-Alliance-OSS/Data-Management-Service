@@ -98,7 +98,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
             PostgresqlGeneratedDdlModelLookup.RequireTableByScopeAndColumns(
                 _fixture.ModelSet,
                 "sample",
-                "$._ext.sample.addresses[*]._ext.sample.schoolDistricts[*]",
+                "$.addresses[*]._ext.sample.schoolDistricts[*]",
                 "StudentEducationOrganizationAssociation_DocumentId",
                 "SchoolDistrict"
             );
