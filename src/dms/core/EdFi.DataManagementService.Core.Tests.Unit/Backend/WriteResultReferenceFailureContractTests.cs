@@ -70,9 +70,12 @@ public class WriteResultReferenceFailureContractTests
         }
 
         [Test]
-        public void It_still_exposes_deduped_resource_names_for_current_handlers()
+        public void It_preserves_the_target_resource_on_each_failing_occurrence()
         {
-            _result.GetResourceNames().Should().Equal(new ResourceName("School"));
+            _result
+                .InvalidDocumentReferences.Select(failure => failure.TargetResource.ResourceName)
+                .Should()
+                .Equal(new ResourceName("School"), new ResourceName("School"));
         }
     }
 
@@ -127,9 +130,12 @@ public class WriteResultReferenceFailureContractTests
         }
 
         [Test]
-        public void It_retains_the_existing_deduped_resource_name_projection()
+        public void It_preserves_the_target_resource_for_the_failing_path()
         {
-            _result.GetResourceNames().Should().Equal(new ResourceName("EducationOrganization"));
+            _result
+                .InvalidDocumentReferences[0]
+                .TargetResource.ResourceName.Should()
+                .Be(new ResourceName("EducationOrganization"));
         }
     }
 

@@ -41,13 +41,6 @@ public record UpsertResult
         public bool HasDocumentReferenceFailures => InvalidDocumentReferences.Length != 0;
 
         public bool HasDescriptorReferenceFailures => InvalidDescriptorReferences.Length != 0;
-
-        public ResourceName[] GetResourceNames() =>
-            InvalidDocumentReferences
-                .Select(failure => failure.TargetResource.ResourceName)
-                .Concat(InvalidDescriptorReferences.Select(failure => failure.TargetResource.ResourceName))
-                .Distinct()
-                .ToArray();
     }
 
     /// <summary>
