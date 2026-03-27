@@ -95,12 +95,12 @@ internal interface IProfileService
     /// <param name="profileName">The name of the profile</param>
     /// <param name="tenantId">Optional tenant identifier for multi-tenant deployments</param>
     /// <param name="baseSpecificationProvider">A function that returns the base OpenAPI specification with servers already injected</param>
-    /// <param name="apiSchemaReloadId">The API schema version/reload ID for cache invalidation</param>
+    /// <param name="apiSchemaLoadId">The API schema version/load ID for cache invalidation</param>
     /// <returns>The filtered OpenAPI specification, or null if profile not found</returns>
     Task<JsonNode?> GetProfileOpenApiSpecAsync(
         string profileName,
         string? tenantId,
         Func<JsonNode> baseSpecificationProvider,
-        Guid apiSchemaReloadId
+        Guid apiSchemaLoadId
     );
 }

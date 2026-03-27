@@ -123,7 +123,6 @@ internal class ProfileWriteValidationMiddleware(
                 );
                 return;
             }
-
         }
 
         // Filter the request body according to profile rules
@@ -256,7 +255,6 @@ internal class ProfileWriteValidationMiddleware(
                 requestInfo.ProjectSchema.ProjectName,
                 requestInfo.ResourceSchema.ResourceName,
                 requestInfo.Method,
-                requestInfo.ApiSchemaReloadId,
                 () => CompileSchema(requestInfo.ResourceSchema, requestInfo.Method)
             );
         }
@@ -299,8 +297,7 @@ internal class ProfileWriteValidationMiddleware(
                     objectName,
                     out string matchedObjectName,
                     out JsonNode? nestedNode
-                )
-                && nestedNode is JsonObject nestedObject
+                ) && nestedNode is JsonObject nestedObject
             )
             {
                 CollectNonCreatableObjectPaths(
@@ -323,8 +320,7 @@ internal class ProfileWriteValidationMiddleware(
                     collectionName,
                     out string matchedCollectionName,
                     out JsonNode? collectionNode
-                )
-                && collectionNode is JsonArray collection
+                ) && collectionNode is JsonArray collection
             )
             {
                 CollectNonCreatableCollectionPaths(
@@ -359,8 +355,7 @@ internal class ProfileWriteValidationMiddleware(
                     objectName,
                     out string matchedObjectName,
                     out JsonNode? requestObjectNode
-                )
-                && requestObjectNode is JsonObject requestObject
+                ) && requestObjectNode is JsonObject requestObject
             )
             {
                 TryGetPropertyValueCaseInsensitive(
@@ -398,8 +393,7 @@ internal class ProfileWriteValidationMiddleware(
                     collectionName,
                     out string matchedCollectionName,
                     out JsonNode? requestCollectionNode
-                )
-                && requestCollectionNode is JsonArray requestCollection
+                ) && requestCollectionNode is JsonArray requestCollection
             )
             {
                 TryGetPropertyValueCaseInsensitive(
@@ -465,8 +459,7 @@ internal class ProfileWriteValidationMiddleware(
                     nestedObjectName,
                     out string matchedNestedObjectName,
                     out JsonNode? nestedNode
-                )
-                && nestedNode is JsonObject nestedObject
+                ) && nestedNode is JsonObject nestedObject
             )
             {
                 CollectNonCreatableObjectPaths(
@@ -489,8 +482,7 @@ internal class ProfileWriteValidationMiddleware(
                     nestedCollectionName,
                     out string matchedNestedCollectionName,
                     out JsonNode? nestedCollectionNode
-                )
-                && nestedCollectionNode is JsonArray nestedCollection
+                ) && nestedCollectionNode is JsonArray nestedCollection
             )
             {
                 CollectNonCreatableCollectionPaths(
@@ -529,8 +521,7 @@ internal class ProfileWriteValidationMiddleware(
                     nestedObjectName,
                     out string matchedNestedObjectName,
                     out JsonNode? requestNestedNode
-                )
-                && requestNestedNode is JsonObject requestNestedObject
+                ) && requestNestedNode is JsonObject requestNestedObject
             )
             {
                 TryGetPropertyValueCaseInsensitive(
@@ -568,8 +559,7 @@ internal class ProfileWriteValidationMiddleware(
                     nestedCollectionName,
                     out string matchedNestedCollectionName,
                     out JsonNode? requestNestedCollectionNode
-                )
-                && requestNestedCollectionNode is JsonArray requestNestedCollection
+                ) && requestNestedCollectionNode is JsonArray requestNestedCollection
             )
             {
                 TryGetPropertyValueCaseInsensitive(
@@ -642,8 +632,7 @@ internal class ProfileWriteValidationMiddleware(
                         nestedObjectName,
                         out string matchedNestedObjectName,
                         out JsonNode? nestedNode
-                    )
-                    && nestedNode is JsonObject nestedObject
+                    ) && nestedNode is JsonObject nestedObject
                 )
                 {
                     CollectNonCreatableObjectPaths(
@@ -666,8 +655,7 @@ internal class ProfileWriteValidationMiddleware(
                         nestedCollectionName,
                         out string matchedNestedCollectionName,
                         out JsonNode? nestedCollectionNode
-                    )
-                    && nestedCollectionNode is JsonArray nestedCollection
+                    ) && nestedCollectionNode is JsonArray nestedCollection
                 )
                 {
                     CollectNonCreatableCollectionPaths(
@@ -701,13 +689,14 @@ internal class ProfileWriteValidationMiddleware(
             JsonObject? filteredItem =
                 i < (filteredCollection?.Count ?? 0) ? filteredCollection![i] as JsonObject : null;
 
-            JsonObject? existingItem = existingCollection == null
-                ? null
-                : FindMatchingExistingItem(
-                    filteredItem ?? CreateCollectionMatchCandidate(requestItem, collectionRule),
-                    existingCollection,
-                    collectionRule
-                );
+            JsonObject? existingItem =
+                existingCollection == null
+                    ? null
+                    : FindMatchingExistingItem(
+                        filteredItem ?? CreateCollectionMatchCandidate(requestItem, collectionRule),
+                        existingCollection,
+                        collectionRule
+                    );
 
             if (existingItem == null)
             {
@@ -726,8 +715,7 @@ internal class ProfileWriteValidationMiddleware(
                         nestedObjectName,
                         out string matchedNestedObjectName,
                         out JsonNode? requestNestedNode
-                    )
-                    && requestNestedNode is JsonObject requestNestedObject
+                    ) && requestNestedNode is JsonObject requestNestedObject
                 )
                 {
                     TryGetPropertyValueCaseInsensitive(
@@ -765,8 +753,7 @@ internal class ProfileWriteValidationMiddleware(
                         nestedCollectionName,
                         out string matchedNestedCollectionName,
                         out JsonNode? requestNestedCollectionNode
-                    )
-                    && requestNestedCollectionNode is JsonArray requestNestedCollection
+                    ) && requestNestedCollectionNode is JsonArray requestNestedCollection
                 )
                 {
                     TryGetPropertyValueCaseInsensitive(
@@ -831,8 +818,7 @@ internal class ProfileWriteValidationMiddleware(
                     nestedObjectName,
                     out string matchedNestedObjectName,
                     out JsonNode? nestedNode
-                )
-                && nestedNode is JsonObject nestedObject
+                ) && nestedNode is JsonObject nestedObject
             )
             {
                 CollectNonCreatableObjectPaths(
@@ -855,8 +841,7 @@ internal class ProfileWriteValidationMiddleware(
                     nestedCollectionName,
                     out string matchedNestedCollectionName,
                     out JsonNode? nestedCollectionNode
-                )
-                && nestedCollectionNode is JsonArray nestedCollection
+                ) && nestedCollectionNode is JsonArray nestedCollection
             )
             {
                 CollectNonCreatableCollectionPaths(
@@ -987,9 +972,8 @@ internal class ProfileWriteValidationMiddleware(
     private async Task<JsonObject?> GetExistingDocument(RequestInfo requestInfo)
     {
         // Resolve from the request scope so tenant/instance-specific services are used consistently.
-        var documentStoreRepository = requestInfo
-            .ScopedServiceProvider
-            .GetRequiredService<IDocumentStoreRepository>();
+        var documentStoreRepository =
+            requestInfo.ScopedServiceProvider.GetRequiredService<IDocumentStoreRepository>();
 
         // Create a bypass authorization handler for internal document fetch
         // The actual authorization will be performed later by the update handler.
@@ -1513,14 +1497,7 @@ internal class ProfileWriteValidationMiddleware(
             bool allMatch = true;
             foreach (var kvp in item)
             {
-                if (
-                    !TryGetPropertyValueCaseInsensitive(
-                        arrayItem,
-                        kvp.Key,
-                        out _,
-                        out JsonNode? arrayValue
-                    )
-                )
+                if (!TryGetPropertyValueCaseInsensitive(arrayItem, kvp.Key, out _, out JsonNode? arrayValue))
                 {
                     allMatch = false;
                     break;

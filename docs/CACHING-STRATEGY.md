@@ -160,31 +160,24 @@ avoiding expensive schema compilation on every request.
   - `ProjectName` - API project name (e.g., "Ed-Fi")
   - `ResourceName` - Resource name (e.g., "students", "schools")
   - `Method` - HTTP method (POST or PUT)
-  - `ReloadId` - GUID that changes on schema reload
 - **Value:** `JsonSchema` - pre-compiled JSON schema for request validation
 
 **Configuration:** None required - cache lifetime is managed internally
 
-**TTL:** Infinite (until schema reload)
+**TTL:** Infinite (schema is fixed at startup and immutable for the process lifetime)
 
 **Cache Operations:**
 
-| Operation | Method                   | Description              |
-| --------- | ------------------------ | ------------------------ |
-| Get/Add   | `GetOrAdd(...)`          | Lazy compilation         |
-| Prime     | `Prime(docs, reloadId)`  | Pre-compiles all schemas |
-| Reset     | `ResetIfReloadChanged()` | Clears on version change |
+| Operation | Method          | Description              |
+| --------- | --------------- | ------------------------ |
+| Get/Add   | `GetOrAdd(...)` | Lazy compilation         |
+| Prime     | `Prime(docs)`   | Pre-compiles all schemas |
 
 **Invalidation Strategy:**
 
-The compiled schema cache uses a **reload ID pattern** for invalidation:
-
-1. Each API schema load generates a new GUID (reload ID)
-2. The reload ID is included in cache keys
-3. When a request arrives with a different reload ID:
-   - The entire cache is cleared
-   - Cache is re-primed with new schemas
-4. This ensures atomic schema updates without stale entries
+The compiled schema cache does not require runtime invalidation. The API schema is loaded
+once at startup and is immutable for the lifetime of the process. The cache is primed
+during startup and entries are never evicted or replaced.
 
 **Priming Behavior:**
 
@@ -561,7 +554,7 @@ Since caches are local to each instance:
 
 - Each DMS instance maintains independent cache state
 - TTL expiration may cause temporary inconsistencies between instances
-- Schema reloads should be coordinated across instances
+- Schema is fixed at startup; no cross-instance coordination is needed for schema state
 - Consider load balancer sticky sessions if cache consistency is critical
 
 ### Memory Usage

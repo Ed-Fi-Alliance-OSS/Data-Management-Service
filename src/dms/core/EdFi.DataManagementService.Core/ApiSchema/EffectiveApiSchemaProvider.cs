@@ -26,7 +26,6 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
     private readonly object _initLock = new();
 
     private ApiSchemaDocuments? _documents;
-    private Guid _schemaId;
     private volatile bool _isInitialized;
 
     public EffectiveApiSchemaProvider(
@@ -45,16 +44,6 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
         {
             EnsureInitialized();
             return _documents!;
-        }
-    }
-
-    /// <inheritdoc />
-    public Guid SchemaId
-    {
-        get
-        {
-            EnsureInitialized();
-            return _schemaId;
         }
     }
 
@@ -130,17 +119,12 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
                 _logger
             );
 
-            _schemaId = Guid.NewGuid();
-
             _logger.LogInformation("Priming compiled schema cache");
-            _compiledSchemaCache.Prime(_documents, _schemaId);
+            _compiledSchemaCache.Prime(_documents);
 
             _isInitialized = true;
 
-            _logger.LogInformation(
-                "Effective API schema built successfully. SchemaId: {SchemaId}",
-                _schemaId
-            );
+            _logger.LogInformation("Effective API schema built successfully");
         }
     }
 

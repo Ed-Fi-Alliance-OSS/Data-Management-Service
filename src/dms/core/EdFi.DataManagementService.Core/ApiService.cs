@@ -685,13 +685,13 @@ internal class ApiService : IApiService
     )
     {
         // Delegate to IProfileService which handles caching and filtering
-        // The cache key includes apiSchemaReloadId so specs are regenerated when the schema changes
+        // The cache key includes apiSchemaLoadId so specs are regenerated when the schema changes
         // We pass a Func to delay the base spec retrieval until needed (cache miss)
         return await _profileService.GetProfileOpenApiSpecAsync(
             profileName,
             tenantId,
             () => GetResourceOpenApiSpecification(servers),
-            _apiSchemaProvider.ReloadId
+            _apiSchemaProvider.SchemaLoadId
         );
     }
 }

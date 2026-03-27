@@ -11,7 +11,7 @@ using Json.Schema;
 namespace EdFi.DataManagementService.Core.Validation;
 
 /// <summary>
-/// Provides caching for compiled JSON Schemas keyed by resource, method, and schema reload identifier.
+/// Provides caching for compiled JSON Schemas keyed by resource and method.
 /// </summary>
 internal interface ICompiledSchemaCache
 {
@@ -22,12 +22,11 @@ internal interface ICompiledSchemaCache
         ProjectName projectName,
         ResourceName resourceName,
         RequestMethod method,
-        Guid reloadId,
         Func<JsonSchema> schemaFactory
     );
 
     /// <summary>
     /// Pre-compiles schemas for the supplied documents.
     /// </summary>
-    void Prime(ApiSchemaDocuments documents, Guid reloadId);
+    void Prime(ApiSchemaDocuments documents);
 }

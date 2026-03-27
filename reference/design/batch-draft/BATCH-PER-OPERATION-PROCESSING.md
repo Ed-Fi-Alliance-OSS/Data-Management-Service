@@ -29,7 +29,7 @@ Idea
   - Creates a fresh RequestInfo per operation (call it opInfo).
   - Copies shared batch-level state into it:
     - ClientAuthorizations (from JWT middleware run once at the batch level).
-    - ApiSchemaDocuments and ApiSchemaReloadId (from ProvideApiSchemaMiddleware).
+    - ApiSchemaDocuments (from ProvideApiSchemaMiddleware).
   - Synthesizes a path like /ed-fi/students/{documentId} or /ed-fi/students based on op.
   - Sets Method (POST/PUT/DELETE).
   - Runs the appropriate validation-only pipeline:
@@ -108,7 +108,6 @@ var opInfo = new RequestInfo(frontendReq, method)
 {
 ClientAuthorizations = batchRequestInfo.ClientAuthorizations,
 ApiSchemaDocuments = batchRequestInfo.ApiSchemaDocuments,
-ApiSchemaReloadId = batchRequestInfo.ApiSchemaReloadId,
 };
 
 await _batchUpsertValidation.Value.Run(opInfo);
@@ -343,9 +342,9 @@ This keeps things elegant, maximizes reuse, and avoids restructuring individual 
           _appSettings,
           _resiliencePipeline,
           _batchUnitOfWorkFactory,
-          new VersionedLazy<PipelineProvider>(CreateBatchUpsertValidationPipeline, () => _apiSchemaProvider.ReloadId),
-          new VersionedLazy<PipelineProvider>(CreateBatchUpdateValidationPipeline, () => _apiSchemaProvider.ReloadId),
-          new VersionedLazy<PipelineProvider>(CreateBatchDeleteValidationPipeline, () => _apiSchemaProvider.ReloadId)
+          new VersionedLazy<PipelineProvider>(CreateBatchUpsertValidationPipeline, () => _apiSchemaProvider.SchemaLoadId),
+          new VersionedLazy<PipelineProvider>(CreateBatchUpdateValidationPipeline, () => _apiSchemaProvider.SchemaLoadId),
+          new VersionedLazy<PipelineProvider>(CreateBatchDeleteValidationPipeline, () => _apiSchemaProvider.SchemaLoadId)
       ));
       return new PipelineProvider(steps);
   }
@@ -353,7 +352,7 @@ This keeps things elegant, maximizes reuse, and avoids restructuring individual 
   So by the time BatchHandler.Execute runs:
 
   - batchInfo.ClientAuthorizations is set (JWT middleware).
-  - batchInfo.ApiSchemaDocuments and batchInfo.ApiSchemaReloadId are set (schema middleware).
+  - batchInfo.ApiSchemaDocuments is set (schema middleware).
   - No resource-specific work has been done yet.
 
   Inside BatchHandler.Execute(RequestInfo batchInfo, Func<Task> next):
@@ -428,7 +427,6 @@ This keeps things elegant, maximizes reuse, and avoids restructuring individual 
      {
          // Reuse schema and auth context from batch-level pipeline
          ApiSchemaDocuments = batchInfo.ApiSchemaDocuments,
-         ApiSchemaReloadId = batchInfo.ApiSchemaReloadId,
          ClientAuthorizations = batchInfo.ClientAuthorizations,
      };
   4. Run the validation-only pipeline for that operation
@@ -579,7 +577,7 @@ This keeps things elegant, maximizes reuse, and avoids restructuring individual 
 
   _batchSteps = new VersionedLazy<PipelineProvider>(
       CreateBatchPipeline,
-      () => _apiSchemaProvider.ReloadId
+      () => _apiSchemaProvider.SchemaLoadId
   );
 
   Method:
@@ -612,9 +610,9 @@ This keeps things elegant, maximizes reuse, and avoids restructuring individual 
               _appSettings,
               _resiliencePipeline,
               _batchUnitOfWorkFactory,
-              new VersionedLazy<PipelineProvider>(CreateBatchUpsertValidationPipeline, () => _apiSchemaProvider.ReloadId),
-              new VersionedLazy<PipelineProvider>(CreateBatchUpdateValidationPipeline, () => _apiSchemaProvider.ReloadId),
-              new VersionedLazy<PipelineProvider>(CreateBatchDeleteValidationPipeline, () => _apiSchemaProvider.ReloadId)
+              new VersionedLazy<PipelineProvider>(CreateBatchUpsertValidationPipeline, () => _apiSchemaProvider.SchemaLoadId),
+              new VersionedLazy<PipelineProvider>(CreateBatchUpdateValidationPipeline, () => _apiSchemaProvider.SchemaLoadId),
+              new VersionedLazy<PipelineProvider>(CreateBatchDeleteValidationPipeline, () => _apiSchemaProvider.SchemaLoadId)
           )
       ]);
 
@@ -744,7 +742,7 @@ This keeps things elegant, maximizes reuse, and avoids restructuring individual 
       - For each operation:
           - Synthesizes an operation-specific FrontendRequest (Path, Body, Method).
           - Creates opInfo : RequestInfo with:
-              - ApiSchemaDocuments, ApiSchemaReloadId, and ClientAuthorizations copied from the batch-level RequestInfo.
+              - ApiSchemaDocuments and ClientAuthorizations copied from the batch-level RequestInfo.
           - Runs the appropriate validation-only pipeline (_batchUpsertValidation, _batchUpdateValidation, _batchDeleteValidation) built from Get*CoreSteps.
           - If any step sets opInfo.FrontendResponse, maps that to a per-operation failure, rolls back, and returns.
           - Otherwise builds UpsertRequest / UpdateRequest / DeleteRequest and calls the unit of work.

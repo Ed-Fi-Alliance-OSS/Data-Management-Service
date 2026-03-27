@@ -44,7 +44,7 @@ public class ApiSchemaValidationMiddlewareTests
                 return new(_apiSchemaRootNode, []);
             }
 
-            public Guid ReloadId => Guid.Empty;
+            public Guid SchemaLoadId => Guid.Empty;
 
             public bool IsSchemaValid => false; // Simulating invalid schema
 
@@ -79,7 +79,7 @@ public class ApiSchemaValidationMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
-    public class HotReloadScenarios : ApiSchemaValidationMiddlewareTests
+    public class SchemaValidationScenarios : ApiSchemaValidationMiddlewareTests
     {
         private IApiSchemaProvider _mockProvider = null!;
         private ApiSchemaValidationMiddleware _middleware = null!;

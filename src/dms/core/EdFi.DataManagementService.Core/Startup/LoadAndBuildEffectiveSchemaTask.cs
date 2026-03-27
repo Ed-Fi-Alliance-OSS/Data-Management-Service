@@ -124,10 +124,7 @@ internal class LoadAndBuildEffectiveSchemaTask(
         _effectiveSchemaSetProvider.Initialize(effectiveSchemaSet);
         _effectiveApiSchemaProvider.Initialize(normalizedNodes);
 
-        _logger.LogInformation(
-            "Effective API schema initialization complete. SchemaId: {SchemaId}",
-            _effectiveApiSchemaProvider.SchemaId
-        );
+        _logger.LogInformation("Effective API schema initialization complete");
 
         return Task.CompletedTask;
     }

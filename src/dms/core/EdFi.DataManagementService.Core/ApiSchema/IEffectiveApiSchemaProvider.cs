@@ -18,12 +18,6 @@ internal interface IEffectiveApiSchemaProvider
     ApiSchemaDocuments Documents { get; }
 
     /// <summary>
-    /// Gets the unique identifier for this schema configuration.
-    /// This value is stable for the lifetime of the process.
-    /// </summary>
-    Guid SchemaId { get; }
-
-    /// <summary>
     /// Gets whether the effective schema has been initialized.
     /// </summary>
     bool IsInitialized { get; }
